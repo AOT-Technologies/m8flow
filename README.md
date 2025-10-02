@@ -1,118 +1,88 @@
-# spiff-arena
+# m8flow  
+![Logo](./docs/m8flow_logo.png)
 
-SpiffArena is a low(ish)-code software development platform for building, running, and monitoring executable diagrams.
-It is intended to support Citizen Developers and to enhance their ability to contribute to the software development process.
-Using tools that look a lot like flow-charts and spreadsheets, it is possible to capture complex rules in a way that everyone in your organization can see, understand, and directly execute.
+**m8flow** is an open-source workflow engine implemented in pure Python.  
+It is built on the proven foundation of SpiffWorkflow, with a vision shaped by **8 guiding principles** for flow orchestration:
 
-Please visit the [SpiffWorkflow website](https://www.spiffworkflow.org) for a [Getting Started Guide](https://www.spiffworkflow.org/posts/articles/get_started/) to see how to use SpiffArena and try it out.
-There are also additional articles, videos, and tutorials about SpiffArena and its components, including SpiffWorkflow, Service Connectors, and BPMN.js extensions.
+**Merge flows effectively** – streamline complex workflows  
+**Make apps faster** – speed up development and deployment  
+**Manage processes better** – bring structure and clarity to execution  
+**Minimize errors** – reduce mistakes through automation  
+**Maximize efficiency** – get more done with fewer resources  
+**Model workflows visually** – design with simplicity and clarity  
+**Modernize systems** – upgrade legacy processes seamlessly  
+**Mobilize innovation** – empower teams to build and experiment quickly  
 
-## Backend Setup, local
+---
 
-Remember, if you don't need a full-on native dev experience, you can run with docker (see below), which saves you from all the native setup.
-If you have issues with the local dev setup, please consult [the troubleshooting guide](https://spiff-arena.readthedocs.io/en/latest/Support/Running_Server_Locally.html).
+## Why m8flow?
 
-There are three prerequisites for non-docker local development:
+**Future-proof alternative** → replaces Camunda 7 with a modern, Python-based workflow engine  
+**Enterprise-grade integrations** → tight alignment with **formsflow.ai**, **caseflow**, and the **SLED360** automation suite  
+**Open and extensible** → open source by default, extensible for enterprise-grade use cases  
+**Principles-first branding** → “m8” = 8 principles for flow, consistent with the product family (caseflow, formsflow.ai)  
+**Visual and symbolic meaning**:  
+  - “8 nodes” in automation  
+  - “8” resembles a curled Python → Python-native identity  
+  - “m8” → mate / mighty → collaboration and strength  
 
-1. python - [asdf-vm](https://asdf-vm.com) works well for installing this.
-2. uv - 'pip install uv` works, but recommend standalone installer, see <https://github.com/astral-sh/uv>
-3. mysql - the app also supports postgres. and sqlite, if you are talking local dev).
+---
 
-When these are installed, you are ready for:
+## Features
 
+**BPMN 2.0**: pools, lanes, multi-instance tasks, sub-processes, timers, signals, messages, boundary events, loops  
+**DMN**: baseline implementation integrated with the Python execution engine  
+**Forms support**: extract form definitions (Camunda XML extensions → JSON) for CLI or web UI generation  
+**Python-native workflows**: run workflows via Python code or JSON structures  
+**Integration-ready**: designed to plug into formsflow, caseflow, decision engines, and enterprise observability tools  
+
+_A complete list of the latest features is available in our [release notes](https://github.com/AOT-Technologies/m8flow/releases)._  
+
+---
+
+## Roadmap
+
+**v1.0 (Jan 2026)** → Foundation release (standalone + formsflow integration)  
+**Summer 2026** → Feature updates (templates, connectors, monitoring) + security iFixes  
+**2027 onward** → Yearly feature releases, quarterly iFixes, enterprise add-ons (dashboards, connectors, observability)  
+
+---
+
+## Installation
 ```bash
-    cd spiffworkflow-backend
-    uv sync
-    ./bin/recreate_db clean
-    ./bin/run_server_locally
-    ./bin/run_server_locally keycloak # if you want to use keycloak instead of the built-in openid server
+
+pip install m8flow
+
 ```
 
-**Mac Port Errors**: On a Mac, port 7000 (used by the backend) might be hijacked by Airplay. For those who upgraded to macOS 12.1 and are running everything locally, your AirPlay receiver may have started on Port 7000 and your server (which uses port 7000 by default) may fail due to this port already being used. You can disable this port in System Preferences > Sharing > AirPlay receiver.
+---
 
-**Poetry Install Errors**: If you encounter errors with the Poetry install, please note that MySQL and PostgreSQL may require certain packages exist on your system prior to installing these libraries.
-Please see the [PyPi mysqlclient instructions](https://pypi.org/project/mysqlclient/) and the pre-requisites for the [Postgres psycopq2 adapter](https://www.psycopg.org/docs/install.html#prerequisites) Following the instructions here carefully will assure your OS has the right dependencies installed.
-Correct these, and rerun the above commands.
+## Documentation & Examples
 
-**Using PyCharm?** If you would like to run or debug your project within an editor like PyCharm please see
-[These directions for PyCharm Setup](spiffworkflow-backend/docs/pycharm.md).
+  - Full documentation on ReadTheDocs
+  - Example application at GitHub/m8flow
 
-## Keycloak Setup
+  ---
 
-You will want an openid server of some sort for authentication.
-There is one built in to the app that is used in the docker compose setup for simplicity, but this is not to be used in production
-If you are using `./bin/run_server_locally keycloak`, you can fire up a companion keycloak for local dev like this:
+## Contribute
 
-    ./keycloak/bin/start_keycloak
+We welcome contributions from the community!
 
-It'll be running on port 7002.
-If you want to log in to the keycloak admin console, it can be found at <http://localhost:7002>, and the creds are admin/admin (also logs you in to the app if running the frontend)
+  - Submit PRs with passing tests and clear references to issues  
 
-## Frontend Setup, local
+  ---
 
-First install nodejs (also installable via asdf-vm), ideally the version in .tool-versions (but likely other versions will work). Then:
+## Credits
 
-    cd spiffworkflow-frontend
-    npm install
-    npm start
+m8flow builds upon the outstanding work of the **SpiffWorkflow community** and contributors over the past decade. We extend gratitude to:
 
-Assuming you're running Keycloak as indicated above, you can log in with admin/admin.
+  - Samuel Abels (@knipknap), Matthew Hampton (@matthewhampton)
+  - The University of Virginia & early BPMN/DMN contributors
+  - The BPMN.js team, Bruce Silver, and the wider open-source workflow community
+  - Countless contributors past and present  
 
-## Run tests
-
-    ./bin/run_pyl
-
-## Run cypress automated browser tests
-
-Get the app running so you can access the frontend at <http://localhost:7001> in your browser by following the frontend and backend setup steps above, and then:
-
-    ./bin/run_cypress_tests_locally
-
-## Docker
-
-For full instructions, see [Running SpiffWorkflow Locally with Docker](https://www.spiffworkflow.org/posts/articles/get_started_docker/).
-
-The `docker-compose.yml` file is for running a full-fledged instance of spiff-arena while `editor.docker-compose.yml` provides BPMN graphical editor capability to libraries and projects that depend on SpiffWorkflow but have no built-in BPMN edit capabilities.
-
-### Using Docker for Local Development
-
-If you have `docker` and `docker compose`, as an alternative to locally installing the required dependencies, you can leverage the development docker containers and `Makefile` while working locally. To use, clone the repo and run `make`. This will build the required images, install all dependencies, start the servers and run the linting and tests. Once complete you can [open the app](http://localhost:8001) and code changes will be reflected while running.
-
-After the containers are set up, you can run `make start-dev` and `make stop-dev` to start and stop the servers. If the frontend or backend lock file changes, `make dev-env` will recreate the containers with the new dependencies.
-
-Please refer to the [Makefile](Makefile) as the source of truth, but for a summary of the available `make` targets:
-
-| Target       | Action                                                                                      |
-| ------------ | ------------------------------------------------------------------------------------------- |
-| dev-env      | Builds the images, sets up the backend db and installs `npm` and `uv` dependencies          |
-| start-dev    | Starts the frontend and backend servers, also stops them first if they were already running |
-| stop-dev     | Stops the frontend and backend servers                                                      |
-| be-tests-par | Runs the backend unit tests in parallel                                                     |
-| fe-lint-fix  | Runs `npm lint:fix` in the frontend container                                               |
-| run-pyl      | Runs all frontend and backend lints, backend unit tests                                     |
-
-## Contributing
-
-To start understanding the system, you might:
-
-1. Explore the demo site via the [Getting Started Guide](https://www.spiffworkflow.org/posts/articles/get_started)
-1. Clone this repo, `cd docs`, run `./bin/build`, and open your browser to [http://127.0.0.1:8000](http://127.0.0.1:8000) to view (and ideally edit!) the docs
-1. Check out our [GitHub issues](https://github.com/sartography/spiff-arena/issues), find something you like, and ask for help on discord
-
-## Monorepo
-
-This is a monorepo based on git subtrees that pulls together various spiffworkflow-related projects.
-FYI, some scripts:
-
-    ls bin | grep subtree
+---
 
 ## License
 
-SpiffArena's main components are published under the terms of the
-[GNU Lesser General Public License (LGPL) Version 3](https://www.gnu.org/licenses/lgpl-3.0.txt).
-
-## Support
-
-You can find us on [our Discord Channel](https://discord.gg/BYHcc7PpUC).
-Commercial support for SpiffWorkflow is available from [Sartography](https://sartography.com).
-Please contact us via the schedule a demo link on the [SpiffWorkflow website](https://spiffworkflow.org) to discuss your needs.
+m8flow is released under the **GNU Lesser General Public License (LGPL)**.
