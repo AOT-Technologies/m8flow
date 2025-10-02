@@ -51,7 +51,6 @@ _A complete list of the latest features is available in our [release notes](http
 ## Installation
 ```bash
 
-pip install m8flow
 
 ```
 
