@@ -1,5 +1,7 @@
-# m8flow  
-![Logo](./docs/m8flow_logo.png)
+# m8flow v0.8 — Python-based workflow engine
+<div align="center">
+    <img src="./docs/m8flow_logo.png" alt-text="m8flow"/>
+</div>
 
 **m8flow** is an open-source workflow engine implemented in pure Python.  
 It is built on the proven foundation of SpiffWorkflow, with a vision shaped by **8 guiding principles** for flow orchestration:
@@ -48,20 +50,13 @@ _A complete list of the latest features is available in our [release notes](http
 
 ---
 
-## Installation
+## Initial installation
 ```bash
 
 
 ```
 
----
-
-## Documentation & Examples
-
-  - Full documentation on ReadTheDocs
-  - Example application at GitHub/m8flow
-
-  ---
+--- 
 
 ## Contribute
 
