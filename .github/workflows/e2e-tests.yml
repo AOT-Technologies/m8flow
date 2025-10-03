@@ -2,10 +2,10 @@ name: E2E Tests
 
 on:
   workflow_dispatch:
-  workflow_run:
-    workflows: ["Build Docker Images"]
-    types:
-      - completed
+  # workflow_run:
+  #   workflows: ["Build Docker Images"]
+  #   types:
+  #     - completed
 
 jobs:
   quickstart-guide-test:

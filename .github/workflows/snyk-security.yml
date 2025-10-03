@@ -30,8 +30,8 @@ name: Snyk Security
 #   - pull_request
 on:
   workflow_dispatch: # allow running on demand
-  schedule:
-    - cron: "0 14 * * 2" # Every Tuesday at 1PM UTC (9AM/10AM eastern)
+  # schedule:
+  #   - cron: "0 14 * * 2" # Every Tuesday at 1PM UTC (9AM/10AM eastern)
 
 permissions:
   contents: read

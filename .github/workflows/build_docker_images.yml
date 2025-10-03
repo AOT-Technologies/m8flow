@@ -28,15 +28,15 @@ name: Build Docker Images
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-      - keycloak-realm-with-groups
-      - fail-fast-off
-      - newui-all-in
-      - rebuild-v1.0.0
-      - support-using-subdir-of-bpmn-spec-repo
-    tags: [v*]
+  # push:
+  #   branches:
+  #     - main
+  #     - keycloak-realm-with-groups
+  #     - fail-fast-off
+  #     - newui-all-in
+  #     - rebuild-v1.0.0
+  #     - support-using-subdir-of-bpmn-spec-repo
+  #   tags: [v*]
 
 jobs:
   create_docker_images:

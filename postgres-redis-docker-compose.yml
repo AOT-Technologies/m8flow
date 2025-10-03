@@ -1,0 +1,69 @@
+version: "3.9"
+
+services:
+  m8flow-db:
+    image: postgres:11
+    env_file: .env
+    ports:
+      - "1111:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data1
+
+  redis:
+    image: redis:6-alpine
+    command: ["redis-server", "--save", "20", "1", "--loglevel", "warning"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  m8flow-backend:
+    build:
+      context: ./spiffworkflow-backend
+      dockerfile: Dockerfile
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../process_models:/app/process_models:rw
+    depends_on:
+      - m8flow-db
+      - redis
+
+  celery_worker:
+    build:
+      context: ./spiffworkflow-backend
+      dockerfile: Dockerfile
+    command: ["./bin/run_server_locally", "celery_worker"]
+    env_file: .env
+    environment:
+      SPIFFWORKFLOW_BACKEND_CELERY_BROKER_URL: redis://redis:6379/0
+      SPIFFWORKFLOW_BACKEND_CELERY_RESULT_BACKEND: redis://redis:6379/0
+      SPIFFWORKFLOW_BACKEND_RUNNING_IN_CELERY_WORKER: "true"
+    volumes:
+      - ../process_models:/app/process_models:rw
+    depends_on:
+      - m8flow-db
+      - redis
+    restart: unless-stopped
+
+  m8flow-frontend:
+    build:
+      context: ./spiffworkflow-frontend
+      dockerfile: Dockerfile
+    env_file: .env
+    ports:
+      - "8001:80"
+    depends_on:
+      - m8flow-backend
+
+volumes:
+  db-data:
+    driver: local
+  redis-data:
+    driver: local
