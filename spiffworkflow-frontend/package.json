@@ -55,7 +55,7 @@
     "typescript": "^5.0.0",
     "use-debounce": "^10.0.1",
     "vite": "^7.1.9",
-    "vite-plugin-svgr": "^4.3.0",
+    "vite-plugin-svgr": "^4.5.0",
     "vite-tsconfig-paths": "^5.1.4"
   },
   "overrides": {
