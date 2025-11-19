@@ -83,7 +83,7 @@ jobs:
         run: echo "sha_short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
       - name: Extract metadata (tags, labels) for Docker
         id: meta
-        uses: docker/metadata-action@v5.8.0
+        uses: docker/metadata-action@v5.9.0
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           labels: |
@@ -143,7 +143,7 @@ jobs:
             echo "UPLOAD_TRIVY_RESULTS=false" >> "$GITHUB_ENV"
           fi
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always() && env.UPLOAD_TRIVY_RESULTS == 'true'
         with:
           sarif_file: "trivy-results.sarif"

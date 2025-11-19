@@ -29,7 +29,7 @@ def update_bpmn_python_script(page, python_script, element_id="process_script"):
     # Open BPMN Python script editor and update script
     page.locator(f"g[data-element-id='{element_id}']").click()
     # Click on the Script tab in properties panel
-    page.locator("div[data-title='Script']").click()
+    page.locator(".bio-properties-panel-group-header-title").filter(has_text="Script").click()
     textarea = page.locator('textarea[name="pythonScript_bpmn:script"]')
     textarea.fill(python_script)
     page.wait_for_timeout(500)
@@ -42,7 +42,7 @@ def test_can_create_and_modify(page: Page):
     """
 
     # 1. Log in
-    login(page, "admin", "admin")
+    login(page)
 
     # 2. Navigate to the process model show page
     page.goto(f"{BASE_URL}/process-groups")
