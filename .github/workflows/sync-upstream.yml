@@ -1,0 +1,186 @@
+name: Sync Upstream Changes
+
+on:
+  workflow_dispatch:
+    branches:
+      - main
+    inputs:
+      upstream_branch:
+        description: 'Upstream branch to sync from'
+        required: true
+        default: 'main'
+        type: string
+
+jobs:
+  sync-upstream:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: main
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+      - name: Verify on main branch
+        run: |
+          CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+          if [[ "$CURRENT_BRANCH" != "main" ]]; then
+            echo "ERROR: Workflow must run on main branch, but current branch is: $CURRENT_BRANCH"
+            exit 1
+          fi
+          echo "✓ Running on main branch"
+
+      - name: Add upstream remote
+        run: |
+          # Check if upstream remote exists, if not add it
+          if ! git remote | grep -q "^upstream$"; then
+            echo "Adding upstream remote..."
+            git remote add upstream ${{ secrets.UPSTREAM_REPO_URL || 'https://github.com/AOT-Technologies/m8flow.git' }}
+          else
+            echo "Upstream remote already exists"
+            # Update the URL in case it changed
+            git remote set-url upstream ${{ secrets.UPSTREAM_REPO_URL || 'https://github.com/AOT-Technologies/m8flow.git' }}
+          fi
+
+      - name: Fetch upstream
+        run: |
+          git fetch upstream ${{ inputs.upstream_branch }}
+
+      - name: Check for relevant changes
+        id: check-changes
+        run: |
+          CURRENT_COMMIT=$(git rev-parse HEAD)
+          UPSTREAM_COMMIT=$(git rev-parse upstream/${{ inputs.upstream_branch }})
+          
+          # Get list of changed files
+          CHANGED_FILES=$(git diff --name-only "$CURRENT_COMMIT" "$UPSTREAM_COMMIT" || echo "")
+          
+          # Filter for only backend and frontend changes
+          RELEVANT_CHANGES=$(echo "$CHANGED_FILES" | grep -E "^(spiffworkflow-backend|spiffworkflow-frontend)/" || true)
+          
+          if [[ -z "$RELEVANT_CHANGES" ]]; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "No changes found in spiffworkflow-backend/ or spiffworkflow-frontend/"
+          else
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "Found changes in:"
+            echo "$RELEVANT_CHANGES" | sed 's/^/  - /'
+            echo "changes<<EOF" >> $GITHUB_OUTPUT
+            echo "$RELEVANT_CHANGES" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create sync branch
+        if: steps.check-changes.outputs.has_changes == 'true'
+        run: |
+          BRANCH_NAME="sync-upstream-$(date +%Y%m%d-%H%M%S)"
+          echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
+          git checkout -b "$BRANCH_NAME"
+
+      - name: Apply selective changes
+        if: steps.check-changes.outputs.has_changes == 'true'
+        run: |
+          CURRENT_COMMIT=$(git rev-parse HEAD~0)
+          UPSTREAM_COMMIT=$(git rev-parse upstream/${{ inputs.upstream_branch }})
+          
+          # Get the list of relevant files
+          RELEVANT_CHANGES=$(echo "${{ steps.check-changes.outputs.changes }}" | grep -E "^(spiffworkflow-backend|spiffworkflow-frontend)/" || true)
+          
+          echo "Applying changes from upstream..."
+          
+          # For each relevant file, checkout the version from upstream
+          while IFS= read -r file; do
+            if [[ -n "$file" ]]; then
+              echo "  Applying: $file"
+              # Checkout the file from upstream commit
+              if git ls-tree -r "$UPSTREAM_COMMIT" --name-only | grep -q "^$file$"; then
+                git checkout "$UPSTREAM_COMMIT" -- "$file" 2>/dev/null || echo "    Warning: Could not checkout $file"
+              else
+                # File might have been deleted in upstream
+                if [[ -f "$file" ]]; then
+                  echo "    Warning: $file exists locally but not in upstream. Keeping local version."
+                fi
+              fi
+            fi
+          done <<< "$RELEVANT_CHANGES"
+
+      - name: Check for changes to commit
+        if: steps.check-changes.outputs.has_changes == 'true'
+        id: check-commit
+        run: |
+          if [[ -z "$(git status --porcelain)" ]]; then
+            echo "has_commit=false" >> $GITHUB_OUTPUT
+            echo "No changes to commit (files may be identical)"
+          else
+            echo "has_commit=true" >> $GITHUB_OUTPUT
+            echo "Changes to be committed:"
+            git status --short
+          fi
+
+      - name: Commit changes
+        if: steps.check-commit.outputs.has_commit == 'true'
+        run: |
+          git add spiffworkflow-backend/ spiffworkflow-frontend/
+          git commit -m "Sync upstream changes for spiffworkflow-backend and spiffworkflow-frontend
+
+Selectively merged changes from upstream/${{ inputs.upstream_branch }} that affect:
+- spiffworkflow-backend/
+- spiffworkflow-frontend/
+
+Other upstream changes were ignored.
+
+Triggered by: ${{ github.actor }}
+Workflow run: ${{ github.run_id }}"
+
+      - name: Push branch
+        if: steps.check-commit.outputs.has_commit == 'true'
+        run: |
+          git push origin "$BRANCH_NAME"
+
+      - name: Create Pull Request
+        if: steps.check-commit.outputs.has_commit == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ${{ env.BRANCH_NAME }}
+          base: main
+          title: "Sync upstream changes (backend & frontend only)"
+          body: |
+            This PR syncs selective changes from upstream that affect only:
+            - `spiffworkflow-backend/`
+            - `spiffworkflow-frontend/`
+
+            ## Changes included:
+            ${{ steps.check-changes.outputs.changes }}
+
+            ## Notes:
+            - Other upstream changes (root files, .github/, docs/, etc.) were intentionally ignored
+            - This maintains the repository restructure while keeping backend/frontend up to date
+            - Triggered manually via GitHub Actions workflow
+
+            **Review carefully before merging.**
+          labels: |
+            upstream-sync
+            automated
+          delete-branch: true
+
+      - name: Summary
+        run: |
+          if [[ "${{ steps.check-changes.outputs.has_changes }}" == "false" ]]; then
+            echo "✅ No relevant changes found in upstream. Nothing to sync."
+          elif [[ "${{ steps.check-commit.outputs.has_commit }}" == "false" ]]; then
+            echo "✅ Changes found but files are identical. Nothing to commit."
+          else
+            echo "✅ Successfully created PR with upstream changes"
+            echo "   Branch: ${{ env.BRANCH_NAME }}"
+          fi
