@@ -22,8 +22,8 @@
 
 ## Changes
 
-- [ ] Backend (`spiffworkflow-backend/`)
-- [ ] Frontend (`spiffworkflow-frontend/`)
+- [ ] Backend 
+- [ ] Frontend
 
 ## Testing
 
