@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+
+function error_handler() {
+  >&2 echo "Exited with BAD EXIT CODE '${2}' in ${0} script at line: ${1}."
+  exit "$2"
+}
+trap 'error_handler ${LINENO} $?' ERR
+set -o errtrace -o errexit -o nounset -o pipefail
+
+# HELP: Sync only changes from upstream that affect spiffworkflow-backend/ and spiffworkflow-frontend/
+# This script selectively merges upstream changes, ignoring all other files
+
+# Check if working tree is clean
+if ! grep -q 'working tree clean' <<<"$(git status)"; then
+  >&2 echo "ERROR: you have local git changes. Please commit or stash them before running this script."
+  exit 1
+fi
+
+# Check if we're on main branch
+branchname=$(git symbolic-ref HEAD | cut -d'/' -f3,4)
+if [[ "$branchname" != "main" ]]; then
+  >&2 echo "ERROR: run this script from the main branch, not $branchname"
+  exit 1
+fi
+
+# Check if upstream remote exists
+if ! git remote | grep -q "^upstream$"; then
+  >&2 echo "ERROR: upstream remote not found. Please add it with:"
+  >&2 echo "  git remote add upstream <upstream-url>"
+  exit 1
+fi
+
+echo "Fetching upstream changes..."
+git fetch upstream
+
+# Get the current branch commit
+CURRENT_COMMIT=$(git rev-parse HEAD)
+UPSTREAM_COMMIT=$(git rev-parse upstream/main)
+
+# Check if there are any changes
+if [[ "$CURRENT_COMMIT" == "$UPSTREAM_COMMIT" ]]; then
+  echo "Already up to date with upstream/main"
+  exit 0
+fi
+
+echo "Checking for changes in spiffworkflow-backend/ and spiffworkflow-frontend/..."
+
+# Get list of changed files between current and upstream
+CHANGED_FILES=$(git diff --name-only "$CURRENT_COMMIT" "$UPSTREAM_COMMIT")
+
+# Filter for only backend and frontend changes
+RELEVANT_CHANGES=$(echo "$CHANGED_FILES" | grep -E "^(spiffworkflow-backend|spiffworkflow-frontend)/" || true)
+
+if [[ -z "$RELEVANT_CHANGES" ]]; then
+  echo "No changes found in spiffworkflow-backend/ or spiffworkflow-frontend/"
+  echo "Skipping merge."
+  exit 0
+fi
+
+echo "Found changes in:"
+echo "$RELEVANT_CHANGES" | sed 's/^/  - /'
+
+# Create a temporary branch for the merge
+TEMP_BRANCH="sync-upstream-$(date +%s)"
+echo ""
+echo "Creating temporary branch: $TEMP_BRANCH"
+git checkout -b "$TEMP_BRANCH"
+
+# Merge upstream/main but only for the specific paths
+echo "Merging upstream changes (selective merge)..."
+echo ""
+
+# Use git merge with a strategy that allows us to be selective
+# We'll merge everything, then reset and checkout only the files we care about
+git merge --no-commit --no-ff upstream/main
+
+# Get the merge commit (which will be created)
+MERGE_COMMIT=$(git rev-parse HEAD)
+
+# Reset to before merge
+git reset --hard "$CURRENT_COMMIT"
+
+# Now selectively apply only the changes we care about
+echo "Selectively applying changes..."
+
+# For each relevant file, checkout the version from upstream
+while IFS= read -r file; do
+  if [[ -n "$file" ]]; then
+    echo "  Applying: $file"
+    # Checkout the file from the merge commit
+    git checkout "$UPSTREAM_COMMIT" -- "$file" 2>/dev/null || {
+      # If file was deleted in upstream, check if it exists locally
+      if git ls-tree -r "$UPSTREAM_COMMIT" --name-only | grep -q "^$file$"; then
+        # File exists in upstream, checkout it
+        git checkout "$UPSTREAM_COMMIT" -- "$file"
+      else
+        # File doesn't exist in upstream, might have been deleted
+        # Check if it exists in current branch
+        if [[ -f "$file" ]]; then
+          echo "    Warning: $file exists locally but not in upstream. Keeping local version."
+        fi
+      fi
+    }
+  fi
+done <<< "$RELEVANT_CHANGES"
+
+# Check if there are any changes to commit
+if [[ -z "$(git status --porcelain)" ]]; then
+  echo ""
+  echo "No changes to apply (files may be identical)."
+  git checkout main
+  git branch -D "$TEMP_BRANCH"
+  exit 0
+fi
+
+# Show what will be committed
+echo ""
+echo "Changes to be committed:"
+git status --short
+
+# Commit the changes
+echo ""
+read -p "Commit these changes? (y/n) " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+  git add spiffworkflow-backend/ spiffworkflow-frontend/
+  git commit -m "Sync upstream changes for spiffworkflow-backend and spiffworkflow-frontend
+
+Selectively merged changes from upstream/main that affect:
+- spiffworkflow-backend/
+- spiffworkflow-frontend/
+
+Other upstream changes were ignored."
+  
+  # Switch back to main and merge the temp branch
+  git checkout main
+  git merge --ff-only "$TEMP_BRANCH"
+  git branch -D "$TEMP_BRANCH"
+  
+  echo ""
+  echo "✓ Successfully synced upstream changes for backend and frontend"
+  echo ""
+  echo "To push these changes:"
+  echo "  git push origin main"
+else
+  echo "Merge cancelled. Cleaning up..."
+  git checkout main
+  git branch -D "$TEMP_BRANCH"
+  exit 1
+fi
