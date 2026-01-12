@@ -1,0 +1,103 @@
+name: Check Upstream for Changes
+
+on:
+  schedule:
+    # Run every week on Monday
+    - cron: '0 0 * * 1'
+  workflow_dispatch:
+    inputs:
+      upstream_branch:
+        description: 'Upstream branch to check'
+        required: true
+        default: 'main'
+        type: string
+
+jobs:
+  check-upstream:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      actions: write  # Required to trigger other workflows
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream ${{ secrets.UPSTREAM_REPO_URL || 'https://github.com/AOT-Technologies/m8flow.git' }}
+
+      - name: Fetch upstream
+        run: |
+          UPSTREAM_BRANCH="${{ inputs.upstream_branch || 'main' }}"
+          git fetch upstream "$UPSTREAM_BRANCH"
+
+      - name: Check for relevant changes
+        id: check-changes
+        run: |
+          UPSTREAM_BRANCH="${{ inputs.upstream_branch || 'main' }}"
+          CURRENT_COMMIT=$(git rev-parse HEAD)
+          UPSTREAM_COMMIT=$(git rev-parse "upstream/$UPSTREAM_BRANCH")
+          
+          echo "Current HEAD: $CURRENT_COMMIT"
+          echo "Upstream HEAD: $UPSTREAM_COMMIT"
+          
+          if [[ "$CURRENT_COMMIT" == "$UPSTREAM_COMMIT" ]]; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "✅ Already up to date with upstream"
+            exit 0
+          fi
+          
+          # Get list of changed files
+          CHANGED_FILES=$(git diff --name-only "$CURRENT_COMMIT" "$UPSTREAM_COMMIT" || echo "")
+          
+          # Filter for only backend and frontend changes
+          RELEVANT_CHANGES=$(echo "$CHANGED_FILES" | grep -E "^(spiffworkflow-backend|spiffworkflow-frontend)/" || true)
+          
+          if [[ -z "$RELEVANT_CHANGES" ]]; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "✅ No changes in spiffworkflow-backend/ or spiffworkflow-frontend/"
+            echo ""
+            echo "Other upstream changes (ignored):"
+            echo "$CHANGED_FILES" | head -20 | sed 's/^/  - /'
+          else
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            CHANGE_COUNT=$(echo "$RELEVANT_CHANGES" | wc -l | tr -d ' ')
+            echo "change_count=$CHANGE_COUNT" >> $GITHUB_OUTPUT
+            echo "🔄 Found $CHANGE_COUNT changed files in backend/frontend:"
+            echo "$RELEVANT_CHANGES" | head -30 | sed 's/^/  - /'
+          fi
+
+      - name: Trigger sync workflow
+        if: steps.check-changes.outputs.has_changes == 'true'
+        run: |
+          UPSTREAM_BRANCH="${{ inputs.upstream_branch || 'main' }}"
+          echo "🚀 Triggering sync-upstream workflow..."
+          gh workflow run sync-upstream.yml \
+            --ref main \
+            -f upstream_branch="$UPSTREAM_BRANCH"
+          echo "✅ Sync workflow triggered successfully"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: |
+          HAS_CHANGES="${{ steps.check-changes.outputs.has_changes }}"
+          CHANGE_COUNT="${{ steps.check-changes.outputs.change_count || '0' }}"
+          
+          echo "## Upstream Check Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ "$HAS_CHANGES" == "true" ]]; then
+            echo "🔄 **Changes detected**: $CHANGE_COUNT files in spiffworkflow-backend/ or spiffworkflow-frontend/" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "✅ Sync workflow has been triggered automatically." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ **No relevant changes** found in upstream." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "The repository is up to date with upstream (for backend/frontend folders)." >> $GITHUB_STEP_SUMMARY
+          fi
