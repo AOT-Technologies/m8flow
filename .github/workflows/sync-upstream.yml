@@ -2,8 +2,6 @@ name: Sync Upstream Changes
 
 on:
   workflow_dispatch:
-    branches:
-      - main
     inputs:
       upstream_branch:
         description: 'Upstream branch to sync from'
