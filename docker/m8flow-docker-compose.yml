@@ -1,0 +1,129 @@
+version: "3.9"
+
+services:
+  m8flow-db:
+    image: postgres:11
+    env_file: ../.env
+    ports:
+      - "1111:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data1
+
+  redis:
+    image: redis:6-alpine
+    command: ["redis-server", "--save", "20", "1", "--loglevel", "warning"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+
+  minio-mc-init:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c '
+      set -e;
+      echo "Waiting for MinIO...";
+      until mc alias set local http://minio:9000 minioadmin minioadmin >/dev/null 2>&1; do
+        sleep 1;
+      done;
+      echo "MinIO is ready.";
+      mc mb -p local/m8flow-process-models >/dev/null 2>&1 || true;
+      echo "Bucket ensured: m8flow-process-models";
+      '
+
+  m8flow-backend:
+    build:
+      context: ..
+      dockerfile: docker/m8flow.backend.Dockerfile
+    command: ["./extensions/m8flow-backend/bin/run_m8flow_backend.sh"]
+    env_file: ../.env
+    environment:
+      SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: /app/process_models
+    ports:
+      - "8000:8000"
+    volumes:
+      - process_models_cache:/app/process_models
+    depends_on:
+      - m8flow-db
+      - redis
+      - minio
+      - process-models-sync
+
+  process-models-sync:
+    image: rclone/rclone:latest
+    depends_on:
+      - minio-mc-init
+    volumes:
+      - process_models_cache:/cache
+      - ../rclone.conf:/config/rclone/rclone.conf:ro
+    entrypoint: >
+      /bin/sh -c "
+      mkdir -p /cache;
+
+      # Optional one-time seed from S3 (non-destructive):
+      rclone copy minio:m8flow-process-models /cache --config /config/rclone/rclone.conf;
+
+      echo 'Push-only loop (local -> S3)...';
+      while true; do
+        rclone sync /cache minio:m8flow-process-models --config /config/rclone/rclone.conf;
+        sleep 3;
+      done
+      "
+
+  celery_worker:
+    build:
+      context: ../spiffworkflow-backend
+      dockerfile: Dockerfile
+    command: ["./bin/run_server_locally", "celery_worker"]
+    env_file: ../.env
+    environment:
+      SPIFFWORKFLOW_BACKEND_CELERY_BROKER_URL: redis://redis:6379/0
+      SPIFFWORKFLOW_BACKEND_CELERY_RESULT_BACKEND: redis://redis:6379/0
+      SPIFFWORKFLOW_BACKEND_RUNNING_IN_CELERY_WORKER: "true"
+      SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: /app/process_models
+    volumes:
+      - process_models_cache:/app/process_models
+    depends_on:
+      - m8flow-db
+      - redis
+      - process-models-sync
+    restart: unless-stopped
+
+  m8flow-frontend:
+    build:
+      context: ../spiffworkflow-frontend
+      dockerfile: Dockerfile
+    env_file: ../.env
+    ports:
+      - "8001:80"
+    depends_on:
+      - m8flow-backend
+
+volumes:
+  db-data:
+    driver: local
+  redis-data:
+    driver: local
+  process_models_cache:
+    driver: local
+  minio_data:
+    driver: local
