@@ -19,4 +19,5 @@ UNKNOWN.egg-info/
 __pycache__/
 
 sample-process-models/
-agent_setup_script_has_completed_successfully
+/extensions/frontend/node_modules
+/spiffworkflow-frontend/node_modules
