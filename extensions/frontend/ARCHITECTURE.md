@@ -8,11 +8,12 @@
 4. [Module Resolution System](#module-resolution-system)
 5. [Vite Plugin: Override Resolver](#vite-plugin-override-resolver)
 6. [Component Override Mechanism](#component-override-mechanism)
-7. [Dependency Resolution](#dependency-resolution)
-8. [SASS/SCSS Resolution](#sassscss-resolution)
-9. [Extension Utilities](#extension-utilities)
-10. [Development Workflow](#development-workflow)
-11. [Technical Implementation Details](#technical-implementation-details)
+7. [Routing Customization](#routing-customization)
+8. [Dependency Resolution](#dependency-resolution)
+9. [SASS/SCSS Resolution](#sassscss-resolution)
+10. [Extension Utilities](#extension-utilities)
+11. [Development Workflow](#development-workflow)
+12. [Technical Implementation Details](#technical-implementation-details)
 
 ---
 
@@ -450,6 +451,193 @@ You can override:
 - **Hooks**: `src/hooks/useHookName.tsx`
 - **Utilities**: `src/utils/utilityName.ts`
 - **Assets**: `src/assets/assetName.svg` (CSS, SCSS, images, etc.)
+
+---
+
+## Routing Customization
+
+The extension architecture allows you to add custom routes to the application by overriding the `ContainerForExtensions` component. This is useful for adding entirely new pages to the application.
+
+### How Routing Works
+
+The application's routing is structured in layers:
+
+1. **App.tsx** - Top-level router using React Router's `createBrowserRouter`
+2. **ContainerForExtensions.tsx** - Contains the main application routes within a `<Routes>` component
+3. **BaseRoutes.tsx** - Core application routes (homepage, process models, tasks, etc.)
+
+### Adding Custom Routes
+
+To add a new route (e.g., `/reports`), follow these steps:
+
+#### Step 1: Create the Page Component
+
+Create a new view component in `extensions/frontend/src/views/`:
+
+```typescript
+// extensions/frontend/src/views/ReportsPage.tsx
+import { Box, Typography } from '@mui/material';
+
+export default function ReportsPage() {
+  return (
+    <Box sx={{ padding: 3 }}>
+      <Typography variant="h4" component="h1">
+        Reports Page
+      </Typography>
+    </Box>
+  );
+}
+```
+
+#### Step 2: Create ContainerForExtensions Override
+
+Create an override of `ContainerForExtensions.tsx`:
+
+```typescript
+// extensions/frontend/src/ContainerForExtensions.tsx
+// Copy the entire contents from spiffworkflow-frontend/src/ContainerForExtensions.tsx
+// Then modify the imports and add your route
+```
+
+Key changes required:
+
+1. **Change all imports** from relative paths to use the `@spiffworkflow-frontend` alias:
+
+```typescript
+// Change from:
+import SideNav from './components/SideNav';
+import BaseRoutes from './views/BaseRoutes';
+
+// To:
+import SideNav from '@spiffworkflow-frontend/components/SideNav';
+import BaseRoutes from '@spiffworkflow-frontend/views/BaseRoutes';
+```
+
+2. **Import your new page component**:
+
+```typescript
+import ReportsPage from './views/ReportsPage';
+```
+
+3. **Add your route** to the `routeComponents()` function:
+
+```typescript
+const routeComponents = () => {
+  return (
+    <Routes>
+      {/* Custom routes - add before the catch-all */}
+      <Route path="reports" element={<ReportsPage />} />
+      
+      {/* Existing routes */}
+      <Route path="extensions/:page_identifier" element={<Extension />} />
+      <Route path="login" element={<Login />} />
+      
+      {/* Catch-all route must be last */}
+      <Route
+        path="*"
+        element={
+          <BaseRoutes
+            extensionUxElements={extensionUxElements}
+            setAdditionalNavElement={setAdditionalNavElement}
+            isMobile={isMobile}
+          />
+        }
+      />
+    </Routes>
+  );
+};
+```
+
+#### Step 3: Update App.tsx Import
+
+**Important**: The override resolver may not always intercept the `@spiffworkflow-frontend/ContainerForExtensions` import in `App.tsx`. To ensure your override is used, change the import to use a relative path:
+
+```typescript
+// extensions/frontend/src/App.tsx
+
+// Change from:
+import ContainerForExtensions from '@spiffworkflow-frontend/ContainerForExtensions';
+
+// To:
+import ContainerForExtensions from './ContainerForExtensions';
+```
+
+### Route Order Matters
+
+When adding routes, order is important:
+
+1. **Specific routes first**: Add your custom routes (e.g., `reports`, `dashboard`) before the catch-all
+2. **Catch-all route last**: The `path="*"` route with `BaseRoutes` should always be last
+
+```typescript
+<Routes>
+  {/* 1. Custom extension routes */}
+  <Route path="reports" element={<ReportsPage />} />
+  <Route path="dashboard" element={<DashboardPage />} />
+  
+  {/* 2. Core specific routes */}
+  <Route path="extensions/:page_identifier" element={<Extension />} />
+  <Route path="login" element={<Login />} />
+  
+  {/* 3. Catch-all for BaseRoutes (must be last) */}
+  <Route path="*" element={<BaseRoutes ... />} />
+</Routes>
+```
+
+### Complete Example
+
+Here's a minimal example of adding a `/reports` route:
+
+**1. Create the page** (`extensions/frontend/src/views/ReportsPage.tsx`):
+
+```typescript
+import { Box, Typography } from '@mui/material';
+
+export default function ReportsPage() {
+  return (
+    <Box sx={{ padding: 3 }}>
+      <Typography variant="h4" component="h1">
+        Reports Page
+      </Typography>
+    </Box>
+  );
+}
+```
+
+**2. Update App.tsx** (`extensions/frontend/src/App.tsx`):
+
+```typescript
+// Use relative import for the override
+import ContainerForExtensions from './ContainerForExtensions';
+```
+
+**3. Create ContainerForExtensions override** with the new route added to `routeComponents()`.
+
+**4. Access your new page** at `http://localhost:7001/reports`
+
+### Adding Navigation Links
+
+To add a link to your new route in the sidebar, you can either:
+
+1. **Override `SideNav.tsx`** to add a custom navigation item
+2. **Use the backend extension system** with `extension_uischema.json` to add `primary_nav_item` entries
+
+### Nested Routes
+
+For nested routes, use React Router's nested route syntax:
+
+```typescript
+<Route path="reports">
+  <Route index element={<ReportsListPage />} />
+  <Route path=":reportId" element={<ReportDetailPage />} />
+  <Route path="new" element={<NewReportPage />} />
+</Route>
+```
+
+This creates:
+- `/reports` - Reports list
+- `/reports/123` - Report detail
+- `/reports/new` - New report form
 
 ---
 
