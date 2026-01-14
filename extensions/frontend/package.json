@@ -65,14 +65,15 @@
   },
   "scripts": {
     "build": "vite build",
-    "start": "VITE_VERSION_INFO='{\"version\":\"local\"}' VITE_BACKEND_BASE_URL=/v1.0 vite",
-    "startopen": "VITE_VERSION_INFO='{\"version\":\"local\"}' vite --host 0.0.0.0",
+    "start": "cross-env VITE_VERSION_INFO=\"{\\\"version\\\":\\\"local\\\"}\" VITE_BACKEND_BASE_URL=/v1.0 vite --host 0.0.0.0",
+    "startopen": "cross-env VITE_VERSION_INFO=\"{\\\"version\\\":\\\"local\\\"}\" vite --host 0.0.0.0",
     "serve": "vite preview",
     "typecheck": "./node_modules/.bin/tsc --noEmit"
   },
   "devDependencies": {
     "@types/node": "^20.12.13",
     "@typescript-eslint/eslint-plugin": "^8.38.0",
-    "@typescript-eslint/parser": "^8.38.0"
+    "@typescript-eslint/parser": "^8.38.0",
+    "cross-env": "^7.0.3"
   }
 }
