@@ -10,6 +10,7 @@ from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScop
 
 
 class ProcessInstanceMigrationDetailDict(TypedDict):
+    """Helper class for ProcessInstanceMigrationDetailDict."""
     initial_git_revision: str | None
     target_git_revision: str | None
     initial_bpmn_process_hash: str
@@ -18,6 +19,7 @@ class ProcessInstanceMigrationDetailDict(TypedDict):
 
 @dataclass
 class ProcessInstanceMigrationDetailModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
+    """SQLAlchemy model for ProcessInstanceMigrationDetailModel."""
     __tablename__ = "process_instance_migration_detail"
     id: int = db.Column(db.Integer, primary_key=True)
 

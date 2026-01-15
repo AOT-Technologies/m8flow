@@ -24,11 +24,13 @@ if TYPE_CHECKING:
 
 
 class MessageTypes(enum.Enum):
+    """Enum for MessageTypes values."""
     send = "send"
     receive = "receive"
 
 
 class MessageStatuses(enum.Enum):
+    """Enum for MessageStatuses values."""
     ready = "ready"
     running = "running"
     completed = "completed"
@@ -37,7 +39,7 @@ class MessageStatuses(enum.Enum):
 
 @dataclass
 class MessageInstanceModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
-    """Messages from a process instance that are ready to send to a receiving task."""
+    """SQLAlchemy model for MessageInstanceModel."""
 
     __tablename__ = "message_instance"
 

@@ -22,7 +22,7 @@ fi
 
 export PYTHONPATH="$repo_root/spiffworkflow-backend:$repo_root/spiffworkflow-backend/src:$repo_root/extensions/m8flow-backend/src:${PYTHONPATH:-}"
 
-alembic_ini="$repo_root/extensions/m8flow-backend/db/alembic/alembic.ini"
+alembic_ini="$repo_root/extensions/m8flow-backend/migrations/alembic.ini"
 
 if [[ "$#" -eq 0 ]]; then
   echo "Usage: ./run_m8flow_alembic.sh <alembic args>"

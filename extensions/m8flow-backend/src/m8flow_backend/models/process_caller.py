@@ -5,7 +5,7 @@ from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScop
 
 # TODO: delete this file
 class ProcessCallerCacheModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
-    """A cache of calling process ids for all Processes defined in all files."""
+    """SQLAlchemy model for ProcessCallerCacheModel."""
 
     __tablename__ = "process_caller_cache"
     id = db.Column(db.Integer, primary_key=True)

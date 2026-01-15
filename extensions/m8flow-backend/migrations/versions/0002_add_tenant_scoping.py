@@ -1,6 +1,8 @@
 from alembic import op
 import sqlalchemy as sa
 
+from m8flow_backend.tenancy import DEFAULT_TENANT_ID
+
 revision = "0002"
 down_revision = "0001"
 branch_labels = None
@@ -87,12 +89,20 @@ def _drop_unique_by_name(table: str, name: str) -> None:
 
 def _get_backfill_tenant_id() -> str:
     conn = op.get_bind()
+    conn.execute(
+        sa.text(
+            "INSERT INTO m8flow_tenant (id, name) VALUES (:tenant_id, :tenant_name) "
+            "ON CONFLICT (id) DO NOTHING"
+        ).bindparams(tenant_id=DEFAULT_TENANT_ID, tenant_name=DEFAULT_TENANT_ID)
+    )
     tenant_id = conn.execute(
-        sa.text("SELECT id FROM m8flow_tenant ORDER BY id LIMIT 1")
+        sa.text("SELECT id FROM m8flow_tenant WHERE id = :tenant_id").bindparams(
+            tenant_id=DEFAULT_TENANT_ID
+        )
     ).scalar()
-    if not tenant_id:
+    if tenant_id != DEFAULT_TENANT_ID:
         raise RuntimeError(
-            "No tenants found in m8flow_tenant. Insert a tenant row before applying 0002_add_tenant_scoping."
+            "Missing default tenant. Insert id='default' into m8flow_tenant before applying 0002_add_tenant_scoping."
         )
     return tenant_id
 

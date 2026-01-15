@@ -9,6 +9,7 @@ from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScop
 
 @dataclass
 class JSONDataStoreModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
+    """SQLAlchemy model for JSONDataStoreModel."""
     __tablename__ = "json_data_store"
     __table_args__ = (
         UniqueConstraint(

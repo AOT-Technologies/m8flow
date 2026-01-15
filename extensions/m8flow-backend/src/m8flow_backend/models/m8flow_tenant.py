@@ -3,6 +3,7 @@ from spiffworkflow_backend.models.db import db
 
 
 class M8flowTenantModel(SpiffworkflowBaseDBModel):
+    """SQLAlchemy model for M8flowTenantModel."""
     __tablename__ = "m8flow_tenant"
 
     id = db.Column(db.String(255), primary_key=True)

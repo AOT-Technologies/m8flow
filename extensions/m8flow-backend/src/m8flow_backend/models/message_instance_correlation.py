@@ -11,12 +11,13 @@ from m8flow_backend.models.message_instance import MessageInstanceModel
 
 @dataclass
 class MessageInstanceCorrelationRuleModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
-    """These are the correlations of a specific Message Instance.
+    """SQLAlchemy model for MessageInstanceCorrelationRuleModel.
 
-    These will only exist on receive messages. It provides the expression to run on
-    a send messages payload which must match receive messages correlation_key dictionary
-     to be considered a valid match.  If the expected value is null, then it does not need to
-    match, but the expression should still evaluate and produce a result.
+    These only exist on receive messages. They provide the expression to run on a
+    send message payload which must match the receive message correlation_key
+    dictionary to be considered a valid match. If the expected value is null,
+    then it does not need to match, but the expression should still evaluate and
+    produce a result.
     """
 
     __tablename__ = "message_instance_correlation_rule"

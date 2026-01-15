@@ -12,6 +12,7 @@ from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScop
 
 
 class BpmnProcessNotFoundError(Exception):
+    """Error raised for BpmnProcessNotFoundError conditions."""
     pass
 
 
@@ -23,6 +24,7 @@ class BpmnProcessNotFoundError(Exception):
 #   "correlations", # if top-level process
 @dataclass
 class BpmnProcessModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
+    """SQLAlchemy model for BpmnProcessModel."""
     __tablename__ = "bpmn_process"
     id: int = db.Column(db.Integer, primary_key=True)
     guid: str | None = db.Column(db.String(36), nullable=True, unique=True)

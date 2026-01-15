@@ -16,6 +16,7 @@ from spiffworkflow_backend.models.user import UserModel
 
 
 class HumanTaskUserAddedBy(SpiffEnum):
+    """Enum for HumanTaskUserAddedBy values."""
     guest = "guest"
     lane_assignment = "lane_assignment"
     lane_owner = "lane_owner"
@@ -25,6 +26,7 @@ class HumanTaskUserAddedBy(SpiffEnum):
 
 @dataclass
 class HumanTaskUserModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
+    """SQLAlchemy model for HumanTaskUserModel."""
     __tablename__ = "human_task_user"
 
     __table_args__ = (

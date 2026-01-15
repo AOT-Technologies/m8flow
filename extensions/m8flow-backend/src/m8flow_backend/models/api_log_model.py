@@ -9,6 +9,7 @@ from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScop
 
 @dataclass
 class APILogModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
+    """SQLAlchemy model for APILogModel."""
     __tablename__ = "api_log"
 
     id: int = db.Column(db.Integer, primary_key=True)

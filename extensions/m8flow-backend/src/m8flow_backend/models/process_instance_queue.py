@@ -11,6 +11,7 @@ from m8flow_backend.models.process_instance import ProcessInstanceModel
 
 @dataclass
 class ProcessInstanceQueueModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
+    """SQLAlchemy model for ProcessInstanceQueueModel."""
     __tablename__ = "process_instance_queue"
 
     id: int = db.Column(db.Integer, primary_key=True)

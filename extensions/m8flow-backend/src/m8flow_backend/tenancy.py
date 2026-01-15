@@ -1,12 +1,13 @@
 from __future__ import annotations
-
-import logging
 import os
+import logging
 from typing import Optional
 
 from flask import g, has_request_context
 
 LOGGER = logging.getLogger(__name__)
+# Default tenant used when no request context is available.
+# This must exist in the database before runtime/migrations that backfill tenant ids.
 DEFAULT_TENANT_ID = os.getenv("M8FLOW_DEFAULT_TENANT_ID", "default")
 
 
@@ -20,23 +21,17 @@ def get_tenant_id() -> str:
     return tid
 
 
-def ensure_tenant_exists(tenant_id: str) -> None:
-    """Ensure the tenant row exists for the given id."""
+def ensure_tenant_exists(tenant_id: str | None) -> None:
+    """Validate that the tenant row exists; raise if missing to enforce pre-provisioning."""
     if not tenant_id:
-        return
-
-    from sqlalchemy.exc import IntegrityError
+        raise RuntimeError(
+            "Missing tenant id. Provide the M8Flow-Tenant-Id header (or set it in request context)."
+        )
 
     from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
     from spiffworkflow_backend.models.db import db
 
-    if db.session.get(M8flowTenantModel, tenant_id) is not None:
-        return
-
-    db.session.add(M8flowTenantModel(id=tenant_id, name=tenant_id))
-    try:
-        db.session.flush()
-    except IntegrityError:
-        db.session.rollback()
-        if db.session.get(M8flowTenantModel, tenant_id) is None:
-            raise
+    if db.session.get(M8flowTenantModel, tenant_id) is None:
+        raise RuntimeError(
+            f"Tenant '{tenant_id}' does not exist. Create it in m8flow_tenant before using M8Flow."
+        )

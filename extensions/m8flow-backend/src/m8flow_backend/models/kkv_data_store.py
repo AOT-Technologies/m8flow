@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 
 @dataclass
 class KKVDataStoreModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
+    """SQLAlchemy model for KKVDataStoreModel."""
     __tablename__ = "kkv_data_store"
     __table_args__ = (
         UniqueConstraint(

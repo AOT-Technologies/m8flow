@@ -15,8 +15,10 @@ from m8flow_backend.models.task import TaskModel  # noqa: F401
 from spiffworkflow_backend.models.user import UserModel
 
 
+"""SQLAlchemy model for ProcessInstanceEventType."""
 # event types take the form [SUBJECT]_[PAST_TENSE_VERB] since subject is not always the same.
 class ProcessInstanceEventType(SpiffEnum):
+    """Enum for ProcessInstanceEventType values."""
     process_instance_created = "process_instance_created"
     process_instance_completed = "process_instance_completed"
     process_instance_error = "process_instance_error"
@@ -37,6 +39,7 @@ class ProcessInstanceEventType(SpiffEnum):
 
 @dataclass
 class ProcessInstanceEventModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
+    """SQLAlchemy model for ProcessInstanceEventModel."""
     __tablename__ = "process_instance_event"
     id: int = db.Column(db.Integer, primary_key=True)
 

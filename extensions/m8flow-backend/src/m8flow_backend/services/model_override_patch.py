@@ -47,12 +47,14 @@ _PATCHED = False
 
 
 def _clear_spiffworkflow_modules() -> None:
+    """Clear spiffworkflow_backend modules from sys.modules to allow re-import."""
     for name in list(sys.modules):
         if name == "spiffworkflow_backend" or name.startswith("spiffworkflow_backend."):
             del sys.modules[name]
 
 
 def _spiffworkflow_package_path() -> Path:
+    """Locate the spiffworkflow_backend package path."""
     spec = importlib.util.find_spec("spiffworkflow_backend")
     if not spec or not spec.submodule_search_locations:
         raise RuntimeError("Unable to locate spiffworkflow_backend package for model overrides.")
@@ -60,6 +62,7 @@ def _spiffworkflow_package_path() -> Path:
 
 
 def _ensure_stub_package(package_path: Path) -> None:
+    """Ensure spiffworkflow_backend package stubs exist in sys.modules."""
     if "spiffworkflow_backend" not in sys.modules:
         stub = types.ModuleType("spiffworkflow_backend")
         stub.__path__ = [str(package_path)]
@@ -73,6 +76,7 @@ def _ensure_stub_package(package_path: Path) -> None:
 
 
 def _load_db_module(package_path: Path) -> None:
+    """Load spiffworkflow_backend.models.db into sys.modules if not already present."""
     if "spiffworkflow_backend.models.db" in sys.modules:
         return
     db_path = package_path / "models" / "db.py"

@@ -10,15 +10,17 @@ from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScop
 
 
 class CalledProcessNotFoundError(Exception):
+    """Error raised for CalledProcessNotFoundError conditions."""
     pass
 
 
 class CallingProcessNotFoundError(Exception):
+    """Error raised for CallingProcessNotFoundError conditions."""
     pass
 
 
 class ProcessCallerRelationshipModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
-    """A cache of calling process ids for all Processes defined in all files."""
+    """SQLAlchemy model for ProcessCallerRelationshipModel."""
 
     __tablename__ = "process_caller_relationship"
     __table_args__ = (

@@ -12,6 +12,7 @@ from spiffworkflow_backend.models.user import UserModel
 
 @dataclass
 class SecretModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
+    """SQLAlchemy model for SecretModel."""
     __tablename__ = "secret"
     __table_args__ = (UniqueConstraint("m8f_tenant_id", "key", name="secret_key_tenant_unique"),)
 

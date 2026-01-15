@@ -7,6 +7,7 @@ from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScop
 
 @dataclass
 class ProcessModelCycleModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
+    """SQLAlchemy model for ProcessModelCycleModel."""
     __tablename__ = "process_model_cycle"
 
     id: int = db.Column(db.Integer, primary_key=True)

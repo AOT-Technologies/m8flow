@@ -17,6 +17,7 @@ _ORIGINALS: dict[str, Any] = {}
 _PATCHED = False
 
 def _with_tenant(values: Mapping[str, Any] | Sequence[Mapping[str, Any]], tenant_id: str) -> Any:
+    """Add tenant id to values if missing."""
     if isinstance(values, Mapping):
         if values.get("m8f_tenant_id"):
             return values
@@ -31,6 +32,7 @@ def _with_tenant(values: Mapping[str, Any] | Sequence[Mapping[str, Any]], tenant
 
 
 def _set_tenant_on_objects(objects: Sequence[Any]) -> None:
+    """Set tenant id on objects if missing."""
     tenant_id = get_tenant_id()
     for obj in objects:
         if hasattr(obj, "m8f_tenant_id") and not getattr(obj, "m8f_tenant_id"):
@@ -38,6 +40,7 @@ def _set_tenant_on_objects(objects: Sequence[Any]) -> None:
 
 
 def _patch_bulk_save_objects() -> None:
+    """Patch Session.bulk_save_objects to set tenant id on new objects."""
     if "bulk_save_objects" in _ORIGINALS:
         return
 
@@ -51,6 +54,7 @@ def _patch_bulk_save_objects() -> None:
 
 
 def _patch_insert_or_ignore_duplicate() -> None:
+    """Patch insert_or_ignore_duplicate to add tenant scoping."""
     from spiffworkflow_backend.utils import db_utils
 
     if "insert_or_ignore_duplicate" in _ORIGINALS:
@@ -63,6 +67,7 @@ def _patch_insert_or_ignore_duplicate() -> None:
         values: Mapping[str, Any] | Sequence[Mapping[str, Any]],
         postgres_conflict_index_elements: list[str],
     ) -> Any:
+        """Insert record(s), ignoring duplicates, with tenant scoping."""
         if isinstance(model_class, type) and issubclass(model_class, TenantScoped):
             tenant_id = get_tenant_id()
             values_with_tenant = _with_tenant(values, tenant_id)
@@ -76,6 +81,7 @@ def _patch_insert_or_ignore_duplicate() -> None:
 
 
 def _patch_task_draft_data() -> None:
+    """Patch TaskDraftDataModel insert to add tenant scoping."""
     from m8flow_backend.models.task_draft_data import TaskDraftDataModel
 
     if "task_draft_data_insert" in _ORIGINALS:
@@ -93,6 +99,7 @@ def _patch_task_draft_data() -> None:
 
 
 def _patch_task_instructions() -> None:
+    """Patch TaskInstructionsForEndUserModel insert to add tenant scoping."""
     from m8flow_backend.models.task_instructions_for_end_user import TaskInstructionsForEndUserModel
 
     if "task_instructions_insert" in _ORIGINALS:
@@ -101,6 +108,7 @@ def _patch_task_instructions() -> None:
     _ORIGINALS["task_instructions_insert"] = TaskInstructionsForEndUserModel.insert_or_update_record
 
     def patched_insert_or_update_record(task_guid: str, process_instance_id: int, instruction: str) -> None:
+        """Insert task instruction record, ignoring duplicates, with tenant scoping."""
         import time
 
         from spiffworkflow_backend.models.db import db
@@ -138,6 +146,7 @@ def _patch_task_instructions() -> None:
 
 
 def _patch_future_task() -> None:
+    """Patch FutureTaskModel insert_or_update to add tenant scoping."""
     from m8flow_backend.models.future_task import FutureTaskModel
 
     if "future_task_insert" in _ORIGINALS:
@@ -185,6 +194,7 @@ def _patch_future_task() -> None:
 
 
 def _patch_process_caller_relationship() -> None:
+    """Patch ProcessCallerRelationshipModel insert_or_update to add tenant scoping."""
     from m8flow_backend.models.process_caller_relationship import ProcessCallerRelationshipModel
 
     if "process_caller_relationship_insert" in _ORIGINALS:
@@ -226,6 +236,7 @@ def _patch_process_caller_relationship() -> None:
 
 
 def _patch_reference_cache_basic_query() -> None:
+    """Patch ReferenceCacheModel.basic_query to scope by tenant and max generation id."""
     from m8flow_backend.models.reference_cache import ReferenceCacheModel
     from spiffworkflow_backend.models.db import db
 
@@ -251,6 +262,7 @@ def _patch_reference_cache_basic_query() -> None:
 
 @event.listens_for(Session, "before_flush")  # type: ignore[misc]
 def _set_tenant_on_flush(session: Session, _flush_context: Any, _instances: Any) -> None:
+    """Set tenant id on objects if missing."""
     for obj in session.new:
         if hasattr(obj, "m8f_tenant_id") and not getattr(obj, "m8f_tenant_id"):
             setattr(obj, "m8f_tenant_id", get_tenant_id())
@@ -258,6 +270,7 @@ def _set_tenant_on_flush(session: Session, _flush_context: Any, _instances: Any)
 
 @event.listens_for(Session, "do_orm_execute")  # type: ignore[misc]
 def _tenant_scope_queries(execute_state: Any) -> None:
+    """Apply tenant scoping to all queries for TenantScoped models."""
     if not execute_state.is_select:
         return
     tenant_id = get_tenant_id()
