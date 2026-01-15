@@ -1,0 +1,223 @@
+name: Deploy to Dev
+
+on:
+  push:
+    tags:
+      - "v*-rc*"
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: true
+
+env:
+  REGISTRY: docker.io
+  PROJECT: spiffworkflow
+  BACKEND_IMAGE: spiffworkflow-backend
+  FRONTEND_IMAGE: spiffworkflow-frontend
+
+jobs:
+  build:
+    name: Build & Push Images (RC)
+    runs-on: ubuntu-latest
+    outputs:
+      backend_digest: ${{ steps.digest.outputs.backend }}
+      frontend_digest: ${{ steps.digest.outputs.frontend }}
+
+    steps:
+      - name: Checkout tagged commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract metadata
+        id: meta
+        run: |
+          echo "tag=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+          echo "sha=${GITHUB_SHA}" >> $GITHUB_OUTPUT
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # -------------------------
+      # Build & Push Backend
+      # -------------------------
+      - name: Build & Push Backend Image
+        id: backend
+        uses: docker/build-push-action@v5
+        with:
+          context: spiffworkflow-backend
+          file: spiffworkflow-backend/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.PROJECT }}-backend:${{ steps.meta.outputs.sha }}
+            ${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.PROJECT }}-backend:${{ steps.meta.outputs.tag }}
+          provenance: true
+          sbom: true
+
+      # -------------------------
+      # Build & Push Frontend
+      # -------------------------
+      - name: Build & Push Frontend Image
+        id: frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: spiffworkflow-frontend
+          file: spiffworkflow-frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.PROJECT }}-frontend:${{ steps.meta.outputs.sha }}
+            ${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.PROJECT }}-frontend:${{ steps.meta.outputs.tag }}
+          provenance: true
+          sbom: true
+
+      # -------------------------
+      # Capture Image Digests
+      # -------------------------
+      - name: Capture image digests
+        id: digest
+        run: |
+          echo "backend=${{ steps.backend.outputs.digest }}" >> $GITHUB_OUTPUT
+          echo "frontend=${{ steps.frontend.outputs.digest }}" >> $GITHUB_OUTPUT
+
+          echo "${{ steps.backend.outputs.digest }}" > backend-image-digest.txt
+          echo "${{ steps.frontend.outputs.digest }}" > frontend-image-digest.txt
+
+      - name: Upload digest artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-digests
+          path: |
+            backend-image-digest.txt
+            frontend-image-digest.txt
+
+  # -------------------------
+  # Deploy to Dev
+  # -------------------------
+  deploy:
+    name: Deploy to Dev (Digest-Based)
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: dev
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Configure kubeconfig (Dev)
+        run: |
+          echo "${{ secrets.KUBECONFIG_DEV }}" | base64 -d > kubeconfig
+          echo "KUBECONFIG=$(pwd)/kubeconfig" >> $GITHUB_ENV
+
+      - name: Deploy backend (digest)
+        run: |
+          echo "Deploying backend with digest: ${{ needs.build.outputs.backend_digest }}"
+          kubectl -n dev set image deployment/spiffworkflow-backend \
+            backend=${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.PROJECT }}-backend@${{ needs.build.outputs.backend_digest }} || {
+            echo "::error::Failed to update backend deployment"
+            kubectl -n dev describe deployment/spiffworkflow-backend
+            exit 1
+          }
+
+      - name: Deploy frontend (digest)
+        run: |
+          echo "Deploying frontend with digest: ${{ needs.build.outputs.frontend_digest }}"
+          kubectl -n dev set image deployment/spiffworkflow-frontend \
+            frontend=${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.PROJECT }}-frontend@${{ needs.build.outputs.frontend_digest }} || {
+            echo "::error::Failed to update frontend deployment"
+            kubectl -n dev describe deployment/spiffworkflow-frontend
+            exit 1
+          }
+
+      - name: Wait for rollout
+        run: |
+          echo "Waiting for backend rollout..."
+          kubectl -n dev rollout status deployment/spiffworkflow-backend --timeout=300s || {
+            echo "::error::Backend rollout failed or timed out"
+            kubectl -n dev describe deployment/spiffworkflow-backend
+            kubectl -n dev logs deployment/spiffworkflow-backend --tail=50 || true
+            exit 1
+          }
+
+          echo "Waiting for frontend rollout..."
+          kubectl -n dev rollout status deployment/spiffworkflow-frontend --timeout=300s || {
+            echo "::error::Frontend rollout failed or timed out"
+            kubectl -n dev describe deployment/spiffworkflow-frontend
+            kubectl -n dev logs deployment/spiffworkflow-frontend --tail=50 || true
+            exit 1
+          }
+
+      # -------------------------
+      # Optional: Database Migrations
+      # -------------------------
+      # Uncomment and configure when migration strategy is determined
+      # - name: Run database migrations
+      #   run: |
+      #     kubectl -n dev exec deployment/spiffworkflow-backend -- \
+      #       flask db upgrade
+
+      # -------------------------
+      # Smoke Tests
+      # -------------------------
+      - name: Run smoke tests
+        run: |
+          # Basic health check endpoints
+          BACKEND_URL="${{ secrets.DEV_BACKEND_URL }}"
+          FRONTEND_URL="${{ secrets.DEV_FRONTEND_URL }}"
+
+          if [[ -n "$BACKEND_URL" ]]; then
+            echo "Checking backend health..."
+            curl --fail --silent --show-error --max-time 30 "${BACKEND_URL}/v1.0/status" || {
+              echo "::error::Backend health check failed"
+              exit 1
+            }
+          else
+            echo "::warning::DEV_BACKEND_URL not configured, skipping backend smoke test"
+          fi
+
+          if [[ -n "$FRONTEND_URL" ]]; then
+            echo "Checking frontend health..."
+            curl --fail --silent --show-error --max-time 30 "${FRONTEND_URL}" || {
+              echo "::error::Frontend health check failed"
+              exit 1
+            }
+          else
+            echo "::warning::DEV_FRONTEND_URL not configured, skipping frontend smoke test"
+          fi
+
+          echo "Smoke tests passed"
+
+      # -------------------------
+      # Cleanup
+      # -------------------------
+      - name: Cleanup kubeconfig
+        if: always()
+        run: rm -f kubeconfig
+
+      # -------------------------
+      # Deployment Summary
+      # -------------------------
+      - name: Deployment summary
+        run: |
+          echo "## Dev Deployment Complete ✅" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Digest |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Backend | \`${{ needs.build.outputs.backend_digest }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Frontend | \`${{ needs.build.outputs.frontend_digest }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployed at:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY

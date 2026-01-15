@@ -1,0 +1,212 @@
+name: Deploy to QA
+
+on:
+  # Manual promotion
+  workflow_dispatch:
+    inputs:
+      rc_tag:
+        description: "RC tag name (e.g. v1.2.3-rc1)"
+        required: true
+        type: string
+      backend_image_digest:
+        description: "Backend image digest (sha256:...) from Dev build"
+        required: true
+        type: string
+      frontend_image_digest:
+        description: "Frontend image digest (sha256:...) from Dev build"
+        required: true
+        type: string
+
+  # Optional: automatic call from deploy-dev.yml
+  workflow_call:
+    inputs:
+      rc_tag:
+        required: true
+        type: string
+      backend_image_digest:
+        required: true
+        type: string
+      frontend_image_digest:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-qa
+  cancel-in-progress: true
+
+env:
+  REGISTRY: docker.io
+  PROJECT: spiffworkflow
+
+jobs:
+  # -------------------------
+  # Validate Inputs
+  # -------------------------
+  validate:
+    name: Validate Promotion Inputs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate RC tag format
+        run: |
+          TAG="${{ inputs.rc_tag }}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc[0-9]+$ ]]; then
+            echo "::error::Invalid RC tag: $TAG"
+            exit 1
+          fi
+
+      - name: Validate backend digest format
+        run: |
+          DIGEST="${{ inputs.backend_image_digest }}"
+          [[ "$DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]] || {
+            echo "::error::Invalid backend image digest"
+            exit 1
+          }
+
+      - name: Validate frontend digest format
+        run: |
+          DIGEST="${{ inputs.frontend_image_digest }}"
+          [[ "$DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]] || {
+            echo "::error::Invalid frontend image digest"
+            exit 1
+          }
+
+      - name: Reject tag-based references
+        run: |
+          for v in "${{ inputs.backend_image_digest }}" "${{ inputs.frontend_image_digest }}"; do
+            if [[ "$v" == *":"* && "$v" != sha256:* ]]; then
+              echo "::error::Tag-based image reference detected. Digest required."
+              exit 1
+            fi
+          done
+
+  # -------------------------
+  # Deploy to QA
+  # -------------------------
+  deploy:
+    name: Deploy to QA (Digest-Based)
+    needs: validate
+    runs-on: ubuntu-latest
+    environment:
+      name: qa
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Configure kubeconfig (QA)
+        run: |
+          echo "${{ secrets.KUBECONFIG_QA }}" | base64 -d > kubeconfig
+          echo "KUBECONFIG=$(pwd)/kubeconfig" >> $GITHUB_ENV
+
+      # -------------------------
+      # Deploy backend
+      # -------------------------
+      - name: Deploy backend (digest only)
+        run: |
+          echo "Deploying backend with digest: ${{ inputs.backend_image_digest }}"
+          kubectl -n qa set image deployment/spiffworkflow-backend \
+            backend=${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.PROJECT }}-backend@${{ inputs.backend_image_digest }} || {
+            echo "::error::Failed to update backend deployment"
+            kubectl -n qa describe deployment/spiffworkflow-backend
+            exit 1
+          }
+
+      # -------------------------
+      # Deploy frontend
+      # -------------------------
+      - name: Deploy frontend (digest only)
+        run: |
+          echo "Deploying frontend with digest: ${{ inputs.frontend_image_digest }}"
+          kubectl -n qa set image deployment/spiffworkflow-frontend \
+            frontend=${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.PROJECT }}-frontend@${{ inputs.frontend_image_digest }} || {
+            echo "::error::Failed to update frontend deployment"
+            kubectl -n qa describe deployment/spiffworkflow-frontend
+            exit 1
+          }
+
+      - name: Wait for rollout
+        run: |
+          echo "Waiting for backend rollout..."
+          kubectl -n qa rollout status deployment/spiffworkflow-backend --timeout=300s || {
+            echo "::error::Backend rollout failed or timed out"
+            kubectl -n qa describe deployment/spiffworkflow-backend
+            kubectl -n qa logs deployment/spiffworkflow-backend --tail=50 || true
+            exit 1
+          }
+
+          echo "Waiting for frontend rollout..."
+          kubectl -n qa rollout status deployment/spiffworkflow-frontend --timeout=300s || {
+            echo "::error::Frontend rollout failed or timed out"
+            kubectl -n qa describe deployment/spiffworkflow-frontend
+            kubectl -n qa logs deployment/spiffworkflow-frontend --tail=50 || true
+            exit 1
+          }
+
+      # -------------------------
+      # Optional: Database Migrations
+      # -------------------------
+      # Uncomment and configure when migration strategy is determined
+      # - name: Run database migrations
+      #   run: |
+      #     kubectl -n qa exec deployment/spiffworkflow-backend -- \
+      #       flask db upgrade
+
+      # -------------------------
+      # Smoke / Regression Tests
+      # -------------------------
+      - name: Run smoke tests
+        run: |
+          BACKEND_URL="${{ secrets.QA_BACKEND_URL }}"
+          FRONTEND_URL="${{ secrets.QA_FRONTEND_URL }}"
+
+          if [[ -n "$BACKEND_URL" ]]; then
+            echo "Checking backend health..."
+            curl --fail --silent --show-error --max-time 30 "${BACKEND_URL}/v1.0/status" || {
+              echo "::error::Backend health check failed"
+              exit 1
+            }
+          else
+            echo "::warning::QA_BACKEND_URL not configured, skipping backend smoke test"
+          fi
+
+          if [[ -n "$FRONTEND_URL" ]]; then
+            echo "Checking frontend health..."
+            curl --fail --silent --show-error --max-time 30 "${FRONTEND_URL}" || {
+              echo "::error::Frontend health check failed"
+              exit 1
+            }
+          else
+            echo "::warning::QA_FRONTEND_URL not configured, skipping frontend smoke test"
+          fi
+
+          echo "Smoke tests passed"
+
+      # -------------------------
+      # Cleanup
+      # -------------------------
+      - name: Cleanup kubeconfig
+        if: always()
+        run: rm -f kubeconfig
+
+      # -------------------------
+      # Deployment Summary
+      # -------------------------
+      - name: Deployment summary
+        run: |
+          echo "## QA Deployment Complete ✅" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Digest |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Backend | \`${{ inputs.backend_image_digest }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Frontend | \`${{ inputs.frontend_image_digest }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**RC Tag:** \`${{ inputs.rc_tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployed at:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Note:** QA approval captured via GitHub Environment protection rules." >> $GITHUB_STEP_SUMMARY

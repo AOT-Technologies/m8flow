@@ -1,0 +1,118 @@
+name: Migration Compatibility Check
+
+on:
+  workflow_call:
+    inputs:
+      migrations_changed:
+        description: "Whether migration files were modified"
+        required: true
+        type: boolean
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  migration-check:
+    name: Validate Migration Compatibility
+    if: ${{ inputs.migrations_changed == true }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # -------------------------
+      # PR Description Validation
+      # -------------------------
+      - name: Validate Migration Plan section exists
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          if [[ -z "$PR_BODY" ]]; then
+            echo "::error::PR description is empty. Migration Plan required."
+            exit 1
+          fi
+
+          echo "$PR_BODY" | grep -qi "Migration Plan" || {
+            echo "::error::Missing 'Migration Plan' section in PR description"
+            exit 1
+          }
+
+      - name: Validate required migration plan content
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          REQUIRED_SECTIONS=(
+            "Backward Compatibility"
+            "Rollback"
+            "Expand/Contract"
+          )
+
+          for section in "${REQUIRED_SECTIONS[@]}"; do
+            echo "$PR_BODY" | grep -qi "$section" || {
+              echo "::error::Migration Plan missing required section: $section"
+              exit 1
+            }
+          done
+
+      # -------------------------
+      # Migration File Inspection
+      # -------------------------
+      - name: Detect destructive migration patterns
+        run: |
+          echo "Scanning migrations for destructive operations..."
+
+          if [ ! -d "spiffworkflow-backend/migrations/versions" ]; then
+            echo "::warning::Migration directory not found"
+            exit 0
+          fi
+
+          MATCHES=$(find spiffworkflow-backend/migrations/versions -type f -name "*.py" -exec grep -lE "op\.drop_|DROP TABLE|DROP COLUMN|ALTER TABLE .* DROP" {} \; || true)
+
+          if [[ -n "$MATCHES" ]]; then
+            echo "::warning::Potential destructive migration detected in:"
+            echo "$MATCHES"
+
+            echo "${{ github.event.pull_request.body }}" | grep -qi "Destructive Migration Approved" || {
+              echo "::error::Destructive migration detected without explicit approval."
+              echo "Add 'Destructive Migration Approved' to the Migration Plan."
+              exit 1
+            }
+          fi
+
+      # -------------------------
+      # Optional: Alembic Sanity Check
+      # -------------------------
+      - name: Validate Alembic revision files load
+        run: |
+          python - <<'EOF'
+          import pathlib, sys
+
+          path = pathlib.Path("spiffworkflow-backend/migrations/versions")
+          bad = False
+
+          for file in path.glob("*.py"):
+            try:
+              compile(file.read_text(), file.name, "exec")
+            except Exception as e:
+              print(f"Invalid migration file: {file}: {e}")
+              bad = True
+
+          if bad:
+            sys.exit(1)
+          EOF
+
+      - name: Migration compatibility check passed
+        run: |
+          echo "Migration checks passed ✅"
+
+          echo "## Migration Compatibility Check Passed ✅" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All required sections found in PR description:" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Migration Plan" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Backward Compatibility" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Rollback strategy" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Expand/Contract classification" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Migration files validated successfully." >> $GITHUB_STEP_SUMMARY

@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [ main ]
 
+# Default: safe for fork PRs
+permissions:
+  contents: read
+  pull-requests: read
+  security-events: write
+
 jobs:
   changes:
     runs-on: ubuntu-latest
@@ -13,20 +19,26 @@ jobs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
       extensions: ${{ steps.filter.outputs.extensions }}
+      migrations: ${{ steps.filter.outputs.migrations }}
     steps:
-    - uses: actions/checkout@v4
-    - uses: dorny/paths-filter@v2
-      id: filter
-      with:
-        filters: |
-          backend:
-            - 'spiffworkflow-backend/**'
-          frontend:
-            - 'spiffworkflow-frontend/**'
-          extensions:
-            - 'extensions/m8flow-backend/**'
-            - 'spiffworkflow-backend/**'
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v2
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'spiffworkflow-backend/**'
+            frontend:
+              - 'spiffworkflow-frontend/**'
+            extensions:
+              - 'extensions/m8flow-backend/**'
+              - 'spiffworkflow-backend/**'
+            migrations:
+              - 'spiffworkflow-backend/migrations/versions/*.py'
 
+  # -------------------------
+  # Backend CI
+  # -------------------------
   backend:
     needs: changes
     if: ${{ needs.changes.outputs.backend == 'true' }}
@@ -35,21 +47,24 @@ jobs:
       run:
         working-directory: spiffworkflow-backend
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
-    - name: Install uv
-      run: pip install uv
-    - name: Install dependencies
-      run: uv sync --group dev
-    - name: Lint with Ruff
-      run: uv run ruff check .
-    - name: Type check with MyPy
-      run: uv run mypy .
-    - name: Test with Pytest
-      run: uv run pytest
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install uv
+        run: pip install uv
+      - name: Install dependencies
+        run: uv sync --group dev
+      - name: Lint with Ruff
+        run: uv run ruff check .
+      - name: Type check with MyPy
+        run: uv run mypy .
+      - name: Test with Pytest
+        run: uv run pytest
 
+  # -------------------------
+  # Frontend CI
+  # -------------------------
   frontend:
     needs: changes
     if: ${{ needs.changes.outputs.frontend == 'true' }}
@@ -58,19 +73,22 @@ jobs:
       run:
         working-directory: spiffworkflow-frontend
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-        cache: 'npm'
-        cache-dependency-path: spiffworkflow-frontend/package-lock.json
-    - name: Install dependencies
-      run: npm ci
-    - name: Lint
-      run: npm run lint
-    - name: Test
-      run: npm test
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: spiffworkflow-frontend/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Test
+        run: npm test
 
+  # -------------------------
+  # Extensions CI
+  # -------------------------
   extensions:
     needs: changes
     if: ${{ needs.changes.outputs.extensions == 'true' }}
@@ -79,17 +97,87 @@ jobs:
       run:
         working-directory: spiffworkflow-backend
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
-    - name: Install uv
-      run: pip install uv
-    - name: Install dependencies
-      run: uv sync --group dev
-    - name: Run Extension Tests
-      # We run from spiffworkflow-backend to use its environment, but target the extension tests
-      # We must set PYTHONPATH to include the backend source and the extension source
-      run: |
-        export PYTHONPATH=$PYTHONPATH:$(pwd):$(pwd)/src:$(pwd)/../extensions/m8flow-backend/src
-        uv run pytest ../extensions/m8flow-backend/tests
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install uv
+        run: pip install uv
+      - name: Install dependencies
+        run: uv sync --group dev
+      - name: Run Extension Tests
+        run: |
+          export PYTHONPATH=$PYTHONPATH:$(pwd):$(pwd)/src:$(pwd)/../extensions/m8flow-backend/src
+          uv run pytest ../extensions/m8flow-backend/tests
+
+  # -------------------------
+  # Security: CodeQL
+  # -------------------------
+  codeql:
+    name: CodeQL Scan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    strategy:
+      matrix:
+        language: [ 'python', 'javascript' ]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+      - uses: github/codeql-action/analyze@v3
+
+  # -------------------------
+  # Security: Trivy (filesystem scan)
+  # -------------------------
+  trivy:
+    name: Trivy Security Scan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aquasecurity/trivy-action@0.20.0
+        with:
+          scan-type: fs
+          severity: CRITICAL,HIGH
+          exit-code: 1
+          ignore-unfixed: true
+
+  # -------------------------
+  # Migration Compatibility Check
+  # -------------------------
+  migration-check:
+    name: Migration Compatibility Check
+    needs: changes
+    if: ${{ needs.changes.outputs.migrations == 'true' && github.event_name == 'pull_request' }}
+    uses: ./.github/workflows/check-migrations.yml
+    with:
+      migrations_changed: true
+
+  # -------------------------
+  # Optional Docker Build Dry Run
+  # -------------------------
+  docker-dry-run:
+    name: Docker Build Dry Run
+    needs: changes
+    runs-on: ubuntu-latest
+    if: ${{ (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true') && github.event_name == 'pull_request' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Backend image build (no push)
+        run: |
+          docker buildx build \
+            --file spiffworkflow-backend/Dockerfile \
+            --tag backend:pr-test \
+            --load \
+            spiffworkflow-backend
+      - name: Frontend image build (no push)
+        run: |
+          docker buildx build \
+            --file spiffworkflow-frontend/Dockerfile \
+            --tag frontend:pr-test \
+            --load \
+            spiffworkflow-frontend
