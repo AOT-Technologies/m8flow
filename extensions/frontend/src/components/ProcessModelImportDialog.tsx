@@ -99,9 +99,6 @@ export function ProcessModelImportDialog({
     setErrorMessage(null);
 
     try {
-      console.log("Importing from source:", importSource);
-      console.log("Process Group ID:", processGroupId);
-
       HttpService.makeCallToBackend({
         httpMethod: "POST",
         path: `/process-model-import/${processGroupId}`,
@@ -109,22 +106,14 @@ export function ProcessModelImportDialog({
           repository_url: importSource,
         },
         successCallback: (result: { process_model: ProcessModel }) => {
-          console.log("Import API success response:", JSON.stringify(result));
-
           if (result && result.process_model && result.process_model.id) {
             const processModelId = result.process_model.id;
-            console.log(
-              "Successfully imported process model with ID:",
-              processModelId
-            );
             onImportSuccess(processModelId);
           } else {
             console.error(
               "Import response missing expected data structure:",
               result
             );
-            // Call with empty string if ID not available
-            console.log("Calling onImportSuccess with empty string");
             onImportSuccess("");
           }
           onClose();
