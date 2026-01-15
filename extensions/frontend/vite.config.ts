@@ -6,8 +6,8 @@ import path from 'path';
 import { overrideResolver } from './vite-plugin-override-resolver';
 
 const host = process.env.HOST ?? 'localhost';
-const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 7001; // Same port as core
-const backendPort = process.env.BACKEND_PORT ? parseInt(process.env.BACKEND_PORT, 10) : 7000; // Backend port (default: 7000)
+const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 8001; // Same port as core
+const backendPort = process.env.BACKEND_PORT ? parseInt(process.env.BACKEND_PORT, 10) : 8000; // Backend port (default: 7000)
 
 export default defineConfig({
   base: '/',
