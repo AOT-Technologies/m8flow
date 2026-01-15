@@ -22,22 +22,27 @@ from spiffworkflow_backend.models.user import UserModel
 
 
 class ProcessInstanceNotFoundError(Exception):
+    """Error raised for ProcessInstanceNotFoundError conditions."""
     pass
 
 
 class ProcessInstanceTaskDataCannotBeUpdatedError(Exception):
+    """Error raised for ProcessInstanceTaskDataCannotBeUpdatedError conditions."""
     pass
 
 
 class ProcessInstanceCannotBeDeletedError(Exception):
+    """Error raised for ProcessInstanceCannotBeDeletedError conditions."""
     pass
 
 
 class ProcessInstanceCannotBeRunError(Exception):
+    """Error raised for ProcessInstanceCannotBeRunError conditions."""
     pass
 
 
 class ProcessInstanceStatus(SpiffEnum):
+    """Enum for ProcessInstanceStatus values."""
     complete = "complete"
     error = "error"
     not_started = "not_started"
@@ -49,6 +54,7 @@ class ProcessInstanceStatus(SpiffEnum):
 
 
 class ProcessInstanceModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
+    """SQLAlchemy model for ProcessInstanceModel."""
     __tablename__ = "process_instance"
     __allow_unmapped__ = True
     id: int = db.Column(db.Integer, primary_key=True)
@@ -224,6 +230,7 @@ class ProcessInstanceModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBase
 
 @dataclass
 class ProcessInstanceApi:
+    """Helper class for ProcessInstanceApi."""
     id: int
     status: str
     process_model_identifier: str

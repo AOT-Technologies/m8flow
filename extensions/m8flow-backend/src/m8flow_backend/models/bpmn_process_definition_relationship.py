@@ -13,6 +13,7 @@ from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScop
 
 @dataclass
 class BpmnProcessDefinitionRelationshipModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
+    """SQLAlchemy model for BpmnProcessDefinitionRelationshipModel."""
     __tablename__ = "bpmn_process_definition_relationship"
     __table_args__ = (
         UniqueConstraint(

@@ -23,24 +23,28 @@ from spiffworkflow_backend.models.user import UserModel
 
 
 class FilterValue(TypedDict):
+    """Helper class for FilterValue."""
     field_name: str
     field_value: str | int | bool
     operator: NotRequired[str]
 
 
 class ReportMetadataColumn(TypedDict):
+    """Helper class for ReportMetadataColumn."""
     Header: str
     accessor: str
     filterable: NotRequired[bool]
 
 
 class ReportMetadata(TypedDict):
+    """Helper class for ReportMetadata."""
     columns: list[ReportMetadataColumn]
     filter_by: list[FilterValue]
     order_by: list[str]
 
 
 class Report(TypedDict):
+    """Helper class for Report."""
     id: int
     identifier: str
     name: str
@@ -48,16 +52,20 @@ class Report(TypedDict):
 
 
 class ProcessInstanceReportAlreadyExistsError(Exception):
+    """Error raised for ProcessInstanceReportAlreadyExistsError conditions."""
     pass
 
 
 class ProcessInstanceReportResult(TypedDict):
+    """Helper class for ProcessInstanceReportResult."""
     report_metadata: ReportMetadata
     results: list[dict]
 
 
+"""SQLAlchemy model for Reversor."""
 # https://stackoverflow.com/a/56842689/6090676
 class Reversor:
+    """Helper class for Reversor."""
     def __init__(self, obj: Any):
         self.obj = obj
 
@@ -73,6 +81,7 @@ class Reversor:
 
 @dataclass
 class ProcessInstanceReportModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
+    """SQLAlchemy model for ProcessInstanceReportModel."""
     __tablename__ = "process_instance_report"
     __table_args__ = (
         db.UniqueConstraint(

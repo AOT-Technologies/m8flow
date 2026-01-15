@@ -19,6 +19,7 @@ from m8flow_backend.models.process_instance import ProcessInstanceModel
 
 
 class TaskDraftDataDict(TypedDict):
+    """Helper class for TaskDraftDataDict."""
     process_instance_id: int
     task_definition_id_path: str
     saved_form_data_hash: str | None
@@ -26,6 +27,7 @@ class TaskDraftDataDict(TypedDict):
 
 @dataclass
 class TaskDraftDataModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
+    """SQLAlchemy model for TaskDraftDataModel."""
     __tablename__ = "task_draft_data"
     __table_args__ = (
         UniqueConstraint(

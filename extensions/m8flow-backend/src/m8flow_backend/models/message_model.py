@@ -13,6 +13,7 @@ from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScop
 
 @dataclass
 class MessageModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
+    """SQLAlchemy model for MessageModel."""
     __tablename__ = "message"
     __table_args__ = (
         UniqueConstraint(
@@ -35,6 +36,7 @@ class MessageModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel)
 
 @dataclass
 class MessageCorrelationPropertyModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
+    """SQLAlchemy model for MessageCorrelationPropertyModel."""
     __tablename__ = "message_correlation_property"
     __table_args__ = (UniqueConstraint("message_id", "identifier", name="message_correlation_property_unique"),)
 

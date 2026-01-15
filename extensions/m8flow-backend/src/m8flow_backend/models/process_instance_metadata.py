@@ -10,6 +10,7 @@ from m8flow_backend.models.process_instance import ProcessInstanceModel
 
 @dataclass
 class ProcessInstanceMetadataModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
+    """SQLAlchemy model for ProcessInstanceMetadataModel."""
     __tablename__ = "process_instance_metadata"
     __table_args__ = (db.UniqueConstraint("process_instance_id", "key", name="process_instance_metadata_unique"),)
 

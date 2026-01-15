@@ -8,7 +8,7 @@ def upgrade_if_enabled():
     if os.environ.get("SPIFFWORKFLOW_BACKEND_UPGRADE_DB", "").lower() not in ("1", "true", "yes"):
         return
 
-    ini_path = Path(__file__).parent / "alembic" / "alembic.ini"
+    ini_path = Path(__file__).parent / "alembic.ini"
     if not ini_path.exists():
         raise RuntimeError(f"Alembic ini not found: {ini_path}")
 

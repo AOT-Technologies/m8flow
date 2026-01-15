@@ -21,6 +21,7 @@ SPIFF_SERVICE_ACCOUNT_AUTH_SERVICE_ID_PREFIX = "service_account_"
 
 @dataclass
 class ServiceAccountModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
+    """SQLAlchemy model for ServiceAccountModel."""
     __tablename__ = "service_account"
     __allow_unmapped__ = True
     __table_args__ = (

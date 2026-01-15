@@ -48,7 +48,7 @@ $allPaths += $extraPaths
 if ($existing) { $allPaths += $existing }
 $env:PYTHONPATH = ($allPaths | Where-Object { $_ }) -join [IO.Path]::PathSeparator
 
-$alembicIni = Join-Path $repoRoot "extensions\m8flow-backend\db\alembic\alembic.ini"
+$alembicIni = Join-Path $repoRoot "extensions\m8flow-backend\migrations\alembic.ini"
 if (-not $AlembicArgs -or $AlembicArgs.Count -eq 0) {
   Write-Host "Usage: .\run_m8flow_alembic.ps1 <alembic args>"
   Write-Host "Example: .\run_m8flow_alembic.ps1 upgrade head"

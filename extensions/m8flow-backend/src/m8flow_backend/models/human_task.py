@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 
 @dataclass
 class HumanTaskModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
+    """SQLAlchemy model for HumanTaskModel."""
     __tablename__ = "human_task"
 
     id: int = db.Column(db.Integer, primary_key=True)

@@ -4,6 +4,7 @@ from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScop
 
 
 class MessageTriggerableProcessModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
+    """SQLAlchemy model for MessageTriggerableProcessModel."""
     __tablename__ = "message_triggerable_process_model"
     __table_args__ = (
         db.UniqueConstraint(

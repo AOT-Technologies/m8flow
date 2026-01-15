@@ -17,10 +17,12 @@ from spiffworkflow_backend.models.db import db
 from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScoped
 from m8flow_backend.models.process_caller_relationship import ProcessCallerRelationshipModel
 
+"""SQLAlchemy model for ReferenceNotFoundError."""
 
 class ReferenceNotFoundError(Exception):
     pass
 
+"""SQLAlchemy model for ReferenceType."""
 
 class ReferenceType(SpiffEnum):
     decision = "decision"
@@ -30,7 +32,7 @@ class ReferenceType(SpiffEnum):
 
 @dataclass()
 class Reference:
-    """File Reference Information.
+    """Helper class for Reference.
 
     Includes items such as the process id and name for a BPMN,
     or the Decision id and Decision name for a DMN file.  There may be more than
@@ -73,7 +75,7 @@ class Reference:
 
 
 class ReferenceCacheModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
-    """A cache of information about all the Processes and Decisions defined in all files."""
+    """SQLAlchemy model for ReferenceCacheModel."""
 
     __tablename__ = "reference_cache"
     __table_args__ = (

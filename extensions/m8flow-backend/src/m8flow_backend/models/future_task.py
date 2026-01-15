@@ -17,6 +17,7 @@ from m8flow_backend.models.task import TaskModel  # noqa: F401
 
 @dataclass
 class FutureTaskModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
+    """SQLAlchemy model for FutureTaskModel."""
     __tablename__ = "future_task"
 
     guid: str = db.Column(ForeignKey(TaskModel.guid, ondelete="CASCADE", name="future_task_task_guid_fk"), primary_key=True)

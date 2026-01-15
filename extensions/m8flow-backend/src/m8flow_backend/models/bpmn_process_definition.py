@@ -19,6 +19,7 @@ from spiffworkflow_backend.utils import db_utils
 # there is a join table to link them together: bpmn_process_definition_relationship
 @dataclass
 class BpmnProcessDefinitionModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
+    """SQLAlchemy model for BpmnProcessDefinitionModel."""
     __tablename__ = "bpmn_process_definition"
     __table_args__ = (
         UniqueConstraint(

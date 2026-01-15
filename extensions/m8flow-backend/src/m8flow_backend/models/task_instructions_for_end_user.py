@@ -16,6 +16,7 @@ from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScop
 
 @dataclass
 class TaskInstructionsForEndUserModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
+    """SQLAlchemy model for TaskInstructionsForEndUserModel."""
     __tablename__ = "task_instructions_for_end_user"
 
     task_guid: str = db.Column(db.String(36), primary_key=True)

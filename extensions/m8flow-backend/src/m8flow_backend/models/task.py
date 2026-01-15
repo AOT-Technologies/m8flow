@@ -22,10 +22,12 @@ if TYPE_CHECKING:
 
 
 class TaskNotFoundError(Exception):
+    """Error raised for TaskNotFoundError conditions."""
     pass
 
 
 class MultiInstanceType(enum.Enum):
+    """Enum for MultiInstanceType values."""
     none = "none"
     looping = "looping"
     parallel = "parallel"
@@ -46,6 +48,7 @@ class MultiInstanceType(enum.Enum):
 #   "internal_data": {},
 @dataclass
 class TaskModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
+    """SQLAlchemy model for TaskModel."""
     __tablename__ = "task"
     __allow_unmapped__ = True
     guid: str = db.Column(db.String(36), nullable=False, index=True, primary_key=True, unique=True)
@@ -133,6 +136,7 @@ class TaskModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
 
 @dataclass
 class Task:
+    """Helper class for Task."""
     HUMAN_TASK_TYPES = ["User Task", "Manual Task"]
     id: str
     name: str
@@ -221,6 +225,7 @@ class Task:
 
 @dataclass
 class Option:
+    """Helper class for Option."""
     id: str
     name: str
     data: Any
@@ -235,6 +240,7 @@ class Option:
 
 @dataclass
 class Validation:
+    """Helper class for Validation."""
     name: str
     config: Any
 
@@ -248,6 +254,7 @@ class Validation:
 
 @dataclass
 class FormFieldProperty:
+    """Helper class for FormFieldProperty."""
     id: str
     value: Any
 
@@ -261,6 +268,7 @@ class FormFieldProperty:
 
 @dataclass
 class FormField:
+    """Helper class for FormField."""
     id: str
     type: str
     label: str

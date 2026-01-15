@@ -31,6 +31,12 @@ from m8flow_backend.models.process_instance import ProcessInstanceStatus  # noqa
 
 
 def test_tenant_scopes_process_instances() -> None:
+    """
+    Test that tenant scoping patch correctly scopes ProcessInstanceModel and MessageModel.
+    Set up in-memory database, create tenants, and verify tenant scoping behavior.
+    Create Flask app with in-memory SQLite database for testing.
+    Apply tenant scoping patch and verify that models are scoped by tenant id.
+    """
     app = Flask(__name__)
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False

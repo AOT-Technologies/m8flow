@@ -12,6 +12,7 @@ from m8flow_backend.models.kkv_data_store import KKVDataStoreModel
 
 @dataclass
 class KKVDataStoreEntryModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
+    """SQLAlchemy model for KKVDataStoreEntryModel."""
     __tablename__ = "kkv_data_store_entry"
     __table_args__ = (UniqueConstraint("kkv_data_store_id", "top_level_key", "secondary_key", name="_instance_keys_unique"),)
 

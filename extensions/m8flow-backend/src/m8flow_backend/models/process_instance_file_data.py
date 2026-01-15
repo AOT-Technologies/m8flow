@@ -16,6 +16,7 @@ PROCESS_INSTANCE_DATA_FILE_ON_FILE_SYSTEM_DIR_COUNT = 2
 
 @dataclass
 class ProcessInstanceFileDataModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
+    """SQLAlchemy model for ProcessInstanceFileDataModel."""
     __tablename__ = "process_instance_file_data"
 
     id: int = db.Column(db.Integer, primary_key=True)

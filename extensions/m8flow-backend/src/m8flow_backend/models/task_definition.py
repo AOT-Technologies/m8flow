@@ -16,6 +16,7 @@ from spiffworkflow_backend.utils import db_utils
 
 @dataclass
 class TaskDefinitionModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
+    """SQLAlchemy model for TaskDefinitionModel."""
     __tablename__ = "task_definition"
     __table_args__ = (
         UniqueConstraint(

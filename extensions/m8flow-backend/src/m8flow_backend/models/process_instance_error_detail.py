@@ -10,6 +10,7 @@ from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScop
 
 @dataclass
 class ProcessInstanceErrorDetailModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
+    """SQLAlchemy model for ProcessInstanceErrorDetailModel."""
     __tablename__ = "process_instance_error_detail"
     id: int = db.Column(db.Integer, primary_key=True)
 
