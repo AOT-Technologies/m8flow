@@ -14,5 +14,4 @@
 
 ## Related Issues
 
-Closes #
 
