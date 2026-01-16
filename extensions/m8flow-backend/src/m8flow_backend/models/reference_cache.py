@@ -1,0 +1,187 @@
+from __future__ import annotations
+
+import dataclasses
+import os
+from dataclasses import dataclass
+from typing import Any
+
+from sqlalchemy import ForeignKey
+from sqlalchemy import UniqueConstraint
+from sqlalchemy.orm import relationship
+from sqlalchemy.orm import validates
+
+from spiffworkflow_backend.helpers.spiff_enum import SpiffEnum
+from spiffworkflow_backend.models.cache_generation import CacheGenerationModel
+from spiffworkflow_backend.models.db import SpiffworkflowBaseDBModel
+from spiffworkflow_backend.models.db import db
+from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScoped
+from m8flow_backend.models.process_caller_relationship import ProcessCallerRelationshipModel
+
+"""SQLAlchemy model for ReferenceNotFoundError."""
+
+class ReferenceNotFoundError(Exception):
+    pass
+
+"""SQLAlchemy model for ReferenceType."""
+
+class ReferenceType(SpiffEnum):
+    decision = "decision"
+    process = "process"
+    data_store = "data_store"
+
+
+@dataclass()
+class Reference:
+    """Helper class for Reference.
+
+    Includes items such as the process id and name for a BPMN,
+    or the Decision id and Decision name for a DMN file.  There may be more than
+    one reference that points to a particular file - if for instance, there are
+    three executable processes in a collaboration within a BPMN Diagram.
+    """
+
+    identifier: str  # The id of the process or decision.  "Process_1234"
+    display_name: str  # The name of the process or decision. "Invoice Submission"
+    relative_location: str
+    type: str
+    file_name: str  # The name of the file where this process or decision is defined.
+    messages: dict  # Any messages defined in the same file where this process is defined.
+    correlations: dict  # Any correlations defined in the same file with this process.
+    start_messages: list  # The names of any messages that would start this process.
+    called_element_ids: list  # The element ids of any called elements
+
+    properties: dict
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert the Reference object to a dictionary."""
+        return dataclasses.asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Reference:
+        """Create a Reference object from a dictionary."""
+        # remove keys not in dataclass
+        known_fields = {f.name for f in dataclasses.fields(cls)}
+        filtered_data = {k: v for k, v in data.items() if k in known_fields}
+        return cls(**filtered_data)
+
+    def prop_is_true(self, prop_name: str) -> bool:
+        return prop_name in self.properties and self.properties[prop_name] is True
+
+    def set_prop(self, prop_name: str, value: Any) -> None:
+        self.properties[prop_name] = value
+
+    def relative_path(self) -> str:
+        return os.path.join(self.relative_location, self.file_name).replace("/", os.sep)
+
+
+class ReferenceCacheModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
+    """SQLAlchemy model for ReferenceCacheModel."""
+
+    __tablename__ = "reference_cache"
+    __table_args__ = (
+        UniqueConstraint(
+            "m8f_tenant_id",
+            "generation_id",
+            "identifier",
+            "relative_location",
+            "type",
+            name="reference_cache_uniq",
+        ),
+    )
+
+    id: int = db.Column(db.Integer, primary_key=True)
+    generation_id: int = db.Column(ForeignKey(CacheGenerationModel.id), nullable=False, index=True)  # type: ignore
+
+    identifier: str = db.Column(db.String(255), index=True, nullable=False)
+    display_name: str = db.Column(db.String(255), index=True, nullable=False)
+    type: str = db.Column(db.String(255), index=True, nullable=False)
+    file_name: str = db.Column(db.String(255), nullable=False)
+
+    # relative to SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR
+    relative_location: str = db.Column(db.String(255), index=True, nullable=False)
+
+    properties: dict | None = db.Column(db.JSON)
+
+    generation = relationship(CacheGenerationModel)
+
+    process_callers = relationship(
+        ProcessCallerRelationshipModel,
+        foreign_keys="[ProcessCallerRelationshipModel.called_reference_cache_process_id]",
+        cascade="all, delete-orphan",
+        single_parent=True,
+    )
+
+    calling_processes = relationship(
+        ProcessCallerRelationshipModel,
+        foreign_keys="[ProcessCallerRelationshipModel.calling_reference_cache_process_id]",
+        cascade="all, delete-orphan",
+        single_parent=True,
+    )
+
+    def to_dict(self) -> dict:
+        """Create a dictionary representation of a ReferenceCacheModel"""
+        return {
+            "identifier": self.identifier,
+            "display_name": self.display_name,
+            "relative_location": self.relative_location,
+            "type": self.type,
+            "file_name": self.file_name,
+            "properties": self.properties,
+        }
+
+    def relative_path(self) -> str:
+        return os.path.join(self.relative_location, self.file_name).replace("/", os.sep)
+
+    @classmethod
+    def basic_query(cls) -> Any:
+        cache_generation = CacheGenerationModel.newest_generation_for_table("reference_cache")
+        basic_query = cls.query
+        if cache_generation is not None:
+            basic_query = basic_query.filter_by(generation_id=cache_generation.id)
+        return basic_query
+
+    @classmethod
+    def from_params(
+        cls,
+        identifier: str,
+        display_name: str,
+        type: str,
+        file_name: str,
+        relative_location: str,
+        properties: dict | None = None,
+        use_current_cache_generation: bool = False,
+    ) -> ReferenceCacheModel:
+        reference_cache = cls(
+            identifier=identifier,
+            display_name=display_name,
+            relative_location=relative_location,
+            type=type,
+            file_name=file_name,
+            properties=properties,
+        )
+        if use_current_cache_generation:
+            cache_generation = CacheGenerationModel.newest_generation_for_table("reference_cache")
+            if cache_generation is None:
+                # NOTE: we may want to raise here instead since this should never happen in real environments
+                # but it does happen in tests
+                cache_generation = CacheGenerationModel(cache_table="reference_cache")
+                db.session.add(cache_generation)
+            reference_cache.generation = cache_generation
+        return reference_cache
+
+    @classmethod
+    def from_spec_reference(cls, ref: Reference, use_current_cache_generation: bool = False) -> ReferenceCacheModel:
+        reference_cache = cls.from_params(
+            identifier=ref.identifier,
+            display_name=ref.display_name,
+            relative_location=ref.relative_location,
+            type=ref.type,
+            file_name=ref.file_name,
+            properties=ref.properties,
+            use_current_cache_generation=use_current_cache_generation,
+        )
+        return reference_cache
+
+    @validates("type")
+    def validate_type(self, key: str, value: Any) -> Any:
+        return self.validate_enum_field(key, value, ReferenceType)
