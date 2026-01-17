@@ -79,8 +79,10 @@ def load_tenant():
     g.m8flow_tenant_id = tenant_id
     ensure_tenant_exists(tenant_id)
 
-# Register the before_request handler
-flask_app.before_request(load_tenant)
+# Register the before_request handler before auth hooks.
+if None not in flask_app.before_request_funcs:
+    flask_app.before_request_funcs[None] = []
+flask_app.before_request_funcs[None].insert(0, load_tenant)
 
 # Expose the Connexion app
 app = cnx_app
