@@ -59,10 +59,10 @@ fi
 
 # Docker network setup
 echo ":: Checking Docker network..."
-if ! docker network inspect spiffworkflow >/dev/null 2>&1; then
-  echo ":: Creating Docker network: spiffworkflow"
-  if ! docker network create spiffworkflow; then
-    echo >&2 "ERROR: Failed to create Docker network 'spiffworkflow'"
+if ! docker network inspect m8flow >/dev/null 2>&1; then
+  echo ":: Creating Docker network: m8flow"
+  if ! docker network create m8flow; then
+    echo >&2 "ERROR: Failed to create Docker network 'm8flow'"
     exit 1
   fi
 fi
@@ -109,7 +109,7 @@ if ! docker run \
   -p 7002:8080 \
   -p 7009:9000 \
   -d \
-  --network=spiffworkflow \
+  --network=m8flow \
   --name keycloak \
   -e KEYCLOAK_LOGLEVEL=ALL \
   -e ROOT_LOGLEVEL=ALL \
