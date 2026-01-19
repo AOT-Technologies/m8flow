@@ -25,7 +25,7 @@ cd extensions/m8flow-backend/bin
 ## What the Script Does
 
 1. **Validates environment**: Checks for required tools (docker, curl, jq) and realm export files
-2. **Sets up Docker network**: Creates or verifies the `spiffworkflow` network exists
+2. **Sets up Docker network**: Creates or verifies the `m8flow` network exists
 3. **Manages container**: Stops and removes any existing `keycloak` container, then starts a new one
 4. **Starts Keycloak**: Runs Keycloak 26.0.7 in Docker with:
    - Port 7002 (HTTP API)
@@ -55,7 +55,7 @@ cd extensions/m8flow-backend/bin
 - **Port conflicts**: Ensure ports 7002 and 7009 are not in use
 - **Docker issues**: Verify Docker is running and you have permissions
 - **Import failures**: Check that realm export JSON files are valid and accessible
-- **Network issues**: The script creates the `spiffworkflow` network if it doesn't exist
+- **Network issues**: The script creates the `m8flow` network if it doesn't exist
 
 ## Stopping Keycloak
 
