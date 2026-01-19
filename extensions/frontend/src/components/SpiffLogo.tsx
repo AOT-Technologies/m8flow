@@ -16,7 +16,6 @@
  */
 
 import { Stack, Typography } from '@mui/material';
-import { useConfig } from '../utils/useConfig';
 import m8fLogo from "../assets/images/m8fLogo.webp";
 
 /**
@@ -33,7 +32,6 @@ import m8fLogo from "../assets/images/m8fLogo.webp";
  * 3. Or wrap the core component
  */
 export default function SpiffLogo() {
-  const config = useConfig();
   
   return (
     <Stack

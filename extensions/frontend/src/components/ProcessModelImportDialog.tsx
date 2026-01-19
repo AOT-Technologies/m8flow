@@ -83,7 +83,7 @@ export function ProcessModelImportDialog({
 
   const handleTabChange = (
     _event: React.SyntheticEvent,
-    newValue: "github" | "marketplace"
+    newValue: "github" | "marketplace",
   ) => {
     setImportType(newValue);
     setImportSource("");
@@ -92,6 +92,12 @@ export function ProcessModelImportDialog({
 
   const handleImport = async () => {
     if (!isValid) {
+      return;
+    }
+
+    // Validate process group ID
+    if (!processGroupId || processGroupId.trim() === "") {
+      setErrorMessage("Process group ID is required for import.");
       return;
     }
 
@@ -109,14 +115,16 @@ export function ProcessModelImportDialog({
           if (result && result.process_model && result.process_model.id) {
             const processModelId = result.process_model.id;
             onImportSuccess(processModelId);
+            onClose();
           } else {
             console.error(
               "Import response missing expected data structure:",
-              result
+              result,
             );
-            onImportSuccess("");
+            setErrorMessage(
+              "Import failed: The server response did not contain a valid process model ID.",
+            );
           }
-          onClose();
         },
         failureCallback: (error: any) => {
           console.error("Import error:", error);
