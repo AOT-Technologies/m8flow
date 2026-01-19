@@ -20,5 +20,3 @@
 
 ## Related Issues
 
-Closes #
-

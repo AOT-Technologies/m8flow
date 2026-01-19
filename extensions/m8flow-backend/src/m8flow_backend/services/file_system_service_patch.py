@@ -3,28 +3,18 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
-from flask import has_request_context, g
-
-from spiffworkflow_backend.exceptions.api_error import ApiError
+from m8flow_backend.tenancy import DEFAULT_TENANT_ID, get_tenant_id
 
 _ORIGINALS: Dict[str, Any] = {}
 _PATCHED = False
 
 LOGGER = logging.getLogger(__name__)
-DEFAULT_TENANT_ID = "default"
 
 def _get_tenant_id() -> str:
-    """Return tenant id for the current request, or a fallback for non-request contexts."""
-    tid: Optional[str] = getattr(g, "m8flow_tenant_id", None) if has_request_context() else None
-    if not tid or tid == "" :
-        # TODO:raise error when tenant context auth is implemented
-        LOGGER.warning("No tenant id found in request context; using default tenant id.")
-        return DEFAULT_TENANT_ID
-        # raise ApiError("missing_tenant_id", "Tenant id is required.", status_code=400)
-    return tid
-    
+    return get_tenant_id()
+
 
 def _tenant_bpmn_root(base_dir: str) -> str:
     """Return the BPMN spec root path scoped to the current request tenant."""
