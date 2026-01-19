@@ -21,7 +21,6 @@ from m8flow_backend.services import model_override_patch
 model_override_patch.apply()
 
 import spiffworkflow_backend.load_database_models  # noqa: F401
-from m8flow_backend.models.template import TemplateModel  # noqa: F401
 from spiffworkflow_backend.models.db import db
 
 config = context.config
