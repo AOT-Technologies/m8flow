@@ -16,7 +16,7 @@
  */
 
 import { Stack, Typography } from '@mui/material';
-import { useConfig } from '../utils/useConfig';
+import m8fLogo from "../assets/images/m8fLogo.webp";
 
 /**
  * Extended SpiffLogo component that uses configuration
@@ -32,7 +32,6 @@ import { useConfig } from '../utils/useConfig';
  * 3. Or wrap the core component
  */
 export default function SpiffLogo() {
-  const config = useConfig();
   
   return (
     <Stack
@@ -43,16 +42,18 @@ export default function SpiffLogo() {
         width: '100%',
       }}
     >
+      <img src={m8fLogo} alt="M8Flow Logo" style={{ height: "180px" }} />
+
       {/* Example: Using config in extension component */}
-      <Typography
+      {/* <Typography
         sx={{
-          color: 'primary.main',
+          color: "primary.main",
           fontSize: 22,
-          display: { xs: 'none', md: 'block' },
+          display: { xs: "none", md: "block" },
         }}
       >
         M8Flow
-      </Typography>
+      </Typography> */}
     </Stack>
   );
 }
