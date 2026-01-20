@@ -29,33 +29,6 @@ paths:
         "409":
           description: Conflict - tenant with slug already exists
 
-  # /tenants/id/{tenant_id}:
-  #   get:
-  #     summary: Get tenant by ID
-  #     operationId: m8flow_backend.routes.tenant_controller.get_tenant_by_id
-  #     tags:
-  #       - Tenant
-  #     parameters:
-  #       - name: tenant_id
-  #         in: path
-  #         required: true
-  #         schema:
-  #           type: string
-  #         description: Unique identifier of the tenant
-  #     responses:
-  #       "200":
-  #         description: Tenant retrieved successfully
-  #         content:
-  #           application/json:
-  #             schema:
-  #               $ref: "#/components/schemas/Tenant"
-  #       "401":
-  #         description: Unauthorized - user not authenticated
-  #       "403":
-  #         description: Forbidden - cannot access default tenant
-  #       "404":
-  #         description: Tenant not found
-
   /tenants/slug/{slug}:
     get:
       summary: Get tenant by slug
