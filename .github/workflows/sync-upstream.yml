@@ -16,6 +16,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      issues: write
     
     steps:
       - name: Checkout repository
@@ -188,18 +189,16 @@ jobs:
 
           **Review carefully before merging.**"
 
-          # Create labels if they don't exist (ignore errors if they already exist)
-          gh label create "upstream-sync" --description "Automated upstream sync" --color "0E8A16" 2>/dev/null || true
-          gh label create "automated" --description "Automated PR" --color "1D76DB" 2>/dev/null || true
-
-          # Create the PR
+          # Create the PR first (without labels to avoid failures if labels don't exist)
           PR_URL=$(gh pr create \
             --base main \
             --head "${{ env.BRANCH_NAME }}" \
             --title "Sync upstream changes (backend & frontend only)" \
-            --body "$PR_BODY" \
-            --label "upstream-sync" \
-            --label "automated")
+            --body "$PR_BODY")
+          
+          # Try to add labels (ignore failures - labels might not exist or no permission)
+          gh pr edit "$PR_URL" --add-label "upstream-sync" 2>/dev/null || echo "Note: Could not add 'upstream-sync' label"
+          gh pr edit "$PR_URL" --add-label "automated" 2>/dev/null || echo "Note: Could not add 'automated' label"
           
           echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
           echo "Created PR: $PR_URL"
