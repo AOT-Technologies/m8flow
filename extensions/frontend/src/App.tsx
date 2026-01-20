@@ -4,11 +4,11 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AbilityContext } from '@spiffworkflow-frontend/contexts/Can';
 import APIErrorProvider from '@spiffworkflow-frontend/contexts/APIErrorContext';
-// M8Flow Extension: Import local override of ContainerForExtensions
+// m8 Extension: Import local override of ContainerForExtensions
 import ContainerForExtensions from './ContainerForExtensions';
 import PublicRoutes from '@spiffworkflow-frontend/views/PublicRoutes';
 import { CONFIGURATION_ERRORS } from '@spiffworkflow-frontend/config';
-// M8Flow Extension: Custom grouping context
+// m8 Extension: Custom grouping context
 import { CustomGroupingProvider } from './contexts/CustomGroupingContext';
 
 const queryClient = new QueryClient();
@@ -48,7 +48,7 @@ export default function App() {
         <QueryClientProvider client={queryClient}>
           <APIErrorProvider>
             <AbilityContext.Provider value={ability}>
-              {/* M8Flow Extension: Wrap with custom grouping provider */}
+              {/* m8 Extension: Wrap with custom grouping provider */}
               <CustomGroupingProvider>
                 <Outlet />
               </CustomGroupingProvider>

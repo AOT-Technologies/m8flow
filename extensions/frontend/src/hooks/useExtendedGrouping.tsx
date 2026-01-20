@@ -1,5 +1,5 @@
 /**
- * M8Flow Extension: Extended Grouping Hook
+ * m8 Extension: Extended Grouping Hook
  * 
  * This hook extends the core grouping functionality with custom options.
  * It wraps the original grouping logic and adds support for custom grouping handlers.
@@ -70,8 +70,8 @@ export function useExtendedGrouping({
         setGroupedTasks(null);
         setSelectedGroupBy(null);
       } else if (isCustomOption(groupBy)) {
-        // M8Flow Extension: Handle custom grouping options
-        console.log(`[M8Flow Extension] Custom grouping selected: ${groupBy}`);
+        // m8 Extension: Handle custom grouping options
+        console.log(`[m8 Extension] Custom grouping selected: ${groupBy}`);
         const handler = getHandler(groupBy);
         if (handler) {
           const grouped = handler(tasks);

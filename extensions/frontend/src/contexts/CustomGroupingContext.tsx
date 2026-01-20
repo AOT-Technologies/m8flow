@@ -1,5 +1,5 @@
 /**
- * M8Flow Extension: Custom Grouping Context
+ * m8 Extension: Custom Grouping Context
  * 
  * Provides a way to extend grouping functionality without duplicating
  * entire components. Components can register custom grouping options
