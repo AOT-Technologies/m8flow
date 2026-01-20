@@ -28,6 +28,26 @@ fileConfig(config.config_file_name)
 
 target_metadata = db.Model.metadata
 
+def process_revision_directives(context, revision, directives):
+    """Generate sequential revision IDs like 0003, 0004, etc."""
+    if directives:
+        # Get the current head revision
+        script = context.script
+        heads = script.get_heads()
+        
+        if heads:
+            # Get the latest revision number
+            latest_head = heads[0]
+            try:
+                # Try to parse as integer (e.g., "0002" -> 2)
+                latest_num = int(latest_head)
+                next_num = latest_num + 1
+                # Format as 4-digit number with leading zeros
+                directives[0].rev_id = f"{next_num:04d}"
+            except ValueError:
+                # If head is not a number, keep the auto-generated hash
+                pass
+
 def get_url():
     """Get the database URL from environment variables."""
     url = os.environ.get("SPIFFWORKFLOW_BACKEND_DATABASE_URI") or os.environ.get(
@@ -53,6 +73,7 @@ def run_migrations_online():
             target_metadata=target_metadata,
             version_table="alembic_version_m8flow",  # <-- important
             compare_type=True,
+            process_revision_directives=process_revision_directives,
         )
 
         with context.begin_transaction():

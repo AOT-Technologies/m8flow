@@ -13,6 +13,14 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "${script_dir}/../../.." && pwd)"
 cd "$repo_root"
 
+# Activate virtual environment
+if [[ ! -d ".venv" ]]; then
+  echo "Error: Virtual environment not found at .venv"
+  exit 1
+fi
+
+source .venv/bin/activate
+
 if [[ -f ".env" ]]; then
   set -a
   # shellcheck disable=SC1091
