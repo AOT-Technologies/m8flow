@@ -172,8 +172,17 @@ jobs:
         if: steps.check-commit.outputs.has_commit == 'true'
         id: create-pr
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Use PAT_TOKEN if configured (recommended for forks/org repos), fallback to GITHUB_TOKEN
+          GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
+          # Check which token is being used
+          if [[ -n "${{ secrets.PAT_TOKEN }}" ]]; then
+            echo "✓ Using PAT_TOKEN for authentication"
+          else
+            echo "⚠️  Using GITHUB_TOKEN (PAT_TOKEN not configured)"
+            echo "   For forked repositories or org restrictions, configure PAT_TOKEN"
+          fi
+          
           PR_BODY="This PR syncs selective changes from upstream that affect only:
           - \`spiffworkflow-backend/\`
           - \`spiffworkflow-frontend/\`
@@ -189,8 +198,9 @@ jobs:
 
           **Review carefully before merging.**"
 
-          # Create the PR first (without labels to avoid failures if labels don't exist)
+          # Create the PR in the same repository (explicit repo to avoid confusion with upstream)
           PR_URL=$(gh pr create \
+            --repo "${{ github.repository }}" \
             --base main \
             --head "${{ env.BRANCH_NAME }}" \
             --title "Sync upstream changes (backend & frontend only)" \
