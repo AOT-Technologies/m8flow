@@ -1,0 +1,66 @@
+openapi: "3.0.2"
+info:
+  version: 1.0.0
+  title: m8flow-backend-extension
+paths:
+  /create-tenant:
+    post:
+      summary: Create a new tenant
+      operationId: m8flow_backend.routes.tenant_controller.create_tenant
+      tags:
+        - Tenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTenantRequest"
+      responses:
+        "201":
+          description: Tenant created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tenant"
+
+components:
+  schemas:
+    CreateTenantRequest:
+      type: object
+      required:
+        - id
+        - name
+        - slug
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE, DELETED]
+
+    Tenant:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        modified_at:
+          type: string
+          format: date-time
+        created_by:
+          type: string
+        modified_by:
+          type: string
