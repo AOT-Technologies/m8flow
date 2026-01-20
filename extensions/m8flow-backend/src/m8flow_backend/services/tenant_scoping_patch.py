@@ -3,15 +3,17 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from collections.abc import Sequence
+import os
 from typing import Any
 
+from flask import g, has_request_context
 from sqlalchemy import event
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import with_loader_criteria
 
 from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin
 from m8flow_backend.models.tenant_scoped import TenantScoped
-from m8flow_backend.tenancy import LOGGER, get_tenant_id
+from m8flow_backend.tenancy import LOGGER, get_context_tenant_id, get_tenant_id
 
 _ORIGINALS: dict[str, Any] = {}
 _PATCHED = False
@@ -281,6 +283,45 @@ def _tenant_scope_queries(execute_state: Any) -> None:
             include_aliases=True,
             track_closure_variables=True,
         )
+    )
+
+
+def _allow_missing_tenant_context() -> bool:
+    value = os.environ.get("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT")
+    if value is None:
+        return False
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _resolve_tenant_id_for_db() -> str | None:
+    if has_request_context():
+        if not getattr(g, "m8flow_tenant_id", None):
+            raise RuntimeError("Missing tenant id in request context.")
+        return get_tenant_id()
+
+    context_tid = get_context_tenant_id()
+    if context_tid:
+        return context_tid
+
+    if _allow_missing_tenant_context():
+        return None
+
+    raise RuntimeError("Missing tenant context for database session.")
+
+
+@event.listens_for(Session, "after_begin")  # type: ignore[misc]
+def _set_postgres_tenant_context(session: Session, transaction: Any, connection: Any) -> None:
+    if connection.dialect.name != "postgresql":
+        return
+
+    tenant_id = _resolve_tenant_id_for_db()
+    if tenant_id is None:
+        connection.exec_driver_sql("RESET app.current_tenant")
+        return
+
+    connection.exec_driver_sql(
+        "SET LOCAL app.current_tenant = %s",
+        (tenant_id,),
     )
 
 

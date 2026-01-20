@@ -79,8 +79,14 @@ def load_tenant():
     g.m8flow_tenant_id = tenant_id
     ensure_tenant_exists(tenant_id)
 
-# Register the before_request handler
-flask_app.before_request(load_tenant)
+# Register the tenant loading function to run before each request.
+# Flask’s before_request() just appends to the handler list, so it can’t guarantee ordering 
+# if auth hooks were already registered. 
+# By inserting into flask_app.before_request_funcs[None] at index 0, load_tenant runs first, 
+# ensuring g.m8flow_tenant_id is set before any auth/authorization hooks that depend on it.
+if None not in flask_app.before_request_funcs:
+    flask_app.before_request_funcs[None] = []
+flask_app.before_request_funcs[None].insert(0, load_tenant)
 
 # Expose the Connexion app
 app = cnx_app
