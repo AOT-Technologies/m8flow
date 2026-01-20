@@ -24,61 +24,58 @@ def patch_connexion_with_extension_spec(extension_api_path: str):
                 with open(core_spec_path, 'r') as f:
                     core_spec = yaml.safe_load(f)
                 
-                # 2. Get Core Base Path
-                core_base_path = kwargs.get('base_path', '')
-                
-                # 3. Load Extension Spec
+                # 2. Load Extension Spec
                 if not os.path.exists(extension_api_path):
                      logger.error(f"Could not find M8Flow API spec at {extension_api_path}")
-                     # Fallback not strictly necessary if we just want to fail or proceed with core, 
-                     # but proceeding with core is safer.
+                     # Fallback: proceed with core only
                      return original_add_api(self, specification, **kwargs)
 
                 with open(extension_api_path, 'r') as f:
                     ext_spec = yaml.safe_load(f)
                 
-                # 4. Define Extension Base Path
-                ext_base_path = "/m8flow"
+                # 3. Define extension path prefix
+                ext_prefix = "/m8flow"
                 
-                # 5. Merge Paths (prepending base paths to create a unified root spec)
-                new_paths = {}
-                for path, item in core_spec.get('paths', {}).items():
-                    new_paths[f"{core_base_path.rstrip('/')}{path}"] = item
-                    
+                # 4. Merge Paths - keep core paths unchanged, add extension paths with prefix
+                # Core paths remain as-is, extension paths get /m8flow prefix
                 for path, item in ext_spec.get('paths', {}).items():
-                    new_paths[f"{ext_base_path.rstrip('/')}{path}"] = item
+                    prefixed_path = f"{ext_prefix}{path}"
+                    if prefixed_path in core_spec.get('paths', {}):
+                        logger.warning(f"Path conflict: {prefixed_path} exists in both core and extension")
+                    core_spec.setdefault('paths', {})[prefixed_path] = item
                 
-                core_spec['paths'] = new_paths
-                
-                # 6. Merge Components
+                # 5. Merge Components
                 core_components = core_spec.setdefault('components', {})
                 ext_components = ext_spec.get('components', {})
                 
                 core_schemas = core_components.setdefault('schemas', {})
                 ext_schemas = ext_components.get('schemas', {})
-                core_schemas.update(ext_schemas)
+                for schema_name, schema_def in ext_schemas.items():
+                    if schema_name in core_schemas:
+                        logger.warning(f"Schema conflict: {schema_name} exists in both core and extension")
+                    core_schemas[schema_name] = schema_def
                 
-                # 7. Merge Tags
+                # 6. Merge Tags
                 core_tags = core_spec.setdefault('tags', [])
                 ext_tags = ext_spec.get('tags', [])
-                core_spec['tags'] = core_tags + ext_tags
-
-                # 8. Update Info (Title)
+                existing_tag_names = {tag.get('name') for tag in core_tags if isinstance(tag, dict)}
+                for tag in ext_tags:
+                    if isinstance(tag, dict) and tag.get('name') not in existing_tag_names:
+                        core_tags.append(tag)
+                
+                # 7. Update Info (Title)
                 if 'info' in core_spec:
                     core_spec['info']['title'] = "m8flow-backend"
                 
-                # 9. Update Servers (Fix for blank servers list/incorrect base)
-                # Since we are prepending paths manually and setting base_path to "/", 
-                # we should set the server URL to root or remove the v1.0 suffix if present.
-                core_spec['servers'] = [{'url': '/'}]
+                # 8. Keep original base_path - don't override it
+                # This preserves core API routing at /v1.0/*
+                # Extension APIs will be accessible at base_path + /m8flow/*
                 
-                # 10. Update base_path to root "/"
-                kwargs['base_path'] = "/"
-                
+                logger.info(f"Successfully merged extension API spec. Extension paths added under {ext_prefix}")
                 return original_add_api(self, core_spec, **kwargs)
                 
             except Exception as e:
-                logger.error(f"Failed to merge API specs: {e}")
+                logger.error(f"Failed to merge API specs: {e}", exc_info=True)
                 # Fallback to original behavior
                 return original_add_api(self, specification, **kwargs)
                 

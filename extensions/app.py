@@ -40,10 +40,6 @@ from sqlalchemy import create_engine
 # Configure the database engine for spiffworkflow_backend.
 create_engine(os.environ["SPIFFWORKFLOW_BACKEND_DATABASE_URI"], pool_pre_ping=True)
 
-# Monkey-patch connexion to merge extension API spec
-api_file_path = os.path.join(os.path.dirname(__file__), "m8flow-backend/src/m8flow_backend/api.yml")
-patch_connexion_with_extension_spec(api_file_path)
-
 
 def _env_truthy(value: str | None) -> bool:
     """Interpret environment variable value as boolean truthy."""
@@ -63,6 +59,9 @@ def _configure_sql_echo(app) -> None:
     except Exception:
         pass
 
+# Monkey-patch connexion to merge extension API spec BEFORE create_app
+api_file_path = os.path.join(os.path.dirname(__file__), "m8flow-backend/src/m8flow_backend/api.yml")
+patch_connexion_with_extension_spec(api_file_path)
 
 # Create the Connexion app.
 cnx_app = create_app()
