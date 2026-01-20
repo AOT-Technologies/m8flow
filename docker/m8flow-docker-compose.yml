@@ -110,8 +110,8 @@ services:
 
   m8flow-frontend:
     build:
-      context: ../spiffworkflow-frontend
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/m8flow.frontend.Dockerfile
     env_file: ../.env
     ports:
       - "8001:80"
