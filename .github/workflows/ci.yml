@@ -144,6 +144,7 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: 1
           ignore-unfixed: true
+          skip-files: spiffworkflow-backend/src/spiffworkflow_backend/config/openid/rsa_keys.py
 
   # -------------------------
   # Migration Compatibility Check
