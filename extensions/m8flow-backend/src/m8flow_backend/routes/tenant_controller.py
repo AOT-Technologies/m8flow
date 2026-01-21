@@ -1,10 +1,64 @@
-from flask import jsonify, make_response, g, current_app
+from flask import jsonify, make_response, g
+from functools import wraps
 from sqlalchemy.exc import IntegrityError
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel, TenantStatus
 from spiffworkflow_backend.models.db import db
 from spiffworkflow_backend.exceptions.api_error import ApiError
 from spiffworkflow_backend.services.authorization_service import AuthorizationService
 import uuid
+
+def _success_response(data, status_code=200):
+    """Helper to create standardized success response."""
+    return make_response(jsonify({
+        "success": True,
+        "statusCode": status_code,
+        "data": data
+    }), status_code)
+
+def _get_tenant_or_raise(tenant_id):
+    """Fetch tenant by ID or raise appropriate error."""
+    _check_not_default_tenant(tenant_id, "tenant")
+    
+    tenant = M8flowTenantModel.query.filter_by(id=tenant_id).first()
+    
+    if not tenant:
+        raise ApiError(
+            error_code="tenant_not_found",
+            message=f"Tenant with ID '{tenant_id}' not found.",
+            status_code=404
+        )
+    return tenant
+
+def handle_api_errors(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        try:
+            return f(*args, **kwargs)
+        except ApiError as e:
+            # ApiError attributes are snake_case (error_code, status_code)
+            # We map them to camelCase for the JSON response
+            status_code = getattr(e, 'status_code', 400)
+            error_code = getattr(e, 'error_code', 'unknown_error')
+            
+            return make_response(jsonify({
+                "success": False,
+                "statusCode": status_code,
+                "data": {
+                    "errorCode": error_code,
+                    "message": e.message
+                }
+            }), status_code)
+        except Exception as e:
+            # Catch-all for unexpected errors
+            return make_response(jsonify({
+                "success": False,
+                "statusCode": 500,
+                "data": {
+                    "errorCode": "internal_server_error",
+                    "message": str(e)
+                }
+            }), 500)
+    return decorated_function
 
 def _check_admin_permission():
     """Check if user has admin permission to manage tenants."""
@@ -14,8 +68,8 @@ def _check_admin_permission():
     # Check if user has permission to manage tenants (admin/system role)
     has_permission = AuthorizationService.user_has_permission(
         user=g.user,
-        permission="create",  # Using 'create' as admin permission check
-        target_uri="/admin/tenants"
+        permission="create",
+        target_uri="/admin/tenants"  # Must be snake_case target_uri
     )
     
     if not has_permission:
@@ -26,12 +80,7 @@ def _check_admin_permission():
         )
 
 def _check_not_default_tenant(identifier: str, identifier_type: str = "tenant"):
-    """Check that the given identifier is not 'default' to prevent operations on default tenant.
-    
-    Args:
-        identifier: The tenant ID or slug to check
-        identifier_type: Type of identifier for error message (e.g., 'tenant', 'ID', 'slug')
-    """
+    """Check that the given identifier is not 'default' to prevent operations on default tenant."""
     if identifier and identifier.lower() == "default":
         raise ApiError(
             error_code="forbidden_tenant",
@@ -39,7 +88,7 @@ def _check_not_default_tenant(identifier: str, identifier_type: str = "tenant"):
             status_code=403
         )
 
-
+@handle_api_errors
 def create_tenant(body):
     _check_admin_permission()
 
@@ -53,37 +102,41 @@ def create_tenant(body):
     if not slug:
          raise ApiError(error_code="missing_slug", message="Slug is required", status_code=400)
     
-    existing_tenant = M8flowTenantModel.query.filter_by(slug=slug).first()
-    if existing_tenant:
+    # Check if ID already exists if explicitly provided
+    if 'id' in body:
+        existing_id = M8flowTenantModel.query.filter_by(id=tenant_id).first()
+        if existing_id:
+            raise ApiError(
+                error_code="tenant_id_exists", 
+                message=f"Tenant with ID '{tenant_id}' already exists.", 
+                status_code=409
+            )
+
+    existing_slug = M8flowTenantModel.query.filter_by(slug=slug).first()
+    if existing_slug:
         raise ApiError(
             error_code="tenant_slug_exists", 
             message=f"Tenant with slug '{slug}' already exists.", 
             status_code=409
         )
 
-    # helper for metadata usually managed by mixins or explicitly
-    current_user_id = g.user.username
-    created_by = current_user_id
-    modified_by = current_user_id
-    
     tenant = M8flowTenantModel(
         id=tenant_id,
         name=name,
         slug=slug,
         status=TenantStatus(status_str),
-        created_by=created_by,
-        modified_by=modified_by
+        created_by=g.user.username,
+        modified_by=g.user.username
     )
     
     try:
         db.session.add(tenant)
         db.session.commit()
-    except IntegrityError as e:
+    except IntegrityError:
         db.session.rollback()
-        # This handles race conditions where the check passed but insert failed
         raise ApiError(
-            error_code="database_integrity_error", 
-            message=f"Could not create tenant due to a database integrity error: {str(e)}", 
+            error_code="tenant_conflict", 
+            message="A tenant with this ID or slug already exists.", 
             status_code=409
         )
     except Exception as e:
@@ -94,33 +147,24 @@ def create_tenant(body):
             status_code=500
         )
     
-    return make_response(jsonify(tenant), 201)
+    return _success_response(tenant, 201)
 
 
+@handle_api_errors
 def get_tenant_by_id(tenant_id):
     """Fetch tenant by ID."""
     _check_admin_permission()
-    _check_not_default_tenant(tenant_id, "tenant")
-    
-    tenant = M8flowTenantModel.query.filter_by(id=tenant_id).first()
-    
-    if not tenant:
-        raise ApiError(
-            error_code="tenant_not_found",
-            message=f"Tenant with ID '{tenant_id}' not found.",
-            status_code=404
-        )
-    
-    return make_response(jsonify(tenant), 200)
+    tenant = _get_tenant_or_raise(tenant_id)
+    return _success_response(tenant, 200)
 
 
+@handle_api_errors
 def get_tenant_by_slug(slug):
     """Fetch tenant by slug."""
     _check_admin_permission()
     _check_not_default_tenant(slug, "tenant")
     
     tenant = M8flowTenantModel.query.filter_by(slug=slug).first()
-    
     if not tenant:
         raise ApiError(
             error_code="tenant_not_found",
@@ -128,20 +172,20 @@ def get_tenant_by_slug(slug):
             status_code=404
         )
     
-    return make_response(jsonify(tenant), 200)
+    return _success_response(tenant, 200)
 
 
+@handle_api_errors
 def get_all_tenants():
     """Fetch all tenants, excluding the default tenant."""
     _check_admin_permission()
     
     try:
-        # Filter out default tenant (by both id and slug)
         tenants = M8flowTenantModel.query.filter(
             M8flowTenantModel.id != "default",
             M8flowTenantModel.slug != "default"
         ).all()
-        return make_response(jsonify(tenants), 200)
+        return _success_response(tenants, 200)
     except Exception as e:
         raise ApiError(
             error_code="database_error",
@@ -149,21 +193,12 @@ def get_all_tenants():
             status_code=500
         )
 
+@handle_api_errors
 def delete_tenant(tenant_id):
     """Soft delete a tenant by setting status to DELETED."""
     _check_admin_permission()
-    _check_not_default_tenant(tenant_id, "tenant")
+    tenant = _get_tenant_or_raise(tenant_id)
     
-    tenant = M8flowTenantModel.query.filter_by(id=tenant_id).first()
-    
-    if not tenant:
-        raise ApiError(
-            error_code="tenant_not_found",
-            message=f"Tenant with ID '{tenant_id}' not found.",
-            status_code=404
-        )
-    
-    # Check if already deleted
     if tenant.status == TenantStatus.DELETED:
         raise ApiError(
             error_code="tenant_already_deleted",
@@ -172,16 +207,15 @@ def delete_tenant(tenant_id):
         )
     
     try:
-        # Soft delete - update status to DELETED
         tenant.status = TenantStatus.DELETED
         tenant.modified_by = g.user.username
         
         db.session.commit()
         
-        return make_response(jsonify({
+        return _success_response({
             "message": f"Tenant '{tenant.name}' has been successfully deleted.",
             "tenant": tenant
-        }), 200)
+        }, 200)
     except Exception as e:
         db.session.rollback()
         raise ApiError(
@@ -190,21 +224,12 @@ def delete_tenant(tenant_id):
             status_code=500
         )
 
+@handle_api_errors
 def update_tenant(tenant_id, body):
     """Update tenant name and status. Slug cannot be updated."""
     _check_admin_permission()
-    _check_not_default_tenant(tenant_id, "tenant")
+    tenant = _get_tenant_or_raise(tenant_id)
     
-    tenant = M8flowTenantModel.query.filter_by(id=tenant_id).first()
-    
-    if not tenant:
-        raise ApiError(
-            error_code="tenant_not_found",
-            message=f"Tenant with ID '{tenant_id}' not found.",
-            status_code=404
-        )
-    
-    # Prevent updating DELETED tenants
     if tenant.status == TenantStatus.DELETED:
         raise ApiError(
             error_code="tenant_deleted",
@@ -212,7 +237,6 @@ def update_tenant(tenant_id, body):
             status_code=400
         )
     
-    # Check if slug update is attempted (not allowed)
     if 'slug' in body and body['slug'] != tenant.slug:
         raise ApiError(
             error_code="slug_update_forbidden",
@@ -220,11 +244,9 @@ def update_tenant(tenant_id, body):
             status_code=400
         )
     
-    # Extract updatable fields
     name = body.get('name')
     status_str = body.get('status')
     
-    # Validate at least one field is being updated
     if not name and not status_str:
         raise ApiError(
             error_code="no_fields_to_update",
@@ -233,11 +255,9 @@ def update_tenant(tenant_id, body):
         )
     
     try:
-        # Update name if provided
         if name:
             tenant.name = name
         
-        # Update status if provided
         if status_str:
             try:
                 tenant.status = TenantStatus(status_str)
@@ -248,15 +268,13 @@ def update_tenant(tenant_id, body):
                     status_code=400
                 )
         
-        # Update modified_by
         tenant.modified_by = g.user.username
-        
         db.session.commit()
         
-        return make_response(jsonify({
+        return _success_response({
             "message": f"Tenant '{tenant.name}' has been successfully updated.",
             "tenant": tenant
-        }), 200)
+        }, 200)
     except ApiError:
         db.session.rollback()
         raise
@@ -267,4 +285,3 @@ def update_tenant(tenant_id, body):
             message=f"Error updating tenant: {str(e)}",
             status_code=500
         )
-

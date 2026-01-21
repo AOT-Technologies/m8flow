@@ -21,13 +21,25 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Tenant"
+                $ref: "#/components/schemas/TenantResponse"
         "400":
           description: Bad request - missing required fields
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: Conflict - tenant with slug already exists
+          description: Conflict - tenant with ID or slug already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /tenants/slug/{slug}:
     get:
@@ -48,13 +60,21 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Tenant"
+                $ref: "#/components/schemas/TenantResponse"
         "401":
           description: Unauthorized - user not authenticated
         "403":
           description: Forbidden - cannot access default tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Tenant not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /tenants:
     get:
@@ -68,13 +88,15 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Tenant"
+                $ref: "#/components/schemas/TenantListResponse"
         "401":
           description: Unauthorized - user not authenticated
         "500":
           description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /tenants/{tenant_id}:
     get:
@@ -95,7 +117,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Tenant"
+                $ref: "#/components/schemas/TenantResponse"
         "401":
           description: Unauthorized - user not authenticated
         "403":
@@ -139,24 +161,26 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: "Tenant 'Updated Tenant Name' has been successfully updated."
-                  tenant:
-                    $ref: "#/components/schemas/Tenant"
+                $ref: "#/components/schemas/TenantActionResponse"
         "400":
           description: Bad request - no fields to update, slug update attempted, tenant is deleted, or invalid status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Unauthorized - user not authenticated
         "403":
           description: Forbidden - cannot update default tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Tenant not found
         "500":
           description: Internal server error
-    
+
     delete:
       summary: Soft delete a tenant
       description: Sets the tenant status to DELETED without removing from database
@@ -176,19 +200,21 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: "Tenant 'Example Tenant' has been successfully deleted."
-                  tenant:
-                    $ref: "#/components/schemas/Tenant"
+                $ref: "#/components/schemas/TenantActionResponse"
         "400":
           description: Bad request - tenant already deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Unauthorized - user not authenticated
         "403":
           description: Forbidden - cannot delete default tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Tenant not found
         "500":
@@ -235,3 +261,69 @@ components:
           type: string
         modified_by:
           type: string
+
+    TenantResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        status_code:
+          type: integer
+          example: 200
+        data:
+          $ref: "#/components/schemas/Tenant"
+
+    TenantListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        status_code:
+          type: integer
+          example: 200
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Tenant"
+
+    TenantActionData:
+      type: object
+      properties:
+        message:
+          type: string
+        tenant:
+          $ref: "#/components/schemas/Tenant"
+
+    TenantActionResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        status_code:
+          type: integer
+          example: 200
+        data:
+          $ref: "#/components/schemas/TenantActionData"
+
+    ErrorData:
+      type: object
+      properties:
+        error_code:
+          type: string
+        message:
+          type: string
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        status_code:
+          type: integer
+          example: 400
+        data:
+          $ref: "#/components/schemas/ErrorData"
