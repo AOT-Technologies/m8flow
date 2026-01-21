@@ -7,7 +7,6 @@ import sys
 
 from flask import g, request
 from extensions.bootstrap import bootstrap
-from m8flow_backend.utils.openapi_merge import patch_connexion_with_extension_spec
 
 logger = logging.getLogger(__name__)
 
@@ -58,10 +57,6 @@ def _configure_sql_echo(app) -> None:
             db.engine.echo = True
     except Exception:
         pass
-
-# Monkey-patch connexion to merge extension API spec BEFORE create_app
-api_file_path = os.path.join(os.path.dirname(__file__), "m8flow-backend/src/m8flow_backend/api.yml")
-patch_connexion_with_extension_spec(api_file_path)
 
 # Create the Connexion app.
 cnx_app = create_app()
