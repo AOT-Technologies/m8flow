@@ -263,30 +263,12 @@ components:
           type: string
 
     TenantResponse:
-      type: object
-      properties:
-        success:
-          type: boolean
-          example: true
-        status_code:
-          type: integer
-          example: 200
-        data:
-          $ref: "#/components/schemas/Tenant"
+      $ref: "#/components/schemas/Tenant"
 
     TenantListResponse:
-      type: object
-      properties:
-        success:
-          type: boolean
-          example: true
-        status_code:
-          type: integer
-          example: 200
-        data:
-          type: array
-          items:
-            $ref: "#/components/schemas/Tenant"
+      type: array
+      items:
+        $ref: "#/components/schemas/Tenant"
 
     TenantActionData:
       type: object
@@ -297,16 +279,7 @@ components:
           $ref: "#/components/schemas/Tenant"
 
     TenantActionResponse:
-      type: object
-      properties:
-        success:
-          type: boolean
-          example: true
-        status_code:
-          type: integer
-          example: 200
-        data:
-          $ref: "#/components/schemas/TenantActionData"
+      $ref: "#/components/schemas/TenantActionData"
 
     ErrorData:
       type: object
@@ -317,13 +290,4 @@ components:
           type: string
 
     ErrorResponse:
-      type: object
-      properties:
-        success:
-          type: boolean
-          example: false
-        status_code:
-          type: integer
-          example: 400
-        data:
-          $ref: "#/components/schemas/ErrorData"
+      $ref: "#/components/schemas/ErrorData"
