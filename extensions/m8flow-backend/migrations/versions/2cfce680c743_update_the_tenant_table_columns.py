@@ -1,8 +1,8 @@
 """update the tenant table columns
 
-Revision ID: 0003
-Revises: 0002
-Create Date: 2026-01-20 09:59:26.124262
+Revision ID: 2cfce680c743
+Revises: 0003
+Create Date: 2026-01-21 12:51:49.418203
 
 """
 from alembic import op
@@ -11,11 +11,10 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy import inspect
 
 # revision identifiers, used by Alembic.
-revision = '0003'
-down_revision = '0002'
+revision = '2cfce680c743'
+down_revision = '0003'
 branch_labels = None
 depends_on = None
-
 
 def upgrade():
     # Create the TenantStatus enum type if it doesn't exist
