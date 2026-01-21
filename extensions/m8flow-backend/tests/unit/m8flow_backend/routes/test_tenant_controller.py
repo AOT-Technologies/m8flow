@@ -103,11 +103,9 @@ class TestTenantController:
                     "slug": "test-tenant"
                 }
                 
-                with pytest.raises(ApiError) as exc_info:
-                    tenant_controller.create_tenant(body)
-                
-                assert exc_info.value.error_code == "missing_name"
-                assert exc_info.value.status_code == 400
+                response = tenant_controller.create_tenant(body)
+                assert response.status_code == 400
+                assert response.get_json()["error_code"] == "missing_name"
 
     def test_create_tenant_without_slug_fails(self, app, mock_admin_user, mock_auth_service):
         """Test that creating tenant without slug raises error."""
@@ -119,11 +117,9 @@ class TestTenantController:
                     "name": "Test Tenant"
                 }
                 
-                with pytest.raises(ApiError) as exc_info:
-                    tenant_controller.create_tenant(body)
-                
-                assert exc_info.value.error_code == "missing_slug"
-                assert exc_info.value.status_code == 400
+                response = tenant_controller.create_tenant(body)
+                assert response.status_code == 400
+                assert response.get_json()["error_code"] == "missing_slug"
 
     def test_create_tenant_duplicate_slug_fails(self, app, mock_admin_user, mock_auth_service):
         """Test that creating tenant with duplicate slug raises error."""
@@ -149,11 +145,9 @@ class TestTenantController:
                     "slug": "duplicate-slug"
                 }
                 
-                with pytest.raises(ApiError) as exc_info:
-                    tenant_controller.create_tenant(body)
-                
-                assert exc_info.value.error_code == "tenant_slug_exists"
-                assert exc_info.value.status_code == 409
+                response = tenant_controller.create_tenant(body)
+                assert response.status_code == 409
+                assert response.get_json()["error_code"] == "tenant_slug_exists"
 
     def test_create_tenant_generates_id_if_not_provided(self, app, mock_admin_user, mock_auth_service):
         """Test that tenant ID is auto-generated if not provided."""
@@ -203,11 +197,9 @@ class TestTenantController:
             with app.test_request_context("/"):
                 g.user = mock_admin_user
                 
-                with pytest.raises(ApiError) as exc_info:
-                    tenant_controller.get_tenant_by_id("non-existent")
-                
-                assert exc_info.value.error_code == "tenant_not_found"
-                assert exc_info.value.status_code == 404
+                response = tenant_controller.get_tenant_by_id("non-existent")
+                assert response.status_code == 404
+                assert response.get_json()["error_code"] == "tenant_not_found"
 
     def test_get_tenant_by_id_default_forbidden(self, app, mock_admin_user, mock_auth_service):
         """Test that getting default tenant by ID is forbidden."""
@@ -215,11 +207,9 @@ class TestTenantController:
             with app.test_request_context("/"):
                 g.user = mock_admin_user
                 
-                with pytest.raises(ApiError) as exc_info:
-                    tenant_controller.get_tenant_by_id("default")
-                
-                assert exc_info.value.error_code == "forbidden_tenant"
-                assert exc_info.value.status_code == 403
+                response = tenant_controller.get_tenant_by_id("default")
+                assert response.status_code == 403
+                assert response.get_json()["error_code"] == "forbidden_tenant"
 
     def test_get_tenant_by_slug_success(self, app, mock_admin_user, mock_auth_service):
         """Test successfully retrieving tenant by slug."""
@@ -249,11 +239,9 @@ class TestTenantController:
             with app.test_request_context("/"):
                 g.user = mock_admin_user
                 
-                with pytest.raises(ApiError) as exc_info:
-                    tenant_controller.get_tenant_by_slug("non-existent-slug")
-                
-                assert exc_info.value.error_code == "tenant_not_found"
-                assert exc_info.value.status_code == 404
+                response = tenant_controller.get_tenant_by_slug("non-existent-slug")
+                assert response.status_code == 404
+                assert response.get_json()["error_code"] == "tenant_not_found"
 
     def test_get_all_tenants_excludes_default(self, app, mock_admin_user, mock_auth_service):
         """Test that get_all_tenants excludes the default tenant."""
@@ -378,11 +366,9 @@ class TestTenantController:
                 # Attempt to update slug
                 body = {"slug": "new-slug"}
                 
-                with pytest.raises(ApiError) as exc_info:
-                    tenant_controller.update_tenant("immutable-slug-1", body)
-                
-                assert exc_info.value.error_code == "slug_update_forbidden"
-                assert exc_info.value.status_code == 400
+                response = tenant_controller.update_tenant("immutable-slug-1", body)
+                assert response.status_code == 400
+                assert response.get_json()["error_code"] == "slug_update_forbidden"
 
     def test_update_deleted_tenant_forbidden(self, app, mock_admin_user, mock_auth_service):
         """Test that updating a deleted tenant is forbidden."""
@@ -405,11 +391,9 @@ class TestTenantController:
                 # Attempt to update
                 body = {"name": "New Name"}
                 
-                with pytest.raises(ApiError) as exc_info:
-                    tenant_controller.update_tenant("deleted-tenant-1", body)
-                
-                assert exc_info.value.error_code == "tenant_deleted"
-                assert exc_info.value.status_code == 400
+                response = tenant_controller.update_tenant("deleted-tenant-1", body)
+                assert response.status_code == 400
+                assert response.get_json()["error_code"] == "tenant_deleted"
 
     def test_delete_tenant_soft_delete(self, app, mock_admin_user, mock_auth_service):
         """Test soft deleting a tenant."""
@@ -457,11 +441,9 @@ class TestTenantController:
                 db.session.commit()
                 
                 # Attempt to delete again
-                with pytest.raises(ApiError) as exc_info:
-                    tenant_controller.delete_tenant("already-deleted-1")
-                
-                assert exc_info.value.error_code == "tenant_already_deleted"
-                assert exc_info.value.status_code == 400
+                response = tenant_controller.delete_tenant("already-deleted-1")
+                assert response.status_code == 400
+                assert response.get_json()["error_code"] == "tenant_already_deleted"
 
     def test_delete_default_tenant_forbidden(self, app, mock_admin_user, mock_auth_service):
         """Test that deleting default tenant is forbidden."""
@@ -469,11 +451,9 @@ class TestTenantController:
             with app.test_request_context("/"):
                 g.user = mock_admin_user
                 
-                with pytest.raises(ApiError) as exc_info:
-                    tenant_controller.delete_tenant("default")
-                
-                assert exc_info.value.error_code == "forbidden_tenant"
-                assert exc_info.value.status_code == 403
+                response = tenant_controller.delete_tenant("default")
+                assert response.status_code == 403
+                assert response.get_json()["error_code"] == "forbidden_tenant"
 
     def test_permission_check_no_user(self, app):
         """Test that operations fail when user is not authenticated."""
@@ -483,11 +463,9 @@ class TestTenantController:
                 
                 body = {"name": "Test", "slug": "test"}
                 
-                with pytest.raises(ApiError) as exc_info:
-                    tenant_controller.create_tenant(body)
-                
-                assert exc_info.value.error_code == "not_authenticated"
-                assert exc_info.value.status_code == 401
+                response = tenant_controller.create_tenant(body)
+                assert response.status_code == 401
+                assert response.get_json()["error_code"] == "not_authenticated"
 
     def test_permission_check_insufficient_permissions(self, app, mock_admin_user):
         """Test that operations fail when user lacks permissions."""
@@ -501,8 +479,6 @@ class TestTenantController:
                     
                     body = {"name": "Test", "slug": "test"}
                     
-                    with pytest.raises(ApiError) as exc_info:
-                        tenant_controller.create_tenant(body)
-                    
-                    assert exc_info.value.error_code == "insufficient_permissions"
-                    assert exc_info.value.status_code == 403
+                    response = tenant_controller.create_tenant(body)
+                    assert response.status_code == 403
+                    assert response.get_json()["error_code"] == "insufficient_permissions"

@@ -225,7 +225,6 @@ components:
     CreateTenantRequest:
       type: object
       required:
-        - id
         - name
         - slug
       properties:
