@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from collections.abc import Sequence
-import os
 from typing import Any
 
 from flask import g, has_request_context
@@ -13,7 +12,13 @@ from sqlalchemy.orm import with_loader_criteria
 
 from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin
 from m8flow_backend.models.tenant_scoped import TenantScoped
-from m8flow_backend.tenancy import LOGGER, get_context_tenant_id, get_tenant_id
+from m8flow_backend.tenancy import (
+    DEFAULT_TENANT_ID,
+    LOGGER,
+    allow_missing_tenant_context,
+    get_context_tenant_id,
+    get_tenant_id,
+)
 
 _ORIGINALS: dict[str, Any] = {}
 _PATCHED = False
@@ -270,11 +275,23 @@ def _set_tenant_on_flush(session: Session, _flush_context: Any, _instances: Any)
             setattr(obj, "m8f_tenant_id", get_tenant_id())
 
 
-@event.listens_for(Session, "do_orm_execute")  # type: ignore[misc]
 def _tenant_scope_queries(execute_state: Any) -> None:
     """Apply tenant scoping to all queries for TenantScoped models."""
     if not execute_state.is_select:
         return
+
+    # Don't scope queries that are reading the tenant table itself
+    # (otherwise resolve_request_tenant() tries to validate tenant_id using a
+    # query that requires tenant_id -> circular dependency in tests)
+    try:
+        stmt = execute_state.statement
+        for from_ in stmt.get_final_froms():
+            if getattr(from_, "name", None) == "m8flow_tenant":
+                return
+    except Exception:
+        # if statement shape is unexpected, fail open (don't break the query)
+        pass
+
     tenant_id = get_tenant_id()
     execute_state.statement = execute_state.statement.options(
         with_loader_criteria(
@@ -286,25 +303,21 @@ def _tenant_scope_queries(execute_state: Any) -> None:
     )
 
 
-def _allow_missing_tenant_context() -> bool:
-    value = os.environ.get("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT")
-    if value is None:
-        return False
-    return value.strip().lower() in {"1", "true", "yes", "on"}
 
-
-def _resolve_tenant_id_for_db() -> str | None:
+def _resolve_tenant_id_for_db() -> str:
     if has_request_context():
-        if not getattr(g, "m8flow_tenant_id", None):
-            raise RuntimeError("Missing tenant id in request context.")
-        return get_tenant_id()
+        if getattr(g, "m8flow_tenant_id", None):
+            return get_tenant_id()
+        if allow_missing_tenant_context():
+            return DEFAULT_TENANT_ID
+        raise RuntimeError("Missing tenant context for database session.")
 
     context_tid = get_context_tenant_id()
     if context_tid:
         return context_tid
 
-    if _allow_missing_tenant_context():
-        return None
+    if allow_missing_tenant_context():
+        return DEFAULT_TENANT_ID
 
     raise RuntimeError("Missing tenant context for database session.")
 
@@ -315,17 +328,22 @@ def _set_postgres_tenant_context(session: Session, transaction: Any, connection:
         return
 
     tenant_id = _resolve_tenant_id_for_db()
-    if tenant_id is None:
-        connection.exec_driver_sql("RESET app.current_tenant")
-        return
-
     connection.exec_driver_sql(
         "SET LOCAL app.current_tenant = %s",
         (tenant_id,),
     )
 
 
+from sqlalchemy import event
+from sqlalchemy.orm import Session
+
+_SCOPING_LISTENER_REGISTERED = False
+
 def apply() -> None:
+    global _SCOPING_LISTENER_REGISTERED
+    if not _SCOPING_LISTENER_REGISTERED:
+        event.listen(Session, "do_orm_execute", _tenant_scope_queries)
+        _SCOPING_LISTENER_REGISTERED = True
     global _PATCHED
     if _PATCHED:
         return
@@ -340,3 +358,11 @@ def apply() -> None:
 
     _PATCHED = True
     LOGGER.info("M8FLOW tenant scoping patch applied")
+
+
+def reset() -> None:
+    """Remove global SQLAlchemy listeners so tests don't leak state."""
+    global _SCOPING_LISTENER_REGISTERED
+    if _SCOPING_LISTENER_REGISTERED:
+        event.remove(Session, "do_orm_execute", _tenant_scope_queries)
+        _SCOPING_LISTENER_REGISTERED = False

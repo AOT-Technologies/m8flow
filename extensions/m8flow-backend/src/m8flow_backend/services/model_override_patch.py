@@ -93,6 +93,9 @@ def apply() -> None:
     if _PATCHED:
         return
 
+    from m8flow_backend.services.spiff_config_patch import apply as apply_spiff_config_patch
+    apply_spiff_config_patch()
+
     existing = sys.modules.get("spiffworkflow_backend")
     if existing and not getattr(existing, "_m8flow_stub", False):
         _clear_spiffworkflow_modules()

@@ -5,7 +5,6 @@ import os
 from pathlib import Path
 import sys
 
-from flask import g, request
 from extensions.bootstrap import bootstrap
 
 logger = logging.getLogger(__name__)
@@ -31,13 +30,10 @@ except ModuleNotFoundError:
 
 upgrade_m8flow_db()
 
-from m8flow_backend.tenancy import DEFAULT_TENANT_ID, ensure_tenant_exists
+from m8flow_backend.services.tenant_context_middleware import resolve_request_tenant
 from spiffworkflow_backend import create_app
 from spiffworkflow_backend.models.db import db
 from sqlalchemy import create_engine
-
-# Configure the database engine for spiffworkflow_backend.
-create_engine(os.environ["SPIFFWORKFLOW_BACKEND_DATABASE_URI"], pool_pre_ping=True)
 
 
 def _env_truthy(value: str | None) -> bool:
@@ -69,24 +65,20 @@ if flask_app is None:
 # Configure SQL echo if enabled
 _configure_sql_echo(flask_app)
 
-# Testing hook for tenant selection; replace with JWT-based tenant context.
-# curl -H "M8Flow-Tenant-Id: tenant-a" http://localhost:8000/v1/process-models
-# curl -H "M8Flow-Tenant-Id: tenant-b" http://localhost:8000/v1/process-models
 def load_tenant():
-    """Load tenant ID from request headers into Flask 'g' context."""
-    logger.info("Loading tenant ID from request headers")
-    tenant_id = request.headers.get("M8Flow-Tenant-Id", DEFAULT_TENANT_ID)
-    g.m8flow_tenant_id = tenant_id
-    ensure_tenant_exists(tenant_id)
+    """Resolve tenant from auth context and store it in Flask 'g'."""
+    resolve_request_tenant()
 
-# Register the tenant loading function to run before each request.
-# Flask’s before_request() just appends to the handler list, so it can’t guarantee ordering 
-# if auth hooks were already registered. 
-# By inserting into flask_app.before_request_funcs[None] at index 0, load_tenant runs first, 
-# ensuring g.m8flow_tenant_id is set before any auth/authorization hooks that depend on it.
+# Register the tenant loading function to run after auth hooks.
 if None not in flask_app.before_request_funcs:
     flask_app.before_request_funcs[None] = []
-flask_app.before_request_funcs[None].insert(0, load_tenant)
+before_request_funcs = flask_app.before_request_funcs[None]
+try:
+    from spiffworkflow_backend.routes.authentication_controller import omni_auth
+    auth_index = before_request_funcs.index(omni_auth)
+    before_request_funcs.insert(auth_index + 1, load_tenant)
+except Exception:
+    flask_app.before_request(load_tenant)
 
 # Expose the Connexion app
 app = cnx_app
