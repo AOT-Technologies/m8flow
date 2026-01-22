@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from sqlalchemy import func
 from spiffworkflow_backend.models.db import SpiffworkflowBaseDBModel
 from spiffworkflow_backend.models.db import db
+from m8flow_backend.models.audit_mixin import AuditDateTimeMixin
 
 
 class TenantStatus(str, enum.Enum):
@@ -15,7 +16,7 @@ class TenantStatus(str, enum.Enum):
 
 
 @dataclass
-class M8flowTenantModel(SpiffworkflowBaseDBModel):
+class M8flowTenantModel(SpiffworkflowBaseDBModel, AuditDateTimeMixin):
     """SQLAlchemy model for M8flowTenantModel."""
     __tablename__ = "m8flow_tenant"
 
@@ -25,17 +26,6 @@ class M8flowTenantModel(SpiffworkflowBaseDBModel):
     status: TenantStatus = db.Column(
         db.Enum(TenantStatus), default=TenantStatus.ACTIVE, nullable=False
     )
-
-    created_at = db.Column(
-        db.DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-    modified_at = db.Column(
-        db.DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
-    )
-
     created_by: str | None = db.Column(db.String(255), nullable=False)
     modified_by: str | None = db.Column(db.String(255), nullable=False)
 

@@ -200,7 +200,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/TenantActionResponse"
+                $ref: "#/components/schemas/MessageResponse"
         "400":
           description: Bad request - tenant already deleted
           content:
@@ -235,9 +235,6 @@ components:
           type: string
         slug:
           type: string
-        status:
-          type: string
-          enum: [ACTIVE, INACTIVE, DELETED]
 
     Tenant:
       type: object
@@ -250,15 +247,15 @@ components:
           type: string
         status:
           type: string
-        created_at:
+        createdAt:
           type: string
           format: date-time
-        modified_at:
+        modifiedAt:
           type: string
           format: date-time
-        created_by:
+        createdBy:
           type: string
-        modified_by:
+        modifiedBy:
           type: string
 
     TenantResponse:
@@ -279,6 +276,15 @@ components:
 
     TenantActionResponse:
       $ref: "#/components/schemas/TenantActionData"
+
+    MessageData:
+      type: object
+      properties:
+        message:
+          type: string
+
+    MessageResponse:
+      $ref: "#/components/schemas/MessageData"
 
     ErrorData:
       type: object

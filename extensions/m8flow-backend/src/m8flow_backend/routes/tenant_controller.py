@@ -5,6 +5,19 @@ from m8flow_backend.services.tenant_service import TenantService
 from m8flow_backend.helpers.response_helper import success_response, handle_api_errors
 import uuid
 
+def _serialize_tenant(tenant):
+    """Serialize tenant model to camelCase dictionary."""
+    return {
+        "id": tenant.id,
+        "name": tenant.name,
+        "slug": tenant.slug,
+        "status": tenant.status,
+        "createdAt": tenant.created.isoformat() if tenant.created else None,
+        "modifiedAt": tenant.modified.isoformat() if tenant.modified else None,
+        "createdBy": tenant.created_by,
+        "modifiedBy": tenant.modified_by
+    }
+
 def _check_admin_permission():
     """Check if user has admin permission to manage tenants."""
     if not hasattr(g, "user") or not g.user:
@@ -31,7 +44,7 @@ def create_tenant(body):
     tenant_id = body.get('id', str(uuid.uuid4()))
     name = body.get('name')
     slug = body.get('slug')
-    status_str = body.get('status', 'ACTIVE')
+    status_str = "ACTIVE"
 
     tenant = TenantService.create_tenant(
         tenant_id=tenant_id,
@@ -41,7 +54,7 @@ def create_tenant(body):
         user_id=g.user.username
     )
     
-    return success_response(tenant, 201)
+    return success_response(_serialize_tenant(tenant), 201)
 
 
 @handle_api_errors
@@ -49,7 +62,7 @@ def get_tenant_by_id(tenant_id):
     """Fetch tenant by ID."""
     _check_admin_permission()
     tenant = TenantService.get_tenant_by_id(tenant_id)
-    return success_response(tenant, 200)
+    return success_response(_serialize_tenant(tenant), 200)
 
 
 @handle_api_errors
@@ -57,7 +70,7 @@ def get_tenant_by_slug(slug):
     """Fetch tenant by slug."""
     _check_admin_permission()
     tenant = TenantService.get_tenant_by_slug(slug)
-    return success_response(tenant, 200)
+    return success_response(_serialize_tenant(tenant), 200)
 
 
 @handle_api_errors
@@ -65,7 +78,7 @@ def get_all_tenants():
     """Fetch all tenants, excluding the default tenant."""
     _check_admin_permission()
     tenants = TenantService.get_all_tenants()
-    return success_response(tenants, 200)
+    return success_response([_serialize_tenant(t) for t in tenants], 200)
 
 @handle_api_errors
 def delete_tenant(tenant_id):
@@ -74,8 +87,7 @@ def delete_tenant(tenant_id):
     tenant = TenantService.delete_tenant(tenant_id, g.user.username)
     
     return success_response({
-        "message": f"Tenant '{tenant.name}' has been successfully deleted.",
-        "tenant": tenant
+        "message": f"Tenant '{tenant.name}' has been successfully deleted."
     }, 200)
 
 @handle_api_errors
@@ -99,5 +111,5 @@ def update_tenant(tenant_id, body):
     
     return success_response({
         "message": f"Tenant '{tenant.name}' has been successfully updated.",
-        "tenant": tenant
+        "tenant": _serialize_tenant(tenant)
     }, 200)
