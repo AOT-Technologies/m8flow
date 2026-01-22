@@ -30,9 +30,12 @@ def upgrade():
                   nullable=True,
                   server_default='ACTIVE'))
     
-    # Add created_at column (UTC timezone-aware)
-    op.add_column('m8flow_tenant', 
-        sa.Column('created_at', sa.DateTime(timezone=True), nullable=True, server_default=sa.text('now()')))
+    # Alter existing created_at column to add UTC timezone support
+    op.alter_column('m8flow_tenant', 'created_at',
+                    type_=sa.DateTime(timezone=True),
+                    existing_type=sa.DateTime(),
+                    existing_nullable=False,
+                    existing_server_default=sa.text('now()'))
     
     # Add modified_at column (UTC timezone-aware)
     op.add_column('m8flow_tenant', 
@@ -54,7 +57,6 @@ def upgrade():
     # Make columns non-nullable after backfill
     op.alter_column('m8flow_tenant', 'slug', nullable=False)
     op.alter_column('m8flow_tenant', 'status', nullable=False)
-    op.alter_column('m8flow_tenant', 'created_at', nullable=False)
     op.alter_column('m8flow_tenant', 'modified_at', nullable=False)
     op.alter_column('m8flow_tenant', 'created_by', nullable=False)
     op.alter_column('m8flow_tenant', 'modified_by', nullable=False)
@@ -87,7 +89,6 @@ def downgrade():
     op.drop_column('m8flow_tenant', 'modified_by')
     op.drop_column('m8flow_tenant', 'created_by')
     op.drop_column('m8flow_tenant', 'modified_at')
-    op.drop_column('m8flow_tenant', 'created_at')
     op.drop_column('m8flow_tenant', 'status')
     op.drop_column('m8flow_tenant', 'slug')
     # Drop the enum type
