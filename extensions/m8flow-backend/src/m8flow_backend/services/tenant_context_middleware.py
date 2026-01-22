@@ -18,7 +18,7 @@ from spiffworkflow_backend.models.db import db
 
 LOGGER = logging.getLogger(__name__)
 
-_DEFAULT_TENANT_CLAIM = "m8flow_tenant_id"
+TENANT_CLAIM = "m8flow_tenant_id"
 
 
 def resolve_request_tenant() -> None:
@@ -77,13 +77,12 @@ def _resolve_from_token_claim() -> str | None:
     token = _token_from_request()
     if not token:
         return None
-    claim = os.getenv("M8FLOW_TENANT_CLAIM", _DEFAULT_TENANT_CLAIM)
     try:
         decoded = AuthenticationService.parse_jwt_token(_authentication_identifier(), token)
     except Exception as exc:
         LOGGER.warning("Failed to decode token for tenant resolution: %s", exc)
         return None
-    return decoded.get(claim)
+    return decoded.get(TENANT_CLAIM)
 
 
 def _resolve_from_context_var() -> str | None:
