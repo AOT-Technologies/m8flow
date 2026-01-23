@@ -113,9 +113,6 @@ def apply() -> None:
         sys.modules[target] = module
 
     if getattr(sys.modules.get("spiffworkflow_backend"), "_m8flow_stub", False):
-        del sys.modules["spiffworkflow_backend"]
-
-    if getattr(sys.modules.get("spiffworkflow_backend"), "_m8flow_stub", False):
         sys.modules.pop("spiffworkflow_backend.models", None)
         sys.modules.pop("spiffworkflow_backend", None)
 

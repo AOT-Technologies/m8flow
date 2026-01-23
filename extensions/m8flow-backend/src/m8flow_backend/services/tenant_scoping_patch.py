@@ -334,9 +334,6 @@ def _set_postgres_tenant_context(session: Session, transaction: Any, connection:
     )
 
 
-from sqlalchemy import event
-from sqlalchemy.orm import Session
-
 _SCOPING_LISTENER_REGISTERED = False
 
 def apply() -> None:
