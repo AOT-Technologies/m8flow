@@ -1,0 +1,298 @@
+openapi: "3.0.2"
+info:
+  version: 1.0.0
+  title: m8flow-backend-extension
+paths:
+  /create-tenant:
+    post:
+      summary: Create a new tenant
+      operationId: m8flow_backend.routes.tenant_controller.create_tenant
+      tags:
+        - Tenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTenantRequest"
+      responses:
+        "201":
+          description: Tenant created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantResponse"
+        "400":
+          description: Bad request - missing required fields
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Conflict - tenant with ID or slug already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /tenants/slug/{slug}:
+    get:
+      summary: Get tenant by slug
+      operationId: m8flow_backend.routes.tenant_controller.get_tenant_by_slug
+      tags:
+        - Tenant
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Human-readable slug identifier of the tenant
+      responses:
+        "200":
+          description: Tenant retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Forbidden - cannot access default tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Tenant not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /tenants:
+    get:
+      summary: Get all tenants
+      operationId: m8flow_backend.routes.tenant_controller.get_all_tenants
+      tags:
+        - Tenant
+      responses:
+        "200":
+          description: List of all tenants
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantListResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /tenants/{tenant_id}:
+    get:
+      summary: Get tenant by ID
+      operationId: m8flow_backend.routes.tenant_controller.get_tenant_by_id
+      tags:
+        - Tenant
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique identifier of the tenant
+      responses:
+        "200":
+          description: Tenant retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Forbidden - cannot access default tenant
+        "404":
+          description: Tenant not found
+
+    put:
+      summary: Update a tenant
+      description: Updates tenant name and/or status. Slug cannot be updated. Cannot update DELETED tenants.
+      operationId: m8flow_backend.routes.tenant_controller.update_tenant
+      tags:
+        - Tenant
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique identifier of the tenant to update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: New name for the tenant
+                status:
+                  type: string
+                  enum: [ACTIVE, INACTIVE, DELETED]
+                  description: New status for the tenant
+              example:
+                name: "Updated Tenant Name"
+                status: "ACTIVE"
+      responses:
+        "200":
+          description: Tenant updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          description: Bad request - no fields to update, slug update attempted, tenant is deleted, or invalid status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Forbidden - cannot update default tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Tenant not found
+        "500":
+          description: Internal server error
+
+    delete:
+      summary: Soft delete a tenant
+      description: Sets the tenant status to DELETED without removing from database
+      operationId: m8flow_backend.routes.tenant_controller.delete_tenant
+      tags:
+        - Tenant
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique identifier of the tenant to delete
+      responses:
+        "200":
+          description: Tenant soft deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          description: Bad request - tenant already deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Forbidden - cannot delete default tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Tenant not found
+        "500":
+          description: Internal server error
+
+components:
+  schemas:
+    CreateTenantRequest:
+      type: object
+      required:
+        - name
+        - slug
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+
+    Tenant:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        modifiedAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+        modifiedBy:
+          type: string
+
+    TenantResponse:
+      $ref: "#/components/schemas/Tenant"
+
+    TenantListResponse:
+      type: array
+      items:
+        $ref: "#/components/schemas/Tenant"
+
+    TenantActionData:
+      type: object
+      properties:
+        message:
+          type: string
+        tenant:
+          $ref: "#/components/schemas/Tenant"
+
+    TenantActionResponse:
+      $ref: "#/components/schemas/TenantActionData"
+
+    MessageData:
+      type: object
+      properties:
+        message:
+          type: string
+
+    MessageResponse:
+      $ref: "#/components/schemas/MessageData"
+
+    ErrorData:
+      type: object
+      properties:
+        error_code:
+          type: string
+        message:
+          type: string
+
+    ErrorResponse:
+      $ref: "#/components/schemas/ErrorData"
