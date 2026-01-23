@@ -110,6 +110,5 @@ def update_tenant(tenant_id, body):
     )
     
     return success_response({
-        "message": f"Tenant '{tenant.name}' has been successfully updated.",
-        "tenant": _serialize_tenant(tenant)
+        "message": f"Tenant '{tenant.name}' has been successfully updated."
     }, 200)

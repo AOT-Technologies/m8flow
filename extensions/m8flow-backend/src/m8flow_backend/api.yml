@@ -161,7 +161,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/TenantActionResponse"
+                $ref: "#/components/schemas/MessageResponse"
         "400":
           description: Bad request - no fields to update, slug update attempted, tenant is deleted, or invalid status
           content:
