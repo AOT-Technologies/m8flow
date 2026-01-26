@@ -4,7 +4,7 @@ from flask import Flask, g
 
 from spiffworkflow_backend.models.db import db
 from spiffworkflow_backend.exceptions.api_error import ApiError
-from m8flow_backend.services.tenant_context_middleware import resolve_request_tenant
+from m8flow_backend.services.tenant_context_middleware import resolve_request_tenant, teardown_request_tenant_context
 
 
 def _make_app() -> Flask:
@@ -17,6 +17,7 @@ def _make_app() -> Flask:
     app.config["SPIFFWORKFLOW_BACKEND_USE_AUTH_FOR_METRICS"] = False
     app.config["SECRET_KEY"] = "test-secret"
     db.init_app(app)
+    app.teardown_request(teardown_request_tenant_context)
     app.add_url_rule("/test", "test_endpoint", lambda: "ok")
     return app
 
@@ -128,14 +129,10 @@ def test_tenant_override_forbidden() -> None:
 
 
 def test_tenant_context_propagates_to_queries(monkeypatch) -> None:
-    monkeypatch.setenv("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", "true")
-
-    # Import tenant_scoping_patch so its SQLAlchemy event listeners register.
     from m8flow_backend.services import tenant_scoping_patch  # noqa: F401
     from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScoped
-    from m8flow_backend.tenancy import reset_context_tenant_id, set_context_tenant_id
     tenant_scoping_patch.apply()
-    
+
     class TestItem(M8fTenantScopedMixin, TenantScoped, db.Model):
         __tablename__ = "m8f_test_item"
         id = db.Column(db.Integer, primary_key=True)
@@ -143,34 +140,40 @@ def test_tenant_context_propagates_to_queries(monkeypatch) -> None:
 
     app = _make_app()
 
+    # Create tiny endpoints so we exercise the *real* request lifecycle (teardown included).
+    @app.get("/add/<name>")
+    def _add(name: str) -> str:
+        resolve_request_tenant()
+        db.session.add(TestItem(name=name))
+        db.session.commit()
+        return "ok"
+
+    @app.get("/list")
+    def _list() -> str:
+        resolve_request_tenant()
+        rows = TestItem.query.order_by(TestItem.name).all()
+        return ",".join([r.name for r in rows])
+
     with app.app_context():
+        from spiffworkflow_backend.models.user import UserModel
+
         db.drop_all()
         db.create_all()
         _seed_tenants()
-        
-        token_a = set_context_tenant_id("tenant-a")
-        try:
-            with app.test_request_context("/test"):
-                resolve_request_tenant()
-                db.session.add(TestItem(name="A"))
-                db.session.commit()
-        finally:
-            reset_context_tenant_id(token_a)
 
-        token_b = set_context_tenant_id("tenant-b")
-        try:
-            with app.test_request_context("/test"):
-                resolve_request_tenant()
-                db.session.add(TestItem(name="B"))
-                db.session.commit()
-        finally:
-            reset_context_tenant_id(token_b)
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.flush()
 
-        token_a2 = set_context_tenant_id("tenant-a")
-        try:
-            with app.test_request_context("/test"):
-                resolve_request_tenant()
-                rows = TestItem.query.order_by(TestItem.name).all()
-                assert [r.name for r in rows] == ["A"]
-        finally:
-            reset_context_tenant_id(token_a2)
+        token_tenant_a = user.encode_auth_token({"m8flow_tenant_id": "tenant-a"})
+        token_tenant_b = user.encode_auth_token({"m8flow_tenant_id": "tenant-b"})
+        db.session.commit()
+
+    client = app.test_client()
+
+    client.get("/add/A", headers={"Authorization": f"Bearer {token_tenant_a}"})
+    client.get("/add/B", headers={"Authorization": f"Bearer {token_tenant_b}"})
+
+    resp = client.get("/list", headers={"Authorization": f"Bearer {token_tenant_a}"})
+    assert resp.get_data(as_text=True) == "A"
+

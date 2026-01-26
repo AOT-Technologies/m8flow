@@ -17,12 +17,19 @@ for p in (extension_src, backend_src):
 
 
 @pytest.fixture(autouse=True)
+def _reset_tenant_context_between_tests():
+    from m8flow_backend.tenancy import clear_tenant_context
+    clear_tenant_context()
+    yield
+    clear_tenant_context()
+
+
+@pytest.fixture(autouse=True)
 def _reset_tenant_scoping_patch():
     from m8flow_backend.services import tenant_scoping_patch
-    try:
-        yield
-    finally:
-        tenant_scoping_patch.reset()
+    tenant_scoping_patch.reset()
+    yield
+    tenant_scoping_patch.reset()
 
 
 def pytest_configure(config):
