@@ -1,10 +1,17 @@
 # extensions/m8flow-backend/tests/unit/m8flow_backend/services/test_tenant_context_middleware.py
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
 import pytest
 from flask import Flask, g
 
-from spiffworkflow_backend.models.db import db
 from spiffworkflow_backend.exceptions.api_error import ApiError
-from m8flow_backend.services.tenant_context_middleware import resolve_request_tenant, teardown_request_tenant_context
+from spiffworkflow_backend.models.db import db
+from m8flow_backend.services.tenant_context_middleware import (
+    resolve_request_tenant,
+    teardown_request_tenant_context,
+)
 
 
 def _make_app() -> Flask:
@@ -16,19 +23,66 @@ def _make_app() -> Flask:
     app.config["SPIFFWORKFLOW_BACKEND_URL"] = "http://localhost"
     app.config["SPIFFWORKFLOW_BACKEND_USE_AUTH_FOR_METRICS"] = False
     app.config["SECRET_KEY"] = "test-secret"
+
     db.init_app(app)
+
+    # Ensure ContextVar is reset between requests (including test_client requests).
     app.teardown_request(teardown_request_tenant_context)
+
+    # A simple endpoint so test_request_context has a route.
     app.add_url_rule("/test", "test_endpoint", lambda: "ok")
     return app
+
+
+@pytest.fixture(autouse=True)
+def _clean_env():
+    """
+    Prevent env leakage between tests, since tenant resolution behavior
+    is controlled by M8FLOW_ALLOW_MISSING_TENANT_CONTEXT.
+    """
+    import os
+
+    old = os.environ.get("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT")
+    os.environ.pop("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", None)
+    yield
+    if old is None:
+        os.environ.pop("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", None)
+    else:
+        os.environ["M8FLOW_ALLOW_MISSING_TENANT_CONTEXT"] = old
 
 
 def _seed_tenants() -> None:
     from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
 
-    db.session.add(M8flowTenantModel(id="default", name="Default"))
-    db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
-    db.session.add(M8flowTenantModel(id="tenant-b", name="Tenant B"))
+    db.session.add(
+        M8flowTenantModel(
+            id="default",
+            name="Default",
+            slug="default",
+            created_by="test",
+            modified_by="test",
+        )
+    )
+    db.session.add(
+        M8flowTenantModel(
+            id="tenant-a",
+            name="Tenant A",
+            slug="tenant-a",
+            created_by="test",
+            modified_by="test",
+        )
+    )
+    db.session.add(
+        M8flowTenantModel(
+            id="tenant-b",
+            name="Tenant B",
+            slug="tenant-b",
+            created_by="test",
+            modified_by="test",
+        )
+    )
     db.session.commit()
+
 
 
 def test_resolves_tenant_from_jwt_claim() -> None:
@@ -39,7 +93,12 @@ def test_resolves_tenant_from_jwt_claim() -> None:
         db.create_all()
         _seed_tenants()
 
-        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        user = UserModel(
+            username="tester",
+            email="tester@example.com",
+            service="local",
+            service_id="tester",
+        )
         db.session.add(user)
         db.session.flush()
 
@@ -52,10 +111,6 @@ def test_resolves_tenant_from_jwt_claim() -> None:
 
 
 def test_missing_tenant_raises_by_default() -> None:
-    import os
-
-    os.environ.pop("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", None)
-
     app = _make_app()
     with app.app_context():
         db.create_all()
@@ -81,9 +136,6 @@ def test_missing_tenant_defaults_when_allowed() -> None:
             resolve_request_tenant()
             assert g.m8flow_tenant_id == "default"
 
-    os.environ.pop("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", None)
-
-
 
 def test_invalid_tenant_raises() -> None:
     from spiffworkflow_backend.models.user import UserModel
@@ -93,7 +145,12 @@ def test_invalid_tenant_raises() -> None:
         db.create_all()
         _seed_tenants()
 
-        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        user = UserModel(
+            username="tester",
+            email="tester@example.com",
+            service="local",
+            service_id="tester",
+        )
         db.session.add(user)
         db.session.flush()
 
@@ -114,7 +171,12 @@ def test_tenant_override_forbidden() -> None:
         db.create_all()
         _seed_tenants()
 
-        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        user = UserModel(
+            username="tester",
+            email="tester@example.com",
+            service="local",
+            service_id="tester",
+        )
         db.session.add(user)
         db.session.flush()
 
@@ -128,9 +190,10 @@ def test_tenant_override_forbidden() -> None:
             assert exc.value.error_code == "tenant_override_forbidden"
 
 
-def test_tenant_context_propagates_to_queries(monkeypatch) -> None:
-    from m8flow_backend.services import tenant_scoping_patch  # noqa: F401
+def test_tenant_context_propagates_to_queries() -> None:
     from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScoped
+    from m8flow_backend.services import tenant_scoping_patch
+
     tenant_scoping_patch.apply()
 
     class TestItem(M8fTenantScopedMixin, TenantScoped, db.Model):
@@ -140,7 +203,7 @@ def test_tenant_context_propagates_to_queries(monkeypatch) -> None:
 
     app = _make_app()
 
-    # Create tiny endpoints so we exercise the *real* request lifecycle (teardown included).
+    # Exercise the real lifecycle (including teardown_request reset of ContextVar)
     @app.get("/add/<name>")
     def _add(name: str) -> str:
         resolve_request_tenant()
@@ -161,7 +224,12 @@ def test_tenant_context_propagates_to_queries(monkeypatch) -> None:
         db.create_all()
         _seed_tenants()
 
-        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        user = UserModel(
+            username="tester",
+            email="tester@example.com",
+            service="local",
+            service_id="tester",
+        )
         db.session.add(user)
         db.session.flush()
 
@@ -176,4 +244,3 @@ def test_tenant_context_propagates_to_queries(monkeypatch) -> None:
 
     resp = client.get("/list", headers={"Authorization": f"Bearer {token_tenant_a}"})
     assert resp.get_data(as_text=True) == "A"
-
