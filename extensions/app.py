@@ -38,6 +38,7 @@ from sqlalchemy import create_engine
 
 # Configure the database engine for spiffworkflow_backend.
 create_engine(os.environ["SPIFFWORKFLOW_BACKEND_DATABASE_URI"], pool_pre_ping=True)
+from m8flow_backend.routes.templates_controller import templates_blueprint
 
 
 def _env_truthy(value: str | None) -> bool:
@@ -72,6 +73,14 @@ _configure_sql_echo(flask_app)
 # Testing hook for tenant selection; replace with JWT-based tenant context.
 # curl -H "M8Flow-Tenant-Id: tenant-a" http://localhost:8000/v1/process-models
 # curl -H "M8Flow-Tenant-Id: tenant-b" http://localhost:8000/v1/process-models
+# Configure M8Flow templates storage directory
+import os
+m8flow_templates_dir = os.environ.get("M8FLOW_TEMPLATES_STORAGE_DIR")
+if m8flow_templates_dir:
+    flask_app.config["M8FLOW_TEMPLATES_STORAGE_DIR"] = m8flow_templates_dir
+    logger.info(f"M8FLOW_TEMPLATES_STORAGE_DIR configured: {m8flow_templates_dir}")
+
+# TODO: Use tenant id from JWT token instead of request headers when tenant context auth is implemented
 def load_tenant():
     """Load tenant ID from request headers into Flask 'g' context."""
     logger.info("Loading tenant ID from request headers")
@@ -87,6 +96,9 @@ def load_tenant():
 if None not in flask_app.before_request_funcs:
     flask_app.before_request_funcs[None] = []
 flask_app.before_request_funcs[None].insert(0, load_tenant)
+
+# Register extension blueprints
+flask_app.register_blueprint(templates_blueprint)
 
 # Expose the Connexion app
 app = cnx_app

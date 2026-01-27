@@ -4,7 +4,7 @@
  * Provides access to HttpService methods for extension components
  */
 
-import HttpService from '@spiffworkflow-frontend/services/HttpService';
+import HttpService from '../services/HttpService';
 
 /**
  * useApi - Hook to access API methods

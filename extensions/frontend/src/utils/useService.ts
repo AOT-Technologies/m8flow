@@ -4,7 +4,7 @@
  * Provides access to services like UserService
  */
 
-import UserService from '@spiffworkflow-frontend/services/UserService';
+import UserService from '../services/UserService';
 
 /**
  * useService - Get services from core
