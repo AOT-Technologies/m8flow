@@ -74,6 +74,10 @@ def _is_public_path(scope) -> bool:
 
 
 class AsgiTenantContextMiddleware:
+    """
+    ASGI middleware to set tenant context based on request.
+    Inspects Authorization header and access_token cookie for JWT tokens
+    """
     def __init__(self, app: Callable):
         self.app = app
 

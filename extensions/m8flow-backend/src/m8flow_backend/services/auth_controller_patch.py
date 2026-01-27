@@ -6,6 +6,7 @@ from m8flow_backend.services.tenant_context_middleware import resolve_request_te
 _PATCHED = False
 
 def apply() -> None:
+    """Patch the authentication controller to resolve tenant after auth."""
     global _PATCHED
     if _PATCHED:
         return

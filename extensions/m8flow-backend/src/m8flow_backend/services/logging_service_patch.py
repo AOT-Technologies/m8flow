@@ -12,7 +12,8 @@ _ORIGINAL_SETUP = None
 
 
 def _resolve_tenant_id_for_logging(record: logging.LogRecord) -> str:
-    # 1) Normal Flask request logs (your app code)
+    """Resolve tenant id for logging purposes."""
+    # 1) Normal Flask request logs
     if has_request_context():
         tid = getattr(g, "m8flow_tenant_id", None)
         if tid:
@@ -20,11 +21,10 @@ def _resolve_tenant_id_for_logging(record: logging.LogRecord) -> str:
         return get_context_tenant_id() or DEFAULT_TENANT_ID
 
     # 2) Uvicorn access logs: these are emitted by uvicorn, outside Flask context.
-    # If you want them to show "default" instead of "system", force it here.
     if record.name == "uvicorn.access":
         return get_context_tenant_id() or DEFAULT_TENANT_ID
 
-    # 3) Any other “request-ish” background where you still want default
+    # 3) Any other “request-ish” background where we may still want default
     if is_request_active():
         return get_context_tenant_id() or DEFAULT_TENANT_ID
 
@@ -71,6 +71,7 @@ def _apply_formatter_to_all_handlers(log_formatter: logging.Formatter) -> None:
 
 
 def apply() -> None:
+    """Patch logging service to include tenant context in logs."""
     global _PATCHED, _ORIGINAL_SETUP
     if _PATCHED:
         return
