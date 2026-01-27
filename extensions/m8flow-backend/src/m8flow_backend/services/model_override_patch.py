@@ -93,6 +93,9 @@ def apply() -> None:
     if _PATCHED:
         return
 
+    from m8flow_backend.services.spiff_config_patch import apply as apply_spiff_config_patch
+    apply_spiff_config_patch()
+
     existing = sys.modules.get("spiffworkflow_backend")
     if existing and not getattr(existing, "_m8flow_stub", False):
         _clear_spiffworkflow_modules()
@@ -108,9 +111,6 @@ def apply() -> None:
     for target, source in _OVERRIDES.items():
         module = importlib.import_module(source)
         sys.modules[target] = module
-
-    if getattr(sys.modules.get("spiffworkflow_backend"), "_m8flow_stub", False):
-        del sys.modules["spiffworkflow_backend"]
 
     if getattr(sys.modules.get("spiffworkflow_backend"), "_m8flow_stub", False):
         sys.modules.pop("spiffworkflow_backend.models", None)
