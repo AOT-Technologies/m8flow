@@ -13,6 +13,7 @@ from spiffworkflow_backend.services.authorization_service import AuthorizationSe
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
 from m8flow_backend.tenancy import (
     DEFAULT_TENANT_ID,
+    PUBLIC_PATH_PREFIXES,
     allow_missing_tenant_context,
     get_context_tenant_id,
     reset_context_tenant_id,
@@ -23,15 +24,6 @@ from spiffworkflow_backend.models.db import db
 LOGGER = logging.getLogger(__name__)
 
 TENANT_CLAIM = "m8flow_tenant_id"
-
-_PUBLIC_PATH_PREFIXES: tuple[str, ...] = (
-    "/v1.0/status",
-    "/v1.0/openapi.json",
-    "/v1.0/openapi.yaml",
-    "/v1.0/ui",
-    "/v1.0/static",
-)
-
 
 def resolve_request_tenant() -> None:
     """
@@ -119,7 +111,7 @@ def _is_public_request() -> bool:
         path = getattr(request, "path", "") or ""
     except Exception:
         return False
-    return any(path.startswith(p) for p in _PUBLIC_PATH_PREFIXES)
+    return any(path.startswith(p) for p in PUBLIC_PATH_PREFIXES)
 
 
 def _resolve_tenant_id() -> Optional[str]:

@@ -6,7 +6,7 @@ import json
 from http.cookies import SimpleCookie
 from typing import Callable, Optional
 
-from m8flow_backend.tenancy import set_context_tenant_id, reset_context_tenant_id
+from m8flow_backend.tenancy import PUBLIC_PATH_PREFIXES, set_context_tenant_id, reset_context_tenant_id
 
 TENANT_CLAIM = "m8flow_tenant_id"
 
@@ -68,17 +68,9 @@ def _extract_tenant(scope) -> Optional[str]:
     return None
 
 
-_PUBLIC_PATH_PREFIXES: tuple[str, ...] = (
-    "/v1.0/status",
-    "/v1.0/openapi.json",
-    "/v1.0/openapi.yaml",
-    "/v1.0/ui",
-)
-
-
 def _is_public_path(scope) -> bool:
     path = scope.get("path") or ""
-    return any(path.startswith(p) for p in _PUBLIC_PATH_PREFIXES)
+    return any(path.startswith(p) for p in PUBLIC_PATH_PREFIXES)
 
 
 class AsgiTenantContextMiddleware:
