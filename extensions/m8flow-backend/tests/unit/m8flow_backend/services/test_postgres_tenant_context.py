@@ -60,14 +60,13 @@ def test_postgres_sets_tenant_context_from_background() -> None:
     assert connection.calls == [("SET LOCAL app.current_tenant = %s", ("tenant-b",))]
 
 
-def test_postgres_missing_tenant_resets_when_allowed() -> None:
-    os.environ["M8FLOW_ALLOW_MISSING_TENANT_CONTEXT"] = "true"
+def test_postgres_missing_tenant_defaults_to_default_when_allowed(monkeypatch) -> None:
+    monkeypatch.setenv("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", "true")
     connection = FakeConnection("postgresql")
 
     tenant_scoping_patch._set_postgres_tenant_context(None, None, connection)
 
-    assert connection.calls == [("RESET app.current_tenant", None)]
-    os.environ.pop("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", None)
+    assert connection.calls == [("SET LOCAL app.current_tenant = %s", ("default",))]
 
 
 def test_postgres_missing_tenant_raises() -> None:
