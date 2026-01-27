@@ -198,4 +198,4 @@ def _authentication_identifier() -> str:
     if header_identifier:
         return header_identifier
 
-    return "default"
+    return DEFAULT_TENANT_ID
