@@ -18,6 +18,7 @@ from m8flow_backend.tenancy import (
     allow_missing_tenant_context,
     get_context_tenant_id,
     get_tenant_id,
+    is_public_request,
 )
 
 _ORIGINALS: dict[str, Any] = {}
@@ -40,6 +41,8 @@ def _with_tenant(values: Mapping[str, Any] | Sequence[Mapping[str, Any]], tenant
 
 def _set_tenant_on_objects(objects: Sequence[Any]) -> None:
     """Set tenant id on objects if missing."""
+    if is_public_request():
+        return
     tenant_id = get_tenant_id()
     for obj in objects:
         if hasattr(obj, "m8f_tenant_id") and not getattr(obj, "m8f_tenant_id"):
@@ -76,6 +79,10 @@ def _patch_insert_or_ignore_duplicate() -> None:
     ) -> Any:
         """Insert record(s), ignoring duplicates, with tenant scoping."""
         if isinstance(model_class, type) and issubclass(model_class, TenantScoped):
+            if is_public_request():
+                return _ORIGINALS["insert_or_ignore_duplicate"](
+                    model_class, values, postgres_conflict_index_elements
+                )
             tenant_id = get_tenant_id()
             values_with_tenant = _with_tenant(values, tenant_id)
             conflict_elements = list(postgres_conflict_index_elements)
@@ -98,6 +105,8 @@ def _patch_task_draft_data() -> None:
 
     def patched_insert_or_update_task_draft_data_dict(task_draft_data_dict: dict[str, Any]) -> None:
         task_draft_data_dict = dict(task_draft_data_dict)
+        if is_public_request():
+            return _ORIGINALS["task_draft_data_insert"](task_draft_data_dict)
         if not task_draft_data_dict.get("m8f_tenant_id"):
             task_draft_data_dict["m8f_tenant_id"] = get_tenant_id()
         return _ORIGINALS["task_draft_data_insert"](task_draft_data_dict)
@@ -121,6 +130,8 @@ def _patch_task_instructions() -> None:
         from spiffworkflow_backend.models.db import db
         from m8flow_backend.models.task_instructions_for_end_user import TaskInstructionsForEndUserModel
 
+        if is_public_request():
+            return _ORIGINALS["task_instructions_insert"](task_guid, process_instance_id, instruction)
         tenant_id = get_tenant_id()
         record = [
             {
@@ -169,6 +180,8 @@ def _patch_future_task() -> None:
         from sqlalchemy.dialects.sqlite import insert as sqlite_insert
         import time
 
+        if is_public_request():
+            return _ORIGINALS["future_task_insert"](guid, run_at_in_seconds, queued_to_run_at_in_seconds)
         tenant_id = get_tenant_id()
         task_info: dict[str, int | str | None] = {
             "guid": guid,
@@ -215,6 +228,10 @@ def _patch_process_caller_relationship() -> None:
         from sqlalchemy.dialects.mysql import insert as mysql_insert
         from sqlalchemy.dialects.postgresql import insert as postgres_insert
 
+        if is_public_request():
+            return _ORIGINALS["process_caller_relationship_insert"](
+                called_reference_cache_process_id, calling_reference_cache_process_id
+            )
         tenant_id = get_tenant_id()
         caller_info = {
             "called_reference_cache_process_id": called_reference_cache_process_id,
@@ -253,6 +270,8 @@ def _patch_reference_cache_basic_query() -> None:
     _ORIGINALS["reference_cache_basic_query"] = ReferenceCacheModel.basic_query
 
     def patched_basic_query(cls: type) -> Any:
+        if is_public_request():
+            return _ORIGINALS["reference_cache_basic_query"](cls)
         tenant_id = get_tenant_id()
         max_generation_id = (
             db.session.query(db.func.max(ReferenceCacheModel.generation_id))
@@ -270,6 +289,8 @@ def _patch_reference_cache_basic_query() -> None:
 @event.listens_for(Session, "before_flush")  # type: ignore[misc]
 def _set_tenant_on_flush(session: Session, _flush_context: Any, _instances: Any) -> None:
     """Set tenant id on objects if missing."""
+    if is_public_request():
+        return
     for obj in session.new:
         if hasattr(obj, "m8f_tenant_id") and not getattr(obj, "m8f_tenant_id"):
             setattr(obj, "m8f_tenant_id", get_tenant_id())
@@ -277,6 +298,8 @@ def _set_tenant_on_flush(session: Session, _flush_context: Any, _instances: Any)
 
 def _tenant_scope_queries(execute_state: Any) -> None:
     """Apply tenant scoping to all queries for TenantScoped models."""
+    if is_public_request():
+        return
     if not execute_state.is_select:
         return
 
@@ -324,6 +347,8 @@ def _resolve_tenant_id_for_db() -> str:
 
 @event.listens_for(Session, "after_begin")  # type: ignore[misc]
 def _set_postgres_tenant_context(session: Session, transaction: Any, connection: Any) -> None:
+    if is_public_request():
+        return
     if connection.dialect.name != "postgresql":
         return
 
