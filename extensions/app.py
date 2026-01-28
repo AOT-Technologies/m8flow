@@ -83,6 +83,7 @@ def _env_truthy(value: str | None) -> bool:
         return False
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
+
 def _configure_sql_echo(app) -> None:
     """Configure SQLAlchemy echo based on environment variable."""
     enable_sql_echo = _env_truthy(os.environ.get("M8FLOW_SQLALCHEMY_ECHO"))
@@ -199,6 +200,19 @@ def _assert_db_engine_bound(app: Flask) -> None:
         assert db.engine is not None, "db.engine is not initialized/bound inside app_context."
 
 
+def _m8flow_startup(app: Flask) -> None:
+    """Run m8flow startup tasks at process startup (not request-time)."""
+    # Make sure everything flows through root (uvicorn-log.yaml formatter/filter)
+    _strip_all_non_root_handlers()
+    _force_root_logging_for(("spiffworkflow_backend", "spiff", "alembic"))
+
+    # Ensure db is bound before migrating (defensive)
+    _assert_db_engine_bound(app)
+
+    # Run migrations now (no request needed)
+    upgrade_m8flow_db()
+
+
 _register_request_active_hooks(flask_app)
 _register_request_tenant_context_hooks(flask_app)
 
@@ -206,23 +220,8 @@ _register_request_tenant_context_hooks(flask_app)
 _assert_model_identity()
 _assert_db_engine_bound(flask_app)
 
-_started = False
-
-def _m8flow_startup_once():
-    global _started
-    if _started:
-        return
-    _started = True
-
-    # Make sure everything flows through root (uvicorn-log.yaml formatter/filter)
-    _strip_all_non_root_handlers()
-    _force_root_logging_for(("spiffworkflow_backend", "spiff", "alembic"))
-
-    # Run migrations once, at first request
-    upgrade_m8flow_db()
-
-# Run startup once on the first incoming request
-flask_app.before_request(_m8flow_startup_once)
+# Run migrations at startup (regardless of requests)
+_m8flow_startup(flask_app)
 
 if flask_app is None:
     raise RuntimeError("Could not access underlying Flask app from Connexion app")
@@ -248,9 +247,6 @@ cnx_app = AsgiTenantContextMiddleware(cnx_app)
 
 # Expose the Connexion app
 app = cnx_app
-
-from spiffworkflow_backend.models.db import db
-import logging
 
 logging.getLogger(__name__).warning(
     "Registered tables AFTER create_app: %s",

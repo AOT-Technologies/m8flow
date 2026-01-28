@@ -14,6 +14,7 @@ DEFAULT_TENANT_ID = os.getenv("M8FLOW_DEFAULT_TENANT_ID", "default")
 
 PUBLIC_PATH_PREFIXES: tuple[str, ...] = (
     "/v1.0/status",
+    "/favicon.ico",
     "/v1.0/openapi.json",
     "/v1.0/openapi.yaml",
     "/v1.0/ui",
