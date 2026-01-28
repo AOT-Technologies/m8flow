@@ -45,11 +45,11 @@ class TemplateAuthorizationService:
         if template.created_by == user.username and not template.is_published:
             return True
 
-        # Admin/editor role check (reuse authorization service with a coarse permission)
+        # Permission check (Spiff permissions are CRUD: create/read/update/delete).
+        # TODO(RBAC): once m8flow has role-based permissions (e.g. admin/editor), map roles -> CRUD
+        # for templates and/or add a dedicated role-aware check here.
         try:
-            if AuthorizationService.user_has_permission(user, "admin", "/templates"):
-                return True
-            if AuthorizationService.user_has_permission(user, "editor", "/templates"):
+            if AuthorizationService.user_has_permission(user, "update", f"/templates/{template.id}"):
                 return True
         except Exception:
             # Fallback to owner-only if permission system is not configured for templates
