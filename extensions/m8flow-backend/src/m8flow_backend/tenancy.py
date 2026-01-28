@@ -13,12 +13,15 @@ LOGGER = logging.getLogger(__name__)
 DEFAULT_TENANT_ID = os.getenv("M8FLOW_DEFAULT_TENANT_ID", "default")
 
 PUBLIC_PATH_PREFIXES: tuple[str, ...] = (
-    "/v1.0/status",
     "/favicon.ico",
+    "/v1.0/status",
     "/v1.0/openapi.json",
     "/v1.0/openapi.yaml",
     "/v1.0/ui",
     "/v1.0/static",
+    "/v1.0/logout",
+    "/v1.0/authentication-options",
+    "/v1.0/login"
 )
 
 _CONTEXT_TENANT_ID: ContextVar[Optional[str]] = ContextVar("m8flow_tenant_id", default=None)
