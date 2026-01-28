@@ -31,8 +31,25 @@ def test_tenant_scopes_process_instances() -> None:
 
         spiff_db.create_all()
 
-        spiff_db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
-        spiff_db.session.add(M8flowTenantModel(id="tenant-b", name="Tenant B"))
+        spiff_db.session.add(
+            M8flowTenantModel(
+                id="tenant-a",
+                name="Tenant A",
+                slug="tenant-a",
+                created_by="test",
+                modified_by="test",
+            )
+        )
+        spiff_db.session.add(
+            M8flowTenantModel(
+                id="tenant-b",
+                name="Tenant B",
+                slug="tenant-b",
+                created_by="test",
+                modified_by="test",
+            )
+        )
+
 
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         spiff_db.session.add(user)

@@ -1,4 +1,4 @@
-from logging.config import fileConfig
+import logging
 import os
 from pathlib import Path
 import sys
@@ -24,21 +24,24 @@ import spiffworkflow_backend.load_database_models  # noqa: F401
 from spiffworkflow_backend.models.db import db
 
 config = context.config
-fileConfig(config.config_file_name)
+
+# IMPORTANT: Do not call fileConfig(config.config_file_name).
+# Let the app's logging configuration (uvicorn-log.yaml) control formatting.
+for name in ("alembic", "alembic.runtime.migration"):
+    lg = logging.getLogger(name)
+    lg.handlers = []
+    lg.propagate = True
 
 target_metadata = db.Model.metadata
 
 
 def get_url():
     """Get the database URL from environment variables."""
-    url = os.environ.get("SPIFFWORKFLOW_BACKEND_DATABASE_URI") or os.environ.get(
-        "M8FLOW_DATABASE_URI"
-    )
+    url = os.environ.get("SPIFFWORKFLOW_BACKEND_DATABASE_URI") or os.environ.get("M8FLOW_DATABASE_URI")
     if not url:
-        raise RuntimeError(
-            "Set SPIFFWORKFLOW_BACKEND_DATABASE_URI or M8FLOW_DATABASE_URI for Alembic."
-        )
+        raise RuntimeError("Set SPIFFWORKFLOW_BACKEND_DATABASE_URI or M8FLOW_DATABASE_URI for Alembic.")
     return url
+
 
 def run_migrations_online():
     """Run migrations in 'online' mode."""
@@ -58,5 +61,6 @@ def run_migrations_online():
 
         with context.begin_transaction():
             context.run_migrations()
+
 
 run_migrations_online()

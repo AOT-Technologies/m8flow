@@ -1,6 +1,7 @@
 # extensions/m8flow-backend/tests/unit/m8flow_backend/services/conftest.py
 import importlib
 import pytest
+from flask import Flask
 
 from m8flow_backend.services import file_system_service_patch as patch
 from m8flow_backend.services import tenant_scoping_patch
@@ -35,3 +36,10 @@ def _isolate_tenant_scoping_patch():
         yield
     finally:
         tenant_scoping_patch.reset()
+
+
+@pytest.fixture()
+def app() -> Flask:
+    app = Flask(__name__)
+    app.config["TESTING"] = True
+    return app

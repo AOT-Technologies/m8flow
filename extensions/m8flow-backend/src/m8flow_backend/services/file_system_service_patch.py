@@ -6,7 +6,8 @@ from flask import current_app, g, has_request_context
 from m8flow_backend.tenancy import (
     DEFAULT_TENANT_ID,
     allow_missing_tenant_context,
-    get_context_tenant_id,   # <-- add this
+    get_context_tenant_id,
+    is_public_request,
 )
 
 _ORIGINALS: Dict[str, Any] = {}
@@ -14,6 +15,14 @@ _PATCHED = False
 
 def _get_tenant_id() -> str:
     """Get the current tenant id from context."""
+    if is_public_request():
+        tid: Optional[str] = getattr(g, "m8flow_tenant_id", None)
+        if tid:
+            return tid
+        if allow_missing_tenant_context():
+            return DEFAULT_TENANT_ID
+        raise RuntimeError("Missing tenant id in request context.")
+
     # 1) HTTP request path: must be set by middleware (strict)
     if has_request_context():
         tid: Optional[str] = getattr(g, "m8flow_tenant_id", None)
