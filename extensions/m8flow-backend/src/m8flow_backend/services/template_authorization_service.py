@@ -49,7 +49,7 @@ class TemplateAuthorizationService:
         # TODO(RBAC): once m8flow has role-based permissions (e.g. admin/editor), map roles -> CRUD
         # for templates and/or add a dedicated role-aware check here.
         try:
-            if AuthorizationService.user_has_permission(user, "update", f"/templates/{template.id}"):
+            if AuthorizationService.user_has_permission(user, "update",  "/templates"):
                 return True
         except Exception:
             # Fallback to owner-only if permission system is not configured for templates
