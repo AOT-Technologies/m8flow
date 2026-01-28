@@ -1,0 +1,252 @@
+name: Rollback Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment to rollback"
+        required: true
+        type: choice
+        options:
+          - dev
+          - qa
+          - prod
+      previous_tag:
+        description: "Previously proven release or RC tag (e.g. v1.5.0 or v1.5.1-rc2)"
+        required: true
+        type: string
+      backend_image_digest:
+        description: "Backend image digest (sha256:...) for rollback"
+        required: true
+        type: string
+      frontend_image_digest:
+        description: "Frontend image digest (sha256:...) for rollback"
+        required: true
+        type: string
+      create_rollback_tag:
+        description: "Create rollback tag (e.g. v1.5.0-rb1)"
+        required: false
+        default: "false"
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rollback-${{ inputs.environment }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: docker.io
+  PROJECT: spiffworkflow
+
+jobs:
+  # -------------------------
+  # Validate Inputs
+  # -------------------------
+  validate:
+    name: Validate Rollback Inputs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate environment
+        run: |
+          case "${{ inputs.environment }}" in
+            dev|qa|prod) ;;
+            *)
+              echo "::error::Invalid environment"
+              exit 1
+              ;;
+          esac
+
+      - name: Validate previous tag format
+        run: |
+          TAG="${{ inputs.previous_tag }}"
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$ ]] || {
+            echo "::error::Invalid tag format: $TAG"
+            exit 1
+          }
+
+      - name: Validate backend digest format
+        run: |
+          [[ "${{ inputs.backend_image_digest }}" =~ ^sha256:[a-f0-9]{64}$ ]] || {
+            echo "::error::Invalid backend image digest"
+            exit 1
+          }
+
+      - name: Validate frontend digest format
+        run: |
+          [[ "${{ inputs.frontend_image_digest }}" =~ ^sha256:[a-f0-9]{64}$ ]] || {
+            echo "::error::Invalid frontend image digest"
+            exit 1
+          }
+
+  # -------------------------
+  # Rollback Deployment
+  # -------------------------
+  rollback:
+    name: Rollback ${{ inputs.environment }}
+    needs: validate
+    runs-on: ubuntu-latest
+
+    # 🔐 Manual approval for prod rollbacks
+    environment:
+      name: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set kubeconfig
+        run: |
+          case "${{ inputs.environment }}" in
+            dev)
+              echo "${{ secrets.KUBECONFIG_DEV }}" | base64 -d > kubeconfig
+              ;;
+            qa)
+              echo "${{ secrets.KUBECONFIG_QA }}" | base64 -d > kubeconfig
+              ;;
+            prod)
+              echo "${{ secrets.KUBECONFIG_PROD }}" | base64 -d > kubeconfig
+              ;;
+          esac
+          echo "KUBECONFIG=$(pwd)/kubeconfig" >> $GITHUB_ENV
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      # -------------------------
+      # Rollback Backend
+      # -------------------------
+      - name: Rollback backend (digest)
+        run: |
+          kubectl -n ${{ inputs.environment }} set image deployment/spiffworkflow-backend \
+            backend=${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.PROJECT }}-backend@${{ inputs.backend_image_digest }}
+
+      # -------------------------
+      # Rollback Frontend
+      # -------------------------
+      - name: Rollback frontend (digest)
+        run: |
+          kubectl -n ${{ inputs.environment }} set image deployment/spiffworkflow-frontend \
+            frontend=${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.PROJECT }}-frontend@${{ inputs.frontend_image_digest }}
+
+      - name: Wait for rollout
+        run: |
+          echo "Waiting for backend rollout..."
+          kubectl -n ${{ inputs.environment }} rollout status deployment/spiffworkflow-backend --timeout=300s || {
+            echo "::error::Backend rollout failed"
+            kubectl -n ${{ inputs.environment }} describe deployment/spiffworkflow-backend
+            exit 1
+          }
+
+          echo "Waiting for frontend rollout..."
+          kubectl -n ${{ inputs.environment }} rollout status deployment/spiffworkflow-frontend --timeout=300s || {
+            echo "::error::Frontend rollout failed"
+            kubectl -n ${{ inputs.environment }} describe deployment/spiffworkflow-frontend
+            exit 1
+          }
+
+      - name: Smoke tests after rollback
+        run: |
+          # Determine URLs based on environment
+          case "${{ inputs.environment }}" in
+            dev)
+              BACKEND_URL="${{ secrets.DEV_BACKEND_URL }}"
+              FRONTEND_URL="${{ secrets.DEV_FRONTEND_URL }}"
+              ;;
+            qa)
+              BACKEND_URL="${{ secrets.QA_BACKEND_URL }}"
+              FRONTEND_URL="${{ secrets.QA_FRONTEND_URL }}"
+              ;;
+            prod)
+              BACKEND_URL="${{ secrets.PROD_BACKEND_URL }}"
+              FRONTEND_URL="${{ secrets.PROD_FRONTEND_URL }}"
+              ;;
+          esac
+
+          if [[ -n "$BACKEND_URL" ]]; then
+            echo "Checking backend health after rollback..."
+            curl --fail --silent --show-error --max-time 30 --retry 3 --retry-delay 5 "${BACKEND_URL}/v1.0/status" || {
+              echo "::error::Backend health check failed after rollback"
+              exit 1
+            }
+          else
+            echo "::warning::Backend URL not configured, skipping health check"
+          fi
+
+          if [[ -n "$FRONTEND_URL" ]]; then
+            echo "Checking frontend health after rollback..."
+            curl --fail --silent --show-error --max-time 30 --retry 3 --retry-delay 5 "${FRONTEND_URL}" || {
+              echo "::error::Frontend health check failed after rollback"
+              exit 1
+            }
+          else
+            echo "::warning::Frontend URL not configured, skipping health check"
+          fi
+
+          echo "Smoke tests passed after rollback"
+
+      - name: Cleanup kubeconfig
+        if: always()
+        run: rm -f kubeconfig
+
+      - name: Rollback summary
+        run: |
+          echo "## Rollback Complete ⏪" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** \`${{ inputs.environment }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Rolled back to:** \`${{ inputs.previous_tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Digest |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Backend | \`${{ inputs.backend_image_digest }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Frontend | \`${{ inputs.frontend_image_digest }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Rolled back at:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "**Initiated by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+
+  # -------------------------
+  # Optional Rollback Tag
+  # -------------------------
+  tag:
+    name: Create Rollback Tag
+    needs: rollback
+    if: ${{ inputs.create_rollback_tag == true }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Create rollback tag
+        id: create-tag
+        run: |
+          BASE="${{ inputs.previous_tag }}"
+          RB_TAG="${BASE}-rb$(date +%s)"
+
+          echo "Creating rollback tag: $RB_TAG"
+          git tag -a "$RB_TAG" -m "Rollback to $BASE on ${{ inputs.environment }}"
+
+          echo "Pushing tag to origin..."
+          git push origin "$RB_TAG" || {
+            echo "::error::Failed to push rollback tag $RB_TAG"
+            exit 1
+          }
+
+          echo "rb_tag=$RB_TAG" >> $GITHUB_OUTPUT
+
+      - name: Rollback tag summary
+        run: |
+          echo "## Rollback Tag Created" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** \`${{ steps.create-tag.outputs.rb_tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Based on:** \`${{ inputs.previous_tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** \`${{ inputs.environment }}\`" >> $GITHUB_STEP_SUMMARY

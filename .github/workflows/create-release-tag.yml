@@ -1,0 +1,168 @@
+name: Create Release Tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: "Commit SHA to tag (must be on main)"
+        required: true
+        type: string
+      tag_name:
+        description: "Tag name (vX.Y.Z or vX.Y.Z-rcN)"
+        required: true
+        type: string
+      tag_message:
+        description: "Optional annotated tag message"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  create-tag:
+    name: Create Annotated Release Tag
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # -------------------------
+      # Maintainer / Permission Check
+      # -------------------------
+      - name: Verify user has write permissions
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: perm } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: context.actor
+            });
+
+            if (!['admin', 'maintain', 'write'].includes(perm.permission)) {
+              core.setFailed(
+                `User ${context.actor} does not have permission to create release tags`
+              );
+            }
+
+      # -------------------------
+      # Validate SemVer Tag
+      # -------------------------
+      - name: Validate tag format
+        run: |
+          TAG="${{ inputs.tag_name }}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$ ]]; then
+            echo "::error::Invalid tag format: $TAG"
+            echo "Expected: vX.Y.Z or vX.Y.Z-rcN"
+            exit 1
+          fi
+
+      # -------------------------
+      # Validate Commit Exists on main
+      # -------------------------
+      - name: Verify commit exists on main branch
+        run: |
+          COMMIT="${{ inputs.commit_sha }}"
+
+          git fetch origin main
+
+          if ! git cat-file -e "$COMMIT^{commit}"; then
+            echo "::error::Commit $COMMIT does not exist"
+            exit 1
+          fi
+
+          if ! git branch -r --contains "$COMMIT" | grep -q "origin/main"; then
+            echo "::error::Commit $COMMIT is not reachable from main branch"
+            exit 1
+          fi
+
+      # -------------------------
+      # Ensure Tag Does Not Already Exist
+      # -------------------------
+      - name: Check tag does not already exist
+        run: |
+          TAG="${{ inputs.tag_name }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $TAG already exists"
+            exit 1
+          fi
+
+      # -------------------------
+      # Configure Git Identity
+      # -------------------------
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      # -------------------------
+      # Create Annotated Tag
+      # -------------------------
+      - name: Create annotated tag
+        env:
+          TAG: ${{ inputs.tag_name }}
+          COMMIT: ${{ inputs.commit_sha }}
+          MESSAGE: ${{ inputs.tag_message }}
+        run: |
+          if [[ -z "$MESSAGE" ]]; then
+            MESSAGE="Release $TAG"
+          fi
+
+          git tag -a "$TAG" "$COMMIT" -m "$MESSAGE"
+
+      # -------------------------
+      # Push Tag
+      # -------------------------
+      - name: Push tag to origin
+        run: |
+          git push origin "${{ inputs.tag_name }}"
+
+      # -------------------------
+      # Create GitHub Release (final tags only)
+      # -------------------------
+      - name: Create GitHub Release
+        if: ${{ !contains(inputs.tag_name, '-rc') }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag_name }}
+          name: ${{ inputs.tag_name }}
+          body: |
+            Release ${{ inputs.tag_name }}
+
+            Commit: ${{ inputs.commit_sha }}
+          draft: false
+          prerelease: false
+
+      # -------------------------
+      # Summary
+      # -------------------------
+      - name: Tag creation summary
+        run: |
+          IS_RC=${{ contains(inputs.tag_name, '-rc') }}
+
+          echo "## Release Tag Created 🏷️" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** \`${{ inputs.tag_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${{ inputs.commit_sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Type:** $([ "$IS_RC" == "true" ] && echo "Release Candidate" || echo "Final Release")" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [[ "$IS_RC" == "true" ]]; then
+            echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+            echo "1. This RC tag will trigger the **Deploy to Dev** workflow" >> $GITHUB_STEP_SUMMARY
+            echo "2. After Dev testing, promote to QA using the **Deploy to QA** workflow" >> $GITHUB_STEP_SUMMARY
+            echo "3. Create a final release tag when ready for production" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+            echo "1. This release tag will trigger the **Deploy to Production** workflow" >> $GITHUB_STEP_SUMMARY
+            echo "2. Approve the deployment in the GitHub Environments page" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Created by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Created at:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY

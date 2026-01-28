@@ -1,0 +1,3 @@
+# Ignore dev-only private key in rsa_keys.py
+# This file is marked as dev-only and should not be used in production
+spiffworkflow-backend/src/spiffworkflow_backend/config/openid/rsa_keys.py
