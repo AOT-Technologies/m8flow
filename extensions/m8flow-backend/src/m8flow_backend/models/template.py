@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
-from datetime import timezone
 from typing import Any, Optional
 
 from sqlalchemy import ForeignKey, UniqueConstraint, Index
@@ -11,6 +9,7 @@ from sqlalchemy.orm import relationship, validates
 from spiffworkflow_backend.helpers.spiff_enum import SpiffEnum
 from spiffworkflow_backend.models.db import SpiffworkflowBaseDBModel
 from spiffworkflow_backend.models.db import db
+from m8flow_backend.models.audit_mixin import AuditDateTimeMixin
 
 
 class TemplateVisibility(SpiffEnum):
@@ -20,10 +19,10 @@ class TemplateVisibility(SpiffEnum):
 
 
 @dataclass
-class TemplateModel(SpiffworkflowBaseDBModel):
+class TemplateModel(SpiffworkflowBaseDBModel, AuditDateTimeMixin):
     """Template metadata and version rows (one row per version)."""
 
-    __tablename__ = "template"
+    __tablename__ = "m8flow_templates"
     __table_args__ = (
         UniqueConstraint("m8f_tenant_id", "template_key", "version", name="uq_template_key_version_tenant"),
         Index("ix_template_template_key", "template_key"),
@@ -41,16 +40,19 @@ class TemplateModel(SpiffworkflowBaseDBModel):
     description: Optional[str] = db.Column(db.Text, nullable=True)
     tags: list[str] | None = db.Column(db.JSON, nullable=True)
     category: Optional[str] = db.Column(db.String(255), nullable=True)
-    m8f_tenant_id: str = db.Column(db.String(255), nullable=True)# type: ignore
+    m8f_tenant_id: str = db.Column(
+        db.String(255),
+        db.ForeignKey("m8flow_tenant.id"),
+        nullable=False,
+    )  # type: ignore
     visibility: str = db.Column(db.String(20), nullable=False, default=TemplateVisibility.private.value)
     bpmn_object_key: str = db.Column(db.String(1024), nullable=False)
     is_published: bool = db.Column(db.Boolean, default=False, nullable=False)
     status: Optional[str] = db.Column(db.String(50), nullable=True)
+    is_deleted: bool = db.Column(db.Boolean, default=False, nullable=False)
 
-    created_at: datetime = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     created_by: str = db.Column(db.String(255), nullable=False)
-    updated_at: datetime = db.Column(db.DateTime(timezone=True))
-    updated_by: str = db.Column(db.String(255), nullable=False)
+    modified_by: str = db.Column(db.String(255), nullable=False)
 
     @validates("visibility")
     def validate_visibility(self, _key: str, value: str) -> str:

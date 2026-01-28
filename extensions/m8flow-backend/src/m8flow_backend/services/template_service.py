@@ -26,18 +26,17 @@ class TemplateService:
 
     @staticmethod
     def _version_key(version: str) -> tuple:
-        """Return a sortable key for semantic-ish versions, fallback to string comparison."""
-        parts = []
-        for part in version.split("."):
-            try:
-                parts.append(int(part))
-            except ValueError:
-                parts.append(part)
-        return tuple(parts)
+        """Return a sortable key for V-prefixed versions like 'V1', 'V2'."""
+        v = (version or "").strip()
+        if v and v[0] in ("V", "v") and v[1:].isdigit():
+            # Known V-style version: sort by numeric value, after any legacy/unknown formats.
+            return (1, int(v[1:]))
+        # Fallback for any unexpected/legacy formats (we no longer actively support them)
+        return (0, v)
 
     @classmethod
     def _next_version(cls, template_key: str, tenant_id: str) -> str:
-        """Get the next version for a template key within a specific tenant."""
+        """Get the next version for a template key within a specific tenant, using V-prefixed versions."""
         # Filter by both template_key AND tenant_id to scope versioning per tenant
         query = TemplateModel.query.filter_by(
             template_key=template_key,
@@ -46,17 +45,18 @@ class TemplateService:
         rows = query.all()
         
         if not rows:
-            return "1.0.0"
+            return "V1"
         
         # Find the latest version for this tenant
         latest = max(rows, key=lambda r: cls._version_key(r.version))
-        
-        # attempt to bump patch if numeric
-        parts = latest.version.split(".")
-        if parts and parts[-1].isdigit():
-            bumped = parts[:-1] + [str(int(parts[-1]) + 1)]
-            return ".".join(bumped)
-        return f"{latest.version}.1"
+        latest_version = (latest.version or "").strip()
+
+        if latest_version and latest_version[0] in ("V", "v") and latest_version[1:].isdigit():
+            next_number = int(latest_version[1:]) + 1
+            return f"V{next_number}"
+
+        # If the latest version is in some unexpected/legacy format, start the V-series at V1
+        return "V1"
 
     @classmethod
     def create_template(
@@ -132,7 +132,7 @@ class TemplateService:
             is_published=is_published,
             status=status,
             created_by=username_str,
-            updated_by=username_str,
+            modified_by=username_str,
         )
         db.session.add(template)
         TemplateModel.commit_with_rollback_on_exception()
@@ -152,6 +152,7 @@ class TemplateService:
     ) -> list[TemplateModel]:
         query = TemplateModel.query
         query = TemplateAuthorizationService.filter_query_by_visibility(query, user=user)
+        query = query.filter(TemplateModel.is_deleted.is_(False))
         
         # Filter by tenant if provided (ensure tenant isolation)
         tenant = tenant_id or getattr(g, "m8flow_tenant_id", None)
@@ -225,6 +226,9 @@ class TemplateService:
         tenant = tenant_id or getattr(g, "m8flow_tenant_id", None)
         if tenant:
             query = query.filter(TemplateModel.m8f_tenant_id == tenant)
+
+        # Exclude soft-deleted templates by default
+        query = query.filter(TemplateModel.is_deleted.is_(False))
         
         if not suppress_visibility:
             query = TemplateAuthorizationService.filter_query_by_visibility(query, user=user)
@@ -244,8 +248,8 @@ class TemplateService:
         template_id: int,
         user: UserModel | None = None,
     ) -> TemplateModel | None:
-        """Get template by database ID with visibility checks."""
-        template = TemplateModel.query.filter_by(id=template_id).first()
+        """Get template by database ID with visibility checks, excluding soft-deleted templates."""
+        template = TemplateModel.query.filter_by(id=template_id).filter(TemplateModel.is_deleted.is_(False)).first()
         if template is None:
             return None
         
@@ -276,7 +280,7 @@ class TemplateService:
                 setattr(template, field, updates[field])
         
         username = getattr(g, "user", None)
-        template.updated_by = username.username if username and hasattr(username, "username") else template.updated_by
+        template.modified_by = username.username if username and hasattr(username, "username") else template.modified_by
         TemplateModel.commit_with_rollback_on_exception()
         return template
 
@@ -335,7 +339,7 @@ class TemplateService:
             if new_bpmn_object_key:
                 existing_template.bpmn_object_key = new_bpmn_object_key
             
-            existing_template.updated_by = username_str
+            existing_template.modified_by = username_str
             existing_template.updated_at = datetime.now(timezone.utc)
             TemplateModel.commit_with_rollback_on_exception()
             return existing_template
@@ -358,7 +362,7 @@ class TemplateService:
             is_published=False,  # New versions start as unpublished
             status=existing_template.status,
             created_by=username_str,
-            updated_by=username_str,
+            modified_by=username_str,
         )
         
         # Apply updates
@@ -376,7 +380,7 @@ class TemplateService:
         template_id: int,
         user: UserModel | None,
     ) -> None:
-        """Delete template by ID."""
+        """Soft delete template by ID (mark as deleted without removing row)."""
         template = cls.get_template_by_id(template_id, user=user)
         if template is None:
             raise ApiError("not_found", "Template not found", status_code=404)
@@ -386,18 +390,8 @@ class TemplateService:
         
         if not TemplateAuthorizationService.can_edit(template, user):
             raise ApiError("forbidden", "You cannot delete this template", status_code=403)
-        
-        db.session.delete(template)
-        TemplateModel.commit_with_rollback_on_exception()
 
-    @classmethod
-    def delete_template(cls, template_key: str, version: str, user: UserModel | None) -> None:
-        template = cls.get_template(template_key, version, user=user)
-        if template is None:
-            raise ApiError("not_found", "Template version not found", status_code=404)
-        if template.is_published:
-            raise ApiError("immutable", "Published template versions cannot be deleted", status_code=400)
-        if not TemplateAuthorizationService.can_edit(template, user):
-            raise ApiError("forbidden", "You cannot delete this template", status_code=403)
-        db.session.delete(template)
+        # Mark as soft-deleted
+        template.is_deleted = True
+
         TemplateModel.commit_with_rollback_on_exception()

@@ -17,7 +17,7 @@ export interface Template {
   created_at: string;
   created_by: string;
   updated_at: string | null;
-  updated_by: string;
+  modified_by: string;
 }
 
 export interface TemplateFilters {

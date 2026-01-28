@@ -34,7 +34,6 @@ from m8flow_backend.services.tenant_context_middleware import resolve_request_te
 from spiffworkflow_backend import create_app
 from spiffworkflow_backend.models.db import db
 from sqlalchemy import create_engine
-from m8flow_backend.routes.templates_controller import templates_blueprint
 
 
 def _env_truthy(value: str | None) -> bool:
@@ -91,9 +90,6 @@ try:
     before_request_funcs.insert(auth_index + 1, load_tenant)
 except Exception:
     flask_app.before_request(load_tenant)
-
-# Register extension blueprints
-flask_app.register_blueprint(templates_blueprint)
 
 # Expose the Connexion app
 app = cnx_app

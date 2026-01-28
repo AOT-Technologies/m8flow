@@ -1,16 +1,13 @@
 from __future__ import annotations
 
 import json
-import os
 
-from flask import Blueprint, Response, jsonify, request, g
+from flask import Response, jsonify, request, g
 
 from spiffworkflow_backend.exceptions.api_error import ApiError
 
 from m8flow_backend.models.template import TemplateModel
 from m8flow_backend.services.template_service import TemplateService
-
-templates_blueprint = Blueprint("templates", __name__, url_prefix="/v1.0/templates")
 
 
 def _serialize_template(template: TemplateModel, include_bpmn: bool = True) -> dict:
@@ -28,10 +25,10 @@ def _serialize_template(template: TemplateModel, include_bpmn: bool = True) -> d
         "bpmn_object_key": template.bpmn_object_key,
         "is_published": template.is_published,
         "status": template.status,
-        "created_at": template.created_at.isoformat() if template.created_at else None,
+        "created_at": template.created.isoformat() if template.created else None,
         "created_by": template.created_by,
-        "updated_at": template.updated_at.isoformat() if template.updated_at else None,
-        "updated_by": template.updated_by,
+        "updated_at": template.modified.isoformat() if template.modified else None,
+        "modified_by": template.modified_by,
     }
     
     # Include BPMN content if requested and available
@@ -46,7 +43,6 @@ def _serialize_template(template: TemplateModel, include_bpmn: bool = True) -> d
     return result
 
 
-@templates_blueprint.route("", methods=["GET"])
 def template_list():
     latest_only = request.args.get("latest_only", "true").lower() != "false"
     category = request.args.get("category")
@@ -68,7 +64,6 @@ def template_list():
     return jsonify([_serialize_template(t) for t in templates])
 
 
-@templates_blueprint.route("", methods=["POST"])
 def template_create():
     user = getattr(g, "user", None)
     
@@ -119,7 +114,6 @@ def template_create():
     return jsonify(_serialize_template(template)), 201
 
 
-@templates_blueprint.route("/<int:id>", methods=["GET"])
 def template_get_by_id(id: int):
     user = getattr(g, "user", None)
     template = TemplateService.get_template_by_id(id, user=user)
@@ -128,7 +122,6 @@ def template_get_by_id(id: int):
     return jsonify(_serialize_template(template))
 
 
-@templates_blueprint.route("/<string:template_key>", methods=["GET"])
 def template_show(template_key: str):
     version = request.args.get("version")
     latest = request.args.get("latest", "true").lower() != "false"
@@ -146,7 +139,6 @@ def template_show(template_key: str):
     return jsonify(_serialize_template(template))
 
 
-@templates_blueprint.route("/<int:id>", methods=["PUT"])
 def template_update_by_id(id: int):
     user = getattr(g, "user", None)
     
@@ -189,7 +181,6 @@ def template_update_by_id(id: int):
     return jsonify(_serialize_template(template))
 
 
-@templates_blueprint.route("/<int:id>/bpmn", methods=["GET"])
 def template_get_bpmn(id: int):
     """Retrieve BPMN file for a template."""
     user = getattr(g, "user", None)
@@ -211,7 +202,6 @@ def template_get_bpmn(id: int):
     )
 
 
-@templates_blueprint.route("/<int:id>", methods=["DELETE"])
 def template_delete_by_id(id: int):
     user = getattr(g, "user", None)
     TemplateService.delete_template_by_id(id, user=user)
