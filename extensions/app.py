@@ -229,6 +229,10 @@ if flask_app is None:
 # Configure SQL echo if enabled
 _configure_sql_echo(flask_app)
 
+m8flow_templates_dir = os.environ.get("M8FLOW_TEMPLATES_STORAGE_DIR")
+if m8flow_templates_dir:
+    flask_app.config["M8FLOW_TEMPLATES_STORAGE_DIR"] = m8flow_templates_dir
+    logger.info(f"M8FLOW_TEMPLATES_STORAGE_DIR configured: {m8flow_templates_dir}")
 
 # Register the tenant loading function to run after auth hooks.
 if None not in flask_app.before_request_funcs:

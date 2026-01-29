@@ -36,7 +36,9 @@ import { createSpiffTheme } from '@spiffworkflow-frontend/assets/theme/SpiffThem
 import DynamicCSSInjection from '@spiffworkflow-frontend/components/DynamicCSSInjection';
 
 // M8Flow Extension: Import Reports page
-import ReportsPage from './views/ReportsPage';
+import ReportsPage from "./views/ReportsPage";
+// M8Flow Extension: Import Tenant page
+import TenantPage from "./views/TenantPage";
 
 const fadeIn = 'fadeIn';
 const fadeOutImmediate = 'fadeOutImmediate';
@@ -253,6 +255,8 @@ export default function ContainerForExtensions() {
       <Routes>
         {/* M8Flow Extension: Reports route */}
         <Route path="reports" element={<ReportsPage />} />
+        {/* M8Flow Extension: Tenant route */}
+        <Route path="/tenants" element={<TenantPage />} />
         <Route path="extensions/:page_identifier" element={<Extension />} />
         <Route path="login" element={<Login />} />
         {/* Catch-all route must be last */}
@@ -303,6 +307,27 @@ export default function ContainerForExtensions() {
           id={cssFile.id}
         />
       ))}
+
+      {/* Manual Highlighting for Tenants Route */}
+      {location.pathname === "/tenants" && (
+        <style>
+          {`
+            a[href$="/tenants"] {
+              background-color: ${(globalTheme.palette as any).background?.light || "#e3f2fd"} !important;
+              color: ${globalTheme.palette.primary.main} !important;
+              border-left-width: 4px !important;
+              border-style: solid !important;
+              border-color: ${globalTheme.palette.primary.main} !important;
+            }
+            a[href$="/tenants"] .MuiListItemIcon-root {
+              color: ${globalTheme.palette.primary.main} !important;
+            }
+            a[href$="/tenants"] .MuiTypography-root {
+              font-weight: bold !important;
+            }
+          `}
+        </style>
+      )}
       <ErrorBoundary FallbackComponent={ErrorBoundaryFallback}>
         <Container
           id="container-for-extensions-container"
@@ -342,7 +367,15 @@ export default function ContainerForExtensions() {
                   isDark={isDark}
                   additionalNavElement={additionalNavElement}
                   setAdditionalNavElement={setAdditionalNavElement}
-                  extensionUxElements={extensionUxElements}
+                  extensionUxElements={[
+                    ...(extensionUxElements || []),
+                    {
+                      page: "/../tenants",
+                      label: "Tenants",
+                      display_location:
+                        UiSchemaDisplayLocation.primary_nav_item,
+                    } as UiSchemaUxElement,
+                  ]}
                 />
               )}
               {isMobile && !isSideNavVisible && (

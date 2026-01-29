@@ -48,6 +48,8 @@ services:
       echo "MinIO is ready.";
       mc mb -p local/m8flow-process-models >/dev/null 2>&1 || true;
       echo "Bucket ensured: m8flow-process-models";
+      mc mb -p local/m8flow-templates >/dev/null 2>&1 || true;
+      echo "Bucket ensured: m8flow-templates";
       '
 
   m8flow-backend:
@@ -58,15 +60,18 @@ services:
     env_file: ../.env
     environment:
       SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: /app/process_models
+      M8FLOW_TEMPLATES_STORAGE_DIR: /app/templates
     ports:
       - "8000:8000"
     volumes:
       - process_models_cache:/app/process_models
+      - templates_cache:/app/templates
     depends_on:
       - m8flow-db
       - redis
       - minio
       - process-models-sync
+      - templates-sync
 
   process-models-sync:
     image: rclone/rclone:latest
@@ -89,6 +94,27 @@ services:
       done
       "
 
+  templates-sync:
+    image: rclone/rclone:latest
+    depends_on:
+      - minio-mc-init
+    volumes:
+      - templates_cache:/cache
+      - ../rclone.conf:/config/rclone/rclone.conf:ro
+    entrypoint: >
+      /bin/sh -c "
+      mkdir -p /cache;
+
+      # Optional one-time seed from S3 (non-destructive):
+      rclone copy minio:m8flow-templates /cache --config /config/rclone/rclone.conf;
+
+      echo 'Templates sync: Push-only loop (local -> S3)...';
+      while true; do
+        rclone sync /cache minio:m8flow-templates --config /config/rclone/rclone.conf;
+        sleep 3;
+      done
+      "
+
   celery_worker:
     build:
       context: ../spiffworkflow-backend
@@ -100,12 +126,15 @@ services:
       SPIFFWORKFLOW_BACKEND_CELERY_RESULT_BACKEND: redis://redis:6379/0
       SPIFFWORKFLOW_BACKEND_RUNNING_IN_CELERY_WORKER: "true"
       SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: /app/process_models
+      M8FLOW_TEMPLATES_STORAGE_DIR: /app/templates
     volumes:
       - process_models_cache:/app/process_models
+      - templates_cache:/app/templates
     depends_on:
       - m8flow-db
       - redis
       - process-models-sync
+      - templates-sync
     restart: unless-stopped
 
   m8flow-frontend:
@@ -124,6 +153,8 @@ volumes:
   redis-data:
     driver: local
   process_models_cache:
+    driver: local
+  templates_cache:
     driver: local
   minio_data:
     driver: local
