@@ -117,10 +117,10 @@ export default function TemplateCard({
             </Typography>
             {template.category && (
               <Chip
-                label={template.category}
+                label={`Category: ${template.category}`}
                 size="small"
                 variant="outlined"
-                sx={{ alignSelf: 'flex-start' }}
+                sx={{ alignSelf: 'flex-start', fontSize: '0.7rem' }}
               />
             )}
             {template.tags && template.tags.length > 0 && (

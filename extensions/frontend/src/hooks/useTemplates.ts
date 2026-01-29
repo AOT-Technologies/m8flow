@@ -42,7 +42,7 @@ export function useTemplates(): UseTemplatesReturn {
     }
 
     const queryString = params.toString();
-    const path = `/v1.0/templates${queryString ? `?${queryString}` : ''}`;
+    const path = `/v1.0/m8flow/templates${queryString ? `?${queryString}` : ''}`;
 
     HttpService.makeCallToBackend({
       path,
