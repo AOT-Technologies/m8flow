@@ -1,3 +1,5 @@
-from .templates_controller import templates_blueprint
+"""Route package for m8flow-backend extension.
 
-__all__ = ["templates_blueprint"]
+Templates and other routes are exposed via Connexion using operationIds
+defined in api.yml; no Flask blueprints are exported here.
+"""

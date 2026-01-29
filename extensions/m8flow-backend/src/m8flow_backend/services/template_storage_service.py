@@ -62,10 +62,11 @@ class FilesystemTemplateStorageService:
         return filename
 
     def store_bpmn(self, template_key: str, version: str, bpmn_bytes: bytes, tenant_id: str) -> str:
-        """Store BPMN content and return filename only (e.g., 'template-key.bpmn')."""
+        """Store BPMN content and return filename only (e.g., 'template-key_V2.bpmn')."""
         base_dir = self._get_base_dir()
         safe_key = self._sanitize_filename(template_key)
-        filename = f"{safe_key}.bpmn"
+        safe_version = self._sanitize_filename(version)
+        filename = f"{safe_key}_{safe_version}.bpmn"
         # Store at: {base_dir}/{tenant_id}/{filename}
         full_path = os.path.join(base_dir, tenant_id, filename)
 
@@ -94,5 +95,8 @@ class FilesystemTemplateStorageService:
         try:
             with open(full_path, "rb") as f:
                 return f.read()
+        except FileNotFoundError:
+            # File might have been removed after the exists() check
+            raise ApiError("not_found", f"BPMN file not found: {filename} for tenant {tenant_id}", status_code=404)
         except (IOError, OSError) as e:
             raise ApiError("storage_error", f"Failed to read BPMN file: {str(e)}", status_code=500)

@@ -99,7 +99,7 @@ def test_next_version_increments_patch() -> None:
             m8f_tenant_id="tenant-a",
             bpmn_object_key="test.bpmn",
             created_by="tester",
-            updated_by="tester",
+            modified_by="tester",
         )
         db.session.add(template1)
         db.session.commit()
@@ -116,7 +116,7 @@ def test_next_version_increments_patch() -> None:
             m8f_tenant_id="tenant-a",
             bpmn_object_key="test.bpmn",
             created_by="tester",
-            updated_by="tester",
+            modified_by="tester",
         )
         db.session.add(template2)
         db.session.commit()
@@ -149,7 +149,7 @@ def test_next_version_handles_non_numeric() -> None:
             m8f_tenant_id="tenant-a",
             bpmn_object_key="test.bpmn",
             created_by="tester",
-            updated_by="tester",
+            modified_by="tester",
         )
         db.session.add(template)
         db.session.commit()
@@ -183,7 +183,7 @@ def test_next_version_tenant_scoped() -> None:
             m8f_tenant_id="tenant-a",
             bpmn_object_key="test.bpmn",
             created_by="tester",
-            updated_by="tester",
+            modified_by="tester",
         )
         db.session.add(template_a)
         db.session.commit()
@@ -249,11 +249,11 @@ def test_create_template_with_bpmn_bytes() -> None:
                 assert template.version == "1.0.0"
                 assert template.bpmn_object_key == "test-template.bpmn"
                 assert template.created_by == "tester"
-                assert template.updated_by == "tester"
+                assert template.modified_by == "tester"
 
 
 def test_create_template_with_legacy_data_format() -> None:
-    """Create template using legacy data dict format."""
+    """Legacy data dict format is no longer supported."""
     app = Flask(__name__)
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -271,23 +271,17 @@ def test_create_template_with_legacy_data_format() -> None:
             g.m8flow_tenant_id = "tenant-a"
             g.user = user
 
-            data = {
-                "template_key": "legacy-template",
-                "name": "Legacy Template",
-                "bpmn_object_key": "legacy.bpmn",
-                "version": "2.0.0",
-            }
-
-            template = TemplateService.create_template(
-                data=data,
-                user=user,
-                tenant_id="tenant-a",
-            )
-
-            assert template.template_key == "legacy-template"
-            assert template.name == "Legacy Template"
-            assert template.version == "2.0.0"
-            assert template.bpmn_object_key == "legacy.bpmn"
+            # Legacy data dict should not be accepted; metadata + BPMN bytes are required.
+            try:
+                TemplateService.create_template(
+                    metadata=None,
+                    bpmn_bytes=None,
+                    user=user,
+                    tenant_id="tenant-a",
+                )
+                assert False, "Should have raised ApiError for missing metadata/BPMN"
+            except ApiError as e:
+                assert e.error_code == "missing_fields"
 
 
 def test_create_template_without_user() -> None:
@@ -575,7 +569,7 @@ def test_list_templates_latest_only() -> None:
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
                 created_by="tester",
-                updated_by="tester",
+                modified_by="tester",
             )
             template2 = TemplateModel(
                 template_key="multi-version",
@@ -584,7 +578,7 @@ def test_list_templates_latest_only() -> None:
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
                 created_by="tester",
-                updated_by="tester",
+                modified_by="tester",
             )
             template3 = TemplateModel(
                 template_key="multi-version",
@@ -593,7 +587,7 @@ def test_list_templates_latest_only() -> None:
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
                 created_by="tester",
-                updated_by="tester",
+                modified_by="tester",
             )
             db.session.add_all([template1, template2, template3])
             db.session.commit()
@@ -629,7 +623,7 @@ def test_list_templates_all_versions() -> None:
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
                 created_by="tester",
-                updated_by="tester",
+                modified_by="tester",
             )
             template2 = TemplateModel(
                 template_key="all-versions",
@@ -638,7 +632,7 @@ def test_list_templates_all_versions() -> None:
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
                 created_by="tester",
-                updated_by="tester",
+                modified_by="tester",
             )
             db.session.add_all([template1, template2])
             db.session.commit()
@@ -673,7 +667,7 @@ def test_list_templates_filter_by_category() -> None:
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
                 created_by="tester",
-                updated_by="tester",
+                modified_by="tester",
             )
             template2 = TemplateModel(
                 template_key="cat2-template",
@@ -683,7 +677,7 @@ def test_list_templates_filter_by_category() -> None:
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
                 created_by="tester",
-                updated_by="tester",
+                modified_by="tester",
             )
             db.session.add_all([template1, template2])
             db.session.commit()
@@ -719,7 +713,7 @@ def test_list_templates_filter_by_tag() -> None:
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
                 created_by="tester",
-                updated_by="tester",
+                modified_by="tester",
             )
             template2 = TemplateModel(
                 template_key="tag3-template",
@@ -729,7 +723,7 @@ def test_list_templates_filter_by_tag() -> None:
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
                 created_by="tester",
-                updated_by="tester",
+                modified_by="tester",
             )
             db.session.add_all([template1, template2])
             db.session.commit()
@@ -765,7 +759,7 @@ def test_list_templates_filter_by_owner() -> None:
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
                 created_by="owner1",
-                updated_by="owner1",
+                modified_by="owner1",
             )
             template2 = TemplateModel(
                 template_key="owner2-template",
@@ -774,7 +768,7 @@ def test_list_templates_filter_by_owner() -> None:
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
                 created_by="owner2",
-                updated_by="owner2",
+                modified_by="owner2",
             )
             db.session.add_all([template1, template2])
             db.session.commit()
@@ -810,7 +804,7 @@ def test_list_templates_filter_by_visibility() -> None:
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
                 created_by="tester",
-                updated_by="tester",
+                modified_by="tester",
             )
             template2 = TemplateModel(
                 template_key="private-template",
@@ -820,7 +814,7 @@ def test_list_templates_filter_by_visibility() -> None:
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
                 created_by="tester",
-                updated_by="tester",
+                modified_by="tester",
             )
             db.session.add_all([template1, template2])
             db.session.commit()
@@ -858,7 +852,7 @@ def test_list_templates_search() -> None:
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
                 created_by="tester",
-                updated_by="tester",
+                modified_by="tester",
             )
             template2 = TemplateModel(
                 template_key="other-template",
@@ -868,7 +862,7 @@ def test_list_templates_search() -> None:
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
                 created_by="tester",
-                updated_by="tester",
+                modified_by="tester",
             )
             db.session.add_all([template1, template2])
             db.session.commit()
@@ -904,7 +898,7 @@ def test_list_templates_tenant_isolation() -> None:
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
                 created_by="tester",
-                updated_by="tester",
+                modified_by="tester",
             )
             db.session.add(template_a)
             db.session.commit()
@@ -919,7 +913,7 @@ def test_list_templates_tenant_isolation() -> None:
                 m8f_tenant_id="tenant-b",
                 bpmn_object_key="test.bpmn",
                 created_by="tester",
-                updated_by="tester",
+                modified_by="tester",
             )
             db.session.add(template_b)
             db.session.commit()
@@ -961,7 +955,7 @@ def test_get_template_by_key_and_version() -> None:
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
                 created_by="tester",
-                updated_by="tester",
+                modified_by="tester",
             )
             db.session.add(template)
             db.session.commit()
@@ -998,7 +992,7 @@ def test_get_template_latest() -> None:
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
                 created_by="tester",
-                updated_by="tester",
+                modified_by="tester",
             )
             template2 = TemplateModel(
                 template_key="latest-test",
@@ -1007,7 +1001,7 @@ def test_get_template_latest() -> None:
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
                 created_by="tester",
-                updated_by="tester",
+                modified_by="tester",
             )
             template3 = TemplateModel(
                 template_key="latest-test",
@@ -1016,7 +1010,7 @@ def test_get_template_latest() -> None:
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
                 created_by="tester",
-                updated_by="tester",
+                modified_by="tester",
             )
             db.session.add_all([template1, template2, template3])
             db.session.commit()
@@ -1078,7 +1072,7 @@ def test_get_template_tenant_isolation() -> None:
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
                 created_by="tester",
-                updated_by="tester",
+                modified_by="tester",
             )
             db.session.add(template_a)
             db.session.commit()
@@ -1093,7 +1087,7 @@ def test_get_template_tenant_isolation() -> None:
                 m8f_tenant_id="tenant-b",
                 bpmn_object_key="test.bpmn",
                 created_by="tester",
-                updated_by="tester",
+                modified_by="tester",
             )
             db.session.add(template_b)
             db.session.commit()
@@ -1137,7 +1131,7 @@ def test_get_template_by_id() -> None:
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
                 created_by="tester",
-                updated_by="tester",
+                modified_by="tester",
             )
             db.session.add(template)
             db.session.commit()
@@ -1175,7 +1169,7 @@ def test_get_template_by_id_visibility_check() -> None:
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
                 created_by="owner",
-                updated_by="owner",
+                modified_by="owner",
             )
             db.session.add(template)
             db.session.commit()
@@ -1216,7 +1210,7 @@ def test_get_template_suppress_visibility() -> None:
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
                 created_by="tester",
-                updated_by="tester",
+                modified_by="tester",
             )
             db.session.add(template)
             db.session.commit()
@@ -1264,7 +1258,7 @@ def test_update_template_by_key_version() -> None:
                 bpmn_object_key="test.bpmn",
                 is_published=False,
                 created_by="tester",
-                updated_by="tester",
+                modified_by="tester",
             )
             db.session.add(template)
             db.session.commit()
@@ -1303,7 +1297,7 @@ def test_update_template_published_immutable() -> None:
                 bpmn_object_key="test.bpmn",
                 is_published=True,
                 created_by="tester",
-                updated_by="tester",
+                modified_by="tester",
             )
             db.session.add(template)
             db.session.commit()
@@ -1344,7 +1338,7 @@ def test_update_template_unauthorized() -> None:
                 bpmn_object_key="test.bpmn",
                 is_published=False,
                 created_by="owner",
-                updated_by="owner",
+                modified_by="owner",
             )
             db.session.add(template)
             db.session.commit()
@@ -1412,7 +1406,7 @@ def test_update_template_by_id_unpublished() -> None:
                 bpmn_object_key="test.bpmn",
                 is_published=False,
                 created_by="tester",
-                updated_by="tester",
+                modified_by="tester",
             )
             db.session.add(template)
             db.session.commit()
@@ -1453,7 +1447,7 @@ def test_update_template_by_id_published_creates_new_version() -> None:
                 bpmn_object_key="test.bpmn",
                 is_published=True,
                 created_by="tester",
-                updated_by="tester",
+                modified_by="tester",
             )
             db.session.add(template)
             db.session.commit()
@@ -1495,7 +1489,7 @@ def test_update_template_with_bpmn_bytes() -> None:
                 bpmn_object_key="old.bpmn",
                 is_published=False,
                 created_by="tester",
-                updated_by="tester",
+                modified_by="tester",
             )
             db.session.add(template)
             db.session.commit()
@@ -1540,7 +1534,7 @@ def test_update_template_allowed_fields() -> None:
                 bpmn_object_key="test.bpmn",
                 is_published=False,
                 created_by="tester",
-                updated_by="tester",
+                modified_by="tester",
             )
             db.session.add(template)
             db.session.commit()
@@ -1569,7 +1563,7 @@ def test_update_template_allowed_fields() -> None:
 
 
 def test_delete_template_by_id() -> None:
-    """Delete unpublished template."""
+    """Soft delete unpublished template."""
     app = Flask(__name__)
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -1595,7 +1589,7 @@ def test_delete_template_by_id() -> None:
                 bpmn_object_key="test.bpmn",
                 is_published=False,
                 created_by="tester",
-                updated_by="tester",
+                modified_by="tester",
             )
             db.session.add(template)
             db.session.commit()
@@ -1603,12 +1597,29 @@ def test_delete_template_by_id() -> None:
 
             TemplateService.delete_template_by_id(template_id, user=user)
 
+            # Row should still exist but be marked as deleted
             deleted = TemplateModel.query.filter_by(id=template_id).first()
-            assert deleted is None
+            assert deleted is not None
+            assert deleted.is_deleted is True
+
+            # Service-level accessors should no longer see the template
+            assert TemplateService.get_template_by_id(template_id, user=user) is None
+            assert (
+                TemplateService.get_template(
+                    template_key="delete-by-id",
+                    version="1.0.0",
+                    user=user,
+                    tenant_id="tenant-a",
+                )
+                is None
+            )
+
+            results = TemplateService.list_templates(user=user, tenant_id="tenant-a", latest_only=False)
+            assert all(t.id != template_id for t in results)
 
 
-def test_delete_template_by_key_version() -> None:
-    """Delete by key and version."""
+def test_soft_deleted_templates_are_excluded_from_queries() -> None:
+    """Ensure soft-deleted templates are excluded from list/get queries."""
     app = Flask(__name__)
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -1626,23 +1637,50 @@ def test_delete_template_by_key_version() -> None:
             g.m8flow_tenant_id = "tenant-a"
             g.user = user
 
-            template = TemplateModel(
-                template_key="delete-key-version",
+            # Create active and soft-deleted templates
+            active = TemplateModel(
+                template_key="active-template",
                 version="1.0.0",
-                name="To Delete",
+                name="Active",
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
                 is_published=False,
                 created_by="tester",
-                updated_by="tester",
+                modified_by="tester",
             )
-            db.session.add(template)
+            deleted = TemplateModel(
+                template_key="deleted-template",
+                version="1.0.0",
+                name="Deleted",
+                m8f_tenant_id="tenant-a",
+                bpmn_object_key="test.bpmn",
+                is_published=False,
+                is_deleted=True,
+                created_by="tester",
+                modified_by="tester",
+            )
+            db.session.add_all([active, deleted])
             db.session.commit()
 
-            TemplateService.delete_template("delete-key-version", "1.0.0", user=user)
+            # list_templates should only return the active template
+            results = TemplateService.list_templates(user=user, tenant_id="tenant-a", latest_only=False)
+            keys = {t.template_key for t in results}
+            assert "active-template" in keys
+            assert "deleted-template" not in keys
 
-            deleted = TemplateModel.query.filter_by(template_key="delete-key-version", version="1.0.0").first()
-            assert deleted is None
+            # get_template should not return the deleted template
+            assert (
+                TemplateService.get_template(
+                    template_key="deleted-template",
+                    version="1.0.0",
+                    user=user,
+                    tenant_id="tenant-a",
+                )
+                is None
+            )
+
+            # get_template_by_id should also exclude the deleted template
+            assert TemplateService.get_template_by_id(deleted.id, user=user) is None
 
 
 def test_delete_template_published_immutable() -> None:
@@ -1672,7 +1710,7 @@ def test_delete_template_published_immutable() -> None:
                 bpmn_object_key="test.bpmn",
                 is_published=True,
                 created_by="tester",
-                updated_by="tester",
+                modified_by="tester",
             )
             db.session.add(template)
             db.session.commit()
@@ -1714,7 +1752,7 @@ def test_delete_template_unauthorized() -> None:
                 bpmn_object_key="test.bpmn",
                 is_published=False,
                 created_by="owner",
-                updated_by="owner",
+                modified_by="owner",
             )
             db.session.add(template)
             db.session.commit()
@@ -1747,8 +1785,10 @@ def test_delete_template_not_found() -> None:
             g.m8flow_tenant_id = "tenant-a"
             g.user = user
 
+            template_id = 9999  # Non-existent ID
+
             try:
-                TemplateService.delete_template("nonexistent", "1.0.0", user=user)
+                TemplateService.delete_template_by_id(template_id, user=user)
                 assert False, "Should have raised ApiError"
             except ApiError as e:
                 assert e.error_code == "not_found"

@@ -5,7 +5,6 @@ import os
 from pathlib import Path
 import sys
 
-from flask import g, request
 from extensions.bootstrap import bootstrap
 
 logger = logging.getLogger(__name__)
@@ -31,14 +30,10 @@ except ModuleNotFoundError:
 
 upgrade_m8flow_db()
 
-from m8flow_backend.tenancy import DEFAULT_TENANT_ID, ensure_tenant_exists
+from m8flow_backend.services.tenant_context_middleware import resolve_request_tenant
 from spiffworkflow_backend import create_app
 from spiffworkflow_backend.models.db import db
 from sqlalchemy import create_engine
-
-# Configure the database engine for spiffworkflow_backend.
-create_engine(os.environ["SPIFFWORKFLOW_BACKEND_DATABASE_URI"], pool_pre_ping=True)
-from m8flow_backend.routes.templates_controller import templates_blueprint
 
 
 def _env_truthy(value: str | None) -> bool:
@@ -70,11 +65,6 @@ if flask_app is None:
 # Configure SQL echo if enabled
 _configure_sql_echo(flask_app)
 
-# Testing hook for tenant selection; replace with JWT-based tenant context.
-# curl -H "M8Flow-Tenant-Id: tenant-a" http://localhost:8000/v1/process-models
-# curl -H "M8Flow-Tenant-Id: tenant-b" http://localhost:8000/v1/process-models
-# Configure M8Flow templates storage directory
-import os
 m8flow_templates_dir = os.environ.get("M8FLOW_TEMPLATES_STORAGE_DIR")
 if m8flow_templates_dir:
     flask_app.config["M8FLOW_TEMPLATES_STORAGE_DIR"] = m8flow_templates_dir
@@ -82,17 +72,19 @@ if m8flow_templates_dir:
 
 # TODO: Use tenant id from JWT token instead of request headers when tenant context auth is implemented
 def load_tenant():
-    """Load tenant ID from request headers into Flask 'g' context."""
-    logger.info("Loading tenant ID from request headers")
-    tenant_id = request.headers.get("M8Flow-Tenant-Id", DEFAULT_TENANT_ID)
-    g.m8flow_tenant_id = tenant_id
-    ensure_tenant_exists(tenant_id)
+    """Resolve tenant from auth context and store it in Flask 'g'."""
+    resolve_request_tenant()
 
-# Register the before_request handler
-flask_app.before_request(load_tenant)
-
-# Register extension blueprints
-flask_app.register_blueprint(templates_blueprint)
+# Register the tenant loading function to run after auth hooks.
+if None not in flask_app.before_request_funcs:
+    flask_app.before_request_funcs[None] = []
+before_request_funcs = flask_app.before_request_funcs[None]
+try:
+    from spiffworkflow_backend.routes.authentication_controller import omni_auth
+    auth_index = before_request_funcs.index(omni_auth)
+    before_request_funcs.insert(auth_index + 1, load_tenant)
+except Exception:
+    flask_app.before_request(load_tenant)
 
 # Expose the Connexion app
 app = cnx_app

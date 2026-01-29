@@ -29,7 +29,12 @@ jobs:
 
       - name: Add upstream remote
         run: |
-          git remote add upstream ${{ secrets.UPSTREAM_REPO_URL || 'https://github.com/AOT-Technologies/m8flow.git' }}
+          # Default to the original sartography/spiff-arena upstream
+          UPSTREAM_URL="${{ secrets.UPSTREAM_REPO_URL }}"
+          if [[ -z "$UPSTREAM_URL" ]]; then
+            UPSTREAM_URL="https://github.com/sartography/spiff-arena.git"
+          fi
+          git remote add upstream "$UPSTREAM_URL"
 
       - name: Fetch upstream
         run: |
@@ -77,7 +82,9 @@ jobs:
         run: |
           UPSTREAM_BRANCH="${{ inputs.upstream_branch || 'main' }}"
           echo "🚀 Triggering sync-upstream workflow..."
+          # Explicitly specify repo to avoid picking up upstream remote
           gh workflow run sync-upstream.yml \
+            --repo "$GITHUB_REPOSITORY" \
             --ref main \
             -f upstream_branch="$UPSTREAM_BRANCH"
           echo "✅ Sync workflow triggered successfully"

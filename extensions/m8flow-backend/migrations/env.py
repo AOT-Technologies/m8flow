@@ -28,6 +28,7 @@ fileConfig(config.config_file_name)
 
 target_metadata = db.Model.metadata
 
+
 def get_url():
     """Get the database URL from environment variables."""
     url = os.environ.get("SPIFFWORKFLOW_BACKEND_DATABASE_URI") or os.environ.get(
