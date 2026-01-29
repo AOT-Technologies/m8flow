@@ -65,17 +65,20 @@ class TemplateAuthorizationService:
             # No tenant context; default deny non-public
             return query.filter(TemplateModel.visibility == TemplateVisibility.public.value)
 
-        # PUBLIC or same tenant; private requires owner check in app layer
-        return query.filter(
-            or_(
-                TemplateModel.visibility == TemplateVisibility.public.value,
-                and_(
-                    TemplateModel.visibility == TemplateVisibility.tenant.value,
-                    TemplateModel.m8f_tenant_id == tenant_id
-                ),
+        # PUBLIC or same-tenant TENANT; PRIVATE only for owner
+        conditions = [
+            TemplateModel.visibility == TemplateVisibility.public.value,
+            and_(
+                TemplateModel.visibility == TemplateVisibility.tenant.value,
+                TemplateModel.m8f_tenant_id == tenant_id
+            ),
+        ]
+        if user is not None:
+            conditions.append(
                 and_(
                     TemplateModel.visibility == TemplateVisibility.private.value,
-                    TemplateModel.m8f_tenant_id == tenant_id
+                    TemplateModel.m8f_tenant_id == tenant_id,
+                    TemplateModel.created_by == user.username
                 )
             )
-        )
+        return query.filter(or_(*conditions))

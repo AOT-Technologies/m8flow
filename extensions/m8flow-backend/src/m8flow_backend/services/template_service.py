@@ -5,6 +5,7 @@ from typing import Any
 
 from flask import g
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 
 from spiffworkflow_backend.exceptions.api_error import ApiError
 from spiffworkflow_backend.models.db import db
@@ -119,9 +120,17 @@ class TemplateService:
             created_by=username_str,
             modified_by=username_str,
         )
-        db.session.add(template)
-        TemplateModel.commit_with_rollback_on_exception()
-        return template
+        try:
+            db.session.add(template)
+            TemplateModel.commit_with_rollback_on_exception()
+            return template
+        except IntegrityError:
+            db.session.rollback()
+            raise ApiError(
+                error_code="template_conflict",
+                message="A template with this key and version already exists for this tenant.",
+                status_code=409,
+            )
 
     @classmethod
     def list_templates(
@@ -139,10 +148,15 @@ class TemplateService:
         query = TemplateAuthorizationService.filter_query_by_visibility(query, user=user)
         query = query.filter(TemplateModel.is_deleted.is_(False))
         
-        # Filter by tenant if provided (ensure tenant isolation)
+        # Filter by tenant: show current tenant's templates + PUBLIC templates from any tenant
         tenant = tenant_id or getattr(g, "m8flow_tenant_id", None)
         if tenant:
-            query = query.filter(TemplateModel.m8f_tenant_id == tenant)
+            query = query.filter(
+                or_(
+                    TemplateModel.m8f_tenant_id == tenant,
+                    TemplateModel.visibility == TemplateVisibility.public.value,
+                )
+            )
 
         # Apply filters
         if category:
