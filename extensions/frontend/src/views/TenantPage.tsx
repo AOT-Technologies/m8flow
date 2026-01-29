@@ -237,7 +237,7 @@ export default function TenantPage() {
                   <MenuItem value="all">All</MenuItem>
                   <MenuItem value="ACTIVE">Active</MenuItem>
                   <MenuItem value="INACTIVE">Inactive</MenuItem>
-                  <MenuItem value="DELETED">Deleted</MenuItem>
+                  {/* <MenuItem value="DELETED">Deleted</MenuItem> */} {/*TODO: Phase 2 - Delete functionality will be implemented in Phase 2*/}
                 </Select>
               </FormControl>
             </Box>
