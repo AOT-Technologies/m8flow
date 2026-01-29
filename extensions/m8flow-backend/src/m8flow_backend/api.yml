@@ -281,16 +281,70 @@ paths:
 
     post:
       summary: Create template
-      description: Creates a new template with the provided details. Accepts both JSON and XML (BPMN) content types
+      description: Creates a new template using BPMN XML content with metadata provided via X-Template-* headers.
       operationId: m8flow_backend.routes.templates_controller.template_create
       tags:
         - Template
+      parameters:
+        - name: X-Template-Key
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Unique key for the template.
+        - name: X-Template-Name
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Human-readable name of the template.
+        - name: X-Template-Description
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Optional description of the template.
+        - name: X-Template-Category
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Optional category for grouping templates.
+        - name: X-Template-Tags
+          in: header
+          required: false
+          schema:
+            type: string
+          description: JSON array string or comma-separated list of tags.
+        - name: X-Template-Visibility
+          in: header
+          required: false
+          schema:
+            type: string
+            enum: [PRIVATE, TENANT, PUBLIC]
+          description: Visibility level of the template. Defaults to PRIVATE.
+        - name: X-Template-Status
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Status of the template. Defaults to draft.
+        - name: X-Template-Is-Published
+          in: header
+          required: false
+          schema:
+            type: string
+            enum: ["true", "false"]
+          description: Whether the template is published. Defaults to false.
+        - name: X-Template-Version
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Optional explicit version identifier (e.g., V1). If omitted, the next version will be generated automatically.
       requestBody:
         required: true
         content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/TemplateCreateRequest"
           application/xml:
             schema:
               type: string
@@ -570,7 +624,7 @@ components:
       properties:
         id:
           type: integer
-        template_key:
+        templateKey:
           type: string
         version:
           type: string
@@ -585,26 +639,28 @@ components:
             type: string
         category:
           type: string
-        tenant_id:
+        tenantId:
           type: string
         visibility:
           type: string
           enum: [PRIVATE, TENANT, PUBLIC]
-        bpmn_object_key:
+        bpmnObjectKey:
           type: string
-        is_published:
+        isPublished:
           type: boolean
         status:
           type: string
-        created_at:
+        createdAt:
           type: string
           format: date-time
-        created_by:
+        createdBy:
           type: string
-        updated_at:
+        updatedAt:
           type: string
           format: date-time
-        modified_by:
+        modifiedBy:
+          type: string
+        bpmnContent:
           type: string
         is_deleted:
           type: boolean

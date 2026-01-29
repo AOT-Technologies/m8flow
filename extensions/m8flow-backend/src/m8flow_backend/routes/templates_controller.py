@@ -14,31 +14,31 @@ def _serialize_template(template: TemplateModel, include_bpmn: bool = True) -> d
     """Serialize template with optional BPMN content."""
     result = {
         "id": template.id,
-        "template_key": template.template_key,
+        "templateKey": template.template_key,
         "version": template.version,
         "name": template.name,
         "description": template.description,
         "tags": template.tags,
         "category": template.category,
-        "tenant_id": template.m8f_tenant_id,
+        "tenantId": template.m8f_tenant_id,
         "visibility": template.visibility,
-        "bpmn_object_key": template.bpmn_object_key,
-        "is_published": template.is_published,
+        "bpmnObjectKey": template.bpmn_object_key,
+        "isPublished": template.is_published,
         "status": template.status,
-        "created_at": template.created.isoformat() if template.created else None,
-        "created_by": template.created_by,
-        "updated_at": template.modified.isoformat() if template.modified else None,
-        "modified_by": template.modified_by,
+        "createdAt": template.created.isoformat() if template.created else None,
+        "createdBy": template.created_by,
+        "updatedAt": template.modified.isoformat() if template.modified else None,
+        "modifiedBy": template.modified_by,
     }
     
     # Include BPMN content if requested and available
     if include_bpmn and template.bpmn_object_key and template.m8f_tenant_id:
         try:
             bpmn_bytes = TemplateService.storage.get_bpmn(template.bpmn_object_key, template.m8f_tenant_id)
-            result["bpmn_content"] = bpmn_bytes.decode('utf-8')
+            result["bpmnContent"] = bpmn_bytes.decode('utf-8')
         except Exception:
             # If BPMN file can't be loaded, just omit it
-            result["bpmn_content"] = None
+            result["bpmnContent"] = None
     
     return result
 
@@ -61,56 +61,67 @@ def template_list():
         visibility=visibility,
         search=search,
     )
-    return jsonify([_serialize_template(t) for t in templates])
+    # For list responses, omit BPMN content for performance
+    return jsonify([_serialize_template(t, include_bpmn=False) for t in templates])
 
 
 def template_create():
     user = getattr(g, "user", None)
-    
-    # Check if this is XML body request (new format) or JSON body (legacy format)
-    if request.content_type == "application/xml":
-        # New format: XML body with metadata in headers
-        # Extract metadata from headers
-        metadata = {
-            "template_key": request.headers.get("X-Template-Key"),
-            "name": request.headers.get("X-Template-Name"),
-            "description": request.headers.get("X-Template-Description"),
-            "category": request.headers.get("X-Template-Category"),
-            "tags": request.headers.get("X-Template-Tags"),
-            "visibility": request.headers.get("X-Template-Visibility", "PRIVATE"),
-            "status": request.headers.get("X-Template-Status", "draft"),
-            "is_published": request.headers.get("X-Template-Is-Published", "false").lower() == "true",
-            "version": request.headers.get("X-Template-Version"),
-        }
-        
-        # Validate required headers
-        if not metadata["template_key"] or not metadata["name"]:
-            raise ApiError("missing_fields", "X-Template-Key and X-Template-Name headers are required", status_code=400)
-        
-        # Get BPMN content from request body
-        bpmn_bytes = request.get_data()
-        if not bpmn_bytes:
-            raise ApiError("missing_content", "BPMN XML content is required in request body", status_code=400)
-        
-        # Parse tags if provided
-        if metadata["tags"]:
-            try:
-                metadata["tags"] = json.loads(metadata["tags"])
-            except json.JSONDecodeError:
-                # If not JSON, treat as comma-separated
-                metadata["tags"] = [tag.strip() for tag in metadata["tags"].split(",") if tag.strip()]
-        
-        template = TemplateService.create_template(
-            bpmn_bytes=bpmn_bytes,
-            metadata=metadata,
-            user=user,
-            tenant_id=getattr(g, "m8flow_tenant_id", None)
+
+    # Require XML body (new format) with metadata in headers
+    if request.content_type != "application/xml":
+        raise ApiError(
+            "unsupported_media_type",
+            "Only application/xml is supported for template creation. "
+            "Send BPMN XML in the body and metadata via X-Template-* headers.",
+            status_code=415,
         )
-    else:
-        # Legacy format: JSON body
-        body = request.get_json(force=True, silent=True) or {}
-        template = TemplateService.create_template(data=body, user=user, tenant_id=getattr(g, "m8flow_tenant_id", None))
-    
+
+    # Extract metadata from headers
+    metadata = {
+        "template_key": request.headers.get("X-Template-Key"),
+        "name": request.headers.get("X-Template-Name"),
+        "description": request.headers.get("X-Template-Description"),
+        "category": request.headers.get("X-Template-Category"),
+        "tags": request.headers.get("X-Template-Tags"),
+        "visibility": request.headers.get("X-Template-Visibility", "PRIVATE"),
+        "status": request.headers.get("X-Template-Status", "draft"),
+        "is_published": request.headers.get("X-Template-Is-Published", "false").lower() == "true",
+        "version": request.headers.get("X-Template-Version"),
+    }
+
+    # Validate required headers
+    if not metadata["template_key"] or not metadata["name"]:
+        raise ApiError(
+            "missing_fields",
+            "X-Template-Key and X-Template-Name headers are required",
+            status_code=400,
+        )
+
+    # Get BPMN content from request body
+    bpmn_bytes = request.get_data()
+    if not bpmn_bytes:
+        raise ApiError(
+            "missing_content",
+            "BPMN XML content is required in request body",
+            status_code=400,
+        )
+
+    # Parse tags if provided
+    if metadata["tags"]:
+        try:
+            metadata["tags"] = json.loads(metadata["tags"])
+        except json.JSONDecodeError:
+            # If not JSON, treat as comma-separated
+            metadata["tags"] = [tag.strip() for tag in metadata["tags"].split(",") if tag.strip()]
+
+    template = TemplateService.create_template(
+        bpmn_bytes=bpmn_bytes,
+        metadata=metadata,
+        user=user,
+        tenant_id=getattr(g, "m8flow_tenant_id", None),
+    )
+
     return jsonify(_serialize_template(template)), 201
 
 

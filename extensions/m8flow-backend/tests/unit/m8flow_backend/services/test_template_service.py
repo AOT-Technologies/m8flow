@@ -253,7 +253,7 @@ def test_create_template_with_bpmn_bytes() -> None:
 
 
 def test_create_template_with_legacy_data_format() -> None:
-    """Create template using legacy data dict format."""
+    """Legacy data dict format is no longer supported."""
     app = Flask(__name__)
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -271,23 +271,17 @@ def test_create_template_with_legacy_data_format() -> None:
             g.m8flow_tenant_id = "tenant-a"
             g.user = user
 
-            data = {
-                "template_key": "legacy-template",
-                "name": "Legacy Template",
-                "bpmn_object_key": "legacy.bpmn",
-                "version": "2.0.0",
-            }
-
-            template = TemplateService.create_template(
-                data=data,
-                user=user,
-                tenant_id="tenant-a",
-            )
-
-            assert template.template_key == "legacy-template"
-            assert template.name == "Legacy Template"
-            assert template.version == "2.0.0"
-            assert template.bpmn_object_key == "legacy.bpmn"
+            # Legacy data dict should not be accepted; metadata + BPMN bytes are required.
+            try:
+                TemplateService.create_template(
+                    metadata=None,
+                    bpmn_bytes=None,
+                    user=user,
+                    tenant_id="tenant-a",
+                )
+                assert False, "Should have raised ApiError for missing metadata/BPMN"
+            except ApiError as e:
+                assert e.error_code == "missing_fields"
 
 
 def test_create_template_without_user() -> None:

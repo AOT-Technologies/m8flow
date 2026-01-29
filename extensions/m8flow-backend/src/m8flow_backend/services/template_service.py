@@ -61,13 +61,12 @@ class TemplateService:
     @classmethod
     def create_template(
         cls,
-        bpmn_bytes: bytes | None = None,
-        metadata: dict[str, Any] | None = None,
-        data: dict[str, Any] | None = None,
+        bpmn_bytes: bytes | None,
+        metadata: dict[str, Any] | None,
         user: UserModel | None = None,
         tenant_id: str | None = None,
     ) -> TemplateModel:
-        """Create a template. Can accept BPMN bytes + metadata, or legacy data dict format."""
+        """Create a template using BPMN bytes and metadata from headers."""
         if user is None:
             raise ApiError("unauthorized", "User must be authenticated to create templates", status_code=403)
 
@@ -75,44 +74,30 @@ class TemplateService:
         if tenant is None:
             raise ApiError("tenant_required", "Tenant context required", status_code=400)
 
-        # Support both new format (bpmn_bytes + metadata) and legacy format (data dict)
-        if data is not None:
-            # Legacy format: all data in dict, bpmn_object_key may be provided directly
-            template_key = data.get("template_key")
-            name = data.get("name")
-            bpmn_object_key = data.get("bpmn_object_key")
-            provided_version = data.get("version")
-            visibility = data.get("visibility", TemplateVisibility.private.value)
-            tags = data.get("tags")
-            category = data.get("category")
-            description = data.get("description")
-            status = data.get("status", "draft")
-            is_published = bool(data.get("is_published", False))
-        else:
-            # New format: metadata dict + bpmn_bytes
-            if metadata is None:
-                raise ApiError("missing_fields", "metadata is required", status_code=400)
-            template_key = metadata.get("template_key")
-            name = metadata.get("name")
-            provided_version = metadata.get("version")
-            visibility = metadata.get("visibility", TemplateVisibility.private.value)
-            tags = metadata.get("tags")
-            category = metadata.get("category")
-            description = metadata.get("description")
-            status = metadata.get("status", "draft")
-            is_published = bool(metadata.get("is_published", False))
-            bpmn_object_key = None  # Will be generated from storage
+        if metadata is None:
+            raise ApiError("missing_fields", "metadata is required", status_code=400)
+
+        template_key = metadata.get("template_key")
+        name = metadata.get("name")
+        provided_version = metadata.get("version")
+        visibility = metadata.get("visibility", TemplateVisibility.private.value)
+        tags = metadata.get("tags")
+        category = metadata.get("category")
+        description = metadata.get("description")
+        status = metadata.get("status", "draft")
+        is_published = bool(metadata.get("is_published", False))
+        bpmn_object_key = None  # Will be generated from storage
 
         if not template_key or not name:
             raise ApiError("missing_fields", "template_key and name are required", status_code=400)
 
         version = provided_version or cls._next_version(template_key, tenant)
 
-        # Store BPMN file if provided
+        # Store BPMN file (now required)
         if bpmn_bytes is not None:
             bpmn_object_key = cls.storage.store_bpmn(template_key, version, bpmn_bytes, tenant)
-        elif bpmn_object_key is None:
-            raise ApiError("missing_fields", "bpmn_content or bpmn_object_key is required", status_code=400)
+        else:
+            raise ApiError("missing_fields", "bpmn_content is required", status_code=400)
 
         username = getattr(g, "user", None)
         username_str = username.username if username and hasattr(username, "username") else None

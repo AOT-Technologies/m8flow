@@ -65,11 +65,6 @@ if flask_app is None:
 # Configure SQL echo if enabled
 _configure_sql_echo(flask_app)
 
-# Testing hook for tenant selection; replace with JWT-based tenant context.
-# curl -H "M8Flow-Tenant-Id: tenant-a" http://localhost:8000/v1/process-models
-# curl -H "M8Flow-Tenant-Id: tenant-b" http://localhost:8000/v1/process-models
-# Configure M8Flow templates storage directory
-
 m8flow_templates_dir = os.environ.get("M8FLOW_TEMPLATES_STORAGE_DIR")
 if m8flow_templates_dir:
     flask_app.config["M8FLOW_TEMPLATES_STORAGE_DIR"] = m8flow_templates_dir
