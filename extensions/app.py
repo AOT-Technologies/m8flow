@@ -65,6 +65,12 @@ if flask_app is None:
 # Configure SQL echo if enabled
 _configure_sql_echo(flask_app)
 
+m8flow_templates_dir = os.environ.get("M8FLOW_TEMPLATES_STORAGE_DIR")
+if m8flow_templates_dir:
+    flask_app.config["M8FLOW_TEMPLATES_STORAGE_DIR"] = m8flow_templates_dir
+    logger.info(f"M8FLOW_TEMPLATES_STORAGE_DIR configured: {m8flow_templates_dir}")
+
+# TODO: Use tenant id from JWT token instead of request headers when tenant context auth is implemented
 def load_tenant():
     """Resolve tenant from auth context and store it in Flask 'g'."""
     resolve_request_tenant()
