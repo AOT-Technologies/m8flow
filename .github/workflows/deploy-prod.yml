@@ -1,0 +1,313 @@
+name: Deploy to Production
+
+on:
+  # Automatic trigger on final release tags
+  push:
+    tags:
+      - "v*"
+      - "!v*-rc*"
+
+  # Manual re-run / emergency deploy
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Final release tag (vX.Y.Z)"
+        required: true
+        type: string
+      backend_image_digest:
+        description: "Backend image digest (sha256:...)"
+        required: true
+        type: string
+      frontend_image_digest:
+        description: "Frontend image digest (sha256:...)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+env:
+  REGISTRY: docker.io
+  PROJECT: spiffworkflow
+
+jobs:
+  # -------------------------
+  # Validate Release & Retrieve Digests
+  # -------------------------
+  validate:
+    name: Validate Final Release
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.tag.outputs.tag }}
+      backend_digest: ${{ steps.digests.outputs.backend }}
+      frontend_digest: ${{ steps.digests.outputs.frontend }}
+
+    steps:
+      - name: Determine release tag
+        id: tag
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            echo "tag=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${{ inputs.release_tag }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Validate final tag format
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid final release tag: $TAG"
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag is on main branch
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          COMMIT=$(git rev-list -n 1 "$TAG")
+
+          git fetch origin main
+          if ! git branch -r --contains "$COMMIT" | grep -q "origin/main"; then
+            echo "::error::Tag $TAG does not point to a commit on main"
+            exit 1
+          fi
+
+      - name: Check for release-blocking labels
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = "${{ steps.tag.outputs.tag }}";
+            const { data: releases } = await github.rest.repos.listReleases({
+              owner: context.repo.owner,
+              repo: context.repo.repo
+            });
+
+            const release = releases.find(r => r.tag_name === tag);
+            if (release && release.body?.includes("do-not-release")) {
+              core.setFailed("Release is blocked by do-not-release marker");
+            }
+
+      # -------------------------
+      # Retrieve or Validate Image Digests
+      # -------------------------
+      - name: Resolve image digests
+        id: digests
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+
+          # If workflow_dispatch with digests provided, use them
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            BACKEND="${{ inputs.backend_image_digest }}"
+            FRONTEND="${{ inputs.frontend_image_digest }}"
+
+            # Validate format
+            if [[ ! "$BACKEND" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+              echo "::error::Invalid backend image digest format"
+              exit 1
+            fi
+            if [[ ! "$FRONTEND" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+              echo "::error::Invalid frontend image digest format"
+              exit 1
+            fi
+
+            echo "backend=$BACKEND" >> $GITHUB_OUTPUT
+            echo "frontend=$FRONTEND" >> $GITHUB_OUTPUT
+            echo "Using provided digests"
+            exit 0
+          fi
+
+          # For push trigger, find corresponding RC tag and retrieve digests
+          # Extract version without 'v' prefix: v1.2.3 -> 1.2.3
+          VERSION="${TAG#v}"
+
+          echo "Looking for RC artifacts for version $VERSION..."
+
+          # Find the latest RC workflow run for this version
+          # This searches for deploy-dev runs with matching RC tag
+          RC_PATTERN="v${VERSION}-rc"
+
+          # Download artifacts from the most recent successful deploy-dev run
+          # that matches our version's RC tags
+          ARTIFACT_FOUND=false
+
+          # List recent workflow runs for deploy-dev
+          RUNS=$(gh run list --workflow=deploy-dev.yml --status=success --limit=20 --json databaseId,headBranch)
+
+          for RUN_ID in $(echo "$RUNS" | jq -r '.[].databaseId'); do
+            BRANCH=$(echo "$RUNS" | jq -r ".[] | select(.databaseId==$RUN_ID) | .headBranch")
+
+            if [[ "$BRANCH" == *"$RC_PATTERN"* ]]; then
+              echo "Found matching RC run: $BRANCH (ID: $RUN_ID)"
+
+              # Try to download artifacts
+              if gh run download "$RUN_ID" --name image-digests --dir ./digests 2>/dev/null; then
+                ARTIFACT_FOUND=true
+                break
+              fi
+            fi
+          done
+
+          if [[ "$ARTIFACT_FOUND" != "true" ]]; then
+            echo "::error::Could not find image digests from Dev build for $TAG"
+            echo "::error::Please use workflow_dispatch and provide digests manually"
+            exit 1
+          fi
+
+          BACKEND=$(cat ./digests/backend-image-digest.txt)
+          FRONTEND=$(cat ./digests/frontend-image-digest.txt)
+
+          # Validate retrieved digests
+          if [[ ! "$BACKEND" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo "::error::Retrieved backend digest is invalid: $BACKEND"
+            exit 1
+          fi
+          if [[ ! "$FRONTEND" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo "::error::Retrieved frontend digest is invalid: $FRONTEND"
+            exit 1
+          fi
+
+          echo "backend=$BACKEND" >> $GITHUB_OUTPUT
+          echo "frontend=$FRONTEND" >> $GITHUB_OUTPUT
+          echo "Retrieved digests from Dev build artifacts"
+
+  # -------------------------
+  # Deploy to Production
+  # -------------------------
+  deploy:
+    name: Deploy to Production (Digest-Based)
+    needs: validate
+    runs-on: ubuntu-latest
+
+    # 🔐 Manual approval gate
+    environment:
+      name: prod
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Configure kubeconfig (Prod)
+        run: |
+          echo "${{ secrets.KUBECONFIG_PROD }}" | base64 -d > kubeconfig
+          echo "KUBECONFIG=$(pwd)/kubeconfig" >> $GITHUB_ENV
+
+      # -------------------------
+      # Deploy Backend
+      # -------------------------
+      - name: Deploy backend (digest only)
+        run: |
+          echo "Deploying backend with digest: ${{ needs.validate.outputs.backend_digest }}"
+          kubectl -n prod set image deployment/spiffworkflow-backend \
+            backend=${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.PROJECT }}-backend@${{ needs.validate.outputs.backend_digest }} || {
+            echo "::error::Failed to update backend deployment"
+            kubectl -n prod describe deployment/spiffworkflow-backend
+            exit 1
+          }
+
+      # -------------------------
+      # Deploy Frontend
+      # -------------------------
+      - name: Deploy frontend (digest only)
+        run: |
+          echo "Deploying frontend with digest: ${{ needs.validate.outputs.frontend_digest }}"
+          kubectl -n prod set image deployment/spiffworkflow-frontend \
+            frontend=${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.PROJECT }}-frontend@${{ needs.validate.outputs.frontend_digest }} || {
+            echo "::error::Failed to update frontend deployment"
+            kubectl -n prod describe deployment/spiffworkflow-frontend
+            exit 1
+          }
+
+      - name: Wait for rollout
+        run: |
+          echo "Waiting for backend rollout..."
+          kubectl -n prod rollout status deployment/spiffworkflow-backend --timeout=300s || {
+            echo "::error::Backend rollout failed or timed out"
+            kubectl -n prod describe deployment/spiffworkflow-backend
+            kubectl -n prod logs deployment/spiffworkflow-backend --tail=50 || true
+            exit 1
+          }
+
+          echo "Waiting for frontend rollout..."
+          kubectl -n prod rollout status deployment/spiffworkflow-frontend --timeout=300s || {
+            echo "::error::Frontend rollout failed or timed out"
+            kubectl -n prod describe deployment/spiffworkflow-frontend
+            kubectl -n prod logs deployment/spiffworkflow-frontend --tail=50 || true
+            exit 1
+          }
+
+      # -------------------------
+      # Optional: Database Migrations
+      # -------------------------
+      # Uncomment and configure when migration strategy is determined
+      # - name: Run database migrations
+      #   run: |
+      #     kubectl -n prod exec deployment/spiffworkflow-backend -- \
+      #       flask db upgrade
+
+      # -------------------------
+      # Post-Deploy Verification
+      # -------------------------
+      - name: Post-deploy verification
+        run: |
+          BACKEND_URL="${{ secrets.PROD_BACKEND_URL }}"
+          FRONTEND_URL="${{ secrets.PROD_FRONTEND_URL }}"
+
+          if [[ -n "$BACKEND_URL" ]]; then
+            echo "Checking production backend health..."
+            curl --fail --silent --show-error --max-time 30 "${BACKEND_URL}/v1.0/status" || {
+              echo "::error::Production backend health check failed"
+              exit 1
+            }
+          else
+            echo "::warning::PROD_BACKEND_URL not configured, skipping backend verification"
+          fi
+
+          if [[ -n "$FRONTEND_URL" ]]; then
+            echo "Checking production frontend health..."
+            curl --fail --silent --show-error --max-time 30 "${FRONTEND_URL}" || {
+              echo "::error::Production frontend health check failed"
+              exit 1
+            }
+          else
+            echo "::warning::PROD_FRONTEND_URL not configured, skipping frontend verification"
+          fi
+
+          echo "Post-deploy verification passed"
+
+      # -------------------------
+      # Cleanup
+      # -------------------------
+      - name: Cleanup kubeconfig
+        if: always()
+        run: rm -f kubeconfig
+
+      # -------------------------
+      # Release Completion Report
+      # -------------------------
+      - name: Release completion report
+        run: |
+          echo "## Production Deployment Complete 🚀" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Release:** \`${{ needs.validate.outputs.release_tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Digest |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Backend | \`${{ needs.validate.outputs.backend_digest }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Frontend | \`${{ needs.validate.outputs.frontend_digest }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployed at:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Approved by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
