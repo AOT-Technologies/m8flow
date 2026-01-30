@@ -990,9 +990,6 @@ export default function ReactDiagramEditor({
         onClose={() => setSaveAsTemplateModalOpen(false)}
         onSuccess={() => {
           setSaveAsTemplateModalOpen(false);
-          if (typeof window !== 'undefined' && window.alert) {
-            window.alert('Template created successfully.');
-          }
         }}
         getBpmnXml={() =>
           (diagramModelerState as any)
