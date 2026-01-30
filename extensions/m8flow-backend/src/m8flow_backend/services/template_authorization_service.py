@@ -41,8 +41,8 @@ class TemplateAuthorizationService:
         if user is None:
             return False
 
-        # Owner can edit if not published
-        if template.created_by == user.username and not template.is_published:
+        # Owner can edit: in-place if unpublished, or create new version if published
+        if template.created_by == user.username:
             return True
 
         # Permission check (Spiff permissions are CRUD: create/read/update/delete).
