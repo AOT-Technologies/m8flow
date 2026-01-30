@@ -2,12 +2,55 @@ version: "3.9"
 
 services:
   m8flow-db:
-    image: postgres:11
+    image: postgres:15
     env_file: ../.env
     ports:
       - "1111:5432"
     volumes:
-      - db-data:/var/lib/postgresql/data1
+      - db-data:/var/lib/postgresql/data
+
+  keycloak:
+    image: keycloak/keycloak:26.0.7
+    command: ["start-dev"]
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://m8flow-db:5432/keycloak
+      KC_DB_USERNAME: ${POSTGRES_USER}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+
+      KC_HTTP_PORT: 8080
+      KC_HOSTNAME_STRICT: "false"
+    ports:
+      - "7002:8080"
+    depends_on:
+      - m8flow-db
+      - keycloak-db-init
+
+  keycloak-db-init:
+    image: postgres:11
+    env_file: ../.env
+    depends_on:
+      - m8flow-db
+    entrypoint: >
+      /bin/sh -c "
+      set -e;
+      until pg_isready -h m8flow-db -p 5432 -U $$POSTGRES_USER; do sleep 1; done;
+
+      export PGPASSWORD=$$POSTGRES_PASSWORD;
+
+      exists=$$(psql -h m8flow-db -U $$POSTGRES_USER -d $$POSTGRES_DB -tAc \"SELECT 1 FROM pg_database WHERE datname='keycloak'\");
+      if [ \"$$exists\" != \"1\" ]; then
+        psql -h m8flow-db -U $$POSTGRES_USER -d $$POSTGRES_DB -c \"CREATE DATABASE keycloak\";
+      fi;
+
+      echo 'keycloak db ready';
+      "
+    restart: "no"
+
+
 
   redis:
     image: redis:6-alpine
@@ -115,27 +158,6 @@ services:
       done
       "
 
-  celery_worker:
-    build:
-      context: ../spiffworkflow-backend
-      dockerfile: Dockerfile
-    command: ["./bin/run_server_locally", "celery_worker"]
-    env_file: ../.env
-    environment:
-      SPIFFWORKFLOW_BACKEND_CELERY_BROKER_URL: redis://redis:6379/0
-      SPIFFWORKFLOW_BACKEND_CELERY_RESULT_BACKEND: redis://redis:6379/0
-      SPIFFWORKFLOW_BACKEND_RUNNING_IN_CELERY_WORKER: "true"
-      SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: /app/process_models
-      M8FLOW_TEMPLATES_STORAGE_DIR: /app/templates
-    volumes:
-      - process_models_cache:/app/process_models
-      - templates_cache:/app/templates
-    depends_on:
-      - m8flow-db
-      - redis
-      - process-models-sync
-      - templates-sync
-    restart: unless-stopped
 
   m8flow-frontend:
     build:
@@ -146,6 +168,8 @@ services:
       - "8001:80"
     depends_on:
       - m8flow-backend
+
+
 
 volumes:
   db-data:
