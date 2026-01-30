@@ -28,3 +28,16 @@ export interface TemplateFilters {
   owner?: string;
   latest_only?: boolean;
 }
+
+/** Metadata for creating a template via POST (maps to X-Template-* headers). */
+export interface CreateTemplateMetadata {
+  template_key: string;
+  name: string;
+  description?: string;
+  category?: string;
+  tags?: string[] | string;
+  visibility?: TemplateVisibility;
+  status?: string;
+  version?: string;
+  is_published?: boolean;
+}

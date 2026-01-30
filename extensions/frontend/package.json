@@ -68,12 +68,17 @@
     "start": "cross-env VITE_VERSION_INFO=\"{\\\"version\\\":\\\"local\\\"}\" VITE_BACKEND_BASE_URL=/v1.0 vite --host 0.0.0.0",
     "startopen": "cross-env VITE_VERSION_INFO=\"{\\\"version\\\":\\\"local\\\"}\" vite --host 0.0.0.0",
     "serve": "vite preview",
+    "test": "vitest run",
     "typecheck": "./node_modules/.bin/tsc --noEmit"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.0",
     "@types/node": "^20.12.13",
     "@typescript-eslint/eslint-plugin": "^8.38.0",
     "@typescript-eslint/parser": "^8.38.0",
-    "cross-env": "^7.0.3"
+    "cross-env": "^7.0.3",
+    "jsdom": "^26.1.0",
+    "vitest": "^3.2.4"
   }
 }
