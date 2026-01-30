@@ -8,7 +8,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { ProcessGroup, ProcessGroupLite } from '@spiffworkflow-frontend/interfaces';
-import HttpService from '@spiffworkflow-frontend/services/HttpService';
+import HttpService from '../services/HttpService';
 
 export default function useProcessGroups({
   processInfo,
@@ -23,10 +23,6 @@ export default function useProcessGroups({
   const [loading, setLoading] = useState(false);
 
   const handleProcessGroupResponse = (result: any) => {
-    // Log the response to console
-    console.log('[M8Flow Extension] Process Groups API Response:', result);
-    console.log('[M8Flow Extension] Number of process groups:', result.results?.length || 0);
-    
     setProcessGroups(result.results);
     setLoading(false);
   };
@@ -41,19 +37,19 @@ export default function useProcessGroups({
     setLoading(true);
     
     // Log the API call
-    console.log('[M8Flow Extension] Calling Process Groups API:', path);
+    console.log('[m8 Extension] Calling Process Groups API:', path);
     
     HttpService.makeCallToBackend({
       path,
       httpMethod: 'GET',
       // Add custom header to the API call
       extraHeaders: {
-        'X-M8Flow-Extension': 'true',
-        'X-M8Flow-Request-Source': 'useProcessGroups-override',
+        'X-m8-Extension': 'true',
+        'X-m8-Request-Source': 'useProcessGroups-override',
       },
       successCallback: handleProcessGroupResponse,
       failureCallback: (error: any) => {
-        console.error('[M8Flow Extension] Process Groups API Error:', error);
+        console.error('[m8 Extension] Process Groups API Error:', error);
         setLoading(false);
       },
     });

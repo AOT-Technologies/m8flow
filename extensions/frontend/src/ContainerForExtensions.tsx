@@ -14,7 +14,7 @@ import MenuIcon from '@mui/icons-material/Menu';
 import { ReactElement, useEffect, useState } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 import { ErrorBoundaryFallback } from '@spiffworkflow-frontend/ErrorBoundaryFallack';
-import SideNav from '@spiffworkflow-frontend/components/SideNav';
+import SideNav from './components/SideNav';
 
 import Extension from '@spiffworkflow-frontend/views/Extension';
 import { useUriListForPermissions } from '@spiffworkflow-frontend/hooks/UriListForPermissions';
@@ -25,7 +25,7 @@ import {
   UiSchemaDisplayLocation,
   UiSchemaUxElement,
 } from '@spiffworkflow-frontend/extension_ui_schema_interfaces';
-import HttpService from '@spiffworkflow-frontend/services/HttpService';
+import HttpService from './services/HttpService';
 import BaseRoutes from '@spiffworkflow-frontend/views/BaseRoutes';
 import BackendIsDown from '@spiffworkflow-frontend/views/BackendIsDown';
 import FrontendAccessDenied from '@spiffworkflow-frontend/views/FrontendAccessDenied';
@@ -35,10 +35,12 @@ import ScrollToTop from '@spiffworkflow-frontend/components/ScrollToTop';
 import { createSpiffTheme } from '@spiffworkflow-frontend/assets/theme/SpiffTheme';
 import DynamicCSSInjection from '@spiffworkflow-frontend/components/DynamicCSSInjection';
 
-// M8Flow Extension: Import Reports page
+// m8 Extension: Import Reports page
 import ReportsPage from "./views/ReportsPage";
 // M8Flow Extension: Import Tenant page
 import TenantPage from "./views/TenantPage";
+// m8 Extension: Import Template Gallery page
+import TemplateGalleryPage from './views/TemplateGalleryPage';
 
 const fadeIn = 'fadeIn';
 const fadeOutImmediate = 'fadeOutImmediate';
@@ -253,10 +255,12 @@ export default function ContainerForExtensions() {
   const routeComponents = () => {
     return (
       <Routes>
-        {/* M8Flow Extension: Reports route */}
+        {/* m8 Extension: Reports route */}
         <Route path="reports" element={<ReportsPage />} />
         {/* M8Flow Extension: Tenant route */}
         <Route path="/tenants" element={<TenantPage />} />
+        {/* m8 Extension: Template Gallery route */}
+        <Route path="templates" element={<TemplateGalleryPage />} />
         <Route path="extensions/:page_identifier" element={<Extension />} />
         <Route path="login" element={<Login />} />
         {/* Catch-all route must be last */}
