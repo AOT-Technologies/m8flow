@@ -34,10 +34,9 @@ upgrade_m8flow_db()
 from m8flow_backend.tenancy import DEFAULT_TENANT_ID, ensure_tenant_exists
 from spiffworkflow_backend import create_app
 from spiffworkflow_backend.models.db import db
-from sqlalchemy import create_engine
 
-# Configure the database engine for spiffworkflow_backend.
-create_engine(os.environ["SPIFFWORKFLOW_BACKEND_DATABASE_URI"], pool_pre_ping=True)
+# Keycloak admin API paths that should skip tenant validation (they manage tenants, not use them)
+KEYCLOAK_ADMIN_PATH_PREFIXES = ("/tenant-realms", "/tenant-login", "/realms/")
 
 
 def _env_truthy(value: str | None) -> bool:
@@ -69,11 +68,27 @@ if flask_app is None:
 # Configure SQL echo if enabled
 _configure_sql_echo(flask_app)
 
+# Register M8Flow Keycloak API (create realm, tenant login, create user in realm)
+KEYCLOAK_API_SPEC = Path(__file__).resolve().parent / "m8flow-backend" / "api" / "keycloak_api.yml"
+if KEYCLOAK_API_SPEC.exists():
+    cnx_app.add_api(
+        str(KEYCLOAK_API_SPEC),
+        base_path=flask_app.config["SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"],
+    )
+
 # Testing hook for tenant selection; replace with JWT-based tenant context.
 # curl -H "M8Flow-Tenant-Id: tenant-a" http://localhost:8000/v1/process-models
 # curl -H "M8Flow-Tenant-Id: tenant-b" http://localhost:8000/v1/process-models
 def load_tenant():
     """Load tenant ID from request headers into Flask 'g' context."""
+    # Skip tenant validation for Keycloak admin APIs (they manage tenants, not use them)
+    api_prefix = flask_app.config.get("SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX", "/v1.0")
+    path = request.path
+    for keycloak_path in KEYCLOAK_ADMIN_PATH_PREFIXES:
+        if path.startswith(api_prefix + keycloak_path):
+            g.m8flow_tenant_id = None
+            return
+
     logger.info("Loading tenant ID from request headers")
     tenant_id = request.headers.get("M8Flow-Tenant-Id", DEFAULT_TENANT_ID)
     g.m8flow_tenant_id = tenant_id

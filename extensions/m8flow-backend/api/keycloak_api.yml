@@ -1,0 +1,141 @@
+openapi: "3.0.2"
+info:
+  version: 1.0.0
+  title: M8Flow Keycloak APIs
+  description: Create spoke realms, tenant login, and create users in spoke realms.
+servers:
+  - url: http://localhost:8000/v1
+security: []
+
+paths:
+  /tenant-realms:
+    post:
+      summary: Create a spoke realm from the spiffworkflow template
+      operationId: m8flow_backend.routes.keycloak_controller.create_realm
+      tags:
+        - Keycloak
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - realm_id
+              properties:
+                realm_id:
+                  type: string
+                  description: Unique realm identifier (e.g. tenant-b)
+                display_name:
+                  type: string
+                  description: Optional display name for the realm
+      responses:
+        "201":
+          description: Realm created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  realm:
+                    type: string
+                  displayName:
+                    type: string
+        "400":
+          description: Bad request (e.g. missing realm_id)
+        "409":
+          description: Realm already exists
+
+  /tenant-login:
+    post:
+      summary: Login as a user in a spoke realm (returns tokens)
+      operationId: m8flow_backend.routes.keycloak_controller.tenant_login
+      tags:
+        - Keycloak
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - realm
+                - username
+                - password
+              properties:
+                realm:
+                  type: string
+                  description: Spoke realm name
+                username:
+                  type: string
+                password:
+                  type: string
+                  format: password
+      responses:
+        "200":
+          description: Token response (access_token, refresh_token, expires_in, etc.)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  refresh_token:
+                    type: string
+                  expires_in:
+                    type: integer
+                  token_type:
+                    type: string
+        "400":
+          description: Bad request
+        "401":
+          description: Invalid credentials
+
+  /realms/{realm}/users:
+    post:
+      summary: Create a user in a spoke realm
+      operationId: m8flow_backend.routes.keycloak_controller.create_user_in_realm
+      tags:
+        - Keycloak
+      parameters:
+        - name: realm
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Spoke realm name
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+                - password
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+                  format: password
+                email:
+                  type: string
+                  format: email
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user_id:
+                    type: string
+                  location:
+                    type: string
+        "400":
+          description: Bad request
+        "409":
+          description: User already exists
