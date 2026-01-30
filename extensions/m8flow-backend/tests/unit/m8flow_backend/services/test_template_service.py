@@ -49,18 +49,14 @@ class MockTemplateStorageService:
 
 
 def test_version_key() -> None:
-    """Test _version_key() static method with various version formats."""
-    assert TemplateService._version_key("1.0.0") == (1, 0, 0)
-    assert TemplateService._version_key("2.5.10") == (2, 5, 10)
-    assert TemplateService._version_key("1.0") == (1, 0)
-    assert TemplateService._version_key("1") == (1,)
-    assert TemplateService._version_key("1.0.0-alpha") == (1, 0, 0, "-alpha")
-    assert TemplateService._version_key("1.0.0.beta") == (1, 0, 0, ".beta")
-    assert TemplateService._version_key("v1.0.0") == ("v1", 0, 0)
+    """Test _version_key() static method for V-style versions (V1, V2, ...)."""
+    assert TemplateService._version_key("V1") == (1, 1)
+    assert TemplateService._version_key("V2") == (1, 2)
+    assert TemplateService._version_key("v10") == (1, 10)
 
 
 def test_next_version_first_template() -> None:
-    """Test _next_version() returns '1.0.0' for first template."""
+    """Test _next_version() returns 'V1' for first template."""
     app = Flask(__name__)
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -69,15 +65,15 @@ def test_next_version_first_template() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         db.session.commit()
 
         version = TemplateService._next_version("test-template", "tenant-a")
-        assert version == "1.0.0"
+        assert version == "V1"
 
 
 def test_next_version_increments_patch() -> None:
-    """Test version incrementing logic."""
+    """Test V-style version incrementing (V1 -> V2 -> V3)."""
     app = Flask(__name__)
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -86,15 +82,15 @@ def test_next_version_increments_patch() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
 
-        # Create first template
+        # Create first template (V1)
         template1 = TemplateModel(
             template_key="test-template",
-            version="1.0.0",
+            version="V1",
             name="Test Template",
             m8f_tenant_id="tenant-a",
             bpmn_object_key="test.bpmn",
@@ -106,7 +102,7 @@ def test_next_version_increments_patch() -> None:
 
         # Get next version
         next_version = TemplateService._next_version("test-template", "tenant-a")
-        assert next_version == "1.0.1"
+        assert next_version == "V2"
 
         # Create another version
         template2 = TemplateModel(
@@ -123,11 +119,11 @@ def test_next_version_increments_patch() -> None:
 
         # Get next version again
         next_version2 = TemplateService._next_version("test-template", "tenant-a")
-        assert next_version2 == "1.0.2"
+        assert next_version2 == "V3"
 
 
 def test_next_version_handles_non_numeric() -> None:
-    """Test version handling with non-numeric parts."""
+    """Non-numeric V suffix (e.g. V1-alpha) falls back to V1 for next version."""
     app = Flask(__name__)
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -136,15 +132,15 @@ def test_next_version_handles_non_numeric() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
 
-        # Create template with non-numeric version
+        # Create template with non-numeric V suffix (V1-alpha -> fallback to V1)
         template = TemplateModel(
             template_key="test-template",
-            version="1.0.0-alpha",
+            version="V1-alpha",
             name="Test Template",
             m8f_tenant_id="tenant-a",
             bpmn_object_key="test.bpmn",
@@ -154,9 +150,9 @@ def test_next_version_handles_non_numeric() -> None:
         db.session.add(template)
         db.session.commit()
 
-        # Should append .1 to non-numeric version
+        # Next version starts V-series at V1
         next_version = TemplateService._next_version("test-template", "tenant-a")
-        assert next_version == "1.0.0-alpha.1"
+        assert next_version == "V1"
 
 
 def test_next_version_tenant_scoped() -> None:
@@ -169,16 +165,16 @@ def test_next_version_tenant_scoped() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
-        db.session.add(M8flowTenantModel(id="tenant-b", name="Tenant B"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        db.session.add(M8flowTenantModel(id="tenant-b", name="Tenant B", slug="tenant-b", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
 
-        # Create template for tenant-a
+        # Create template for tenant-a (V1)
         template_a = TemplateModel(
             template_key="shared-template",
-            version="1.0.0",
+            version="V1",
             name="Shared Template",
             m8f_tenant_id="tenant-a",
             bpmn_object_key="test.bpmn",
@@ -188,13 +184,13 @@ def test_next_version_tenant_scoped() -> None:
         db.session.add(template_a)
         db.session.commit()
 
-        # Tenant-b should get 1.0.0 as first version (independent versioning)
+        # Tenant-b should get V1 as first version (independent versioning)
         version_b = TemplateService._next_version("shared-template", "tenant-b")
-        assert version_b == "1.0.0"
+        assert version_b == "V1"
 
-        # Tenant-a should get 1.0.1
+        # Tenant-a should get V2
         version_a = TemplateService._next_version("shared-template", "tenant-a")
-        assert version_a == "1.0.1"
+        assert version_a == "V2"
 
 
 # ============================================================================
@@ -212,7 +208,7 @@ def test_create_template_with_bpmn_bytes() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
@@ -246,7 +242,7 @@ def test_create_template_with_bpmn_bytes() -> None:
                 assert template.tags == ["tag1", "tag2"]
                 assert template.visibility == TemplateVisibility.private.value
                 assert template.m8f_tenant_id == "tenant-a"
-                assert template.version == "1.0.0"
+                assert template.version == "V1"
                 assert template.bpmn_object_key == "test-template.bpmn"
                 assert template.created_by == "tester"
                 assert template.modified_by == "tester"
@@ -262,7 +258,7 @@ def test_create_template_with_legacy_data_format() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
@@ -294,7 +290,7 @@ def test_create_template_without_user() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         db.session.commit()
 
         with app.test_request_context("/"):
@@ -303,6 +299,7 @@ def test_create_template_without_user() -> None:
             try:
                 TemplateService.create_template(
                     metadata={"template_key": "test", "name": "Test"},
+                    bpmn_bytes=b"<bpmn>test</bpmn>",
                     user=None,
                     tenant_id="tenant-a",
                 )
@@ -352,7 +349,7 @@ def test_create_template_without_required_fields() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
@@ -398,7 +395,7 @@ def test_create_template_without_bpmn_content() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
@@ -410,6 +407,7 @@ def test_create_template_without_bpmn_content() -> None:
             try:
                 TemplateService.create_template(
                     metadata={"template_key": "test", "name": "Test"},
+                    bpmn_bytes=None,
                     user=user,
                     tenant_id="tenant-a",
                 )
@@ -429,7 +427,7 @@ def test_create_template_auto_versioning() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
@@ -439,23 +437,23 @@ def test_create_template_auto_versioning() -> None:
             g.user = user
 
             with patch.object(TemplateService, "storage", MockTemplateStorageService()):
-                # First template should get 1.0.0
+                # First template should get V1
                 template1 = TemplateService.create_template(
                     metadata={"template_key": "auto-version", "name": "Test"},
                     bpmn_bytes=b"<bpmn>test</bpmn>",
                     user=user,
                     tenant_id="tenant-a",
                 )
-                assert template1.version == "1.0.0"
+                assert template1.version == "V1"
 
-                # Second template with same key should get 1.0.1
+                # Second template with same key should get V2
                 template2 = TemplateService.create_template(
                     metadata={"template_key": "auto-version", "name": "Test"},
                     bpmn_bytes=b"<bpmn>test</bpmn>",
                     user=user,
                     tenant_id="tenant-a",
                 )
-                assert template2.version == "1.0.1"
+                assert template2.version == "V2"
 
 
 def test_create_template_with_provided_version() -> None:
@@ -468,7 +466,7 @@ def test_create_template_with_provided_version() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
@@ -481,7 +479,7 @@ def test_create_template_with_provided_version() -> None:
                 metadata = {
                     "template_key": "explicit-version",
                     "name": "Test",
-                    "version": "5.0.0",
+                    "version": "V5",
                 }
                 template = TemplateService.create_template(
                     metadata=metadata,
@@ -489,7 +487,7 @@ def test_create_template_with_provided_version() -> None:
                     user=user,
                     tenant_id="tenant-a",
                 )
-                assert template.version == "5.0.0"
+                assert template.version == "V5"
 
 
 def test_create_template_tenant_isolation() -> None:
@@ -502,8 +500,8 @@ def test_create_template_tenant_isolation() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
-        db.session.add(M8flowTenantModel(id="tenant-b", name="Tenant B"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        db.session.add(M8flowTenantModel(id="tenant-b", name="Tenant B", slug="tenant-b", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
@@ -534,8 +532,8 @@ def test_create_template_tenant_isolation() -> None:
                 )
                 assert template_b.m8f_tenant_id == "tenant-b"
                 assert template_b.template_key == "shared"
-                # Should be independent versioning
-                assert template_b.version == "1.0.0"
+                # Should be independent versioning (V1 for first in tenant-b)
+                assert template_b.version == "V1"
 
 
 # ============================================================================
@@ -553,7 +551,7 @@ def test_list_templates_latest_only() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
@@ -561,10 +559,10 @@ def test_list_templates_latest_only() -> None:
         with app.test_request_context("/"):
             g.m8flow_tenant_id = "tenant-a"
 
-            # Create multiple versions
+            # Create multiple versions (V-style)
             template1 = TemplateModel(
                 template_key="multi-version",
-                version="1.0.0",
+                version="V1",
                 name="Test",
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
@@ -573,7 +571,7 @@ def test_list_templates_latest_only() -> None:
             )
             template2 = TemplateModel(
                 template_key="multi-version",
-                version="1.0.1",
+                version="V2",
                 name="Test",
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
@@ -582,7 +580,7 @@ def test_list_templates_latest_only() -> None:
             )
             template3 = TemplateModel(
                 template_key="multi-version",
-                version="1.0.2",
+                version="V3",
                 name="Test",
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
@@ -594,7 +592,7 @@ def test_list_templates_latest_only() -> None:
 
             results = TemplateService.list_templates(user=user, tenant_id="tenant-a", latest_only=True)
             assert len(results) == 1
-            assert results[0].version == "1.0.2"
+            assert results[0].version == "V3"
 
 
 def test_list_templates_all_versions() -> None:
@@ -607,7 +605,7 @@ def test_list_templates_all_versions() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
@@ -615,10 +613,10 @@ def test_list_templates_all_versions() -> None:
         with app.test_request_context("/"):
             g.m8flow_tenant_id = "tenant-a"
 
-            # Create multiple versions
+            # Create multiple versions (V-style)
             template1 = TemplateModel(
                 template_key="all-versions",
-                version="1.0.0",
+                version="V1",
                 name="Test",
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
@@ -627,7 +625,7 @@ def test_list_templates_all_versions() -> None:
             )
             template2 = TemplateModel(
                 template_key="all-versions",
-                version="1.0.1",
+                version="V2",
                 name="Test",
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
@@ -651,7 +649,7 @@ def test_list_templates_filter_by_category() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
@@ -661,7 +659,7 @@ def test_list_templates_filter_by_category() -> None:
 
             template1 = TemplateModel(
                 template_key="cat1-template",
-                version="1.0.0",
+                version="V1",
                 name="Category 1",
                 category="category1",
                 m8f_tenant_id="tenant-a",
@@ -671,7 +669,7 @@ def test_list_templates_filter_by_category() -> None:
             )
             template2 = TemplateModel(
                 template_key="cat2-template",
-                version="1.0.0",
+                version="V1",
                 name="Category 2",
                 category="category2",
                 m8f_tenant_id="tenant-a",
@@ -697,7 +695,7 @@ def test_list_templates_filter_by_tag() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
@@ -707,7 +705,7 @@ def test_list_templates_filter_by_tag() -> None:
 
             template1 = TemplateModel(
                 template_key="tag1-template",
-                version="1.0.0",
+                version="V1",
                 name="Tag 1",
                 tags=["tag1", "tag2"],
                 m8f_tenant_id="tenant-a",
@@ -717,7 +715,7 @@ def test_list_templates_filter_by_tag() -> None:
             )
             template2 = TemplateModel(
                 template_key="tag3-template",
-                version="1.0.0",
+                version="V1",
                 name="Tag 3",
                 tags=["tag3"],
                 m8f_tenant_id="tenant-a",
@@ -743,7 +741,7 @@ def test_list_templates_filter_by_owner() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         user1 = UserModel(username="owner1", email="owner1@example.com", service="local", service_id="owner1")
         user2 = UserModel(username="owner2", email="owner2@example.com", service="local", service_id="owner2")
         db.session.add_all([user1, user2])
@@ -754,7 +752,7 @@ def test_list_templates_filter_by_owner() -> None:
 
             template1 = TemplateModel(
                 template_key="owner1-template",
-                version="1.0.0",
+                version="V1",
                 name="Owner 1",
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
@@ -763,7 +761,7 @@ def test_list_templates_filter_by_owner() -> None:
             )
             template2 = TemplateModel(
                 template_key="owner2-template",
-                version="1.0.0",
+                version="V1",
                 name="Owner 2",
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
@@ -788,7 +786,7 @@ def test_list_templates_filter_by_visibility() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
@@ -798,7 +796,7 @@ def test_list_templates_filter_by_visibility() -> None:
 
             template1 = TemplateModel(
                 template_key="public-template",
-                version="1.0.0",
+                version="V1",
                 name="Public",
                 visibility=TemplateVisibility.public.value,
                 m8f_tenant_id="tenant-a",
@@ -808,7 +806,7 @@ def test_list_templates_filter_by_visibility() -> None:
             )
             template2 = TemplateModel(
                 template_key="private-template",
-                version="1.0.0",
+                version="V1",
                 name="Private",
                 visibility=TemplateVisibility.private.value,
                 m8f_tenant_id="tenant-a",
@@ -836,7 +834,7 @@ def test_list_templates_search() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
@@ -846,7 +844,7 @@ def test_list_templates_search() -> None:
 
             template1 = TemplateModel(
                 template_key="search-template",
-                version="1.0.0",
+                version="V1",
                 name="Searchable Template",
                 description="This is searchable",
                 m8f_tenant_id="tenant-a",
@@ -856,9 +854,9 @@ def test_list_templates_search() -> None:
             )
             template2 = TemplateModel(
                 template_key="other-template",
-                version="1.0.0",
+                version="V1",
                 name="Other Template",
-                description="Not searchable",
+                description="Unrelated content",
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
                 created_by="tester",
@@ -882,8 +880,8 @@ def test_list_templates_tenant_isolation() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
-        db.session.add(M8flowTenantModel(id="tenant-b", name="Tenant B"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        db.session.add(M8flowTenantModel(id="tenant-b", name="Tenant B", slug="tenant-b", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
@@ -893,7 +891,7 @@ def test_list_templates_tenant_isolation() -> None:
 
             template_a = TemplateModel(
                 template_key="shared",
-                version="1.0.0",
+                version="V1",
                 name="Tenant A Template",
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
@@ -908,7 +906,7 @@ def test_list_templates_tenant_isolation() -> None:
 
             template_b = TemplateModel(
                 template_key="shared",
-                version="1.0.0",
+                version="V1",
                 name="Tenant B Template",
                 m8f_tenant_id="tenant-b",
                 bpmn_object_key="test.bpmn",
@@ -940,7 +938,7 @@ def test_get_template_by_key_and_version() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
@@ -950,7 +948,7 @@ def test_get_template_by_key_and_version() -> None:
 
             template = TemplateModel(
                 template_key="specific-version",
-                version="2.0.0",
+                version="V2",
                 name="Test",
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
@@ -961,10 +959,10 @@ def test_get_template_by_key_and_version() -> None:
             db.session.commit()
 
             result = TemplateService.get_template(
-                template_key="specific-version", version="2.0.0", user=user, tenant_id="tenant-a"
+                template_key="specific-version", version="V2", user=user, tenant_id="tenant-a"
             )
             assert result is not None
-            assert result.version == "2.0.0"
+            assert result.version == "V2"
 
 
 def test_get_template_latest() -> None:
@@ -977,7 +975,7 @@ def test_get_template_latest() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
@@ -987,7 +985,7 @@ def test_get_template_latest() -> None:
 
             template1 = TemplateModel(
                 template_key="latest-test",
-                version="1.0.0",
+                version="V1",
                 name="Test",
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
@@ -996,7 +994,7 @@ def test_get_template_latest() -> None:
             )
             template2 = TemplateModel(
                 template_key="latest-test",
-                version="1.0.2",
+                version="V3",
                 name="Test",
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
@@ -1005,7 +1003,7 @@ def test_get_template_latest() -> None:
             )
             template3 = TemplateModel(
                 template_key="latest-test",
-                version="1.0.1",
+                version="V2",
                 name="Test",
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
@@ -1019,7 +1017,7 @@ def test_get_template_latest() -> None:
                 template_key="latest-test", latest=True, user=user, tenant_id="tenant-a"
             )
             assert result is not None
-            assert result.version == "1.0.2"
+            assert result.version == "V3"
 
 
 def test_get_template_not_found() -> None:
@@ -1032,7 +1030,7 @@ def test_get_template_not_found() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
@@ -1056,8 +1054,8 @@ def test_get_template_tenant_isolation() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
-        db.session.add(M8flowTenantModel(id="tenant-b", name="Tenant B"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        db.session.add(M8flowTenantModel(id="tenant-b", name="Tenant B", slug="tenant-b", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
@@ -1067,7 +1065,7 @@ def test_get_template_tenant_isolation() -> None:
 
             template_a = TemplateModel(
                 template_key="shared",
-                version="1.0.0",
+                version="V1",
                 name="Tenant A",
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
@@ -1082,7 +1080,7 @@ def test_get_template_tenant_isolation() -> None:
 
             template_b = TemplateModel(
                 template_key="shared",
-                version="1.0.0",
+                version="V1",
                 name="Tenant B",
                 m8f_tenant_id="tenant-b",
                 bpmn_object_key="test.bpmn",
@@ -1115,7 +1113,7 @@ def test_get_template_by_id() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
@@ -1125,7 +1123,7 @@ def test_get_template_by_id() -> None:
 
             template = TemplateModel(
                 template_key="by-id",
-                version="1.0.0",
+                version="V1",
                 name="Test",
                 visibility=TemplateVisibility.public.value,
                 m8f_tenant_id="tenant-a",
@@ -1152,7 +1150,7 @@ def test_get_template_by_id_visibility_check() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         user1 = UserModel(username="owner", email="owner@example.com", service="local", service_id="owner")
         user2 = UserModel(username="other", email="other@example.com", service="local", service_id="other")
         db.session.add_all([user1, user2])
@@ -1163,7 +1161,7 @@ def test_get_template_by_id_visibility_check() -> None:
 
             template = TemplateModel(
                 template_key="private",
-                version="1.0.0",
+                version="V1",
                 name="Private Template",
                 visibility=TemplateVisibility.private.value,
                 m8f_tenant_id="tenant-a",
@@ -1194,7 +1192,7 @@ def test_get_template_suppress_visibility() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
@@ -1204,7 +1202,7 @@ def test_get_template_suppress_visibility() -> None:
 
             template = TemplateModel(
                 template_key="suppress-test",
-                version="1.0.0",
+                version="V1",
                 name="Test",
                 visibility=TemplateVisibility.private.value,
                 m8f_tenant_id="tenant-a",
@@ -1240,7 +1238,7 @@ def test_update_template_by_key_version() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
@@ -1251,7 +1249,7 @@ def test_update_template_by_key_version() -> None:
 
             template = TemplateModel(
                 template_key="update-test",
-                version="1.0.0",
+                version="V1",
                 name="Original Name",
                 description="Original Description",
                 m8f_tenant_id="tenant-a",
@@ -1264,7 +1262,7 @@ def test_update_template_by_key_version() -> None:
             db.session.commit()
 
             updates = {"name": "Updated Name", "description": "Updated Description"}
-            updated = TemplateService.update_template("update-test", "1.0.0", updates, user=user)
+            updated = TemplateService.update_template("update-test", "V1", updates, user=user)
 
             assert updated.name == "Updated Name"
             assert updated.description == "Updated Description"
@@ -1280,7 +1278,7 @@ def test_update_template_published_immutable() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
@@ -1291,7 +1289,7 @@ def test_update_template_published_immutable() -> None:
 
             template = TemplateModel(
                 template_key="published",
-                version="1.0.0",
+                version="V1",
                 name="Published Template",
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
@@ -1303,7 +1301,7 @@ def test_update_template_published_immutable() -> None:
             db.session.commit()
 
             try:
-                TemplateService.update_template("published", "1.0.0", {"name": "Updated"}, user=user)
+                TemplateService.update_template("published", "V1", {"name": "Updated"}, user=user)
                 assert False, "Should have raised ApiError"
             except ApiError as e:
                 assert e.error_code == "immutable"
@@ -1320,7 +1318,7 @@ def test_update_template_unauthorized() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         owner = UserModel(username="owner", email="owner@example.com", service="local", service_id="owner")
         other = UserModel(username="other", email="other@example.com", service="local", service_id="other")
         db.session.add_all([owner, other])
@@ -1332,20 +1330,21 @@ def test_update_template_unauthorized() -> None:
 
             template = TemplateModel(
                 template_key="unauthorized",
-                version="1.0.0",
+                version="V1",
                 name="Test",
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
                 is_published=False,
+                visibility=TemplateVisibility.public.value,
                 created_by="owner",
                 modified_by="owner",
             )
             db.session.add(template)
             db.session.commit()
 
-            # Other user cannot edit
+            # Other user can see (public) but cannot edit
             try:
-                TemplateService.update_template("unauthorized", "1.0.0", {"name": "Updated"}, user=other)
+                TemplateService.update_template("unauthorized", "V1", {"name": "Updated"}, user=other)
                 assert False, "Should have raised ApiError"
             except ApiError as e:
                 assert e.error_code == "forbidden"
@@ -1362,7 +1361,7 @@ def test_update_template_not_found() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
@@ -1372,7 +1371,7 @@ def test_update_template_not_found() -> None:
             g.user = user
 
             try:
-                TemplateService.update_template("nonexistent", "1.0.0", {"name": "Updated"}, user=user)
+                TemplateService.update_template("nonexistent", "V1", {"name": "Updated"}, user=user)
                 assert False, "Should have raised ApiError"
             except ApiError as e:
                 assert e.error_code == "not_found"
@@ -1389,7 +1388,7 @@ def test_update_template_by_id_unpublished() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
@@ -1400,7 +1399,7 @@ def test_update_template_by_id_unpublished() -> None:
 
             template = TemplateModel(
                 template_key="update-by-id",
-                version="1.0.0",
+                version="V1",
                 name="Original",
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
@@ -1417,7 +1416,7 @@ def test_update_template_by_id_unpublished() -> None:
 
             assert updated.id == template_id  # Same record
             assert updated.name == "Updated"
-            assert updated.version == "1.0.0"  # Same version
+            assert updated.version == "V1"  # Same version
 
 
 def test_update_template_by_id_published_creates_new_version() -> None:
@@ -1430,7 +1429,7 @@ def test_update_template_by_id_published_creates_new_version() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
@@ -1441,7 +1440,7 @@ def test_update_template_by_id_published_creates_new_version() -> None:
 
             template = TemplateModel(
                 template_key="published-update",
-                version="1.0.0",
+                version="V1",
                 name="Published",
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
@@ -1458,7 +1457,7 @@ def test_update_template_by_id_published_creates_new_version() -> None:
 
             assert updated.id != template_id  # New record
             assert updated.name == "New Version"
-            assert updated.version == "1.0.1"  # New version
+            assert updated.version == "V2"  # New version (V1 -> next V2)
             assert updated.is_published is False  # New versions start unpublished
 
 
@@ -1472,7 +1471,7 @@ def test_update_template_with_bpmn_bytes() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
@@ -1483,7 +1482,7 @@ def test_update_template_with_bpmn_bytes() -> None:
 
             template = TemplateModel(
                 template_key="bpmn-update",
-                version="1.0.0",
+                version="V1",
                 name="Test",
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="old.bpmn",
@@ -1512,7 +1511,7 @@ def test_update_template_allowed_fields() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
@@ -1523,7 +1522,7 @@ def test_update_template_allowed_fields() -> None:
 
             template = TemplateModel(
                 template_key="fields-update",
-                version="1.0.0",
+                version="V1",
                 name="Original",
                 description="Original Desc",
                 category="cat1",
@@ -1547,7 +1546,7 @@ def test_update_template_allowed_fields() -> None:
                 "visibility": TemplateVisibility.public.value,
                 "status": "active",
             }
-            updated = TemplateService.update_template("fields-update", "1.0.0", updates, user=user)
+            updated = TemplateService.update_template("fields-update", "V1", updates, user=user)
 
             assert updated.name == "Updated"
             assert updated.description == "Updated Desc"
@@ -1572,7 +1571,7 @@ def test_delete_template_by_id() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
@@ -1583,7 +1582,7 @@ def test_delete_template_by_id() -> None:
 
             template = TemplateModel(
                 template_key="delete-by-id",
-                version="1.0.0",
+                version="V1",
                 name="To Delete",
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
@@ -1607,7 +1606,7 @@ def test_delete_template_by_id() -> None:
             assert (
                 TemplateService.get_template(
                     template_key="delete-by-id",
-                    version="1.0.0",
+                    version="V1",
                     user=user,
                     tenant_id="tenant-a",
                 )
@@ -1628,7 +1627,7 @@ def test_soft_deleted_templates_are_excluded_from_queries() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
@@ -1640,7 +1639,7 @@ def test_soft_deleted_templates_are_excluded_from_queries() -> None:
             # Create active and soft-deleted templates
             active = TemplateModel(
                 template_key="active-template",
-                version="1.0.0",
+                version="V1",
                 name="Active",
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
@@ -1650,7 +1649,7 @@ def test_soft_deleted_templates_are_excluded_from_queries() -> None:
             )
             deleted = TemplateModel(
                 template_key="deleted-template",
-                version="1.0.0",
+                version="V1",
                 name="Deleted",
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
@@ -1672,7 +1671,7 @@ def test_soft_deleted_templates_are_excluded_from_queries() -> None:
             assert (
                 TemplateService.get_template(
                     template_key="deleted-template",
-                    version="1.0.0",
+                    version="V1",
                     user=user,
                     tenant_id="tenant-a",
                 )
@@ -1693,7 +1692,7 @@ def test_delete_template_published_immutable() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
@@ -1704,7 +1703,7 @@ def test_delete_template_published_immutable() -> None:
 
             template = TemplateModel(
                 template_key="published-delete",
-                version="1.0.0",
+                version="V1",
                 name="Published",
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
@@ -1734,7 +1733,7 @@ def test_delete_template_unauthorized() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         owner = UserModel(username="owner", email="owner@example.com", service="local", service_id="owner")
         other = UserModel(username="other", email="other@example.com", service="local", service_id="other")
         db.session.add_all([owner, other])
@@ -1746,11 +1745,12 @@ def test_delete_template_unauthorized() -> None:
 
             template = TemplateModel(
                 template_key="unauthorized-delete",
-                version="1.0.0",
+                version="V1",
                 name="Test",
                 m8f_tenant_id="tenant-a",
                 bpmn_object_key="test.bpmn",
                 is_published=False,
+                visibility=TemplateVisibility.public.value,
                 created_by="owner",
                 modified_by="owner",
             )
@@ -1758,6 +1758,7 @@ def test_delete_template_unauthorized() -> None:
             db.session.commit()
             template_id = template.id
 
+            # Other user can see (public) but cannot delete
             try:
                 TemplateService.delete_template_by_id(template_id, user=other)
                 assert False, "Should have raised ApiError"
@@ -1776,7 +1777,7 @@ def test_delete_template_not_found() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
@@ -1810,8 +1811,8 @@ def test_template_tenant_isolation_across_tenants() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
-        db.session.add(M8flowTenantModel(id="tenant-b", name="Tenant B"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        db.session.add(M8flowTenantModel(id="tenant-b", name="Tenant B", slug="tenant-b", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
@@ -1864,8 +1865,8 @@ def test_template_versioning_multiple_tenants() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
-        db.session.add(M8flowTenantModel(id="tenant-b", name="Tenant B"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        db.session.add(M8flowTenantModel(id="tenant-b", name="Tenant B", slug="tenant-b", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
@@ -1894,14 +1895,14 @@ def test_template_versioning_multiple_tenants() -> None:
             g.user = user
 
             with patch.object(TemplateService, "storage", MockTemplateStorageService()):
-                # Create version for tenant-b (should be 1.0.0, independent)
+                # Create version for tenant-b (should be V1, independent)
                 template_b = TemplateService.create_template(
                     metadata={"template_key": "shared", "name": "Shared"},
                     bpmn_bytes=b"<bpmn>test</bpmn>",
                     user=user,
                     tenant_id="tenant-b",
                 )
-                assert template_b.version == "1.0.0"  # Independent versioning
+                assert template_b.version == "V1"  # Independent versioning
 
 
 def test_template_visibility_public_tenant_private() -> None:
@@ -1914,7 +1915,7 @@ def test_template_visibility_public_tenant_private() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()
@@ -1971,7 +1972,7 @@ def test_template_tags_json_handling() -> None:
 
     with app.app_context():
         db.create_all()
-        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A"))
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
         user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
         db.session.add(user)
         db.session.commit()

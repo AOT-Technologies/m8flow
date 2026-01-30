@@ -105,9 +105,6 @@ def apply() -> None:
     _ensure_stub_package(package_path)
     _load_db_module(package_path)
 
-    # Ensure the tenant table is registered in metadata for FK resolution.
-    importlib.import_module("m8flow_backend.models.m8flow_tenant")
-
     for target, source in _OVERRIDES.items():
         module = importlib.import_module(source)
         sys.modules[target] = module
