@@ -151,14 +151,14 @@ export default function TemplateCard({
         </CardContent>
       </CardActionArea>
       <CardActions sx={{ mt: 'auto', p: 2 }}>
-        <Button
+        {/* <Button
           variant="contained"
           color="primary"
           size="small"
           onClick={(e) => handleUseTemplate(e as unknown as PointerEvent)}
         >
           Use Template
-        </Button>
+        </Button> */}
       </CardActions>
     </Card>
   );
