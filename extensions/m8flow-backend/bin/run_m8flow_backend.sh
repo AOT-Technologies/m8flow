@@ -35,8 +35,10 @@ if [[ -f "$env_file" ]]; then
   done < "$env_file"
 fi
 
+export SPIFFWORKFLOW_BACKEND_DATABASE_URI="${M8FLOW_BACKEND_DATABASE_URI}"
+export SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR="${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR}"
 cd "$repo_root/spiffworkflow-backend"
-if [[ "${SPIFFWORKFLOW_BACKEND_UPGRADE_DB:-}" == "true" ]]; then
+if [[ "${M8FLOW_BACKEND_SW_UPGRADE_DB:-}" == "true" ]]; then
   python -m flask db upgrade
 fi
 python bin/bootstrap.py

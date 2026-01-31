@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 from flask import Flask, g
 from extensions.bootstrap import bootstrap
+from extensions.env_var_mapper import apply_spiff_env_mapping
 from m8flow_backend.services.asgi_tenant_context_middleware import AsgiTenantContextMiddleware
 from m8flow_backend.tenancy import begin_request_context, end_request_context, clear_tenant_context
 
@@ -43,6 +44,9 @@ def _strip_all_non_root_handlers() -> None:
 
 
 logger = logging.getLogger(__name__)
+
+# Map M8FLOW_* vars to SPIFF_* before any backend config loads.
+apply_spiff_env_mapping()
 
 # Apply model overrides before importing spiffworkflow_backend.
 bootstrap()
@@ -200,8 +204,8 @@ def _assert_db_engine_bound(app: Flask) -> None:
         assert db.engine is not None, "db.engine is not initialized/bound inside app_context."
 
 
-def _m8flow_startup(app: Flask) -> None:
-    """Run m8flow startup tasks at process startup (not request-time)."""
+def _m8flow_migration(app: Flask) -> None:
+    """Run m8flow migrations at startup if enabled."""
     # Make sure everything flows through root (uvicorn-log.yaml formatter/filter)
     _strip_all_non_root_handlers()
     _force_root_logging_for(("spiffworkflow_backend", "spiff", "alembic"))
@@ -209,7 +213,7 @@ def _m8flow_startup(app: Flask) -> None:
     # Ensure db is bound before migrating (defensive)
     _assert_db_engine_bound(app)
 
-    # Run migrations now (no request needed)
+    # Run migrations now if enabled
     upgrade_m8flow_db()
 
 
@@ -220,8 +224,8 @@ _register_request_tenant_context_hooks(flask_app)
 _assert_model_identity()
 _assert_db_engine_bound(flask_app)
 
-# Run migrations at startup (regardless of requests)
-_m8flow_startup(flask_app)
+# Run migrations at startup 
+_m8flow_migration(flask_app)
 
 if flask_app is None:
     raise RuntimeError("Could not access underlying Flask app from Connexion app")

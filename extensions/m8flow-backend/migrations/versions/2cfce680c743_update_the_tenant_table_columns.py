@@ -1,7 +1,7 @@
 """update the tenant table columns
 
 Revision ID: 2cfce680c743
-Revises: 0003
+Revises: a750bbb5c234
 Create Date: 2026-01-21 12:51:49.418203
 
 """
@@ -12,7 +12,7 @@ from sqlalchemy import inspect
 
 # revision identifiers, used by Alembic.
 revision = '2cfce680c743'
-down_revision = '0003'
+down_revision = 'a750bbb5c234'
 branch_labels = None
 depends_on = None
 

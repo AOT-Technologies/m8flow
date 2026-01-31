@@ -1,4 +1,5 @@
 #requires -Version 5.1
+
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $scriptDir))
 Set-Location $repoRoot
@@ -27,16 +28,29 @@ $allPaths += $extraPaths
 if ($existing) { $allPaths += $existing }
 $env:PYTHONPATH = ($allPaths | Where-Object { $_ }) -join [IO.Path]::PathSeparator
 
+# --- .env loading (reload-friendly) ------------------------------------------
+# keep a list of keys loaded from .env in this PowerShell session
+if (-not $script:LoadedEnvKeys) { $script:LoadedEnvKeys = @() }
+
+# remove previously-loaded keys so changes in .env take effect on re-run
+foreach ($k in $script:LoadedEnvKeys) {
+  Remove-Item -Path "Env:$k" -ErrorAction SilentlyContinue
+}
+$script:LoadedEnvKeys = @()
+
 $envFile = Join-Path $repoRoot ".env"
 if (Test-Path $envFile) {
   Get-Content $envFile | ForEach-Object {
     $line = $_.Trim()
     if (-not $line -or $line.StartsWith("#")) { return }
     if ($line.StartsWith("export ")) { $line = $line.Substring(7).Trim() }
+
     $idx = $line.IndexOf("=")
     if ($idx -lt 1) { return }
+
     $key = $line.Substring(0, $idx).Trim()
     $value = $line.Substring($idx + 1).Trim()
+
     if ($value.StartsWith("'") -and $value.EndsWith("'")) {
       $value = $value.Substring(1, $value.Length - 2)
     } elseif ($value.StartsWith('"') -and $value.EndsWith('"')) {
@@ -46,14 +60,23 @@ if (Test-Path $envFile) {
       if ($commentIdx -lt 0) { $commentIdx = $value.IndexOf("`t#") }
       if ($commentIdx -ge 0) { $value = $value.Substring(0, $commentIdx).TrimEnd() }
     }
-    if ($key -and -not (Get-Item -Path "Env:$key" -ErrorAction SilentlyContinue)) {
+
+    if ($key) {
       Set-Item -Path "Env:$key" -Value $value
+      $script:LoadedEnvKeys += $key
     }
   }
 }
+# -----------------------------------------------------------------------------
+
+$env:SPIFFWORKFLOW_BACKEND_DATABASE_URI = $env:M8FLOW_BACKEND_DATABASE_URI
+$env:SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR = $env:M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR
 
 Push-Location (Join-Path $repoRoot "spiffworkflow-backend")
 uv sync --all-groups --active
+if ($env:M8FLOW_BACKEND_SW_UPGRADE_DB -eq "true") {
+  python -m flask db upgrade
+}
 Pop-Location
 
 $logConfig = Join-Path $repoRoot "uvicorn-log.yaml"
@@ -63,5 +86,3 @@ python -m uvicorn extensions.app:app `
   --env-file (Join-Path $repoRoot ".env") `
   --app-dir $repoRoot `
   --log-config $logConfig
-
-
