@@ -37,6 +37,9 @@ if (Test-Path $envPath) {
   }
 }
 
+$env:SPIFFWORKFLOW_BACKEND_DATABASE_URI = $env:M8FLOW_BACKEND_DATABASE_URI
+$env:SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR = $env:M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR
+
 $extraPaths = @(
   (Join-Path $repoRoot "spiffworkflow-backend"),
   (Join-Path $repoRoot "spiffworkflow-backend\src"),
