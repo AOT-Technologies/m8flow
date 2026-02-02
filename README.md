@@ -198,6 +198,55 @@ Disable **Client authentication**.
 
 ---
 
+## Running Backend locally
+
+Create a virtual environment and activate it:
+
+```sh
+python -m venv .venv
+source .venv/bin/activate
+```
+
+Install uv and all the dependencies:
+```sh
+pip install --upgrade pip  && pip install uv
+cd spiffworkflow-backend
+uv sync --all-groups --active
+cd ..
+```
+
+To have the backend running locally, on the root of the project, run:
+
+`./extensions/m8flow-backend/bin/run_m8flow_backend.sh`
+
+You can test it running:
+
+`curl http://localhost:8000/v1.0/status`
+
+The result should be:
+
+```json
+{
+  "ok": true,
+  "can_access_frontend": true
+}
+```
+
+---
+
+## Running Backend tests
+
+Running all tests:
+
+`pytest -c spiffworkflow-backend/pyproject.toml ./extensions/m8flow-backend/tests/ -q`
+
+
+Running a specific test:
+
+`pytest -c spiffworkflow-backend/pyproject.toml ./extensions/m8flow-backend/tests/unit/m8flow_backend/services/test_tenant_context_middleware.py -q`
+
+---
+
 ## Access the application 
 
 Open `http://<LOCAL_IP>:8001/` on your browser and you are going to be redirected to keycloak authentication. Now enter temporary credentials: user `admin` password `admin`.
