@@ -2,6 +2,35 @@ import { useState, useCallback } from 'react';
 import HttpService from '../services/HttpService';
 import { Template, TemplateFilters } from '../types/template';
 
+const FILTER_PARAM_KEYS: (keyof TemplateFilters)[] = [
+  'search',
+  'category',
+  'tag',
+  'visibility',
+  'owner',
+  'latest_only',
+];
+
+function buildTemplateQueryParams(filters?: TemplateFilters): URLSearchParams {
+  const params = new URLSearchParams();
+  if (!filters) return params;
+  for (const key of FILTER_PARAM_KEYS) {
+    const value = filters[key];
+    if (value !== undefined && value !== null) {
+      params.append(key, typeof value === 'boolean' ? String(value) : value);
+    }
+  }
+  return params;
+}
+
+function getErrorMessage(err: unknown, fallback: string): string {
+  if (err != null && typeof err === 'object' && 'message' in err && typeof (err as { message: unknown }).message === 'string') {
+    return (err as { message: string }).message;
+  }
+  if (err instanceof Error) return err.message;
+  return fallback;
+}
+
 interface UseTemplatesReturn {
   templates: Template[];
   loading: boolean;
@@ -20,27 +49,7 @@ export function useTemplates(): UseTemplatesReturn {
     setLoading(true);
     setError(null);
 
-    // Build query parameters
-    const params = new URLSearchParams();
-    if (filters?.search) {
-      params.append('search', filters.search);
-    }
-    if (filters?.category) {
-      params.append('category', filters.category);
-    }
-    if (filters?.tag) {
-      params.append('tag', filters.tag);
-    }
-    if (filters?.visibility) {
-      params.append('visibility', filters.visibility);
-    }
-    if (filters?.owner) {
-      params.append('owner', filters.owner);
-    }
-    if (filters?.latest_only !== undefined) {
-      params.append('latest_only', filters.latest_only.toString());
-    }
-
+    const params = buildTemplateQueryParams(filters);
     const queryString = params.toString();
     const path = `/v1.0/m8flow/templates${queryString ? `?${queryString}` : ''}`;
 
@@ -51,11 +60,12 @@ export function useTemplates(): UseTemplatesReturn {
         setTemplates(result);
         setLoading(false);
       },
-      failureCallback: (err: any) => {
-        const errorMessage = err?.message || 'Failed to fetch templates';
-        setError(errorMessage);
+      failureCallback: (err: unknown) => {
+        setError(getErrorMessage(err, 'Failed to fetch templates'));
         setLoading(false);
-        console.error('Error fetching templates:', err);
+        if (process.env.NODE_ENV === 'development') {
+          console.error('Error fetching templates:', err);
+        }
       },
     });
   }, []);
@@ -66,17 +76,18 @@ export function useTemplates(): UseTemplatesReturn {
       setError(null);
 
       HttpService.makeCallToBackend({
-        path: `/v1.0/templates/${id}`,
+        path: `/v1.0/m8flow/templates/${id}`,
         httpMethod: HttpService.HttpMethods.GET,
         successCallback: (result: Template) => {
           setLoading(false);
           resolve(result);
         },
-        failureCallback: (err: any) => {
-          const errorMessage = err?.message || 'Failed to fetch template';
-          setError(errorMessage);
+        failureCallback: (err: unknown) => {
+          setError(getErrorMessage(err, 'Failed to fetch template'));
           setLoading(false);
-          console.error('Error fetching template by ID:', err);
+          if (process.env.NODE_ENV === 'development') {
+            console.error('Error fetching template by ID:', err);
+          }
           resolve(null);
         },
       });
@@ -97,7 +108,7 @@ export function useTemplates(): UseTemplatesReturn {
         }
 
         const queryString = params.toString();
-        const path = `/v1.0/templates/${key}${queryString ? `?${queryString}` : ''}`;
+        const path = `/v1.0/m8flow/templates/${key}${queryString ? `?${queryString}` : ''}`;
 
         HttpService.makeCallToBackend({
           path,
@@ -106,11 +117,12 @@ export function useTemplates(): UseTemplatesReturn {
             setLoading(false);
             resolve(result);
           },
-          failureCallback: (err: any) => {
-            const errorMessage = err?.message || 'Failed to fetch template';
-            setError(errorMessage);
+          failureCallback: (err: unknown) => {
+            setError(getErrorMessage(err, 'Failed to fetch template'));
             setLoading(false);
-            console.error('Error fetching template by key:', err);
+            if (process.env.NODE_ENV === 'development') {
+              console.error('Error fetching template by key:', err);
+            }
             resolve(null);
           },
         });

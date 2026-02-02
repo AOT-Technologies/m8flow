@@ -7,12 +7,14 @@ import {
   Alert,
   Paper,
 } from '@mui/material';
+import { useNavigate } from 'react-router-dom';
 import { useTemplates } from '../hooks/useTemplates';
 import { TemplateFilters as TemplateFiltersType, Template } from '../types/template';
 import TemplateCard from '../components/TemplateCard';
 import TemplateFilters from '../components/TemplateFilters';
 
 export default function TemplateGalleryPage() {
+  const navigate = useNavigate();
   const { templates, loading, error, fetchTemplates } = useTemplates();
   const [filters, setFilters] = useState<TemplateFiltersType>({
     latest_only: true,
@@ -59,8 +61,7 @@ export default function TemplateGalleryPage() {
   };
 
   const handleViewTemplate = (template: Template) => {
-    // Navigate to template detail
-    console.log('View template:', template);
+    navigate(`/templates/${template.id}`);
   };
 
   return (
