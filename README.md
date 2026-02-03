@@ -42,14 +42,6 @@ _A complete list of the latest features is available in our [release notes](http
 
 ---
 
-## Roadmap
-
-**v1.0 (Jan 2026)** → Foundation release (standalone + formsflow integration)  
-**Summer 2026** → Feature updates (templates, connectors, monitoring) + security iFixes  
-**2027 onward** → Yearly feature releases, quarterly iFixes, enterprise add-ons (dashboards, connectors, observability)  
-
----
-
 ## M8Flow Local Installation Guide
 
 This document describes how to run M8Flow locally for testing and development purposes using Docker for infrastructure.
