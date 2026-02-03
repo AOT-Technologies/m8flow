@@ -33,7 +33,9 @@ function getErrorMessage(err: unknown, fallback: string): string {
 
 interface UseTemplatesReturn {
   templates: Template[];
-  loading: boolean;
+  templatesLoading: boolean;
+  templateByIdLoading: boolean;
+  templateByKeyLoading: boolean;
   error: string | null;
   fetchTemplates: (filters?: TemplateFilters) => void;
   fetchTemplateById: (id: number) => Promise<Template | null>;
@@ -42,11 +44,13 @@ interface UseTemplatesReturn {
 
 export function useTemplates(): UseTemplatesReturn {
   const [templates, setTemplates] = useState<Template[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
+  const [templatesLoading, setTemplatesLoading] = useState<boolean>(false);
+  const [templateByIdLoading, setTemplateByIdLoading] = useState<boolean>(false);
+  const [templateByKeyLoading, setTemplateByKeyLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   const fetchTemplates = useCallback((filters?: TemplateFilters) => {
-    setLoading(true);
+    setTemplatesLoading(true);
     setError(null);
 
     const params = buildTemplateQueryParams(filters);
@@ -58,11 +62,11 @@ export function useTemplates(): UseTemplatesReturn {
       httpMethod: HttpService.HttpMethods.GET,
       successCallback: (result: Template[]) => {
         setTemplates(result);
-        setLoading(false);
+        setTemplatesLoading(false);
       },
       failureCallback: (err: unknown) => {
         setError(getErrorMessage(err, 'Failed to fetch templates'));
-        setLoading(false);
+        setTemplatesLoading(false);
         if (process.env.NODE_ENV === 'development') {
           console.error('Error fetching templates:', err);
         }
@@ -72,19 +76,19 @@ export function useTemplates(): UseTemplatesReturn {
 
   const fetchTemplateById = useCallback((id: number): Promise<Template | null> => {
     return new Promise((resolve) => {
-      setLoading(true);
+      setTemplateByIdLoading(true);
       setError(null);
 
       HttpService.makeCallToBackend({
         path: `/v1.0/m8flow/templates/${id}`,
         httpMethod: HttpService.HttpMethods.GET,
         successCallback: (result: Template) => {
-          setLoading(false);
+          setTemplateByIdLoading(false);
           resolve(result);
         },
         failureCallback: (err: unknown) => {
           setError(getErrorMessage(err, 'Failed to fetch template'));
-          setLoading(false);
+          setTemplateByIdLoading(false);
           if (process.env.NODE_ENV === 'development') {
             console.error('Error fetching template by ID:', err);
           }
@@ -97,7 +101,7 @@ export function useTemplates(): UseTemplatesReturn {
   const fetchTemplateByKey = useCallback(
     (key: string, version?: string): Promise<Template | null> => {
       return new Promise((resolve) => {
-        setLoading(true);
+        setTemplateByKeyLoading(true);
         setError(null);
 
         const params = new URLSearchParams();
@@ -114,12 +118,12 @@ export function useTemplates(): UseTemplatesReturn {
           path,
           httpMethod: HttpService.HttpMethods.GET,
           successCallback: (result: Template) => {
-            setLoading(false);
+            setTemplateByKeyLoading(false);
             resolve(result);
           },
           failureCallback: (err: unknown) => {
             setError(getErrorMessage(err, 'Failed to fetch template'));
-            setLoading(false);
+            setTemplateByKeyLoading(false);
             if (process.env.NODE_ENV === 'development') {
               console.error('Error fetching template by key:', err);
             }
@@ -133,7 +137,9 @@ export function useTemplates(): UseTemplatesReturn {
 
   return {
     templates,
-    loading,
+    templatesLoading,
+    templateByIdLoading,
+    templateByKeyLoading,
     error,
     fetchTemplates,
     fetchTemplateById,

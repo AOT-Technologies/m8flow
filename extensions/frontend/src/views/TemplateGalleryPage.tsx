@@ -15,7 +15,7 @@ import TemplateFilters from '../components/TemplateFilters';
 
 export default function TemplateGalleryPage() {
   const navigate = useNavigate();
-  const { templates, loading, error, fetchTemplates } = useTemplates();
+  const { templates, templatesLoading, error, fetchTemplates } = useTemplates();
   const [filters, setFilters] = useState<TemplateFiltersType>({
     latest_only: true,
   });
@@ -76,7 +76,7 @@ export default function TemplateGalleryPage() {
         </Alert>
       )}
 
-      {loading && templates.length === 0 ? (
+      {templatesLoading && templates.length === 0 ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
           <CircularProgress />
         </Box>
@@ -91,7 +91,7 @@ export default function TemplateGalleryPage() {
           />
 
           {/* Main Gallery */}
-          {loading ? (
+          {templatesLoading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
               <CircularProgress />
             </Box>

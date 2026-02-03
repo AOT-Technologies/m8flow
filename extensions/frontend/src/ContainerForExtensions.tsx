@@ -97,13 +97,6 @@ export default function ContainerForExtensions() {
       setIsNavCollapsed(newCollapsedState);
       localStorage.setItem('isNavCollapsed', JSON.stringify(newCollapsedState));
     }
-    if (isMobile) {
-      setIsSideNavVisible(!isSideNavVisible);
-    } else {
-      const newCollapsedState = !isNavCollapsed;
-      setIsNavCollapsed(newCollapsedState);
-      localStorage.setItem('isNavCollapsed', JSON.stringify(newCollapsedState));
-    }
   };
 
   const toggleDarkMode = () => {
