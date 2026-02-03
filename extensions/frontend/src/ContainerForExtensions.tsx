@@ -37,14 +37,61 @@ import DynamicCSSInjection from '@spiffworkflow-frontend/components/DynamicCSSIn
 
 // M8Flow Extension: Import Reports page and tenant selection
 import ReportsPage from './views/ReportsPage';
-import TenantSelectPage from './views/TenantSelectPage';
+import TenantSelectPage, {
+  M8FLOW_TENANT_STORAGE_KEY,
+} from './views/TenantSelectPage';
 import { useConfig } from './utils/useConfig';
+
+/** When ENABLE_MULTITENANT: at "/" show TenantSelectPage if no tenant in localStorage, else show default home (BaseRoutes). */
+function MultitenantRootGate({
+  extensionUxElements,
+  setAdditionalNavElement,
+  isMobile,
+}: {
+  extensionUxElements: UiSchemaUxElement[] | null;
+  setAdditionalNavElement: (el: ReactElement | null) => void;
+  isMobile: boolean;
+}) {
+  const storedTenant = typeof window !== 'undefined' ? localStorage.getItem(M8FLOW_TENANT_STORAGE_KEY) : null;
+  if (storedTenant) {
+    return (
+      <BaseRoutes
+        extensionUxElements={extensionUxElements}
+        setAdditionalNavElement={setAdditionalNavElement}
+        isMobile={isMobile}
+      />
+    );
+  }
+  return <TenantSelectPage />;
+}
 
 const fadeIn = 'fadeIn';
 const fadeOutImmediate = 'fadeOutImmediate';
 
+// #region agent log
+const DEBUG_LOG = (payload: Record<string, unknown>) => {
+  fetch('http://127.0.0.1:7243/ingest/603ec126-81cd-4be3-ba0d-84501c09e628', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      ...payload,
+      timestamp: Date.now(),
+      sessionId: 'debug-session',
+    }),
+  }).catch(() => {});
+};
+// #endregion
+
 export default function ContainerForExtensions() {
   const { ENABLE_MULTITENANT } = useConfig();
+  // #region agent log
+  DEBUG_LOG({
+    hypothesisId: 'D',
+    location: 'ContainerForExtensions.tsx:mount',
+    message: 'ContainerForExtensions mounted',
+    data: { ENABLE_MULTITENANT },
+  });
+  // #endregion
   const [backendIsUp, setBackendIsUp] = useState<boolean | null>(null);
   const [canAccessFrontend, setCanAccessFrontend] = useState<boolean>(true);
   const [extensionUxElements, setExtensionUxElements] = useState<
@@ -254,10 +301,19 @@ export default function ContainerForExtensions() {
   const routeComponents = () => {
     return (
       <Routes>
-        {/* M8Flow Extension: Tenant selection (default when ENABLE_MULTITENANT) */}
+        {/* M8Flow Extension: Tenant selection (default when ENABLE_MULTITENANT; gate shows home if tenant in localStorage) */}
         {ENABLE_MULTITENANT && (
           <>
-            <Route path="/" element={<TenantSelectPage />} />
+            <Route
+              path="/"
+              element={
+                <MultitenantRootGate
+                  extensionUxElements={extensionUxElements}
+                  setAdditionalNavElement={setAdditionalNavElement}
+                  isMobile={isMobile}
+                />
+              }
+            />
             <Route path="tenant" element={<TenantSelectPage />} />
           </>
         )}

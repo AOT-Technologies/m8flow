@@ -31,7 +31,24 @@ function getEnableMultitenant(): boolean {
       ? (import.meta.env.VITE_MULTI_TENANT_ON as string | undefined)
       : undefined;
   const raw = runtime ?? build ?? '';
-  return String(raw).toLowerCase() === 'true';
+  const result = String(raw).toLowerCase() === 'true';
+  // #region agent log
+  if (typeof window !== 'undefined') {
+    fetch('http://127.0.0.1:7243/ingest/603ec126-81cd-4be3-ba0d-84501c09e628', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        hypothesisId: 'A',
+        location: 'useConfig.ts:getEnableMultitenant',
+        message: 'Multitenant config source',
+        data: { runtime, build, raw, result },
+        timestamp: Date.now(),
+        sessionId: 'debug-session',
+      }),
+    }).catch(() => {});
+  }
+  // #endregion
+  return result;
 }
 
 const ENABLE_MULTITENANT = getEnableMultitenant();
