@@ -120,7 +120,8 @@ Linux:
 git clone https://github.com/AOT-Technologies/m8flow.git
 cd m8flow
 cp sample.env .env
-IP=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}'); grep -q "^<LOCAL_IP>=" .env && sed -i.bak "s|^<LOCAL_IP>=.*|<LOCAL_IP>=$IP|" .env || echo "<LOCAL_IP>=$IP" >> .env
+IP="$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')" && \
+[ -n "$IP" ] && grep -q "<LOCAL_IP>" .env && sed -i.bak "s/<LOCAL_IP>/$IP/g" .env && echo "Using IP=$IP"
 docker-compose -f docker/m8flow-docker-compose.yml up -d --build
 
 ```
@@ -130,9 +131,7 @@ Windows CMD:
 git clone https://github.com/AOT-Technologies/m8flow.git
 cd m8flow
 copy sample.env .env
-for /f "tokens=2 delims=:" %A in ('ipconfig ^| findstr /c:"IPv4 Address"') do (set "IP=%A" & set "IP=%IP: =%" & goto :gotip)
-:gotip
-powershell -NoProfile -Command "(Get-Content .env) -replace '<LOCAL_IP>', '%IP%' | Set-Content .env"
+powershell -NoProfile -Command "$ifIndex=(Get-NetRoute '0.0.0.0/0' | sort RouteMetric,InterfaceMetric | select -First 1).IfIndex; $ip=(Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $ifIndex | ?{ $_.IPAddress -notlike '169.254*' -and $_.IPAddress -notlike '127.*' } | select -First 1 -Expand IPAddress); $c=Get-Content .env -Raw; $n=$c -replace '<LOCAL_IP>', $ip; if($n -eq $c){ throw 'No <LOCAL_IP> tokens found in .env' }; $n | Set-Content .env -Encoding UTF8; Write-Host Using IP=$ip"
 docker-compose -f docker/m8flow-docker-compose.yml up -d --build
 
 ```
