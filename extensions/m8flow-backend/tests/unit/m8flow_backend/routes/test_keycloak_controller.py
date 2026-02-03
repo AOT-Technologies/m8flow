@@ -19,6 +19,7 @@ for path in (extension_src, backend_src):
 from m8flow_backend.routes.keycloak_controller import (  # noqa: E402
     create_realm,
     create_user_in_realm,
+    get_tenant_login_url,
     tenant_login,
 )
 
@@ -209,3 +210,33 @@ class TestCreateUserInRealm:
         result, status = create_user_in_realm("tenant-a", {"username": "u", "password": "p"})
         assert status == 400
         assert "Realm" in result["detail"]
+
+
+class TestGetTenantLoginUrl:
+    """Tests for get_tenant_login_url (GET /tenant-login-url)."""
+
+    @patch("m8flow_backend.routes.keycloak_controller.tenant_login_authorization_url")
+    @patch("m8flow_backend.routes.keycloak_controller.realm_exists")
+    def test_get_tenant_login_url_success(self, mock_realm_exists, mock_auth_url):
+        mock_realm_exists.return_value = True
+        mock_auth_url.return_value = "http://keycloak/realms/tenant-a/protocol/openid-connect/auth"
+        result, status = get_tenant_login_url("tenant-a")
+        assert status == 200
+        assert result["login_url"] == "http://keycloak/realms/tenant-a/protocol/openid-connect/auth"
+        assert result["realm"] == "tenant-a"
+        mock_realm_exists.assert_called_once_with("tenant-a")
+        mock_auth_url.assert_called_once_with("tenant-a")
+
+    @patch("m8flow_backend.routes.keycloak_controller.realm_exists")
+    def test_get_tenant_login_url_realm_not_found(self, mock_realm_exists):
+        mock_realm_exists.return_value = False
+        result, status = get_tenant_login_url("missing-tenant")
+        assert status == 404
+        assert "Tenant realm not found" in result["detail"]
+
+    def test_get_tenant_login_url_missing_tenant(self):
+        result, status = get_tenant_login_url("")
+        assert status == 400
+        assert "tenant" in result["detail"].lower()
+        result2, status2 = get_tenant_login_url("   ")
+        assert status2 == 400

@@ -143,6 +143,30 @@ def get_master_admin_token() -> str:
     return r.json()["access_token"]
 
 
+def realm_exists(realm: str) -> bool:
+    """Return True if the realm exists in Keycloak, False otherwise (e.g. 404).
+    Uses the public OpenID discovery endpoint so no admin credentials are required."""
+    if not realm or not str(realm).strip():
+        return False
+    realm = str(realm).strip()
+    try:
+        base_url = keycloak_url()
+        # Public endpoint: no admin token required
+        discovery_url = f"{base_url}/realms/{realm}/.well-known/openid-configuration"
+        r = requests.get(discovery_url, timeout=30)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
+def tenant_login_authorization_url(realm: str) -> str:
+    """Return the Keycloak authorization (login) base URL for the given realm (no query params)."""
+    if not realm or not str(realm).strip():
+        raise ValueError("realm is required")
+    realm = str(realm).strip()
+    return f"{keycloak_url()}/realms/{realm}/protocol/openid-connect/auth"
+
+
 def _fill_realm_template(
     template: dict[str, Any], realm_id: str, display_name: str | None, template_name: str
 ) -> dict[str, Any]:

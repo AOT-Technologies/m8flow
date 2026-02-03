@@ -26,10 +26,12 @@ import {
   UiSchemaUxElement,
 } from '@spiffworkflow-frontend/extension_ui_schema_interfaces';
 import HttpService from '@spiffworkflow-frontend/services/HttpService';
+import UserService from '@spiffworkflow-frontend/services/UserService';
 import BaseRoutes from '@spiffworkflow-frontend/views/BaseRoutes';
 import BackendIsDown from '@spiffworkflow-frontend/views/BackendIsDown';
 import FrontendAccessDenied from '@spiffworkflow-frontend/views/FrontendAccessDenied';
 import Login from '@spiffworkflow-frontend/views/Login';
+import TenantAwareLogin from './views/TenantAwareLogin';
 import useAPIError from '@spiffworkflow-frontend/hooks/UseApiError';
 import ScrollToTop from '@spiffworkflow-frontend/components/ScrollToTop';
 import { createSpiffTheme } from '@spiffworkflow-frontend/assets/theme/SpiffTheme';
@@ -41,6 +43,15 @@ import TenantSelectPage, {
   M8FLOW_TENANT_STORAGE_KEY,
 } from './views/TenantSelectPage';
 import { useConfig } from './utils/useConfig';
+
+// M8Flow Extension: clear tenant from localStorage on logout so next visit shows tenant selection
+const originalDoLogout = UserService.doLogout;
+UserService.doLogout = () => {
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem(M8FLOW_TENANT_STORAGE_KEY);
+  }
+  originalDoLogout();
+};
 
 /** When ENABLE_MULTITENANT: at "/" show TenantSelectPage if no tenant in localStorage, else show default home (BaseRoutes). */
 function MultitenantRootGate({
@@ -323,7 +334,7 @@ export default function ContainerForExtensions() {
         {/* M8Flow Extension: Reports route */}
         <Route path="reports" element={<ReportsPage />} />
         <Route path="extensions/:page_identifier" element={<Extension />} />
-        <Route path="login" element={<Login />} />
+        <Route path="login" element={<TenantAwareLogin />} />
         {/* Catch-all route must be last */}
         <Route
           path="*"

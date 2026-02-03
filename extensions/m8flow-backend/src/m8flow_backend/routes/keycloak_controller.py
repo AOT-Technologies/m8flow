@@ -8,7 +8,9 @@ import requests
 from m8flow_backend.services.keycloak_service import (
     create_realm_from_template,
     create_user_in_realm as create_user_in_realm_svc,
+    realm_exists,
     tenant_login as tenant_login_svc,
+    tenant_login_authorization_url,
 )
 from m8flow_backend.tenancy import create_tenant_if_not_exists
 
@@ -89,5 +91,19 @@ def create_user_in_realm(realm: str, body: dict) -> tuple[dict, int]:
         if status == 409:
             return {"detail": "User already exists or conflict"}, 409
         return {"detail": detail}, status
+    except ValueError as e:
+        return {"detail": str(e)}, 400
+
+
+def get_tenant_login_url(tenant: str) -> tuple[dict, int]:
+    """Check Keycloak for tenant realm and return its login URL. Returns (response_dict, status_code)."""
+    if not tenant or not str(tenant).strip():
+        return {"detail": "tenant is required"}, 400
+    tenant = str(tenant).strip()
+    if not realm_exists(tenant):
+        return {"detail": "Tenant realm not found"}, 404
+    try:
+        login_url = tenant_login_authorization_url(tenant)
+        return {"login_url": login_url, "realm": tenant}, 200
     except ValueError as e:
         return {"detail": str(e)}, 400

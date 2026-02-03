@@ -41,6 +41,56 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /tenant-login-url:
+    get:
+      summary: Get Keycloak login URL for a tenant realm (unauthenticated)
+      description: Checks Keycloak for the tenant realm; if it exists returns the authorization URL for that realm.
+      operationId: m8flow_backend.routes.keycloak_controller.get_tenant_login_url
+      tags:
+        - Keycloak
+      security: []
+      parameters:
+        - name: tenant
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Tenant (realm) name to look up in Keycloak
+      responses:
+        "200":
+          description: Tenant realm exists; login URL returned
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - login_url
+                properties:
+                  login_url:
+                    type: string
+                    description: Keycloak authorization (login) base URL for the tenant realm
+                  realm:
+                    type: string
+                    description: Realm name
+        "400":
+          description: Bad request - tenant missing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+        "404":
+          description: Tenant realm not found in Keycloak
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+
   /tenants/check:
     get:
       summary: Check if tenant exists by slug or id (unauthenticated)

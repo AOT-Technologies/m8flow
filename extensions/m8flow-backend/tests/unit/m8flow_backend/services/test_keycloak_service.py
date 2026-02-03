@@ -1,6 +1,10 @@
-"""Unit tests for Keycloak service (_fill_realm_template and template substitution)."""
+"""Unit tests for Keycloak service (_fill_realm_template, realm_exists, tenant_login_authorization_url)."""
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock
+from unittest.mock import patch
+
+import pytest
 
 # Ensure m8flow_backend is importable
 extension_root = Path(__file__).resolve().parents[4]
@@ -8,20 +12,24 @@ extension_src = extension_root / "src"
 if str(extension_src) not in sys.path:
     sys.path.insert(0, str(extension_src))
 
-from m8flow_backend.services.keycloak_service import _fill_realm_template  # noqa: E402
+from m8flow_backend.services.keycloak_service import (  # noqa: E402
+    _fill_realm_template,
+    realm_exists,
+    tenant_login_authorization_url,
+)
 
 
 def test_fill_realm_template_top_level() -> None:
-    """Top-level id, realm, displayName are set for the new tenant."""
+    """Top-level realm, displayName are set for the new tenant; id is omitted for Keycloak create."""
     template = {
         "id": "spiffworkflow",
         "realm": "spiffworkflow",
         "displayName": "SpiffWorkflow",
     }
     result = _fill_realm_template(template, "tenant-b", "Tenant B", "spiffworkflow")
-    assert result["id"] == "tenant-b"
     assert result["realm"] == "tenant-b"
     assert result["displayName"] == "Tenant B"
+    assert "id" not in result  # id is popped so Keycloak auto-generates it
 
 
 def test_fill_realm_template_display_name_defaults_to_realm_id() -> None:
@@ -135,3 +143,61 @@ def test_fill_realm_template_client_attributes() -> None:
     }
     result = _fill_realm_template(template, "tenant-i", None, "spiffworkflow")
     assert "/realms/tenant-i/account" in result["clients"][0]["attributes"]["post.logout.redirect.uris"]
+
+
+@patch("m8flow_backend.services.keycloak_service.get_master_admin_token")
+@patch("m8flow_backend.services.keycloak_service.requests.get")
+def test_realm_exists_true(mock_get, mock_token) -> None:
+    """realm_exists returns True when Keycloak returns 200."""
+    mock_token.return_value = "admin-token"
+    mock_get.return_value = MagicMock(status_code=200)
+    assert realm_exists("tenant-a") is True
+    mock_get.assert_called_once()
+    call_url = mock_get.call_args[0][0]
+    assert "/admin/realms/tenant-a" in call_url
+
+
+@patch("m8flow_backend.services.keycloak_service.get_master_admin_token")
+@patch("m8flow_backend.services.keycloak_service.requests.get")
+def test_realm_exists_false_404(mock_get, mock_token) -> None:
+    """realm_exists returns False when Keycloak returns 404."""
+    mock_token.return_value = "admin-token"
+    mock_get.return_value = MagicMock(status_code=404)
+    assert realm_exists("missing-realm") is False
+
+
+@patch("m8flow_backend.services.keycloak_service.get_master_admin_token")
+def test_realm_exists_false_on_exception(mock_token) -> None:
+    """realm_exists returns False when request raises."""
+    mock_token.side_effect = Exception("network error")
+    assert realm_exists("tenant-a") is False
+
+
+def test_realm_exists_empty_realm() -> None:
+    """realm_exists returns False for empty or whitespace realm."""
+    assert realm_exists("") is False
+    assert realm_exists("   ") is False
+
+
+@patch("m8flow_backend.services.keycloak_service.keycloak_url")
+def test_tenant_login_authorization_url(mock_keycloak_url) -> None:
+    """tenant_login_authorization_url returns Keycloak auth endpoint for realm."""
+    mock_keycloak_url.return_value = "http://localhost:7002"
+    url = tenant_login_authorization_url("tenant-a")
+    assert url == "http://localhost:7002/realms/tenant-a/protocol/openid-connect/auth"
+
+
+@patch("m8flow_backend.services.keycloak_service.keycloak_url")
+def test_tenant_login_authorization_url_strips_realm(mock_keycloak_url) -> None:
+    """tenant_login_authorization_url strips realm whitespace."""
+    mock_keycloak_url.return_value = "http://keycloak"
+    url = tenant_login_authorization_url("  tenant-b  ")
+    assert url == "http://keycloak/realms/tenant-b/protocol/openid-connect/auth"
+
+
+def test_tenant_login_authorization_url_empty_raises() -> None:
+    """tenant_login_authorization_url raises ValueError for empty realm."""
+    with pytest.raises(ValueError, match="realm is required"):
+        tenant_login_authorization_url("")
+    with pytest.raises(ValueError, match="realm is required"):
+        tenant_login_authorization_url("   ")

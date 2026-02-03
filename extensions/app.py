@@ -98,6 +98,11 @@ try:
     apply_auth_token_error_patch()
 except ImportError:
     pass
+apply_login_tenant_patch = None
+try:
+    from extensions.login_tenant_patch import apply_login_tenant_patch
+except ImportError:
+    pass
 
 # #region agent log
 _agent_log("app.py:after_m8flow_migration", "after_upgrade_m8flow_db", {}, "H6,H7")
@@ -111,7 +116,7 @@ from spiffworkflow_backend.models.db import db
 # Keycloak admin API paths that should skip tenant validation (they manage tenants, not use them)
 KEYCLOAK_ADMIN_PATH_PREFIXES = ("/tenant-realms", "/tenant-login", "/realms/")
 # Unauthenticated tenant check for pre-login tenant selection (no tenant context required)
-TENANT_PUBLIC_PATH_PREFIXES = ("/tenants/check",)
+TENANT_PUBLIC_PATH_PREFIXES = ("/tenants/check", "/m8flow/tenant-login-url")
 
 
 def _env_truthy(value: str | None) -> bool:
@@ -206,6 +211,13 @@ flask_app = getattr(cnx_app, "app", None)
 if flask_app is None:
     raise RuntimeError("Could not access underlying Flask app from Connexion app")
 
+# M8Flow: allow tenant-login-url (and other public endpoints) without authentication
+try:
+    from extensions.auth_exclusion_patch import apply_auth_exclusion_patch
+    apply_auth_exclusion_patch()
+except ImportError:
+    pass
+
 # Configure SQL echo if enabled
 _configure_sql_echo(flask_app)
 
@@ -286,6 +298,8 @@ def load_tenant():
 
 # Register the tenant loading function to run before each request.
 flask_app.before_request(load_tenant)
+if apply_login_tenant_patch is not None:
+    apply_login_tenant_patch(flask_app)
 # Ensure load_tenant runs first (before omni_auth) so g.m8flow_tenant_id is set before any DB access in auth.
 _funcs = flask_app.before_request_funcs.get(None) or []
 flask_app.before_request_funcs[None] = [load_tenant] + [f for f in _funcs if f is not load_tenant]
