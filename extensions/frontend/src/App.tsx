@@ -8,8 +8,11 @@ import {
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
+import { createTheme, ThemeProvider } from '@mui/material/styles';
+import CssBaseline from '@mui/material/CssBaseline';
 import { AbilityContext } from '@spiffworkflow-frontend/contexts/Can';
 import APIErrorProvider from '@spiffworkflow-frontend/contexts/APIErrorContext';
+import { createSpiffTheme } from '@spiffworkflow-frontend/assets/theme/SpiffTheme';
 // M8Flow Extension: Import local override of ContainerForExtensions
 import ContainerForExtensions from './ContainerForExtensions';
 import PublicRoutes from '@spiffworkflow-frontend/views/PublicRoutes';
@@ -76,20 +79,28 @@ export default function App() {
       data: {},
     });
     // #endregion
+    const minimalTheme = createTheme(
+      createSpiffTheme(
+        (typeof window !== 'undefined' && (localStorage.getItem('theme') as 'light' | 'dark')) || 'light'
+      )
+    );
     return (
       <BrowserRouter>
         <div className="cds--white">
-          <QueryClientProvider client={queryClient}>
-            <APIErrorProvider>
-              <AbilityContext.Provider value={ability}>
-                <TenantGateContext.Provider
-                  value={{ onTenantSelected: () => setHasTenant(true) }}
-                >
-                  <TenantSelectPage />
-                </TenantGateContext.Provider>
-              </AbilityContext.Provider>
-            </APIErrorProvider>
-          </QueryClientProvider>
+          <ThemeProvider theme={minimalTheme}>
+            <CssBaseline />
+            <QueryClientProvider client={queryClient}>
+              <APIErrorProvider>
+                <AbilityContext.Provider value={ability}>
+                  <TenantGateContext.Provider
+                    value={{ onTenantSelected: () => setHasTenant(true) }}
+                  >
+                    <TenantSelectPage />
+                  </TenantGateContext.Provider>
+                </AbilityContext.Provider>
+              </APIErrorProvider>
+            </QueryClientProvider>
+          </ThemeProvider>
         </div>
       </BrowserRouter>
     );

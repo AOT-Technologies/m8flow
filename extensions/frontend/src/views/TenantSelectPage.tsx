@@ -1,9 +1,9 @@
 /**
  * Tenant selection page. When ENABLE_MULTITENANT is true this can be the default page.
- * Stores tenant name in localStorage under key m8flow_tenant (used later e.g. for X-Tenant header).
- * On submit saves to localStorage and navigates to the default home page.
+ * On submit calls tenant-login-url API; only if it returns a redirect URL is the tenant
+ * saved to localStorage under m8flow_tenant and the user sent to the default home.
  */
-import { Box, Typography, TextField, Button } from '@mui/material';
+import { Box, Container, Typography, TextField, Button } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { FormEvent, useState } from 'react';
 import { useConfig } from '../utils/useConfig';
@@ -24,7 +24,7 @@ const DEBUG_LOG = (payload: Record<string, unknown>) => {
 };
 
 export default function TenantSelectPage() {
-  const { ENABLE_MULTITENANT } = useConfig();
+  const { ENABLE_MULTITENANT, BACKEND_BASE_URL } = useConfig();
   const tenantGate = useTenantGate();
   const navigate = useNavigate();
   const [tenantName, setTenantName] = useState('');
@@ -62,35 +62,62 @@ export default function TenantSelectPage() {
     }
     setError('');
     setSubmitting(true);
-    localStorage.setItem(M8FLOW_TENANT_STORAGE_KEY, trimmed);
-    setSubmitting(false);
-    if (tenantGate?.onTenantSelected) {
-      tenantGate.onTenantSelected();
-    } else {
-      navigate('/', { replace: true });
-    }
+    const url = `${BACKEND_BASE_URL}/m8flow/tenant-login-url?tenant=${encodeURIComponent(trimmed)}`;
+    fetch(url, { method: 'GET', credentials: 'include' })
+      .then((res) => {
+        if (res.status === 404) {
+          setError('Tenant not found. Please check the name or contact your administrator.');
+          setSubmitting(false);
+          return null;
+        }
+        if (!res.ok) {
+          setError('Unable to verify tenant. Please try again.');
+          setSubmitting(false);
+          return null;
+        }
+        return res.json();
+      })
+      .then((data) => {
+        if (!data?.login_url) {
+          setSubmitting(false);
+          return;
+        }
+        localStorage.setItem(M8FLOW_TENANT_STORAGE_KEY, trimmed);
+        setSubmitting(false);
+        if (tenantGate?.onTenantSelected) {
+          tenantGate.onTenantSelected();
+        } else {
+          navigate('/', { replace: true });
+        }
+      })
+      .catch(() => {
+        setError('Unable to verify tenant. Please try again.');
+        setSubmitting(false);
+      });
   };
 
   return (
-    <Box sx={{ padding: 3, maxWidth: 400 }}>
-      <Typography variant="h4" component="h1" sx={{ mb: 2 }}>
-        Select tenant
-      </Typography>
-      <form onSubmit={handleSubmit}>
-        <TextField
-          fullWidth
-          label="Tenant name"
-          value={tenantName}
-          onChange={(e) => setTenantName(e.target.value)}
-          error={!!error}
-          helperText={error}
-          autoFocus
-          sx={{ mb: 2 }}
-        />
-        <Button type="submit" variant="contained" disabled={submitting}>
-          {submitting ? 'Saving…' : 'Continue'}
-        </Button>
-      </form>
-    </Box>
+    <Container maxWidth="sm">
+      <Box sx={{ padding: 3 }}>
+        <Typography variant="h4" component="h1" sx={{ mb: 2 }}>
+          Select tenant
+        </Typography>
+        <form onSubmit={handleSubmit}>
+          <TextField
+            fullWidth
+            label="Tenant name"
+            value={tenantName}
+            onChange={(e) => setTenantName(e.target.value)}
+            error={!!error}
+            helperText={error}
+            autoFocus
+            sx={{ mb: 2 }}
+          />
+          <Button type="submit" variant="contained" disabled={submitting}>
+            {submitting ? 'Saving…' : 'Continue'}
+          </Button>
+        </form>
+      </Box>
+    </Container>
   );
 }
