@@ -28,6 +28,21 @@ When these are installed, you are ready for:
     ./bin/run_server_locally keycloak # if you want to use keycloak instead of the built-in openid server
 ```
 
+### Backend with m8flow extensions (tenant APIs, etc.)
+
+To run the **extensions app** (same as above but with m8flow backend: tenant login URL, tenant APIs, and DB migrations for m8flow):
+
+1. Ensure `.env` at repo root has `SPIFFWORKFLOW_BACKEND_DATABASE_URI` (and optionally `SPIFFWORKFLOW_BACKEND_UPGRADE_DB=true` so migrations run).
+2. From repo root:
+
+```bash
+    ./extensions/m8flow-backend/bin/setup_and_run_backend.sh
+```
+
+This script: syncs backend deps (`uv sync` in spiffworkflow-backend), runs SpiffWorkflow DB migrations when `SPIFFWORKFLOW_BACKEND_UPGRADE_DB=true`, then starts the backend with the extensions app (m8flow migrations run automatically at startup). Default port is 7000 (`SPIFFWORKFLOW_BACKEND_PORT`).
+
+To run backend and frontend together (backend in background), use `./start_dev.sh` from repo root instead.
+
 **Mac Port Errors**: On a Mac, port 7000 (used by the backend) might be hijacked by Airplay. For those who upgraded to macOS 12.1 and are running everything locally, your AirPlay receiver may have started on Port 7000 and your server (which uses port 7000 by default) may fail due to this port already being used. You can disable this port in System Preferences > Sharing > AirPlay receiver.
 
 **Poetry Install Errors**: If you encounter errors with the Poetry install, please note that MySQL and PostgreSQL may require certain packages exist on your system prior to installing these libraries.

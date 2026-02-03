@@ -4,6 +4,11 @@ services:
   m8flow-db:
     image: postgres:11
     env_file: ../.env
+    environment:
+      # Postgres image requires non-empty POSTGRES_PASSWORD; defaults used when .env leaves them blank
+      POSTGRES_USER: "${POSTGRES_USER:-postgres}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
+      POSTGRES_DB: "${POSTGRES_DB:-postgres}"
     ports:
       - "1111:5432"
     volumes:
@@ -57,7 +62,23 @@ services:
     command: ["./extensions/m8flow-backend/bin/run_m8flow_backend.sh"]
     env_file: ../.env
     environment:
+      SPIFFWORKFLOW_BACKEND_UPGRADE_DB: "true"
       SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: /app/process_models
+      # Override for Docker networking (backend and DB in same compose)
+      SPIFFWORKFLOW_BACKEND_DATABASE_TYPE: postgres
+      SPIFFWORKFLOW_BACKEND_DATABASE_URI: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}
+      SPIFFWORKFLOW_BACKEND_URL: "${SPIFFWORKFLOW_BACKEND_URL:-http://localhost:8000}"
+      SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND: "${SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND:-http://localhost:8001}"
+      SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX: "${SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX:-/v1.0}"
+      SPIFFWORKFLOW_BACKEND_CORS_ALLOW_ORIGINS: "${SPIFFWORKFLOW_BACKEND_CORS_ALLOW_ORIGINS:-localhost:8001,127.0.0.1:8001}"
+      # M8Flow tenancy
+      M8FLOW_DEFAULT_TENANT_ID: "${M8FLOW_DEFAULT_TENANT_ID:-default}"
+      M8FLOW_ALLOW_MISSING_TENANT_CONTEXT: "${M8FLOW_ALLOW_MISSING_TENANT_CONTEXT:-false}"
+      M8FLOW_SQLALCHEMY_ECHO: "${M8FLOW_SQLALCHEMY_ECHO:-false}"
+      MULTI_TENANT_ON: "${MULTI_TENANT_ON:-false}"
+      # Celery (override for Docker networking)
+      SPIFFWORKFLOW_BACKEND_CELERY_BROKER_URL: "${SPIFFWORKFLOW_BACKEND_CELERY_BROKER_URL:-redis://redis:6379/0}"
+      SPIFFWORKFLOW_BACKEND_CELERY_RESULT_BACKEND: "${SPIFFWORKFLOW_BACKEND_CELERY_RESULT_BACKEND:-redis://redis:6379/0}"
     ports:
       - "8000:8000"
     volumes:
@@ -96,6 +117,8 @@ services:
     command: ["./bin/run_server_locally", "celery_worker"]
     env_file: ../.env
     environment:
+      SPIFFWORKFLOW_BACKEND_DATABASE_TYPE: postgres
+      SPIFFWORKFLOW_BACKEND_DATABASE_URI: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}
       SPIFFWORKFLOW_BACKEND_CELERY_BROKER_URL: redis://redis:6379/0
       SPIFFWORKFLOW_BACKEND_CELERY_RESULT_BACKEND: redis://redis:6379/0
       SPIFFWORKFLOW_BACKEND_RUNNING_IN_CELERY_WORKER: "true"
@@ -104,6 +127,7 @@ services:
       - process_models_cache:/app/process_models
     depends_on:
       - m8flow-db
+      - m8flow-backend
       - redis
       - process-models-sync
     restart: unless-stopped
@@ -113,6 +137,9 @@ services:
       context: ../spiffworkflow-frontend
       dockerfile: Dockerfile
     env_file: ../.env
+    environment:
+      # Extensions frontend reads MULTI_TENANT_ON at runtime via window.spiffworkflowFrontendJsenv (if injected by server)
+      MULTI_TENANT_ON: "${MULTI_TENANT_ON:-false}"
     ports:
       - "8001:80"
     depends_on:

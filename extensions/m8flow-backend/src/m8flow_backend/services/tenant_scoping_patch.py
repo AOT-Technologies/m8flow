@@ -13,7 +13,7 @@ from sqlalchemy.orm import with_loader_criteria
 
 from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin
 from m8flow_backend.models.tenant_scoped import TenantScoped
-from m8flow_backend.tenancy import LOGGER, get_context_tenant_id, get_tenant_id
+from m8flow_backend.tenancy import DEFAULT_TENANT_ID, LOGGER, get_context_tenant_id, get_tenant_id
 
 _ORIGINALS: dict[str, Any] = {}
 _PATCHED = False
@@ -306,7 +306,8 @@ def _resolve_tenant_id_for_db() -> str | None:
     if _allow_missing_tenant_context():
         return None
 
-    raise RuntimeError("Missing tenant context for database session.")
+    # Background jobs have no request/context tenant; use default tenant (matches get_tenant_id()).
+    return DEFAULT_TENANT_ID
 
 
 @event.listens_for(Session, "after_begin")  # type: ignore[misc]

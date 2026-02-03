@@ -29,6 +29,8 @@ script_dir="$(
 # Realm export file paths
 identity_realm_file="${script_dir}/realm_exports/identity-realm-export.json"
 tenant_realm_file="${script_dir}/realm_exports/tenant-realm-export.json"
+# Backend default auth uses spiffworkflow-local; must exist and have sslRequired=NONE for HTTP
+spiffworkflow_local_realm_file="${script_dir}/realm_exports/spiffworkflow-local-realm.json"
 
 # Validate required tools
 if ! command -v docker &> /dev/null; then
@@ -54,6 +56,11 @@ fi
 
 if [[ ! -f "$tenant_realm_file" ]]; then
   echo >&2 "ERROR: Tenant realm export file not found: $tenant_realm_file"
+  exit 1
+fi
+
+if [[ ! -f "$spiffworkflow_local_realm_file" ]]; then
+  echo >&2 "ERROR: Spiffworkflow-local realm export file not found: $spiffworkflow_local_realm_file"
   exit 1
 fi
 
@@ -136,29 +143,39 @@ fi
 echo ":: Waiting for admin API to be ready..."
 sleep 3
 
+# Turn off SSL for master realm so token and admin API work over HTTP (localhost)
+echo ":: Configuring master realm for HTTP access..."
+docker exec keycloak /opt/keycloak/bin/kcadm.sh config credentials --server http://localhost:8080 --realm master --user admin --password admin 2>/dev/null || true
+docker exec keycloak /opt/keycloak/bin/kcadm.sh update realms/master -s sslRequired=NONE 2>/dev/null || true
+
 # Get admin token
 function get_admin_token() {
   local token_url="${keycloak_base_url}/realms/master/protocol/openid-connect/token"
-  local token_response
+  local token_out
+  local token_code
+  local token_body
 
   echo ":: Obtaining admin access token..." >&2
-  token_response=$(curl --fail -s -X POST "$token_url" \
+  token_out=$(mktemp)
+  token_code=$(curl -s -w '%{http_code}' -o "$token_out" -X POST "$token_url" \
     -H 'Content-Type: application/x-www-form-urlencoded' \
-    -d "grant_type=password&client_id=admin-cli&username=${keycloak_admin_user}&password=${keycloak_admin_password}" 2>&1)
-  local curl_exit_code=$?
+    -d "grant_type=password&client_id=admin-cli&username=${keycloak_admin_user}&password=${keycloak_admin_password}")
+  token_body=$(cat "$token_out")
+  rm -f "$token_out"
 
-  if [[ $curl_exit_code -ne 0 ]]; then
-    echo >&2 "ERROR: Failed to obtain admin token. Response: $token_response"
+  if [[ "$token_code" -lt 200 || "$token_code" -ge 300 ]]; then
+    echo >&2 "ERROR: Token request failed (HTTP $token_code): $token_body"
     return 1
   fi
-  
-  local token=$(echo "$token_response" | jq -r '.access_token // empty' 2>/dev/null)
+
+  local token
+  token=$(echo "$token_body" | jq -r '.access_token // empty' 2>/dev/null)
 
   if [[ -z "$token" || "$token" == "null" ]]; then
-    echo >&2 "ERROR: Failed to extract access token from response: $token_response"
+    echo >&2 "ERROR: No access_token in response (HTTP $token_code): $token_body"
     return 1
   fi
-  
+
   echo "$token"
 }
 
@@ -196,7 +213,12 @@ function import_realm() {
   # Check if realm already exists
   echo ":: Checking if realm '$realm_name' already exists..."
   if realm_exists "$realm_name" "$admin_token"; then
-    echo ":: Realm '$realm_name' already exists. Skipping import."
+    echo ":: Realm '$realm_name' already exists. Updating sslRequired=NONE just in case..."
+    # Update existing realm to disable SSL requirement for local dev
+    curl -s -X PUT "${keycloak_base_url}/admin/realms/${realm_name}" \
+      -H "Authorization: Bearer $admin_token" \
+      -H 'Content-Type: application/json' \
+      -d '{"sslRequired": "NONE"}' >/dev/null || true
     return 0
   fi
   
@@ -221,6 +243,12 @@ function import_realm() {
 
   if [[ "$http_code" == "201" ]]; then
     echo ":: Successfully imported realm '$realm_name'"
+    # Disable SSL requirement for the newly imported realm
+    echo ":: Disabling SSL requirement for realm '$realm_name'..."
+    curl -s -X PUT "${keycloak_base_url}/admin/realms/${realm_name}" \
+      -H "Authorization: Bearer $admin_token" \
+      -H 'Content-Type: application/json' \
+      -d '{"sslRequired": "NONE"}' >/dev/null || true
     return 0
   elif [[ "$http_code" == "409" ]]; then
     echo ":: Realm '$realm_name' already exists (409 Conflict). Skipping import."
@@ -270,5 +298,15 @@ if ! import_realm "$tenant_realm_file" "$tenant_realm_name" "$admin_token"; then
   exit 1
 fi
 
+# Import spiffworkflow-local (used by backend default SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS for OpenID discovery)
+spiffworkflow_local_realm_name=$(jq -r '.realm // empty' "$spiffworkflow_local_realm_file" 2>/dev/null)
+if [[ -n "$spiffworkflow_local_realm_name" ]]; then
+  echo ":: Importing spiffworkflow-local realm (backend auth)..."
+  if ! import_realm "$spiffworkflow_local_realm_file" "$spiffworkflow_local_realm_name" "$admin_token"; then
+    echo >&2 "ERROR: Failed to import spiffworkflow-local realm"
+    exit 1
+  fi
+fi
+
 echo ":: Realm import process completed successfully"
-echo ":: Keycloak is running with realms: $identity_realm_name, $tenant_realm_name"
+echo ":: Keycloak is running with realms: $identity_realm_name, $tenant_realm_name${spiffworkflow_local_realm_name:+, $spiffworkflow_local_realm_name}"
