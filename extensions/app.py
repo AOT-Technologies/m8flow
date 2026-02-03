@@ -37,6 +37,8 @@ from spiffworkflow_backend.models.db import db
 
 # Keycloak admin API paths that should skip tenant validation (they manage tenants, not use them)
 KEYCLOAK_ADMIN_PATH_PREFIXES = ("/tenant-realms", "/tenant-login", "/realms/")
+# Unauthenticated tenant check for pre-login tenant selection (no tenant context required)
+TENANT_PUBLIC_PATH_PREFIXES = ("/tenants/check",)
 
 
 def _env_truthy(value: str | None) -> bool:
@@ -81,13 +83,17 @@ if KEYCLOAK_API_SPEC.exists():
 # curl -H "M8Flow-Tenant-Id: tenant-b" http://localhost:8000/v1/process-models
 def load_tenant():
     """Load tenant ID from request headers into Flask 'g' context."""
-    # Skip tenant validation for Keycloak admin APIs (they manage tenants, not use them)
+    # Skip tenant validation for Keycloak admin APIs and public tenant check
     api_prefix = flask_app.config.get("SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX", "/v1.0")
     path = request.path
     for keycloak_path in KEYCLOAK_ADMIN_PATH_PREFIXES:
         if path.startswith(api_prefix + keycloak_path):
             g.m8flow_tenant_id = None
             return
+    for public_path in TENANT_PUBLIC_PATH_PREFIXES:
+        if path.startswith(api_prefix + public_path):
+            g.m8flow_tenant_id = None
+            return  # no tenant context required for unauthenticated check
 
     logger.info("Loading tenant ID from request headers")
     tenant_id = request.headers.get("M8Flow-Tenant-Id", DEFAULT_TENANT_ID)

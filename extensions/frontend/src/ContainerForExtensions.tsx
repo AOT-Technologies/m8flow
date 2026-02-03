@@ -9,7 +9,7 @@ import {
   createTheme,
   useMediaQuery,
 } from '@mui/material';
-import { Routes, Route, useLocation } from 'react-router-dom';
+import { Routes, Route, useLocation, Navigate } from 'react-router-dom';
 import MenuIcon from '@mui/icons-material/Menu';
 import { ReactElement, useEffect, useState } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
@@ -35,13 +35,16 @@ import ScrollToTop from '@spiffworkflow-frontend/components/ScrollToTop';
 import { createSpiffTheme } from '@spiffworkflow-frontend/assets/theme/SpiffTheme';
 import DynamicCSSInjection from '@spiffworkflow-frontend/components/DynamicCSSInjection';
 
-// M8Flow Extension: Import Reports page
+// M8Flow Extension: Import Reports page and tenant selection
 import ReportsPage from './views/ReportsPage';
+import TenantSelectPage from './views/TenantSelectPage';
+import { useConfig } from './utils/useConfig';
 
 const fadeIn = 'fadeIn';
 const fadeOutImmediate = 'fadeOutImmediate';
 
 export default function ContainerForExtensions() {
+  const { ENABLE_MULTITENANT } = useConfig();
   const [backendIsUp, setBackendIsUp] = useState<boolean | null>(null);
   const [canAccessFrontend, setCanAccessFrontend] = useState<boolean>(true);
   const [extensionUxElements, setExtensionUxElements] = useState<
@@ -251,6 +254,16 @@ export default function ContainerForExtensions() {
   const routeComponents = () => {
     return (
       <Routes>
+        {/* M8Flow Extension: Tenant selection (default when ENABLE_MULTITENANT) */}
+        {ENABLE_MULTITENANT && (
+          <>
+            <Route path="/" element={<TenantSelectPage />} />
+            <Route path="tenant" element={<TenantSelectPage />} />
+          </>
+        )}
+        {!ENABLE_MULTITENANT && (
+          <Route path="tenant" element={<Navigate to="/" replace />} />
+        )}
         {/* M8Flow Extension: Reports route */}
         <Route path="reports" element={<ReportsPage />} />
         <Route path="extensions/:page_identifier" element={<Extension />} />

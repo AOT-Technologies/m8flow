@@ -38,6 +38,16 @@ def _check_admin_permission():
         )
 
 @handle_api_errors
+def check_tenant_exists(identifier: str):
+    """
+    Check if an active tenant exists by slug or id. Unauthenticated; for pre-login tenant selection.
+    Returns {"exists": true, "tenant_id": "..."} or {"exists": false}.
+    """
+    result = TenantService.check_tenant_exists(identifier or "")
+    return success_response(result, 200)
+
+
+@handle_api_errors
 def create_tenant(body):
     _check_admin_permission()
 
