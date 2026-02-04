@@ -11,10 +11,17 @@ const backendPort = process.env.BACKEND_PORT ? parseInt(process.env.BACKEND_PORT
 
 export default defineConfig({
   base: '/',
+  test: {
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+    setupFiles: ['src/test/vitest.setup.ts'],
+    globals: true,
+    environment: 'jsdom',
+  },
   plugins: [
     // Override resolver - must be first to check extensions before core
     overrideResolver(),
-    preact({ devToolsEnabled: false }),
+    // Use real React in tests to avoid ref type mismatch with @testing-library/react
+    ...(process.env.VITEST ? [] : [preact({ devToolsEnabled: false })]),
     // viteTsconfigPaths(),
     svgr({
       svgrOptions: {

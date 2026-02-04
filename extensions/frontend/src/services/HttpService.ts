@@ -141,6 +141,9 @@ const makeCallToBackend = ({
 
     .then((result: any) => {
       let jsonResult = null;
+      const isHtml =
+        typeof result.text === 'string' &&
+        (result.text.trimStart().startsWith('<!') || result.text.trimStart().startsWith('<html'));
       try {
         jsonResult = JSON.parse(result.text);
       } catch (error) {
@@ -148,7 +151,13 @@ const makeCallToBackend = ({
           result.response.status,
           result.response.statusText,
         );
-        const baseMessage = `Received unexpected response from server. ${httpStatusMesage}.`;
+        let baseMessage = `Received unexpected response from server. ${httpStatusMesage}.`;
+        if (isHtml) {
+          baseMessage +=
+            ' The response was HTML (e.g. the app index page) instead of JSON. ' +
+            'Ensure the backend is running (e.g. port 8000) and that VITE_BACKEND_BASE_URL points to it; ' +
+            'when using npm start with a relative URL, the Vite proxy forwards /v1.0 to the backend.';
+        }
         console.error(`${baseMessage} Body: ${result.text}`);
         if (error instanceof SyntaxError) {
           throw new UnexpectedResponseError(baseMessage);
