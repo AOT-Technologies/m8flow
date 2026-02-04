@@ -10,4 +10,5 @@ services:
       - "19000:9000"
       - "19001:9001"
     volumes:
-      - ${SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR}:/data
+      - ${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-./data/bpmn}:/data
+      - ${M8FLOW_TEMPLATES_STORAGE_DIR:-./templates}:/m8flow-templates

@@ -3,8 +3,8 @@ import sqlalchemy as sa
 
 from m8flow_backend.tenancy import DEFAULT_TENANT_ID
 
-revision = "0002"
-down_revision = "0001"
+revision = "ce8f052197c2"
+down_revision = "1518b05122bc"
 branch_labels = None
 depends_on = None
 

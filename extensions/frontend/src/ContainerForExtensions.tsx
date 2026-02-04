@@ -14,7 +14,7 @@ import MenuIcon from '@mui/icons-material/Menu';
 import { ReactElement, useEffect, useState } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 import { ErrorBoundaryFallback } from '@spiffworkflow-frontend/ErrorBoundaryFallack';
-import SideNav from '@spiffworkflow-frontend/components/SideNav';
+import SideNav from './components/SideNav';
 
 import Extension from '@spiffworkflow-frontend/views/Extension';
 import { useUriListForPermissions } from '@spiffworkflow-frontend/hooks/UriListForPermissions';
@@ -25,8 +25,8 @@ import {
   UiSchemaDisplayLocation,
   UiSchemaUxElement,
 } from '@spiffworkflow-frontend/extension_ui_schema_interfaces';
-import HttpService from '@spiffworkflow-frontend/services/HttpService';
-import UserService from '@spiffworkflow-frontend/services/UserService';
+import HttpService from './services/HttpService';
+import UserService from './services/UserService';
 import BaseRoutes from '@spiffworkflow-frontend/views/BaseRoutes';
 import BackendIsDown from '@spiffworkflow-frontend/views/BackendIsDown';
 import FrontendAccessDenied from '@spiffworkflow-frontend/views/FrontendAccessDenied';
@@ -75,6 +75,11 @@ function MultitenantRootGate({
   }
   return <TenantSelectPage />;
 }
+
+// M8Flow Extension: Import Tenant page
+import TenantPage from './views/TenantPage';
+// m8 Extension: Import Template Gallery page
+import TemplateGalleryPage from './views/TemplateGalleryPage';
 
 const fadeIn = 'fadeIn';
 const fadeOutImmediate = 'fadeOutImmediate';
@@ -302,8 +307,12 @@ export default function ContainerForExtensions() {
         {!ENABLE_MULTITENANT && (
           <Route path="tenant" element={<Navigate to="/" replace />} />
         )}
-        {/* M8Flow Extension: Reports route */}
+        {/* Reports route */}
         <Route path="reports" element={<ReportsPage />} />
+        {/* M8Flow Extension: Tenant route */}
+        <Route path="/tenants" element={<TenantPage />} />
+        {/* m8 Extension: Template Gallery route */}
+        <Route path="templates" element={<TemplateGalleryPage />} />
         <Route path="extensions/:page_identifier" element={<Extension />} />
         <Route path="login" element={<TenantAwareLogin />} />
         {/* Catch-all route must be last */}
@@ -354,6 +363,27 @@ export default function ContainerForExtensions() {
           id={cssFile.id}
         />
       ))}
+
+      {/* Manual Highlighting for Tenants Route */}
+      {location.pathname === "/tenants" && (
+        <style>
+          {`
+            a[href$="/tenants"] {
+              background-color: ${(globalTheme.palette as any).background?.light || "#e3f2fd"} !important;
+              color: ${globalTheme.palette.primary.main} !important;
+              border-left-width: 4px !important;
+              border-style: solid !important;
+              border-color: ${globalTheme.palette.primary.main} !important;
+            }
+            a[href$="/tenants"] .MuiListItemIcon-root {
+              color: ${globalTheme.palette.primary.main} !important;
+            }
+            a[href$="/tenants"] .MuiTypography-root {
+              font-weight: bold !important;
+            }
+          `}
+        </style>
+      )}
       <ErrorBoundary FallbackComponent={ErrorBoundaryFallback}>
         <Container
           id="container-for-extensions-container"
@@ -393,7 +423,15 @@ export default function ContainerForExtensions() {
                   isDark={isDark}
                   additionalNavElement={additionalNavElement}
                   setAdditionalNavElement={setAdditionalNavElement}
-                  extensionUxElements={extensionUxElements}
+                  extensionUxElements={[
+                    ...(extensionUxElements || []),
+                    {
+                      page: "/../tenants",
+                      label: "Tenants",
+                      display_location:
+                        UiSchemaDisplayLocation.primary_nav_item,
+                    } as UiSchemaUxElement,
+                  ]}
                 />
               )}
               {isMobile && !isSideNavVisible && (

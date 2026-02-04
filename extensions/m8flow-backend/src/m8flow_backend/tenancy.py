@@ -1,9 +1,10 @@
+# extensions/m8flow-backend/src/m8flow_backend/tenancy.py
 from __future__ import annotations
+
 import logging
 import os
-from contextvars import ContextVar
-from contextvars import Token
-from typing import Optional
+from contextvars import ContextVar, Token
+from typing import Optional, cast
 
 from flask import g, has_request_context
 
@@ -12,46 +13,131 @@ LOGGER = logging.getLogger(__name__)
 # Default tenant used when no request context is available.
 # This must exist in the database before runtime/migrations that backfill tenant ids.
 DEFAULT_TENANT_ID = os.getenv("M8FLOW_DEFAULT_TENANT_ID", "default")
-# Context variable to hold tenant id for non-request contexts (e.g., background jobs).
-# This allows setting and getting tenant id outside of Flask request context.
+
+PUBLIC_PATH_PREFIXES: tuple[str, ...] = (
+    "/favicon.ico",
+    "/v1.0/status",
+    "/v1.0/openapi.json",
+    "/v1.0/openapi.yaml",
+    "/v1.0/ui",
+    "/v1.0/static",
+    "/v1.0/logout",
+    "/v1.0/authentication-options",
+    "/v1.0/login"
+)
+
 _CONTEXT_TENANT_ID: ContextVar[Optional[str]] = ContextVar("m8flow_tenant_id", default=None)
+
+# "Are we inside a request handler?" (works for ASGI/WSGI alike)
+_REQUEST_ACTIVE: ContextVar[bool] = ContextVar("m8flow_request_active", default=False)
+
+# Local flag to avoid warning spam outside Flask request context
+_CONTEXT_WARNED_DEFAULT: ContextVar[bool] = ContextVar("m8flow_warned_default_tenant", default=False)
+
+
+def allow_missing_tenant_context() -> bool:
+    value = os.getenv("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT")
+    if value is None:
+        return False
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def begin_request_context() -> Token:
+    """Mark the current execution context as handling an HTTP request."""
+    return _REQUEST_ACTIVE.set(True)
+
+
+def end_request_context(token: Token) -> None:
+    """Undo begin_request_context()."""
+    _REQUEST_ACTIVE.reset(token)
+
+
+def is_request_active() -> bool:
+    return _REQUEST_ACTIVE.get()
 
 
 def set_context_tenant_id(tenant_id: str | None) -> Token:
-    """Set a non-request tenant id for background jobs."""
     return _CONTEXT_TENANT_ID.set(tenant_id)
 
 
 def reset_context_tenant_id(token: Token) -> None:
-    """Reset the non-request tenant id."""
     _CONTEXT_TENANT_ID.reset(token)
 
 
 def get_context_tenant_id() -> str | None:
-    """Return the non-request tenant id, if set."""
     return _CONTEXT_TENANT_ID.get()
 
 
-def get_tenant_id() -> str:
-    """Return tenant id for the current request, or a fallback for non-request contexts."""
+def clear_tenant_context() -> None:
+    """Clear tenant context variables to prevent cross-request leakage."""
+    _CONTEXT_TENANT_ID.set(None)
+    _CONTEXT_WARNED_DEFAULT.set(False)
+
+
+def is_public_request() -> bool:
+    return has_request_context() and bool(getattr(g, "_m8flow_public_request", False))
+
+
+def _warn_default_once(message: str, **extra: object) -> None:
+    """
+    Warn once per Flask request (via g flag), otherwise once per execution context (ContextVar flag).
+    """
     if has_request_context():
-        tid: Optional[str] = getattr(g, "m8flow_tenant_id", None)
+        if getattr(g, "_m8flow_warned_default_tenant", False):
+            return
+        g._m8flow_warned_default_tenant = True
+        LOGGER.warning(message, DEFAULT_TENANT_ID, extra=extra)  # type: ignore[arg-type]
+        return
+
+    if _CONTEXT_WARNED_DEFAULT.get():
+        return
+    _CONTEXT_WARNED_DEFAULT.set(True)
+    LOGGER.warning(message, extra=extra)  # type: ignore[arg-type]
+
+
+def get_tenant_id(*, warn_on_default: bool = True) -> str:
+    """
+    Return the tenant id for the current execution.
+    """
+    if has_request_context():
+        tid = cast(Optional[str], getattr(g, "m8flow_tenant_id", None))
         if tid:
+            if get_context_tenant_id() != tid:
+                _CONTEXT_TENANT_ID.set(tid)
             return tid
-        # TODO: raise 400 once tenant context auth is implemented.
-        LOGGER.warning("No tenant id found in request context; using default tenant id.")
+
+        ctx_tid = get_context_tenant_id()
+        if ctx_tid:
+            g.m8flow_tenant_id = ctx_tid
+            return ctx_tid
+
+        if allow_missing_tenant_context():
+            g.m8flow_tenant_id = DEFAULT_TENANT_ID
+            _CONTEXT_TENANT_ID.set(DEFAULT_TENANT_ID)
+            if warn_on_default:
+                _warn_default_once(
+                    "No tenant id found in request context; defaulting to '%s'.",
+                    m8flow_tenant=DEFAULT_TENANT_ID,
+                )
+            return DEFAULT_TENANT_ID
+
+        raise RuntimeError("Missing tenant id in request context.")
+
+    # Non-request context
+    ctx_tid = get_context_tenant_id()
+    if ctx_tid:
+        return ctx_tid
+
+    if allow_missing_tenant_context():
+        _CONTEXT_TENANT_ID.set(DEFAULT_TENANT_ID)
+        if warn_on_default:
+            _warn_default_once(
+                "No tenant id found in non-request context; defaulting to '%s'.",
+                m8flow_tenant=DEFAULT_TENANT_ID,
+            )
         return DEFAULT_TENANT_ID
 
-    # Use the context tenant id for non-request work like background jobs or CLI scripts.
-    context_tid = get_context_tenant_id()
-    if context_tid:
-        return context_tid
-    # Background jobs (e.g. APScheduler) have no request context; run in default tenant.
-    LOGGER.debug(
-        "No tenant id in non-request context; using default tenant id %s. Set with set_context_tenant_id() to override.",
-        DEFAULT_TENANT_ID,
-    )
-    return DEFAULT_TENANT_ID
+    raise RuntimeError("Missing tenant id in non-request context.")
 
 
 def ensure_tenant_exists(tenant_id: str | None) -> None:

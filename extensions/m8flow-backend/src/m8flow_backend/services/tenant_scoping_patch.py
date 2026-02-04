@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from collections.abc import Sequence
-import os
 from typing import Any
 
 from flask import g, has_request_context
@@ -13,7 +12,14 @@ from sqlalchemy.orm import with_loader_criteria
 
 from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin
 from m8flow_backend.models.tenant_scoped import TenantScoped
-from m8flow_backend.tenancy import DEFAULT_TENANT_ID, LOGGER, get_context_tenant_id, get_tenant_id
+from m8flow_backend.tenancy import (
+    DEFAULT_TENANT_ID,
+    LOGGER,
+    allow_missing_tenant_context,
+    get_context_tenant_id,
+    get_tenant_id,
+    is_public_request,
+)
 
 _ORIGINALS: dict[str, Any] = {}
 _PATCHED = False
@@ -35,6 +41,8 @@ def _with_tenant(values: Mapping[str, Any] | Sequence[Mapping[str, Any]], tenant
 
 def _set_tenant_on_objects(objects: Sequence[Any]) -> None:
     """Set tenant id on objects if missing."""
+    if is_public_request():
+        return
     tenant_id = get_tenant_id()
     for obj in objects:
         if hasattr(obj, "m8f_tenant_id") and not getattr(obj, "m8f_tenant_id"):
@@ -71,6 +79,10 @@ def _patch_insert_or_ignore_duplicate() -> None:
     ) -> Any:
         """Insert record(s), ignoring duplicates, with tenant scoping."""
         if isinstance(model_class, type) and issubclass(model_class, TenantScoped):
+            if is_public_request():
+                return _ORIGINALS["insert_or_ignore_duplicate"](
+                    model_class, values, postgres_conflict_index_elements
+                )
             tenant_id = get_tenant_id()
             values_with_tenant = _with_tenant(values, tenant_id)
             conflict_elements = list(postgres_conflict_index_elements)
@@ -93,6 +105,8 @@ def _patch_task_draft_data() -> None:
 
     def patched_insert_or_update_task_draft_data_dict(task_draft_data_dict: dict[str, Any]) -> None:
         task_draft_data_dict = dict(task_draft_data_dict)
+        if is_public_request():
+            return _ORIGINALS["task_draft_data_insert"](task_draft_data_dict)
         if not task_draft_data_dict.get("m8f_tenant_id"):
             task_draft_data_dict["m8f_tenant_id"] = get_tenant_id()
         return _ORIGINALS["task_draft_data_insert"](task_draft_data_dict)
@@ -116,6 +130,8 @@ def _patch_task_instructions() -> None:
         from spiffworkflow_backend.models.db import db
         from m8flow_backend.models.task_instructions_for_end_user import TaskInstructionsForEndUserModel
 
+        if is_public_request():
+            return _ORIGINALS["task_instructions_insert"](task_guid, process_instance_id, instruction)
         tenant_id = get_tenant_id()
         record = [
             {
@@ -164,6 +180,8 @@ def _patch_future_task() -> None:
         from sqlalchemy.dialects.sqlite import insert as sqlite_insert
         import time
 
+        if is_public_request():
+            return _ORIGINALS["future_task_insert"](guid, run_at_in_seconds, queued_to_run_at_in_seconds)
         tenant_id = get_tenant_id()
         task_info: dict[str, int | str | None] = {
             "guid": guid,
@@ -210,6 +228,10 @@ def _patch_process_caller_relationship() -> None:
         from sqlalchemy.dialects.mysql import insert as mysql_insert
         from sqlalchemy.dialects.postgresql import insert as postgres_insert
 
+        if is_public_request():
+            return _ORIGINALS["process_caller_relationship_insert"](
+                called_reference_cache_process_id, calling_reference_cache_process_id
+            )
         tenant_id = get_tenant_id()
         caller_info = {
             "called_reference_cache_process_id": called_reference_cache_process_id,
@@ -248,6 +270,8 @@ def _patch_reference_cache_basic_query() -> None:
     _ORIGINALS["reference_cache_basic_query"] = ReferenceCacheModel.basic_query
 
     def patched_basic_query(cls: type) -> Any:
+        if is_public_request():
+            return _ORIGINALS["reference_cache_basic_query"](cls)
         tenant_id = get_tenant_id()
         max_generation_id = (
             db.session.query(db.func.max(ReferenceCacheModel.generation_id))
@@ -265,16 +289,32 @@ def _patch_reference_cache_basic_query() -> None:
 @event.listens_for(Session, "before_flush")  # type: ignore[misc]
 def _set_tenant_on_flush(session: Session, _flush_context: Any, _instances: Any) -> None:
     """Set tenant id on objects if missing."""
+    if is_public_request():
+        return
     for obj in session.new:
         if hasattr(obj, "m8f_tenant_id") and not getattr(obj, "m8f_tenant_id"):
             setattr(obj, "m8f_tenant_id", get_tenant_id())
 
 
-@event.listens_for(Session, "do_orm_execute")  # type: ignore[misc]
 def _tenant_scope_queries(execute_state: Any) -> None:
     """Apply tenant scoping to all queries for TenantScoped models."""
+    if is_public_request():
+        return
     if not execute_state.is_select:
         return
+
+    # Don't scope queries that are reading the tenant table itself
+    # (otherwise resolve_request_tenant() tries to validate tenant_id using a
+    # query that requires tenant_id -> circular dependency in tests)
+    try:
+        stmt = execute_state.statement
+        for from_ in stmt.get_final_froms():
+            if getattr(from_, "name", None) == "m8flow_tenant":
+                return
+    except Exception:
+        # if statement shape is unexpected, fail open (don't break the query)
+        pass
+
     tenant_id = get_tenant_id()
     execute_state.statement = execute_state.statement.options(
         with_loader_criteria(
@@ -286,25 +326,21 @@ def _tenant_scope_queries(execute_state: Any) -> None:
     )
 
 
-def _allow_missing_tenant_context() -> bool:
-    value = os.environ.get("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT")
-    if value is None:
-        return False
-    return value.strip().lower() in {"1", "true", "yes", "on"}
 
-
-def _resolve_tenant_id_for_db() -> str | None:
+def _resolve_tenant_id_for_db() -> str:
     if has_request_context():
-        if not getattr(g, "m8flow_tenant_id", None):
-            raise RuntimeError("Missing tenant id in request context.")
-        return get_tenant_id()
+        if getattr(g, "m8flow_tenant_id", None):
+            return get_tenant_id()
+        if allow_missing_tenant_context():
+            return DEFAULT_TENANT_ID
+        raise RuntimeError("Missing tenant context for database session.")
 
     context_tid = get_context_tenant_id()
     if context_tid:
         return context_tid
 
-    if _allow_missing_tenant_context():
-        return None
+    if allow_missing_tenant_context():
+        return DEFAULT_TENANT_ID
 
     # Background jobs have no request/context tenant; use default tenant (matches get_tenant_id()).
     return DEFAULT_TENANT_ID
@@ -312,21 +348,25 @@ def _resolve_tenant_id_for_db() -> str | None:
 
 @event.listens_for(Session, "after_begin")  # type: ignore[misc]
 def _set_postgres_tenant_context(session: Session, transaction: Any, connection: Any) -> None:
+    if is_public_request():
+        return
     if connection.dialect.name != "postgresql":
         return
 
     tenant_id = _resolve_tenant_id_for_db()
-    if tenant_id is None:
-        connection.exec_driver_sql("RESET app.current_tenant")
-        return
-
     connection.exec_driver_sql(
         "SET LOCAL app.current_tenant = %s",
         (tenant_id,),
     )
 
 
+_SCOPING_LISTENER_REGISTERED = False
+
 def apply() -> None:
+    global _SCOPING_LISTENER_REGISTERED
+    if not _SCOPING_LISTENER_REGISTERED:
+        event.listen(Session, "do_orm_execute", _tenant_scope_queries)
+        _SCOPING_LISTENER_REGISTERED = True
     global _PATCHED
     if _PATCHED:
         return
@@ -341,3 +381,11 @@ def apply() -> None:
 
     _PATCHED = True
     LOGGER.info("M8FLOW tenant scoping patch applied")
+
+
+def reset() -> None:
+    """Remove global SQLAlchemy listeners so tests don't leak state."""
+    global _SCOPING_LISTENER_REGISTERED
+    if _SCOPING_LISTENER_REGISTERED:
+        event.remove(Session, "do_orm_execute", _tenant_scope_queries)
+        _SCOPING_LISTENER_REGISTERED = False
