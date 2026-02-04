@@ -14,10 +14,10 @@ export interface Template {
   bpmnContent?: string; // Included in GET responses
   isPublished: boolean;
   status: string | null;
-  createdAt: string;
   createdBy: string;
-  updatedAt: string | null;
   modifiedBy: string;
+  createdAtInSeconds: number;
+  updatedAtInSeconds: number;
 }
 
 export interface TemplateFilters {

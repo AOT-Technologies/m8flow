@@ -105,6 +105,7 @@ _strip_all_non_root_handlers()
 _force_root_logging_for(("spiffworkflow_backend", "spiff", "alembic"))
 import m8flow_backend.models.m8flow_tenant  # noqa: F401
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
+from m8flow_backend.models._timestamps_bootstrap import apply as apply_m8flow_timestamp_listeners
 
 logger.warning("Tenant tablename: %s", getattr(M8flowTenantModel, "__tablename__", None))
 logger.warning("Tenant has __table__? %s", hasattr(M8flowTenantModel, "__table__"))
@@ -164,6 +165,10 @@ def _assert_model_identity() -> None:
 
 # Assert identity BEFORE create_app (fail fast on import/override ordering issues)
 _assert_model_identity()
+
+# Ensure m8flow models that use AuditDateTimeMixin participate in Spiff's
+# timestamp listeners (created_at_in_seconds / updated_at_in_seconds).
+apply_m8flow_timestamp_listeners()
 
 
 # Create the Connexion app.

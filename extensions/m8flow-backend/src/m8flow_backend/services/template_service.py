@@ -124,13 +124,21 @@ class TemplateService:
             db.session.add(template)
             TemplateModel.commit_with_rollback_on_exception()
             return template
-        except IntegrityError:
+        except IntegrityError as exc:
             db.session.rollback()
-            raise ApiError(
-                error_code="template_conflict",
-                message="A template with this key and version already exists for this tenant.",
-                status_code=409,
-            )
+            # Only treat true unique/constraint conflicts as template_conflict.
+            # For other integrity errors (e.g. NOT NULL violations), let the
+            # underlying error surface as a 500 via the global handler so we
+            # don't mis-report them as key/version conflicts.
+            orig = getattr(exc, "orig", None)
+            pgcode = getattr(orig, "pgcode", None)
+            if pgcode == "23505":
+                raise ApiError(
+                    error_code="template_conflict",
+                    message="A template with this key and version already exists for this tenant.",
+                    status_code=409,
+                ) from exc
+            raise
 
     @classmethod
     def list_templates(
@@ -339,7 +347,6 @@ class TemplateService:
                 existing_template.bpmn_object_key = new_bpmn_object_key
             
             existing_template.modified_by = username_str
-            existing_template.updated_at = datetime.now(timezone.utc)
             TemplateModel.commit_with_rollback_on_exception()
             return existing_template
         
