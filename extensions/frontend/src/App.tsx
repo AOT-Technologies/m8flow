@@ -31,54 +31,14 @@ function getStoredTenant(): boolean {
   return !!localStorage.getItem(M8FLOW_TENANT_STORAGE_KEY);
 }
 
-// #region agent log
-const DEBUG_LOG = (payload: Record<string, unknown>) => {
-  fetch('http://127.0.0.1:7243/ingest/603ec126-81cd-4be3-ba0d-84501c09e628', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      ...payload,
-      timestamp: Date.now(),
-      sessionId: 'debug-session',
-    }),
-  }).catch(() => {});
-};
-// #endregion
-
 export default function App() {
   const ability = defineAbility(() => {});
   const { ENABLE_MULTITENANT } = useConfig();
   const [hasTenant, setHasTenant] = useState(getStoredTenant);
 
-  // #region agent log
-  const storedRaw =
-    typeof window !== 'undefined'
-      ? localStorage.getItem(M8FLOW_TENANT_STORAGE_KEY)
-      : null;
-  DEBUG_LOG({
-    hypothesisId: 'A_B_E',
-    location: 'App.tsx:render',
-    message: 'App render branch check',
-    data: {
-      ENABLE_MULTITENANT,
-      hasTenant,
-      storedRaw,
-      takingMinimalBranch: ENABLE_MULTITENANT && !hasTenant,
-    },
-  });
-  // #endregion
-
   // When multitenant is on and no tenant is stored, show only the tenant page.
   // This avoids mounting ContainerForExtensions (and its permission check), which would 401 and redirect to login.
   if (ENABLE_MULTITENANT && !hasTenant) {
-    // #region agent log
-    DEBUG_LOG({
-      hypothesisId: 'D',
-      location: 'App.tsx:minimal-branch',
-      message: 'Rendering minimal view (TenantSelectPage only)',
-      data: {},
-    });
-    // #endregion
     const minimalTheme = createTheme(
       createSpiffTheme(
         (typeof window !== 'undefined' && (localStorage.getItem('theme') as 'light' | 'dark')) || 'light'
@@ -105,15 +65,6 @@ export default function App() {
       </BrowserRouter>
     );
   }
-
-  // #region agent log
-  DEBUG_LOG({
-    hypothesisId: 'D',
-    location: 'App.tsx:full-router',
-    message: 'Rendering full router (ContainerForExtensions will mount)',
-    data: {},
-  });
-  // #endregion
 
   const routeComponents = () => {
     return [

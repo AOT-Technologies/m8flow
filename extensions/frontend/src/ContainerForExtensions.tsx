@@ -79,30 +79,8 @@ function MultitenantRootGate({
 const fadeIn = 'fadeIn';
 const fadeOutImmediate = 'fadeOutImmediate';
 
-// #region agent log
-const DEBUG_LOG = (payload: Record<string, unknown>) => {
-  fetch('http://127.0.0.1:7243/ingest/603ec126-81cd-4be3-ba0d-84501c09e628', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      ...payload,
-      timestamp: Date.now(),
-      sessionId: 'debug-session',
-    }),
-  }).catch(() => {});
-};
-// #endregion
-
 export default function ContainerForExtensions() {
   const { ENABLE_MULTITENANT } = useConfig();
-  // #region agent log
-  DEBUG_LOG({
-    hypothesisId: 'D',
-    location: 'ContainerForExtensions.tsx:mount',
-    message: 'ContainerForExtensions mounted',
-    data: { ENABLE_MULTITENANT },
-  });
-  // #endregion
   const [backendIsUp, setBackendIsUp] = useState<boolean | null>(null);
   const [canAccessFrontend, setCanAccessFrontend] = useState<boolean>(true);
   const [extensionUxElements, setExtensionUxElements] = useState<
@@ -146,13 +124,6 @@ export default function ContainerForExtensions() {
   const [isSideNavVisible, setIsSideNavVisible] = useState<boolean>(!isMobile);
 
   const toggleNavCollapse = () => {
-    if (isMobile) {
-      setIsSideNavVisible(!isSideNavVisible);
-    } else {
-      const newCollapsedState = !isNavCollapsed;
-      setIsNavCollapsed(newCollapsedState);
-      localStorage.setItem('isNavCollapsed', JSON.stringify(newCollapsedState));
-    }
     if (isMobile) {
       setIsSideNavVisible(!isSideNavVisible);
     } else {

@@ -11,18 +11,6 @@ import { useTenantGate } from '../contexts/TenantGateContext';
 
 export const M8FLOW_TENANT_STORAGE_KEY = 'm8flow_tenant';
 
-const DEBUG_LOG = (payload: Record<string, unknown>) => {
-  fetch('http://127.0.0.1:7243/ingest/603ec126-81cd-4be3-ba0d-84501c09e628', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      ...payload,
-      timestamp: Date.now(),
-      sessionId: 'debug-session',
-    }),
-  }).catch(() => {});
-};
-
 export default function TenantSelectPage() {
   const { ENABLE_MULTITENANT, BACKEND_BASE_URL } = useConfig();
   const tenantGate = useTenantGate();
@@ -31,24 +19,7 @@ export default function TenantSelectPage() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // #region agent log
-  DEBUG_LOG({
-    hypothesisId: 'C',
-    location: 'TenantSelectPage.tsx:render',
-    message: 'TenantSelectPage render',
-    data: { ENABLE_MULTITENANT, hasTenantGate: !!tenantGate?.onTenantSelected },
-  });
-  // #endregion
-
   if (!ENABLE_MULTITENANT) {
-    // #region agent log
-    DEBUG_LOG({
-      hypothesisId: 'C',
-      location: 'TenantSelectPage.tsx:redirect-no-multitenant',
-      message: 'Redirecting because ENABLE_MULTITENANT is false',
-      data: {},
-    });
-    // #endregion
     navigate('/', { replace: true });
     return null;
   }

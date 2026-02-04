@@ -9,20 +9,6 @@ from flask import g, has_request_context
 
 LOGGER = logging.getLogger(__name__)
 
-# #region agent log
-DEBUG_LOG = "/Users/aot/Development/AOT/m8Flow/vinaayakh-m8flow/.cursor/debug.log"
-def _agent_log(location: str, message: str, data: dict, hypothesis_id: str = "") -> None:
-    import time
-    import json
-    log_entry = json.dumps({"location": location, "message": message, "data": data, "hypothesisId": hypothesis_id, "timestamp": int(time.time() * 1000)})
-    print(f"AGENT_LOG: {log_entry}", flush=True)
-    try:
-        with open(DEBUG_LOG, "a") as f:
-            f.write(log_entry + "\n")
-    except Exception as e:
-        print(f"AGENT_LOG_ERROR: {e}", flush=True)
-# #endregion
-
 # Default tenant used when no request context is available.
 # This must exist in the database before runtime/migrations that backfill tenant ids.
 DEFAULT_TENANT_ID = os.getenv("M8FLOW_DEFAULT_TENANT_ID", "default")
@@ -71,9 +57,6 @@ def get_tenant_id() -> str:
 def ensure_tenant_exists(tenant_id: str | None) -> None:
     """Validate that the tenant row exists; raise if missing to enforce pre-provisioning."""
     if not tenant_id:
-        # #region agent log
-        _agent_log("tenancy.py:ensure_tenant_exists", "missing_tenant_id", {}, "H1")
-        # #endregion
         raise RuntimeError(
             "Missing tenant id. Provide the M8Flow-Tenant-Id header (or set it in request context)."
         )
@@ -82,9 +65,6 @@ def ensure_tenant_exists(tenant_id: str | None) -> None:
     from spiffworkflow_backend.models.db import db
 
     tenant = db.session.get(M8flowTenantModel, tenant_id)
-    # #region agent log
-    _agent_log("tenancy.py:ensure_tenant_exists", "check_tenant", {"tenant_id": tenant_id, "exists": tenant is not None}, "H1")
-    # #endregion
 
     if tenant is None:
         raise RuntimeError(

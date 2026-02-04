@@ -85,7 +85,7 @@ export default defineConfig({
   css: {
     preprocessorOptions: {
       scss: {
-        silenceDeprecations: ['mixed-decls'],
+        silenceDeprecations: ['mixed-decls', 'if-function'],
         // Allow SASS to find modules in extensions/frontend/node_modules
         loadPaths: [
           path.resolve(__dirname, './node_modules'),
