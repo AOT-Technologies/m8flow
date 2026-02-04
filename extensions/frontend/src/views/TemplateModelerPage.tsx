@@ -305,7 +305,7 @@ export default function TemplateModelerPage() {
           </Box>
           {!template.isPublished && (
             <Box sx={{ mt: 2 }}>
-              <Button size="small" variant="contained" color="primary" onClick={() => {}}>
+              <Button size="small" variant="contained" color="primary" onClick={handlePublish}>
                 Publish
               </Button>
             </Box>
