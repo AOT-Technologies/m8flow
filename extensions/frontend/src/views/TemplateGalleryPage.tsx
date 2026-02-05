@@ -7,13 +7,15 @@ import {
   Alert,
   Paper,
 } from '@mui/material';
+import { useNavigate } from 'react-router-dom';
 import { useTemplates } from '../hooks/useTemplates';
 import { TemplateFilters as TemplateFiltersType, Template } from '../types/template';
 import TemplateCard from '../components/TemplateCard';
 import TemplateFilters from '../components/TemplateFilters';
 
 export default function TemplateGalleryPage() {
-  const { templates, loading, error, fetchTemplates } = useTemplates();
+  const navigate = useNavigate();
+  const { templates, templatesLoading, error, fetchTemplates } = useTemplates();
   const [filters, setFilters] = useState<TemplateFiltersType>({
     latest_only: true,
   });
@@ -59,8 +61,7 @@ export default function TemplateGalleryPage() {
   };
 
   const handleViewTemplate = (template: Template) => {
-    // Navigate to template detail
-    console.log('View template:', template);
+    navigate(`/templates/${template.id}`);
   };
 
   return (
@@ -75,7 +76,7 @@ export default function TemplateGalleryPage() {
         </Alert>
       )}
 
-      {loading && templates.length === 0 ? (
+      {templatesLoading && templates.length === 0 ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
           <CircularProgress />
         </Box>
@@ -90,7 +91,7 @@ export default function TemplateGalleryPage() {
           />
 
           {/* Main Gallery */}
-          {loading ? (
+          {templatesLoading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
               <CircularProgress />
             </Box>
