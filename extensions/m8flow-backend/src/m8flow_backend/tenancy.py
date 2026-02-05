@@ -17,13 +17,31 @@ DEFAULT_TENANT_ID = os.getenv("M8FLOW_DEFAULT_TENANT_ID", "default")
 PUBLIC_PATH_PREFIXES: tuple[str, ...] = (
     "/favicon.ico",
     "/v1.0/status",
+    "/status",
     "/v1.0/openapi.json",
+    "/openapi.json",
     "/v1.0/openapi.yaml",
+    "/openapi.yaml",
     "/v1.0/ui",
+    "/ui",
     "/v1.0/static",
+    "/static",
     "/v1.0/logout",
+    "/logout",
     "/v1.0/authentication-options",
-    "/v1.0/login"
+    "/authentication-options",
+    "/v1.0/login",
+    "/login",
+    # Pre-login tenant selection endpoints (must not require tenant context)
+    "/v1.0/tenants/check",
+    "/tenants/check",
+    "/v1.0/m8flow/tenant-login-url",
+    "/m8flow/tenant-login-url",
+    # Bootstrap/admin: create realm and create tenant (no tenant in token yet)
+    "/v1.0/m8flow/tenant-realms",
+    "/m8flow/tenant-realms",
+    "/v1.0/m8flow/create-tenant",
+    "/m8flow/create-tenant",
 )
 
 _CONTEXT_TENANT_ID: ContextVar[Optional[str]] = ContextVar("m8flow_tenant_id", default=None)
@@ -170,7 +188,14 @@ def create_tenant_if_not_exists(tenant_id: str, name: str | None = None) -> None
 
     if db.session.get(M8flowTenantModel, tenant_id) is not None:
         return
-    tenant = M8flowTenantModel(id=tenant_id, name=display_name)
+    # slug, created_by, modified_by are NOT NULL; use tenant_id as slug, 'system' for audit when no user context
+    tenant = M8flowTenantModel(
+        id=tenant_id,
+        name=display_name,
+        slug=tenant_id,
+        created_by="system",
+        modified_by="system",
+    )
     db.session.add(tenant)
     db.session.commit()
     LOGGER.info("Created tenant row for tenant_id=%s name=%s", tenant_id, display_name)

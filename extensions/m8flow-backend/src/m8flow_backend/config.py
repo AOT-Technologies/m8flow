@@ -29,13 +29,18 @@ def keycloak_admin_password() -> str:
 
 
 def realm_template_path() -> str:
-    """Path to realm template JSON (absolute or relative to cwd)."""
-    default = "extensions/m8flow-backend/keycloak/realm_exports/spiffworkflow-realm.json"
-    raw = _get("M8FLOW_KEYCLOAK_REALM_TEMPLATE_PATH") or default
-    p = Path(raw)
-    if not p.is_absolute():
-        p = Path.cwd() / raw
-    return str(p)
+    """Path to realm template JSON (absolute, or relative to cwd, or default next to package)."""
+    raw = _get("M8FLOW_KEYCLOAK_REALM_TEMPLATE_PATH")
+    if raw:
+        p = Path(raw)
+        if not p.is_absolute():
+            p = Path.cwd() / raw
+        return str(p)
+    # Default: under m8flow-backend extension root (works regardless of cwd)
+    _pkg = Path(__file__).resolve().parent  # .../m8flow_backend
+    _root = _pkg.parent.parent  # .../m8flow-backend (keycloak/ lives here)
+    default = _root / "keycloak" / "realm_exports" / "spiffworkflow-realm.json"
+    return str(default)
 
 
 def spoke_keystore_p12_path() -> str | None:

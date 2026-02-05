@@ -11,6 +11,41 @@ from flask import request
 
 logger = logging.getLogger(__name__)
 
+# Realm name used by Keycloak and by the frontend cookie authentication_identifier.
+# If the backend has a config with uri .../realms/spiffworkflow-local but identifier e.g. "default",
+# token decode fails because the cookie sends "spiffworkflow-local". We ensure an alias exists.
+SPIFFWORKFLOW_LOCAL_REALM = "spiffworkflow-local"
+
+
+def _ensure_realm_identifier_in_auth_configs(flask_app) -> None:
+    """
+    Ensure SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS has an entry with identifier matching the realm
+    when any config's URI points at .../realms/spiffworkflow-local. Fixes token decode errors
+    when the frontend cookie authentication_identifier is spiffworkflow-local but env uses
+    identifier=default.
+    """
+    configs = flask_app.config.get("SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS") or []
+    if not configs:
+        return
+    if any(c.get("identifier") == SPIFFWORKFLOW_LOCAL_REALM for c in configs):
+        return
+    template = None
+    for c in configs:
+        uri = (c.get("uri") or "").strip()
+        if f"/realms/{SPIFFWORKFLOW_LOCAL_REALM}" in uri or uri.endswith(f"/realms/{SPIFFWORKFLOW_LOCAL_REALM}"):
+            template = c
+            break
+    if not template:
+        return
+    new_config = copy.deepcopy(template)
+    new_config["identifier"] = SPIFFWORKFLOW_LOCAL_REALM
+    new_config["label"] = new_config.get("label") or SPIFFWORKFLOW_LOCAL_REALM
+    configs.append(new_config)
+    logger.info(
+        "login_tenant_patch: Added auth config identifier=%s so cookie authentication_identifier matches",
+        SPIFFWORKFLOW_LOCAL_REALM,
+    )
+
 
 def _ensure_tenant_auth_config(flask_app, tenant: str) -> None:
     """Ensure SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS has an entry for this tenant (realm)."""
@@ -74,6 +109,7 @@ def _handle_tenant_login_request(flask_app):
 
 def apply_login_tenant_patch(flask_app) -> None:
     """Register a before_request handler to intercept login when tenant param is present."""
+    _ensure_realm_identifier_in_auth_configs(flask_app)
     def before_login_tenant():
         resp = _handle_tenant_login_request(flask_app)
         if resp is not None:

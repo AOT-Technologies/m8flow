@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 import time
 import uuid
 import warnings
@@ -10,6 +11,8 @@ from pathlib import Path
 from typing import Any
 
 import requests
+
+logger = logging.getLogger(__name__)
 
 from m8flow_backend.config import (
     keycloak_admin_password,
@@ -145,7 +148,9 @@ def get_master_admin_token() -> str:
 
 def realm_exists(realm: str) -> bool:
     """Return True if the realm exists in Keycloak, False otherwise (e.g. 404).
-    Uses the public OpenID discovery endpoint so no admin credentials are required."""
+    Uses the public OpenID discovery endpoint so no admin credentials are required.
+    Treats 200 (OK) and 403 (Forbidden) as realm exists: some Keycloak configs restrict
+    discovery while the realm and auth endpoint still work."""
     if not realm or not str(realm).strip():
         return False
     realm = str(realm).strip()
@@ -154,8 +159,30 @@ def realm_exists(realm: str) -> bool:
         # Public endpoint: no admin token required
         discovery_url = f"{base_url}/realms/{realm}/.well-known/openid-configuration"
         r = requests.get(discovery_url, timeout=30)
-        return r.status_code == 200
-    except Exception:
+        msg = f"[realm_exists] realm={realm!r} url={discovery_url} status={r.status_code}"
+        print(msg, flush=True)  # always visible regardless of logging config
+        logger.warning(
+            "realm_exists: realm=%s url=%s status=%s (check KEYCLOAK_URL if realm exists in browser)",
+            realm,
+            discovery_url,
+            r.status_code,
+        )
+        if r.status_code != 200 and r.text:
+            logger.debug("realm_exists: response body (first 200 chars): %s", r.text[:200])
+        # 200 = discovery public; 403 = discovery restricted but realm often still exists and auth works
+        return r.status_code in (200, 403)
+    except Exception as e:
+        try:
+            _url = f"{keycloak_url()}/realms/{realm}/.well-known/openid-configuration"
+        except Exception:
+            _url = "(could not build URL)"
+        print(f"[realm_exists] realm={realm!r} url={_url} error={e!r}", flush=True)
+        logger.warning(
+            "realm_exists: realm=%s discovery_url=%s error=%s",
+            realm,
+            _url,
+            e,
+        )
         return False
 
 

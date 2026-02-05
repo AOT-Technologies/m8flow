@@ -309,6 +309,12 @@ try:
     apply_auth_exclusion_patch()
 except ImportError:
     pass
+# M8Flow: create-realm/create-tenant accept Keycloak master realm token when no auth identifier set
+try:
+    from extensions.master_realm_auth_patch import apply_master_realm_auth_patch
+    apply_master_realm_auth_patch()
+except ImportError:
+    pass
 
 # Configure SQL echo if enabled
 _configure_sql_echo(flask_app)

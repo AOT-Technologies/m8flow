@@ -23,6 +23,7 @@ export default defineConfig({
   base: '/',
   define: {
     'import.meta.env.VITE_MULTI_TENANT_ON': JSON.stringify(multiTenantOn),
+  },
   test: {
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     setupFiles: ['src/test/vitest.setup.ts'],

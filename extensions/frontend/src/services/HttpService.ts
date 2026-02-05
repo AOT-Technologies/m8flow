@@ -20,7 +20,8 @@ export const getBasicHeaders = (): Record<string, string> => {
   // Include tenant ID if available
   const tenantId = UserService.getTenantId();
   if (tenantId) {
-    headers['m8-Tenant-Id'] = tenantId;
+    // Backend expects this header name for request-scoped tenant resolution
+    headers['M8Flow-Tenant-Id'] = tenantId;
   }
   
   return headers;

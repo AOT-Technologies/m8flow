@@ -91,6 +91,68 @@ paths:
                   detail:
                     type: string
 
+  /tenant-realms:
+    post:
+      summary: Create a spoke realm from the SpiffWorkflow template
+      description: Creates a Keycloak realm from the template and ensures a tenant record exists. Does not require tenant context (bootstrap/admin).
+      operationId: m8flow_backend.routes.keycloak_controller.create_realm
+      tags:
+        - Keycloak
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - realm_id
+              properties:
+                realm_id:
+                  type: string
+                  description: Keycloak realm id (required)
+                display_name:
+                  type: string
+                  description: Optional display name for the realm
+      responses:
+        "201":
+          description: Realm created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  realm:
+                    type: string
+                  displayName:
+                    type: string
+        "400":
+          description: Bad request - realm_id missing or invalid
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+        "409":
+          description: Realm already exists or conflict
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+        "500":
+          description: Keycloak or server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+
   /tenants/check:
     get:
       summary: Check if tenant exists by slug or id (unauthenticated)

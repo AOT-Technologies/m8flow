@@ -26,7 +26,7 @@
   "oauth2DeviceCodeLifespan": 600,
   "oauth2DevicePollingInterval": 5,
   "enabled": true,
-  "sslRequired": "external",
+  "sslRequired": "none",
   "registrationAllowed": false,
   "registrationEmailAsUsername": false,
   "rememberMe": false,
@@ -432,9 +432,9 @@
   },
   "groups": [
     {
-      "id": "47f7e95a-ea3a-458f-a5a7-fba8cbf6db9a",
-      "name": "test_group_from_open_id",
-      "path": "/test_group_from_open_id",
+      "id": "a14e6081-ffd4-4925-9364-4916bcf74931",
+      "name": "group_keycloak",
+      "path": "/group_keycloak",
       "attributes": {},
       "realmRoles": [],
       "clientRoles": {},
@@ -507,7 +507,7 @@
         "realm-management": ["realm-admin"]
       },
       "notBefore": 0,
-      "groups": []
+      "groups": ["/group_keycloak"]
     },
     {
       "id": "4c436296-8471-4105-b551-80eee96b43bb",
@@ -630,7 +630,7 @@
       "requiredActions": [],
       "realmRoles": ["default-roles-spiffworkflow"],
       "notBefore": 0,
-      "groups": ["/test_group_from_open_id"]
+      "groups": []
     },
     {
       "id": "cdec7198-19f5-4788-aceb-e8c68f4c277f",
