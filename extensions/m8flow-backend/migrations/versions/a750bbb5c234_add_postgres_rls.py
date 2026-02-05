@@ -52,10 +52,6 @@ def _inspector():
     return sa.inspect(op.get_bind())
 
 
-def _table_exists(table: str) -> bool:
-    return _inspector().has_table(table)
-
-
 def _column_exists(table: str, column: str) -> bool:
     insp = _inspector()
     return column in [c["name"] for c in insp.get_columns(table)]
@@ -99,8 +95,6 @@ def upgrade() -> None:
         return
 
     for table in TENANT_TABLES:
-        if not _table_exists(table):
-            continue
         if not _column_exists(table, "m8f_tenant_id"):
             continue
 
@@ -133,8 +127,6 @@ def downgrade() -> None:
         return
 
     for table in TENANT_TABLES:
-        if not _table_exists(table):
-            continue
         if not _column_exists(table, "m8f_tenant_id"):
             continue
         policy_name = f"{table}_tenant_isolation"
