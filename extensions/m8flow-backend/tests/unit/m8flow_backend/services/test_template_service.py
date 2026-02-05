@@ -1419,6 +1419,48 @@ def test_update_template_by_id_unpublished() -> None:
             assert updated.version == "V1"  # Same version
 
 
+def test_update_template_by_id_publish_sets_status() -> None:
+    """Publishing via is_published=True sets status to 'published'."""
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = user
+
+            template = TemplateModel(
+                template_key="publish-test",
+                version="V1",
+                name="Draft Template",
+                m8f_tenant_id="tenant-a",
+                bpmn_object_key="test.bpmn",
+                is_published=False,
+                status="draft",
+                created_by="tester",
+                modified_by="tester",
+            )
+            db.session.add(template)
+            db.session.commit()
+            template_id = template.id
+
+            updates = {"is_published": True}
+            updated = TemplateService.update_template_by_id(template_id, updates, user=user)
+
+            assert updated.id == template_id
+            assert updated.is_published is True
+            assert updated.status == "published"
+
+
 def test_update_template_by_id_published_creates_new_version() -> None:
     """Published templates create new version."""
     app = Flask(__name__)

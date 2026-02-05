@@ -39,8 +39,9 @@ import DynamicCSSInjection from '@spiffworkflow-frontend/components/DynamicCSSIn
 import ReportsPage from "./views/ReportsPage";
 // M8Flow Extension: Import Tenant page
 import TenantPage from "./views/TenantPage";
-// m8 Extension: Import Template Gallery page
+// m8 Extension: Import Template Gallery and Template Modeler pages
 import TemplateGalleryPage from './views/TemplateGalleryPage';
+import TemplateModelerPage from './views/TemplateModelerPage';
 
 const fadeIn = 'fadeIn';
 const fadeOutImmediate = 'fadeOutImmediate';
@@ -89,13 +90,6 @@ export default function ContainerForExtensions() {
   const [isSideNavVisible, setIsSideNavVisible] = useState<boolean>(!isMobile);
 
   const toggleNavCollapse = () => {
-    if (isMobile) {
-      setIsSideNavVisible(!isSideNavVisible);
-    } else {
-      const newCollapsedState = !isNavCollapsed;
-      setIsNavCollapsed(newCollapsedState);
-      localStorage.setItem('isNavCollapsed', JSON.stringify(newCollapsedState));
-    }
     if (isMobile) {
       setIsSideNavVisible(!isSideNavVisible);
     } else {
@@ -259,7 +253,8 @@ export default function ContainerForExtensions() {
         <Route path="reports" element={<ReportsPage />} />
         {/* M8Flow Extension: Tenant route */}
         <Route path="/tenants" element={<TenantPage />} />
-        {/* m8 Extension: Template Gallery route */}
+        {/* m8 Extension: Template Gallery and Template Modeler routes */}
+        <Route path="templates/:templateId" element={<TemplateModelerPage />} />
         <Route path="templates" element={<TemplateGalleryPage />} />
         <Route path="extensions/:page_identifier" element={<Extension />} />
         <Route path="login" element={<Login />} />

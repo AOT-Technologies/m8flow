@@ -337,6 +337,10 @@ class TemplateService:
         
         # If template is not published, update in place
         if not existing_template.is_published:
+            # Handle publish: set is_published and sync status (only allow setting to True)
+            if updates.get("is_published") is True:
+                existing_template.is_published = True
+                existing_template.status = "published"
             # Update the existing template record in place
             for field in allowed_fields:
                 if field in updates:
