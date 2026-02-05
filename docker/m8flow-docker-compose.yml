@@ -4,11 +4,6 @@ services:
   m8flow-db:
     image: postgres:15
     env_file: ../.env
-    environment:
-      # Postgres image requires non-empty POSTGRES_PASSWORD; defaults used when .env leaves them blank
-      POSTGRES_USER: "${POSTGRES_USER:-postgres}"
-      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
-      POSTGRES_DB: "${POSTGRES_DB:-postgres}"
     ports:
       - "1111:5432"
     volumes:
@@ -119,59 +114,12 @@ services:
       - m8flow-db
       - redis
       - minio
-      - process-models-sync
-
-  process-models-sync:
-    image: rclone/rclone:latest
-    depends_on:
-      - minio-mc-init
-    volumes:
-      - process_models_cache:/cache
-      - ../rclone.conf:/config/rclone/rclone.conf:ro
-    entrypoint: >
-      /bin/sh -c "
-      mkdir -p /cache;
-
-      # Optional one-time seed from S3 (non-destructive):
-      rclone copy minio:m8flow-process-models /cache --config /config/rclone/rclone.conf;
-
-      echo 'Push-only loop (local -> S3)...';
-      while true; do
-        rclone sync /cache minio:m8flow-process-models --config /config/rclone/rclone.conf;
-        sleep 3;
-      done
-      "
-
-  celery_worker:
-    build:
-      context: ../spiffworkflow-backend
-      dockerfile: Dockerfile
-    command: ["./bin/run_server_locally", "celery_worker"]
-    env_file: ../.env
-    environment:
-      SPIFFWORKFLOW_BACKEND_DATABASE_TYPE: postgres
-      SPIFFWORKFLOW_BACKEND_DATABASE_URI: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}
-      SPIFFWORKFLOW_BACKEND_CELERY_BROKER_URL: redis://redis:6379/0
-      SPIFFWORKFLOW_BACKEND_CELERY_RESULT_BACKEND: redis://redis:6379/0
-      SPIFFWORKFLOW_BACKEND_RUNNING_IN_CELERY_WORKER: "true"
-      SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: /app/process_models
-    volumes:
-      - process_models_cache:/app/process_models
-    depends_on:
-      - m8flow-db
-      - m8flow-backend
-      - redis
-      - process-models-sync
-    restart: unless-stopped
 
   m8flow-frontend:
     build:
       context: ..
       dockerfile: docker/m8flow.frontend.Dockerfile
     env_file: ../.env
-    environment:
-      # Extensions frontend reads MULTI_TENANT_ON at runtime via window.spiffworkflowFrontendJsenv (if injected by server)
-      MULTI_TENANT_ON: "${MULTI_TENANT_ON:-false}"
     ports:
       - "8001:80"
     depends_on:
