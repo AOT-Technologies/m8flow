@@ -30,6 +30,11 @@ def test_create_realm_from_template_includes_client_scopes(mock_load, mock_post,
     
     create_realm_from_template("new-realm", "New Realm")
     
+    # Verify Step 1 call (Create Realm)
+    realm_creation_call = mock_post.call_args_list[0]
+    _, creation_kwargs = realm_creation_call
+    assert creation_kwargs["json"]["sslRequired"] == "none"
+
     # Verify Step 2 call (Partial Import)
     assert mock_post.call_count == 2
     partial_import_call = mock_post.call_args_list[1]

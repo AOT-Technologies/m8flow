@@ -351,8 +351,9 @@ def create_realm_from_template(realm_id: str, display_name: str | None = None) -
     if not realm_id or not realm_id.strip():
         raise ValueError("realm_id is required")
     realm_id = realm_id.strip()
-    template_name = template_realm_name()
     template = load_realm_template()
+    # Detect template realm name from JSON if present, else fallback to config
+    template_name = template.get("realm") or template_realm_name()
     full_payload = _fill_realm_template(template, realm_id, display_name, template_name)
     
     # Step 1: Create minimal realm first (avoids 500 error from full template)
@@ -360,6 +361,7 @@ def create_realm_from_template(realm_id: str, display_name: str | None = None) -
         "realm": full_payload.get("realm"),
         "displayName": full_payload.get("displayName"),
         "enabled": full_payload.get("enabled", True),
+        "sslRequired": full_payload.get("sslRequired", "none"),
     }
     
     token = get_master_admin_token()
