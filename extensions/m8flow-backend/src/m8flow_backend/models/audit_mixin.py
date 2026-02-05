@@ -13,12 +13,3 @@ class AuditDateTimeMixin:  # pylint: disable=too-few-public-methods
 
     created_at_in_seconds = db.Column(db.Integer, nullable=False)
     updated_at_in_seconds = db.Column(db.Integer, nullable=False)
-
-    # Alias properties used in some m8flow code paths.
-    @property
-    def created(self) -> int:
-        return self.created_at_in_seconds
-
-    @property
-    def modified(self) -> int:
-        return self.updated_at_in_seconds

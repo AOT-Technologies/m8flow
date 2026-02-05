@@ -7,7 +7,7 @@ Create Date: 2026-02-04
 
 from __future__ import annotations
 
-import time
+import datetime as dt
 
 from alembic import op
 import sqlalchemy as sa
@@ -20,34 +20,151 @@ branch_labels = None
 depends_on = None
 
 
-def _dialect_name() -> str:
-    return op.get_bind().dialect.name
+def _utc_now() -> dt.datetime:
+    """Use naive UTC to avoid timezone surprises across dialects."""
+    return dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
 
 
-def _backfill_seconds_columns(table: str, created_col: str, modified_col: str) -> None:
-    """Backfill *_at_in_seconds from existing datetime columns.
+def _to_epoch_seconds(value: dt.datetime | None) -> int:
+    if value is None:
+        value = _utc_now()
 
-    - For NULL modified timestamps (possible on templates), fall back to created timestamp.
-    - For any remaining NULLs, fall back to current time.
-    """
-    dialect = _dialect_name()
-    if dialect != "postgresql":
-        raise RuntimeError(f"This migration is Postgres-only; got dialect {dialect!r}.")
+    # If the DB returns timezone-aware datetimes, normalize to UTC.
+    if value.tzinfo is not None:
+        value = value.astimezone(dt.timezone.utc).replace(tzinfo=None)
 
-    now_seconds = int(round(time.time()))
-    op.execute(
-        sa.text(
-            f"""
-            UPDATE {table}
-            SET
-              created_at_in_seconds = COALESCE(EXTRACT(EPOCH FROM {created_col})::int, :now_seconds),
-              updated_at_in_seconds = COALESCE(EXTRACT(EPOCH FROM {modified_col})::int,
-                                              EXTRACT(EPOCH FROM {created_col})::int,
-                                              :now_seconds)
-            WHERE created_at_in_seconds IS NULL OR updated_at_in_seconds IS NULL
-            """
-        ).bindparams(now_seconds=now_seconds)
-    )
+    return int(value.timestamp())
+
+
+def _backfill_seconds_columns(
+    table: str,
+    id_col: str,
+    created_col: str,
+    modified_col: str,
+    created_seconds_col: str,
+    updated_seconds_col: str,
+    batch_size: int = 5000,
+) -> None:
+    """Backfill seconds columns from datetime columns in a DB-agnostic way."""
+    bind = op.get_bind()
+    last_id = None
+
+    while True:
+        if last_id is None:
+            rows = bind.execute(
+                sa.text(
+                    f"""
+                    SELECT {id_col} AS id, {created_col} AS created_at, {modified_col} AS modified_at
+                    FROM {table}
+                    WHERE {created_seconds_col} IS NULL OR {updated_seconds_col} IS NULL
+                    ORDER BY {id_col}
+                    LIMIT :limit
+                    """
+                ),
+                {"limit": batch_size},
+            ).fetchall()
+        else:
+            rows = bind.execute(
+                sa.text(
+                    f"""
+                    SELECT {id_col} AS id, {created_col} AS created_at, {modified_col} AS modified_at
+                    FROM {table}
+                    WHERE ({created_seconds_col} IS NULL OR {updated_seconds_col} IS NULL)
+                      AND {id_col} > :last_id
+                    ORDER BY {id_col}
+                    LIMIT :limit
+                    """
+                ),
+                {"last_id": last_id, "limit": batch_size},
+            ).fetchall()
+
+        if not rows:
+            break
+
+        for r in rows:
+            created_dt = r.created_at
+            modified_dt = r.modified_at if r.modified_at is not None else created_dt
+
+            created_s = _to_epoch_seconds(created_dt)
+            updated_s = _to_epoch_seconds(modified_dt)
+
+            bind.execute(
+                sa.text(
+                    f"""
+                    UPDATE {table}
+                    SET {created_seconds_col} = COALESCE({created_seconds_col}, :created_s),
+                        {updated_seconds_col} = COALESCE({updated_seconds_col}, :updated_s)
+                    WHERE {id_col} = :id
+                    """
+                ),
+                {"id": r.id, "created_s": created_s, "updated_s": updated_s},
+            )
+
+        last_id = rows[-1].id
+
+
+def _backfill_datetime_columns(
+    table: str,
+    id_col: str,
+    created_seconds_col: str,
+    updated_seconds_col: str,
+    created_col: str,
+    modified_col: str,
+    batch_size: int = 5000,
+) -> None:
+    """Backfill datetime columns from seconds columns in a DB-agnostic way (downgrade)."""
+    bind = op.get_bind()
+    last_id = None
+    utc = dt.timezone.utc
+
+    while True:
+        if last_id is None:
+            rows = bind.execute(
+                sa.text(
+                    f"""
+                    SELECT {id_col} AS id, {created_seconds_col} AS created_s, {updated_seconds_col} AS updated_s
+                    FROM {table}
+                    ORDER BY {id_col}
+                    LIMIT :limit
+                    """
+                ),
+                {"limit": batch_size},
+            ).fetchall()
+        else:
+            rows = bind.execute(
+                sa.text(
+                    f"""
+                    SELECT {id_col} AS id, {created_seconds_col} AS created_s, {updated_seconds_col} AS updated_s
+                    FROM {table}
+                    WHERE {id_col} > :last_id
+                    ORDER BY {id_col}
+                    LIMIT :limit
+                    """
+                ),
+                {"last_id": last_id, "limit": batch_size},
+            ).fetchall()
+
+        if not rows:
+            break
+
+        for r in rows:
+            created_s = r.created_s if r.created_s is not None else int(dt.datetime.now(utc).timestamp())
+            updated_s = r.updated_s if r.updated_s is not None else created_s
+            created_at = dt.datetime.fromtimestamp(created_s, tz=utc)
+            modified_at = dt.datetime.fromtimestamp(updated_s, tz=utc)
+
+            bind.execute(
+                sa.text(
+                    f"""
+                    UPDATE {table}
+                    SET {created_col} = :created_at, {modified_col} = :modified_at
+                    WHERE {id_col} = :id
+                    """
+                ),
+                {"id": r.id, "created_at": created_at, "modified_at": modified_at},
+            )
+
+        last_id = rows[-1].id
 
 
 def upgrade() -> None:
@@ -60,9 +177,23 @@ def upgrade() -> None:
         batch_op.add_column(sa.Column("created_at_in_seconds", sa.Integer(), nullable=True))
         batch_op.add_column(sa.Column("updated_at_in_seconds", sa.Integer(), nullable=True))
 
-    # Backfill from existing datetime columns.
-    _backfill_seconds_columns("m8flow_tenant", created_col="created_at", modified_col="modified_at")
-    _backfill_seconds_columns("m8flow_templates", created_col="created_at", modified_col="modified_at")
+    # Backfill from existing datetime columns (portable).
+    _backfill_seconds_columns(
+        table="m8flow_tenant",
+        id_col="id",
+        created_col="created_at",
+        modified_col="modified_at",
+        created_seconds_col="created_at_in_seconds",
+        updated_seconds_col="updated_at_in_seconds",
+    )
+    _backfill_seconds_columns(
+        table="m8flow_templates",
+        id_col="id",
+        created_col="created_at",
+        modified_col="modified_at",
+        created_seconds_col="created_at_in_seconds",
+        updated_seconds_col="updated_at_in_seconds",
+    )
 
     # Enforce NOT NULL after backfill.
     with op.batch_alter_table("m8flow_tenant") as batch_op:
@@ -82,58 +213,9 @@ def upgrade() -> None:
         batch_op.drop_column("modified_at")
         batch_op.drop_column("created_at")
 
-    # Postgres-only hardening for template seconds columns:
-    # - ensure no remaining NULLs using NOW()
-    # - add server-side defaults so future inserts never get NULLs
-    op.execute(
-        sa.text(
-            """
-            UPDATE m8flow_templates
-            SET
-              created_at_in_seconds = COALESCE(
-                created_at_in_seconds,
-                CAST(EXTRACT(EPOCH FROM NOW()) AS INTEGER)
-              ),
-              updated_at_in_seconds = COALESCE(
-                updated_at_in_seconds,
-                created_at_in_seconds,
-                CAST(EXTRACT(EPOCH FROM NOW()) AS INTEGER)
-              )
-            WHERE created_at_in_seconds IS NULL
-               OR updated_at_in_seconds IS NULL
-            """
-        )
-    )
-    op.execute(
-        sa.text(
-            """
-            ALTER TABLE m8flow_templates
-              ALTER COLUMN created_at_in_seconds
-                SET DEFAULT CAST(EXTRACT(EPOCH FROM NOW()) AS INTEGER),
-              ALTER COLUMN updated_at_in_seconds
-                SET DEFAULT CAST(EXTRACT(EPOCH FROM NOW()) AS INTEGER)
-            """
-        )
-    )
-
 
 def downgrade() -> None:
-    dialect = _dialect_name()
-    if dialect != "postgresql":
-        raise RuntimeError(f"This migration is Postgres-only; got dialect {dialect!r}.")
-
-    # Drop the server defaults; leave the backfilled values as-is.
-    op.execute(
-        sa.text(
-            """
-            ALTER TABLE m8flow_templates
-              ALTER COLUMN created_at_in_seconds DROP DEFAULT,
-              ALTER COLUMN updated_at_in_seconds DROP DEFAULT
-            """
-        )
-    )
-
-    # Re-add datetime columns (best-effort; values are not fully recoverable).
+    # Re-add datetime columns (nullable).
     with op.batch_alter_table("m8flow_tenant") as batch_op:
         batch_op.add_column(sa.Column("created_at", sa.DateTime(timezone=True), nullable=True))
         batch_op.add_column(sa.Column("modified_at", sa.DateTime(timezone=True), nullable=True))
@@ -142,26 +224,22 @@ def downgrade() -> None:
         batch_op.add_column(sa.Column("created_at", sa.DateTime(timezone=True), nullable=True))
         batch_op.add_column(sa.Column("modified_at", sa.DateTime(timezone=True), nullable=True))
 
-    # Backfill datetime columns from seconds.
-    op.execute(
-        sa.text(
-            """
-            UPDATE m8flow_tenant
-            SET created_at = to_timestamp(created_at_in_seconds),
-                modified_at = to_timestamp(updated_at_in_seconds)
-            WHERE created_at IS NULL OR modified_at IS NULL
-            """
-        )
+    # Backfill datetime columns from seconds (portable).
+    _backfill_datetime_columns(
+        table="m8flow_tenant",
+        id_col="id",
+        created_seconds_col="created_at_in_seconds",
+        updated_seconds_col="updated_at_in_seconds",
+        created_col="created_at",
+        modified_col="modified_at",
     )
-    op.execute(
-        sa.text(
-            """
-            UPDATE m8flow_templates
-            SET created_at = to_timestamp(created_at_in_seconds),
-                modified_at = to_timestamp(updated_at_in_seconds)
-            WHERE created_at IS NULL OR modified_at IS NULL
-            """
-        )
+    _backfill_datetime_columns(
+        table="m8flow_templates",
+        id_col="id",
+        created_seconds_col="created_at_in_seconds",
+        updated_seconds_col="updated_at_in_seconds",
+        created_col="created_at",
+        modified_col="modified_at",
     )
 
     # Drop seconds columns.

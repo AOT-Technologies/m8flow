@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import sys
 from flask import Flask, g
-from extensions.bootstrap import bootstrap
+from extensions.bootstrap import bootstrap, ensure_m8flow_audit_timestamps
 from extensions.env_var_mapper import apply_spiff_env_mapping
 from m8flow_backend.services.asgi_tenant_context_middleware import AsgiTenantContextMiddleware
 from m8flow_backend.tenancy import begin_request_context, end_request_context, clear_tenant_context
@@ -105,7 +105,6 @@ _strip_all_non_root_handlers()
 _force_root_logging_for(("spiffworkflow_backend", "spiff", "alembic"))
 import m8flow_backend.models.m8flow_tenant  # noqa: F401
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
-from m8flow_backend.models._timestamps_bootstrap import apply as apply_m8flow_timestamp_listeners
 
 logger.warning("Tenant tablename: %s", getattr(M8flowTenantModel, "__tablename__", None))
 logger.warning("Tenant has __table__? %s", hasattr(M8flowTenantModel, "__table__"))
@@ -168,7 +167,7 @@ _assert_model_identity()
 
 # Ensure m8flow models that use AuditDateTimeMixin participate in Spiff's
 # timestamp listeners (created_at_in_seconds / updated_at_in_seconds).
-apply_m8flow_timestamp_listeners()
+ensure_m8flow_audit_timestamps()
 
 
 # Create the Connexion app.

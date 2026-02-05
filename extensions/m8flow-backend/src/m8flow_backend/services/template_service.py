@@ -19,6 +19,8 @@ from m8flow_backend.services.template_storage_service import (
     TemplateStorageService,
 )
 
+UNIQUE_TEMPLATE_CONSTRAINT = "uq_template_key_version_tenant"  # keep in sync with TemplateModel __table_args__
+
 
 class TemplateService:
     """Service for CRUD, versioning, and visibility enforcement for templates."""
@@ -126,13 +128,10 @@ class TemplateService:
             return template
         except IntegrityError as exc:
             db.session.rollback()
-            # Only treat true unique/constraint conflicts as template_conflict.
-            # For other integrity errors (e.g. NOT NULL violations), let the
-            # underlying error surface as a 500 via the global handler so we
-            # don't mis-report them as key/version conflicts.
-            orig = getattr(exc, "orig", None)
-            pgcode = getattr(orig, "pgcode", None)
-            if pgcode == "23505":
+            # Generic detection based on constraint name rather than DB-specific codes.
+            # For other integrity errors (NOT NULL, FK, etc.), let them surface normally.
+            message = str(getattr(exc, "orig", exc))
+            if UNIQUE_TEMPLATE_CONSTRAINT in message:
                 raise ApiError(
                     error_code="template_conflict",
                     message="A template with this key and version already exists for this tenant.",
