@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Box, Button, Chip, CircularProgress, Alert, Typography, Paper } from '@mui/material';
 import ProcessBreadcrumb from '@spiffworkflow-frontend/components/ProcessBreadcrumb';
 import ReactDiagramEditor from '@spiffworkflow-frontend/components/ReactDiagramEditor';
+import DateAndTimeService from '@spiffworkflow-frontend/services/DateAndTimeService';
 import HttpService from '../services/HttpService';
 import { Template } from '../types/template';
 import './TemplateModelerPage.css';
@@ -54,11 +55,12 @@ function TemplateDetailsCard({ template }: { template: Template }) {
             Created by: {template.createdBy}
           </Typography>
         )}
-        {template.updatedAt && (
-          <Typography variant="caption" color="text.secondary">
-            Updated: {new Date(template.updatedAt).toLocaleString()}
-          </Typography>
-        )}
+        <Typography variant="caption" color="text.secondary">
+          Created: {DateAndTimeService.convertSecondsToFormattedDateTime(template.createdAtInSeconds) ?? '—'}
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          Updated: {DateAndTimeService.convertSecondsToFormattedDateTime(template.updatedAtInSeconds) ?? '—'}
+        </Typography>
       </Box>
       {template.description && (
         <Typography

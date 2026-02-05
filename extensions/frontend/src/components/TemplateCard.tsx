@@ -11,6 +11,8 @@ import {
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { PointerEvent } from 'react';
+import { TimeAgo } from '@spiffworkflow-frontend/helpers/timeago';
+import DateAndTimeService from '@spiffworkflow-frontend/services/DateAndTimeService';
 import { Template, TemplateVisibility } from '../types/template';
 
 interface TemplateCardProps {
@@ -146,6 +148,15 @@ export default function TemplateCard({
             )}
             <Typography variant="caption" sx={{ color: 'text.secondary', mt: 'auto' }}>
               Version: {template.version}
+            </Typography>
+            <Typography
+              variant="caption"
+              sx={{ color: 'text.secondary' }}
+              title={
+                DateAndTimeService.convertSecondsToFormattedDateTime(template.updatedAtInSeconds) ?? undefined
+              }
+            >
+              Updated {TimeAgo.inWords(template.updatedAtInSeconds)}
             </Typography>
           </Stack>
         </CardContent>
