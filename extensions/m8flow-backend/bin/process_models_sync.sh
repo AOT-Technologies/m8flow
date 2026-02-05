@@ -1,13 +1,8 @@
 #!/bin/sh
 set -e
 
+echo "Syncing process models to MinIO..."
 mkdir -p /cache
-
-# Optional one-time seed from S3 (non-destructive)
-rclone copy minio:m8flow-process-models /cache --config /config/rclone/rclone.conf
-
-echo "Push-only loop (local -> S3)..."
-while true; do
-  rclone sync /cache minio:m8flow-process-models --config /config/rclone/rclone.conf
-  sleep 3
-done
+rclone copy minio:m8flow-process-models /cache --config /config/rclone/rclone.conf || true
+rclone sync /cache minio:m8flow-process-models --config /config/rclone/rclone.conf
+echo "Done."

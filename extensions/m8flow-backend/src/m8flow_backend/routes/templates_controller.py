@@ -24,7 +24,7 @@ def _serialize_template(template: TemplateModel, include_bpmn: bool = True) -> d
         "visibility": template.visibility,
         "bpmnObjectKey": template.bpmn_object_key,
         "isPublished": template.is_published,
-        "status": template.status,
+        "status": "published" if template.is_published else template.status,
         "createdAt": template.created.isoformat() if template.created else None,
         "createdBy": template.created_by,
         "updatedAt": template.modified.isoformat() if template.modified else None,

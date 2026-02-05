@@ -77,9 +77,12 @@ function MultitenantRootGate({
 }
 
 // M8Flow Extension: Import Tenant page
-import TenantPage from './views/TenantPage';
-// m8 Extension: Import Template Gallery page
+
+import TenantPage from "./views/TenantPage";
+// m8 Extension: Import Template Gallery and Template Modeler pages
+
 import TemplateGalleryPage from './views/TemplateGalleryPage';
+import TemplateModelerPage from './views/TemplateModelerPage';
 
 const fadeIn = 'fadeIn';
 const fadeOutImmediate = 'fadeOutImmediate';
@@ -311,7 +314,8 @@ export default function ContainerForExtensions() {
         <Route path="reports" element={<ReportsPage />} />
         {/* M8Flow Extension: Tenant route */}
         <Route path="/tenants" element={<TenantPage />} />
-        {/* m8 Extension: Template Gallery route */}
+        {/* m8 Extension: Template Gallery and Template Modeler routes */}
+        <Route path="templates/:templateId" element={<TemplateModelerPage />} />
         <Route path="templates" element={<TemplateGalleryPage />} />
         <Route path="extensions/:page_identifier" element={<Extension />} />
         <Route path="login" element={<TenantAwareLogin />} />

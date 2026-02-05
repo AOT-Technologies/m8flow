@@ -5,6 +5,7 @@ import UserService from './UserService';
 const HttpMethods = {
   GET: 'GET',
   POST: 'POST',
+  PUT: 'PUT',
   DELETE: 'DELETE',
 };
 
@@ -206,9 +207,47 @@ const makeCallToBackend = ({
     });
 };
 
+/**
+ * GET request that returns response body as text (e.g. for XML). Uses same auth/headers as makeCallToBackend.
+ */
+const fetchTextFromBackend = (
+  path: string,
+  successCallback: (text: string) => void,
+  failureCallback?: (err: unknown) => void,
+) => {
+  const headers = getBasicHeaders();
+  const updatedPath = path.replace(/^\/v1\.0/, '');
+  fetch(`${BACKEND_BASE_URL}${updatedPath}`, {
+    method: 'GET',
+    credentials: 'include',
+    headers: new Headers(headers as Record<string, string>),
+  })
+    .then((response) => {
+      if (response.status === 401) {
+        throw new UnauthenticatedError('You must be authenticated to do this.');
+      }
+      return response.text().then((text) => ({ response, text }));
+    })
+    .then(({ response, text }) => {
+      if (response.ok) {
+        successCallback(text);
+      } else if (failureCallback) {
+        failureCallback(new Error(response.statusText || `HTTP ${response.status}`));
+      }
+    })
+    .catch((err) => {
+      if (err.name !== 'UnauthenticatedError' && failureCallback) {
+        failureCallback(err);
+      } else if (err.name === 'UnauthenticatedError' && window.location.pathname !== '/login') {
+        UserService.redirectToLogin();
+      }
+    });
+};
+
 const HttpService = {
   HttpMethods,
   makeCallToBackend,
+  fetchTextFromBackend,
   messageForHttpError,
 };
 
