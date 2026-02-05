@@ -26,7 +26,7 @@
   "oauth2DeviceCodeLifespan": 600,
   "oauth2DevicePollingInterval": 5,
   "enabled": true,
-  "sslRequired": "external",
+  "sslRequired": "none",
   "registrationAllowed": false,
   "registrationEmailAsUsername": false,
   "rememberMe": false,
@@ -500,7 +500,7 @@
       "username": "admin",
       "enabled": true,
       "totp": false,
-      "emailVerified": false,
+      "emailVerified": true,
       "email": "admin@example.com",
       "credentials": [
         {

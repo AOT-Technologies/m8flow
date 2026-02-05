@@ -267,6 +267,71 @@ def _fill_realm_template(
     return payload
 
 
+def _sanitize_roles_for_partial_import(roles: dict[str, Any]) -> dict[str, Any]:
+    """Strip id and containerId from realm and client roles so Keycloak can assign new ones."""
+    out = copy.deepcopy(roles)
+    for role in out.get("realm") or []:
+        if isinstance(role, dict):
+            role.pop("id", None)
+            role.pop("containerId", None)
+    for client_id, role_list in (out.get("client") or {}).items():
+        if isinstance(role_list, list):
+            for role in role_list:
+                if isinstance(role, dict):
+                    role.pop("id", None)
+                    role.pop("containerId", None)
+    return out
+
+
+def _sanitize_groups_for_partial_import(groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Recursively strip id from groups and subGroups for partial import."""
+    out = copy.deepcopy(groups)
+
+    def _strip_group_ids(g: dict[str, Any]) -> None:
+        g.pop("id", None)
+        for sub in g.get("subGroups") or []:
+            if isinstance(sub, dict):
+                _strip_group_ids(sub)
+
+    for group in out:
+        if isinstance(group, dict):
+            _strip_group_ids(group)
+    return out
+
+
+def _sanitize_users_for_partial_import(users: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Strip id from users and their credentials for partial import."""
+    out = copy.deepcopy(users)
+    for user in out:
+        if isinstance(user, dict):
+            user.pop("id", None)
+            for cred in user.get("credentials") or []:
+                if isinstance(cred, dict):
+                    cred.pop("id", None)
+    return out
+
+
+def _sanitize_client_scopes_for_partial_import(scopes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Strip id from client scopes and their protocol mappers for partial import."""
+    out = copy.deepcopy(scopes)
+    for scope in out:
+        if isinstance(scope, dict):
+            scope.pop("id", None)
+            for mapper in scope.get("protocolMappers") or []:
+                if isinstance(mapper, dict):
+                    mapper.pop("id", None)
+    return out
+
+
+def _sanitize_idps_for_partial_import(idps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Strip internal id from identity providers for partial import."""
+    out = copy.deepcopy(idps)
+    for idp in out:
+        if isinstance(idp, dict):
+            idp.pop("internalId", None)
+    return out
+
+
 def load_realm_template() -> dict[str, Any]:
     """Load the realm template JSON (spiffworkflow-realm.json). Placeholder __M8FLOW_SPOKE_CLIENT_ID__ is replaced with spoke_client_id() from env."""
     template_path = realm_template_path()
@@ -281,7 +346,7 @@ def create_realm_from_template(realm_id: str, display_name: str | None = None) -
     """
     Create a new tenant realm from the template in two steps:
     1. Create minimal realm (realm name, displayName, enabled)
-    2. Use Keycloak partial import to add clients, roles, users from template
+    2. Use Keycloak partial import to add clients, roles, groups, and users from template
     """
     if not realm_id or not realm_id.strip():
         raise ValueError("realm_id is required")
@@ -308,8 +373,8 @@ def create_realm_from_template(realm_id: str, display_name: str | None = None) -
     )
     r.raise_for_status()
     
-    # Step 2: Use partial import to add clients from template (users/roles cause 500)
-    # Get clients and configure spiffworkflow-backend for JWT authentication
+    # Step 2: Partial import of clients, roles, groups, and users from template.
+    # Sanitize ids/containerIds so Keycloak can assign new ones and avoid conflicts.
     clients = copy.deepcopy(full_payload.get("clients", []))
     client_id_to_find = spoke_client_id()
     for client in clients:
@@ -319,27 +384,83 @@ def create_realm_from_template(realm_id: str, display_name: str | None = None) -
         for mapper in client.get("protocolMappers", []):
             if isinstance(mapper, dict):
                 mapper.pop("id", None)
-        
-        # Configure spiffworkflow-backend client for JWT authentication
+        # Strip authorization (UMA) settings to avoid Keycloak FK violation during sync:
+        # RESOURCE_SCOPE.SCOPE_ID -> RESOURCE_SERVER_SCOPE.ID delete order can trigger
+        # ModelDuplicateException / JdbcBatchUpdateException in ClientApplicationSynchronizer.
+        client.pop("authorizationSettings", None)
+        if client.get("authorizationServicesEnabled") is True:
+            client["authorizationServicesEnabled"] = False
+
+        # Configure spiffworkflow-backend client for JWT authentication (only when keystore is available)
         if client.get("clientId") == client_id_to_find:
-            client["clientAuthenticatorType"] = "client-jwt"
-            # Remove client secret (not needed for JWT)
-            client.pop("secret", None)
-            # Configure JWT certificate from keystore
+            # #region agent log
+            try:
+                _debug_log = open("/Users/aot/Development/AOT/m8Flow/vinaayakh-m8flow/.cursor/debug.log", "a")
+                _debug_log.write(
+                    json.dumps(
+                        {
+                            "hypothesisId": "H1",
+                            "location": "keycloak_service.create_realm_from_template.spoke_client",
+                            "message": "Configuring spoke client",
+                            "data": {"clientId": client_id_to_find, "had_secret": "secret" in client},
+                            "timestamp": int(time.time() * 1000),
+                            "sessionId": "debug-session",
+                            "runId": "pre-fix",
+                        }
+                    )
+                    + "\n"
+                )
+                _debug_log.close()
+            except Exception:
+                pass
+            # #endregion
+            cert_pem = None
             try:
                 cert_pem = _get_certificate_pem_from_p12()
-                # Keycloak expects the certificate in attributes.jwt.credential.certificate
+            except Exception as e:
+                logger.warning(f"Could not configure JWT certificate for client {client_id_to_find}: {e}")
+            if cert_pem:
+                client["clientAuthenticatorType"] = "client-jwt"
+                client.pop("secret", None)
                 if "attributes" not in client:
                     client["attributes"] = {}
                 client["attributes"]["jwt.credential.certificate"] = cert_pem
-            except Exception as e:
-                # Log but don't fail - client will be created but JWT auth may not work
-                import logging
-                logging.warning(f"Could not configure JWT certificate for client {client_id_to_find}: {e}")
+                # #region agent log
+                try:
+                    _dl = open("/Users/aot/Development/AOT/m8Flow/vinaayakh-m8flow/.cursor/debug.log", "a")
+                    _dl.write(json.dumps({"hypothesisId": "H5", "location": "keycloak_service.spoke_client", "message": "Using client-jwt (keystore OK)", "data": {}, "timestamp": int(time.time() * 1000), "sessionId": "debug-session", "runId": "pre-fix"}) + "\n")
+                    _dl.close()
+                except Exception:
+                    pass
+                # #endregion
+            else:
+                # Keystore missing: leave client as confidential with secret so upstream Basic auth token exchange works
+                # #region agent log
+                try:
+                    _dl = open("/Users/aot/Development/AOT/m8Flow/vinaayakh-m8flow/.cursor/debug.log", "a")
+                    _dl.write(json.dumps({"hypothesisId": "H5", "location": "keycloak_service.spoke_client", "message": "Keystore missing, leaving client with secret", "data": {"clientAuthenticatorType": client.get("clientAuthenticatorType")}, "timestamp": int(time.time() * 1000), "sessionId": "debug-session", "runId": "pre-fix"}) + "\n")
+                    _dl.close()
+                except Exception:
+                    pass
+                # #endregion
+                pass  # do not set client-jwt, do not remove secret
     
+    roles = _sanitize_roles_for_partial_import(full_payload.get("roles") or {})
+    groups = _sanitize_groups_for_partial_import(full_payload.get("groups") or [])
+    users = _sanitize_users_for_partial_import(full_payload.get("users") or [])
+    client_scopes = _sanitize_client_scopes_for_partial_import(full_payload.get("clientScopes") or [])
+    idps = _sanitize_idps_for_partial_import(full_payload.get("identityProviders") or [])
+
     partial_import_payload = {
         "ifResourceExists": "SKIP",
         "clients": clients,
+        "roles": roles,
+        "groups": groups,
+        "users": users,
+        "clientScopes": client_scopes,
+        "identityProviders": idps,
+        "defaultDefaultClientScopes": full_payload.get("defaultDefaultClientScopes", []),
+        "defaultOptionalClientScopes": full_payload.get("defaultOptionalClientScopes", []),
     }
 
     r2 = requests.post(

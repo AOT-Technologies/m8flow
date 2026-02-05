@@ -85,6 +85,16 @@ try:
     apply_auth_token_error_patch()
 except ImportError:
     pass
+try:
+    from extensions.decode_token_debug_patch import apply_decode_token_debug_patch
+    apply_decode_token_debug_patch()
+except ImportError:
+    pass
+try:
+    from extensions.create_user_tenant_scope_patch import apply_create_user_tenant_scope_patch
+    apply_create_user_tenant_scope_patch()
+except ImportError:
+    pass
 apply_login_tenant_patch = None
 try:
     from extensions.login_tenant_patch import apply_login_tenant_patch

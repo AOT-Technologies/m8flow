@@ -1,14 +1,19 @@
 # extensions/master_realm_auth_patch.py
-# For create-realm and create-tenant APIs, use Keycloak master realm for token validation
-# when the request has a Bearer token but no authentication_identifier (cookie/header),
-# and only when an auth config with identifier "master" exists (otherwise token decode would fail).
+# 1) For create-realm and create-tenant APIs, use Keycloak master realm for token validation
+#    when the request has a Bearer token but no authentication_identifier (cookie/header).
+# 2) On login_return callback, use authentication_identifier from OAuth state so token
+#    decode uses the correct realm's JWKS (cookie is not set yet on that request).
 
+import ast
+import base64
 import logging
+from urllib.parse import unquote
 
 logger = logging.getLogger(__name__)
 
 # Path suffixes that may be called with Keycloak master realm tokens (bootstrap/admin).
 M8FLOW_MASTER_REALM_PATH_SUBSTRINGS = ("/m8flow/tenant-realms", "/m8flow/create-tenant")
+LOGIN_RETURN_PATH_SUBSTRING = "/login_return"
 
 # #region agent log
 def _debug_log(hypothesis_id: str, message: str, data: dict) -> None:
@@ -20,6 +25,25 @@ def _debug_log(hypothesis_id: str, message: str, data: dict) -> None:
     except Exception:
         pass
 # #endregion
+
+
+def _authentication_identifier_from_state() -> str | None:
+    """On login_return, state query param contains base64-encoded dict with authentication_identifier. Return it or None."""
+    from flask import request
+
+    path = (request.path or "").strip()
+    if LOGIN_RETURN_PATH_SUBSTRING not in path:
+        return None
+    state = request.args.get("state")
+    if not state or not isinstance(state, str):
+        return None
+    try:
+        state = unquote(state)
+        raw = base64.b64decode(state).decode("utf-8")
+        state_dict = ast.literal_eval(raw)
+        return state_dict.get("authentication_identifier")
+    except Exception:
+        return None
 
 
 def _has_master_auth_config() -> bool:
@@ -43,6 +67,10 @@ def apply_master_realm_auth_patch() -> None:
 
     def _patched_get_authentication_identifier_from_request() -> str:
         path = (request.path or "").strip()
+        # login_return callback: cookie not set yet; use state so decode uses correct realm JWKS
+        state_id = _authentication_identifier_from_state()
+        if state_id:
+            return state_id
         auth_header = (request.headers.get("Authorization") or "").strip()
         has_bearer = auth_header.startswith("Bearer ") and len(auth_header) > 7
         cookie_id = request.cookies.get("authentication_identifier")
