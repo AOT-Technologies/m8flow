@@ -28,7 +28,6 @@ script_dir="$(
 
 # Realm export file paths
 identity_realm_file="${script_dir}/realm_exports/identity-realm-export.json"
-tenant_realm_file="${script_dir}/realm_exports/tenant-realm-export.json"
 # Backend default auth uses spiffworkflow-local; must exist and have sslRequired=NONE for HTTP
 spiffworkflow_local_realm_file="${script_dir}/realm_exports/spiffworkflow-local-realm.json"
 
@@ -51,11 +50,6 @@ fi
 # Validate realm export files exist
 if [[ ! -f "$identity_realm_file" ]]; then
   echo >&2 "ERROR: Identity realm export file not found: $identity_realm_file"
-  exit 1
-fi
-
-if [[ ! -f "$tenant_realm_file" ]]; then
-  echo >&2 "ERROR: Tenant realm export file not found: $tenant_realm_file"
   exit 1
 fi
 
@@ -260,6 +254,136 @@ function import_realm() {
   fi
 }
 
+# Create realm from template (mimicking keycloak_service.py)
+function create_realm_from_template() {
+  local template_file="$1"
+  local realm_id="$2"
+  local display_name="$3"
+  local admin_token="$4"
+  local template_name
+  
+  template_name=$(jq -r '.realm // empty' "$template_file" 2>/dev/null)
+  
+  echo ":: Creating realm '$realm_id' from template '$template_name'..."
+
+  # Step 0: Fill template using jq (Mimicking keycloak_service.py _fill_realm_template)
+  local full_payload
+  full_payload=$(jq --arg realm_id "$realm_id" \
+     --arg display_name "$display_name" \
+     --arg template_name "$template_name" \
+     '
+    .realm = $realm_id |
+    .id = $realm_id |
+    .displayName = $display_name |
+    # Update realm roles containerId and names
+    (if .roles.realm then .roles.realm[] |= (if .containerId == $template_name then .containerId = $realm_id else . end | if .name | startswith("default-roles-") then .name = ("default-roles-" + $realm_id) else . end) else . end) |
+    # Update defaultRole
+    (if .defaultRole then
+      (if .defaultRole.containerId == $template_name then .defaultRole.containerId = $realm_id else . end) |
+      (if .defaultRole.name | startswith("default-roles-") then .defaultRole.name = ("default-roles-" + $realm_id) else . end)
+    else . end) |
+    # Update clients URLs and attributes
+    (if .clients then .clients[] |= (
+      (if .baseUrl then .baseUrl |= sub("/realms/" + $template_name + "/"; "/realms/" + $realm_id + "/") else . end) |
+      (if .rootUrl then .rootUrl |= sub("/realms/" + $template_name + "/"; "/realms/" + $realm_id + "/") else . end) |
+      (if .adminUrl then .adminUrl |= sub("/realms/" + $template_name + "/"; "/realms/" + $realm_id + "/") else . end) |
+      (if .redirectUris then .redirectUris[] |= sub("/realms/" + $template_name + "/"; "/realms/" + $realm_id + "/") else . end) |
+      (if .attributes."post.logout.redirect.uris" then .attributes."post.logout.redirect.uris" |= sub("/realms/" + $template_name + "/"; "/realms/" + $realm_id + "/") else . end)
+    ) else . end) |
+    # Update users realm roles
+    (if .users then .users[] |= (if .realmRoles then .realmRoles[] |= sub("^default-roles-" + $template_name + "$"; "default-roles-" + $realm_id) else . end) else . end)
+  ' "$template_file")
+
+  # Step 1: Create minimal realm
+  local minimal_payload
+  minimal_payload=$(echo "$full_payload" | jq '{realm: .realm, displayName: .displayName, enabled: (.enabled // true), sslRequired: (.sslRequired // "none")}')
+  
+  local create_url="${keycloak_base_url}/admin/realms"
+  local http_code
+  http_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$create_url" \
+    -H "Authorization: Bearer $admin_token" \
+    -H 'Content-Type: application/json' \
+    -d "$minimal_payload")
+    
+  if [[ "$http_code" == "201" || "$http_code" == "409" ]]; then
+    echo ":: Minimal realm '$realm_id' created or already exists ($http_code)"
+  else
+    echo >&2 "ERROR: Failed to create minimal realm '$realm_id' (HTTP $http_code)"
+    return 1
+  fi
+
+  # Step 2: Partial Import (mimicking keycloak_service.py sanitization)
+  local partial_import_payload
+  partial_import_payload=$(echo "$full_payload" | jq '
+    # Sanitization
+    (if .roles.realm then .roles.realm[] |= del(.id) else . end) |
+    (if .roles.client then .roles.client |= map_values(.[] |= del(.id)) else . end) |
+    (if .groups then .groups[] |= (del(.id) | (if .subGroups then .subGroups[] |= del(.id) else . end)) else . end) |
+    (if .users then .users[] |= (del(.id, .createdTimestamp) | (if .credentials then .credentials[] |= del(.id, .createdDate) else . end)) else . end) |
+    (if .clientScopes then .clientScopes[] |= del(.id) else . end) |
+    (if .identityProviders then .identityProviders[] |= del(.internalId) else . end) |
+    (if .clients then .clients[] |= (del(.id) | (if .protocolMappers then .protocolMappers[] |= del(.id) else . end)) else . end) |
+    
+    {
+      ifResourceExists: "SKIP",
+      clients: .clients,
+      clientScopes: .clientScopes,
+      defaultDefaultClientScopes: .defaultDefaultClientScopes,
+      defaultOptionalClientScopes: .defaultOptionalClientScopes,
+      identityProviders: .identityProviders,
+      roles: .roles,
+      groups: .groups,
+      users: .users,
+      realmRoles: .realmRoles,
+      clientRoles: .clientRoles,
+      themes: .themes,
+      emailThemes: .emailThemes,
+      smtpServer: .smtpServer,
+      bruteForceConfig: .bruteForceConfig,
+      tokenPolicies: .tokenPolicies,
+      oauth2DeviceConfig: .oauth2DeviceConfig,
+      otpPolicy: .otpPolicy,
+      webAuthnPolicy: .webAuthnPolicy,
+      passwordPolicy: .passwordPolicy,
+      internationalization: .internationalization,
+      accountTheme: .accountTheme,
+      accountThemeText: .accountThemeText,
+      loginTheme: .loginTheme,
+      loginThemeText: .loginThemeText,
+      adminTheme: .adminTheme,
+      adminThemeText: .adminThemeText,
+      emailTheme: .emailTheme,
+      emailThemeText: .emailThemeText,
+      masterRealmAdminTheme: .masterRealmAdminTheme,
+      masterRealmAdminThemeText: .masterRealmAdminThemeText,
+      masterRealmLoginTheme: .masterRealmLoginTheme,
+      masterRealmLoginThemeText: .masterRealmLoginThemeText,
+      masterRealmEmailTheme: .masterRealmEmailTheme,
+      masterRealmEmailThemeText: .masterRealmEmailThemeText
+    } | with_entries(select(.value != null))
+  ')
+  
+  local import_url="${keycloak_base_url}/admin/realms/${realm_id}/partialImport"
+  http_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$import_url" \
+    -H "Authorization: Bearer $admin_token" \
+    -H 'Content-Type: application/json' \
+    -d "$partial_import_payload")
+    
+  if [[ "$http_code" == "200" || "$http_code" == "201" || "$http_code" == "204" ]]; then
+    echo ":: Partial import for realm '$realm_id' successful ($http_code)"
+  else
+    echo >&2 "ERROR: Partial import for realm '$realm_id' failed (HTTP $http_code)"
+  fi
+
+  # Final cleanup: ensure sslRequired=NONE
+  curl -s -X PUT "${keycloak_base_url}/admin/realms/${realm_id}" \
+    -H "Authorization: Bearer $admin_token" \
+    -H 'Content-Type: application/json' \
+    -d '{"sslRequired": "NONE"}' >/dev/null || true
+    
+  return 0
+}
+
 # Main import logic
 echo ":: Starting realm import process..."
 
@@ -291,10 +415,10 @@ if ! import_realm "$identity_realm_file" "$identity_realm_name" "$admin_token"; 
   exit 1
 fi
 
-# Import tenant realm second
-echo ":: Importing tenant realm..."
-if ! import_realm "$tenant_realm_file" "$tenant_realm_name" "$admin_token"; then
-  echo >&2 "ERROR: Failed to import tenant realm"
+# Create tenant-a from spiffworkflow-local template (following API format)
+echo ":: Creating tenant-a from template..."
+if ! create_realm_from_template "$spiffworkflow_local_realm_file" "tenant-a" "Tenant A" "$admin_token"; then
+  echo >&2 "ERROR: Failed to create tenant-a from template"
   exit 1
 fi
 

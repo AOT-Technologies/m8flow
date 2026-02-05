@@ -567,3 +567,42 @@ def create_user_in_realm(
     r2.raise_for_status()
     
     return user_id
+
+def delete_realm(realm_id: str, admin_token: str | None = None) -> None:
+    """Delete a realm in Keycloak using the provided admin token or the master admin token."""
+    if not realm_id or not str(realm_id).strip():
+        raise ValueError("realm_id is required")
+    realm_id = str(realm_id).strip()
+    
+    token = admin_token or get_master_admin_token()
+    base_url = keycloak_url()
+
+    r = requests.delete(
+        f"{base_url}/admin/realms/{realm_id}",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=30,
+    )
+    if r.status_code == 404:
+        logger.info("Keycloak realm %s already deleted or not found.", realm_id)
+        return
+    r.raise_for_status()
+    logger.info("Deleted Keycloak realm: %s", realm_id)
+
+
+def verify_admin_token(token: str) -> bool:
+    """
+    Verify that the provided token is a valid admin token.
+    We check this by calling the master realm info endpoint.
+    """
+    if not token:
+        return False
+    base_url = keycloak_url()
+    try:
+        r = requests.get(
+            f"{base_url}/admin/realms/master",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10,
+        )
+        return r.status_code == 200
+    except requests.RequestException:
+        return False

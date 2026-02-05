@@ -153,6 +153,45 @@ paths:
                   detail:
                     type: string
 
+  /m8flow/tenant-realms/{realm_id}:
+    delete:
+      summary: Delete a Keycloak realm and its associated tenant
+      description: Removes the realm from Keycloak and the tenant record from Postgres. Requires a valid master admin token.
+      operationId: m8flow_backend.routes.keycloak_controller.delete_tenant_realm
+      tags:
+        - Keycloak
+      parameters:
+        - name: realm_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The ID of the realm to delete
+      responses:
+        "200":
+          description: Tenant deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        "401":
+          description: Unauthorized - missing or invalid admin token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Realm not found in Keycloak
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /tenants/check:
     get:
       summary: Check if tenant exists by slug or id (unauthenticated)

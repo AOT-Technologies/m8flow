@@ -8,11 +8,16 @@ import requests
 from m8flow_backend.services.keycloak_service import (
     create_realm_from_template,
     create_user_in_realm as create_user_in_realm_svc,
+    delete_realm,
     realm_exists,
     tenant_login as tenant_login_svc,
     tenant_login_authorization_url,
+    verify_admin_token,
 )
 from m8flow_backend.tenancy import create_tenant_if_not_exists
+from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
+from spiffworkflow_backend.models.db import db
+from flask import request
 
 logger = logging.getLogger(__name__)
 
@@ -107,3 +112,37 @@ def get_tenant_login_url(tenant: str) -> tuple[dict, int]:
         return {"login_url": login_url, "realm": tenant}, 200
     except ValueError as e:
         return {"detail": str(e)}, 400
+
+def delete_tenant_realm(realm_id: str) -> tuple[dict, int]:
+    """Delete a tenant realm from Keycloak and Postgres. Requires a valid admin token."""
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return {"detail": "Authorization header with Bearer token is required"}, 401
+    
+    admin_token = auth_header.split(" ")[1]
+    if not verify_admin_token(admin_token):
+        return {"detail": "Invalid or unauthorized admin token"}, 401
+    
+    try:
+        # 1. Delete from Keycloak
+        delete_realm(realm_id, admin_token=admin_token)
+        
+        # 2. Delete from Postgres
+        tenant = db.session.get(M8flowTenantModel, realm_id)
+        if tenant:
+            db.session.delete(tenant)
+            db.session.commit()
+            logger.info("Deleted tenant record: %s", realm_id)
+        else:
+            logger.info("Tenant record %s not found in Postgres, skipping.", realm_id)
+            
+        return {"message": f"Tenant {realm_id} deleted successfully"}, 200
+        
+    except requests.exceptions.HTTPError as e:
+        status = e.response.status_code if e.response is not None else 500
+        detail = (e.response.text or str(e))[:500] if e.response is not None else str(e)
+        logger.warning("Keycloak delete realm HTTP error: %s %s", status, detail)
+        return {"detail": detail}, status
+    except Exception as e:
+        logger.exception("Error deleting tenant %s", realm_id)
+        return {"detail": str(e)}, 500
