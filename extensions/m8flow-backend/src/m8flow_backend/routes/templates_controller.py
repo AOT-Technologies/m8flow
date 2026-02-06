@@ -25,17 +25,17 @@ def _serialize_template(template: TemplateModel, include_bpmn: bool = True) -> d
         "bpmnObjectKey": template.bpmn_object_key,
         "isPublished": template.is_published,
         "status": "published" if template.is_published else template.status,
-        "createdAt": template.created.isoformat() if template.created else None,
         "createdBy": template.created_by,
-        "updatedAt": template.modified.isoformat() if template.modified else None,
         "modifiedBy": template.modified_by,
+        "createdAtInSeconds": template.created_at_in_seconds,
+        "updatedAtInSeconds": template.updated_at_in_seconds,
     }
     
     # Include BPMN content if requested and available
     if include_bpmn and template.bpmn_object_key and template.m8f_tenant_id:
         try:
             bpmn_bytes = TemplateService.storage.get_bpmn(template.bpmn_object_key, template.m8f_tenant_id)
-            result["bpmnContent"] = bpmn_bytes.decode('utf-8')
+            result["bpmnContent"] = bpmn_bytes.decode("utf-8")
         except Exception:
             # If BPMN file can't be loaded, just omit it
             result["bpmnContent"] = None

@@ -4,11 +4,12 @@ Tests cover:
 - Model creation with required fields
 - Slug uniqueness enforcement at database level
 - Status enum validation (ACTIVE, INACTIVE, DELETED)
-- Timestamp auto-population (created_at, modified_at)
+- Timestamp auto-population (created_at_in_seconds, updated_at_in_seconds)
 - Bookkeeping fields (created_by, modified_by)
 - Database constraints and validation
 """
 import sys
+import time
 from pathlib import Path
 from datetime import datetime
 
@@ -29,6 +30,7 @@ for path in (extension_src, backend_src):
 
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel, TenantStatus  # noqa: E402
 from spiffworkflow_backend.models.db import db  # noqa: E402
+from spiffworkflow_backend.models.db import add_listeners  # noqa: E402
 
 
 @pytest.fixture
@@ -42,6 +44,7 @@ def app():
     
     with app.app_context():
         db.create_all()
+        add_listeners()
         yield app
         db.session.remove()
         db.drop_all()
@@ -196,7 +199,7 @@ class TestM8flowTenantModel:
             assert deleted_tenant.status == TenantStatus.DELETED
 
     def test_timestamps_auto_populated(self, app):
-        """Test that created_at and modified_at timestamps are auto-populated."""
+        """Test that created_at_in_seconds and updated_at_in_seconds are auto-populated."""
         with app.app_context():
             tenant = M8flowTenantModel(
                 id="tenant-timestamps",
@@ -209,20 +212,22 @@ class TestM8flowTenantModel:
             db.session.add(tenant)
             db.session.commit()
             
-            # Verify created_at is set and is a datetime
-            assert tenant.created_at is not None
-            assert isinstance(tenant.created_at, datetime)
-            
-            # Verify modified_at is set and is a datetime
-            assert tenant.modified_at is not None
-            assert isinstance(tenant.modified_at, datetime)
-            
+            # Verify timestamps are set and are ints
+            assert tenant.created_at_in_seconds is not None
+            assert isinstance(tenant.created_at_in_seconds, int)
+            assert tenant.created_at_in_seconds > 0
+
+            assert tenant.updated_at_in_seconds is not None
+            assert isinstance(tenant.updated_at_in_seconds, int)
+            assert tenant.updated_at_in_seconds > 0
+
             # Verify timestamps are recent (within last minute)
             from datetime import timedelta
-            now = datetime.utcnow()
-            time_diff = timedelta(minutes=1)
-            assert abs((tenant.created_at.replace(tzinfo=None) - now).total_seconds()) < time_diff.total_seconds()
-            assert abs((tenant.modified_at.replace(tzinfo=None) - now).total_seconds()) < time_diff.total_seconds()
+
+            now_seconds = int(round(time.time()))
+            time_diff_seconds = int(timedelta(minutes=1).total_seconds())
+            assert abs(tenant.created_at_in_seconds - now_seconds) < time_diff_seconds
+            assert abs(tenant.updated_at_in_seconds - now_seconds) < time_diff_seconds
 
     def test_bookkeeping_fields_required(self, app):
         """Test that created_by and modified_by fields are required."""
