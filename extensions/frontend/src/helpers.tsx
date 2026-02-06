@@ -48,5 +48,5 @@ export {
  * @param items - Array of strings to append to the page title
  */
 export const setPageTitle = (items: Array<string>) => {
-  document.title = ["M8flow"].concat(items).join(" - ");
+  document.title = ["M8flow"].concat(items || []).join(" - ");
 };
