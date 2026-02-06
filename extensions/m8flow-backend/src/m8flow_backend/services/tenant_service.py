@@ -81,6 +81,29 @@ class TenantService:
         return tenant
 
     @staticmethod
+    def check_tenant_exists(identifier: str) -> dict:
+        """
+        Check if an active tenant exists by slug or id. Unauthenticated; for pre-login tenant selection.
+        Returns {"exists": True, "tenant_id": "..."} or {"exists": False}. Only considers ACTIVE tenants.
+        """
+        if not identifier or not identifier.strip():
+            return {"exists": False}
+        identifier = identifier.strip()
+        tenant = (
+            M8flowTenantModel.query.filter(
+                M8flowTenantModel.status == TenantStatus.ACTIVE,
+                db.or_(
+                    M8flowTenantModel.slug == identifier,
+                    M8flowTenantModel.id == identifier,
+                ),
+            )
+            .first()
+        )
+        if tenant:
+            return {"exists": True, "tenant_id": tenant.id}
+        return {"exists": False}
+
+    @staticmethod
     def get_tenant_by_slug(slug: str):
         TenantService._check_not_default_tenant(slug)
         

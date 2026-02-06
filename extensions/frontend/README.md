@@ -63,6 +63,29 @@ PORT=7002 npm start
 BACKEND_PORT=8000 npm start
 ```
 
+### Multitenant mode
+
+When multitenant mode is enabled, the app shows a tenant selection page as the default at `/`. The user enters a tenant name, which is stored in localStorage and then redirected to the login page (Keycloak flow).
+
+**Environment variable**
+
+- **Env variable:** `MULTI_TENANT_ON=true` or `MULTI_TENANT_ON=false` (default: false if unset). The extensions frontend start script passes it to Vite as `VITE_MULTI_TENANT_ON`.
+- **Runtime (optional):** set `window.spiffworkflowFrontendJsenv.MULTI_TENANT_ON = 'true'` in `index.html` or server-injected script to enable without a rebuild.
+
+**Example:**
+```bash
+MULTI_TENANT_ON=true npm start
+```
+
+**Behavior**
+
+- When `ENABLE_MULTITENANT` is **true**: `/` and `/tenant` show the tenant selection page. User submits tenant name → stored in localStorage under key `m8flow_tenant` → redirect to `/login`.
+- When `ENABLE_MULTITENANT` is **false**: `/` shows the normal home (BaseRoutes). `/tenant` redirects to `/`. The tenant page is hidden.
+
+**Local storage key**
+
+The selected tenant name is stored under **`m8flow_tenant`**. This key can be used later (e.g. by the frontend or backend) to send the tenant in requests (e.g. `X-Tenant` header) for realm-specific login.
+
 ### 3. Create an Override
 
 To override a component, create a file in `src/components/` with the same name as the core component:
@@ -169,6 +192,7 @@ function MyComponent() {
 **Available Config Values:**
 - `BACKEND_BASE_URL` - Backend API base URL
 - `SPIFF_ENVIRONMENT` - Current environment identifier
+- `ENABLE_MULTITENANT` - When true, tenant selection page is the default at `/` (driven by `MULTI_TENANT_ON`; see [Multitenant mode](#multitenant-mode))
 - `DARK_MODE_ENABLED` - Whether dark mode is enabled
 - `DATE_FORMAT` - Date format string
 - `DATE_TIME_FORMAT` - Date and time format

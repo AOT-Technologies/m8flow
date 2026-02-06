@@ -9,7 +9,7 @@ import {
   createTheme,
   useMediaQuery,
 } from '@mui/material';
-import { Routes, Route, useLocation } from 'react-router-dom';
+import { Routes, Route, useLocation, Navigate } from 'react-router-dom';
 import MenuIcon from '@mui/icons-material/Menu';
 import { ReactElement, useEffect, useState } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
@@ -26,20 +26,61 @@ import {
   UiSchemaUxElement,
 } from '@spiffworkflow-frontend/extension_ui_schema_interfaces';
 import HttpService from './services/HttpService';
+import UserService from './services/UserService';
 import BaseRoutes from '@spiffworkflow-frontend/views/BaseRoutes';
 import BackendIsDown from '@spiffworkflow-frontend/views/BackendIsDown';
 import FrontendAccessDenied from '@spiffworkflow-frontend/views/FrontendAccessDenied';
 import Login from '@spiffworkflow-frontend/views/Login';
+import TenantAwareLogin from './views/TenantAwareLogin';
 import useAPIError from '@spiffworkflow-frontend/hooks/UseApiError';
 import ScrollToTop from '@spiffworkflow-frontend/components/ScrollToTop';
 import { createSpiffTheme } from '@spiffworkflow-frontend/assets/theme/SpiffTheme';
 import DynamicCSSInjection from '@spiffworkflow-frontend/components/DynamicCSSInjection';
 
-// m8 Extension: Import Reports page
-import ReportsPage from "./views/ReportsPage";
+// M8Flow Extension: Import Reports page and tenant selection
+import ReportsPage from './views/ReportsPage';
+import TenantSelectPage, {
+  M8FLOW_TENANT_STORAGE_KEY,
+} from './views/TenantSelectPage';
+import { useConfig } from './utils/useConfig';
+
+// M8Flow Extension: clear tenant from localStorage on logout so next visit shows tenant selection
+const originalDoLogout = UserService.doLogout;
+UserService.doLogout = () => {
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem(M8FLOW_TENANT_STORAGE_KEY);
+  }
+  originalDoLogout();
+};
+
+/** When ENABLE_MULTITENANT: at "/" show TenantSelectPage if no tenant in localStorage, else show default home (BaseRoutes). */
+function MultitenantRootGate({
+  extensionUxElements,
+  setAdditionalNavElement,
+  isMobile,
+}: {
+  extensionUxElements: UiSchemaUxElement[] | null;
+  setAdditionalNavElement: (el: ReactElement | null) => void;
+  isMobile: boolean;
+}) {
+  const storedTenant = typeof window !== 'undefined' ? localStorage.getItem(M8FLOW_TENANT_STORAGE_KEY) : null;
+  if (storedTenant) {
+    return (
+      <BaseRoutes
+        extensionUxElements={extensionUxElements}
+        setAdditionalNavElement={setAdditionalNavElement}
+        isMobile={isMobile}
+      />
+    );
+  }
+  return <TenantSelectPage />;
+}
+
 // M8Flow Extension: Import Tenant page
+
 import TenantPage from "./views/TenantPage";
 // m8 Extension: Import Template Gallery and Template Modeler pages
+
 import TemplateGalleryPage from './views/TemplateGalleryPage';
 import TemplateModelerPage from './views/TemplateModelerPage';
 
@@ -47,6 +88,7 @@ const fadeIn = 'fadeIn';
 const fadeOutImmediate = 'fadeOutImmediate';
 
 export default function ContainerForExtensions() {
+  const { ENABLE_MULTITENANT } = useConfig();
   const [backendIsUp, setBackendIsUp] = useState<boolean | null>(null);
   const [canAccessFrontend, setCanAccessFrontend] = useState<boolean>(true);
   const [extensionUxElements, setExtensionUxElements] = useState<
@@ -249,7 +291,26 @@ export default function ContainerForExtensions() {
   const routeComponents = () => {
     return (
       <Routes>
-        {/* m8 Extension: Reports route */}
+        {/* M8Flow Extension: Tenant selection (default when ENABLE_MULTITENANT; gate shows home if tenant in localStorage) */}
+        {ENABLE_MULTITENANT && (
+          <>
+            <Route
+              path="/"
+              element={
+                <MultitenantRootGate
+                  extensionUxElements={extensionUxElements}
+                  setAdditionalNavElement={setAdditionalNavElement}
+                  isMobile={isMobile}
+                />
+              }
+            />
+            <Route path="tenant" element={<TenantSelectPage />} />
+          </>
+        )}
+        {!ENABLE_MULTITENANT && (
+          <Route path="tenant" element={<Navigate to="/" replace />} />
+        )}
+        {/* Reports route */}
         <Route path="reports" element={<ReportsPage />} />
         {/* M8Flow Extension: Tenant route */}
         <Route path="/tenants" element={<TenantPage />} />
@@ -257,7 +318,7 @@ export default function ContainerForExtensions() {
         <Route path="templates/:templateId" element={<TemplateModelerPage />} />
         <Route path="templates" element={<TemplateGalleryPage />} />
         <Route path="extensions/:page_identifier" element={<Extension />} />
-        <Route path="login" element={<Login />} />
+        <Route path="login" element={<TenantAwareLogin />} />
         {/* Catch-all route must be last */}
         <Route
           path="*"
