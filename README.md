@@ -119,14 +119,16 @@ This IP address will be used in Keycloak configuration and when accessing fronte
 Start all required infrastructure services (databases, Keycloak, MinIO, etc.) and init containers (important for the first time):
 
 ```bash
-docker-compose --profile init -f docker/m8flow-docker-compose.yml up -d --build
+docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build
 ```
 
 If the init containers are not needed:
 
 ```bash
-docker-compose -f docker/m8flow-docker-compose.yml up -d --build
+docker compose -f docker/m8flow-docker-compose.yml up -d --build
 ```
+
+The Keycloak image is built with the **m8flow realm-info-mapper** provider, so tokens include `m8flow_tenant_id` and `m8flow_tenant_name`. No separate build of the keycloak-extensions JAR is required.
 
 To stop containers and remove associated volumes (this deletes local database data):
 
@@ -147,7 +149,7 @@ cd m8flow
 cp sample.env .env
 IP="$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')" && \
 [ -n "$IP" ] && grep -q "<LOCAL_IP>" .env && sed -i.bak "s/<LOCAL_IP>/$IP/g" .env && echo "Using IP=$IP"
-docker-compose --profile init -f docker/m8flow-docker-compose.yml up -d --build
+docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build
 
 ```
 
@@ -157,7 +159,7 @@ git clone https://github.com/AOT-Technologies/m8flow.git
 cd m8flow
 copy sample.env .env
 powershell -NoProfile -Command "$ifIndex=(Get-NetRoute '0.0.0.0/0' | sort RouteMetric,InterfaceMetric | select -First 1).IfIndex; $ip=(Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $ifIndex | ?{ $_.IPAddress -notlike '169.254*' -and $_.IPAddress -notlike '127.*' } | select -First 1 -Expand IPAddress); $c=Get-Content .env -Raw; $n=$c -replace '<LOCAL_IP>', $ip; if($n -eq $c){ throw 'No <LOCAL_IP> tokens found in .env' }; $n | Set-Content .env -Encoding UTF8; Write-Host Using IP=$ip"
-docker-compose --profile init -f docker/m8flow-docker-compose.yml up -d --build
+docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build
 
 ```
 
@@ -177,7 +179,7 @@ Click on "Keycloak master" and then on "Create a realm".
     <img src="./docs/images/keycloak-realm-settings-1.png" />
 </div>
 
-Browse or copy the content of `m8flow/spiffworkflow-backend/keycloak/realm_exports/spiffworkflow-basic-realm.json` and click on "Create".
+Browse or copy the content of `spiffworkflow-backend/keycloak/realm_exports/spiffworkflow-basic-realm.json` and click on "Create". For tenant-aware setup with token claims `m8flow_tenant_id` and `m8flow_tenant_name`, use `extensions/m8flow-backend/keycloak/realm_exports/spiffworkflow-local-realm.json` instead.
 <div align="center">
     <img src="./docs/images/keycloak-realm-settings-2.png" />
 </div>

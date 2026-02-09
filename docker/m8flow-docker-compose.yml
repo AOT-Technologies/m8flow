@@ -20,7 +20,9 @@ services:
       - keycloak-db-data:/var/lib/postgresql/data
 
   keycloak:
-    image: keycloak/keycloak:26.0.7
+    build:
+      context: ..
+      dockerfile: docker/m8flow.keycloak.Dockerfile
     env_file: ../.env
     command: ["start-dev"]
     environment:
@@ -35,8 +37,6 @@ services:
       KC_HOSTNAME_STRICT_HTTPS: "false"
     ports:
       - "7002:8080"
-    volumes:
-      - ../keycloak-extensions/realm-info-mapper/target/realm-info-mapper.jar:/opt/keycloak/providers/realm-info-mapper.jar:ro
     depends_on:
       - keycloak-db
 
@@ -115,6 +115,7 @@ services:
       - templates_cache:/app/templates
     depends_on:
       - m8flow-db
+      - keycloak
       - redis
       - minio
 
