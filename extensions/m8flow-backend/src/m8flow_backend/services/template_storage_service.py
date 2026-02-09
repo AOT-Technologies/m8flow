@@ -1,47 +1,145 @@
 from __future__ import annotations
 
+import io
+import logging
 import os
+import zipfile
 from typing import Protocol
 
 from flask import current_app
 
 from spiffworkflow_backend.exceptions.api_error import ApiError
 
+logger = logging.getLogger(__name__)
+
+FILE_EXT_TO_TYPE = {
+    ".bpmn": "bpmn",
+    ".json": "json",
+    ".dmn": "dmn",
+    ".md": "md",
+}
+
+
+def file_type_from_filename(filename: str) -> str:
+    ext = os.path.splitext(filename)[1].lower()
+    return FILE_EXT_TO_TYPE.get(ext, "other")
+
 
 class TemplateStorageService(Protocol):
-    """Abstraction for storing and retrieving BPMN content."""
+    """Abstraction for storing and retrieving template files."""
 
-    def store_bpmn(self, template_key: str, version: str, bpmn_bytes: bytes, tenant_id: str) -> str:
-        """Persist BPMN content and return filename only (e.g., 'template-key.bpmn')."""
+    def store_file(
+        self,
+        tenant_id: str,
+        template_key: str,
+        version: str,
+        file_name: str,
+        file_type: str,
+        content: bytes,
+    ) -> None:
+        """Persist a file under {tenant_id}/{template_key}/{version}/{file_name}."""
         ...
 
-    def get_bpmn(self, filename: str, tenant_id: str) -> bytes:
-        """Retrieve BPMN content by filename and tenant_id."""
+    def get_file(
+        self,
+        tenant_id: str,
+        template_key: str,
+        version: str,
+        file_name: str,
+    ) -> bytes:
+        """Retrieve file content by path."""
+        ...
+
+    def list_files(
+        self,
+        tenant_id: str,
+        template_key: str,
+        version: str,
+    ) -> list[dict]:
+        """List files under version prefix. Returns [{"file_name": str, "file_type": str}]."""
+        ...
+
+    def delete_file(
+        self,
+        tenant_id: str,
+        template_key: str,
+        version: str,
+        file_name: str,
+    ) -> None:
+        """Remove a single file (for replace/delete)."""
+        ...
+
+    def stream_zip(
+        self,
+        tenant_id: str,
+        template_key: str,
+        version: str,
+        file_entries: list[dict],
+    ) -> bytes:
+        """Build a zip of the given file entries (each has file_name, file_type). Returns zip bytes."""
         ...
 
 
 class NoopTemplateStorageService:
-    """Placeholder storage that assumes BPMN is already stored and key is provided."""
+    """Placeholder storage."""
 
-    def store_bpmn(self, template_key: str, version: str, bpmn_bytes: bytes, tenant_id: str) -> str:
-        raise NotImplementedError("BPMN storage is not configured; provide bpmn_object_key directly.")
+    def store_file(
+        self,
+        tenant_id: str,
+        template_key: str,
+        version: str,
+        file_name: str,
+        file_type: str,
+        content: bytes,
+    ) -> None:
+        raise NotImplementedError("Template storage is not configured.")
 
-    def get_bpmn(self, filename: str, tenant_id: str) -> bytes:
-        raise NotImplementedError("BPMN storage is not configured; cannot fetch BPMN content.")
+    def get_file(
+        self,
+        tenant_id: str,
+        template_key: str,
+        version: str,
+        file_name: str,
+    ) -> bytes:
+        raise NotImplementedError("Template storage is not configured.")
+
+    def list_files(
+        self,
+        tenant_id: str,
+        template_key: str,
+        version: str,
+    ) -> list[dict]:
+        raise NotImplementedError("Template storage is not configured.")
+
+    def delete_file(
+        self,
+        tenant_id: str,
+        template_key: str,
+        version: str,
+        file_name: str,
+    ) -> None:
+        raise NotImplementedError("Template storage is not configured.")
+
+    def stream_zip(
+        self,
+        tenant_id: str,
+        template_key: str,
+        version: str,
+        file_entries: list[dict],
+    ) -> bytes:
+        raise NotImplementedError("Template storage is not configured.")
 
 
 class FilesystemTemplateStorageService:
-    """Stores BPMN templates on the local filesystem in m8flow-specific directory."""
+    """Stores template files on the local filesystem at {base_dir}/{tenant_id}/{template_key}/{version}/{file_name}."""
 
     @staticmethod
     def _get_base_dir() -> str:
-        """Get m8flow templates base directory from Flask config."""
-        # Try m8flow-specific directory first
         base_dir = current_app.config.get("M8FLOW_TEMPLATES_STORAGE_DIR")
-
         if not base_dir:
-            # Fallback to subdirectory of BPMN spec dir for backward compatibility
-            bpmn_spec_dir = current_app.config.get("SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR")
+            bpmn_spec_dir = current_app.config.get(
+                "SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR"
+            )
             if bpmn_spec_dir:
                 base_dir = os.path.join(bpmn_spec_dir, "m8flow-templates")
             else:
@@ -50,53 +148,152 @@ class FilesystemTemplateStorageService:
                     "M8FLOW_TEMPLATES_STORAGE_DIR or SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR must be configured",
                     status_code=500,
                 )
-
         return os.path.abspath(base_dir)
 
     @staticmethod
-    def _sanitize_filename(filename: str) -> str:
-        """Remove invalid filesystem characters from filename."""
-        invalid_chars = ["/", "\\", ":", "*", "?", '"', "<", ">", "|"]
-        for char in invalid_chars:
-            filename = filename.replace(char, "-")
-        return filename
+    def _sanitize(s: str) -> str:
+        """Sanitize a path component: strip null bytes, replace invalid chars, enforce length."""
+        s = s.replace("\x00", "")
+        invalid = ["/", "\\", ":", "*", "?", '"', "<", ">", "|"]
+        for c in invalid:
+            s = s.replace(c, "-")
+        s = s.strip(". -")
+        if not s:
+            raise ApiError("invalid_input", "Name is empty after sanitization", status_code=400)
+        if len(s) > 255:
+            s = s[:255]
+        return s
 
-    def store_bpmn(self, template_key: str, version: str, bpmn_bytes: bytes, tenant_id: str) -> str:
-        """Store BPMN content and return filename only (e.g., 'template-key_V2.bpmn')."""
-        base_dir = self._get_base_dir()
-        safe_key = self._sanitize_filename(template_key)
-        safe_version = self._sanitize_filename(version)
-        filename = f"{safe_key}_{safe_version}.bpmn"
-        # Store at: {base_dir}/{tenant_id}/{filename}
-        full_path = os.path.join(base_dir, tenant_id, filename)
+    def _version_dir(self, tenant_id: str, template_key: str, version: str) -> str:
+        base = self._get_base_dir()
+        return os.path.join(
+            base,
+            self._sanitize(tenant_id),
+            self._sanitize(template_key),
+            self._sanitize(version),
+        )
 
-        # Create directory if needed
-        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+    def _file_path(
+        self,
+        tenant_id: str,
+        template_key: str,
+        version: str,
+        file_name: str,
+    ) -> str:
+        safe_name = self._sanitize(os.path.basename(file_name))
+        return os.path.join(
+            self._version_dir(tenant_id, template_key, version),
+            safe_name,
+        )
 
-        # Write file
+    def store_file(
+        self,
+        tenant_id: str,
+        template_key: str,
+        version: str,
+        file_name: str,
+        file_type: str,
+        content: bytes,
+    ) -> None:
+        path = self._file_path(tenant_id, template_key, version, file_name)
         try:
-            with open(full_path, "wb") as f:
-                f.write(bpmn_bytes)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "wb") as f:
+                f.write(content)
         except (IOError, OSError) as e:
-            raise ApiError("storage_error", f"Failed to write BPMN file: {str(e)}", status_code=500)
+            raise ApiError(
+                "storage_error",
+                f"Failed to write file: {str(e)}",
+                status_code=500,
+            )
 
-        # Return only filename for database storage
-        return filename
-
-    def get_bpmn(self, filename: str, tenant_id: str) -> bytes:
-        """Retrieve BPMN content by filename and tenant_id."""
-        base_dir = self._get_base_dir()
-        # Reconstruct full path: {base_dir}/{tenant_id}/{filename}
-        full_path = os.path.join(base_dir, tenant_id, filename)
-
-        if not os.path.exists(full_path):
-            raise ApiError("not_found", f"BPMN file not found: {filename} for tenant {tenant_id}", status_code=404)
-
+    def get_file(
+        self,
+        tenant_id: str,
+        template_key: str,
+        version: str,
+        file_name: str,
+    ) -> bytes:
+        path = self._file_path(tenant_id, template_key, version, file_name)
+        if not os.path.isfile(path):
+            raise ApiError(
+                "not_found",
+                f"File not found: {file_name}",
+                status_code=404,
+            )
         try:
-            with open(full_path, "rb") as f:
+            with open(path, "rb") as f:
                 return f.read()
-        except FileNotFoundError:
-            # File might have been removed after the exists() check
-            raise ApiError("not_found", f"BPMN file not found: {filename} for tenant {tenant_id}", status_code=404)
         except (IOError, OSError) as e:
-            raise ApiError("storage_error", f"Failed to read BPMN file: {str(e)}", status_code=500)
+            raise ApiError(
+                "storage_error",
+                f"Failed to read file: {str(e)}",
+                status_code=500,
+            )
+
+    def list_files(
+        self,
+        tenant_id: str,
+        template_key: str,
+        version: str,
+    ) -> list[dict]:
+        vdir = self._version_dir(tenant_id, template_key, version)
+        if not os.path.isdir(vdir):
+            return []
+        result = []
+        for name in os.listdir(vdir):
+            path = os.path.join(vdir, name)
+            if os.path.isfile(path):
+                result.append({
+                    "file_name": name,
+                    "file_type": file_type_from_filename(name),
+                })
+        return result
+
+    def delete_file(
+        self,
+        tenant_id: str,
+        template_key: str,
+        version: str,
+        file_name: str,
+    ) -> None:
+        path = self._file_path(tenant_id, template_key, version, file_name)
+        if os.path.isfile(path):
+            try:
+                os.remove(path)
+            except (IOError, OSError) as e:
+                raise ApiError(
+                    "storage_error",
+                    f"Failed to delete file: {str(e)}",
+                    status_code=500,
+                )
+
+    def stream_zip(
+        self,
+        tenant_id: str,
+        template_key: str,
+        version: str,
+        file_entries: list[dict],
+    ) -> bytes:
+        buf = io.BytesIO()
+        skipped: list[str] = []
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for entry in file_entries:
+                name = entry.get("file_name")
+                if not name:
+                    continue
+                try:
+                    content = self.get_file(tenant_id, template_key, version, name)
+                    zf.writestr(name, content)
+                except ApiError:
+                    logger.warning(
+                        "Skipping missing file during zip export: %s/%s/%s/%s",
+                        tenant_id, template_key, version, name,
+                    )
+                    skipped.append(name)
+        if skipped:
+            logger.warning(
+                "Zip export for %s/%s/%s skipped %d file(s): %s",
+                tenant_id, template_key, version, len(skipped), ", ".join(skipped),
+            )
+        return buf.getvalue()

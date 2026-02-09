@@ -22,7 +22,7 @@ export type DiagramEditorToolbarProps = {
   onSetPrimaryFile: () => void;
   onDownload: () => void;
   onViewXml: () => void;
-  onSaveAsTemplate: () => void;
+  onSaveAsTemplate?: () => void;
   referencesButton: React.ReactNode;
   activeUserElement?: React.ReactElement;
   onSetPrimaryFileAvailable?: boolean;
@@ -111,15 +111,7 @@ export default function DiagramEditorToolbar({
           </Button>
         )}
       </Can>
-      {diagramType === 'bpmn' && (
-        <Button
-          variant="contained"
-          onClick={onSaveAsTemplate}
-          data-testid="save-as-template-button"
-        >
-          Save as Template
-        </Button>
-      )}
+      {/* Save as Template moved to Process Model page (not in diagram editor) */}
       {referencesButton}
       <Can
         I="PUT"

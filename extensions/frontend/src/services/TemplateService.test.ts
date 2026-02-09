@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import HttpService from "@spiffworkflow-frontend/services/HttpService";
+import HttpService from "./HttpService";
 import TemplateService from "./TemplateService";
 
-vi.mock("@spiffworkflow-frontend/services/HttpService", () => ({
+vi.mock("./HttpService", () => ({
   default: {
     makeCallToBackend: vi.fn(),
+    getBasicHeaders: vi.fn().mockReturnValue({}),
   },
 }));
 
@@ -90,6 +91,38 @@ describe("TemplateService", () => {
       ).rejects.toThrow("Template key and name are required");
 
       expect(HttpService.makeCallToBackend).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("deleteTemplate", () => {
+    const fetchMock = vi.fn();
+
+    beforeEach(() => {
+      fetchMock.mockClear();
+      vi.stubGlobal("fetch", fetchMock);
+    });
+
+    it("sends DELETE to correct URL and resolves when response is ok", async () => {
+      fetchMock.mockResolvedValue({ ok: true });
+
+      await expect(TemplateService.deleteTemplate(7)).resolves.toBeUndefined();
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/templates/7"),
+        expect.objectContaining({
+          method: "DELETE",
+          credentials: "include",
+        })
+      );
+    });
+
+    it("rejects with error when response is not ok", async () => {
+      fetchMock.mockResolvedValue({ ok: false });
+
+      await expect(TemplateService.deleteTemplate(7)).rejects.toThrow("Delete failed");
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     });
   });
 });
