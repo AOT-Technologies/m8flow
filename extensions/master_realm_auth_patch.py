@@ -3,6 +3,8 @@
 #    when the request has a Bearer token but no authentication_identifier (cookie/header).
 # 2) On login_return callback, use authentication_identifier from OAuth state so token
 #    decode uses the correct realm's JWKS (cookie is not set yet on that request).
+# 3) When Bearer token is present but cookie/header are not, derive authentication_identifier
+#    from token claims (realm_name or iss) so the frontend does not need to send the header.
 
 import ast
 import base64
@@ -54,6 +56,59 @@ def _has_master_auth_config() -> bool:
     return any(isinstance(c, dict) and c.get("identifier") == "master" for c in configs)
 
 
+def _auth_config_identifiers() -> list[str]:
+    """Return list of auth config identifiers (e.g. realm names)."""
+    from flask import current_app
+
+    configs = current_app.config.get("SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS") or []
+    return [c["identifier"] for c in configs if isinstance(c, dict) and c.get("identifier")]
+
+
+def _authentication_identifier_from_bearer_token() -> str | None:
+    """
+    If the request has a Bearer token, decode the payload (without verification) and derive
+    the authentication identifier from realm_name (Keycloak RealmInfoMapper) or from iss
+    (e.g. http://host/realms/<realm_name>). Return the identifier if it matches an auth
+    config; otherwise None.
+    """
+    from flask import request
+
+    auth_header = (request.headers.get("Authorization") or "").strip()
+    if not auth_header.startswith("Bearer ") or len(auth_header) <= 7:
+        return None
+    token = auth_header[7:].strip()
+    if not token:
+        return None
+
+    try:
+        # Decode payload only (no signature verification) to read realm_name or iss
+        import jwt
+        payload = jwt.decode(token, options={"verify_signature": False})
+    except Exception:
+        return None
+
+    if not isinstance(payload, dict):
+        return None
+
+    # Prefer realm_name from Keycloak RealmInfoMapper
+    realm_name = payload.get("realm_name")
+    if isinstance(realm_name, str) and realm_name.strip():
+        identifiers = _auth_config_identifiers()
+        if realm_name in identifiers:
+            return realm_name
+
+    # Fallback: last path segment of iss (Keycloak: http://host/realms/<realm_name>)
+    iss = payload.get("iss")
+    if isinstance(iss, str) and iss.strip():
+        realm_from_iss = iss.rstrip("/").split("/")[-1]
+        if realm_from_iss:
+            identifiers = _auth_config_identifiers()
+            if realm_from_iss in identifiers:
+                return realm_from_iss
+
+    return None
+
+
 def apply_master_realm_auth_patch() -> None:
     """Patch _get_authentication_identifier_from_request so create-realm/create-tenant
     use 'master' when Bearer token is present, no authentication_identifier is set,
@@ -92,6 +147,11 @@ def apply_master_realm_auth_patch() -> None:
             _debug_log("H2", "returning master", {"result": "master"})
             # #endregion
             return "master"
+        # Derive from token when cookie/header absent (e.g. API calls with only Bearer)
+        if has_bearer and not cookie_id and not header_id:
+            derived = _authentication_identifier_from_bearer_token()
+            if derived:
+                return derived
         result = _original()
         # #region agent log
         _debug_log("H1", "returning original", {"result": result})

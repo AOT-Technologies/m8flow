@@ -173,24 +173,28 @@ const getPreferredUsername = () => {
 };
 
 const getTenantId = (): string | null => {
-  // First try to get from JWT token
+  // Prefer tenant from JWT (Keycloak RealmInfoMapper: realm_id, realm_name)
   const idToken = getIdToken();
   if (idToken) {
     try {
-      const idObject = jwtDecode(idToken);
-      if ((idObject as any).m8f_tenant_id !== undefined) {
-        return (idObject as any).m8f_tenant_id;
+      const idObject = jwtDecode(idToken) as Record<string, unknown>;
+      if (typeof idObject.realm_id === 'string' && idObject.realm_id) {
+        return idObject.realm_id;
       }
-      // Also check for alternative claim names
-      if ((idObject as any).tenant_id !== undefined) {
-        return (idObject as any).tenant_id;
+      if (typeof idObject.realm_name === 'string' && idObject.realm_name) {
+        return idObject.realm_name;
       }
-    } catch (error) {
+      if (idObject.m8f_tenant_id !== undefined) {
+        return String(idObject.m8f_tenant_id);
+      }
+      if (idObject.tenant_id !== undefined) {
+        return String(idObject.tenant_id);
+      }
+    } catch {
       // If JWT decode fails, fall back to localStorage
     }
   }
-  
-  // Fall back to localStorage
+
   const storedTenantId = localStorage.getItem('m8f_tenant_id');
   return storedTenantId;
 };

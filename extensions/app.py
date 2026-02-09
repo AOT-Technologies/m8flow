@@ -206,7 +206,7 @@ def _cors_headers(origin: str) -> list[tuple[bytes, bytes]]:
         (b"access-control-allow-origin", origin.encode()),
         (b"access-control-allow-credentials", b"true"),
         (b"access-control-allow-methods", b"GET, POST, PUT, PATCH, DELETE, OPTIONS"),
-        (b"access-control-allow-headers", b"Content-Type, Authorization, M8Flow-Tenant-Id, SpiffWorkflow-Authentication-Identifier"),
+        (b"access-control-allow-headers", b"Content-Type, Authorization"),
         (b"access-control-max-age", b"3600"),
     ]
 
@@ -335,6 +335,7 @@ if m8flow_templates_dir:
     logger.info(f"M8FLOW_TEMPLATES_STORAGE_DIR configured: {m8flow_templates_dir}")
 
 # Register the tenant loading function to run after auth hooks.
+# Tenant id (realm_id/realm_name) is resolved from the JWT in resolve_request_tenant (tenant_context_middleware.py).
 if None not in flask_app.before_request_funcs:
     flask_app.before_request_funcs[None] = []
 before_request_funcs = flask_app.before_request_funcs[None]
