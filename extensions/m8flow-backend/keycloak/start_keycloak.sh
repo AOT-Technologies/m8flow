@@ -31,6 +31,10 @@ identity_realm_file="${script_dir}/realm_exports/identity-realm-export.json"
 # Backend default auth uses spiffworkflow-local; must exist and have sslRequired=NONE for HTTP
 spiffworkflow_local_realm_file="${script_dir}/realm_exports/spiffworkflow-local-realm.json"
 
+# Realm Info Mapper JAR (from repo root: keycloak-extensions/realm-info-mapper)
+repo_root="$(cd "${script_dir}/../../.." && pwd -P)"
+realm_info_mapper_jar="${repo_root}/keycloak-extensions/realm-info-mapper/target/realm-info-mapper.jar"
+
 # Validate required tools
 if ! command -v docker &> /dev/null; then
   echo >&2 "ERROR: docker command not found. Please install Docker."
@@ -55,6 +59,12 @@ fi
 
 if [[ ! -f "$spiffworkflow_local_realm_file" ]]; then
   echo >&2 "ERROR: Spiffworkflow-local realm export file not found: $spiffworkflow_local_realm_file"
+  exit 1
+fi
+
+if [[ ! -f "$realm_info_mapper_jar" ]]; then
+  echo >&2 "ERROR: Realm Info Mapper JAR not found: $realm_info_mapper_jar"
+  echo >&2 "Build it with: (cd ${repo_root}/keycloak-extensions/realm-info-mapper && ./build.sh)"
   exit 1
 fi
 
@@ -112,6 +122,7 @@ if ! docker run \
   -d \
   --network=m8flow \
   --name keycloak \
+  -v "${realm_info_mapper_jar}:/opt/keycloak/providers/realm-info-mapper.jar:ro" \
   -e KEYCLOAK_LOGLEVEL=ALL \
   -e ROOT_LOGLEVEL=ALL \
   -e KEYCLOAK_ADMIN="$keycloak_admin_user" \
@@ -394,17 +405,12 @@ if [[ -z "$admin_token" ]]; then
   exit 1
 fi
 
-# Extract realm names from JSON files
+# Extract realm names from JSON files (tenant-a is created from template, not from a file)
 identity_realm_name=$(jq -r '.realm // empty' "$identity_realm_file" 2>/dev/null)
-tenant_realm_name=$(jq -r '.realm // empty' "$tenant_realm_file" 2>/dev/null)
+tenant_realm_name="tenant-a"
 
 if [[ -z "$identity_realm_name" ]]; then
   echo >&2 "ERROR: Could not extract realm name from identity realm file"
-  exit 1
-fi
-
-if [[ -z "$tenant_realm_name" ]]; then
-  echo >&2 "ERROR: Could not extract realm name from tenant realm file"
   exit 1
 fi
 

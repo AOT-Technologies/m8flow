@@ -1219,6 +1219,17 @@
             "access.token.claim": "true",
             "claim.name": "spiffworkflow-employeeid"
           }
+        },
+        {
+          "id": "e8a7c4b2-1d5f-4a0e-9b3c-6f2e8d1a4c70",
+          "name": "realm_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-realm-info-mapper",
+          "consentRequired": false,
+          "config": {
+            "id.token.claim": "true",
+            "access.token.claim": "true"
+          }
         }
       ],
       "defaultClientScopes": [

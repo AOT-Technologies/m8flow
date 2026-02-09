@@ -8,6 +8,7 @@ import org.keycloak.models.UserSessionModel;
 import org.keycloak.protocol.oidc.mappers.AbstractOIDCProtocolMapper;
 import org.keycloak.protocol.oidc.mappers.OIDCAccessTokenMapper;
 import org.keycloak.protocol.oidc.mappers.OIDCIDTokenMapper;
+import org.keycloak.protocol.oidc.mappers.OIDCAttributeMapperHelper;
 import org.keycloak.provider.ProviderConfigProperty;
 import org.keycloak.representations.IDToken;
 
@@ -19,6 +20,10 @@ public class RealmInfoMapper extends AbstractOIDCProtocolMapper implements OIDCA
     public static final String PROVIDER_ID = "oidc-realm-info-mapper";
 
     private static final List<ProviderConfigProperty> CONFIG_PROPERTIES = new ArrayList<>();
+
+    static {
+        OIDCAttributeMapperHelper.addIncludeInTokensConfig(CONFIG_PROPERTIES, RealmInfoMapper.class);
+    }
 
     @Override
     public String getDisplayCategory() {
