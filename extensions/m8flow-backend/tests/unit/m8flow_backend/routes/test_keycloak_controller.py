@@ -19,6 +19,7 @@ for path in (extension_src, backend_src):
 from m8flow_backend.routes.keycloak_controller import (  # noqa: E402
     create_realm,
     create_user_in_realm,
+    delete_tenant_realm,
     get_tenant_login_url,
     tenant_login,
 )
@@ -30,26 +31,46 @@ class TestCreateRealm:
     @patch("m8flow_backend.routes.keycloak_controller.create_tenant_if_not_exists")
     @patch("m8flow_backend.routes.keycloak_controller.create_realm_from_template")
     def test_create_realm_success(self, mock_create_realm, mock_create_tenant):
-        mock_create_realm.return_value = {"realm": "tenant-b", "displayName": "Tenant B"}
+        mock_create_realm.return_value = {
+            "realm": "tenant-b",
+            "displayName": "Tenant B",
+            "keycloak_realm_id": "uuid-tenant-b-123",
+        }
         body = {"realm_id": "tenant-b", "display_name": "Tenant B"}
         result, status = create_realm(body)
         assert status == 201
-        assert result == {"realm": "tenant-b", "displayName": "Tenant B"}
+        assert result["realm"] == "tenant-b"
+        assert result["displayName"] == "Tenant B"
+        assert result["id"] == "uuid-tenant-b-123"
+        assert result["keycloak_realm_id"] == "uuid-tenant-b-123"
         mock_create_realm.assert_called_once_with(
             realm_id="tenant-b",
             display_name="Tenant B",
         )
-        mock_create_tenant.assert_called_once_with("tenant-b", name="Tenant B")
+        mock_create_tenant.assert_called_once_with(
+            "uuid-tenant-b-123",
+            name="Tenant B",
+            slug="tenant-b",
+        )
 
     @patch("m8flow_backend.routes.keycloak_controller.create_tenant_if_not_exists")
     @patch("m8flow_backend.routes.keycloak_controller.create_realm_from_template")
     def test_create_realm_success_no_display_name(self, mock_create_realm, mock_create_tenant):
-        mock_create_realm.return_value = {"realm": "tenant-c", "displayName": "tenant-c"}
+        mock_create_realm.return_value = {
+            "realm": "tenant-c",
+            "displayName": "tenant-c",
+            "keycloak_realm_id": "uuid-tenant-c-456",
+        }
         body = {"realm_id": "tenant-c"}
         result, status = create_realm(body)
         assert status == 201
+        assert result["id"] == "uuid-tenant-c-456"
         mock_create_realm.assert_called_once_with(realm_id="tenant-c", display_name=None)
-        mock_create_tenant.assert_called_once_with("tenant-c", name="tenant-c")
+        mock_create_tenant.assert_called_once_with(
+            "uuid-tenant-c-456",
+            name="tenant-c",
+            slug="tenant-c",
+        )
 
     def test_create_realm_missing_realm_id(self):
         result, status = create_realm({})
@@ -240,3 +261,64 @@ class TestGetTenantLoginUrl:
         assert "tenant" in result["detail"].lower()
         result2, status2 = get_tenant_login_url("   ")
         assert status2 == 400
+
+
+class TestDeleteTenantRealm:
+    """Tests for delete_tenant_realm (DELETE /tenant-realms/{realm_id}). Path realm_id is realm name (slug)."""
+
+    @patch("m8flow_backend.routes.keycloak_controller.delete_realm")
+    @patch("m8flow_backend.routes.keycloak_controller.verify_admin_token")
+    @patch("m8flow_backend.routes.keycloak_controller.request")
+    def test_delete_tenant_realm_success(self, mock_request, mock_verify, mock_delete_realm):
+        mock_request.headers = {"Authorization": "Bearer valid-token"}
+        mock_verify.return_value = True
+        tenant_mock = MagicMock()
+        tenant_mock.id = "keycloak-uuid-123"
+        mock_query = MagicMock()
+        mock_query.filter.return_value.one_or_none.return_value = tenant_mock
+        with patch(
+            "m8flow_backend.routes.keycloak_controller.db"
+        ) as mock_db:
+            mock_db.session.query.return_value.filter.return_value.one_or_none.return_value = (
+                tenant_mock
+            )
+            result, status = delete_tenant_realm("tenant-a")
+        assert status == 200
+        assert "deleted successfully" in result["message"]
+        mock_delete_realm.assert_called_once_with("tenant-a", admin_token="valid-token")
+        mock_db.session.delete.assert_called_once_with(tenant_mock)
+        mock_db.session.commit.assert_called_once()
+
+    @patch("m8flow_backend.routes.keycloak_controller.delete_realm")
+    @patch("m8flow_backend.routes.keycloak_controller.verify_admin_token")
+    @patch("m8flow_backend.routes.keycloak_controller.request")
+    def test_delete_tenant_realm_no_tenant_row_still_deletes_keycloak(
+        self, mock_request, mock_verify, mock_delete_realm
+    ):
+        mock_request.headers = {"Authorization": "Bearer valid-token"}
+        mock_verify.return_value = True
+        with patch(
+            "m8flow_backend.routes.keycloak_controller.db"
+        ) as mock_db:
+            mock_db.session.query.return_value.filter.return_value.one_or_none.return_value = None
+            result, status = delete_tenant_realm("missing-slug")
+        assert status == 200
+        mock_delete_realm.assert_called_once_with("missing-slug", admin_token="valid-token")
+        mock_db.session.delete.assert_not_called()
+        mock_db.session.commit.assert_not_called()
+
+    @patch("m8flow_backend.routes.keycloak_controller.request")
+    def test_delete_tenant_realm_no_auth(self, mock_request):
+        mock_request.headers = {}
+        result, status = delete_tenant_realm("tenant-a")
+        assert status == 401
+        assert "Authorization" in result["detail"]
+
+    @patch("m8flow_backend.routes.keycloak_controller.verify_admin_token")
+    @patch("m8flow_backend.routes.keycloak_controller.request")
+    def test_delete_tenant_realm_invalid_token(self, mock_request, mock_verify):
+        mock_request.headers = {"Authorization": "Bearer bad-token"}
+        mock_verify.return_value = False
+        result, status = delete_tenant_realm("tenant-a")
+        assert status == 401
+        assert "Invalid" in result["detail"]

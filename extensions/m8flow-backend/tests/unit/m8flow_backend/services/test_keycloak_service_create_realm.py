@@ -1,12 +1,12 @@
 # extensions/m8flow-backend/tests/unit/m8flow_backend/services/test_keycloak_service_create_realm.py
-import json
 from unittest.mock import MagicMock, patch
-import pytest
+
 
 @patch("m8flow_backend.services.keycloak_service.get_master_admin_token")
+@patch("m8flow_backend.services.keycloak_service.requests.get")
 @patch("m8flow_backend.services.keycloak_service.requests.post")
 @patch("m8flow_backend.services.keycloak_service.load_realm_template")
-def test_create_realm_from_template_includes_client_scopes(mock_load, mock_post, mock_token):
+def test_create_realm_from_template_includes_client_scopes(mock_load, mock_post, mock_get, mock_token):
     from m8flow_backend.services.keycloak_service import create_realm_from_template
     
     mock_token.return_value = "token"
@@ -22,13 +22,22 @@ def test_create_realm_from_template_includes_client_scopes(mock_load, mock_post,
         "users": []
     }
     
-    # Mock responses for realm creation (Step 1) and partial import (Step 2)
+    # Mock responses for realm creation (Step 1), partial import (Step 2), and GET realm (Step 3)
     mock_post.side_effect = [
         MagicMock(status_code=201), # Step 1: Create realm
         MagicMock(status_code=200)  # Step 2: Partial import
     ]
+    mock_get.return_value = MagicMock(
+        status_code=200,
+        json=lambda: {"id": "keycloak-realm-uuid-123", "realm": "new-realm", "displayName": "New Realm"}
+    )
     
-    create_realm_from_template("new-realm", "New Realm")
+    result = create_realm_from_template("new-realm", "New Realm")
+    
+    # Verify return includes Keycloak realm UUID
+    assert result["realm"] == "new-realm"
+    assert result["displayName"] == "New Realm"
+    assert result["keycloak_realm_id"] == "keycloak-realm-uuid-123"
     
     # Verify Step 1 call (Create Realm)
     realm_creation_call = mock_post.call_args_list[0]
@@ -53,3 +62,6 @@ def test_create_realm_from_template_includes_client_scopes(mock_load, mock_post,
     
     assert payload["defaultDefaultClientScopes"] == ["profile"]
     assert payload["defaultOptionalClientScopes"] == ["address"]
+    
+    # Verify Step 3 (GET realm for UUID) was called
+    mock_get.assert_called_once()

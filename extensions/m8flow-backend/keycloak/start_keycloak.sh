@@ -428,15 +428,5 @@ if ! create_realm_from_template "$spiffworkflow_local_realm_file" "tenant-a" "Te
   exit 1
 fi
 
-# Import spiffworkflow-local (used by backend default SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS for OpenID discovery)
-spiffworkflow_local_realm_name=$(jq -r '.realm // empty' "$spiffworkflow_local_realm_file" 2>/dev/null)
-if [[ -n "$spiffworkflow_local_realm_name" ]]; then
-  echo ":: Importing spiffworkflow-local realm (backend auth)..."
-  if ! import_realm "$spiffworkflow_local_realm_file" "$spiffworkflow_local_realm_name" "$admin_token"; then
-    echo >&2 "ERROR: Failed to import spiffworkflow-local realm"
-    exit 1
-  fi
-fi
-
 echo ":: Realm import process completed successfully"
-echo ":: Keycloak is running with realms: $identity_realm_name, $tenant_realm_name${spiffworkflow_local_realm_name:+, $spiffworkflow_local_realm_name}"
+echo ":: Keycloak is running with realms: $identity_realm_name, $tenant_realm_name"

@@ -123,8 +123,15 @@ paths:
                 properties:
                   realm:
                     type: string
+                    description: Realm name (slug)
                   displayName:
                     type: string
+                  keycloak_realm_id:
+                    type: string
+                    description: Keycloak realm UUID (stored as M8flowTenantModel.id)
+                  id:
+                    type: string
+                    description: Same as keycloak_realm_id (Keycloak realm UUID)
         "400":
           description: Bad request - realm_id missing or invalid
           content:
@@ -156,7 +163,7 @@ paths:
   /tenant-realms/{realm_id}:
     delete:
       summary: Delete a Keycloak realm and its associated tenant
-      description: Removes the realm from Keycloak and the tenant record from Postgres. Requires a valid master admin token.
+      description: Removes the realm from Keycloak and the tenant record from Postgres. Requires a valid master admin token. The path parameter is the realm name (slug), not the Keycloak realm UUID.
       operationId: m8flow_backend.routes.keycloak_controller.delete_tenant_realm
       tags:
         - Keycloak
@@ -166,7 +173,7 @@ paths:
           required: true
           schema:
             type: string
-          description: The ID of the realm to delete
+          description: The realm name (slug) of the realm to delete, not the Keycloak UUID
       responses:
         "200":
           description: Tenant deleted successfully

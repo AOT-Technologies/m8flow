@@ -395,27 +395,6 @@ def create_realm_from_template(realm_id: str, display_name: str | None = None) -
 
         # Configure spiffworkflow-backend client for JWT authentication (only when keystore is available)
         if client.get("clientId") == client_id_to_find:
-            # #region agent log
-            try:
-                _debug_log = open("/Users/aot/Development/AOT/m8Flow/vinaayakh-m8flow/.cursor/debug.log", "a")
-                _debug_log.write(
-                    json.dumps(
-                        {
-                            "hypothesisId": "H1",
-                            "location": "keycloak_service.create_realm_from_template.spoke_client",
-                            "message": "Configuring spoke client",
-                            "data": {"clientId": client_id_to_find, "had_secret": "secret" in client},
-                            "timestamp": int(time.time() * 1000),
-                            "sessionId": "debug-session",
-                            "runId": "pre-fix",
-                        }
-                    )
-                    + "\n"
-                )
-                _debug_log.close()
-            except Exception:
-                pass
-            # #endregion
             cert_pem = None
             try:
                 cert_pem = _get_certificate_pem_from_p12()
@@ -427,24 +406,8 @@ def create_realm_from_template(realm_id: str, display_name: str | None = None) -
                 if "attributes" not in client:
                     client["attributes"] = {}
                 client["attributes"]["jwt.credential.certificate"] = cert_pem
-                # #region agent log
-                try:
-                    _dl = open("/Users/aot/Development/AOT/m8Flow/vinaayakh-m8flow/.cursor/debug.log", "a")
-                    _dl.write(json.dumps({"hypothesisId": "H5", "location": "keycloak_service.spoke_client", "message": "Using client-jwt (keystore OK)", "data": {}, "timestamp": int(time.time() * 1000), "sessionId": "debug-session", "runId": "pre-fix"}) + "\n")
-                    _dl.close()
-                except Exception:
-                    pass
-                # #endregion
             else:
                 # Keystore missing: leave client as confidential with secret so upstream Basic auth token exchange works
-                # #region agent log
-                try:
-                    _dl = open("/Users/aot/Development/AOT/m8Flow/vinaayakh-m8flow/.cursor/debug.log", "a")
-                    _dl.write(json.dumps({"hypothesisId": "H5", "location": "keycloak_service.spoke_client", "message": "Keystore missing, leaving client with secret", "data": {"clientAuthenticatorType": client.get("clientAuthenticatorType")}, "timestamp": int(time.time() * 1000), "sessionId": "debug-session", "runId": "pre-fix"}) + "\n")
-                    _dl.close()
-                except Exception:
-                    pass
-                # #endregion
                 pass  # do not set client-jwt, do not remove secret
     
     roles = _sanitize_roles_for_partial_import(full_payload.get("roles") or {})
@@ -472,8 +435,26 @@ def create_realm_from_template(realm_id: str, display_name: str | None = None) -
         timeout=120,
     )
     r2.raise_for_status()
-    
-    return {"realm": realm_id, "displayName": full_payload.get("displayName", "")}
+
+    # Step 3: Fetch realm to obtain Keycloak's internal UUID (used as M8flowTenantModel.id)
+    r3 = requests.get(
+        f"{base_url}/admin/realms/{realm_id}",
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    r3.raise_for_status()
+    realm_json = r3.json()
+    keycloak_realm_id = realm_json.get("id")
+    if not keycloak_realm_id:
+        raise ValueError(
+            f"Keycloak did not return realm id for realm {realm_id!r}. Cannot persist tenant."
+        )
+
+    return {
+        "realm": realm_id,
+        "displayName": full_payload.get("displayName", ""),
+        "keycloak_realm_id": keycloak_realm_id,
+    }
 
 
 def tenant_login(realm: str, username: str, password: str) -> dict:
