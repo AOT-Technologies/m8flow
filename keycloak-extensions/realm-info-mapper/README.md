@@ -10,10 +10,10 @@ A Keycloak OIDC protocol mapper that adds the current realm’s name and ID to a
 
 When attached to a client, it adds two claims to the token:
 
-| Claim       | Description                    |
-|------------|---------------------------------|
-| `realm_name` | Name of the realm that issued the token |
-| `realm_id`   | ID of the realm that issued the token   |
+| Claim                | Description                                    |
+|----------------------|------------------------------------------------|
+| `m8flow_tenant_name` | Name of the realm that issued the token       |
+| `m8flow_tenant_id`   | ID of the realm that issued the token (tenant)|
 
 The mapper reads the realm from the current Keycloak session, so the values are always for the realm in which the user authenticated. Applications can use these claims for multi-realm or tenant-aware logic without extra lookups.
 
@@ -67,4 +67,4 @@ So:
 3. Add a mapper: **Add mapper** → **By configuration** → choose **Realm Info Mapper**.
 4. Save.
 
-After that, tokens issued for that client will include `realm_name` and `realm_id` in the payload (typically under `otherClaims` or the root, depending on token type and client settings).
+After that, tokens issued for that client will include `m8flow_tenant_name` and `m8flow_tenant_id` in the payload (typically under `otherClaims` or the root, depending on token type and client settings).

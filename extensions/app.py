@@ -335,7 +335,7 @@ if m8flow_templates_dir:
     logger.info(f"M8FLOW_TEMPLATES_STORAGE_DIR configured: {m8flow_templates_dir}")
 
 # Register the tenant loading function to run after auth hooks.
-# Tenant id (realm_id/realm_name) is resolved from the JWT in resolve_request_tenant (tenant_context_middleware.py).
+# Tenant id (m8flow_tenant_id/m8flow_tenant_name) is resolved from the JWT in resolve_request_tenant (tenant_context_middleware.py).
 if None not in flask_app.before_request_funcs:
     flask_app.before_request_funcs[None] = []
 before_request_funcs = flask_app.before_request_funcs[None]

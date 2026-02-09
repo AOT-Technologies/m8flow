@@ -173,11 +173,17 @@ const getPreferredUsername = () => {
 };
 
 const getTenantId = (): string | null => {
-  // Prefer tenant from JWT (Keycloak RealmInfoMapper: realm_id, realm_name)
+  // Prefer tenant from JWT (Keycloak RealmInfoMapper: m8flow_tenant_id, m8flow_tenant_name)
   const idToken = getIdToken();
   if (idToken) {
     try {
       const idObject = jwtDecode(idToken) as Record<string, unknown>;
+      if (typeof idObject.m8flow_tenant_id === 'string' && idObject.m8flow_tenant_id) {
+        return idObject.m8flow_tenant_id;
+      }
+      if (typeof idObject.m8flow_tenant_name === 'string' && idObject.m8flow_tenant_name) {
+        return idObject.m8flow_tenant_name;
+      }
       if (typeof idObject.realm_id === 'string' && idObject.realm_id) {
         return idObject.realm_id;
       }

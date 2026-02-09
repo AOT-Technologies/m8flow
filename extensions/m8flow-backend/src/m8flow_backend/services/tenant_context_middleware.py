@@ -23,8 +23,8 @@ from spiffworkflow_backend.models.db import db
 
 LOGGER = logging.getLogger(__name__)
 
-# Keycloak RealmInfoMapper adds realm_id and realm_name; prefer realm_id (stable UUID).
-TENANT_CLAIMS = ("realm_id", "realm_name", "m8flow_tenant_id", "m8f_tenant_id", "tenant_id")
+# Keycloak RealmInfoMapper adds m8flow_tenant_id and m8flow_tenant_name; prefer tenant id (stable UUID).
+TENANT_CLAIMS = ("m8flow_tenant_id", "m8flow_tenant_name", "realm_id", "realm_name", "m8f_tenant_id", "tenant_id")
 
 def resolve_request_tenant() -> None:
     """

@@ -67,7 +67,7 @@ def _auth_config_identifiers() -> list[str]:
 def _authentication_identifier_from_bearer_token() -> str | None:
     """
     If the request has a Bearer token, decode the payload (without verification) and derive
-    the authentication identifier from realm_name (Keycloak RealmInfoMapper) or from iss
+    the authentication identifier from m8flow_tenant_name (Keycloak RealmInfoMapper) or from iss
     (e.g. http://host/realms/<realm_name>). Return the identifier if it matches an auth
     config; otherwise None.
     """
@@ -81,7 +81,7 @@ def _authentication_identifier_from_bearer_token() -> str | None:
         return None
 
     try:
-        # Decode payload only (no signature verification) to read realm_name or iss
+        # Decode payload only (no signature verification) to read m8flow_tenant_name or iss
         import jwt
         payload = jwt.decode(token, options={"verify_signature": False})
     except Exception:
@@ -90,8 +90,8 @@ def _authentication_identifier_from_bearer_token() -> str | None:
     if not isinstance(payload, dict):
         return None
 
-    # Prefer realm_name from Keycloak RealmInfoMapper
-    realm_name = payload.get("realm_name")
+    # Prefer m8flow_tenant_name from Keycloak RealmInfoMapper (then legacy realm_name)
+    realm_name = payload.get("m8flow_tenant_name") or payload.get("realm_name")
     if isinstance(realm_name, str) and realm_name.strip():
         identifiers = _auth_config_identifiers()
         if realm_name in identifiers:

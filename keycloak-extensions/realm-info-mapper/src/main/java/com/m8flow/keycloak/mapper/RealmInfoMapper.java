@@ -37,7 +37,7 @@ public class RealmInfoMapper extends AbstractOIDCProtocolMapper implements OIDCA
 
     @Override
     public String getHelpText() {
-        return "Adds realm name and ID to the token claims.";
+        return "Adds m8flow_tenant_id and m8flow_tenant_name to the token claims.";
     }
 
     @Override
@@ -55,10 +55,10 @@ public class RealmInfoMapper extends AbstractOIDCProtocolMapper implements OIDCA
                           UserSessionModel userSession, KeycloakSession keycloakSession,
                           ClientSessionContext clientSessionCtx) {
 
-        // This dynamically fetches the current realm's name and ID
+        // This dynamically fetches the current realm's name and ID (m8flow claim names)
         RealmModel realm = keycloakSession.getContext().getRealm();
 
-        token.getOtherClaims().put("realm_name", realm.getName());
-        token.getOtherClaims().put("realm_id", realm.getId());
+        token.getOtherClaims().put("m8flow_tenant_name", realm.getName());
+        token.getOtherClaims().put("m8flow_tenant_id", realm.getId());
     }
 }
