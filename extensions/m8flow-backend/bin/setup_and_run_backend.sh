@@ -2,7 +2,7 @@
 # Equivalent of: cd spiffworkflow-backend && uv sync && ./bin/recreate_db clean && ./bin/run_server_locally
 # but for the m8flow extensions app: sync deps, run DB migrations, then start the backend.
 # Run from repo root, or from anywhere (script will cd to repo root).
-# Requires: .env at repo root with SPIFFWORKFLOW_BACKEND_DATABASE_URI (and optionally SPIFFWORKFLOW_BACKEND_UPGRADE_DB=true).
+# Requires: .env at repo root with M8FLOW_BACKEND_DATABASE_URI (and optionally M8FLOW_BACKEND_UPGRADE_DB=true).
 
 set -euo pipefail
 
@@ -24,7 +24,7 @@ uv sync
 cd "$repo_root"
 
 # Run SpiffWorkflow schema migrations (creates/updates their tables)
-if [[ "${SPIFFWORKFLOW_BACKEND_UPGRADE_DB:-}" == "true" ]]; then
+if [[ "${M8FLOW_BACKEND_UPGRADE_DB:-}" == "true" ]]; then
   echo ":: Running SpiffWorkflow DB migrations (flask db upgrade)..."
   cd "$repo_root/spiffworkflow-backend"
   uv run flask db upgrade
@@ -33,7 +33,7 @@ if [[ "${SPIFFWORKFLOW_BACKEND_UPGRADE_DB:-}" == "true" ]]; then
 fi
 
 export PYTHONPATH="$repo_root:$repo_root/extensions/m8flow-backend/src:$repo_root/spiffworkflow-backend/src"
-BACKEND_PORT="${SPIFFWORKFLOW_BACKEND_PORT:-7000}"
+BACKEND_PORT="${M8FLOW_BACKEND_PORT:-7000}"
 export UVICORN_LOG_LEVEL="${UVICORN_LOG_LEVEL:-debug}"
 
 echo ":: Starting backend (extensions app) on port $BACKEND_PORT..."

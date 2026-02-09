@@ -24,7 +24,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-BACKEND_PORT="${SPIFFWORKFLOW_BACKEND_PORT:-7000}"
+BACKEND_PORT="${M8FLOW_BACKEND_PORT:-7000}"
 export SPIFFWORKFLOW_BACKEND_RUN_DATA_SETUP=false
 
 # Kill any existing process on backend port so we can bind to it
@@ -39,7 +39,7 @@ fi
 
 if [[ -f "$ROOT/extensions/app.py" ]]; then
   # Run SpiffWorkflow base migrations if UPGRADE_DB is enabled
-  if [[ "${SPIFFWORKFLOW_BACKEND_UPGRADE_DB:-}" == "true" ]]; then
+  if [[ "${M8FLOW_BACKEND_UPGRADE_DB:-}" == "true" ]]; then
     echo "Running SpiffWorkflow database migrations..."
     (
       export PYTHONPATH="$ROOT:$ROOT/extensions/m8flow-backend/src:$ROOT/spiffworkflow-backend/src"
@@ -57,7 +57,7 @@ if [[ -f "$ROOT/extensions/app.py" ]]; then
       uv run python -c "
 import os
 import sqlalchemy as sa
-db_uri = os.environ.get('SPIFFWORKFLOW_BACKEND_DATABASE_URI', '')
+db_uri = os.environ.get('M8FLOW_BACKEND_DATABASE_URI', '')
 if db_uri:
     engine = sa.create_engine(db_uri)
     with engine.connect() as conn:

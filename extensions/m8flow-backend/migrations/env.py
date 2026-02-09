@@ -37,9 +37,9 @@ target_metadata = db.Model.metadata
 
 def get_url():
     """Get the database URL from environment variables."""
-    url = os.environ.get("SPIFFWORKFLOW_BACKEND_DATABASE_URI") or os.environ.get("M8FLOW_DATABASE_URI")
+    url = os.environ.get("M8FLOW_BACKEND_DATABASE_URI") or os.environ.get("M8FLOW_DATABASE_URI")
     if not url:
-        raise RuntimeError("Set SPIFFWORKFLOW_BACKEND_DATABASE_URI or M8FLOW_DATABASE_URI for Alembic.")
+        raise RuntimeError("Set M8FLOW_BACKEND_DATABASE_URI or M8FLOW_DATABASE_URI for Alembic.")
     return url
 
 

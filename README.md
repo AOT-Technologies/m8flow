@@ -83,16 +83,18 @@ Edit the `.env` file if adjustments are required for the local setup.
 
 ### Backend with m8flow extensions (tenant APIs, etc.)
 
-To run the **extensions app** (same as above but with m8flow backend: tenant login URL, tenant APIs, and DB migrations for m8flow):
+To run the **extensions app** (m8flow backend: tenant login URL, tenant APIs, and DB migrations for m8flow):
 
-1. Ensure `.env` at repo root has `SPIFFWORKFLOW_BACKEND_DATABASE_URI` (and optionally `SPIFFWORKFLOW_BACKEND_UPGRADE_DB=true` so migrations run).
+1. Ensure `.env` at repo root has `M8FLOW_BACKEND_DATABASE_URI`. Optionally set `M8FLOW_BACKEND_SW_UPGRADE_DB=true` to run SpiffWorkflow DB migrations before start.
 2. From repo root:
 
 ```bash
-./extensions/m8flow-backend/bin/setup_and_run_backend.sh
+./extensions/m8flow-backend/bin/run_m8flow_backend.sh
 ```
 
-This script: syncs backend deps (`uv sync` in spiffworkflow-backend), runs SpiffWorkflow DB migrations when `SPIFFWORKFLOW_BACKEND_UPGRADE_DB=true`, then starts the backend with the extensions app (m8flow migrations run automatically at startup). Default port is 7000 (`SPIFFWORKFLOW_BACKEND_PORT`).
+Backend runs on port **8000**. m8flow migrations run automatically at startup.
+
+**Alternative — uv-based (sync deps + optional migrations):** If you use `uv` and want to sync backend deps and run SpiffWorkflow migrations before starting, use `./extensions/m8flow-backend/bin/setup_and_run_backend.sh` instead. That script uses port 7000 (`M8FLOW_BACKEND_PORT`) and `M8FLOW_BACKEND_UPGRADE_DB=true` for migrations.
 
 To run backend and frontend together (backend in background), use `./start_dev.sh` from repo root instead.
 

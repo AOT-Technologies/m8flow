@@ -153,7 +153,7 @@ paths:
                   detail:
                     type: string
 
-  /m8flow/tenant-realms/{realm_id}:
+  /tenant-realms/{realm_id}:
     delete:
       summary: Delete a Keycloak realm and its associated tenant
       description: Removes the realm from Keycloak and the tenant record from Postgres. Requires a valid master admin token.
