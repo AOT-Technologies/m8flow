@@ -56,12 +56,20 @@ permissions:
 
 
   read-all-process-groups:
-    groups: ["tenant-admin", "editor", "viewer"]
+    groups: ["viewer"]
     actions: [read]
     uri: PG:ALL
+  manage-all-process-groups:
+    groups: ["tenant-admin", "editor"]
+    actions: [all]
+    uri: PG:ALL
   read-all-process-models:
-    groups: ["tenant-admin", "editor", "viewer", "reviewer"]
+    groups: ["viewer", "reviewer"]
     actions: [read]
+    uri: PM:ALL
+  manage-all-process-models:
+    groups: ["tenant-admin", "editor"]
+    actions: [all]
     uri: PM:ALL
   read-processes:
     groups: ["tenant-admin", "editor", "viewer", "reviewer"]
