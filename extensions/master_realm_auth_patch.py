@@ -17,17 +17,6 @@ logger = logging.getLogger(__name__)
 M8FLOW_MASTER_REALM_PATH_SUBSTRINGS = ("/m8flow/tenant-realms", "/m8flow/create-tenant")
 LOGIN_RETURN_PATH_SUBSTRING = "/login_return"
 
-# #region agent log
-def _debug_log(hypothesis_id: str, message: str, data: dict) -> None:
-    import json
-    import time
-    try:
-        with open("/Users/aot/Development/AOT/m8Flow/vinaayakh-m8flow/.cursor/debug.log", "a") as f:
-            f.write(json.dumps({"hypothesisId": hypothesis_id, "message": message, "data": data, "timestamp": int(time.time() * 1000), "sessionId": "debug-session", "runId": "run1", "location": "master_realm_auth_patch.py"}) + "\n")
-    except Exception:
-        pass
-# #endregion
-
 
 def _authentication_identifier_from_state() -> str | None:
     """On login_return, state query param contains base64-encoded dict with authentication_identifier. Return it or None."""
@@ -132,9 +121,6 @@ def apply_master_realm_auth_patch() -> None:
         header_id = request.headers.get("SpiffWorkflow-Authentication-Identifier")
         path_match = any(s in path for s in M8FLOW_MASTER_REALM_PATH_SUBSTRINGS)
         has_master_config = _has_master_auth_config()
-        # #region agent log
-        _debug_log("H1", "auth identifier resolution", {"path": path, "has_bearer": has_bearer, "cookie_id": cookie_id is not None, "header_id": header_id, "path_match": path_match, "has_master_config": has_master_config})
-        # #endregion
 
         if (
             has_bearer
@@ -143,9 +129,6 @@ def apply_master_realm_auth_patch() -> None:
             and path_match
             and has_master_config
         ):
-            # #region agent log
-            _debug_log("H2", "returning master", {"result": "master"})
-            # #endregion
             return "master"
         # Derive from token when cookie/header absent (e.g. API calls with only Bearer)
         if has_bearer and not cookie_id and not header_id:
@@ -153,9 +136,6 @@ def apply_master_realm_auth_patch() -> None:
             if derived:
                 return derived
         result = _original()
-        # #region agent log
-        _debug_log("H1", "returning original", {"result": result})
-        # #endregion
         return result
 
     authentication_controller._get_authentication_identifier_from_request = (

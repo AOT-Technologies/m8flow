@@ -69,7 +69,7 @@ if (Test-Path $envFile) {
 }
 # -----------------------------------------------------------------------------
 
-$env:M8FLOW_BACKEND_DATABASE_URI = $env:M8FLOW_BACKEND_DATABASE_URI
+$env:SPIFFWORKFLOW_BACKEND_DATABASE_URI = $env:M8FLOW_BACKEND_DATABASE_URI
 $env:SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR = $env:M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR
 
 Push-Location (Join-Path $repoRoot "spiffworkflow-backend")

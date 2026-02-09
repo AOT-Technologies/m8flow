@@ -28,7 +28,7 @@ if [[ -f ".env" ]]; then
   set +a
 fi
 
-export M8FLOW_BACKEND_DATABASE_URI="${M8FLOW_BACKEND_DATABASE_URI}"
+export SPIFFWORKFLOW_BACKEND_DATABASE_URI="${M8FLOW_BACKEND_DATABASE_URI}"
 export SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR="${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR}"
 export PYTHONPATH="$repo_root/spiffworkflow-backend:$repo_root/spiffworkflow-backend/src:$repo_root/extensions/m8flow-backend/src:${PYTHONPATH:-}"
 
