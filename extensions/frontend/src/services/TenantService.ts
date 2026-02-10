@@ -11,10 +11,10 @@ export interface Tenant {
     name: string;
     slug: string;
     status: TenantStatus;
-    createdAt: string;
-    modifiedAt: string;
     createdBy: string;
     modifiedBy: string;
+    createdAtInSeconds: number;
+    updatedAtInSeconds: number;
 }
 
 export interface UpdateTenantRequest {
