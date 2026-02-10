@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import sys
 from flask import Flask, g
-from extensions.bootstrap import bootstrap
+from extensions.bootstrap import bootstrap, ensure_m8flow_audit_timestamps
 from extensions.env_var_mapper import apply_spiff_env_mapping
 from m8flow_backend.services.asgi_tenant_context_middleware import AsgiTenantContextMiddleware
 from m8flow_backend.tenancy import begin_request_context, end_request_context, clear_tenant_context
@@ -170,6 +170,10 @@ def _assert_model_identity() -> None:
 
 # Assert identity BEFORE create_app (fail fast on import/override ordering issues)
 _assert_model_identity()
+
+# Ensure m8flow models that use AuditDateTimeMixin participate in Spiff's
+# timestamp listeners (created_at_in_seconds / updated_at_in_seconds).
+ensure_m8flow_audit_timestamps()
 
 
 # Create the Connexion app.

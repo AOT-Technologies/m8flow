@@ -3,6 +3,10 @@
 # This module is imported by extensions/app.py before creating the app.
 # Add any other extension-wide initialization code here.
 # This file is part of the M8Flow extension to SpiffWorkflow Backend.
+#
+# ensure_m8flow_audit_timestamps() is intended to be called from app.py after
+# tenant re-import and db imports (so m8flow models are loaded).
+
 
 
 def apply_extension_patches() -> None:
@@ -61,3 +65,9 @@ def bootstrap() -> None:
     apply_user_service_patch()
     apply_authorization_service_patch()
     apply_extension_patches()
+
+
+def ensure_m8flow_audit_timestamps() -> None:
+    """Ensure m8flow models that use AuditDateTimeMixin participate in Spiff's timestamp listeners."""
+    from m8flow_backend.models._timestamps_bootstrap import apply as apply_m8flow_timestamp_listeners
+    apply_m8flow_timestamp_listeners()

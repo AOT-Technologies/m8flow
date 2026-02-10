@@ -1,31 +1,15 @@
 # extensions/m8flow-backend/src/m8flow_backend/models/audit_mixin.py
 from __future__ import annotations
 
-import datetime
-
 from spiffworkflow_backend.models.db import db
 
 
-def utcnow() -> datetime.datetime:
-    return datetime.datetime.now(datetime.timezone.utc)
-
-
 class AuditDateTimeMixin:  # pylint: disable=too-few-public-methods
-    """Inherit this class to extend the model with created and modified column."""
+    """Spiff-standard audit timestamps stored as epoch seconds.
 
-    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
-    modified_at = db.Column(
-        db.DateTime(timezone=True),
-        nullable=False,
-        default=utcnow,
-        onupdate=utcnow,
-    )
+    Any model inheriting this mixin and `SpiffworkflowBaseDBModel` will have these fields
+    automatically set/updated by Spiff's SQLAlchemy listeners (see `spiffworkflow_backend.models.db`).
+    """
 
-    # Backwards-compat aliases for some .created/.modified previous usages:
-    @property
-    def created(self):
-        return self.created_at
-
-    @property
-    def modified(self):
-        return self.modified_at
+    created_at_in_seconds = db.Column(db.Integer, nullable=False)
+    updated_at_in_seconds = db.Column(db.Integer, nullable=False)
