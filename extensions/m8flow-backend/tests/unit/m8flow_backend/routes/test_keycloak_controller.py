@@ -322,3 +322,21 @@ class TestDeleteTenantRealm:
         result, status = delete_tenant_realm("tenant-a")
         assert status == 401
         assert "Invalid" in result["detail"]
+
+    @patch("m8flow_backend.routes.keycloak_controller.delete_realm")
+    @patch("m8flow_backend.routes.keycloak_controller.verify_admin_token")
+    @patch("m8flow_backend.routes.keycloak_controller.request")
+    def test_delete_tenant_realm_keycloak_failure_does_not_touch_postgres(
+        self, mock_request, mock_verify, mock_delete_realm
+    ):
+        """When Keycloak delete_realm raises, we do not delete from Postgres (inverted order)."""
+        mock_request.headers = {"Authorization": "Bearer valid-token"}
+        mock_verify.return_value = True
+        err = requests.HTTPError("502 Bad Gateway")
+        err.response = MagicMock(status_code=502, text="Bad Gateway")
+        mock_delete_realm.side_effect = err
+        with patch("m8flow_backend.routes.keycloak_controller.db") as mock_db:
+            result, status = delete_tenant_realm("tenant-a")
+        assert status == 502
+        mock_db.session.delete.assert_not_called()
+        mock_db.session.commit.assert_not_called()

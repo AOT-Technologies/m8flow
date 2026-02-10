@@ -94,16 +94,18 @@ def resolve_request_tenant() -> None:
                 status_code=400,
             )
 
-    # Validate tenant exists in DB (your tests expect this)
+    # Validate tenant exists in DB (your tests expect this).
+    # 503 can occur during app startup or misconfiguration when the DB is not yet bound.
     try:
         tenant = db.session.query(M8flowTenantModel).filter(M8flowTenantModel.id == tenant_id).one_or_none()
     except Exception as exc:
-        # If Flask-SQLAlchemy isn't bound to the current app context yet (observed in runtime logs),
-        # fail open for tenant *validation* only. Tenant context is still set for downstream scoping.
         if isinstance(exc, RuntimeError) and "not registered with this 'SQLAlchemy' instance" in str(exc):
-            tenant = object()  # sentinel: treat as "exists"
-        else:
-            raise
+            raise ApiError(
+                error_code="service_unavailable",
+                message="Tenant validation is temporarily unavailable (database not ready).",
+                status_code=503,
+            ) from exc
+        raise
     if tenant is None:
         raise ApiError(
             error_code="invalid_tenant",

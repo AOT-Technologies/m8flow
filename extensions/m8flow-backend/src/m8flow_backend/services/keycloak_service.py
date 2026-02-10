@@ -159,8 +159,12 @@ def realm_exists(realm: str) -> bool:
         # Public endpoint: no admin token required
         discovery_url = f"{base_url}/realms/{realm}/.well-known/openid-configuration"
         r = requests.get(discovery_url, timeout=30)
-        msg = f"[realm_exists] realm={realm!r} url={discovery_url} status={r.status_code}"
-        print(msg, flush=True)  # always visible regardless of logging config
+        logger.debug(
+            "realm_exists: realm=%r url=%s status=%s",
+            realm,
+            discovery_url,
+            r.status_code,
+        )
         logger.warning(
             "realm_exists: realm=%s url=%s status=%s (check KEYCLOAK_URL if realm exists in browser)",
             realm,
@@ -176,7 +180,7 @@ def realm_exists(realm: str) -> bool:
             _url = f"{keycloak_url()}/realms/{realm}/.well-known/openid-configuration"
         except Exception:
             _url = "(could not build URL)"
-        print(f"[realm_exists] realm={realm!r} url={_url} error={e!r}", flush=True)
+        logger.debug("realm_exists: realm=%r url=%s error=%r", realm, _url, e)
         logger.warning(
             "realm_exists: realm=%s discovery_url=%s error=%s",
             realm,

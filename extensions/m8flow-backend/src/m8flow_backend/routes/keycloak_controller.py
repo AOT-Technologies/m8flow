@@ -119,34 +119,50 @@ def get_tenant_login_url(tenant: str) -> tuple[dict, int]:
 
 
 def delete_tenant_realm(realm_id: str) -> tuple[dict, int]:
-    """Delete a tenant realm from Keycloak and Postgres. Requires a valid admin token."""
+    """Delete a tenant realm from Keycloak and Postgres. Requires a valid admin token.
+    Keycloak is deleted first; Postgres is updated only after Keycloak succeeds to avoid
+    inconsistent state if Keycloak fails (network, 5xx, timeout).
+    """
     auth_header = request.headers.get("Authorization")
     if not auth_header or not auth_header.startswith("Bearer "):
         return {"detail": "Authorization header with Bearer token is required"}, 401
-    
+
     admin_token = auth_header.split(" ")[1]
     if not verify_admin_token(admin_token):
         return {"detail": "Invalid or unauthorized admin token"}, 401
-    
+
     try:
-        # Path realm_id is the realm name (slug), not the UUID. Resolve tenant by slug.
+        # Delete from Keycloak first. If this raises, we do not touch Postgres.
+        delete_realm(realm_id, admin_token=admin_token)
+
+        # Only after Keycloak succeeds: remove tenant from Postgres.
         tenant = (
             db.session.query(M8flowTenantModel)
             .filter(M8flowTenantModel.slug == realm_id)
             .one_or_none()
         )
         if tenant:
-            db.session.delete(tenant)
-            db.session.commit()
-            logger.info("Deleted tenant record: id=%s slug=%s", tenant.id, realm_id)
+            try:
+                db.session.delete(tenant)
+                db.session.commit()
+                logger.info("Deleted tenant record: id=%s slug=%s", tenant.id, realm_id)
+            except Exception as pg_exc:
+                logger.exception(
+                    "Keycloak realm %s was deleted but Postgres delete failed; tenant record may need manual cleanup: %s",
+                    realm_id,
+                    pg_exc,
+                )
+                return {
+                    "message": f"Tenant realm {realm_id} was removed from Keycloak; local tenant record may need manual cleanup.",
+                }, 200
         else:
-            logger.info("Tenant record with slug %s not found in Postgres, skipping.", realm_id)
-
-        # Delete from Keycloak (realm name in path)
-        delete_realm(realm_id, admin_token=admin_token)
+            logger.info(
+                "Tenant record with slug %s not found in Postgres after Keycloak delete (already consistent).",
+                realm_id,
+            )
 
         return {"message": f"Tenant {realm_id} deleted successfully"}, 200
-        
+
     except requests.exceptions.HTTPError as e:
         status = e.response.status_code if e.response is not None else 500
         detail = (e.response.text or str(e))[:500] if e.response is not None else str(e)

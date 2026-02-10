@@ -163,6 +163,44 @@ def test_invalid_tenant_raises() -> None:
             assert exc.value.error_code == "invalid_tenant"
 
 
+def test_tenant_validation_raises_503_when_db_not_bound() -> None:
+    """When Flask-SQLAlchemy is not bound (e.g. startup/misconfiguration), raise 503 instead of failing open."""
+    from unittest.mock import patch
+
+    from spiffworkflow_backend.models.user import UserModel
+
+    app = _make_app()
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+
+        user = UserModel(
+            username="tester",
+            email="tester@example.com",
+            service="local",
+            service_id="tester",
+        )
+        db.session.add(user)
+        db.session.flush()
+        token = user.encode_auth_token({"m8flow_tenant_id": "tenant-a"})
+        db.session.commit()
+
+        runtime_error = RuntimeError(
+            "M8flowTenantModel is not registered with this 'SQLAlchemy' instance."
+        )
+        with app.test_request_context("/test", headers={"Authorization": f"Bearer {token}"}):
+            with patch(
+                "m8flow_backend.services.tenant_context_middleware.db.session.query"
+            ) as mock_query:
+                mock_query.return_value.filter.return_value.one_or_none.side_effect = (
+                    runtime_error
+                )
+                with pytest.raises(ApiError) as exc:
+                    resolve_request_tenant()
+                assert exc.value.error_code == "service_unavailable"
+                assert exc.value.status_code == 503
+
+
 def test_tenant_override_forbidden() -> None:
     from spiffworkflow_backend.models.user import UserModel
 
