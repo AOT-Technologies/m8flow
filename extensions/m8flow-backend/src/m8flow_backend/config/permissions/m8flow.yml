@@ -12,7 +12,7 @@ users:
 
 # Groups should be managed in OIDC provider or user management system and mapped to these names.
 groups:
-  # The "super-admin" group has access to everything and should be assigned to users that need full control over the system, including managing tenants.
+  # The "super-admin" group has access to tenants management only.
   "super-admin":
     users: []
   # The "tenant-admin" group has access to everything within a tenant, but does not have access to tenant management features. 
@@ -48,13 +48,11 @@ permissions:
     uri: /onboarding
 
 
-  # Super Admins have access to everything.
+  # Super Admins have access to tenants management only.
   super-admin:
     groups: ["super-admin"]
     actions: [all]
-    uri: /*
-
-
+    uri: /m8flow/tenants/*
   read-all-process-groups:
     groups: ["viewer"]
     actions: [read]
