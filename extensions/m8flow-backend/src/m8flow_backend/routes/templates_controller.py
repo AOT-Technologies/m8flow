@@ -36,10 +36,10 @@ def _serialize_template(template: TemplateModel, include_bpmn: bool = True) -> d
         ],
         "isPublished": template.is_published,
         "status": "published" if template.is_published else (template.status or "draft"),
-        "createdAt": template.created.isoformat() if template.created else None,
         "createdBy": template.created_by,
-        "updatedAt": template.modified.isoformat() if template.modified else None,
         "modifiedBy": template.modified_by,
+        "createdAtInSeconds": template.created_at_in_seconds,
+        "updatedAtInSeconds": template.updated_at_in_seconds,
     }
 
     if include_bpmn:

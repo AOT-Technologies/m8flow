@@ -31,6 +31,8 @@ MAX_ZIP_SIZE = 50 * 1024 * 1024        # 50 MB compressed
 MAX_EXTRACTED_SIZE = 200 * 1024 * 1024  # 200 MB total uncompressed
 MAX_ZIP_ENTRIES = 100
 
+UNIQUE_TEMPLATE_CONSTRAINT = "uq_template_key_version_tenant"  # keep in sync with TemplateModel __table_args__
+
 
 class TemplateService:
     """Service for CRUD, versioning, and visibility enforcement for templates."""
@@ -157,13 +159,18 @@ class TemplateService:
             db.session.add(template)
             TemplateModel.commit_with_rollback_on_exception()
             return template
-        except IntegrityError:
+        except IntegrityError as exc:
             db.session.rollback()
-            raise ApiError(
-                error_code="template_conflict",
-                message="A template with this key and version already exists for this tenant.",
-                status_code=409,
-            )
+            # Generic detection based on constraint name rather than DB-specific codes.
+            # For other integrity errors (NOT NULL, FK, etc.), let them surface normally.
+            message = str(getattr(exc, "orig", exc))
+            if UNIQUE_TEMPLATE_CONSTRAINT in message:
+                raise ApiError(
+                    error_code="template_conflict",
+                    message="A template with this key and version already exists for this tenant.",
+                    status_code=409,
+                ) from exc
+            raise
 
     @classmethod
     def list_templates(
@@ -386,7 +393,6 @@ class TemplateService:
             if files_list:
                 existing_template.files = files_list
             existing_template.modified_by = username_str
-            existing_template.modified_at = datetime.now(timezone.utc)
             TemplateModel.commit_with_rollback_on_exception()
             return existing_template
 
