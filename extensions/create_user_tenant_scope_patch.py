@@ -1,8 +1,5 @@
 # extensions/create_user_tenant_scope_patch.py
-# Multi-tenant: upstream user table has unique(username) only, so "admin" can exist once globally.
-# When a different tenant's user (e.g. admin in spiffworkflow-local4) signs in, we use a
-# tenant-scoped username (e.g. admin@spiffworkflow-local4) to avoid UniqueViolation.
-# All changes in extensions; does not modify spiffworkflow_backend.
+"""Patches UserService.create_user in spiffworkflow_backend.services.user_service."""
 
 import logging
 

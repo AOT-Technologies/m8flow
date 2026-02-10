@@ -1,12 +1,11 @@
 # extensions/auth_token_error_patch.py
-# When Keycloak token endpoint returns an error (e.g. invalid_grant, redirect_uri mismatch),
-# surface it as an ApiError instead of the generic "missing_token".
-# All changes stay in extensions; spiffworkflow_backend is not modified.
+"""Patches AuthenticationService.get_auth_token_object in spiffworkflow_backend.services.authentication_service."""
 
 from spiffworkflow_backend.exceptions.api_error import ApiError
 from spiffworkflow_backend.services.authentication_service import AuthenticationService
 
 _original_get_auth_token_object = None
+_PATCHED = False
 
 
 def _patched_get_auth_token_object(self, code, authentication_identifier, pkce_id=None):
@@ -28,6 +27,9 @@ def _patched_get_auth_token_object(self, code, authentication_identifier, pkce_i
 
 def apply_auth_token_error_patch() -> None:
     """Patch get_auth_token_object so Keycloak token errors are surfaced to the user."""
-    global _original_get_auth_token_object
+    global _original_get_auth_token_object, _PATCHED
+    if _PATCHED:
+        return
     _original_get_auth_token_object = AuthenticationService.get_auth_token_object
     AuthenticationService.get_auth_token_object = _patched_get_auth_token_object
+    _PATCHED = True

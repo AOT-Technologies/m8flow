@@ -23,8 +23,8 @@ from spiffworkflow_backend.models.db import db
 
 LOGGER = logging.getLogger(__name__)
 
-# Keycloak RealmInfoMapper adds m8flow_tenant_id and m8flow_tenant_name; prefer tenant id (stable UUID).
-TENANT_CLAIMS = ("m8flow_tenant_id", "m8flow_tenant_name", "realm_id", "realm_name", "m8f_tenant_id", "tenant_id")
+# Tenant is read only from JWT claim m8flow_tenant_id; name/realm can be derived from id if needed.
+TENANT_CLAIMS = ("m8flow_tenant_id",)
 
 def resolve_request_tenant() -> None:
     """
@@ -95,7 +95,7 @@ def resolve_request_tenant() -> None:
             )
 
     # Validate tenant exists in DB (your tests expect this).
-    # 503 can occur during app startup or misconfiguration when the DB is not yet bound.
+    # Return 503 when DB is not bound so we never proceed with unvalidated tenant id.
     try:
         tenant = db.session.query(M8flowTenantModel).filter(M8flowTenantModel.id == tenant_id).one_or_none()
     except Exception as exc:

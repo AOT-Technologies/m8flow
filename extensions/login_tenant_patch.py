@@ -1,7 +1,5 @@
 # extensions/login_tenant_patch.py
-# When /v1.0/login is called with tenant query param, verify the tenant realm exists in Keycloak,
-# ensure an auth config for that realm exists, and redirect to the tenant's Keycloak login URL.
-# Does not modify spiffworkflow_backend; only adds a before_request handler on the Flask app.
+"""Adds a before_request handler for /login and mutates SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS; does not patch a single upstream file."""
 
 import copy
 import logging

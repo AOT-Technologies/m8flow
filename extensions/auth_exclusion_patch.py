@@ -1,10 +1,10 @@
 # extensions/auth_exclusion_patch.py
-# Add M8Flow public API endpoints to the auth exclusion list so they can be called without login.
-# Does not modify spiffworkflow_backend; only patches AuthorizationService.authentication_exclusion_list.
+"""Patches AuthorizationService.authentication_exclusion_list in spiffworkflow_backend.services.authorization_service."""
 
 import logging
 
 logger = logging.getLogger(__name__)
+_PATCHED = False
 
 # Endpoints that must be callable without authentication (pre-login tenant selection, tenant login URL,
 # and bootstrap: create realm / create tenant — no tenant in token yet; Keycloak admin is server-side).
@@ -17,6 +17,9 @@ M8FLOW_AUTH_EXCLUSION_ADDITIONS = [
 
 def apply_auth_exclusion_patch() -> None:
     """Patch AuthorizationService.authentication_exclusion_list to include M8Flow public endpoints."""
+    global _PATCHED
+    if _PATCHED:
+        return
     from spiffworkflow_backend.services import authorization_service
 
     _original = authorization_service.AuthorizationService.authentication_exclusion_list
@@ -30,4 +33,5 @@ def apply_auth_exclusion_patch() -> None:
         return result
 
     authorization_service.AuthorizationService.authentication_exclusion_list = _patched_authentication_exclusion_list
+    _PATCHED = True
     logger.info("auth_exclusion_patch: added %s to authentication_exclusion_list", M8FLOW_AUTH_EXCLUSION_ADDITIONS)
