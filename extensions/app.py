@@ -241,19 +241,6 @@ _m8flow_migration(flask_app)
 if flask_app is None:
     raise RuntimeError("Could not access underlying Flask app from Connexion app")
 
-# M8Flow: allow tenant-login-url (and other public endpoints) without authentication
-try:
-    from extensions.auth_exclusion_patch import apply_auth_exclusion_patch
-    apply_auth_exclusion_patch()
-except ImportError:
-    pass
-# M8Flow: create-realm/create-tenant accept Keycloak master realm token when no auth identifier set
-try:
-    from extensions.master_realm_auth_patch import apply_master_realm_auth_patch
-    apply_master_realm_auth_patch()
-except ImportError:
-    pass
-
 # Configure SQL echo if enabled
 _configure_sql_echo(flask_app)
 

@@ -27,6 +27,18 @@ def apply_extension_patches() -> None:
         apply_create_user_tenant_scope_patch()
     except ImportError:
         pass
+    # M8Flow: allow tenant-login-url (and other public endpoints) without authentication
+    try:
+        from extensions.auth_exclusion_patch import apply_auth_exclusion_patch
+        apply_auth_exclusion_patch()
+    except ImportError:
+        pass
+    # M8Flow: create-realm/create-tenant accept Keycloak master realm token when no auth identifier set
+    try:
+        from extensions.master_realm_auth_patch import apply_master_realm_auth_patch
+        apply_master_realm_auth_patch()
+    except ImportError:
+        pass
 
 
 def bootstrap() -> None:

@@ -14,6 +14,8 @@ from m8flow_backend.services.keycloak_service import (
     tenant_login_authorization_url,
     verify_admin_token,
 )
+from sqlalchemy.exc import IntegrityError
+
 from m8flow_backend.tenancy import create_tenant_if_not_exists
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
 from spiffworkflow_backend.models.db import db
@@ -122,6 +124,10 @@ def delete_tenant_realm(realm_id: str) -> tuple[dict, int]:
     """Delete a tenant realm from Keycloak and Postgres. Requires a valid admin token.
     Keycloak is deleted first; Postgres is updated only after Keycloak succeeds to avoid
     inconsistent state if Keycloak fails (network, 5xx, timeout).
+
+    The tenant row in Postgres has FK references from tenant-scoped tables (m8f_tenant_id)
+    with ON DELETE RESTRICT. If any rows still reference this tenant, the delete returns
+    409 and the caller must remove or reassign those references first (or use soft delete).
     """
     auth_header = request.headers.get("Authorization")
     if not auth_header or not auth_header.startswith("Bearer "):
@@ -146,7 +152,18 @@ def delete_tenant_realm(realm_id: str) -> tuple[dict, int]:
                 db.session.delete(tenant)
                 db.session.commit()
                 logger.info("Deleted tenant record: id=%s slug=%s", tenant.id, realm_id)
+            except IntegrityError as pg_exc:
+                db.session.rollback()
+                logger.warning(
+                    "Cannot delete tenant %s: still referenced by other tables (m8f_tenant_id). %s",
+                    realm_id,
+                    pg_exc,
+                )
+                return {
+                    "detail": "Tenant cannot be deleted: it still has data in tenant-scoped tables. Remove or reassign those records first, or use soft delete (tenant status DELETED).",
+                }, 409
             except Exception as pg_exc:
+                db.session.rollback()
                 logger.exception(
                     "Keycloak realm %s was deleted but Postgres delete failed; tenant record may need manual cleanup: %s",
                     realm_id,

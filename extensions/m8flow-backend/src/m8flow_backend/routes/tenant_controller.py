@@ -50,6 +50,7 @@ def check_tenant_exists(identifier: str):
 @handle_api_errors
 def create_tenant(body):
     _check_admin_permission()
+    body = body or {}
 
     tenant_id = body.get('id', str(uuid.uuid4()))
     name = body.get('name')
@@ -104,7 +105,8 @@ def delete_tenant(tenant_id):
 def update_tenant(tenant_id, body):
     """Update tenant name and status. Slug cannot be updated."""
     _check_admin_permission()
-    
+    body = body or {}
+
     if 'slug' in body: 
         raise ApiError(
             error_code="slug_update_forbidden",

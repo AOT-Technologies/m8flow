@@ -1,5 +1,5 @@
 # extensions/login_tenant_patch.py
-"""Adds a before_request handler for /login and mutates SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS; does not patch a single upstream file."""
+"""Adds a before_request handler for /login and mutates SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS;"""
 
 import copy
 import logging

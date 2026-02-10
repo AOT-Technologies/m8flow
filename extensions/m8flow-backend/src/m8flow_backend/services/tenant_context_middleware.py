@@ -96,6 +96,8 @@ def resolve_request_tenant() -> None:
 
     # Validate tenant exists in DB (your tests expect this).
     # Return 503 when DB is not bound so we never proceed with unvalidated tenant id.
+    # We do NOT set g.m8flow_tenant_id when validation is skipped (fail closed) so that
+    # no downstream code can use an invalid or unresolved tenant in DB calls.
     try:
         tenant = db.session.query(M8flowTenantModel).filter(M8flowTenantModel.id == tenant_id).one_or_none()
     except Exception as exc:
