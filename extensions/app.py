@@ -165,6 +165,10 @@ def _assert_model_identity() -> None:
 # Assert identity BEFORE create_app (fail fast on import/override ordering issues)
 _assert_model_identity()
 
+# TODO: Move these patch applications into the bootstrap functions. Refactor it to be more modular and 
+# less fragile (currently relies on import order and global state). Each patch module can have its own apply() function that is called from bootstrap.
+from m8flow_backend.services.user_service_patch import apply as apply_user_service_patch
+apply_user_service_patch()
 # Ensure m8flow models that use AuditDateTimeMixin participate in Spiff's
 # timestamp listeners (created_at_in_seconds / updated_at_in_seconds).
 ensure_m8flow_audit_timestamps()
