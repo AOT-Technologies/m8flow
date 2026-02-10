@@ -35,6 +35,7 @@ class MessageStatuses(enum.Enum):
     running = "running"
     completed = "completed"
     failed = "failed"
+    cancelled = "cancelled"
 
 
 @dataclass

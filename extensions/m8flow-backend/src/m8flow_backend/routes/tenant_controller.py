@@ -6,16 +6,16 @@ from m8flow_backend.helpers.response_helper import success_response, handle_api_
 import uuid
 
 def _serialize_tenant(tenant):
-    """Serialize tenant model to camelCase dictionary."""
+    """Serialize tenant model to Spiff-standard (camelCase) dictionary."""
     return {
         "id": tenant.id,
         "name": tenant.name,
         "slug": tenant.slug,
         "status": tenant.status,
-        "createdAt": tenant.created.isoformat() if tenant.created else None,
-        "modifiedAt": tenant.modified.isoformat() if tenant.modified else None,
         "createdBy": tenant.created_by,
-        "modifiedBy": tenant.modified_by
+        "modifiedBy": tenant.modified_by,
+        "createdAtInSeconds": tenant.created_at_in_seconds,
+        "updatedAtInSeconds": tenant.updated_at_in_seconds,
     }
 
 @handle_api_errors

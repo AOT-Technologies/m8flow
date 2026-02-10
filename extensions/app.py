@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import sys
 from flask import Flask, g
-from extensions.bootstrap import bootstrap
+from extensions.bootstrap import bootstrap, ensure_m8flow_audit_timestamps
 from extensions.env_var_mapper import apply_spiff_env_mapping
 from m8flow_backend.services.asgi_tenant_context_middleware import AsgiTenantContextMiddleware
 from m8flow_backend.tenancy import begin_request_context, end_request_context, clear_tenant_context
@@ -169,6 +169,10 @@ _assert_model_identity()
 # less fragile (currently relies on import order and global state). Each patch module can have its own apply() function that is called from bootstrap.
 from m8flow_backend.services.user_service_patch import apply as apply_user_service_patch
 apply_user_service_patch()
+# Ensure m8flow models that use AuditDateTimeMixin participate in Spiff's
+# timestamp listeners (created_at_in_seconds / updated_at_in_seconds).
+ensure_m8flow_audit_timestamps()
+
 
 # Create the Connexion app.
 cnx_app = create_app()
