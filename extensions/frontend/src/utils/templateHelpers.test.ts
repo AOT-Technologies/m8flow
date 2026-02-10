@@ -2,36 +2,34 @@ import { describe, it, expect } from "vitest";
 import { normalizeTemplate, sortFilesWithPrimaryFirst } from "./templateHelpers";
 
 describe("normalizeTemplate", () => {
-  it("converts ISO date strings to epoch seconds", () => {
+  it("uses createdAtInSeconds and updatedAtInSeconds from API when present", () => {
+    const createdSec = Math.floor(new Date("2025-06-15T10:30:00.000Z").getTime() / 1000);
+    const updatedSec = Math.floor(new Date("2025-06-16T12:00:00.000Z").getTime() / 1000);
     const raw = {
       id: 1,
-      createdAt: "2025-06-15T10:30:00.000Z",
-      updatedAt: "2025-06-16T12:00:00.000Z",
+      createdAtInSeconds: createdSec,
+      updatedAtInSeconds: updatedSec,
       files: [],
     };
     const result = normalizeTemplate(raw);
-    expect(result.createdAtInSeconds).toBe(
-      Math.floor(new Date("2025-06-15T10:30:00.000Z").getTime() / 1000)
-    );
-    expect(result.updatedAtInSeconds).toBe(
-      Math.floor(new Date("2025-06-16T12:00:00.000Z").getTime() / 1000)
-    );
+    expect(result.createdAtInSeconds).toBe(createdSec);
+    expect(result.updatedAtInSeconds).toBe(updatedSec);
   });
 
-  it("defaults createdAtInSeconds to 0 when createdAt is missing", () => {
+  it("defaults createdAtInSeconds to 0 when not provided or invalid", () => {
     const raw = {
       id: 2,
-      updatedAt: "2025-06-16T12:00:00.000Z",
+      updatedAtInSeconds: 1718542800,
       files: [],
     };
     const result = normalizeTemplate(raw);
     expect(result.createdAtInSeconds).toBe(0);
   });
 
-  it("defaults updatedAtInSeconds to 0 when updatedAt is missing", () => {
+  it("defaults updatedAtInSeconds to 0 when not provided or invalid", () => {
     const raw = {
       id: 3,
-      createdAt: "2025-06-15T10:30:00.000Z",
+      createdAtInSeconds: 1718456400,
       files: [],
     };
     const result = normalizeTemplate(raw);
@@ -83,8 +81,8 @@ describe("normalizeTemplate", () => {
       createdBy: "user1",
       modifiedBy: "user2",
       files: [],
-      createdAt: "2025-01-01T00:00:00.000Z",
-      updatedAt: "2025-01-02T00:00:00.000Z",
+      createdAtInSeconds: 1735689600,
+      updatedAtInSeconds: 1735776000,
     };
     const result = normalizeTemplate(raw);
     expect(result.id).toBe(10);
@@ -100,6 +98,8 @@ describe("normalizeTemplate", () => {
     expect(result.status).toBe("draft");
     expect(result.createdBy).toBe("user1");
     expect(result.modifiedBy).toBe("user2");
+    expect(result.createdAtInSeconds).toBe(1735689600);
+    expect(result.updatedAtInSeconds).toBe(1735776000);
   });
 
   it("handles a completely empty object gracefully", () => {
@@ -110,16 +110,40 @@ describe("normalizeTemplate", () => {
     expect(result.files).toEqual([]);
   });
 
-  it("handles non-ISO date strings (resulting in NaN) as 0", () => {
+  it("defaults to 0 when createdAtInSeconds is missing or not a positive number", () => {
     const raw = {
       id: 11,
-      createdAt: "not-a-date",
       files: [],
     };
     const result = normalizeTemplate(raw);
-    // new Date("not-a-date").getTime() => NaN, Math.floor(NaN / 1000) => NaN
-    // This documents the current behavior - NaN propagates
-    expect(Number.isNaN(result.createdAtInSeconds)).toBe(true);
+    expect(result.createdAtInSeconds).toBe(0);
+    expect(result.updatedAtInSeconds).toBe(0);
+  });
+
+  it("derives createdAtInSeconds from createdAt ISO string when createdAtInSeconds not provided", () => {
+    const raw = {
+      id: 12,
+      createdAt: "2025-06-15T10:30:00.000Z",
+      updatedAt: "2025-06-16T12:00:00.000Z",
+      files: [],
+    };
+    const result = normalizeTemplate(raw);
+    expect(result.createdAtInSeconds).toBe(Math.floor(new Date("2025-06-15T10:30:00.000Z").getTime() / 1000));
+    expect(result.updatedAtInSeconds).toBe(Math.floor(new Date("2025-06-16T12:00:00.000Z").getTime() / 1000));
+  });
+
+  it("prefers createdAtInSeconds/updatedAtInSeconds over ISO strings when both present", () => {
+    const raw = {
+      id: 13,
+      createdAt: "2020-01-01T00:00:00.000Z",
+      updatedAt: "2020-01-02T00:00:00.000Z",
+      createdAtInSeconds: 1735689600,
+      updatedAtInSeconds: 1735776000,
+      files: [],
+    };
+    const result = normalizeTemplate(raw);
+    expect(result.createdAtInSeconds).toBe(1735689600);
+    expect(result.updatedAtInSeconds).toBe(1735776000);
   });
 });
 

@@ -16,19 +16,22 @@ export function sortFilesWithPrimaryFirst<T extends { name: string }>(
   });
 }
 
+function secondsFromApiOrIso(seconds: unknown, iso: unknown): number {
+  if (typeof seconds === "number" && !Number.isNaN(seconds)) return seconds;
+  if (typeof iso === "string") {
+    const ms = Date.parse(iso);
+    if (!Number.isNaN(ms)) return Math.floor(ms / 1000);
+  }
+  return 0;
+}
+
 /**
  * Normalize a raw API response object into a typed Template.
- * Converts ISO date strings to epoch seconds for Spiff-style display.
+ * Uses createdAtInSeconds/updatedAtInSeconds from API when present, else derives from createdAt/updatedAt ISO strings.
  */
 export function normalizeTemplate(raw: Record<string, unknown>): Template {
-  const created = raw.createdAt as string | undefined;
-  const updated = raw.updatedAt as string | undefined;
-  const createdAtInSeconds = created
-    ? Math.floor(new Date(created).getTime() / 1000)
-    : 0;
-  const updatedAtInSeconds = updated
-    ? Math.floor(new Date(updated).getTime() / 1000)
-    : 0;
+  const createdAtInSeconds = secondsFromApiOrIso(raw.createdAtInSeconds, raw.createdAt);
+  const updatedAtInSeconds = secondsFromApiOrIso(raw.updatedAtInSeconds, raw.updatedAt);
   return {
     ...raw,
     files: (raw.files as TemplateFile[]) ?? [],

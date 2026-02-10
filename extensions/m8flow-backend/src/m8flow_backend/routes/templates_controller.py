@@ -58,6 +58,12 @@ def template_list():
     owner = request.args.get("owner")  # created_by username
     visibility = request.args.get("visibility")  # PRIVATE, TENANT, PUBLIC
     search = request.args.get("search")  # Text search in name/description
+    template_key = request.args.get("template_key")
+    published_only = request.args.get("published_only", "false").lower() == "true"
+    sort_by = request.args.get("sort_by")  # created, name
+    order = request.args.get("order", "desc").lower()
+    if order not in ("asc", "desc"):
+        order = "desc"
 
     # Pagination params
     try:
@@ -79,6 +85,10 @@ def template_list():
         owner=owner,
         visibility=visibility,
         search=search,
+        template_key=template_key,
+        published_only=published_only,
+        sort_by=sort_by,
+        order=order,
         page=page,
         per_page=per_page,
     )
@@ -218,11 +228,15 @@ def template_update_by_id(id: int):
         
         # Get BPMN content from request body if provided
         bpmn_bytes = request.get_data() if request.get_data() else None
-        
+        bpmn_file_name = request.headers.get("X-Template-File-Name") or None
+        if bpmn_file_name:
+            bpmn_file_name = bpmn_file_name.strip() or None
+
         template = TemplateService.update_template_by_id(
             id,
             updates=updates,
             bpmn_bytes=bpmn_bytes,
+            bpmn_file_name=bpmn_file_name,
             user=user
         )
     else:

@@ -5,12 +5,16 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Select,
   Stack,
   TextField,
 } from "@mui/material";
 import { useState } from "react";
 import TemplateService from "../services/TemplateService";
-import type { CreateTemplateMetadata, Template } from "../types/template";
+import type { CreateTemplateMetadata, Template, TemplateVisibility } from "../types/template";
 import { nameToTemplateKey } from "../utils/templateKey";
 
 export interface ImportTemplateModalProps {
@@ -28,6 +32,7 @@ export default function ImportTemplateModal({
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [visibility, setVisibility] = useState<TemplateVisibility>("PRIVATE");
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -55,6 +60,7 @@ export default function ImportTemplateModal({
       const metadata: CreateTemplateMetadata = {
         template_key,
         name: trimmedName,
+        visibility,
       };
       const template = await TemplateService.importTemplate(file, metadata);
       onClose();
@@ -69,6 +75,7 @@ export default function ImportTemplateModal({
   const handleClose = () => {
     setName("");
     setFile(null);
+    setVisibility("PRIVATE");
     setError(null);
     onClose();
   };
@@ -90,6 +97,20 @@ export default function ImportTemplateModal({
             disabled={loading}
             placeholder="e.g. My Workflow"
           />
+          <FormControl fullWidth size="medium">
+            <InputLabel id="import-visibility-label">Visibility</InputLabel>
+            <Select
+              labelId="import-visibility-label"
+              label="Visibility"
+              value={visibility}
+              onChange={(e) => setVisibility(e.target.value as TemplateVisibility)}
+              disabled={loading}
+            >
+              <MenuItem value="PRIVATE">Private</MenuItem>
+              <MenuItem value="TENANT">Tenant</MenuItem>
+              <MenuItem value="PUBLIC">Public</MenuItem>
+            </Select>
+          </FormControl>
           <Button variant="outlined" component="label" disabled={loading}>
             {file ? file.name : "Choose zip file"}
             <input

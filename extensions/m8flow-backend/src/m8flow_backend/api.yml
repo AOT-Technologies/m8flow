@@ -259,6 +259,29 @@ paths:
           schema:
             type: string
           description: Search templates by name or description
+        - name: template_key
+          in: query
+          schema:
+            type: string
+          description: Filter to this template key (returns all versions if latest_only=false)
+        - name: published_only
+          in: query
+          schema:
+            type: boolean
+          description: When true, return only published templates
+        - name: sort_by
+          in: query
+          schema:
+            type: string
+            enum: [created, name]
+          description: Sort results by created date or name
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+          description: Sort order (asc or desc)
         - name: page
           in: query
           schema:

@@ -12,7 +12,7 @@ import json
 
 
 revision = "b1c2d3e4f5a6"
-down_revision = "22aaaa61d8f6"
+down_revision = "9f2d0e4c8abc"
 branch_labels = None
 depends_on = None
 

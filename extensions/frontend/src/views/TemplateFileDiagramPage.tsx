@@ -92,11 +92,15 @@ export default function TemplateFileDiagramPage() {
       if (isNaN(id)) return;
       setError(null);
       setSaveSuccess(false);
-      if (isFirstBpmn) {
+      const isBpmn = decodedFileName.toLowerCase().endsWith(".bpmn");
+      if (isBpmn) {
         HttpService.makeCallToBackend({
           path: `/v1.0/m8flow/templates/${id}`,
           httpMethod: HttpService.HttpMethods.PUT,
-          extraHeaders: { "Content-Type": "application/xml" },
+          extraHeaders: {
+            "Content-Type": "application/xml",
+            "X-Template-File-Name": decodedFileName,
+          },
           postBody: xml,
           successCallback: () => {
             setFileContent(xml);
@@ -121,7 +125,7 @@ export default function TemplateFileDiagramPage() {
           .catch((err) => setError(err instanceof Error ? err.message : "Save failed"));
       }
     },
-    [id, decodedFileName, isFirstBpmn]
+    [id, decodedFileName]
   );
 
   const onElementsChanged = useCallback(() => {

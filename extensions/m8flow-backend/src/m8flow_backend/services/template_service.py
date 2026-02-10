@@ -183,6 +183,10 @@ class TemplateService:
         owner: str | None = None,
         visibility: str | None = None,
         search: str | None = None,
+        template_key: str | None = None,
+        published_only: bool = False,
+        sort_by: str | None = None,
+        order: str = "desc",
         page: int = 1,
         per_page: int = 10,
     ) -> tuple[list[TemplateModel], dict]:
@@ -209,6 +213,12 @@ class TemplateService:
         
         if visibility:
             query = query.filter(TemplateModel.visibility == visibility)
+        
+        if template_key:
+            query = query.filter(TemplateModel.template_key == template_key)
+        
+        if published_only:
+            query = query.filter(TemplateModel.is_published.is_(True))
         
         if search:
             # Text search in name and description
@@ -247,6 +257,14 @@ class TemplateService:
                 if current is None or cls._version_key(row.version) > cls._version_key(current.version):
                     latest_per_tenant_key[key] = row
             results = list(latest_per_tenant_key.values())
+
+        # Sort: created (by created_at_in_seconds) or name (case-insensitive)
+        if sort_by in ("created", "name"):
+            reverse = order.lower() == "desc"
+            if sort_by == "created":
+                results = sorted(results, key=lambda r: getattr(r, "created_at_in_seconds", 0) or 0, reverse=reverse)
+            else:
+                results = sorted(results, key=lambda r: (r.name or "").lower(), reverse=reverse)
 
         # Paginate the final filtered results
         total = len(results)
@@ -339,6 +357,7 @@ class TemplateService:
         template_id: int,
         updates: dict[str, Any],
         bpmn_bytes: bytes | None = None,
+        bpmn_file_name: str | None = None,
         user: UserModel | None = None,
     ) -> TemplateModel:
         """Update template by ID - updates in place if not published, creates new version if published."""
@@ -361,25 +380,35 @@ class TemplateService:
         version = existing_template.version
         files_list = list(existing_template.files or [])
 
-        # Handle BPMN content update if provided (replace first bpmn or add)
+        # Handle BPMN content update if provided (replace specific file by name, or first bpmn)
         if bpmn_bytes is not None:
-            bpmn_name = "diagram.bpmn"
+            bpmn_name = bpmn_file_name or "diagram.bpmn"
             ft = "bpmn"
             if not existing_template.is_published:
-                # Replace first bpmn or add
-                for i, entry in enumerate(files_list):
-                    if entry.get("file_type") == "bpmn":
-                        bpmn_name = entry.get("file_name", bpmn_name)
-                        cls.storage.store_file(tenant, key, version, bpmn_name, ft, bpmn_bytes)
-                        break
+                if bpmn_file_name:
+                    # Update only the file with this name if it exists
+                    found = any(
+                        e.get("file_name") == bpmn_file_name and e.get("file_type") == "bpmn"
+                        for e in files_list
+                    )
+                    if found:
+                        cls.storage.store_file(tenant, key, version, bpmn_file_name, ft, bpmn_bytes)
+                    else:
+                        cls.storage.store_file(tenant, key, version, bpmn_file_name, ft, bpmn_bytes)
+                        files_list.append({"file_type": ft, "file_name": bpmn_file_name})
                 else:
-                    cls.storage.store_file(tenant, key, version, bpmn_name, ft, bpmn_bytes)
-                    files_list.append({"file_type": ft, "file_name": bpmn_name})
+                    # Replace first bpmn or add (backward compatibility)
+                    for entry in files_list:
+                        if entry.get("file_type") == "bpmn":
+                            bpmn_name = entry.get("file_name", bpmn_name)
+                            cls.storage.store_file(tenant, key, version, bpmn_name, ft, bpmn_bytes)
+                            break
+                    else:
+                        cls.storage.store_file(tenant, key, version, bpmn_name, ft, bpmn_bytes)
+                        files_list.append({"file_type": ft, "file_name": bpmn_name})
             else:
-                next_version = cls._next_version(key, tenant)
-                cls.storage.store_file(tenant, key, next_version, bpmn_name, ft, bpmn_bytes)
-                files_list = [{"file_type": ft, "file_name": bpmn_name}]
-                version = next_version
+                # Published: will create new version in the loop below; bpmn_bytes applied there by file name
+                pass
 
         allowed_fields = ["name", "description", "tags", "category", "visibility", "status"]
 
@@ -399,6 +428,7 @@ class TemplateService:
         # Published: create new version and copy files
         next_version = cls._next_version(key, tenant)
         new_files: list[dict] = []
+        replaced_first_bpmn = False  # used when bpmn_file_name is not set (backward compat)
         for entry in (existing_template.files or []):
             fname = entry.get("file_name")
             if not fname:
@@ -406,15 +436,20 @@ class TemplateService:
             try:
                 content = cls.storage.get_file(tenant, key, existing_template.version, fname)
                 if bpmn_bytes is not None and entry.get("file_type") == "bpmn":
-                    content = bpmn_bytes
+                    if bpmn_file_name and fname == bpmn_file_name:
+                        content = bpmn_bytes
+                    elif not bpmn_file_name and not replaced_first_bpmn:
+                        content = bpmn_bytes
+                        replaced_first_bpmn = True
                 ft = entry.get("file_type", file_type_from_filename(fname))
                 cls.storage.store_file(tenant, key, next_version, fname, ft, content)
                 new_files.append({"file_type": ft, "file_name": fname})
             except ApiError as e:
                 logger.warning("Failed to copy file %s for new version %s: %s", fname, next_version, e)
         if bpmn_bytes is not None and not any(e.get("file_type") == "bpmn" for e in (existing_template.files or [])):
-            cls.storage.store_file(tenant, key, next_version, "diagram.bpmn", "bpmn", bpmn_bytes)
-            new_files.append({"file_type": "bpmn", "file_name": "diagram.bpmn"})
+            add_name = bpmn_file_name or "diagram.bpmn"
+            cls.storage.store_file(tenant, key, next_version, add_name, "bpmn", bpmn_bytes)
+            new_files.append({"file_type": "bpmn", "file_name": add_name})
         if not new_files:
             raise ApiError(
                 "storage_error",
@@ -433,11 +468,13 @@ class TemplateService:
             visibility=existing_template.visibility,
             files=new_files,
             is_published=False,
-            status=existing_template.status,
+            status="draft",
             created_by=username_str,
             modified_by=username_str,
         )
         for field in allowed_fields:
+            if field == "status":
+                continue  # keep new version as draft, do not overwrite from updates
             if field in updates:
                 setattr(new_template, field, updates[field])
         try:

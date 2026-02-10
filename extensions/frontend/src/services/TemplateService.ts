@@ -50,15 +50,18 @@ function buildHeaders(metadata: CreateTemplateMetadata): Record<string, string> 
   return headers;
 }
 
+function secondsFromApiOrIso(seconds: unknown, iso: unknown): number {
+  if (typeof seconds === "number" && !Number.isNaN(seconds)) return seconds;
+  if (typeof iso === "string") {
+    const ms = Date.parse(iso);
+    if (!Number.isNaN(ms)) return Math.floor(ms / 1000);
+  }
+  return 0;
+}
+
 function parseTemplateResponse(data: Record<string, unknown>): Template {
-  const created = data.createdAt as string | undefined;
-  const updated = data.updatedAt as string | undefined;
-  const createdAtInSeconds = created
-    ? Math.floor(new Date(created).getTime() / 1000)
-    : 0;
-  const updatedAtInSeconds = updated
-    ? Math.floor(new Date(updated).getTime() / 1000)
-    : 0;
+  const createdAtInSeconds = secondsFromApiOrIso(data.createdAtInSeconds, data.createdAt);
+  const updatedAtInSeconds = secondsFromApiOrIso(data.updatedAtInSeconds, data.updatedAt);
   return {
     ...data,
     files: (data.files as TemplateFile[]) ?? [],
@@ -308,6 +311,39 @@ const TemplateService = {
     }).then((r) => {
       if (!r.ok) throw new Error("Export failed");
       return r.blob();
+    });
+  },
+
+  /**
+   * Fetch published versions of a template by template key.
+   * Uses GET /templates?template_key=...&published_only=true&latest_only=false.
+   */
+  getPublishedVersions(templateKey: string): Promise<Template[]> {
+    const query = new URLSearchParams({
+      template_key: templateKey,
+      published_only: "true",
+      latest_only: "false",
+    }).toString();
+    return new Promise((resolve, reject) => {
+      HttpService.makeCallToBackend({
+        path: `${BASE_PATH}/templates?${query}`,
+        httpMethod: "GET",
+        successCallback: (result: Record<string, unknown>) => {
+          const results = result.results as Record<string, unknown>[];
+          resolve(
+            Array.isArray(results)
+              ? results.map((r) => parseTemplateResponse(r))
+              : []
+          );
+        },
+        failureCallback: (err: unknown) => {
+          const message =
+            err && typeof err === "object" && "message" in err
+              ? String((err as { message: unknown }).message)
+              : "Failed to fetch published versions";
+          reject(new Error(message));
+        },
+      });
     });
   },
 

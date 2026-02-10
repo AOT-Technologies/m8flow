@@ -8,11 +8,10 @@ import {
   Alert,
   Typography,
   Paper,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogContentText,
-  DialogActions,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from '@mui/material';
 import ProcessBreadcrumb from '@spiffworkflow-frontend/components/ProcessBreadcrumb';
 import DateAndTimeService from '@spiffworkflow-frontend/services/DateAndTimeService';
@@ -27,12 +26,10 @@ function TemplateDetailsCard({
   template,
   onExport,
   onPublish,
-  onDelete,
 }: {
   template: Template;
   onExport: () => void;
   onPublish: () => void;
-  onDelete: () => void;
 }) {
   return (
     <Paper
@@ -76,11 +73,6 @@ function TemplateDetailsCard({
             Publish
           </Button>
         )}
-        {!template.isPublished && (
-          <Button size="small" variant="outlined" color="error" onClick={onDelete}>
-            Delete
-          </Button>
-        )}
       </Box>
       {template.description && (
         <Typography
@@ -106,7 +98,8 @@ export default function TemplateModelerPage() {
   const [error, setError] = useState<string | null>(null);
   const [publishSuccess, setPublishSuccess] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [publishedVersions, setPublishedVersions] = useState<Template[]>([]);
+  const [versionsLoading, setVersionsLoading] = useState(false);
 
   const id = templateId ? parseInt(templateId, 10) : NaN;
 
@@ -149,6 +142,18 @@ export default function TemplateModelerPage() {
     });
   }, [templateId, id]);
 
+  useEffect(() => {
+    if (!template?.templateKey) {
+      setPublishedVersions([]);
+      return;
+    }
+    setVersionsLoading(true);
+    TemplateService.getPublishedVersions(template.templateKey)
+      .then(setPublishedVersions)
+      .catch(() => setPublishedVersions([]))
+      .finally(() => setVersionsLoading(false));
+  }, [template?.templateKey]);
+
   const handlePublish = useCallback(() => {
     if (!template || isNaN(id)) return;
     setPublishSuccess(false);
@@ -166,19 +171,6 @@ export default function TemplateModelerPage() {
       },
     });
   }, [id, template]);
-
-  const handleDeleteConfirm = useCallback(() => {
-    if (isNaN(id)) return;
-    setDeleteConfirmOpen(false);
-    setError(null);
-    TemplateService.deleteTemplate(id)
-      .then(() => {
-        navigate('/templates');
-      })
-      .catch((err) => {
-        setError(err instanceof Error ? err.message : 'Failed to delete template');
-      });
-  }, [id, navigate]);
 
   const SUCCESS_ALERT_DURATION_MS = 5000;
   useEffect(() => {
@@ -225,7 +217,39 @@ export default function TemplateModelerPage() {
       <Typography variant="h5" component="h1" sx={{ mb: 1 }}>
         Template: {template.name}
       </Typography>
-      <TemplateDetailsCard template={template} onExport={handleExport} onPublish={handlePublish} onDelete={() => setDeleteConfirmOpen(true)} />
+      {publishedVersions.length > 0 && (
+        <Paper
+          elevation={0}
+          sx={{
+            p: 1.5,
+            mb: 1,
+            border: '1px solid',
+            borderColor: 'divider',
+            borderRadius: 1,
+          }}
+        >
+          <FormControl size="small" sx={{ minWidth: 220 }} disabled={versionsLoading}>
+            <InputLabel id="template-version-label">Published versions</InputLabel>
+            <Select
+              labelId="template-version-label"
+              label="Published versions"
+              value={template.id}
+              onChange={(e) => {
+                const selectedId = Number(e.target.value);
+                if (selectedId !== template.id) navigate(`/templates/${selectedId}`);
+              }}
+            >
+              {publishedVersions.map((v) => (
+                <MenuItem key={v.id} value={v.id}>
+                  {v.version}
+                  {v.id === template.id ? ' (current)' : ''}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </Paper>
+      )}
+      <TemplateDetailsCard template={template} onExport={handleExport} onPublish={handlePublish} />
       {exportError && (
         <Alert severity="error" sx={{ mb: 1 }} onClose={() => setExportError(null)}>
           {exportError}
@@ -241,25 +265,6 @@ export default function TemplateModelerPage() {
           Template published successfully.
         </Alert>
       )}
-      <Dialog
-        open={deleteConfirmOpen}
-        onClose={() => setDeleteConfirmOpen(false)}
-        aria-labelledby="delete-confirm-title"
-      >
-        <DialogTitle id="delete-confirm-title">Delete Template</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Are you sure you want to delete the template &quot;{template.name}&quot;? This action
-            cannot be undone.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteConfirmOpen(false)}>Cancel</Button>
-          <Button onClick={handleDeleteConfirm} color="error" variant="contained">
-            Delete
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   );
 }
