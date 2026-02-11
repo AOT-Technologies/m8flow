@@ -5,6 +5,26 @@ from m8flow_backend.services.tenant_service import TenantService
 from m8flow_backend.helpers.response_helper import success_response, handle_api_errors
 import uuid
 
+def _check_admin_permission() -> None:
+    """Check if user has admin permission to manage tenants."""
+    if not hasattr(g, "user") or not g.user:
+        raise ApiError(error_code="not_authenticated", message="User not authenticated", status_code=401)
+
+    # TODO: This logic may change to role-based permissions in the future. Ensure to update this accordingly.
+    has_permission = AuthorizationService.user_has_permission(
+        user=g.user,
+        permission="create",
+        target_uri="/admin/tenants"
+    )
+
+    if not has_permission:
+        raise ApiError(
+            error_code="insufficient_permissions",
+            message="User does not have sufficient permissions to manage tenants. Admin or system role required.",
+            status_code=403
+        )
+
+
 def _serialize_tenant(tenant):
     """Serialize tenant model to Spiff-standard (camelCase) dictionary."""
     return {
