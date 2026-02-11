@@ -15,4 +15,4 @@ if app.config.get("ENV", "development") != "production":
 app.register_blueprint(proxy_blueprint)
 
 if __name__ == "__main__":
-    app.run(host="localhost", port=7004)
+    app.run(host="192.168.1.89", port=7004)

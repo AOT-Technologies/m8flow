@@ -2,7 +2,7 @@
 services:
   spiffworkflow-connector:
     build:
-      context: connector-proxy-demo
+      context: .
       dockerfile: dev.Dockerfile
     user: "${RUN_AS}"
     environment:
@@ -12,5 +12,5 @@ services:
     env_file:
       - path: .env
         required: false
-    volumes:
-      - ./connector-proxy-demo:/app
+    ports:
+      - "7004:7004"
