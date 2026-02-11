@@ -75,10 +75,16 @@ except ModuleNotFoundError:
     upgrade_m8flow_db = migrate_module.upgrade_if_enabled
 
 
+# Extension patches that do not need the Flask app are applied in bootstrap.apply_extension_patches()
+apply_login_tenant_patch = None
+try:
+    from extensions.login_tenant_patch import apply_login_tenant_patch
+except ImportError:
+    pass
+
 from m8flow_backend.services.tenant_context_middleware import resolve_request_tenant
 from spiffworkflow_backend import create_app
 from spiffworkflow_backend.models.db import db
-from sqlalchemy import create_engine
 
 
 def _env_truthy(value: str | None) -> bool:
@@ -177,8 +183,13 @@ ensure_m8flow_audit_timestamps()
 # Create the Connexion app.
 cnx_app = create_app()
 
-# Register on the underlying Flask app
-flask_app = getattr(cnx_app, "app", None)
+# Add CORS for local frontend; only add headers if not already set (avoids duplicate with upstream).
+from extensions.cors_fallback_middleware import CORSFallbackMiddleware, LOCAL_CORS_ORIGINS
+cnx_app = CORSFallbackMiddleware(cnx_app, origins=LOCAL_CORS_ORIGINS)
+
+# Register on the underlying Flask app (cnx_app is CORS middleware -> .app is Connexion app -> .app is Flask app)
+_connexion_app = getattr(cnx_app, "app", None)
+flask_app = getattr(_connexion_app, "app", None)
 
 
 def _register_request_active_hooks(app: Flask) -> None:
@@ -247,6 +258,7 @@ if m8flow_templates_dir:
     logger.info(f"M8FLOW_TEMPLATES_STORAGE_DIR configured: {m8flow_templates_dir}")
 
 # Register the tenant loading function to run after auth hooks.
+# Tenant id is resolved from the JWT claim m8flow_tenant_id only in resolve_request_tenant (tenant_context_middleware.py).
 if None not in flask_app.before_request_funcs:
     flask_app.before_request_funcs[None] = []
 before_request_funcs = flask_app.before_request_funcs[None]
@@ -256,6 +268,9 @@ try:
     before_request_funcs.insert(auth_index + 1, resolve_request_tenant)
 except Exception:
     flask_app.before_request(resolve_request_tenant)
+
+if apply_login_tenant_patch is not None:
+    apply_login_tenant_patch(flask_app)
 
 
 # Wrap ASGI app so uvicorn/connexion/starlette logs can see ContextVar tenant.

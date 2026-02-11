@@ -315,7 +315,16 @@ def _tenant_scope_queries(execute_state: Any) -> None:
         # if statement shape is unexpected, fail open (don't break the query)
         pass
 
-    tenant_id = get_tenant_id()
+    # Background/scheduled jobs may run outside a request context. In that case, we either:
+    # - use a context tenant if one was set, or
+    # - fall back to DEFAULT_TENANT_ID (see _resolve_tenant_id_for_db()).
+    #
+    # If we still can't resolve (e.g. request context missing and strict mode), fail open
+    # so background processing doesn't crash the whole scheduler loop.
+    try:
+        tenant_id = _resolve_tenant_id_for_db()
+    except RuntimeError:
+        return
     execute_state.statement = execute_state.statement.options(
         with_loader_criteria(
             M8fTenantScopedMixin,
@@ -342,7 +351,8 @@ def _resolve_tenant_id_for_db() -> str:
     if allow_missing_tenant_context():
         return DEFAULT_TENANT_ID
 
-    raise RuntimeError("Missing tenant context for database session.")
+    # Background jobs have no request/context tenant; use default tenant (matches get_tenant_id()).
+    return DEFAULT_TENANT_ID
 
 
 @event.listens_for(Session, "after_begin")  # type: ignore[misc]
@@ -352,7 +362,13 @@ def _set_postgres_tenant_context(session: Session, transaction: Any, connection:
     if connection.dialect.name != "postgresql":
         return
 
-    tenant_id = _resolve_tenant_id_for_db()
+    # During early request handling (e.g. omni_auth token verification), DB access can happen
+    # before tenant resolution middleware has run. In that case we fail open (skip setting the
+    # per-transaction tenant) rather than crashing the request.
+    try:
+        tenant_id = _resolve_tenant_id_for_db()
+    except RuntimeError:
+        return
     connection.exec_driver_sql(
         "SET LOCAL app.current_tenant = %s",
         (tenant_id,),

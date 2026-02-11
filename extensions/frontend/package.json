@@ -65,8 +65,8 @@
   },
   "scripts": {
     "build": "vite build",
-    "start": "cross-env VITE_VERSION_INFO=\"{\\\"version\\\":\\\"local\\\"}\" VITE_BACKEND_BASE_URL=/v1.0 vite --host 0.0.0.0",
-    "startopen": "cross-env VITE_VERSION_INFO=\"{\\\"version\\\":\\\"local\\\"}\" vite --host 0.0.0.0",
+    "start": "cross-env VITE_VERSION_INFO=\"{\\\"version\\\":\\\"local\\\"}\" VITE_BACKEND_BASE_URL=/v1.0 VITE_MULTI_TENANT_ON=${MULTI_TENANT_ON:-false} vite --host 0.0.0.0",
+    "startopen": "cross-env VITE_VERSION_INFO=\"{\\\"version\\\":\\\"local\\\"}\" VITE_MULTI_TENANT_ON=${MULTI_TENANT_ON:-false} vite --host 0.0.0.0",
     "serve": "vite preview",
     "test": "vitest run",
     "typecheck": "./node_modules/.bin/tsc --noEmit"

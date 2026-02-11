@@ -81,6 +81,25 @@ Edit the `.env` file if adjustments are required for the local setup.
 
 ---
 
+### Backend with m8flow extensions (tenant APIs, etc.)
+
+To run the **extensions app** (m8flow backend: tenant login URL, tenant APIs, and DB migrations for m8flow):
+
+1. Ensure `.env` at repo root has `M8FLOW_BACKEND_DATABASE_URI`. Optionally set `M8FLOW_BACKEND_SW_UPGRADE_DB=true` to run SpiffWorkflow DB migrations before start.
+2. From repo root:
+
+```bash
+./extensions/m8flow-backend/bin/run_m8flow_backend.sh
+```
+
+Backend runs on port **8000**. m8flow migrations run automatically at startup.
+
+**Alternative — uv-based (sync deps + optional migrations):** If you use `uv` and want to sync backend deps and run SpiffWorkflow migrations before starting, use `./extensions/m8flow-backend/bin/setup_and_run_backend.sh` instead. That script uses port 7000 (`M8FLOW_BACKEND_PORT`) and `M8FLOW_BACKEND_UPGRADE_DB=true` for migrations.
+
+To run backend and frontend together (backend in background), use `./start_dev.sh` from repo root instead.
+
+**Mac Port Errors**: On a Mac, port 7000 (used by the backend) might be hijacked by Airplay. For those who upgraded to macOS 12.1 and are running everything locally, your AirPlay receiver may have started on Port 7000 and your server (which uses port 7000 by default) may fail due to this port already being used. You can disable this port in System Preferences > Sharing > AirPlay receiver.
+
 ## Determine Local IP Address
 
 For reliable networking between browser, Docker containers, and local services, use the machine's LAN IP address instead of `localhost`.
@@ -100,14 +119,16 @@ This IP address will be used in Keycloak configuration and when accessing fronte
 Start all required infrastructure services (databases, Keycloak, MinIO, etc.) and init containers (important for the first time):
 
 ```bash
-docker-compose --profile init -f docker/m8flow-docker-compose.yml up -d --build
+docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build
 ```
 
 If the init containers are not needed:
 
 ```bash
-docker-compose -f docker/m8flow-docker-compose.yml up -d --build
+docker compose -f docker/m8flow-docker-compose.yml up -d --build
 ```
+
+The Keycloak image is built with the **m8flow realm-info-mapper** provider, so tokens include `m8flow_tenant_id` and `m8flow_tenant_name`. No separate build of the keycloak-extensions JAR is required.
 
 To stop containers and remove associated volumes (this deletes local database data):
 
@@ -128,7 +149,7 @@ cd m8flow
 cp sample.env .env
 IP="$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')" && \
 [ -n "$IP" ] && grep -q "<LOCAL_IP>" .env && sed -i.bak "s/<LOCAL_IP>/$IP/g" .env && echo "Using IP=$IP"
-docker-compose --profile init -f docker/m8flow-docker-compose.yml up -d --build
+docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build
 
 ```
 
@@ -138,7 +159,7 @@ git clone https://github.com/AOT-Technologies/m8flow.git
 cd m8flow
 copy sample.env .env
 powershell -NoProfile -Command "$ifIndex=(Get-NetRoute '0.0.0.0/0' | sort RouteMetric,InterfaceMetric | select -First 1).IfIndex; $ip=(Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $ifIndex | ?{ $_.IPAddress -notlike '169.254*' -and $_.IPAddress -notlike '127.*' } | select -First 1 -Expand IPAddress); $c=Get-Content .env -Raw; $n=$c -replace '<LOCAL_IP>', $ip; if($n -eq $c){ throw 'No <LOCAL_IP> tokens found in .env' }; $n | Set-Content .env -Encoding UTF8; Write-Host Using IP=$ip"
-docker-compose --profile init -f docker/m8flow-docker-compose.yml up -d --build
+docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build
 
 ```
 
@@ -158,7 +179,7 @@ Click on "Keycloak master" and then on "Create a realm".
     <img src="./docs/images/keycloak-realm-settings-1.png" />
 </div>
 
-Browse or copy the content of `m8flow/extensions/m8flow-backend/keycloak/realm_exports/m8flow-rbac-realm.json` and click on "Create".
+Browse or copy the content of `extensions/m8flow-backend/keycloak/realm_exports/m8flow-rbac-realm.json` and click on "Create". For tenant-aware setup this realm includes token claims `m8flow_tenant_id` and `m8flow_tenant_name`.
 <div align="center">
     <img src="./docs/images/keycloak-realm-settings-2.png" />
 </div>

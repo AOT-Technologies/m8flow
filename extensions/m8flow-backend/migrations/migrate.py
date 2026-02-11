@@ -4,8 +4,8 @@ from alembic import command
 from alembic.config import Config
 
 def upgrade_if_enabled():
-    """Upgrade the M8Flow database if the SPIFFWORKFLOW_BACKEND_UPGRADE_DB env var is set."""
-    if os.environ.get("SPIFFWORKFLOW_BACKEND_UPGRADE_DB", "").lower() not in ("1", "true", "yes"):
+    """Upgrade the M8Flow database if the M8FLOW_BACKEND_UPGRADE_DB env var is set."""
+    if os.environ.get("M8FLOW_BACKEND_UPGRADE_DB", "").lower() not in ("1", "true", "yes"):
         return
 
     ini_path = Path(__file__).parent / "alembic.ini"

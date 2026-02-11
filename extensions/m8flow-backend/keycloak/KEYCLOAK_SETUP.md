@@ -15,6 +15,36 @@ The `start_keycloak.sh` script automatically starts a Keycloak Docker container 
   - `realm_exports/identity-realm-export.json`
   - `realm_exports/tenant-realm-export.json`
 
+## Spoke client JWT keystore (keystore.p12)
+
+For spoke-realm token/login and JWT client authentication, the backend uses a PKCS#12 keystore. Generate it **manually** from the repo root with the backend venv active:
+
+```bash
+# From repo root (default output: extensions/m8flow-backend/keystore.p12)
+python extensions/m8flow-backend/bin/generate_keystore_p12.py
+
+# Custom path and password
+python extensions/m8flow-backend/bin/generate_keystore_p12.py -o /path/to/keystore.p12 -p yourpassword
+
+# Use env for password (no prompt)
+export M8FLOW_KEYCLOAK_SPOKE_KEYSTORE_PASSWORD=yourpassword
+python extensions/m8flow-backend/bin/generate_keystore_p12.py
+```
+
+**Options:**
+
+- `-o`, `--output` — Output path (default: `extensions/m8flow-backend/keystore.p12` from cwd)
+- `-p`, `--password` — Keystore password (or set `M8FLOW_KEYCLOAK_SPOKE_KEYSTORE_PASSWORD`; otherwise you are prompted)
+- `--days` — Certificate validity in days (default: 365)
+- `--cn` — Certificate common name (default: `spiffworkflow-backend`)
+
+After generating, set in your environment (or `.env`):
+
+- `M8FLOW_KEYCLOAK_SPOKE_KEYSTORE_P12` — Path to the `.p12` file (optional if using the default path)
+- `M8FLOW_KEYCLOAK_SPOKE_KEYSTORE_PASSWORD` — Keystore password
+
+The script requires the `cryptography` package (provided by the backend venv).
+
 ## Usage
 
 ```bash
