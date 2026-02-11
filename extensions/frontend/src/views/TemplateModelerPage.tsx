@@ -1,32 +1,36 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Box, Button, Chip, CircularProgress, Alert, Typography, Paper } from '@mui/material';
+import {
+  Box,
+  Button,
+  Chip,
+  CircularProgress,
+  Alert,
+  Typography,
+  Paper,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+} from '@mui/material';
 import ProcessBreadcrumb from '@spiffworkflow-frontend/components/ProcessBreadcrumb';
-import ReactDiagramEditor from '@spiffworkflow-frontend/components/ReactDiagramEditor';
 import DateAndTimeService from '@spiffworkflow-frontend/services/DateAndTimeService';
 import HttpService from '../services/HttpService';
+import TemplateService from '../services/TemplateService';
+import TemplateFileList from '../components/TemplateFileList';
 import { Template } from '../types/template';
+import { normalizeTemplate } from '../utils/templateHelpers';
 import './TemplateModelerPage.css';
 
-const DEFAULT_FILE_NAME = 'template.bpmn';
-
-const noop = () => {};
-const DIAGRAM_EDITOR_NOOP_PROPS = {
-  onLaunchBpmnEditor: noop,
-  onLaunchDmnEditor: noop,
-  onLaunchJsonSchemaEditor: noop,
-  onLaunchMarkdownEditor: noop,
-  onLaunchScriptEditor: noop,
-  onLaunchMessageEditor: noop,
-  onSearchProcessModels: noop,
-  onDataStoresRequested: noop,
-  onDmnFilesRequested: noop,
-  onJsonSchemaFilesRequested: noop,
-  onMessagesRequested: noop,
-  onServiceTasksRequested: noop,
-};
-
-function TemplateDetailsCard({ template }: { template: Template }) {
+function TemplateDetailsCard({
+  template,
+  onExport,
+  onPublish,
+}: {
+  template: Template;
+  onExport: () => void;
+  onPublish: () => void;
+}) {
   return (
     <Paper
       elevation={0}
@@ -61,6 +65,14 @@ function TemplateDetailsCard({ template }: { template: Template }) {
         <Typography variant="caption" color="text.secondary">
           Updated: {DateAndTimeService.convertSecondsToFormattedDateTime(template.updatedAtInSeconds) ?? '—'}
         </Typography>
+        <Button size="small" variant="contained" onClick={onExport} sx={{ ml: 1 }}>
+          Export template
+        </Button>
+        {!template.isPublished && (
+          <Button size="small" variant="contained" color="primary" onClick={onPublish}>
+            Publish
+          </Button>
+        )}
       </Box>
       {template.description && (
         <Typography
@@ -73,6 +85,7 @@ function TemplateDetailsCard({ template }: { template: Template }) {
             : template.description}
         </Typography>
       )}
+      <TemplateFileList template={template} templateId={template.id} />
     </Paper>
   );
 }
@@ -81,15 +94,29 @@ export default function TemplateModelerPage() {
   const { templateId } = useParams<{ templateId: string }>();
   const navigate = useNavigate();
   const [template, setTemplate] = useState<Template | null>(null);
-  const [bpmnXml, setBpmnXml] = useState<string | null>(null);
-  const [diagramHasChanges, setDiagramHasChanges] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [saveSuccess, setSaveSuccess] = useState(false);
   const [publishSuccess, setPublishSuccess] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [publishedVersions, setPublishedVersions] = useState<Template[]>([]);
+  const [versionsLoading, setVersionsLoading] = useState(false);
 
   const id = templateId ? parseInt(templateId, 10) : NaN;
-  const fileName = DEFAULT_FILE_NAME;
+
+  const handleExport = useCallback(() => {
+    if (isNaN(id)) return;
+    setExportError(null);
+    TemplateService.exportTemplate(id)
+      .then((blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `template-${template?.templateKey ?? id}-${template?.version ?? 'export'}.zip`;
+        a.click();
+        URL.revokeObjectURL(url);
+      })
+      .catch((err) => setExportError(err instanceof Error ? err.message : 'Export failed'));
+  }, [id, template?.templateKey, template?.version]);
 
   useEffect(() => {
     if (!templateId || isNaN(id)) {
@@ -100,32 +127,13 @@ export default function TemplateModelerPage() {
 
     setLoading(true);
     setError(null);
-    setBpmnXml(null);
 
     HttpService.makeCallToBackend({
       path: `/v1.0/m8flow/templates/${id}`,
       httpMethod: HttpService.HttpMethods.GET,
-      successCallback: (result: Template) => {
-        setTemplate(result);
-        const content = result.bpmnContent ?? null;
-        const hasContent = typeof content === 'string' && content.trim().length > 0;
-        if (hasContent) {
-          setBpmnXml(content);
-          setLoading(false);
-        } else {
-          // Fallback: fetch raw BPMN from dedicated endpoint (e.g. if get response omits bpmnContent)
-          HttpService.fetchTextFromBackend(
-            `/v1.0/m8flow/templates/${id}/bpmn`,
-            (xml) => {
-              setBpmnXml(xml && xml.trim() ? xml : null);
-              setLoading(false);
-            },
-            () => {
-              setBpmnXml(null);
-              setLoading(false);
-            },
-          );
-        }
+      successCallback: (result: Record<string, unknown>) => {
+        setTemplate(normalizeTemplate(result));
+        setLoading(false);
       },
       failureCallback: (err: any) => {
         setError(err?.message ?? 'Failed to load template');
@@ -134,34 +142,17 @@ export default function TemplateModelerPage() {
     });
   }, [templateId, id]);
 
-  const saveDiagram = useCallback(
-    (xml: string) => {
-      if (!template || isNaN(id)) return;
-
-      setSaveSuccess(false);
-
-      HttpService.makeCallToBackend({
-        path: `/v1.0/m8flow/templates/${id}`,
-        httpMethod: HttpService.HttpMethods.PUT,
-        extraHeaders: { 'Content-Type': 'application/xml' },
-        postBody: xml,
-        successCallback: (result: Template) => {
-          setTemplate(result);
-          setBpmnXml(result.bpmnContent ?? xml);
-          setDiagramHasChanges(false);
-          setSaveSuccess(true);
-        },
-        failureCallback: (err: any) => {
-          setError(err?.message ?? 'Failed to save template');
-        },
-      });
-    },
-    [id, template],
-  );
-
-  const onElementsChanged = useCallback(() => {
-    setDiagramHasChanges(true);
-  }, []);
+  useEffect(() => {
+    if (!template?.templateKey) {
+      setPublishedVersions([]);
+      return;
+    }
+    setVersionsLoading(true);
+    TemplateService.getPublishedVersions(template.templateKey)
+      .then(setPublishedVersions)
+      .catch(() => setPublishedVersions([]))
+      .finally(() => setVersionsLoading(false));
+  }, [template?.templateKey]);
 
   const handlePublish = useCallback(() => {
     if (!template || isNaN(id)) return;
@@ -171,8 +162,8 @@ export default function TemplateModelerPage() {
       path: `/v1.0/m8flow/templates/${id}`,
       httpMethod: HttpService.HttpMethods.PUT,
       postBody: { is_published: true },
-      successCallback: (result: Template) => {
-        setTemplate(result);
+      successCallback: (result: Record<string, unknown>) => {
+        setTemplate(normalizeTemplate(result));
         setPublishSuccess(true);
       },
       failureCallback: (err: any) => {
@@ -183,13 +174,10 @@ export default function TemplateModelerPage() {
 
   const SUCCESS_ALERT_DURATION_MS = 5000;
   useEffect(() => {
-    if (!saveSuccess && !publishSuccess) return;
-    const timer = window.setTimeout(() => {
-      setSaveSuccess(false);
-      setPublishSuccess(false);
-    }, SUCCESS_ALERT_DURATION_MS);
+    if (!publishSuccess) return;
+    const timer = window.setTimeout(() => setPublishSuccess(false), SUCCESS_ALERT_DURATION_MS);
     return () => window.clearTimeout(timer);
-  }, [saveSuccess, publishSuccess]);
+  }, [publishSuccess]);
 
   if (loading && !template) {
     return (
@@ -216,112 +204,67 @@ export default function TemplateModelerPage() {
     return null;
   }
 
-  const hasBpmn = typeof bpmnXml === 'string' && bpmnXml.trim().length > 0;
-  if (!hasBpmn) {
-    return (
-      <Box sx={{ p: 3 }}>
-        <Alert severity="warning">
-          This template has no BPMN content to display.
-        </Alert>
-        <Button onClick={() => navigate('/templates')} sx={{ mt: 2 }}>
-          Back to Templates
-        </Button>
-      </Box>
-    );
-  }
-
   const hotCrumbs: [string, string?][] = [
     ['Templates', '/templates'],
     [template.name],
-    [fileName],
   ];
 
   return (
-    <Box
-      sx={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
-        minHeight: '60vh',
-        overflow: 'hidden',
-        px: 2,
-        pl: 3,
-      }}
-    >
-      {/* Row 1: Breadcrumb only */}
+    <Box sx={{ px: 2, pl: 3, pb: 3 }}>
       <Box sx={{ mb: 1 }}>
         <ProcessBreadcrumb hotCrumbs={hotCrumbs} />
       </Box>
-
-      {/* Row 2: Template details below breadcrumb, above button row */}
-      <TemplateDetailsCard template={template} />
-
+      <Typography variant="h5" component="h1" sx={{ mb: 1 }}>
+        Template: {template.name}
+      </Typography>
+      {publishedVersions.length > 0 && (
+        <Paper
+          elevation={0}
+          sx={{
+            p: 1.5,
+            mb: 1,
+            border: '1px solid',
+            borderColor: 'divider',
+            borderRadius: 1,
+          }}
+        >
+          <FormControl size="small" sx={{ minWidth: 220 }} disabled={versionsLoading}>
+            <InputLabel id="template-version-label">Published versions</InputLabel>
+            <Select
+              labelId="template-version-label"
+              label="Published versions"
+              value={template.id}
+              onChange={(e) => {
+                const selectedId = Number(e.target.value);
+                if (selectedId !== template.id) navigate(`/templates/${selectedId}`);
+              }}
+            >
+              {publishedVersions.map((v) => (
+                <MenuItem key={v.id} value={v.id}>
+                  {v.version}
+                  {v.id === template.id ? ' (current)' : ''}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </Paper>
+      )}
+      <TemplateDetailsCard template={template} onExport={handleExport} onPublish={handlePublish} />
+      {exportError && (
+        <Alert severity="error" sx={{ mb: 1 }} onClose={() => setExportError(null)}>
+          {exportError}
+        </Alert>
+      )}
       {error && (
         <Alert severity="error" sx={{ mb: 1 }} onClose={() => setError(null)}>
           {error}
         </Alert>
       )}
-
-      {saveSuccess && (
-        <Alert severity="success" sx={{ mb: 1 }} onClose={() => setSaveSuccess(false)}>
-          Template saved successfully.
-        </Alert>
-      )}
-
       {publishSuccess && (
         <Alert severity="success" sx={{ mb: 1 }} onClose={() => setPublishSuccess(false)}>
           Template published successfully.
         </Alert>
       )}
-
-      <Box
-        sx={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          minHeight: 0,
-          pl: 2,
-        }}
-      >
-        <Box
-          sx={{
-            display: 'flex',
-            flexDirection: 'row',
-            alignItems: 'flex-start',
-            gap: 2,
-            flexShrink: 0,
-          }}
-        >
-          <Box className="template-modeler-editor-wrap" sx={{ flexShrink: 0 }}>
-            <ReactDiagramEditor
-              key={`template-modeler-${id}`}
-              diagramType="bpmn"
-              diagramXML={bpmnXml}
-              processModelId={`template-${id}`}
-              fileName={fileName}
-              disableSaveButton={!diagramHasChanges}
-              saveDiagram={saveDiagram}
-              onElementsChanged={onElementsChanged}
-              {...DIAGRAM_EDITOR_NOOP_PROPS}
-            />
-          </Box>
-          {!template.isPublished && (
-            <Box sx={{ mt: 2 }}>
-              <Button size="small" variant="contained" color="primary" onClick={handlePublish}>
-                Publish
-              </Button>
-            </Box>
-          )}
-        </Box>
-        <div
-          id="diagram-container"
-          style={{
-            flex: 1,
-            minHeight: 400,
-            position: 'relative',
-          }}
-        />
-      </Box>
     </Box>
   );
 }

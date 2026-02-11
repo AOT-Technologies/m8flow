@@ -34,13 +34,51 @@ import spiffworkflow_backend.load_database_models  # noqa: F401,E402
 class MockTemplateStorageService:
     """Mock storage service for testing without file system dependencies."""
 
-    def store_bpmn(self, template_key: str, version: str, bpmn_bytes: bytes, tenant_id: str) -> str:
-        """Return a mock filename."""
-        return f"{template_key}.bpmn"
+    def store_file(
+        self,
+        tenant_id: str,
+        template_key: str,
+        version: str,
+        file_name: str,
+        file_type: str,
+        content: bytes,
+    ) -> None:
+        pass
 
-    def get_bpmn(self, filename: str, tenant_id: str) -> bytes:
-        """Return mock BPMN content."""
+    def get_file(
+        self,
+        tenant_id: str,
+        template_key: str,
+        version: str,
+        file_name: str,
+    ) -> bytes:
         return b"<bpmn>mock content</bpmn>"
+
+    def list_files(
+        self,
+        tenant_id: str,
+        template_key: str,
+        version: str,
+    ) -> list:
+        return [{"file_name": "test.bpmn", "file_type": "bpmn"}]
+
+    def delete_file(
+        self,
+        tenant_id: str,
+        template_key: str,
+        version: str,
+        file_name: str,
+    ) -> None:
+        pass
+
+    def stream_zip(
+        self,
+        tenant_id: str,
+        template_key: str,
+        version: str,
+        file_entries: list,
+    ) -> bytes:
+        return b"PK\x03\x04"  # minimal zip bytes
 
 
 # ============================================================================
@@ -93,7 +131,7 @@ def test_next_version_increments_patch() -> None:
             version="V1",
             name="Test Template",
             m8f_tenant_id="tenant-a",
-            bpmn_object_key="test.bpmn",
+            files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
             created_by="tester",
             modified_by="tester",
         )
@@ -110,7 +148,7 @@ def test_next_version_increments_patch() -> None:
             version=next_version,
             name="Test Template",
             m8f_tenant_id="tenant-a",
-            bpmn_object_key="test.bpmn",
+            files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
             created_by="tester",
             modified_by="tester",
         )
@@ -143,7 +181,7 @@ def test_next_version_handles_non_numeric() -> None:
             version="V1-alpha",
             name="Test Template",
             m8f_tenant_id="tenant-a",
-            bpmn_object_key="test.bpmn",
+            files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
             created_by="tester",
             modified_by="tester",
         )
@@ -177,7 +215,7 @@ def test_next_version_tenant_scoped() -> None:
             version="V1",
             name="Shared Template",
             m8f_tenant_id="tenant-a",
-            bpmn_object_key="test.bpmn",
+            files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
             created_by="tester",
             modified_by="tester",
         )
@@ -243,7 +281,8 @@ def test_create_template_with_bpmn_bytes() -> None:
                 assert template.visibility == TemplateVisibility.private.value
                 assert template.m8f_tenant_id == "tenant-a"
                 assert template.version == "V1"
-                assert template.bpmn_object_key == "test-template.bpmn"
+                assert template.files and len(template.files) == 1
+                assert template.files[0]["file_name"] == "diagram.bpmn"
                 assert template.created_by == "tester"
                 assert template.modified_by == "tester"
 
@@ -565,7 +604,7 @@ def test_list_templates_latest_only() -> None:
                 version="V1",
                 name="Test",
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 created_by="tester",
                 modified_by="tester",
             )
@@ -574,7 +613,7 @@ def test_list_templates_latest_only() -> None:
                 version="V2",
                 name="Test",
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 created_by="tester",
                 modified_by="tester",
             )
@@ -583,14 +622,14 @@ def test_list_templates_latest_only() -> None:
                 version="V3",
                 name="Test",
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 created_by="tester",
                 modified_by="tester",
             )
             db.session.add_all([template1, template2, template3])
             db.session.commit()
 
-            results = TemplateService.list_templates(user=user, tenant_id="tenant-a", latest_only=True)
+            results, pagination = TemplateService.list_templates(user=user, tenant_id="tenant-a", latest_only=True)
             assert len(results) == 1
             assert results[0].version == "V3"
 
@@ -619,7 +658,7 @@ def test_list_templates_all_versions() -> None:
                 version="V1",
                 name="Test",
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 created_by="tester",
                 modified_by="tester",
             )
@@ -628,14 +667,14 @@ def test_list_templates_all_versions() -> None:
                 version="V2",
                 name="Test",
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 created_by="tester",
                 modified_by="tester",
             )
             db.session.add_all([template1, template2])
             db.session.commit()
 
-            results = TemplateService.list_templates(user=user, tenant_id="tenant-a", latest_only=False)
+            results, pagination = TemplateService.list_templates(user=user, tenant_id="tenant-a", latest_only=False)
             assert len(results) == 2
 
 
@@ -663,7 +702,7 @@ def test_list_templates_filter_by_category() -> None:
                 name="Category 1",
                 category="category1",
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 created_by="tester",
                 modified_by="tester",
             )
@@ -673,14 +712,14 @@ def test_list_templates_filter_by_category() -> None:
                 name="Category 2",
                 category="category2",
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 created_by="tester",
                 modified_by="tester",
             )
             db.session.add_all([template1, template2])
             db.session.commit()
 
-            results = TemplateService.list_templates(user=user, tenant_id="tenant-a", category="category1")
+            results, pagination = TemplateService.list_templates(user=user, tenant_id="tenant-a", category="category1")
             assert len(results) == 1
             assert results[0].category == "category1"
 
@@ -709,7 +748,7 @@ def test_list_templates_filter_by_tag() -> None:
                 name="Tag 1",
                 tags=["tag1", "tag2"],
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 created_by="tester",
                 modified_by="tester",
             )
@@ -719,14 +758,14 @@ def test_list_templates_filter_by_tag() -> None:
                 name="Tag 3",
                 tags=["tag3"],
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 created_by="tester",
                 modified_by="tester",
             )
             db.session.add_all([template1, template2])
             db.session.commit()
 
-            results = TemplateService.list_templates(user=user, tenant_id="tenant-a", tag="tag1")
+            results, pagination = TemplateService.list_templates(user=user, tenant_id="tenant-a", tag="tag1")
             assert len(results) == 1
             assert "tag1" in results[0].tags
 
@@ -755,7 +794,7 @@ def test_list_templates_filter_by_owner() -> None:
                 version="V1",
                 name="Owner 1",
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 created_by="owner1",
                 modified_by="owner1",
             )
@@ -764,14 +803,14 @@ def test_list_templates_filter_by_owner() -> None:
                 version="V1",
                 name="Owner 2",
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 created_by="owner2",
                 modified_by="owner2",
             )
             db.session.add_all([template1, template2])
             db.session.commit()
 
-            results = TemplateService.list_templates(user=user1, tenant_id="tenant-a", owner="owner1")
+            results, pagination = TemplateService.list_templates(user=user1, tenant_id="tenant-a", owner="owner1")
             assert len(results) == 1
             assert results[0].created_by == "owner1"
 
@@ -800,7 +839,7 @@ def test_list_templates_filter_by_visibility() -> None:
                 name="Public",
                 visibility=TemplateVisibility.public.value,
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 created_by="tester",
                 modified_by="tester",
             )
@@ -810,14 +849,14 @@ def test_list_templates_filter_by_visibility() -> None:
                 name="Private",
                 visibility=TemplateVisibility.private.value,
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 created_by="tester",
                 modified_by="tester",
             )
             db.session.add_all([template1, template2])
             db.session.commit()
 
-            results = TemplateService.list_templates(
+            results, pagination = TemplateService.list_templates(
                 user=user, tenant_id="tenant-a", visibility=TemplateVisibility.public.value
             )
             assert len(results) == 1
@@ -848,7 +887,7 @@ def test_list_templates_search() -> None:
                 name="Searchable Template",
                 description="This is searchable",
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 created_by="tester",
                 modified_by="tester",
             )
@@ -858,14 +897,14 @@ def test_list_templates_search() -> None:
                 name="Other Template",
                 description="Unrelated content",
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 created_by="tester",
                 modified_by="tester",
             )
             db.session.add_all([template1, template2])
             db.session.commit()
 
-            results = TemplateService.list_templates(user=user, tenant_id="tenant-a", search="searchable")
+            results, pagination = TemplateService.list_templates(user=user, tenant_id="tenant-a", search="searchable")
             assert len(results) == 1
             assert "searchable" in results[0].name.lower() or "searchable" in results[0].description.lower()
 
@@ -894,7 +933,7 @@ def test_list_templates_tenant_isolation() -> None:
                 version="V1",
                 name="Tenant A Template",
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 created_by="tester",
                 modified_by="tester",
             )
@@ -909,7 +948,7 @@ def test_list_templates_tenant_isolation() -> None:
                 version="V1",
                 name="Tenant B Template",
                 m8f_tenant_id="tenant-b",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 created_by="tester",
                 modified_by="tester",
             )
@@ -918,7 +957,7 @@ def test_list_templates_tenant_isolation() -> None:
 
         with app.test_request_context("/"):
             g.m8flow_tenant_id = "tenant-a"
-            results = TemplateService.list_templates(user=user, tenant_id="tenant-a")
+            results, pagination = TemplateService.list_templates(user=user, tenant_id="tenant-a")
             assert len(results) == 1
             assert results[0].m8f_tenant_id == "tenant-a"
 
@@ -951,7 +990,7 @@ def test_get_template_by_key_and_version() -> None:
                 version="V2",
                 name="Test",
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 created_by="tester",
                 modified_by="tester",
             )
@@ -988,7 +1027,7 @@ def test_get_template_latest() -> None:
                 version="V1",
                 name="Test",
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 created_by="tester",
                 modified_by="tester",
             )
@@ -997,7 +1036,7 @@ def test_get_template_latest() -> None:
                 version="V3",
                 name="Test",
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 created_by="tester",
                 modified_by="tester",
             )
@@ -1006,7 +1045,7 @@ def test_get_template_latest() -> None:
                 version="V2",
                 name="Test",
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 created_by="tester",
                 modified_by="tester",
             )
@@ -1068,7 +1107,7 @@ def test_get_template_tenant_isolation() -> None:
                 version="V1",
                 name="Tenant A",
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 created_by="tester",
                 modified_by="tester",
             )
@@ -1083,7 +1122,7 @@ def test_get_template_tenant_isolation() -> None:
                 version="V1",
                 name="Tenant B",
                 m8f_tenant_id="tenant-b",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 created_by="tester",
                 modified_by="tester",
             )
@@ -1127,7 +1166,7 @@ def test_get_template_by_id() -> None:
                 name="Test",
                 visibility=TemplateVisibility.public.value,
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 created_by="tester",
                 modified_by="tester",
             )
@@ -1165,7 +1204,7 @@ def test_get_template_by_id_visibility_check() -> None:
                 name="Private Template",
                 visibility=TemplateVisibility.private.value,
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 created_by="owner",
                 modified_by="owner",
             )
@@ -1206,7 +1245,7 @@ def test_get_template_suppress_visibility() -> None:
                 name="Test",
                 visibility=TemplateVisibility.private.value,
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 created_by="tester",
                 modified_by="tester",
             )
@@ -1253,7 +1292,7 @@ def test_update_template_by_key_version() -> None:
                 name="Original Name",
                 description="Original Description",
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 is_published=False,
                 created_by="tester",
                 modified_by="tester",
@@ -1292,7 +1331,7 @@ def test_update_template_published_immutable() -> None:
                 version="V1",
                 name="Published Template",
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 is_published=True,
                 created_by="tester",
                 modified_by="tester",
@@ -1333,7 +1372,7 @@ def test_update_template_unauthorized() -> None:
                 version="V1",
                 name="Test",
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 is_published=False,
                 visibility=TemplateVisibility.public.value,
                 created_by="owner",
@@ -1402,7 +1441,7 @@ def test_update_template_by_id_unpublished() -> None:
                 version="V1",
                 name="Original",
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 is_published=False,
                 created_by="tester",
                 modified_by="tester",
@@ -1443,7 +1482,7 @@ def test_update_template_by_id_publish_sets_status() -> None:
                 version="V1",
                 name="Draft Template",
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 is_published=False,
                 status="draft",
                 created_by="tester",
@@ -1485,7 +1524,7 @@ def test_update_template_by_id_published_creates_new_version() -> None:
                 version="V1",
                 name="Published",
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 is_published=True,
                 created_by="tester",
                 modified_by="tester",
@@ -1495,7 +1534,8 @@ def test_update_template_by_id_published_creates_new_version() -> None:
             template_id = template.id
 
             updates = {"name": "New Version"}
-            updated = TemplateService.update_template_by_id(template_id, updates, user=user)
+            with patch.object(TemplateService, "storage", MockTemplateStorageService()):
+                updated = TemplateService.update_template_by_id(template_id, updates, user=user)
 
             assert updated.id != template_id  # New record
             assert updated.name == "New Version"
@@ -1527,7 +1567,7 @@ def test_update_template_with_bpmn_bytes() -> None:
                 version="V1",
                 name="Test",
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="old.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "old.bpmn"}],
                 is_published=False,
                 created_by="tester",
                 modified_by="tester",
@@ -1540,7 +1580,8 @@ def test_update_template_with_bpmn_bytes() -> None:
                 new_bpmn = b"<bpmn>new content</bpmn>"
                 updated = TemplateService.update_template_by_id(template_id, {}, bpmn_bytes=new_bpmn, user=user)
 
-                assert updated.bpmn_object_key == "bpmn-update.bpmn"
+                assert updated.files and len(updated.files) >= 1
+                assert any(e.get("file_type") == "bpmn" for e in updated.files)
 
 
 def test_update_template_allowed_fields() -> None:
@@ -1572,7 +1613,7 @@ def test_update_template_allowed_fields() -> None:
                 visibility=TemplateVisibility.private.value,
                 status="draft",
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 is_published=False,
                 created_by="tester",
                 modified_by="tester",
@@ -1627,7 +1668,7 @@ def test_delete_template_by_id() -> None:
                 version="V1",
                 name="To Delete",
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 is_published=False,
                 created_by="tester",
                 modified_by="tester",
@@ -1655,7 +1696,7 @@ def test_delete_template_by_id() -> None:
                 is None
             )
 
-            results = TemplateService.list_templates(user=user, tenant_id="tenant-a", latest_only=False)
+            results, pagination = TemplateService.list_templates(user=user, tenant_id="tenant-a", latest_only=False)
             assert all(t.id != template_id for t in results)
 
 
@@ -1684,7 +1725,7 @@ def test_soft_deleted_templates_are_excluded_from_queries() -> None:
                 version="V1",
                 name="Active",
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 is_published=False,
                 created_by="tester",
                 modified_by="tester",
@@ -1694,7 +1735,7 @@ def test_soft_deleted_templates_are_excluded_from_queries() -> None:
                 version="V1",
                 name="Deleted",
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 is_published=False,
                 is_deleted=True,
                 created_by="tester",
@@ -1704,7 +1745,7 @@ def test_soft_deleted_templates_are_excluded_from_queries() -> None:
             db.session.commit()
 
             # list_templates should only return the active template
-            results = TemplateService.list_templates(user=user, tenant_id="tenant-a", latest_only=False)
+            results, pagination = TemplateService.list_templates(user=user, tenant_id="tenant-a", latest_only=False)
             keys = {t.template_key for t in results}
             assert "active-template" in keys
             assert "deleted-template" not in keys
@@ -1748,7 +1789,7 @@ def test_delete_template_published_immutable() -> None:
                 version="V1",
                 name="Published",
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 is_published=True,
                 created_by="tester",
                 modified_by="tester",
@@ -1790,7 +1831,7 @@ def test_delete_template_unauthorized() -> None:
                 version="V1",
                 name="Test",
                 m8f_tenant_id="tenant-a",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 is_published=False,
                 visibility=TemplateVisibility.public.value,
                 created_by="owner",
@@ -1886,13 +1927,13 @@ def test_template_tenant_isolation_across_tenants() -> None:
         # Verify isolation
         with app.test_request_context("/"):
             g.m8flow_tenant_id = "tenant-a"
-            results_a = TemplateService.list_templates(user=user, tenant_id="tenant-a")
+            results_a, _ = TemplateService.list_templates(user=user, tenant_id="tenant-a")
             assert len(results_a) == 1
             assert results_a[0].m8f_tenant_id == "tenant-a"
 
         with app.test_request_context("/"):
             g.m8flow_tenant_id = "tenant-b"
-            results_b = TemplateService.list_templates(user=user, tenant_id="tenant-b")
+            results_b, _ = TemplateService.list_templates(user=user, tenant_id="tenant-b")
             assert len(results_b) == 1
             assert results_b[0].m8f_tenant_id == "tenant-b"
 
@@ -2039,10 +2080,1236 @@ def test_template_tags_json_handling() -> None:
                 assert isinstance(template.tags, list)
 
                 # Test filtering by tag
-                results = TemplateService.list_templates(user=user, tenant_id="tenant-a", tag="tag1")
+                results, _ = TemplateService.list_templates(user=user, tenant_id="tenant-a", tag="tag1")
                 assert len(results) == 1
                 assert "tag1" in results[0].tags
 
                 # Test filtering by multiple tags
-                results = TemplateService.list_templates(user=user, tenant_id="tenant-a", tag="tag1,tag2")
+                results, _ = TemplateService.list_templates(user=user, tenant_id="tenant-a", tag="tag1,tag2")
                 assert len(results) == 1
+
+
+# ============================================================================
+# Create Template with Multiple Files Tests
+# ============================================================================
+
+
+def test_create_template_with_multiple_files() -> None:
+    """Create template with BPMN + JSON files."""
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = user
+
+            with patch.object(TemplateService, "storage", MockTemplateStorageService()):
+                files = [
+                    ("diagram.bpmn", b"<bpmn>content</bpmn>"),
+                    ("form.json", b'{"field": "value"}'),
+                ]
+                metadata = {
+                    "template_key": "multi-file",
+                    "name": "Multi-File Template",
+                }
+                template = TemplateService.create_template_with_files(
+                    metadata=metadata,
+                    files=files,
+                    user=user,
+                    tenant_id="tenant-a",
+                )
+
+                assert template.template_key == "multi-file"
+                assert len(template.files) == 2
+                file_names = [f["file_name"] for f in template.files]
+                assert "diagram.bpmn" in file_names
+                assert "form.json" in file_names
+                file_types = {f["file_name"]: f["file_type"] for f in template.files}
+                assert file_types["diagram.bpmn"] == "bpmn"
+                assert file_types["form.json"] == "json"
+
+
+def test_create_template_with_files_requires_bpmn() -> None:
+    """Should raise ApiError when no BPMN file is included."""
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = user
+
+            with patch.object(TemplateService, "storage", MockTemplateStorageService()):
+                files = [
+                    ("form.json", b'{"field": "value"}'),
+                    ("readme.md", b"# Readme"),
+                ]
+                metadata = {
+                    "template_key": "no-bpmn",
+                    "name": "No BPMN Template",
+                }
+                try:
+                    TemplateService.create_template_with_files(
+                        metadata=metadata,
+                        files=files,
+                        user=user,
+                        tenant_id="tenant-a",
+                    )
+                    assert False, "Should have raised ApiError"
+                except ApiError as e:
+                    assert e.error_code == "missing_fields"
+                    assert e.status_code == 400
+
+
+def test_create_template_with_files_requires_user() -> None:
+    """Should raise ApiError when user is None."""
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+
+            try:
+                TemplateService.create_template_with_files(
+                    metadata={"template_key": "test", "name": "Test"},
+                    files=[("diagram.bpmn", b"<bpmn/>")],
+                    user=None,
+                    tenant_id="tenant-a",
+                )
+                assert False, "Should have raised ApiError"
+            except ApiError as e:
+                assert e.error_code == "unauthorized"
+
+
+def test_create_template_with_files_requires_metadata() -> None:
+    """Should raise ApiError when metadata is missing."""
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = user
+
+            try:
+                TemplateService.create_template_with_files(
+                    metadata=None,
+                    files=[("diagram.bpmn", b"<bpmn/>")],
+                    user=user,
+                    tenant_id="tenant-a",
+                )
+                assert False, "Should have raised ApiError"
+            except ApiError as e:
+                assert e.error_code == "missing_fields"
+
+
+# ============================================================================
+# Update File Content Tests
+# ============================================================================
+
+
+def test_update_file_content_unpublished() -> None:
+    """Update file content for an unpublished template."""
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = user
+
+            template = TemplateModel(
+                template_key="file-update",
+                version="V1",
+                name="Test",
+                m8f_tenant_id="tenant-a",
+                files=[
+                    {"file_type": "bpmn", "file_name": "diagram.bpmn"},
+                    {"file_type": "json", "file_name": "form.json"},
+                ],
+                is_published=False,
+                created_by="tester",
+                modified_by="tester",
+            )
+            db.session.add(template)
+            db.session.commit()
+
+            with patch.object(TemplateService, "storage", MockTemplateStorageService()):
+                # Should not raise - updates file content
+                TemplateService.update_file_content(
+                    template, "form.json", b'{"updated": true}', user=user
+                )
+
+
+def test_update_file_content_published_rejected() -> None:
+    """Should raise ApiError for published template."""
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = user
+
+            template = TemplateModel(
+                template_key="published-file",
+                version="V1",
+                name="Published",
+                m8f_tenant_id="tenant-a",
+                files=[{"file_type": "bpmn", "file_name": "diagram.bpmn"}],
+                is_published=True,
+                created_by="tester",
+                modified_by="tester",
+            )
+            db.session.add(template)
+            db.session.commit()
+
+            try:
+                TemplateService.update_file_content(
+                    template, "diagram.bpmn", b"<bpmn>new</bpmn>", user=user
+                )
+                assert False, "Should have raised ApiError"
+            except ApiError as e:
+                assert e.error_code == "forbidden"
+                assert e.status_code == 403
+
+
+def test_update_file_content_file_not_found() -> None:
+    """Should raise ApiError when file is not in template files list."""
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = user
+
+            template = TemplateModel(
+                template_key="missing-file",
+                version="V1",
+                name="Test",
+                m8f_tenant_id="tenant-a",
+                files=[{"file_type": "bpmn", "file_name": "diagram.bpmn"}],
+                is_published=False,
+                created_by="tester",
+                modified_by="tester",
+            )
+            db.session.add(template)
+            db.session.commit()
+
+            try:
+                TemplateService.update_file_content(
+                    template, "nonexistent.json", b"content", user=user
+                )
+                assert False, "Should have raised ApiError"
+            except ApiError as e:
+                assert e.error_code == "not_found"
+                assert e.status_code == 404
+
+
+# ============================================================================
+# Delete File from Template Tests
+# ============================================================================
+
+
+def test_delete_file_from_template_removes_entry() -> None:
+    """Delete a file from template removes it from files list."""
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = user
+
+            template = TemplateModel(
+                template_key="delete-file",
+                version="V1",
+                name="Test",
+                m8f_tenant_id="tenant-a",
+                files=[
+                    {"file_type": "bpmn", "file_name": "diagram.bpmn"},
+                    {"file_type": "json", "file_name": "form.json"},
+                ],
+                is_published=False,
+                created_by="tester",
+                modified_by="tester",
+            )
+            db.session.add(template)
+            db.session.commit()
+
+            with patch.object(TemplateService, "storage", MockTemplateStorageService()):
+                TemplateService.delete_file_from_template(template, "form.json", user=user)
+
+            assert len(template.files) == 1
+            assert template.files[0]["file_name"] == "diagram.bpmn"
+
+
+def test_delete_file_rejects_last_file() -> None:
+    """Cannot delete the last file from a template."""
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = user
+
+            template = TemplateModel(
+                template_key="last-file",
+                version="V1",
+                name="Test",
+                m8f_tenant_id="tenant-a",
+                files=[{"file_type": "bpmn", "file_name": "diagram.bpmn"}],
+                is_published=False,
+                created_by="tester",
+                modified_by="tester",
+            )
+            db.session.add(template)
+            db.session.commit()
+
+            try:
+                TemplateService.delete_file_from_template(template, "diagram.bpmn", user=user)
+                assert False, "Should have raised ApiError"
+            except ApiError as e:
+                assert e.error_code == "forbidden"
+                assert e.status_code == 403
+
+
+def test_delete_file_rejects_only_bpmn() -> None:
+    """Cannot delete the only BPMN file (even if other file types remain)."""
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = user
+
+            template = TemplateModel(
+                template_key="only-bpmn",
+                version="V1",
+                name="Test",
+                m8f_tenant_id="tenant-a",
+                files=[
+                    {"file_type": "bpmn", "file_name": "diagram.bpmn"},
+                    {"file_type": "json", "file_name": "form.json"},
+                ],
+                is_published=False,
+                created_by="tester",
+                modified_by="tester",
+            )
+            db.session.add(template)
+            db.session.commit()
+
+            try:
+                TemplateService.delete_file_from_template(template, "diagram.bpmn", user=user)
+                assert False, "Should have raised ApiError"
+            except ApiError as e:
+                assert e.error_code == "forbidden"
+                assert e.status_code == 403
+
+
+def test_delete_file_rejects_published() -> None:
+    """Cannot delete files from a published template."""
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = user
+
+            template = TemplateModel(
+                template_key="published-del-file",
+                version="V1",
+                name="Published",
+                m8f_tenant_id="tenant-a",
+                files=[
+                    {"file_type": "bpmn", "file_name": "diagram.bpmn"},
+                    {"file_type": "json", "file_name": "form.json"},
+                ],
+                is_published=True,
+                created_by="tester",
+                modified_by="tester",
+            )
+            db.session.add(template)
+            db.session.commit()
+
+            try:
+                TemplateService.delete_file_from_template(template, "form.json", user=user)
+                assert False, "Should have raised ApiError"
+            except ApiError as e:
+                assert e.error_code == "forbidden"
+                assert e.status_code == 403
+
+
+def test_delete_file_not_found() -> None:
+    """Should raise ApiError when file is not in template files list."""
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = user
+
+            template = TemplateModel(
+                template_key="del-not-found",
+                version="V1",
+                name="Test",
+                m8f_tenant_id="tenant-a",
+                files=[{"file_type": "bpmn", "file_name": "diagram.bpmn"}],
+                is_published=False,
+                created_by="tester",
+                modified_by="tester",
+            )
+            db.session.add(template)
+            db.session.commit()
+
+            try:
+                TemplateService.delete_file_from_template(template, "nonexistent.json", user=user)
+                assert False, "Should have raised ApiError"
+            except ApiError as e:
+                assert e.error_code == "not_found"
+                assert e.status_code == 404
+
+
+# ============================================================================
+# Export Template Zip Tests
+# ============================================================================
+
+
+def test_export_template_zip() -> None:
+    """Export template as zip returns zip bytes and filename."""
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = user
+
+            template = TemplateModel(
+                template_key="export-test",
+                version="V1",
+                name="Export Test",
+                m8f_tenant_id="tenant-a",
+                files=[
+                    {"file_type": "bpmn", "file_name": "diagram.bpmn"},
+                    {"file_type": "json", "file_name": "form.json"},
+                ],
+                is_published=False,
+                created_by="tester",
+                modified_by="tester",
+            )
+            db.session.add(template)
+            db.session.commit()
+            template_id = template.id
+
+            with patch.object(TemplateService, "storage", MockTemplateStorageService()):
+                zip_bytes, filename = TemplateService.export_template_zip(template_id, user=user)
+
+            assert isinstance(zip_bytes, bytes)
+            assert len(zip_bytes) > 0
+            assert "export-test" in filename
+            assert filename.endswith(".zip")
+
+
+def test_export_template_zip_not_found() -> None:
+    """Should raise ApiError for non-existent template."""
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+
+            try:
+                TemplateService.export_template_zip(9999, user=user)
+                assert False, "Should have raised ApiError"
+            except ApiError as e:
+                assert e.error_code == "not_found"
+                assert e.status_code == 404
+
+
+def test_export_template_zip_no_files() -> None:
+    """Should raise ApiError when template has no files."""
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = user
+
+            template = TemplateModel(
+                template_key="no-files",
+                version="V1",
+                name="No Files",
+                m8f_tenant_id="tenant-a",
+                files=[],
+                is_published=False,
+                created_by="tester",
+                modified_by="tester",
+            )
+            db.session.add(template)
+            db.session.commit()
+            template_id = template.id
+
+            try:
+                TemplateService.export_template_zip(template_id, user=user)
+                assert False, "Should have raised ApiError"
+            except ApiError as e:
+                assert e.error_code == "not_found"
+
+
+# ============================================================================
+# Import Template from Zip Tests
+# ============================================================================
+
+
+def _create_zip_bytes(files: dict[str, bytes]) -> bytes:
+    """Helper to create zip bytes from a dict of {filename: content}."""
+    import io as _io
+    import zipfile as _zipfile
+    buf = _io.BytesIO()
+    with _zipfile.ZipFile(buf, "w", _zipfile.ZIP_DEFLATED) as zf:
+        for name, content in files.items():
+            zf.writestr(name, content)
+    return buf.getvalue()
+
+
+def test_import_template_from_zip_valid() -> None:
+    """Import a valid zip with BPMN and JSON files."""
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = user
+
+            zip_bytes = _create_zip_bytes({
+                "diagram.bpmn": b"<bpmn>content</bpmn>",
+                "form.json": b'{"field": "value"}',
+            })
+            metadata = {
+                "template_key": "imported",
+                "name": "Imported Template",
+            }
+
+            with patch.object(TemplateService, "storage", MockTemplateStorageService()):
+                template = TemplateService.import_template_from_zip(
+                    zip_bytes=zip_bytes,
+                    metadata=metadata,
+                    user=user,
+                    tenant_id="tenant-a",
+                )
+
+            assert template.template_key == "imported"
+            assert len(template.files) == 2
+            file_names = sorted(f["file_name"] for f in template.files)
+            assert file_names == ["diagram.bpmn", "form.json"]
+
+
+def test_import_template_from_zip_no_bpmn() -> None:
+    """Should raise ApiError when zip contains no BPMN file."""
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = user
+
+            zip_bytes = _create_zip_bytes({
+                "form.json": b'{"field": "value"}',
+                "readme.md": b"# Readme",
+            })
+            metadata = {
+                "template_key": "no-bpmn-zip",
+                "name": "No BPMN",
+            }
+
+            try:
+                TemplateService.import_template_from_zip(
+                    zip_bytes=zip_bytes,
+                    metadata=metadata,
+                    user=user,
+                    tenant_id="tenant-a",
+                )
+                assert False, "Should have raised ApiError"
+            except ApiError as e:
+                assert e.error_code == "missing_fields"
+                assert e.status_code == 400
+
+
+def test_import_template_from_zip_requires_user() -> None:
+    """Should raise ApiError when user is None."""
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+
+            zip_bytes = _create_zip_bytes({"diagram.bpmn": b"<bpmn/>"})
+            try:
+                TemplateService.import_template_from_zip(
+                    zip_bytes=zip_bytes,
+                    metadata={"template_key": "test", "name": "Test"},
+                    user=None,
+                    tenant_id="tenant-a",
+                )
+                assert False, "Should have raised ApiError"
+            except ApiError as e:
+                assert e.error_code == "unauthorized"
+
+
+def test_import_template_from_zip_oversized_rejected() -> None:
+    """Should raise ApiError when zip exceeds maximum size."""
+    from m8flow_backend.services.template_service import MAX_ZIP_SIZE
+
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = user
+
+            # Create oversized zip bytes (bigger than MAX_ZIP_SIZE)
+            oversized_bytes = b"x" * (MAX_ZIP_SIZE + 1)
+            metadata = {
+                "template_key": "oversized",
+                "name": "Oversized",
+            }
+
+            try:
+                TemplateService.import_template_from_zip(
+                    zip_bytes=oversized_bytes,
+                    metadata=metadata,
+                    user=user,
+                    tenant_id="tenant-a",
+                )
+                assert False, "Should have raised ApiError"
+            except ApiError as e:
+                assert e.error_code == "payload_too_large"
+                assert e.status_code == 400
+
+
+def test_import_template_from_zip_missing_fields() -> None:
+    """Should raise ApiError when required metadata fields are missing."""
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = user
+
+            zip_bytes = _create_zip_bytes({"diagram.bpmn": b"<bpmn/>"})
+
+            # Missing template_key
+            try:
+                TemplateService.import_template_from_zip(
+                    zip_bytes=zip_bytes,
+                    metadata={"name": "Test"},
+                    user=user,
+                    tenant_id="tenant-a",
+                )
+                assert False, "Should have raised ApiError"
+            except ApiError as e:
+                assert e.error_code == "missing_fields"
+
+            # Missing name
+            try:
+                TemplateService.import_template_from_zip(
+                    zip_bytes=zip_bytes,
+                    metadata={"template_key": "test"},
+                    user=user,
+                    tenant_id="tenant-a",
+                )
+                assert False, "Should have raised ApiError"
+            except ApiError as e:
+                assert e.error_code == "missing_fields"
+
+
+# ============================================================================
+# Pagination Tests
+# ============================================================================
+
+
+def test_list_templates_pagination_returns_correct_structure() -> None:
+    """list_templates returns (items, pagination) tuple with correct metadata."""
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+
+            # Create 5 templates
+            for i in range(5):
+                db.session.add(TemplateModel(
+                    template_key=f"page-test-{i}",
+                    version="V1",
+                    name=f"Template {i}",
+                    m8f_tenant_id="tenant-a",
+                    files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
+                    created_by="tester",
+                    modified_by="tester",
+                ))
+            db.session.commit()
+
+            # Page 1, 2 per page
+            items, pagination = TemplateService.list_templates(
+                user=user, tenant_id="tenant-a", latest_only=False, page=1, per_page=2
+            )
+            assert len(items) == 2
+            assert pagination["total"] == 5
+            assert pagination["count"] == 2
+            assert pagination["pages"] == 3
+
+            # Page 2
+            items2, pagination2 = TemplateService.list_templates(
+                user=user, tenant_id="tenant-a", latest_only=False, page=2, per_page=2
+            )
+            assert len(items2) == 2
+            assert pagination2["total"] == 5
+            assert pagination2["count"] == 2
+
+            # Page 3 (last page, partial)
+            items3, pagination3 = TemplateService.list_templates(
+                user=user, tenant_id="tenant-a", latest_only=False, page=3, per_page=2
+            )
+            assert len(items3) == 1
+            assert pagination3["total"] == 5
+            assert pagination3["count"] == 1
+
+
+def test_list_templates_pagination_clamps_page() -> None:
+    """Page value is clamped to valid range."""
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+
+            # Create 3 templates
+            for i in range(3):
+                db.session.add(TemplateModel(
+                    template_key=f"clamp-test-{i}",
+                    version="V1",
+                    name=f"Template {i}",
+                    m8f_tenant_id="tenant-a",
+                    files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
+                    created_by="tester",
+                    modified_by="tester",
+                ))
+            db.session.commit()
+
+            # Page beyond max should be clamped
+            items, pagination = TemplateService.list_templates(
+                user=user, tenant_id="tenant-a", latest_only=False, page=999, per_page=10
+            )
+            assert len(items) == 3  # All items on page 1 (clamped)
+            assert pagination["pages"] == 1
+
+            # Page 0 or negative should be clamped to 1
+            items_neg, pagination_neg = TemplateService.list_templates(
+                user=user, tenant_id="tenant-a", latest_only=False, page=0, per_page=2
+            )
+            assert len(items_neg) == 2
+            assert pagination_neg["total"] == 3
+
+
+def test_list_templates_pagination_per_page_clamped() -> None:
+    """per_page is clamped to 1..100."""
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+
+            for i in range(3):
+                db.session.add(TemplateModel(
+                    template_key=f"perpage-test-{i}",
+                    version="V1",
+                    name=f"Template {i}",
+                    m8f_tenant_id="tenant-a",
+                    files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
+                    created_by="tester",
+                    modified_by="tester",
+                ))
+            db.session.commit()
+
+            # per_page=0 should be clamped to 1
+            items, pagination = TemplateService.list_templates(
+                user=user, tenant_id="tenant-a", latest_only=False, page=1, per_page=0
+            )
+            assert len(items) == 1
+            assert pagination["pages"] == 3
+
+            # per_page=200 should be clamped to 100
+            items2, pagination2 = TemplateService.list_templates(
+                user=user, tenant_id="tenant-a", latest_only=False, page=1, per_page=200
+            )
+            assert len(items2) == 3  # All 3 fit within 100
+            assert pagination2["pages"] == 1
+
+
+def test_list_templates_pagination_empty_results() -> None:
+    """Pagination with no results."""
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+
+            items, pagination = TemplateService.list_templates(
+                user=user, tenant_id="tenant-a", latest_only=False, page=1, per_page=10
+            )
+            assert len(items) == 0
+            assert pagination["total"] == 0
+            assert pagination["count"] == 0
+            assert pagination["pages"] == 1
+
+
+# ============================================================================
+# _safe_content_disposition Tests (Controller Helper)
+# ============================================================================
+
+
+def test_safe_content_disposition_simple_filename() -> None:
+    """Simple filename is properly encoded."""
+    from m8flow_backend.routes.templates_controller import _safe_content_disposition
+
+    result = _safe_content_disposition("diagram.bpmn")
+    assert "Content-Disposition" in result
+    assert "diagram.bpmn" in result["Content-Disposition"]
+    assert result["Content-Disposition"].startswith("attachment;")
+
+
+def test_safe_content_disposition_special_chars() -> None:
+    """Special characters are percent-encoded per RFC 5987."""
+    from m8flow_backend.routes.templates_controller import _safe_content_disposition
+
+    result = _safe_content_disposition("my template (1).bpmn")
+    header = result["Content-Disposition"]
+    assert "filename*=UTF-8''" in header
+    # Spaces and parens should be encoded
+    assert " " not in header.split("UTF-8''")[1]
+    assert "(" not in header.split("UTF-8''")[1]
+
+
+def test_safe_content_disposition_unicode() -> None:
+    """Unicode filename is properly percent-encoded."""
+    from m8flow_backend.routes.templates_controller import _safe_content_disposition
+
+    result = _safe_content_disposition("diagrama_\u00e9.bpmn")
+    header = result["Content-Disposition"]
+    assert "filename*=UTF-8''" in header
+    # The unicode char should be percent-encoded
+    assert "\u00e9" not in header
+
+
+# ============================================================================
+# get_first_bpmn_content Tests
+# ============================================================================
+
+
+def test_get_first_bpmn_content_returns_first_bpmn() -> None:
+    """get_first_bpmn_content returns the content of the first BPMN file in list order."""
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = user
+
+            # Files list has primary.bpmn FIRST, then secondary.bpmn
+            template = TemplateModel(
+                template_key="primary-first",
+                version="V1",
+                name="Primary First",
+                m8f_tenant_id="tenant-a",
+                files=[
+                    {"file_type": "bpmn", "file_name": "primary.bpmn"},
+                    {"file_type": "json", "file_name": "form.json"},
+                    {"file_type": "bpmn", "file_name": "secondary.bpmn"},
+                ],
+                is_published=False,
+                created_by="tester",
+                modified_by="tester",
+            )
+            db.session.add(template)
+            db.session.commit()
+
+            class OrderAwareMockStorage:
+                """Returns different content for each BPMN file to verify ordering."""
+                def store_file(self, *a, **kw): pass
+                def get_file(self, tenant_id, template_key, version, file_name):
+                    if file_name == "primary.bpmn":
+                        return b"<bpmn>PRIMARY CONTENT</bpmn>"
+                    if file_name == "secondary.bpmn":
+                        return b"<bpmn>SECONDARY CONTENT</bpmn>"
+                    return b""
+                def list_files(self, *a, **kw): return []
+                def delete_file(self, *a, **kw): pass
+                def stream_zip(self, *a, **kw): return b""
+
+            with patch.object(TemplateService, "storage", OrderAwareMockStorage()):
+                content = TemplateService.get_first_bpmn_content(template)
+
+            assert content is not None
+            assert b"PRIMARY CONTENT" in content
+            assert b"SECONDARY" not in content
+
+
+def test_get_first_bpmn_content_skips_non_bpmn() -> None:
+    """get_first_bpmn_content skips non-BPMN files and returns the first BPMN."""
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = user
+
+            # JSON file first, then BPMN
+            template = TemplateModel(
+                template_key="json-first",
+                version="V1",
+                name="JSON First",
+                m8f_tenant_id="tenant-a",
+                files=[
+                    {"file_type": "json", "file_name": "form.json"},
+                    {"file_type": "bpmn", "file_name": "diagram.bpmn"},
+                ],
+                is_published=False,
+                created_by="tester",
+                modified_by="tester",
+            )
+            db.session.add(template)
+            db.session.commit()
+
+            with patch.object(TemplateService, "storage", MockTemplateStorageService()):
+                content = TemplateService.get_first_bpmn_content(template)
+
+            assert content is not None
+
+
+def test_get_first_bpmn_content_no_bpmn_returns_none() -> None:
+    """get_first_bpmn_content returns None when no BPMN files exist."""
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = user
+
+            template = TemplateModel(
+                template_key="no-bpmn",
+                version="V1",
+                name="No BPMN",
+                m8f_tenant_id="tenant-a",
+                files=[
+                    {"file_type": "json", "file_name": "form.json"},
+                ],
+                is_published=False,
+                created_by="tester",
+                modified_by="tester",
+            )
+            db.session.add(template)
+            db.session.commit()
+
+            with patch.object(TemplateService, "storage", MockTemplateStorageService()):
+                content = TemplateService.get_first_bpmn_content(template)
+
+            assert content is None
+
+
+def test_get_first_bpmn_content_empty_files() -> None:
+    """get_first_bpmn_content returns None when files list is empty."""
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = user
+
+            template = TemplateModel(
+                template_key="empty-files",
+                version="V1",
+                name="Empty Files",
+                m8f_tenant_id="tenant-a",
+                files=[],
+                is_published=False,
+                created_by="tester",
+                modified_by="tester",
+            )
+            db.session.add(template)
+            db.session.commit()
+
+            with patch.object(TemplateService, "storage", MockTemplateStorageService()):
+                content = TemplateService.get_first_bpmn_content(template)
+
+            assert content is None
