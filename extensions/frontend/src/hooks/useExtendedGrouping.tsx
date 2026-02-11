@@ -71,7 +71,6 @@ export function useExtendedGrouping({
         setSelectedGroupBy(null);
       } else if (isCustomOption(groupBy)) {
         // m8 Extension: Handle custom grouping options
-        console.log(`[m8 Extension] Custom grouping selected: ${groupBy}`);
         const handler = getHandler(groupBy);
         if (handler) {
           const grouped = handler(tasks);

@@ -810,6 +810,104 @@ paths:
         "500":
           description: Internal server error
 
+  /templates/{id}/create-process-model:
+    post:
+      summary: Create a process model from this template
+      description: Creates a new process model by copying all files from the template. Records template provenance for tracking.
+      operationId: m8flow_backend.routes.templates_controller.template_create_process_model
+      tags:
+        - Template
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Unique identifier of the template to use
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProcessModelFromTemplateRequest"
+      responses:
+        "201":
+          description: Process model created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateProcessModelFromTemplateResponse"
+        "400":
+          description: Bad request - missing required fields or invalid data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Template or process group not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Conflict - process model with this ID already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /process-models/{modified_process_model_identifier}/template-info:
+    get:
+      summary: Get template provenance for a process model
+      description: Returns information about the template a process model was created from, if any
+      operationId: m8flow_backend.routes.templates_controller.get_process_model_template_info
+      tags:
+        - Template
+      parameters:
+        - name: modified_process_model_identifier
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Process model identifier with colons instead of slashes (e.g., "my-group:my-model")
+      responses:
+        "200":
+          description: Template provenance info retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessModelTemplateInfo"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: No template info found for this process model
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     CreateTenantRequest:
@@ -992,3 +1090,56 @@ components:
 
     ErrorResponse:
       $ref: "#/components/schemas/ErrorData"
+
+    CreateProcessModelFromTemplateRequest:
+      type: object
+      required:
+        - process_group_id
+        - process_model_id
+        - display_name
+      properties:
+        process_group_id:
+          type: string
+          description: The process group where the model will be created
+        process_model_id:
+          type: string
+          description: The ID for the new process model (just the model name, not full path)
+        display_name:
+          type: string
+          description: Display name for the new process model
+        description:
+          type: string
+          description: Optional description for the new process model
+
+    ProcessModelTemplateInfo:
+      type: object
+      properties:
+        id:
+          type: integer
+        process_model_identifier:
+          type: string
+        source_template_id:
+          type: integer
+        source_template_key:
+          type: string
+        source_template_version:
+          type: string
+        source_template_name:
+          type: string
+        m8f_tenant_id:
+          type: string
+        created_by:
+          type: string
+        created_at_in_seconds:
+          type: integer
+        updated_at_in_seconds:
+          type: integer
+
+    CreateProcessModelFromTemplateResponse:
+      type: object
+      properties:
+        process_model:
+          type: object
+          description: The created process model info
+        template_info:
+          $ref: "#/components/schemas/ProcessModelTemplateInfo"

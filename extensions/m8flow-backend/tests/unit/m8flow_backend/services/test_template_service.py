@@ -2286,8 +2286,8 @@ def test_update_file_content_unpublished() -> None:
                 )
 
 
-def test_update_file_content_published_rejected() -> None:
-    """Should raise ApiError for published template."""
+def test_update_file_content_published_creates_draft_version() -> None:
+    """Updating file on published template should create a new draft version."""
     app = Flask(__name__)
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -2318,14 +2318,18 @@ def test_update_file_content_published_rejected() -> None:
             db.session.add(template)
             db.session.commit()
 
-            try:
-                TemplateService.update_file_content(
+            with patch.object(TemplateService, "storage", MockTemplateStorageService()):
+                # Should create a new draft version instead of raising
+                result = TemplateService.update_file_content(
                     template, "diagram.bpmn", b"<bpmn>new</bpmn>", user=user
                 )
-                assert False, "Should have raised ApiError"
-            except ApiError as e:
-                assert e.error_code == "forbidden"
-                assert e.status_code == 403
+                
+                # Result should be a new draft version
+                assert result is not None
+                assert result.id != template.id
+                assert result.version == "V2"
+                assert result.is_published is False
+                assert result.template_key == "published-file"
 
 
 def test_update_file_content_file_not_found() -> None:
@@ -2368,6 +2372,65 @@ def test_update_file_content_file_not_found() -> None:
             except ApiError as e:
                 assert e.error_code == "not_found"
                 assert e.status_code == 404
+
+
+def test_update_file_content_published_reuses_existing_draft() -> None:
+    """When a draft version exists, subsequent edits should update that draft instead of creating a new one."""
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = user
+
+            # Create published V1
+            published_template = TemplateModel(
+                template_key="reuse-draft",
+                version="V1",
+                name="Published",
+                m8f_tenant_id="tenant-a",
+                files=[{"file_type": "bpmn", "file_name": "diagram.bpmn"}],
+                is_published=True,
+                created_by="tester",
+                modified_by="tester",
+            )
+            db.session.add(published_template)
+            db.session.commit()
+
+            with patch.object(TemplateService, "storage", MockTemplateStorageService()):
+                # First edit creates V2 draft
+                result1 = TemplateService.update_file_content(
+                    published_template, "diagram.bpmn", b"<bpmn>edit1</bpmn>", user=user
+                )
+                assert result1.version == "V2"
+                assert result1.is_published is False
+                v2_id = result1.id
+
+                # Second edit should reuse V2 draft, not create V3
+                result2 = TemplateService.update_file_content(
+                    published_template, "diagram.bpmn", b"<bpmn>edit2</bpmn>", user=user
+                )
+                assert result2.id == v2_id
+                assert result2.version == "V2"
+                assert result2.is_published is False
+
+                # Verify no V3 was created
+                v3 = TemplateModel.query.filter_by(
+                    template_key="reuse-draft",
+                    version="V3",
+                    m8f_tenant_id="tenant-a",
+                ).first()
+                assert v3 is None
 
 
 # ============================================================================
@@ -2500,8 +2563,8 @@ def test_delete_file_rejects_only_bpmn() -> None:
                 assert e.status_code == 403
 
 
-def test_delete_file_rejects_published() -> None:
-    """Cannot delete files from a published template."""
+def test_delete_file_from_published_creates_draft() -> None:
+    """Deleting file from published template should create a new draft version."""
     app = Flask(__name__)
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -2535,12 +2598,24 @@ def test_delete_file_rejects_published() -> None:
             db.session.add(template)
             db.session.commit()
 
-            try:
-                TemplateService.delete_file_from_template(template, "form.json", user=user)
-                assert False, "Should have raised ApiError"
-            except ApiError as e:
-                assert e.error_code == "forbidden"
-                assert e.status_code == 403
+            with patch.object(TemplateService, "storage", MockTemplateStorageService()):
+                # Should create a new draft version instead of raising
+                result = TemplateService.delete_file_from_template(template, "form.json", user=user)
+                
+                # Result should be a new draft version
+                assert result is not None
+                assert result.id != template.id
+                assert result.version == "V2"
+                assert result.is_published is False
+                assert result.template_key == "published-del-file"
+                # The file should be deleted from the new version
+                assert len(result.files) == 1
+                assert result.files[0]["file_name"] == "diagram.bpmn"
+                
+                # Original published template should be unchanged
+                db.session.refresh(template)
+                assert len(template.files) == 2
+                assert template.is_published is True
 
 
 def test_delete_file_not_found() -> None:
