@@ -18,25 +18,6 @@ def _serialize_tenant(tenant):
         "updatedAtInSeconds": tenant.updated_at_in_seconds,
     }
 
-def _check_admin_permission():
-    """Check if user has admin permission to manage tenants."""
-    if not hasattr(g, "user") or not g.user:
-        raise ApiError(error_code="not_authenticated", message="User not authenticated", status_code=401)
-    
-    # TODO: This logic may change to role-based permissions in the future. Ensure to update this accordingly.
-    has_permission = AuthorizationService.user_has_permission(
-        user=g.user,
-        permission="create",
-        target_uri="/admin/tenants"
-    )
-    
-    if not has_permission:
-        raise ApiError(
-            error_code="insufficient_permissions",
-            message="User does not have sufficient permissions to manage tenants. Admin or system role required.",
-            status_code=403
-        )
-
 @handle_api_errors
 def check_tenant_exists(identifier: str):
     """
@@ -71,7 +52,6 @@ def create_tenant(body):
 @handle_api_errors
 def get_tenant_by_id(tenant_id):
     """Fetch tenant by ID."""
-    _check_admin_permission()
     tenant = TenantService.get_tenant_by_id(tenant_id)
     return success_response(_serialize_tenant(tenant), 200)
 
@@ -79,7 +59,6 @@ def get_tenant_by_id(tenant_id):
 @handle_api_errors
 def get_tenant_by_slug(slug):
     """Fetch tenant by slug."""
-    _check_admin_permission()
     tenant = TenantService.get_tenant_by_slug(slug)
     return success_response(_serialize_tenant(tenant), 200)
 
@@ -87,14 +66,12 @@ def get_tenant_by_slug(slug):
 @handle_api_errors
 def get_all_tenants():
     """Fetch all tenants, excluding the default tenant."""
-    _check_admin_permission()
     tenants = TenantService.get_all_tenants()
     return success_response([_serialize_tenant(t) for t in tenants], 200)
 
 @handle_api_errors
 def delete_tenant(tenant_id):
     """Soft delete a tenant by setting status to DELETED."""
-    _check_admin_permission()
     tenant = TenantService.delete_tenant(tenant_id, g.user.username)
     
     return success_response({

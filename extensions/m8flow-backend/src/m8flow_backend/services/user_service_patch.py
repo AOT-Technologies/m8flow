@@ -1,9 +1,17 @@
+
 # user_service_patch.py
 from __future__ import annotations
 import logging
-from sqlalchemy import or_
+from sqlalchemy import and_, or_
+from spiffworkflow_backend.models.db import db
+from spiffworkflow_backend.models.user import UserModel
+from spiffworkflow_backend.services import user_service
+
+from m8flow_backend.models.human_task import HumanTaskModel
+from m8flow_backend.models.human_task_user import HumanTaskUserAddedBy, HumanTaskUserModel
 
 _PATCHED = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -33,16 +41,15 @@ def apply() -> None:
     if _PATCHED:
         return
 
+    # Patch 1: add_user_to_group_or_add_to_waiting — multi-tenant email handling (HEAD)
     try:
         from flask import g
         from spiffworkflow_backend.services.user_service import UserService
-        from spiffworkflow_backend.models.user import UserModel
-        from spiffworkflow_backend.models.db import db
     except ImportError:
-        logger.error("Could not import UserService or UserModel for patching")
+        logger.error("Could not import UserService for patching")
         return
 
-    _ORIGINAL_ADD_USER_TO_GROUP_OR_ADD_TO_WAITING = UserService.add_user_to_group_or_add_to_waiting
+    _ORIGINAL_ADD_USER_TO_GROUP_OR_ADD_TO_WAITING = user_service.UserService.add_user_to_group_or_add_to_waiting
 
     @classmethod
     def patched_add_user_to_group_or_add_to_waiting(
@@ -66,6 +73,63 @@ def apply() -> None:
         else:
             return cls.add_waiting_group_assignment(username_or_email, group)
 
-    UserService.add_user_to_group_or_add_to_waiting = patched_add_user_to_group_or_add_to_waiting
-    _PATCHED = True
+    user_service.UserService.add_user_to_group_or_add_to_waiting = patched_add_user_to_group_or_add_to_waiting
     logger.info("UserService.add_user_to_group_or_add_to_waiting patched to handle multi-tenant email duplicates")
+
+    # Patch 2: update_human_task_assignments_for_user — tenant-scoped human task assignments (main)
+    def patched_update_human_task_assignments(cls, user: UserModel, new_group_ids: set[int], old_group_ids: set[int]) -> None:
+        with db.session.no_autoflush:
+            current_assignments = HumanTaskUserModel.query.filter(
+                HumanTaskUserModel.user_id == user.id
+            ).all()
+            current_human_task_ids = {ca.human_task_id for ca in current_assignments}
+
+            human_tasks = (
+                HumanTaskModel.query.outerjoin(HumanTaskUserModel)
+                .filter(
+                    HumanTaskModel.lane_assignment_id.in_(new_group_ids),  # type: ignore
+                    HumanTaskModel.completed == False,  # noqa: E712
+                    or_(
+                        and_(
+                            HumanTaskUserModel.user_id != user.id,
+                            HumanTaskUserModel.added_by == HumanTaskUserAddedBy.lane_assignment.value,
+                        ),
+                        HumanTaskUserModel.user_id == None,  # noqa: E711
+                    ),
+                )
+                .distinct(HumanTaskModel.id)
+                .all()
+            )
+
+        # insert (tenant comes from the task itself)
+        for human_task in human_tasks:
+            if human_task.id not in current_human_task_ids:
+                db.session.add(
+                    HumanTaskUserModel(
+                        user_id=user.id,
+                        human_task_id=human_task.id,
+                        added_by=HumanTaskUserAddedBy.lane_assignment.value,
+                        m8f_tenant_id=human_task.m8f_tenant_id,
+                    )
+                )
+
+        # delete (avoid cross-tenant delete by tying tenant ids together)
+        to_delete = (
+            HumanTaskUserModel.query.join(HumanTaskModel)
+            .filter(
+                HumanTaskUserModel.user_id == user.id,
+                HumanTaskUserModel.added_by == HumanTaskUserAddedBy.lane_assignment.value,
+                HumanTaskModel.lane_assignment_id.in_(old_group_ids),  # type: ignore
+                HumanTaskModel.completed == False,  # noqa: E712
+                # tenant safety
+                HumanTaskUserModel.m8f_tenant_id == HumanTaskModel.m8f_tenant_id,
+            )
+            .all()
+        )
+        for row in to_delete:
+            db.session.delete(row)
+
+        db.session.commit()
+
+    user_service.UserService.update_human_task_assignments_for_user = classmethod(patched_update_human_task_assignments)  # type: ignore[assignment]
+    _PATCHED = True

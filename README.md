@@ -179,11 +179,10 @@ Click on "Keycloak master" and then on "Create a realm".
     <img src="./docs/images/keycloak-realm-settings-1.png" />
 </div>
 
-Browse or copy the content of `spiffworkflow-backend/keycloak/realm_exports/spiffworkflow-basic-realm.json` and click on "Create". For tenant-aware setup with token claims `m8flow_tenant_id` and `m8flow_tenant_name`, use `extensions/m8flow-backend/keycloak/realm_exports/spiffworkflow-local-realm.json` instead.
+Browse or copy the content of `extensions/m8flow-backend/keycloak/realm_exports/m8flow-rbac-realm.json` and click on "Create". For tenant-aware setup this realm includes token claims `m8flow_tenant_id` and `m8flow_tenant_name`.
 <div align="center">
     <img src="./docs/images/keycloak-realm-settings-2.png" />
 </div>
-
 
 ### Configure Client
 
@@ -267,7 +266,15 @@ Running a specific test:
 
 ## Access the application 
 
-Open `http://<LOCAL_IP>:8001/` on your browser and you are going to be redirected to keycloak authentication. Now enter temporary credentials: user `admin` password `admin`.
+Open `http://<LOCAL_IP>:8001/` on your browser and you are going to be redirected to keycloak authentication. Now use of the test users (password is same as username):
+
+- super-admin
+- tenant-admin
+- editor
+- viewer
+- integrator
+- reviewer
+
 <div align="center">
     <img src="./docs/images/access-m8flow-1.png" />
 </div>

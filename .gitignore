@@ -27,3 +27,4 @@ agent_setup_script_has_completed_successfully
 .cursor/*
 *.p12
 .venv*
+templates
