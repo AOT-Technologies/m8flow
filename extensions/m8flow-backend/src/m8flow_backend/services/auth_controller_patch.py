@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from flask import current_app
+
 from spiffworkflow_backend.routes import authentication_controller
 from m8flow_backend.services.tenant_context_middleware import resolve_request_tenant
 
@@ -16,7 +18,9 @@ def apply() -> None:
     def patched_omni_auth(*args, **kwargs):
         rv = original(*args, **kwargs)
         # resolve tenant as soon as auth has populated g.token/cookies
-        resolve_request_tenant()
+        # db must be the instance bound to the current app so tenant validation uses the same engine/session
+        db = current_app.extensions["sqlalchemy"]
+        resolve_request_tenant(db)
         return rv
 
     authentication_controller.omni_auth = patched_omni_auth  # type: ignore[assignment]
