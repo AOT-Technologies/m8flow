@@ -6,13 +6,17 @@ import SaveAsTemplateModal from "./SaveAsTemplateModal";
 
 vi.mock("../services/TemplateService", () => ({
   default: {
-    createTemplate: vi.fn(),
+    createTemplateWithFiles: vi.fn(),
   },
 }));
 
 import TemplateService from "../services/TemplateService";
 
 const theme = createTheme();
+
+const defaultFiles = [
+  { name: "diagram.bpmn", content: new Blob(["<bpmn:definitions/>"], { type: "application/xml" }) },
+];
 
 function renderWithTheme(ui: React.ReactElement) {
   return render(<ThemeProvider theme={theme}>{ui}</ThemeProvider>);
@@ -27,14 +31,14 @@ describe("SaveAsTemplateModal", () => {
   const defaultProps = {
     open: true,
     onClose: vi.fn(),
-    getBpmnXml: vi.fn().mockResolvedValue("<bpmn:definitions/>"),
+    getFiles: vi.fn().mockResolvedValue(defaultFiles),
   };
 
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(defaultProps.onClose).mockClear();
-    vi.mocked(defaultProps.getBpmnXml).mockClear().mockResolvedValue("<bpmn:definitions/>");
-    vi.mocked(TemplateService.createTemplate).mockResolvedValue({
+    vi.mocked(defaultProps.getFiles).mockClear().mockResolvedValue(defaultFiles);
+    vi.mocked(TemplateService.createTemplateWithFiles).mockResolvedValue({
       id: 1,
       templateKey: "test-key",
       name: "Test Template",
@@ -68,7 +72,7 @@ describe("SaveAsTemplateModal", () => {
     await waitFor(() => {
       expect(screen.getByText("Template key is required.")).toBeInTheDocument();
     });
-    expect(TemplateService.createTemplate).not.toHaveBeenCalled();
+    expect(TemplateService.createTemplateWithFiles).not.toHaveBeenCalled();
   });
 
   it("shows validation error when name is empty on submit", async () => {
@@ -78,25 +82,25 @@ describe("SaveAsTemplateModal", () => {
     await waitFor(() => {
       expect(screen.getByText("Name is required.")).toBeInTheDocument();
     });
-    expect(TemplateService.createTemplate).not.toHaveBeenCalled();
+    expect(TemplateService.createTemplateWithFiles).not.toHaveBeenCalled();
   });
 
-  it("calls getBpmnXml and createTemplate with trimmed key and name on submit", async () => {
+  it("calls getFiles and createTemplateWithFiles with trimmed key and name on submit", async () => {
     renderWithTheme(<SaveAsTemplateModal {...defaultProps} />);
     typeInField(/Template key/i, "  my-key  ");
     typeInField(/Name/i, "  My Template  ");
     fireEvent.click(screen.getByRole("button", { name: /Create Template/i }));
     await waitFor(() => {
-      expect(defaultProps.getBpmnXml).toHaveBeenCalledTimes(1);
+      expect(defaultProps.getFiles).toHaveBeenCalledTimes(1);
     });
     await waitFor(() => {
-      expect(TemplateService.createTemplate).toHaveBeenCalledWith(
-        "<bpmn:definitions/>",
+      expect(TemplateService.createTemplateWithFiles).toHaveBeenCalledWith(
         expect.objectContaining({
           template_key: "my-key",
           name: "My Template",
           visibility: "PRIVATE",
-        })
+        }),
+        defaultFiles
       );
     });
   });
@@ -110,33 +114,47 @@ describe("SaveAsTemplateModal", () => {
     typeInField(/Tags/i, "tag1, tag2 , tag3");
     fireEvent.click(screen.getByRole("button", { name: /Create Template/i }));
     await waitFor(() => {
-      expect(TemplateService.createTemplate).toHaveBeenCalledWith(
-        "<bpmn:definitions/>",
+      expect(TemplateService.createTemplateWithFiles).toHaveBeenCalledWith(
         expect.objectContaining({
           template_key: "my-key",
           name: "My Template",
           description: "A description",
           category: "Approval",
           tags: ["tag1", "tag2", "tag3"],
-        })
+        }),
+        defaultFiles
       );
     });
   });
 
-  it("shows error when getBpmnXml returns empty string", async () => {
-    vi.mocked(defaultProps.getBpmnXml).mockResolvedValue("");
+  it("shows error when getFiles returns no bpmn file", async () => {
+    vi.mocked(defaultProps.getFiles).mockResolvedValue([
+      { name: "data.json", content: new Blob(["{}"], { type: "application/json" }) },
+    ]);
     renderWithTheme(<SaveAsTemplateModal {...defaultProps} />);
     typeInField(/Template key/i, "my-key");
     typeInField(/Name/i, "My Template");
     fireEvent.click(screen.getByRole("button", { name: /Create Template/i }));
     await waitFor(() => {
-      expect(screen.getByText("Could not get diagram content. Please try again.")).toBeInTheDocument();
+      expect(screen.getByText("At least one BPMN file is required.")).toBeInTheDocument();
     });
-    expect(TemplateService.createTemplate).not.toHaveBeenCalled();
+    expect(TemplateService.createTemplateWithFiles).not.toHaveBeenCalled();
   });
 
-  it("shows error when createTemplate rejects", async () => {
-    vi.mocked(TemplateService.createTemplate).mockRejectedValue(new Error("Server error"));
+  it("shows error when getFiles returns empty array", async () => {
+    vi.mocked(defaultProps.getFiles).mockResolvedValue([]);
+    renderWithTheme(<SaveAsTemplateModal {...defaultProps} />);
+    typeInField(/Template key/i, "my-key");
+    typeInField(/Name/i, "My Template");
+    fireEvent.click(screen.getByRole("button", { name: /Create Template/i }));
+    await waitFor(() => {
+      expect(screen.getByText("No files to save. Please try again.")).toBeInTheDocument();
+    });
+    expect(TemplateService.createTemplateWithFiles).not.toHaveBeenCalled();
+  });
+
+  it("shows error when createTemplateWithFiles rejects", async () => {
+    vi.mocked(TemplateService.createTemplateWithFiles).mockRejectedValue(new Error("Server error"));
     renderWithTheme(<SaveAsTemplateModal {...defaultProps} />);
     typeInField(/Template key/i, "my-key");
     typeInField(/Name/i, "My Template");
@@ -160,6 +178,18 @@ describe("SaveAsTemplateModal", () => {
     });
   });
 
+  it("shows error when getFiles rejects", async () => {
+    vi.mocked(defaultProps.getFiles).mockRejectedValue(new Error("Could not load files"));
+    renderWithTheme(<SaveAsTemplateModal {...defaultProps} />);
+    typeInField(/Template key/i, "my-key");
+    typeInField(/Name/i, "My Template");
+    fireEvent.click(screen.getByRole("button", { name: /Create Template/i }));
+    await waitFor(() => {
+      expect(screen.getByText("Could not load files")).toBeInTheDocument();
+    });
+    expect(TemplateService.createTemplateWithFiles).not.toHaveBeenCalled();
+  });
+
   it("Cancel button calls onClose", () => {
     renderWithTheme(<SaveAsTemplateModal {...defaultProps} />);
     fireEvent.click(screen.getByRole("button", { name: /Cancel/i }));
@@ -176,9 +206,9 @@ describe("SaveAsTemplateModal", () => {
     fireEvent.click(tenantOption);
     fireEvent.click(screen.getByRole("button", { name: /Create Template/i }));
     await waitFor(() => {
-      expect(TemplateService.createTemplate).toHaveBeenCalledWith(
-        "<bpmn:definitions/>",
-        expect.objectContaining({ visibility: "TENANT" })
+      expect(TemplateService.createTemplateWithFiles).toHaveBeenCalledWith(
+        expect.objectContaining({ visibility: "TENANT" }),
+        defaultFiles
       );
     });
   });

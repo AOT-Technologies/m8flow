@@ -240,6 +240,7 @@ const HttpService = {
   makeCallToBackend,
   fetchTextFromBackend,
   messageForHttpError,
+  getBasicHeaders,
 };
 
 export default HttpService;

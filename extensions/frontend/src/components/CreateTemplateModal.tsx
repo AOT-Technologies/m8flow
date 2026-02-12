@@ -14,43 +14,33 @@ import {
 } from "@mui/material";
 import { useEffect, useState } from "react";
 import TemplateService from "../services/TemplateService";
-import { nameToTemplateKey } from "../utils/templateKey";
 import type { CreateTemplateMetadata, Template, TemplateVisibility } from "../types/template";
+import { nameToTemplateKey } from "../utils/templateKey";
 
 const VISIBILITY_OPTIONS: { value: TemplateVisibility; label: string }[] = [
   { value: "PRIVATE", label: "Private (only you)" },
   { value: "TENANT", label: "Tenant-wide (all users in your tenant)" },
 ];
 
-const SUPPORTED_EXT = [".bpmn", ".json", ".dmn", ".md"];
-
-export interface SaveAsTemplateFile {
-  name: string;
-  content: Blob;
-}
-
-export interface SaveAsTemplateModalProps {
+export interface CreateTemplateModalProps {
   open: boolean;
   onClose: () => void;
-  onSuccess?: (template?: Template) => void;
-  /** Return all files to save with the template (at least one must be .bpmn). */
-  getFiles: () => Promise<SaveAsTemplateFile[]>;
+  onSuccess?: (template: Template) => void;
 }
 
-export default function SaveAsTemplateModal({
+export default function CreateTemplateModal({
   open,
   onClose,
   onSuccess,
-  getFiles,
-}: SaveAsTemplateModalProps) {
+}: CreateTemplateModalProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("");
   const [tags, setTags] = useState("");
   const [visibility, setVisibility] = useState<TemplateVisibility>("PRIVATE");
+  const [files, setFiles] = useState<File[]>([]);
 
   useEffect(() => {
     if (!open) {
@@ -59,9 +49,17 @@ export default function SaveAsTemplateModal({
       setCategory("");
       setTags("");
       setVisibility("PRIVATE");
+      setFiles([]);
       setError(null);
     }
   }, [open]);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = e.target.files;
+    if (selected) {
+      setFiles(Array.from(selected));
+    }
+  };
 
   const handleSubmit = async () => {
     const trimmedName = name.trim();
@@ -74,24 +72,16 @@ export default function SaveAsTemplateModal({
       setError("Name must contain at least one letter or number.");
       return;
     }
-
+    const hasBpmn = files.some(
+      (f) => f.name.toLowerCase().endsWith(".bpmn")
+    );
+    if (!hasBpmn) {
+      setError("At least one BPMN file is required.");
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      const files = await getFiles();
-      if (!files?.length) {
-        setError("No files to save. Please try again.");
-        setLoading(false);
-        return;
-      }
-      const hasBpmn = files.some((f) =>
-        f.name.toLowerCase().endsWith(".bpmn")
-      );
-      if (!hasBpmn) {
-        setError("At least one BPMN file is required.");
-        setLoading(false);
-        return;
-      }
       const metadata: CreateTemplateMetadata = {
         template_key,
         name: trimmedName,
@@ -102,52 +92,47 @@ export default function SaveAsTemplateModal({
       if (tags.trim()) {
         metadata.tags = tags.split(",").map((s) => s.trim()).filter(Boolean);
       }
-      const filesForApi = files.map((f) => ({ name: f.name, content: f.content }));
+      const filesWithContent = files.map((f) => ({
+        name: f.name,
+        content: f,
+      }));
       const template = await TemplateService.createTemplateWithFiles(
         metadata,
-        filesForApi
+        filesWithContent
       );
       onClose();
       onSuccess?.(template);
     } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : "Failed to create template. Please try again.";
-      setError(message);
+      setError(
+        err instanceof Error ? err.message : "Failed to create template."
+      );
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Dialog
-      open={open}
-      onClose={onClose}
-      maxWidth="sm"
-      fullWidth
-    >
-      <DialogTitle sx={{ fontSize: "1.25rem", fontWeight: 600 }}>
-        Save as Template
-      </DialogTitle>
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>Create template</DialogTitle>
       <DialogContent>
-        <Stack spacing={2.5} sx={{ pt: 1 }}>
+        <Stack spacing={2} sx={{ pt: 1 }}>
           {error && (
             <Alert severity="error" sx={{ mb: 1 }}>{error}</Alert>
           )}
           <TextField
             label="Name"
-            fullWidth
             required
-            placeholder="e.g. Approval Workflow"
+            fullWidth
             value={name}
             onChange={(e) => setName(e.target.value)}
             disabled={loading}
+            placeholder="e.g. Approval Workflow"
           />
           <TextField
             label="Description"
             fullWidth
             multiline
             minRows={2}
-            placeholder="Optional description"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             disabled={loading}
@@ -155,7 +140,6 @@ export default function SaveAsTemplateModal({
           <TextField
             label="Category"
             fullWidth
-            placeholder="Optional category"
             value={category}
             onChange={(e) => setCategory(e.target.value)}
             disabled={loading}
@@ -163,7 +147,7 @@ export default function SaveAsTemplateModal({
           <TextField
             label="Tags"
             fullWidth
-            placeholder="Comma-separated tags"
+            placeholder="Comma-separated"
             value={tags}
             onChange={(e) => setTags(e.target.value)}
             disabled={loading}
@@ -173,7 +157,9 @@ export default function SaveAsTemplateModal({
             <Select
               value={visibility}
               label="Visibility"
-              onChange={(e) => setVisibility(e.target.value as TemplateVisibility)}
+              onChange={(e) =>
+                setVisibility(e.target.value as TemplateVisibility)
+              }
             >
               {VISIBILITY_OPTIONS.map((opt) => (
                 <MenuItem key={opt.value} value={opt.value}>
@@ -182,19 +168,26 @@ export default function SaveAsTemplateModal({
               ))}
             </Select>
           </FormControl>
+          <Button variant="outlined" component="label" disabled={loading}>
+            {files.length > 0
+              ? `${files.length} file(s) selected (include .bpmn)`
+              : "Choose files (BPMN required)"}
+            <input
+              type="file"
+              hidden
+              multiple
+              accept=".bpmn,.json,.dmn,.md"
+              onChange={handleFileChange}
+            />
+          </Button>
         </Stack>
       </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
-        <Button onClick={onClose} disabled={loading} variant="outlined">
+      <DialogActions>
+        <Button onClick={onClose} disabled={loading}>
           Cancel
         </Button>
-        <Button
-          onClick={handleSubmit}
-          variant="contained"
-          color="primary"
-          disabled={loading}
-        >
-          {loading ? "Creating..." : "Create Template"}
+        <Button variant="contained" onClick={handleSubmit} disabled={loading}>
+          {loading ? "Creating..." : "Create"}
         </Button>
       </DialogActions>
     </Dialog>
