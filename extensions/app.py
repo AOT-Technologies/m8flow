@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import sys
 from flask import Flask, g
-from extensions.bootstrap import bootstrap
+from extensions.bootstrap import bootstrap, ensure_m8flow_audit_timestamps
 from extensions.env_var_mapper import apply_spiff_env_mapping
 from m8flow_backend.services.asgi_tenant_context_middleware import AsgiTenantContextMiddleware
 from m8flow_backend.tenancy import begin_request_context, end_request_context, clear_tenant_context
@@ -193,6 +193,9 @@ def _assert_model_identity() -> None:
 # Assert identity BEFORE create_app (fail fast on import/override ordering issues)
 _assert_model_identity()
 
+# Ensure m8flow models that use AuditDateTimeMixin participate in Spiff's
+# timestamp listeners (created_at_in_seconds / updated_at_in_seconds).
+ensure_m8flow_audit_timestamps()
 
 # Create the Connexion app.
 cnx_app = create_app()
@@ -312,6 +315,18 @@ _m8flow_migration(flask_app)
 
 if flask_app is None:
     raise RuntimeError("Could not access underlying Flask app from Connexion app")
+
+# M8Flow: ensure permissions are loaded from m8flow.yml so RBAC groups (tenant-admin, editor, etc.) get assignments.
+# Always use the package's m8flow.yml when present so login-time import_permissions_from_yaml_file creates
+# permission assignments for token groups regardless of env (env may be unset, relative, or point elsewhere).
+_m8flow_permissions_yml = os.path.join(
+    os.path.dirname(__import__("m8flow_backend").__file__),
+    "config", "permissions", "m8flow.yml",
+)
+if os.path.isfile(_m8flow_permissions_yml):
+    _abs = os.path.abspath(_m8flow_permissions_yml)
+    flask_app.config["SPIFFWORKFLOW_BACKEND_PERMISSIONS_FILE_ABSOLUTE_PATH"] = _abs
+    logger.info("M8Flow: using permissions file %s", _abs)
 
 # M8Flow: allow tenant-login-url (and other public endpoints) without authentication
 try:

@@ -80,6 +80,17 @@ cd extensions/m8flow-backend/bin
 - If a realm doesn't exist, it will be imported automatically
 - The script handles HTTP 409 (Conflict) gracefully if a realm is created between the check and import
 
+## Realm template and RBAC users
+
+When new tenant realms are created (e.g. via the create-realm API), they are provisioned from the realm template `realm_exports/spiffworkflow-realm.json`. The template includes:
+
+- **RBAC realm roles:** `editor`, `super-admin`, `tenant-admin`, `integrator`, `reviewer`, `viewer`
+- **One user per role:** usernames `editor`, `integrator`, `reviewer`, `super-admin`, `tenant-admin`, `viewer`, each assigned the matching realm role
+
+These users are created with a **default password** (shared placeholder in the template). For security, admins should change these passwords after tenant creation, or configure Keycloak required actions (e.g. "Update Password") to force a password change on first login.
+
+**Permissions and role alignment:** For the backend to grant API and UI permissions, Keycloak realm role names must match the group names defined in `m8flow.yml`: `super-admin`, `tenant-admin`, `editor`, `viewer`, `integrator`, `reviewer`. The template’s **spiffworkflow-backend** client includes a "groups" protocol mapper that adds the user’s realm roles to the token as the `groups` claim (ID and access token). On login, the backend reads this claim and adds the user to the corresponding Spiffworkflow groups, then applies permissions from `m8flow.yml`. Do not rename these realm roles in the template without updating `m8flow.yml` to match.
+
 ## Troubleshooting
 
 - **Port conflicts**: Ensure ports 7002 and 7009 are not in use
