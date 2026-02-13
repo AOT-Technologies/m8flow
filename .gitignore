@@ -28,3 +28,4 @@ agent_setup_script_has_completed_successfully
 *.p12
 .venv*
 templates
+email_attachments
