@@ -49,19 +49,7 @@
         "id": "c9f0ff93-642d-402b-965a-04d70719886b",
         "name": "default-roles-spiffworkflow",
         "description": "${role_default-roles}",
-        "composite": true,
-        "composites": {
-          "realm": [
-            "offline_access",
-            "uma_authorization"
-          ],
-          "client": {
-            "account": [
-              "view-profile",
-              "manage-account"
-            ]
-          }
-        },
+        "composite": false,
         "clientRole": false,
         "containerId": "spiffworkflow",
         "attributes": {}
@@ -70,14 +58,6 @@
         "id": "9f474167-5707-4c10-8f9e-bb54ec715cd3",
         "name": "uma_authorization",
         "description": "${role_uma_authorization}",
-        "composite": false,
-        "clientRole": false,
-        "containerId": "spiffworkflow",
-        "attributes": {}
-      },
-      {
-        "id": "6738d143-2d1d-4458-8a98-01ea003fde14",
-        "name": "admin",
         "composite": false,
         "clientRole": false,
         "containerId": "spiffworkflow",
@@ -95,6 +75,60 @@
         "id": "b5a92aee-82d2-4687-8282-365df4df21a9",
         "name": "offline_access",
         "description": "${role_offline-access}",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "spiffworkflow",
+        "attributes": {}
+      },
+      {
+        "id": "30e6f20e-decd-438c-9507-f9d220ab2215",
+        "name": "editor",
+        "description": "",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "spiffworkflow",
+        "attributes": {}
+      },
+      {
+        "id": "3c0d3831-b264-47c4-be17-df0849b2b448",
+        "name": "super-admin",
+        "description": "",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "spiffworkflow",
+        "attributes": {}
+      },
+      {
+        "id": "8a89975d-faa3-4472-beec-c882b87d1f04",
+        "name": "tenant-admin",
+        "description": "",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "spiffworkflow",
+        "attributes": {}
+      },
+      {
+        "id": "8f6b97a0-f67a-474a-9475-2e0eb20a5471",
+        "name": "integrator",
+        "description": "",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "spiffworkflow",
+        "attributes": {}
+      },
+      {
+        "id": "9b72ecf8-32fb-44b7-844b-2831ea11de7e",
+        "name": "reviewer",
+        "description": "",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "spiffworkflow",
+        "attributes": {}
+      },
+      {
+        "id": "a4e63382-1fb0-4f7f-a485-8e162aaf8c16",
+        "name": "viewer",
+        "description": "",
         "composite": false,
         "clientRole": false,
         "containerId": "spiffworkflow",
@@ -526,7 +560,8 @@
       "disableableCredentialTypes": [],
       "requiredActions": [],
       "realmRoles": [
-        "default-roles-spiffworkflow"
+        "default-roles-spiffworkflow",
+        "tenant-admin"
       ],
       "clientRoles": {
         "realm-management": [
@@ -723,6 +758,138 @@
       },
       "notBefore": 0,
       "groups": []
+    },
+    {
+      "username": "editor",
+      "firstName": "Editor",
+      "lastName": "M8Flow",
+      "email": "",
+      "emailVerified": true,
+      "enabled": true,
+      "totp": false,
+      "disableableCredentialTypes": [],
+      "requiredActions": [],
+      "realmRoles": ["default-roles-spiffworkflow", "editor"],
+      "notBefore": 0,
+      "groups": [],
+      "credentials": [
+        {
+          "type": "password",
+          "userLabel": "My password",
+          "secretData": "{\"value\":\"+EHCzekdXnLi3tKjueEFXzb1zGD2AhG9uRr94iGfLlM=\",\"salt\":\"Wx4upd39HaO0AQ1fcZ4HZA==\",\"additionalParameters\":{}}",
+          "credentialData": "{\"hashIterations\":5,\"algorithm\":\"argon2\",\"additionalParameters\":{\"hashLength\":[\"32\"],\"memory\":[\"7168\"],\"type\":[\"id\"],\"version\":[\"1.3\"],\"parallelism\":[\"1\"]}}"
+        }
+      ]
+    },
+    {
+      "username": "integrator",
+      "firstName": "Integrator",
+      "lastName": "M8Flow",
+      "email": "",
+      "emailVerified": true,
+      "enabled": true,
+      "totp": false,
+      "disableableCredentialTypes": [],
+      "requiredActions": [],
+      "realmRoles": ["default-roles-spiffworkflow", "integrator"],
+      "notBefore": 0,
+      "groups": [],
+      "credentials": [
+        {
+          "type": "password",
+          "userLabel": "My password",
+          "secretData": "{\"value\":\"+EHCzekdXnLi3tKjueEFXzb1zGD2AhG9uRr94iGfLlM=\",\"salt\":\"Wx4upd39HaO0AQ1fcZ4HZA==\",\"additionalParameters\":{}}",
+          "credentialData": "{\"hashIterations\":5,\"algorithm\":\"argon2\",\"additionalParameters\":{\"hashLength\":[\"32\"],\"memory\":[\"7168\"],\"type\":[\"id\"],\"version\":[\"1.3\"],\"parallelism\":[\"1\"]}}"
+        }
+      ]
+    },
+    {
+      "username": "reviewer",
+      "firstName": "Reviewer",
+      "lastName": "M8Flow",
+      "email": "",
+      "emailVerified": true,
+      "enabled": true,
+      "totp": false,
+      "disableableCredentialTypes": [],
+      "requiredActions": [],
+      "realmRoles": ["default-roles-spiffworkflow", "reviewer"],
+      "notBefore": 0,
+      "groups": [],
+      "credentials": [
+        {
+          "type": "password",
+          "userLabel": "My password",
+          "secretData": "{\"value\":\"+EHCzekdXnLi3tKjueEFXzb1zGD2AhG9uRr94iGfLlM=\",\"salt\":\"Wx4upd39HaO0AQ1fcZ4HZA==\",\"additionalParameters\":{}}",
+          "credentialData": "{\"hashIterations\":5,\"algorithm\":\"argon2\",\"additionalParameters\":{\"hashLength\":[\"32\"],\"memory\":[\"7168\"],\"type\":[\"id\"],\"version\":[\"1.3\"],\"parallelism\":[\"1\"]}}"
+        }
+      ]
+    },
+    {
+      "username": "super-admin",
+      "firstName": "Super Admin",
+      "lastName": "M8Flow",
+      "email": "",
+      "emailVerified": true,
+      "enabled": true,
+      "totp": false,
+      "disableableCredentialTypes": [],
+      "requiredActions": [],
+      "realmRoles": ["default-roles-spiffworkflow", "super-admin"],
+      "notBefore": 0,
+      "groups": [],
+      "credentials": [
+        {
+          "type": "password",
+          "userLabel": "My password",
+          "secretData": "{\"value\":\"+EHCzekdXnLi3tKjueEFXzb1zGD2AhG9uRr94iGfLlM=\",\"salt\":\"Wx4upd39HaO0AQ1fcZ4HZA==\",\"additionalParameters\":{}}",
+          "credentialData": "{\"hashIterations\":5,\"algorithm\":\"argon2\",\"additionalParameters\":{\"hashLength\":[\"32\"],\"memory\":[\"7168\"],\"type\":[\"id\"],\"version\":[\"1.3\"],\"parallelism\":[\"1\"]}}"
+        }
+      ]
+    },
+    {
+      "username": "tenant-admin",
+      "firstName": "Tenant Admin",
+      "lastName": "M8Flow",
+      "email": "",
+      "emailVerified": true,
+      "enabled": true,
+      "totp": false,
+      "disableableCredentialTypes": [],
+      "requiredActions": [],
+      "realmRoles": ["default-roles-spiffworkflow", "tenant-admin"],
+      "notBefore": 0,
+      "groups": [],
+      "credentials": [
+        {
+          "type": "password",
+          "userLabel": "My password",
+          "secretData": "{\"value\":\"+EHCzekdXnLi3tKjueEFXzb1zGD2AhG9uRr94iGfLlM=\",\"salt\":\"Wx4upd39HaO0AQ1fcZ4HZA==\",\"additionalParameters\":{}}",
+          "credentialData": "{\"hashIterations\":5,\"algorithm\":\"argon2\",\"additionalParameters\":{\"hashLength\":[\"32\"],\"memory\":[\"7168\"],\"type\":[\"id\"],\"version\":[\"1.3\"],\"parallelism\":[\"1\"]}}"
+        }
+      ]
+    },
+    {
+      "username": "viewer",
+      "firstName": "Viewer",
+      "lastName": "M8Flow",
+      "email": "",
+      "emailVerified": true,
+      "enabled": true,
+      "totp": false,
+      "disableableCredentialTypes": [],
+      "requiredActions": [],
+      "realmRoles": ["default-roles-spiffworkflow", "viewer"],
+      "notBefore": 0,
+      "groups": [],
+      "credentials": [
+        {
+          "type": "password",
+          "userLabel": "My password",
+          "secretData": "{\"value\":\"+EHCzekdXnLi3tKjueEFXzb1zGD2AhG9uRr94iGfLlM=\",\"salt\":\"Wx4upd39HaO0AQ1fcZ4HZA==\",\"additionalParameters\":{}}",
+          "credentialData": "{\"hashIterations\":5,\"algorithm\":\"argon2\",\"additionalParameters\":{\"hashLength\":[\"32\"],\"memory\":[\"7168\"],\"type\":[\"id\"],\"version\":[\"1.3\"],\"parallelism\":[\"1\"]}}"
+        }
+      ]
     }
   ],
   "scopeMappings": [
@@ -1230,6 +1397,23 @@
             "id.token.claim": "true",
             "access.token.claim": "true"
           }
+        },
+        {
+          "id": "144579f3-168a-4dc3-a8ff-a9ac89dd7658",
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "introspection.token.claim": "true",
+            "multivalued": "true",
+            "userinfo.token.claim": "true",
+            "user.attribute": "foo",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "groups",
+            "jsonType.label": "String"
+          }
         }
       ],
       "defaultClientScopes": [
@@ -1237,6 +1421,7 @@
         "acr",
         "profile",
         "roles",
+        "basic",
         "email"
       ],
       "optionalClientScopes": [
@@ -1936,7 +2121,8 @@
     "role_list",
     "roles",
     "acr",
-    "web-origins"
+    "web-origins",
+    "basic"
   ],
   "defaultOptionalClientScopes": [
     "offline_access",

@@ -106,7 +106,7 @@ def test_resolves_tenant_from_jwt_claim() -> None:
         db.session.commit()
 
         with app.test_request_context("/test", headers={"Authorization": f"Bearer {token}"}):
-            resolve_request_tenant()
+            resolve_request_tenant(db)
             assert g.m8flow_tenant_id == "tenant-b"
 
 
@@ -118,7 +118,7 @@ def test_missing_tenant_raises_by_default() -> None:
 
         with app.test_request_context("/test"):
             with pytest.raises(ApiError) as exc:
-                resolve_request_tenant()
+                resolve_request_tenant(db)
             assert exc.value.error_code == "tenant_required"
 
 
@@ -133,7 +133,7 @@ def test_missing_tenant_defaults_when_allowed() -> None:
         _seed_tenants()
 
         with app.test_request_context("/test"):
-            resolve_request_tenant()
+            resolve_request_tenant(db)
             assert g.m8flow_tenant_id == "default"
 
 
@@ -159,13 +159,13 @@ def test_invalid_tenant_raises() -> None:
 
         with app.test_request_context("/test", headers={"Authorization": f"Bearer {token}"}):
             with pytest.raises(ApiError) as exc:
-                resolve_request_tenant()
+                resolve_request_tenant(db)
             assert exc.value.error_code == "invalid_tenant"
 
 
 def test_tenant_validation_raises_503_when_db_not_bound() -> None:
-    """When Flask-SQLAlchemy is not bound (e.g. startup/misconfiguration), raise 503 instead of failing open."""
-    from unittest.mock import patch
+    """When db session raises 'not registered with this SQLAlchemy instance', raise 503 instead of failing open."""
+    from unittest.mock import MagicMock
 
     from spiffworkflow_backend.models.user import UserModel
 
@@ -188,17 +188,15 @@ def test_tenant_validation_raises_503_when_db_not_bound() -> None:
         runtime_error = RuntimeError(
             "M8flowTenantModel is not registered with this 'SQLAlchemy' instance."
         )
+        mock_db = MagicMock()
+        mock_db.session.query.return_value.filter.return_value.one_or_none.side_effect = (
+            runtime_error
+        )
         with app.test_request_context("/test", headers={"Authorization": f"Bearer {token}"}):
-            with patch(
-                "m8flow_backend.services.tenant_context_middleware.db.session.query"
-            ) as mock_query:
-                mock_query.return_value.filter.return_value.one_or_none.side_effect = (
-                    runtime_error
-                )
-                with pytest.raises(ApiError) as exc:
-                    resolve_request_tenant()
-                assert exc.value.error_code == "service_unavailable"
-                assert exc.value.status_code == 503
+            with pytest.raises(ApiError) as exc:
+                resolve_request_tenant(mock_db)
+            assert exc.value.error_code == "service_unavailable"
+            assert exc.value.status_code == 503
 
 
 def test_tenant_override_forbidden() -> None:
@@ -224,7 +222,7 @@ def test_tenant_override_forbidden() -> None:
         with app.test_request_context("/test", headers={"Authorization": f"Bearer {token}"}):
             g.m8flow_tenant_id = "tenant-a"
             with pytest.raises(ApiError) as exc:
-                resolve_request_tenant()
+                resolve_request_tenant(db)
             assert exc.value.error_code == "tenant_override_forbidden"
 
 
@@ -244,14 +242,14 @@ def test_tenant_context_propagates_to_queries() -> None:
     # Exercise the real lifecycle (including teardown_request reset of ContextVar)
     @app.get("/add/<name>")
     def _add(name: str) -> str:
-        resolve_request_tenant()
+        resolve_request_tenant(db)
         db.session.add(TestItem(name=name))
         db.session.commit()
         return "ok"
 
     @app.get("/list")
     def _list() -> str:
-        resolve_request_tenant()
+        resolve_request_tenant(db)
         rows = TestItem.query.order_by(TestItem.name).all()
         return ",".join([r.name for r in rows])
 

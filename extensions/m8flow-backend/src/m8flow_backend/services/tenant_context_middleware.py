@@ -19,18 +19,20 @@ from m8flow_backend.tenancy import (
     reset_context_tenant_id,
     set_context_tenant_id,
 )
-from spiffworkflow_backend.models.db import db
 
 LOGGER = logging.getLogger(__name__)
 
 # Tenant is read only from JWT claim m8flow_tenant_id; name/realm can be derived from id if needed.
 TENANT_CLAIMS = ("m8flow_tenant_id",)
 
-def resolve_request_tenant() -> None:
+def resolve_request_tenant(db: Any) -> None:
     """
     Resolve tenant id for this Flask request and store it in:
       - g.m8flow_tenant_id
       - a ContextVar (for SQLAlchemy scoping, logging, etc.)
+
+    db must be the SQLAlchemy instance bound to the current Flask app (the one that
+    received init_app), so tenant validation uses the same engine/session as the rest of the app.
 
     Priority:
       1) JWT claim (m8flow_tenant_id)

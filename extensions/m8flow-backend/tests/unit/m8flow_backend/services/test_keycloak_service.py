@@ -88,6 +88,38 @@ def test_fill_realm_template_user_realm_roles() -> None:
     assert result["users"][1]["realmRoles"] == ["default-roles-tenant-f"]
 
 
+RBAC_REALM_ROLES = ("editor", "super-admin", "tenant-admin", "integrator", "reviewer", "viewer")
+RBAC_USERNAMES = ("editor", "integrator", "reviewer", "super-admin", "tenant-admin", "viewer")
+
+
+def test_fill_realm_template_rbac_roles_and_users() -> None:
+    """Template with RBAC realm roles and users: roles are preserved, default role name is rewritten in user realmRoles."""
+    template = {
+        "id": "spiffworkflow",
+        "realm": "spiffworkflow",
+        "roles": {
+            "realm": [
+                {"id": "def", "name": "default-roles-spiffworkflow", "containerId": "spiffworkflow"},
+                *[{"id": r, "name": r, "containerId": "spiffworkflow"} for r in RBAC_REALM_ROLES],
+            ],
+        },
+        "users": [
+            {"username": u, "realmRoles": ["default-roles-spiffworkflow", u]} for u in RBAC_USERNAMES
+        ],
+    }
+    result = _fill_realm_template(template, "tenant-x", "Tenant X", "spiffworkflow")
+    realm_role_names = [r["name"] for r in result["roles"]["realm"]]
+    for role in RBAC_REALM_ROLES:
+        assert role in realm_role_names
+    assert "default-roles-tenant-x" in realm_role_names
+    user_usernames = [u["username"] for u in result["users"]]
+    for username in RBAC_USERNAMES:
+        assert username in user_usernames
+    for user in result["users"]:
+        assert "default-roles-tenant-x" in user["realmRoles"]
+        assert user["username"] in user["realmRoles"]
+
+
 def test_fill_realm_template_client_urls() -> None:
     """Client baseUrl, redirectUris contain /realms/{realm}/ and /admin/{realm}/ updated."""
     template = {
