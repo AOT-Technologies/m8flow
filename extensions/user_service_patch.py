@@ -1,4 +1,4 @@
-# extensions/create_user_tenant_scope_patch.py
+# extensions/user_service_patch.py
 """Patches UserService.create_user in spiffworkflow_backend.services.user_service."""
 
 import logging
