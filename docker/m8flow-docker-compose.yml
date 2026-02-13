@@ -95,6 +95,16 @@ services:
     entrypoint: ["/bin/sh", "/templates_sync.sh"]
     restart: "no"
 
+  smtp-attachments-sync:
+    profiles: ["init"]
+    image: alpine:3.20
+    entrypoint: ["/bin/sh", "/smtp_attachments_sync.sh"]
+    volumes:
+      - smtp_attachments:/app/email_attachments
+      - ../email_attachments:/host_attachments:ro
+      - ../extensions/m8flow-backend/bin/smtp_attachments_sync.sh:/smtp_attachments_sync.sh:ro
+    restart: "no"
+
   # -------------------------
   # APP SERVICES
   # -------------------------
@@ -125,6 +135,30 @@ services:
     depends_on:
       - m8flow-backend
 
+  m8flow-connector-proxy:
+    container_name: m8flow-connector-proxy
+    image: m8flow/connector-proxy
+    build:
+      context: ../connector-proxy-demo
+    environment:
+      FLASK_ENV: "${FLASK_ENV:-development}"
+      FLASK_DEBUG: "0"
+      FLASK_SESSION_SECRET_KEY: "${FLASK_SESSION_SECRET_KEY:-super_secret_key}"
+      CONNECTOR_PROXY_PORT: "${M8FLOW_CONNECTOR_PORT:-8004}"
+      M8FLOW_CONNECTOR_SMTP_ATTACHMENTS_DIR: "${M8FLOW_CONNECTOR_SMTP_ATTACHMENTS_DIR:-./email_attachments}"
+    ports:
+      - "${M8FLOW_CONNECTOR_PORT:-8004}:${M8FLOW_CONNECTOR_PORT:-8004}/tcp"
+    volumes:
+      - type: volume
+        source: "${M8FLOW_CONNECTOR_SMTP_ATTACHMENTS_VOLUME:-smtp_attachments}"
+        target: /app/email_attachments
+        read_only: true
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:${M8FLOW_CONNECTOR_PORT:-8004}/liveness || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
 volumes:
   db-data:
     driver: local
@@ -137,4 +171,6 @@ volumes:
   templates_cache:
     driver: local
   minio_data:
+    driver: local
+  smtp_attachments:
     driver: local

@@ -24,3 +24,4 @@ sample-process-models/
 agent_setup_script_has_completed_successfully
 .venv*
 templates
+email_attachments
