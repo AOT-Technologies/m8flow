@@ -1,9 +1,9 @@
 from flask import g
-from spiffworkflow_backend.services.authorization_service import AuthorizationService
 from spiffworkflow_backend.exceptions.api_error import ApiError
 from m8flow_backend.services.tenant_service import TenantService
 from m8flow_backend.helpers.response_helper import success_response, handle_api_errors
 import uuid
+
 
 def _serialize_tenant(tenant):
     """Serialize tenant model to Spiff-standard (camelCase) dictionary."""
@@ -19,7 +19,19 @@ def _serialize_tenant(tenant):
     }
 
 @handle_api_errors
+def check_tenant_exists(identifier: str):
+    """
+    Check if an active tenant exists by slug or id. Unauthenticated; for pre-login tenant selection.
+    Returns {"exists": true, "tenant_id": "..."} or {"exists": false}.
+    """
+    result = TenantService.check_tenant_exists(identifier or "")
+    return success_response(result, 200)
+
+
+@handle_api_errors
 def create_tenant(body):
+    body = body or {}
+
     tenant_id = body.get('id', str(uuid.uuid4()))
     name = body.get('name')
     slug = body.get('slug')
@@ -68,6 +80,8 @@ def delete_tenant(tenant_id):
 @handle_api_errors
 def update_tenant(tenant_id, body):
     """Update tenant name and status. Slug cannot be updated."""
+    body = body or {}
+
     if 'slug' in body: 
         raise ApiError(
             error_code="slug_update_forbidden",

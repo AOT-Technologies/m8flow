@@ -20,7 +20,9 @@ services:
       - keycloak-db-data:/var/lib/postgresql/data
 
   keycloak:
-    image: keycloak/keycloak:26.0.7
+    build:
+      context: ..
+      dockerfile: docker/m8flow.keycloak.Dockerfile
     env_file: ../.env
     command: ["start-dev"]
     environment:
@@ -32,6 +34,7 @@ services:
       KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak}
       KC_HTTP_PORT: ${KC_HTTP_PORT:-8080}
       KC_HOSTNAME_STRICT: ${KC_HOSTNAME_STRICT:-false}
+      KC_HOSTNAME_STRICT_HTTPS: "false"
     ports:
       - "7002:8080"
     depends_on:
@@ -122,6 +125,7 @@ services:
       - templates_cache:/app/templates
     depends_on:
       - m8flow-db
+      - keycloak
       - redis
       - minio
 

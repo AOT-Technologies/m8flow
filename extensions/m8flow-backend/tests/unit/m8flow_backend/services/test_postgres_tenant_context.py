@@ -69,12 +69,15 @@ def test_postgres_missing_tenant_defaults_to_default_when_allowed(monkeypatch) -
     assert connection.calls == [("SET LOCAL app.current_tenant = %s", ("default",))]
 
 
-def test_postgres_missing_tenant_raises() -> None:
+def test_postgres_missing_tenant_uses_default() -> None:
+    """When no request/context tenant (e.g. background job), default tenant is used."""
     os.environ.pop("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", None)
+    default_id = os.environ.get("M8FLOW_DEFAULT_TENANT_ID", "default")
     connection = FakeConnection("postgresql")
 
-    with pytest.raises(RuntimeError):
-        tenant_scoping_patch._set_postgres_tenant_context(None, None, connection)
+    tenant_scoping_patch._set_postgres_tenant_context(None, None, connection)
+
+    assert connection.calls == [("SET LOCAL app.current_tenant = %s", (default_id,))]
 
 
 def test_non_postgres_does_nothing() -> None:

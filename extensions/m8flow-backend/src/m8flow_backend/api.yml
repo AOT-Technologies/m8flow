@@ -41,6 +41,193 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /tenant-login-url:
+    get:
+      summary: Get Keycloak login URL for a tenant realm (unauthenticated)
+      description: Checks Keycloak for the tenant realm; if it exists returns the authorization URL for that realm.
+      operationId: m8flow_backend.routes.keycloak_controller.get_tenant_login_url
+      tags:
+        - Keycloak
+      security: []
+      parameters:
+        - name: tenant
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Tenant (realm) name to look up in Keycloak
+      responses:
+        "200":
+          description: Tenant realm exists; login URL returned
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - login_url
+                properties:
+                  login_url:
+                    type: string
+                    description: Keycloak authorization (login) base URL for the tenant realm
+                  realm:
+                    type: string
+                    description: Realm name
+        "400":
+          description: Bad request - tenant missing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+        "404":
+          description: Tenant realm not found in Keycloak
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+
+  /tenant-realms:
+    post:
+      summary: Create a spoke realm from the SpiffWorkflow template
+      description: Creates a Keycloak realm from the template and ensures a tenant record exists. Does not require tenant context (bootstrap/admin).
+      operationId: m8flow_backend.routes.keycloak_controller.create_realm
+      tags:
+        - Keycloak
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - realm_id
+              properties:
+                realm_id:
+                  type: string
+                  description: Keycloak realm id (required)
+                display_name:
+                  type: string
+                  description: Optional display name for the realm
+      responses:
+        "201":
+          description: Realm created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  realm:
+                    type: string
+                    description: Realm name (slug)
+                  displayName:
+                    type: string
+                  keycloak_realm_id:
+                    type: string
+                    description: Keycloak realm UUID (stored as M8flowTenantModel.id)
+                  id:
+                    type: string
+                    description: Same as keycloak_realm_id (Keycloak realm UUID)
+        "400":
+          description: Bad request - realm_id missing or invalid
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+        "409":
+          description: Realm already exists or conflict
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+        "500":
+          description: Keycloak or server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+
+  /tenant-realms/{realm_id}:
+    delete:
+      summary: Delete a Keycloak realm and its associated tenant
+      description: Removes the realm from Keycloak and the tenant record from Postgres. Requires a valid master admin token. The path parameter is the realm name (slug), not the Keycloak realm UUID.
+      operationId: m8flow_backend.routes.keycloak_controller.delete_tenant_realm
+      tags:
+        - Keycloak
+      parameters:
+        - name: realm_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The realm name (slug) of the realm to delete, not the Keycloak UUID
+      responses:
+        "200":
+          description: Tenant deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        "401":
+          description: Unauthorized - missing or invalid admin token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Realm not found in Keycloak
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /tenants/check:
+    get:
+      summary: Check if tenant exists by slug or id (unauthenticated)
+      description: For pre-login tenant selection. Only considers ACTIVE tenants.
+      operationId: m8flow_backend.routes.tenant_controller.check_tenant_exists
+      tags:
+        - Tenant
+      security: []
+      parameters:
+        - name: identifier
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Tenant slug or id to look up
+      responses:
+        "200":
+          description: Check result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantExistsResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /tenants/slug/{slug}:
     get:
       summary: Get tenant by slug
@@ -607,6 +794,18 @@ components:
       type: array
       items:
         $ref: "#/components/schemas/Tenant"
+
+    TenantExistsResponse:
+      type: object
+      required:
+        - exists
+      properties:
+        exists:
+          type: boolean
+          description: Whether an active tenant with the given slug or id exists
+        tenant_id:
+          type: string
+          description: Canonical tenant id when exists is true (for storage/headers)
 
     TenantActionData:
       type: object

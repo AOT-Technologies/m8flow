@@ -14,16 +14,8 @@ export const getBasicHeaders = (): Record<string, string> => {
   
   if (UserService.isLoggedIn()) {
     headers.Authorization = `Bearer ${UserService.getAccessToken()}`;
-    headers['SpiffWorkflow-Authentication-Identifier'] =
-      UserService.getAuthenticationIdentifier() || 'default';
   }
-  
-  // Include tenant ID if available
-  const tenantId = UserService.getTenantId();
-  if (tenantId) {
-    headers['m8-Tenant-Id'] = tenantId;
-  }
-  
+
   return headers;
 };
 
