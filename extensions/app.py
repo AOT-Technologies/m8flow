@@ -263,6 +263,10 @@ flask_app = getattr(cnx_app, "app", None)
 from m8flow_backend.services.user_service_patch import apply as apply_user_service_patch
 apply_user_service_patch()
 
+# Canonical db: set once so tenant resolution and m8flow_backend services use the same instance.
+from m8flow_backend.canonical_db import set_canonical_db
+set_canonical_db(db)
+
 
 def _register_request_active_hooks(app: Flask) -> None:
     @app.before_request
@@ -362,9 +366,9 @@ before_request_funcs = flask_app.before_request_funcs[None]
 try:
     from spiffworkflow_backend.routes.authentication_controller import omni_auth
     auth_index = before_request_funcs.index(omni_auth)
-    before_request_funcs.insert(auth_index + 1, lambda: resolve_request_tenant(db))
+    before_request_funcs.insert(auth_index + 1, lambda: resolve_request_tenant())
 except Exception:
-    flask_app.before_request(lambda: resolve_request_tenant(db))
+    flask_app.before_request(lambda: resolve_request_tenant())
 
 if apply_login_tenant_patch is not None:
     apply_login_tenant_patch(flask_app)

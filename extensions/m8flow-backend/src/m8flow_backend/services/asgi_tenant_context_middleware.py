@@ -6,10 +6,12 @@ import json
 from http.cookies import SimpleCookie
 from typing import Callable, Optional
 
-from m8flow_backend.tenancy import PUBLIC_PATH_PREFIXES, set_context_tenant_id, reset_context_tenant_id
-
-# Tenant is read only from JWT claim m8flow_tenant_id; name/realm can be derived from id if needed.
-TENANT_CLAIMS = ("m8flow_tenant_id",)
+from m8flow_backend.tenancy import (
+    PUBLIC_PATH_PREFIXES,
+    TENANT_CLAIM,
+    reset_context_tenant_id,
+    set_context_tenant_id,
+)
 
 
 def _get_header(scope, name: bytes) -> Optional[str]:
@@ -39,10 +41,9 @@ def _tenant_from_token(token: str) -> Optional[str]:
     payload = _jwt_payload(token)
     if not payload:
         return None
-    for claim in TENANT_CLAIMS:
-        tenant = payload.get(claim)
-        if isinstance(tenant, str) and tenant:
-            return tenant
+    tenant = payload.get(TENANT_CLAIM)
+    if isinstance(tenant, str) and tenant:
+        return tenant
     return None
 
 

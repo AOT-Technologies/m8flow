@@ -10,10 +10,12 @@ from spiffworkflow_backend.exceptions.api_error import ApiError
 from spiffworkflow_backend.services.authentication_service import AuthenticationService
 from spiffworkflow_backend.services.authorization_service import AuthorizationService
 
+from m8flow_backend.canonical_db import get_canonical_db
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
 from m8flow_backend.tenancy import (
     DEFAULT_TENANT_ID,
     PUBLIC_PATH_PREFIXES,
+    TENANT_CLAIM,
     allow_missing_tenant_context,
     get_context_tenant_id,
     reset_context_tenant_id,
@@ -22,17 +24,14 @@ from m8flow_backend.tenancy import (
 
 LOGGER = logging.getLogger(__name__)
 
-# Tenant is read only from JWT claim m8flow_tenant_id; name/realm can be derived from id if needed.
-TENANT_CLAIMS = ("m8flow_tenant_id",)
-
-def resolve_request_tenant(db: Any) -> None:
+def resolve_request_tenant() -> None:
     """
     Resolve tenant id for this Flask request and store it in:
       - g.m8flow_tenant_id
       - a ContextVar (for SQLAlchemy scoping, logging, etc.)
 
-    db must be the SQLAlchemy instance bound to the current Flask app (the one that
-    received init_app), so tenant validation uses the same engine/session as the rest of the app.
+    Uses the canonical db (set by extensions/app.py). Tests that call this function
+    must call set_canonical_db(db) in their app setup.
 
     Priority:
       1) JWT claim (m8flow_tenant_id)
@@ -47,6 +46,12 @@ def resolve_request_tenant(db: Any) -> None:
       - Tenant resolution MUST happen even when auth is "disabled" for the request.
         Disabling auth should not disable tenant isolation.
     """
+    db = get_canonical_db()
+    if db is None:
+        raise RuntimeError(
+            "Canonical db not set; ensure app has been initialized (extensions/app.py calls set_canonical_db)."
+        )
+
     if _is_public_request():
         g._m8flow_public_request = True
         return
@@ -192,7 +197,7 @@ def _tenant_from_jwt_claim_cached(*, allow_decode: bool) -> Optional[str]:
     cached_decoded = getattr(g, "_m8flow_decoded_token", None)
     cached_raw = getattr(g, "_m8flow_decoded_token_raw", None)
     if cached_decoded is not None and cached_raw == token:
-        return _get_str_claims(cached_decoded, TENANT_CLAIMS)
+        return _get_str_claims(cached_decoded, (TENANT_CLAIM,))
 
     if not allow_decode:
         return None
@@ -207,7 +212,7 @@ def _tenant_from_jwt_claim_cached(*, allow_decode: bool) -> Optional[str]:
 
     g._m8flow_decoded_token = decoded
     g._m8flow_decoded_token_raw = token
-    return _get_str_claims(decoded, TENANT_CLAIMS)
+    return _get_str_claims(decoded, (TENANT_CLAIM,))
 
 
 def _get_str_claims(decoded: Any, claims: tuple[str, ...]) -> Optional[str]:

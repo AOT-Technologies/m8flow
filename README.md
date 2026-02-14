@@ -77,7 +77,7 @@ A sample environment file is provided at the repository root. Create a working e
 cp sample.env .env
 ```
 
-Edit the `.env` file if adjustments are required for the local setup.
+Edit the `.env` file if adjustments are required for the local setup. Key tenancy options (`M8FLOW_DEFAULT_TENANT_ID`, `M8FLOW_ALLOW_MISSING_TENANT_CONTEXT`, `M8FLOW_TENANT_CLAIM`) are described in `sample.env`.
 
 ---
 
