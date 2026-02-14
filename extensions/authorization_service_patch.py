@@ -1,4 +1,4 @@
-# extensions/auth_exclusion_patch.py
+# extensions/authorization_service_patch.py
 """Patches AuthorizationService.authentication_exclusion_list in spiffworkflow_backend.services.authorization_service."""
 
 import logging
