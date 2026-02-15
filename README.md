@@ -85,7 +85,7 @@ Edit the `.env` file if adjustments are required for the local setup.
 
 To run the **extensions app** (m8flow backend: tenant login URL, tenant APIs, and DB migrations for m8flow):
 
-1. Ensure `.env` at repo root has `M8FLOW_BACKEND_DATABASE_URI`. Optionally set `M8FLOW_BACKEND_SW_UPGRADE_DB=true` to run SpiffWorkflow DB migrations before start.
+1. Ensure `.env` at repo root has `M8FLOW_BACKEND_DATABASE_URI`. Optionally set `M8FLOW_BACKEND_UPGRADE_DB=true` or `M8FLOW_BACKEND_SW_UPGRADE_DB=true` to run SpiffWorkflow and tenant DB migrations before start. Other options: `M8FLOW_BACKEND_RUN_BOOTSTRAP=false`, `SPIFFWORKFLOW_BACKEND_RUN_DATA_SETUP` (see sample.env).
 2. From repo root:
 
 ```bash
@@ -128,7 +128,7 @@ If the init containers are not needed:
 docker compose -f docker/m8flow-docker-compose.yml up -d --build
 ```
 
-The Keycloak image is built with the **m8flow realm-info-mapper** provider, so tokens include `m8flow_tenant_id` and `m8flow_tenant_name`. No separate build of the keycloak-extensions JAR is required.
+The Keycloak image is built with the **m8flow realm-info-mapper** provider, so tokens include `m8flow_tenant_id` and `m8flow_tenant_name`. No separate build of the keycloak-extensions JAR is required. Realm import can be done manually in the Keycloak Admin Console (see Keycloak Setup below) or by running `./extensions/m8flow-backend/keycloak/start_keycloak.sh` once after Keycloak is up; the script imports the identity realm and creates tenant-a (expects Keycloak on ports 7002 and 7009, e.g. when using Docker Compose).
 
 To stop containers and remove associated volumes (this deletes local database data):
 
@@ -170,6 +170,8 @@ After the containers start, continue below to the Keycloak Setup to import the r
 ## Keycloak Setup
 
 ### Import Realm
+
+You can import realms manually as below, or run `./extensions/m8flow-backend/keycloak/start_keycloak.sh` after starting Docker to import the identity realm and tenant-a.
 
 In the Keycloak Admin Console http://localhost:7002/ log in using the configured administrator credentials.
 

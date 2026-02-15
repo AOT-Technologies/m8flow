@@ -25,7 +25,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 BACKEND_PORT="${M8FLOW_BACKEND_PORT:-7000}"
-export SPIFFWORKFLOW_BACKEND_RUN_DATA_SETUP=false
+export SPIFFWORKFLOW_BACKEND_RUN_DATA_SETUP="${SPIFFWORKFLOW_BACKEND_RUN_DATA_SETUP:-false}"
 
 # Kill any existing process on backend port so we can bind to it
 if command -v lsof >/dev/null 2>&1; then

@@ -37,6 +37,7 @@ services:
       KC_HOSTNAME_STRICT_HTTPS: "false"
     ports:
       - "7002:8080"
+      - "7009:9000"
     depends_on:
       - keycloak-db
 
@@ -60,9 +61,7 @@ services:
     volumes:
       - minio_data:/data
 
-  # -------------------------
-  # INIT JOBS (opt-in)
-  # -------------------------
+  # --- INIT JOBS (opt-in)
 
   minio-mc-init:
     profiles: ["init"]
@@ -98,10 +97,9 @@ services:
     entrypoint: ["/bin/sh", "/templates_sync.sh"]
     restart: "no"
 
-  # -------------------------
-  # APP SERVICES
-  # -------------------------
+  # --- APP SERVICES
 
+  # Backend: .env. Optional: M8FLOW_BACKEND_UPGRADE_DB, M8FLOW_BACKEND_RUN_BOOTSTRAP=false, SPIFFWORKFLOW_BACKEND_RUN_DATA_SETUP.
   m8flow-backend:
     build:
       context: ..
@@ -119,6 +117,7 @@ services:
       - redis
       - minio
 
+  # Frontend: nginx on 80 (SPIFFWORKFLOW_FRONTEND_INTERNAL_PORT in .env).
   m8flow-frontend:
     build:
       context: ..

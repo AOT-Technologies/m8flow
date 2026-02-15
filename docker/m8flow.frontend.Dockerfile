@@ -3,9 +3,7 @@ FROM node:24.10.0-trixie-slim AS base
 RUN mkdir /app
 WORKDIR /app
 
-# curl for debugging
-# procps for debugging
-# vim ftw
+# Build deps and debug tools (curl, procps, vim-tiny).
 RUN apt-get update \
   && apt-get clean -y \
   && apt-get install -y -q \
@@ -16,26 +14,20 @@ RUN apt-get update \
   libexpat1 \
   && rm -rf /var/lib/apt/lists/*
 
-# this matches total memory on spiffworkflow-demo
+# Node heap for build (matches demo).
 ENV NODE_OPTIONS=--max_old_space_size=4096
 
-######################## - SETUP
-# Setup image for installing JS dependencies and building both
-# the core spiffworkflow-frontend and the m8flow extension frontend.
+# --- Setup: build core + extension frontends
 FROM base AS setup
 
-# Copy the full repo so that both spiffworkflow-frontend and extensions/frontend are available.
+# Copy repo for spiffworkflow-frontend and extensions/frontend.
 WORKDIR /app
 COPY . /app
 
-########################
-# Build upstream spiffworkflow-frontend
-########################
+# Build upstream spiffworkflow-frontend.
 WORKDIR /app/spiffworkflow-frontend
 
-# Install core frontend dependencies and build the app.
-# Use npm ci when a lockfile is present (for reproducibility),
-# otherwise fall back to npm install.
+# npm ci when lockfile present, else npm install; then build.
 RUN if [ -f package-lock.json ]; then \
       npm ci; \
     else \
@@ -43,53 +35,42 @@ RUN if [ -f package-lock.json ]; then \
     fi && \
     npm run build
 
-########################
-# Build the m8flow extension frontend
-########################
+# Build m8flow extension frontend.
 WORKDIR /app/extensions/frontend
 
-# Ensure the python worker from the core frontend is available at the
-# path expected by the build tooling, without modifying upstream code.
+# Copy core python worker for extension build (no upstream change).
 RUN mkdir -p public/src/workers && \
     cp /app/spiffworkflow-frontend/src/workers/python.ts public/src/workers/python.ts
 
-# npm ci because it respects the lock file.
-# --ignore-scripts because authors can do bad things in postinstall scripts.
-# https://cheatsheetseries.owasp.org/cheatsheets/NPM_Security_Cheat_Sheet.html
-# npx can-i-ignore-scripts can check that it's safe to ignore scripts.
+# npm ci --ignore-scripts then build (OWASP NPM Security Cheat Sheet).
 RUN npm ci --ignore-scripts && \
     npm run build
 
-######################## - FINAL
-
-# Use nginx as the base image
+# --- Final: nginx serving static assets
 FROM nginx:1.29.2-alpine
 
-# we sort of love bash too much to use sh
-RUN apk add --no-cache bash dos2unix
-
-# to fix security vulnerability:
-# remove this line once the base image has the secure version of this lib (10.46)
-RUN apk add --upgrade pcre2
+# bash for entry script; pcre2 upgrade for CVE (remove when base has 10.46).
+RUN apk add --no-cache bash && apk add --upgrade pcre2
 
 # Remove default nginx configuration
 RUN rm -rf /etc/nginx/conf.d/*
 
-# Copy the nginx configuration file from the core frontend
+# Nginx template (port substituted at runtime).
 COPY spiffworkflow-frontend/docker_build/nginx.conf.template /var/tmp
 
-# Copy the built static files from the extension frontend into the nginx directory
+# Extension frontend static files.
 COPY --from=setup /app/extensions/frontend/dist /usr/share/nginx/html
 
-# Optionally expose the core frontend dist under a sub-path if needed
-# (keeps behavior flexible without changing upstream code).
+# Core frontend at /spiff.
 COPY --from=setup /app/spiffworkflow-frontend/dist /usr/share/nginx/html/spiff
 
-# Reuse core frontend helper scripts (including boot_server_in_docker)
-COPY --from=setup /app/spiffworkflow-frontend/bin /app/bin
+# Entry script inlined for same behavior on Mac and Windows.
+RUN mkdir -p /app/bin && printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'set -e' \
+  'port="${SPIFFWORKFLOW_FRONTEND_INTERNAL_PORT:-80}"' \
+  'sed "s/{{SPIFFWORKFLOW_FRONTEND_INTERNAL_PORT}}/$port/g" /var/tmp/nginx.conf.template > /etc/nginx/conf.d/default.conf' \
+  'exec nginx -g "daemon off;"' \
+  > /app/bin/nginx-frontend-start.sh && chmod +x /app/bin/nginx-frontend-start.sh
 
-# Fix line endings (CRLF to LF) for shell scripts using dos2unix
-RUN dos2unix /app/bin/boot_server_in_docker && \
-    chmod +x /app/bin/boot_server_in_docker
-
-CMD ["/app/bin/boot_server_in_docker"]
+CMD ["/app/bin/nginx-frontend-start.sh"]

@@ -4,9 +4,7 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "${script_dir}/../../.." && pwd)"
 cd "$repo_root"
 
-export PYTHONPATH=./spiffworkflow-backend:$PYTHONPATH
-export PYTHONPATH=./spiffworkflow-backend/src:$PYTHONPATH
-export PYTHONPATH=./extensions/m8flow-backend/src:$PYTHONPATH
+export PYTHONPATH="$repo_root:$repo_root/spiffworkflow-backend:$repo_root/spiffworkflow-backend/src:$repo_root/extensions/m8flow-backend/src:$PYTHONPATH"
 
 env_file="$repo_root/.env"
 if [[ -f "$env_file" ]]; then
@@ -38,11 +36,20 @@ fi
 export SPIFFWORKFLOW_BACKEND_DATABASE_URI="${M8FLOW_BACKEND_DATABASE_URI}"
 export SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR="${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR}"
 cd "$repo_root/spiffworkflow-backend"
-if [[ "${M8FLOW_BACKEND_SW_UPGRADE_DB:-}" == "true" ]]; then
+# Run SpiffWorkflow + tenant migrations when either UPGRADE_DB env is true
+if [[ "${M8FLOW_BACKEND_UPGRADE_DB:-}" == "true" || "${M8FLOW_BACKEND_SW_UPGRADE_DB:-}" == "true" ]]; then
   python -m flask db upgrade
+  echo "Resetting M8Flow migration version to re-apply tenant columns if needed..."
+  python "$repo_root/extensions/m8flow-backend/bin/reset_m8flow_tenant_migration.py"
 fi
-python bin/bootstrap.py
+# Bootstrap optional: set M8FLOW_BACKEND_RUN_BOOTSTRAP=false to skip
+if [[ "${M8FLOW_BACKEND_RUN_BOOTSTRAP:-}" != "false" ]]; then
+  python bin/bootstrap.py
+fi
 cd "$repo_root"
+
+# SPIFFWORKFLOW_BACKEND_RUN_DATA_SETUP from .env (default false = no cache refresh)
+export SPIFFWORKFLOW_BACKEND_RUN_DATA_SETUP="${SPIFFWORKFLOW_BACKEND_RUN_DATA_SETUP:-false}"
 
 log_config="$repo_root/uvicorn-log.yaml"
 
