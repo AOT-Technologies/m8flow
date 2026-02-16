@@ -2323,7 +2323,7 @@ def test_update_file_content_published_creates_draft_version() -> None:
                 result = TemplateService.update_file_content(
                     template, "diagram.bpmn", b"<bpmn>new</bpmn>", user=user
                 )
-                
+
                 # Result should be a new draft version
                 assert result is not None
                 assert result.id != template.id
@@ -2601,7 +2601,7 @@ def test_delete_file_from_published_creates_draft() -> None:
             with patch.object(TemplateService, "storage", MockTemplateStorageService()):
                 # Should create a new draft version instead of raising
                 result = TemplateService.delete_file_from_template(template, "form.json", user=user)
-                
+
                 # Result should be a new draft version
                 assert result is not None
                 assert result.id != template.id
@@ -2611,7 +2611,7 @@ def test_delete_file_from_published_creates_draft() -> None:
                 # The file should be deleted from the new version
                 assert len(result.files) == 1
                 assert result.files[0]["file_name"] == "diagram.bpmn"
-                
+
                 # Original published template should be unchanged
                 db.session.refresh(template)
                 assert len(template.files) == 2

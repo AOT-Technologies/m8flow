@@ -108,7 +108,7 @@ export default function TemplateFileDiagramPage() {
             const updatedTemplate = normalizeTemplate(result);
             setFileContent(xml);
             setDiagramHasChanges(false);
-            
+
             // Check if a new version was created (published template was edited)
             if (updatedTemplate.id !== id) {
               setNewVersionInfo({ id: updatedTemplate.id, version: updatedTemplate.version });

@@ -22,4 +22,9 @@ sample-process-models/
 /extensions/frontend/node_modules
 /spiffworkflow-frontend/node_modules
 agent_setup_script_has_completed_successfully
+.venv/
+/test/*
+.cursor/*
+*.p12
 .venv*
+templates

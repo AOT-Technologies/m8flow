@@ -39,7 +39,7 @@ export default function ProcessModelShowWithSaveAsTemplate() {
   // Fetch template provenance info
   useEffect(() => {
     if (!processModelIdentifier) return;
-    
+
     setTemplateInfoLoading(true);
     TemplateService.getProcessModelTemplateInfo(processModelIdentifier)
       .then((info) => {
@@ -132,7 +132,7 @@ export default function ProcessModelShowWithSaveAsTemplate() {
           Save as Template
         </Button>
       </Box>
-      
+
       {/* Template Provenance Info */}
       {templateInfoLoading && (
         <Box sx={{ mt: 2, display: "flex", alignItems: "center", gap: 1 }}>
@@ -188,7 +188,7 @@ export default function ProcessModelShowWithSaveAsTemplate() {
           </Box>
         </Paper>
       )}
-      
+
       <SaveAsTemplateModal
         open={saveAsTemplateOpen}
         onClose={() => setSaveAsTemplateOpen(false)}

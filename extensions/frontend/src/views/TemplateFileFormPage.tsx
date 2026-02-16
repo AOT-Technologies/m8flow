@@ -191,16 +191,16 @@ export default function TemplateFileFormPage() {
         </Alert>
       )}
       <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
-        <Button 
-          variant="contained" 
-          color="primary" 
+        <Button
+          variant="contained"
+          color="primary"
           onClick={handleSave}
         >
           Save
         </Button>
-        <Button 
-          variant="contained" 
-          color="error" 
+        <Button
+          variant="contained"
+          color="error"
           onClick={handleDelete}
         >
           Delete

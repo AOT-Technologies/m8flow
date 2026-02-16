@@ -75,10 +75,38 @@ except ModuleNotFoundError:
     upgrade_m8flow_db = migrate_module.upgrade_if_enabled
 
 
+try:
+    from extensions.openid_discovery_patch import apply_openid_discovery_patch
+    apply_openid_discovery_patch()
+except ImportError:
+    pass
+try:
+    from extensions.auth_token_error_patch import apply_auth_token_error_patch
+    apply_auth_token_error_patch()
+except ImportError:
+    pass
+try:
+    from extensions.decode_token_debug_patch import apply_decode_token_debug_patch
+    apply_decode_token_debug_patch()
+except ImportError:
+    pass
+try:
+    from extensions.create_user_tenant_scope_patch import apply_create_user_tenant_scope_patch
+    apply_create_user_tenant_scope_patch()
+except ImportError:
+    pass
+apply_login_tenant_patch = None
+try:
+    from extensions.login_tenant_patch import apply_login_tenant_patch
+except ImportError:
+    pass
+
 from m8flow_backend.services.tenant_context_middleware import resolve_request_tenant
 from spiffworkflow_backend import create_app
 from spiffworkflow_backend.models.db import db
-from sqlalchemy import create_engine
+
+# Unauthenticated tenant check for pre-login tenant selection (no tenant context required)
+TENANT_PUBLIC_PATH_PREFIXES = ("/tenants/check", "/m8flow/tenant-login-url")
 
 
 def _env_truthy(value: str | None) -> bool:
@@ -169,9 +197,63 @@ _assert_model_identity()
 # timestamp listeners (created_at_in_seconds / updated_at_in_seconds).
 ensure_m8flow_audit_timestamps()
 
-
 # Create the Connexion app.
 cnx_app = create_app()
+
+# Add CORS for local frontend; only add headers if not already set (avoids duplicate with upstream).
+
+_LOCAL_CORS_ORIGINS = frozenset(["http://localhost:7001", "http://127.0.0.1:7001", "http://localhost:5173"])
+
+def _cors_headers(origin: str) -> list[tuple[bytes, bytes]]:
+    return [
+        (b"access-control-allow-origin", origin.encode()),
+        (b"access-control-allow-credentials", b"true"),
+        (b"access-control-allow-methods", b"GET, POST, PUT, PATCH, DELETE, OPTIONS"),
+        (b"access-control-allow-headers", b"Content-Type, Authorization"),
+        (b"access-control-max-age", b"3600"),
+    ]
+
+class _CORSFallbackMiddleware:
+    """ASGI middleware that adds CORS headers when missing and handles OPTIONS preflight."""
+
+    def __init__(self, app, origins=None, **kwargs):
+        self.app = app
+        self.origins = origins or frozenset()
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        origin = None
+        for h in scope.get("headers", []):
+            if h[0].lower() == b"origin":
+                origin = h[1].decode("latin-1")
+                break
+
+        # Handle preflight: respond immediately with 200 + CORS headers.
+        if scope.get("method") == "OPTIONS" and origin and origin in self.origins:
+            await send({
+                "type": "http.response.start",
+                "status": 200,
+                "headers": _cors_headers(origin),
+            })
+            await send({"type": "http.response.body", "body": b"", "more_body": False})
+            return
+
+        async def send_with_cors(message):
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                has_allow_origin = any(k.lower() == b"access-control-allow-origin" for k, _ in headers)
+                if not has_allow_origin and origin and origin in self.origins:
+                    headers.extend(_cors_headers(origin))
+                    message = {**message, "headers": headers}
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_with_cors)
+        except Exception:
+            raise
 
 # Register on the underlying Flask app
 flask_app = getattr(cnx_app, "app", None)
@@ -264,6 +346,34 @@ _assert_db_engine_bound(flask_app)
 # Run migrations at startup 
 _m8flow_migration(flask_app)
 
+if flask_app is None:
+    raise RuntimeError("Could not access underlying Flask app from Connexion app")
+
+# M8Flow: ensure permissions are loaded from m8flow.yml so RBAC groups (tenant-admin, editor, etc.) get assignments.
+# Always use the package's m8flow.yml when present so login-time import_permissions_from_yaml_file creates
+# permission assignments for token groups regardless of env (env may be unset, relative, or point elsewhere).
+_m8flow_permissions_yml = os.path.join(
+    os.path.dirname(__import__("m8flow_backend").__file__),
+    "config", "permissions", "m8flow.yml",
+)
+if os.path.isfile(_m8flow_permissions_yml):
+    _abs = os.path.abspath(_m8flow_permissions_yml)
+    flask_app.config["SPIFFWORKFLOW_BACKEND_PERMISSIONS_FILE_ABSOLUTE_PATH"] = _abs
+    logger.info("M8Flow: using permissions file %s", _abs)
+
+# M8Flow: allow tenant-login-url (and other public endpoints) without authentication
+try:
+    from extensions.auth_exclusion_patch import apply_auth_exclusion_patch
+    apply_auth_exclusion_patch()
+except ImportError:
+    pass
+# M8Flow: create-realm/create-tenant accept Keycloak master realm token when no auth identifier set
+try:
+    from extensions.master_realm_auth_patch import apply_master_realm_auth_patch
+    apply_master_realm_auth_patch()
+except ImportError:
+    pass
+
 # Configure SQL echo if enabled
 _configure_sql_echo(flask_app)
 
@@ -273,16 +383,24 @@ if m8flow_templates_dir:
     logger.info(f"M8FLOW_TEMPLATES_STORAGE_DIR configured: {m8flow_templates_dir}")
 
 # Register the tenant loading function to run after auth hooks.
+# Tenant id (m8flow_tenant_id/m8flow_tenant_name) is resolved from the JWT in resolve_request_tenant (tenant_context_middleware.py).
 if None not in flask_app.before_request_funcs:
     flask_app.before_request_funcs[None] = []
 before_request_funcs = flask_app.before_request_funcs[None]
 try:
     from spiffworkflow_backend.routes.authentication_controller import omni_auth
     auth_index = before_request_funcs.index(omni_auth)
-    before_request_funcs.insert(auth_index + 1, resolve_request_tenant)
+    before_request_funcs.insert(auth_index + 1, lambda: resolve_request_tenant(db))
 except Exception:
-    flask_app.before_request(resolve_request_tenant)
+    flask_app.before_request(lambda: resolve_request_tenant(db))
 
+if apply_login_tenant_patch is not None:
+    apply_login_tenant_patch(flask_app)
+try:
+    from extensions.auth_config_on_demand_patch import apply_auth_config_on_demand_patch
+    apply_auth_config_on_demand_patch()
+except ImportError:
+    pass
 
 # Wrap ASGI app so uvicorn/connexion/starlette logs can see ContextVar tenant.
 cnx_app = AsgiTenantContextMiddleware(cnx_app)

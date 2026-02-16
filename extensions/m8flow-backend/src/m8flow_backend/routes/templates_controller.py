@@ -184,23 +184,6 @@ def template_get_by_id(id: int):
     return jsonify(_serialize_template(template, include_bpmn=include_contents))
 
 
-def template_show(template_key: str):
-    version = request.args.get("version")
-    latest = request.args.get("latest", "true").lower() != "false"
-    user = getattr(g, "user", None)
-    tenant_id = getattr(g, "m8flow_tenant_id", None)
-    template = TemplateService.get_template(
-        template_key, 
-        version=version, 
-        latest=latest, 
-        user=user,
-        tenant_id=tenant_id
-    )
-    if template is None:
-        raise ApiError("not_found", "Template not found", status_code=404)
-    return jsonify(_serialize_template(template))
-
-
 def template_update_by_id(id: int):
     user = getattr(g, "user", None)
     
@@ -296,7 +279,7 @@ def template_get_file(id: int, file_name: str):
 
 def template_put_file(id: int, file_name: str):
     """Update a single file by name.
-    
+
     If the template is published, a draft version is created/reused and the file is updated there.
     Returns the template that was actually updated (may be different from the requested ID if published).
     """
@@ -313,7 +296,7 @@ def template_put_file(id: int, file_name: str):
 
 def template_delete_file(id: int, file_name: str):
     """Delete a single file from the template.
-    
+
     If the template is published, a draft version is created/reused and the file is deleted there.
     Returns the template that was actually modified (may be different from the requested ID if published).
     """
@@ -361,12 +344,13 @@ def template_import():
 def template_delete_by_id(id: int):
     user = getattr(g, "user", None)
     TemplateService.delete_template_by_id(id, user=user)
+    return jsonify({"status": "success", "message": "Template deleted successfully"}), 200
     return "", 204
 
 
 def template_create_process_model(id: int):
     """Create a new process model from a template.
-    
+
     Request body should contain:
     - process_group_id: The process group where the model will be created
     - process_model_id: The ID for the new process model (just the model name)
@@ -375,21 +359,21 @@ def template_create_process_model(id: int):
     """
     user = getattr(g, "user", None)
     tenant_id = getattr(g, "m8flow_tenant_id", None)
-    
+
     body = request.get_json(force=True, silent=True) or {}
-    
+
     process_group_id = body.get("process_group_id")
     process_model_id = body.get("process_model_id")
     display_name = body.get("display_name")
     description = body.get("description")
-    
+
     if not process_group_id:
         raise ApiError("missing_fields", "process_group_id is required", status_code=400)
     if not process_model_id:
         raise ApiError("missing_fields", "process_model_id is required", status_code=400)
     if not display_name:
         raise ApiError("missing_fields", "display_name is required", status_code=400)
-    
+
     result = TemplateService.create_process_model_from_template(
         template_id=id,
         process_group_id=process_group_id,
@@ -399,31 +383,31 @@ def template_create_process_model(id: int):
         user=user,
         tenant_id=tenant_id,
     )
-    
+
     return jsonify(result), 201
 
 
 def get_process_model_template_info(modified_process_model_identifier: str):
     """Get the template provenance info for a process model.
-    
+
     Returns the template info if the process model was created from a template,
     or 404 if no template info exists for this process model.
     """
     # Convert modified identifier (colons) back to standard format (slashes)
     process_model_identifier = modified_process_model_identifier.replace(":", "/")
-    
+
     tenant_id = getattr(g, "m8flow_tenant_id", None)
-    
+
     provenance = TemplateService.get_process_model_template_info(
         process_model_identifier=process_model_identifier,
         tenant_id=tenant_id,
     )
-    
+
     if provenance is None:
         raise ApiError(
             "not_found",
             f"No template info found for process model '{process_model_identifier}'",
             status_code=404,
         )
-    
+
     return jsonify(provenance.serialized())

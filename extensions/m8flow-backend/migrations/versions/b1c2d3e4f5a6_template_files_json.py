@@ -1,7 +1,7 @@
 """template_files_json: add files JSON column, migrate from bpmn_object_key, drop bpmn_object_key
 
 Revision ID: b1c2d3e4f5a6
-Revises: 22aaaa61d8f6
+Revises: 9f2d0e4c8abc
 Create Date: 2026-02-09
 
 """
@@ -9,6 +9,9 @@ from alembic import op
 import sqlalchemy as sa
 import os
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 revision = "b1c2d3e4f5a6"
@@ -65,8 +68,8 @@ def upgrade():
                         content = f.read()
                     with open(new_path, "wb") as f:
                         f.write(content)
-                except (OSError, IOError):
-                    pass
+                except (OSError, IOError) as e:
+                    logger.warning("Failed to copy file from %s to %s: %s", old_path, new_path, e)
 
         conn.execute(
             sa.text("UPDATE m8flow_templates SET files = :files WHERE id = :id"),
@@ -122,8 +125,8 @@ def downgrade():
                         content = f.read()
                     with open(old_path, "wb") as f:
                         f.write(content)
-                except (OSError, IOError):
-                    pass
+                except (OSError, IOError) as e:
+                    logger.warning("Failed to copy file from %s to %s: %s", new_path, old_path, e)
 
     op.alter_column(
         "m8flow_templates",

@@ -15,6 +15,36 @@ The `start_keycloak.sh` script automatically starts a Keycloak Docker container 
   - `realm_exports/identity-realm-export.json`
   - `realm_exports/tenant-realm-export.json`
 
+## Spoke client JWT keystore (keystore.p12)
+
+For spoke-realm token/login and JWT client authentication, the backend uses a PKCS#12 keystore. Generate it **manually** from the repo root with the backend venv active:
+
+```bash
+# From repo root (default output: extensions/m8flow-backend/keystore.p12)
+python extensions/m8flow-backend/bin/generate_keystore_p12.py
+
+# Custom path and password
+python extensions/m8flow-backend/bin/generate_keystore_p12.py -o /path/to/keystore.p12 -p yourpassword
+
+# Use env for password (no prompt)
+export M8FLOW_KEYCLOAK_SPOKE_KEYSTORE_PASSWORD=yourpassword
+python extensions/m8flow-backend/bin/generate_keystore_p12.py
+```
+
+**Options:**
+
+- `-o`, `--output` — Output path (default: `extensions/m8flow-backend/keystore.p12` from cwd)
+- `-p`, `--password` — Keystore password (or set `M8FLOW_KEYCLOAK_SPOKE_KEYSTORE_PASSWORD`; otherwise you are prompted)
+- `--days` — Certificate validity in days (default: 365)
+- `--cn` — Certificate common name (default: `spiffworkflow-backend`)
+
+After generating, set in your environment (or `.env`):
+
+- `M8FLOW_KEYCLOAK_SPOKE_KEYSTORE_P12` — Path to the `.p12` file (optional if using the default path)
+- `M8FLOW_KEYCLOAK_SPOKE_KEYSTORE_PASSWORD` — Keystore password
+
+The script requires the `cryptography` package (provided by the backend venv).
+
 ## Usage
 
 ```bash
@@ -49,6 +79,17 @@ cd extensions/m8flow-backend/bin
 - If a realm already exists, the script will skip importing it (no error)
 - If a realm doesn't exist, it will be imported automatically
 - The script handles HTTP 409 (Conflict) gracefully if a realm is created between the check and import
+
+## Realm template and RBAC users
+
+When new tenant realms are created (e.g. via the create-realm API), they are provisioned from the realm template `realm_exports/spiffworkflow-realm.json`. The template includes:
+
+- **RBAC realm roles:** `editor`, `super-admin`, `tenant-admin`, `integrator`, `reviewer`, `viewer`
+- **One user per role:** usernames `editor`, `integrator`, `reviewer`, `super-admin`, `tenant-admin`, `viewer`, each assigned the matching realm role
+
+These users are created with a **default password** (shared placeholder in the template). For security, admins should change these passwords after tenant creation, or configure Keycloak required actions (e.g. "Update Password") to force a password change on first login.
+
+**Permissions and role alignment:** For the backend to grant API and UI permissions, Keycloak realm role names must match the group names defined in `m8flow.yml`: `super-admin`, `tenant-admin`, `editor`, `viewer`, `integrator`, `reviewer`. The template’s **spiffworkflow-backend** client includes a "groups" protocol mapper that adds the user’s realm roles to the token as the `groups` claim (ID and access token). On login, the backend reads this claim and adds the user to the corresponding Spiffworkflow groups, then applies permissions from `m8flow.yml`. Do not rename these realm roles in the template without updating `m8flow.yml` to match.
 
 ## Troubleshooting
 
