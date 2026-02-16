@@ -39,8 +39,6 @@ cd "$repo_root/spiffworkflow-backend"
 # Run SpiffWorkflow + tenant migrations when either UPGRADE_DB env is true
 if [[ "${M8FLOW_BACKEND_UPGRADE_DB:-}" == "true" || "${M8FLOW_BACKEND_SW_UPGRADE_DB:-}" == "true" ]]; then
   python -m flask db upgrade
-  echo "Resetting M8Flow migration version to re-apply tenant columns if needed..."
-  python "$repo_root/extensions/m8flow-backend/bin/reset_m8flow_tenant_migration.py"
 fi
 # Bootstrap optional: set M8FLOW_BACKEND_RUN_BOOTSTRAP=false to skip
 if [[ "${M8FLOW_BACKEND_RUN_BOOTSTRAP:-}" != "false" ]]; then
