@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import io
+import logging
+import os
+import zipfile
 from datetime import datetime, timezone
 from typing import Any
 
@@ -17,7 +21,15 @@ from m8flow_backend.services.template_storage_service import (
     FilesystemTemplateStorageService,
     NoopTemplateStorageService,
     TemplateStorageService,
+    file_type_from_filename,
 )
+
+logger = logging.getLogger(__name__)
+
+# Zip import safety limits
+MAX_ZIP_SIZE = 50 * 1024 * 1024        # 50 MB compressed
+MAX_EXTRACTED_SIZE = 200 * 1024 * 1024  # 200 MB total uncompressed
+MAX_ZIP_ENTRIES = 100
 
 UNIQUE_TEMPLATE_CONSTRAINT = "uq_template_key_version_tenant"  # keep in sync with TemplateModel __table_args__
 
@@ -69,7 +81,25 @@ class TemplateService:
         user: UserModel | None = None,
         tenant_id: str | None = None,
     ) -> TemplateModel:
-        """Create a template using BPMN bytes and metadata from headers."""
+        """Create a template with a single BPMN file (backward-compat)."""
+        if bpmn_bytes is None:
+            raise ApiError("missing_fields", "bpmn_content is required", status_code=400)
+        return cls.create_template_with_files(
+            metadata=metadata,
+            files=[("diagram.bpmn", bpmn_bytes)],
+            user=user,
+            tenant_id=tenant_id,
+        )
+
+    @classmethod
+    def create_template_with_files(
+        cls,
+        metadata: dict[str, Any],
+        files: list[tuple[str, bytes]],
+        user: UserModel | None = None,
+        tenant_id: str | None = None,
+    ) -> TemplateModel:
+        """Create a template with multiple files. At least one must be BPMN."""
         if user is None:
             raise ApiError("unauthorized", "User must be authenticated to create templates", status_code=403)
 
@@ -77,30 +107,33 @@ class TemplateService:
         if tenant is None:
             raise ApiError("tenant_required", "Tenant context required", status_code=400)
 
-        if metadata is None:
+        if not metadata:
             raise ApiError("missing_fields", "metadata is required", status_code=400)
 
         template_key = metadata.get("template_key")
         name = metadata.get("name")
-        provided_version = metadata.get("version")
+        if not template_key or not name:
+            raise ApiError("missing_fields", "template_key and name are required", status_code=400)
+
+        version = metadata.get("version") or cls._next_version(template_key, tenant)
         visibility = metadata.get("visibility", TemplateVisibility.private.value)
         tags = metadata.get("tags")
         category = metadata.get("category")
         description = metadata.get("description")
         status = metadata.get("status", "draft")
         is_published = bool(metadata.get("is_published", False))
-        bpmn_object_key = None  # Will be generated from storage
 
-        if not template_key or not name:
-            raise ApiError("missing_fields", "template_key and name are required", status_code=400)
+        has_bpmn = any(
+            file_type_from_filename(fname) == "bpmn" for fname, _ in files
+        )
+        if not has_bpmn:
+            raise ApiError("missing_fields", "At least one BPMN file is required", status_code=400)
 
-        version = provided_version or cls._next_version(template_key, tenant)
-
-        # Store BPMN file (now required)
-        if bpmn_bytes is not None:
-            bpmn_object_key = cls.storage.store_bpmn(template_key, version, bpmn_bytes, tenant)
-        else:
-            raise ApiError("missing_fields", "bpmn_content is required", status_code=400)
+        file_entries: list[dict] = []
+        for file_name, content in files:
+            ft = file_type_from_filename(file_name)
+            cls.storage.store_file(tenant, template_key, version, file_name, ft, content)
+            file_entries.append({"file_type": ft, "file_name": file_name})
 
         username = getattr(g, "user", None)
         username_str = username.username if username and hasattr(username, "username") else None
@@ -116,7 +149,7 @@ class TemplateService:
             category=category,
             m8f_tenant_id=tenant,
             visibility=visibility,
-            bpmn_object_key=bpmn_object_key,
+            files=file_entries,
             is_published=is_published,
             status=status,
             created_by=username_str,
@@ -150,7 +183,13 @@ class TemplateService:
         owner: str | None = None,
         visibility: str | None = None,
         search: str | None = None,
-    ) -> list[TemplateModel]:
+        template_key: str | None = None,
+        published_only: bool = False,
+        sort_by: str | None = None,
+        order: str = "desc",
+        page: int = 1,
+        per_page: int = 10,
+    ) -> tuple[list[TemplateModel], dict]:
         query = TemplateModel.query
         query = TemplateAuthorizationService.filter_query_by_visibility(query, user=user)
         query = query.filter(TemplateModel.is_deleted.is_(False))
@@ -174,6 +213,12 @@ class TemplateService:
         
         if visibility:
             query = query.filter(TemplateModel.visibility == visibility)
+        
+        if template_key:
+            query = query.filter(TemplateModel.template_key == template_key)
+        
+        if published_only:
+            query = query.filter(TemplateModel.is_published.is_(True))
         
         if search:
             # Text search in name and description
@@ -203,17 +248,33 @@ class TemplateService:
                             filtered_results.append(row)
                 results = filtered_results
         
-        if not latest_only:
-            return results
+        if latest_only:
+            # Scope latest versions by tenant + template_key combination
+            latest_per_tenant_key: dict[tuple[str, str], TemplateModel] = {}
+            for row in results:
+                key = (row.m8f_tenant_id or "", row.template_key)
+                current = latest_per_tenant_key.get(key)
+                if current is None or cls._version_key(row.version) > cls._version_key(current.version):
+                    latest_per_tenant_key[key] = row
+            results = list(latest_per_tenant_key.values())
 
-        # Scope latest versions by tenant + template_key combination
-        latest_per_tenant_key: dict[tuple[str, str], TemplateModel] = {}
-        for row in results:
-            key = (row.m8f_tenant_id or "", row.template_key)
-            current = latest_per_tenant_key.get(key)
-            if current is None or cls._version_key(row.version) > cls._version_key(current.version):
-                latest_per_tenant_key[key] = row
-        return list(latest_per_tenant_key.values())
+        # Sort: created (by created_at_in_seconds) or name (case-insensitive)
+        if sort_by in ("created", "name"):
+            reverse = order.lower() == "desc"
+            if sort_by == "created":
+                results = sorted(results, key=lambda r: getattr(r, "created_at_in_seconds", 0) or 0, reverse=reverse)
+            else:
+                results = sorted(results, key=lambda r: (r.name or "").lower(), reverse=reverse)
+
+        # Paginate the final filtered results
+        total = len(results)
+        per_page = max(1, min(per_page, 100))
+        pages = max(1, (total + per_page - 1) // per_page)
+        page = max(1, min(page, pages))
+        start = (page - 1) * per_page
+        items = results[start : start + per_page]
+        pagination = {"count": len(items), "total": total, "pages": pages}
+        return items, pagination
 
     @classmethod
     def get_template(
@@ -281,10 +342,10 @@ class TemplateService:
         if not TemplateAuthorizationService.can_edit(template, user):
             raise ApiError("forbidden", "You cannot edit this template", status_code=403)
 
-        for field in ["name", "description", "tags", "category", "visibility", "bpmn_object_key", "status"]:
+        for field in ["name", "description", "tags", "category", "visibility", "status", "files"]:
             if field in updates:
                 setattr(template, field, updates[field])
-        
+
         username = getattr(g, "user", None)
         template.modified_by = username.username if username and hasattr(username, "username") else template.modified_by
         TemplateModel.commit_with_rollback_on_exception()
@@ -296,6 +357,7 @@ class TemplateService:
         template_id: int,
         updates: dict[str, Any],
         bpmn_bytes: bytes | None = None,
+        bpmn_file_name: str | None = None,
         user: UserModel | None = None,
     ) -> TemplateModel:
         """Update template by ID - updates in place if not published, creates new version if published."""
@@ -314,52 +376,89 @@ class TemplateService:
             raise ApiError("unauthorized", "User username not found in request context", status_code=403)
         
         tenant = existing_template.m8f_tenant_id
-        
-        # Handle BPMN content update if provided
+        key = existing_template.template_key
+        version = existing_template.version
+        files_list = list(existing_template.files or [])
+
+        # Handle BPMN content update if provided (replace specific file by name, or first bpmn)
         if bpmn_bytes is not None:
-            # Store new BPMN file
+            bpmn_name = bpmn_file_name or "diagram.bpmn"
+            ft = "bpmn"
             if not existing_template.is_published:
-                # Update in place - overwrite existing file
-                new_bpmn_object_key = cls.storage.store_bpmn(
-                    existing_template.template_key, existing_template.version, bpmn_bytes, tenant
-                )
+                if bpmn_file_name:
+                    # Update only the file with this name if it exists
+                    found = any(
+                        e.get("file_name") == bpmn_file_name and e.get("file_type") == "bpmn"
+                        for e in files_list
+                    )
+                    if found:
+                        cls.storage.store_file(tenant, key, version, bpmn_file_name, ft, bpmn_bytes)
+                    else:
+                        cls.storage.store_file(tenant, key, version, bpmn_file_name, ft, bpmn_bytes)
+                        files_list.append({"file_type": ft, "file_name": bpmn_file_name})
+                else:
+                    # Replace first bpmn or add (backward compatibility)
+                    for entry in files_list:
+                        if entry.get("file_type") == "bpmn":
+                            bpmn_name = entry.get("file_name", bpmn_name)
+                            cls.storage.store_file(tenant, key, version, bpmn_name, ft, bpmn_bytes)
+                            break
+                    else:
+                        cls.storage.store_file(tenant, key, version, bpmn_name, ft, bpmn_bytes)
+                        files_list.append({"file_type": ft, "file_name": bpmn_name})
             else:
-                # Create new version - will create new file with new version
-                next_version = cls._next_version(existing_template.template_key, tenant)
-                new_bpmn_object_key = cls.storage.store_bpmn(
-                    existing_template.template_key, next_version, bpmn_bytes, tenant
-                )
-        else:
-            new_bpmn_object_key = None
-        
-        allowed_fields = ["name", "description", "tags", "category", "visibility", "bpmn_object_key", "status"]
-        
-        # If template is not published, update in place
+                # Published: will create new version in the loop below; bpmn_bytes applied there by file name
+                pass
+
+        allowed_fields = ["name", "description", "tags", "category", "visibility", "status"]
+
         if not existing_template.is_published:
-            # Handle publish: set is_published and sync status (only allow setting to True)
             if updates.get("is_published") is True:
                 existing_template.is_published = True
                 existing_template.status = "published"
-            # Update the existing template record in place
             for field in allowed_fields:
                 if field in updates:
                     setattr(existing_template, field, updates[field])
-            
-            # Update BPMN object key if new BPMN was provided
-            if new_bpmn_object_key:
-                existing_template.bpmn_object_key = new_bpmn_object_key
-            
+            if files_list:
+                existing_template.files = files_list
             existing_template.modified_by = username_str
             TemplateModel.commit_with_rollback_on_exception()
             return existing_template
-        
-        # If template is published, create a new version
-        # Calculate next version
-        next_version = cls._next_version(existing_template.template_key, tenant)
-        
-        # Create new template version with copied fields
+
+        # Published: create new version and copy files
+        next_version = cls._next_version(key, tenant)
+        new_files: list[dict] = []
+        replaced_first_bpmn = False  # used when bpmn_file_name is not set (backward compat)
+        for entry in (existing_template.files or []):
+            fname = entry.get("file_name")
+            if not fname:
+                continue
+            try:
+                content = cls.storage.get_file(tenant, key, existing_template.version, fname)
+                if bpmn_bytes is not None and entry.get("file_type") == "bpmn":
+                    if bpmn_file_name and fname == bpmn_file_name:
+                        content = bpmn_bytes
+                    elif not bpmn_file_name and not replaced_first_bpmn:
+                        content = bpmn_bytes
+                        replaced_first_bpmn = True
+                ft = entry.get("file_type", file_type_from_filename(fname))
+                cls.storage.store_file(tenant, key, next_version, fname, ft, content)
+                new_files.append({"file_type": ft, "file_name": fname})
+            except ApiError as e:
+                logger.warning("Failed to copy file %s for new version %s: %s", fname, next_version, e)
+        if bpmn_bytes is not None and not any(e.get("file_type") == "bpmn" for e in (existing_template.files or [])):
+            add_name = bpmn_file_name or "diagram.bpmn"
+            cls.storage.store_file(tenant, key, next_version, add_name, "bpmn", bpmn_bytes)
+            new_files.append({"file_type": "bpmn", "file_name": add_name})
+        if not new_files:
+            raise ApiError(
+                "storage_error",
+                "Failed to copy any files for the new template version",
+                status_code=500,
+            )
+
         new_template = TemplateModel(
-            template_key=existing_template.template_key,
+            template_key=key,
             version=next_version,
             name=existing_template.name,
             description=existing_template.description,
@@ -367,20 +466,27 @@ class TemplateService:
             category=existing_template.category,
             m8f_tenant_id=existing_template.m8f_tenant_id,
             visibility=existing_template.visibility,
-            bpmn_object_key=new_bpmn_object_key or existing_template.bpmn_object_key,
-            is_published=False,  # New versions start as unpublished
-            status=existing_template.status,
+            files=new_files,
+            is_published=False,
+            status="draft",
             created_by=username_str,
             modified_by=username_str,
         )
-        
-        # Apply updates
         for field in allowed_fields:
+            if field == "status":
+                continue  # keep new version as draft, do not overwrite from updates
             if field in updates:
                 setattr(new_template, field, updates[field])
-        
-        db.session.add(new_template)
-        TemplateModel.commit_with_rollback_on_exception()
+        try:
+            db.session.add(new_template)
+            TemplateModel.commit_with_rollback_on_exception()
+        except IntegrityError:
+            db.session.rollback()
+            raise ApiError(
+                error_code="template_conflict",
+                message="A template with this key and version already exists for this tenant.",
+                status_code=409,
+            )
         return new_template
 
     @classmethod
@@ -404,3 +510,210 @@ class TemplateService:
         template.is_deleted = True
 
         TemplateModel.commit_with_rollback_on_exception()
+
+    @classmethod
+    def get_file_content(
+        cls,
+        template: TemplateModel,
+        file_name: str,
+    ) -> bytes:
+        """Get content of one file by name. Raises ApiError if not found."""
+        return cls.storage.get_file(
+            template.m8f_tenant_id,
+            template.template_key,
+            template.version,
+            file_name,
+        )
+
+    @classmethod
+    def get_first_bpmn_content(cls, template: TemplateModel) -> bytes | None:
+        """Return content of first BPMN file, or None if none."""
+        for entry in template.files or []:
+            if entry.get("file_type") == "bpmn":
+                fname = entry.get("file_name")
+                if fname:
+                    try:
+                        return cls.get_file_content(template, fname)
+                    except ApiError:
+                        continue
+        return None
+
+    @classmethod
+    def update_file_content(
+        cls,
+        template: TemplateModel,
+        file_name: str,
+        content: bytes,
+        user: UserModel | None = None,
+    ) -> None:
+        """Update content of an existing file. Template must not be published."""
+        if template.is_published:
+            raise ApiError(
+                "forbidden",
+                "Cannot update files of a published template",
+                status_code=403,
+            )
+        found = None
+        for e in template.files or []:
+            if e.get("file_name") == file_name:
+                found = e
+                break
+        if not found:
+            raise ApiError("not_found", f"File not found: {file_name}", status_code=404)
+        ft = found.get("file_type") or file_type_from_filename(file_name)
+        cls.storage.store_file(
+            template.m8f_tenant_id,
+            template.template_key,
+            template.version,
+            file_name,
+            ft,
+            content,
+        )
+
+        # Update modified_by if user provided
+        if user and hasattr(user, "username"):
+            template.modified_by = user.username
+            template.modified_at = datetime.now(timezone.utc)
+            TemplateModel.commit_with_rollback_on_exception()
+
+    @classmethod
+    def delete_file_from_template(
+        cls,
+        template: TemplateModel,
+        file_name: str,
+        user: UserModel | None = None,
+    ) -> None:
+        """Remove a file from the template. Template must not be published. Cannot delete last file or only BPMN."""
+        if template.is_published:
+            raise ApiError(
+                "forbidden",
+                "Cannot delete files from a published template",
+                status_code=403,
+            )
+        files_list = list(template.files or [])
+        if not files_list:
+            raise ApiError("not_found", "Template has no files", status_code=404)
+        remaining = [e for e in files_list if e.get("file_name") != file_name]
+        if len(remaining) == len(files_list):
+            raise ApiError("not_found", f"File not found: {file_name}", status_code=404)
+        if len(remaining) == 0:
+            raise ApiError(
+                "forbidden",
+                "Cannot delete the last file from a template",
+                status_code=403,
+            )
+        has_bpmn_after = any(e.get("file_type") == "bpmn" for e in remaining)
+        if not has_bpmn_after:
+            raise ApiError(
+                "forbidden",
+                "Template must have at least one BPMN file",
+                status_code=403,
+            )
+        template.files = remaining
+        if user and hasattr(user, "username"):
+            template.modified_by = user.username
+        template.modified_at = datetime.now(timezone.utc)
+        TemplateModel.commit_with_rollback_on_exception()
+        try:
+            cls.storage.delete_file(
+                template.m8f_tenant_id,
+                template.template_key,
+                template.version,
+                file_name,
+            )
+        except Exception:
+            pass
+
+    @classmethod
+    def export_template_zip(
+        cls,
+        template_id: int,
+        user: UserModel | None = None,
+    ) -> tuple[bytes, str]:
+        """Return (zip bytes, suggested filename)."""
+        template = cls.get_template_by_id(template_id, user=user)
+        if template is None:
+            raise ApiError("not_found", "Template not found", status_code=404)
+        entries = template.files or []
+        if not entries:
+            raise ApiError("not_found", "Template has no files to export", status_code=404)
+        zip_bytes = cls.storage.stream_zip(
+            template.m8f_tenant_id,
+            template.template_key,
+            template.version,
+            entries,
+        )
+        filename = f"template-{template.template_key}-{template.version}.zip"
+        return zip_bytes, filename
+
+    @classmethod
+    def import_template_from_zip(
+        cls,
+        zip_bytes: bytes,
+        metadata: dict[str, Any],
+        user: UserModel | None = None,
+        tenant_id: str | None = None,
+    ) -> TemplateModel:
+        """Create a template from a zip file. Zip must contain at least one .bpmn file."""
+        if user is None:
+            raise ApiError("unauthorized", "User must be authenticated", status_code=403)
+        tenant = tenant_id or getattr(g, "m8flow_tenant_id", None)
+        if tenant is None:
+            raise ApiError("tenant_required", "Tenant context required", status_code=400)
+        template_key = metadata.get("template_key")
+        name = metadata.get("name")
+        if not template_key or not name:
+            raise ApiError("missing_fields", "template_key and name are required", status_code=400)
+
+        # Validate zip size before extracting
+        if len(zip_bytes) > MAX_ZIP_SIZE:
+            raise ApiError(
+                "payload_too_large",
+                f"Zip file exceeds maximum allowed size of {MAX_ZIP_SIZE // (1024 * 1024)} MB",
+                status_code=400,
+            )
+
+        version = metadata.get("version") or cls._next_version(template_key, tenant)
+        files_to_add: list[tuple[str, bytes]] = []
+        has_bpmn = False
+        total_extracted = 0
+        try:
+            with zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as zf:
+                entries = [n for n in zf.namelist() if not n.endswith("/")]
+                if len(entries) > MAX_ZIP_ENTRIES:
+                    raise ApiError(
+                        "payload_too_large",
+                        f"Zip contains too many entries (max {MAX_ZIP_ENTRIES})",
+                        status_code=400,
+                    )
+                for name_in_zip in entries:
+                    base_name = os.path.basename(name_in_zip)
+                    if not base_name:
+                        continue
+                    if base_name.startswith("."):
+                        continue
+                    content = zf.read(name_in_zip)
+                    total_extracted += len(content)
+                    if total_extracted > MAX_EXTRACTED_SIZE:
+                        raise ApiError(
+                            "payload_too_large",
+                            f"Extracted content exceeds maximum allowed size of {MAX_EXTRACTED_SIZE // (1024 * 1024)} MB",
+                            status_code=400,
+                        )
+                    ft = file_type_from_filename(base_name)
+                    if ft == "bpmn":
+                        has_bpmn = True
+                    files_to_add.append((base_name, content))
+        except zipfile.BadZipFile as e:
+            raise ApiError("invalid_content", f"Invalid zip file: {e}", status_code=400)
+
+        if not has_bpmn:
+            raise ApiError("missing_fields", "Zip must contain at least one .bpmn file", status_code=400)
+
+        metadata["version"] = version
+        return cls.create_template_with_files(
+            metadata=metadata,
+            files=files_to_add,
+            user=user,
+            tenant_id=tenant,
+        )

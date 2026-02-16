@@ -446,6 +446,41 @@ paths:
           schema:
             type: string
           description: Search templates by name or description
+        - name: template_key
+          in: query
+          schema:
+            type: string
+          description: Filter to this template key (returns all versions if latest_only=false)
+        - name: published_only
+          in: query
+          schema:
+            type: boolean
+          description: When true, return only published templates
+        - name: sort_by
+          in: query
+          schema:
+            type: string
+            enum: [created, name]
+          description: Sort results by created date or name
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+          description: Sort order (asc or desc)
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+          description: Page number (1-indexed)
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            default: 10
+          description: Items per page (max 100)
       responses:
         "200":
           description: List of templates retrieved successfully
@@ -535,7 +570,17 @@ paths:
           application/xml:
             schema:
               type: string
-              description: BPMN XML content
+              description: BPMN XML content (single file)
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+              description: Multiple files (.bpmn, .json, .dmn, .md). At least one .bpmn required. Metadata via X-Template-* headers.
       responses:
         "201":
           description: Template created successfully
@@ -582,6 +627,13 @@ paths:
           schema:
             type: integer
           description: Unique identifier of the template
+        - name: include_contents
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: true
+          description: Whether to include BPMN content in the response. Set to false for better performance when only metadata is needed.
       responses:
         "200":
           description: Template retrieved successfully
@@ -684,7 +736,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/MessageResponse"
         "400":
-          description: Bad request - template already deleted
+          description: Bad request - published template cannot be deleted (immutable)
           content:
             application/json:
               schema:
@@ -695,8 +747,63 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - user not allowed to delete this template
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Template not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /templates/import:
+    post:
+      summary: Import template from zip
+      description: Creates a new template from an uploaded zip file. Metadata via X-Template-* headers. Zip must contain at least one .bpmn file.
+      operationId: m8flow_backend.routes.templates_controller.template_import
+      tags:
+        - Template
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                zip:
+                  type: string
+                  format: binary
+          application/zip:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "201":
+          description: Template created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Template"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
           content:
             application/json:
               schema:
@@ -748,6 +855,160 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+
+  /templates/{id}/export:
+    get:
+      summary: Export template as zip
+      description: Returns a zip file containing all template files for this version
+      operationId: m8flow_backend.routes.templates_controller.template_export
+      tags:
+        - Template
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Zip file
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Template not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /templates/{id}/files/{file_name}:
+    get:
+      summary: Get a template file by name
+      description: Download a single file (BPMN, JSON, DMN, etc.) by filename
+      operationId: m8flow_backend.routes.templates_controller.template_get_file
+      tags:
+        - Template
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: file_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: File content
+          content:
+            application/xml:
+              schema:
+                type: string
+            application/json:
+              schema:
+                type: string
+            text/markdown:
+              schema:
+                type: string
+        "404":
+          description: Template or file not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      summary: Update a template file by name
+      description: Update content of a single file. Template must not be published.
+      operationId: m8flow_backend.routes.templates_controller.template_put_file
+      tags:
+        - Template
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: file_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: string
+          application/xml:
+            schema:
+              type: string
+          text/markdown:
+            schema:
+              type: string
+          text/plain:
+            schema:
+              type: string
+      responses:
+        "200":
+          description: File updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        "400":
+          description: Bad request
+        "403":
+          description: Template is published
+        "404":
+          description: Template or file not found
+        "500":
+          description: Internal server error
+    delete:
+      summary: Delete a template file by name
+      description: Remove a file from the template. Template must not be published. Cannot delete last file or only BPMN.
+      operationId: m8flow_backend.routes.templates_controller.template_delete_file
+      tags:
+        - Template
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: file_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: File deleted
+        "403":
+          description: Forbidden (published template or last file or only BPMN)
+        "404":
+          description: Template or file not found
+        "500":
+          description: Internal server error
 
 components:
   schemas:
@@ -843,8 +1104,16 @@ components:
         visibility:
           type: string
           enum: [PRIVATE, TENANT, PUBLIC]
-        bpmnObjectKey:
-          type: string
+        files:
+          type: array
+          items:
+            type: object
+            properties:
+              fileType:
+                type: string
+                enum: [bpmn, json, dmn, md]
+              fileName:
+                type: string
         isPublished:
           type: boolean
         status:
@@ -895,8 +1164,6 @@ components:
         is_published:
           type: boolean
         version:
-          type: string
-        bpmn_object_key:
           type: string
 
     TemplateUpdateRequest:

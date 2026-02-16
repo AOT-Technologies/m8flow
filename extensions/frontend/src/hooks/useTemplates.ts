@@ -1,6 +1,8 @@
 import { useState, useCallback } from 'react';
 import HttpService from '../services/HttpService';
 import { Template, TemplateFilters } from '../types/template';
+import { normalizeTemplate } from '../utils/templateHelpers';
+import { PaginationObject } from '@spiffworkflow-frontend/interfaces';
 
 const FILTER_PARAM_KEYS: (keyof TemplateFilters)[] = [
   'search',
@@ -9,6 +11,8 @@ const FILTER_PARAM_KEYS: (keyof TemplateFilters)[] = [
   'visibility',
   'owner',
   'latest_only',
+  'page',
+  'per_page',
 ];
 
 function buildTemplateQueryParams(filters?: TemplateFilters): URLSearchParams {
@@ -17,7 +21,7 @@ function buildTemplateQueryParams(filters?: TemplateFilters): URLSearchParams {
   for (const key of FILTER_PARAM_KEYS) {
     const value = filters[key];
     if (value !== undefined && value !== null) {
-      params.append(key, typeof value === 'boolean' ? String(value) : value);
+      params.append(key, typeof value === 'boolean' ? String(value) : String(value));
     }
   }
   return params;
@@ -33,6 +37,7 @@ function getErrorMessage(err: unknown, fallback: string): string {
 
 interface UseTemplatesReturn {
   templates: Template[];
+  pagination: PaginationObject | null;
   templatesLoading: boolean;
   templateByIdLoading: boolean;
   templateByKeyLoading: boolean;
@@ -44,6 +49,7 @@ interface UseTemplatesReturn {
 
 export function useTemplates(): UseTemplatesReturn {
   const [templates, setTemplates] = useState<Template[]>([]);
+  const [pagination, setPagination] = useState<PaginationObject | null>(null);
   const [templatesLoading, setTemplatesLoading] = useState<boolean>(false);
   const [templateByIdLoading, setTemplateByIdLoading] = useState<boolean>(false);
   const [templateByKeyLoading, setTemplateByKeyLoading] = useState<boolean>(false);
@@ -60,8 +66,11 @@ export function useTemplates(): UseTemplatesReturn {
     HttpService.makeCallToBackend({
       path,
       httpMethod: HttpService.HttpMethods.GET,
-      successCallback: (result: Template[]) => {
-        setTemplates(result);
+      successCallback: (result: Record<string, unknown>) => {
+        const results = result.results as Record<string, unknown>[];
+        const pag = result.pagination as PaginationObject | undefined;
+        setTemplates(Array.isArray(results) ? results.map((r) => normalizeTemplate(r)) : []);
+        setPagination(pag ?? null);
         setTemplatesLoading(false);
       },
       failureCallback: (err: unknown) => {
@@ -82,9 +91,9 @@ export function useTemplates(): UseTemplatesReturn {
       HttpService.makeCallToBackend({
         path: `/v1.0/m8flow/templates/${id}`,
         httpMethod: HttpService.HttpMethods.GET,
-        successCallback: (result: Template) => {
+        successCallback: (result: Record<string, unknown>) => {
           setTemplateByIdLoading(false);
-          resolve(result);
+          resolve(normalizeTemplate(result));
         },
         failureCallback: (err: unknown) => {
           setError(getErrorMessage(err, 'Failed to fetch template'));
@@ -117,9 +126,9 @@ export function useTemplates(): UseTemplatesReturn {
         HttpService.makeCallToBackend({
           path,
           httpMethod: HttpService.HttpMethods.GET,
-          successCallback: (result: Template) => {
+          successCallback: (result: Record<string, unknown>) => {
             setTemplateByKeyLoading(false);
-            resolve(result);
+            resolve(normalizeTemplate(result));
           },
           failureCallback: (err: unknown) => {
             setError(getErrorMessage(err, 'Failed to fetch template'));
@@ -137,6 +146,7 @@ export function useTemplates(): UseTemplatesReturn {
 
   return {
     templates,
+    pagination,
     templatesLoading,
     templateByIdLoading,
     templateByKeyLoading,

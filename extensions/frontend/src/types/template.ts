@@ -1,5 +1,12 @@
 export type TemplateVisibility = 'PRIVATE' | 'TENANT' | 'PUBLIC';
 
+export type TemplateFileType = 'bpmn' | 'json' | 'dmn' | 'md';
+
+export interface TemplateFile {
+  fileType: TemplateFileType;
+  fileName: string;
+}
+
 export interface Template {
   id: number;
   templateKey: string;
@@ -10,8 +17,8 @@ export interface Template {
   category: string | null;
   tenantId: string | null;
   visibility: TemplateVisibility;
-  bpmnObjectKey: string;
-  bpmnContent?: string; // Included in GET responses
+  files: TemplateFile[];
+  bpmnContent?: string; // Included in GET when include_contents true
   isPublished: boolean;
   status: string | null;
   /** Epoch seconds for display (Spiff-style). */
@@ -29,6 +36,8 @@ export interface TemplateFilters {
   visibility?: TemplateVisibility;
   owner?: string;
   latest_only?: boolean;
+  page?: number;
+  per_page?: number;
 }
 
 /** Metadata for creating a template via POST (maps to X-Template-* headers). */

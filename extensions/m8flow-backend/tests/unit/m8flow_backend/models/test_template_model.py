@@ -74,7 +74,7 @@ class TestTemplateModel:
                 category=None,
                 m8f_tenant_id=tenant.id,
                 visibility="PRIVATE",
-                bpmn_object_key="test.bpmn",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 is_published=False,
                 status="draft",
                 is_deleted=False,

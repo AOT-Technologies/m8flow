@@ -46,7 +46,7 @@ class TemplateModel(SpiffworkflowBaseDBModel, AuditDateTimeMixin):
         nullable=False,
     )  # type: ignore
     visibility: str = db.Column(db.String(20), nullable=False, default=TemplateVisibility.private.value)
-    bpmn_object_key: str = db.Column(db.String(1024), nullable=False)
+    files: list[dict] = db.Column(db.JSON, nullable=False)  # [{"file_type": "bpmn"|"json"|"dmn"|"md", "file_name": str}]
     is_published: bool = db.Column(db.Boolean, default=False, nullable=False)
     status: Optional[str] = db.Column(db.String(50), nullable=True)
     is_deleted: bool = db.Column(db.Boolean, default=False, nullable=False)

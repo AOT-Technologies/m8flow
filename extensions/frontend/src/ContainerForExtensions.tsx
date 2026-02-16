@@ -83,6 +83,9 @@ import TenantPage from "./views/TenantPage";
 
 import TemplateGalleryPage from './views/TemplateGalleryPage';
 import TemplateModelerPage from './views/TemplateModelerPage';
+import TemplateFileDiagramPage from './views/TemplateFileDiagramPage';
+import TemplateFileFormPage from './views/TemplateFileFormPage';
+import ProcessModelShowWithSaveAsTemplate from './views/ProcessModelShowWithSaveAsTemplate';
 
 const fadeIn = 'fadeIn';
 const fadeOutImmediate = 'fadeOutImmediate';
@@ -314,9 +317,12 @@ export default function ContainerForExtensions() {
         <Route path="reports" element={<ReportsPage />} />
         {/* M8Flow Extension: Tenant route */}
         <Route path="/tenants" element={<TenantPage />} />
-        {/* m8 Extension: Template Gallery and Template Modeler routes */}
+        {/* m8 Extension: Template Gallery and Template Modeler routes (more specific first) */}
+        <Route path="templates/:templateId/files/:fileName" element={<TemplateFileDiagramPage />} />
+        <Route path="templates/:templateId/form/:fileName" element={<TemplateFileFormPage />} />
         <Route path="templates/:templateId" element={<TemplateModelerPage />} />
         <Route path="templates" element={<TemplateGalleryPage />} />
+        <Route path="process-models/:process_model_id" element={<ProcessModelShowWithSaveAsTemplate />} />
         <Route path="extensions/:page_identifier" element={<Extension />} />
         <Route path="login" element={<TenantAwareLogin />} />
         {/* Catch-all route must be last */}
