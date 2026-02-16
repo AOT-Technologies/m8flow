@@ -184,23 +184,6 @@ def template_get_by_id(id: int):
     return jsonify(_serialize_template(template, include_bpmn=include_contents))
 
 
-def template_show(template_key: str):
-    version = request.args.get("version")
-    latest = request.args.get("latest", "true").lower() != "false"
-    user = getattr(g, "user", None)
-    tenant_id = getattr(g, "m8flow_tenant_id", None)
-    template = TemplateService.get_template(
-        template_key, 
-        version=version, 
-        latest=latest, 
-        user=user,
-        tenant_id=tenant_id
-    )
-    if template is None:
-        raise ApiError("not_found", "Template not found", status_code=404)
-    return jsonify(_serialize_template(template))
-
-
 def template_update_by_id(id: int):
     user = getattr(g, "user", None)
     
