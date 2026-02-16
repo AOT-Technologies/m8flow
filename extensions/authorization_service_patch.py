@@ -26,10 +26,12 @@ def apply_auth_exclusion_patch() -> None:
 
     @classmethod
     def _patched_authentication_exclusion_list(cls) -> list:
-        result = _original.__func__(cls)  # call original classmethod with cls
+        # Copy to list so we don't mutate upstream's return value and support any iterable.
+        raw = _original.__func__(cls)
+        result = list(raw) if raw is not None else []
         for path in M8FLOW_AUTH_EXCLUSION_ADDITIONS:
             if path not in result:
-                result = list(result) + [path]
+                result.append(path)
         return result
 
     authorization_service.AuthorizationService.authentication_exclusion_list = _patched_authentication_exclusion_list

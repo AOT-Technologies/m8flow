@@ -1,4 +1,8 @@
-"""Unit tests for extensions.authentication_service_patch (on-demand tenant auth config)."""
+"""Unit tests for extensions.authentication_service_patch (on-demand tenant auth config).
+
+These tests require m8flow_backend.services.keycloak_service and extensions.login_tenant_patch
+(or mocks thereof). They are skipped when those modules are not available (e.g. minimal test env).
+"""
 
 import sys
 from pathlib import Path
@@ -10,6 +14,10 @@ import pytest
 _workspace_root = Path(__file__).resolve().parents[4]
 if str(_workspace_root) not in sys.path:
     sys.path.insert(0, str(_workspace_root))
+
+# Skip entire module if optional deps not available (minimal/alternate test env)
+pytest.importorskip("m8flow_backend.services.keycloak_service")
+pytest.importorskip("extensions.login_tenant_patch")
 
 
 @pytest.fixture

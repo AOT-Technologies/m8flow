@@ -358,16 +358,19 @@ if m8flow_templates_dir:
     flask_app.config["M8FLOW_TEMPLATES_STORAGE_DIR"] = m8flow_templates_dir
     logger.info(f"M8FLOW_TEMPLATES_STORAGE_DIR configured: {m8flow_templates_dir}")
 
-# Register the tenant loading function to run after auth hooks.
+# Tenant resolution must run immediately after auth when possible (ordering matters for tenant context).
 # Tenant id (m8flow_tenant_id/m8flow_tenant_name) is resolved from the JWT in resolve_request_tenant (tenant_context_middleware.py).
 if None not in flask_app.before_request_funcs:
     flask_app.before_request_funcs[None] = []
 before_request_funcs = flask_app.before_request_funcs[None]
 try:
     from spiffworkflow_backend.routes.authentication_controller import omni_auth
-    auth_index = before_request_funcs.index(omni_auth)
-    before_request_funcs.insert(auth_index + 1, lambda: resolve_request_tenant())
-except Exception:
+    if omni_auth in before_request_funcs:
+        auth_index = before_request_funcs.index(omni_auth)
+        before_request_funcs.insert(auth_index + 1, lambda: resolve_request_tenant())
+    else:
+        flask_app.before_request(lambda: resolve_request_tenant())
+except (ValueError, AttributeError):
     flask_app.before_request(lambda: resolve_request_tenant())
 
 if apply_login_tenant_patch is not None:

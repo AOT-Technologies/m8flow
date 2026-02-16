@@ -14,6 +14,8 @@ from spiffworkflow_backend.exceptions.error import OpenIdConnectionError
 from spiffworkflow_backend.services.authentication_service import AuthenticationService
 
 # --- On-demand tenant auth config ---
+# On-demand tenant config requires extensions.login_tenant_patch; if that module is missing,
+# unknown identifiers still raise AuthenticationOptionNotFoundError (no hard dependency).
 _ON_DEMAND_PATCHED = False
 
 
@@ -40,12 +42,15 @@ def apply_auth_config_on_demand_patch() -> None:
                 raise e from e
             if not realm_exists(authentication_identifier):
                 raise e from e
-            from flask import current_app
+            try:
+                from flask import current_app
 
-            from extensions.login_tenant_patch import _ensure_tenant_auth_config
+                from extensions.login_tenant_patch import _ensure_tenant_auth_config
 
-            _ensure_tenant_auth_config(current_app, authentication_identifier)
-            return _original.__func__(cls, authentication_identifier)
+                _ensure_tenant_auth_config(current_app, authentication_identifier)
+                return _original.__func__(cls, authentication_identifier)
+            except ImportError:
+                raise e from e
 
     AuthenticationService.authentication_option_for_identifier = (
         _patched_authentication_option_for_identifier

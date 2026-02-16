@@ -10,6 +10,11 @@ from spiffworkflow_backend.exceptions.api_error import ApiError
 from spiffworkflow_backend.services.authentication_service import AuthenticationService
 from spiffworkflow_backend.services.authorization_service import AuthorizationService
 
+try:
+    from sqlalchemy.exc import InvalidRequestError
+except ImportError:
+    InvalidRequestError = None  # type: ignore[misc, assignment]
+
 from m8flow_backend.canonical_db import get_canonical_db
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
 from m8flow_backend.tenancy import (
@@ -103,12 +108,15 @@ def resolve_request_tenant() -> None:
 
     # Validate tenant exists in DB (your tests expect this).
     # Return 503 when DB is not bound so we never proceed with unvalidated tenant id.
-    # We do NOT set g.m8flow_tenant_id when validation is skipped (fail closed) so that
-    # no downstream code can use an invalid or unresolved tenant in DB calls.
+    # Flask-SQLAlchemy may raise RuntimeError when model not bound; message check for backward compatibility.
+    # InvalidRequestError used when applicable (SQLAlchemy mapping/registry errors).
     try:
         tenant = db.session.query(M8flowTenantModel).filter(M8flowTenantModel.id == tenant_id).one_or_none()
     except Exception as exc:
-        if isinstance(exc, RuntimeError) and "not registered with this 'SQLAlchemy' instance" in str(exc):
+        _exc_tuple = (InvalidRequestError, RuntimeError) if InvalidRequestError is not None else (RuntimeError,)
+        if isinstance(exc, _exc_tuple):
+            if isinstance(exc, RuntimeError) and "not registered" not in str(exc):
+                raise
             raise ApiError(
                 error_code="service_unavailable",
                 message="Tenant validation is temporarily unavailable (database not ready).",
