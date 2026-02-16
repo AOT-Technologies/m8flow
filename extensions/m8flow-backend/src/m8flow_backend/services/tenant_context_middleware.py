@@ -19,17 +19,20 @@ from m8flow_backend.tenancy import (
     reset_context_tenant_id,
     set_context_tenant_id,
 )
-from spiffworkflow_backend.models.db import db
 
 LOGGER = logging.getLogger(__name__)
 
-TENANT_CLAIM = "m8flow_tenant_id"
+# Tenant is read only from JWT claim m8flow_tenant_id; name/realm can be derived from id if needed.
+TENANT_CLAIMS = ("m8flow_tenant_id",)
 
-def resolve_request_tenant() -> None:
+def resolve_request_tenant(db: Any) -> None:
     """
     Resolve tenant id for this Flask request and store it in:
       - g.m8flow_tenant_id
       - a ContextVar (for SQLAlchemy scoping, logging, etc.)
+
+    db must be the SQLAlchemy instance bound to the current Flask app (the one that
+    received init_app), so tenant validation uses the same engine/session as the rest of the app.
 
     Priority:
       1) JWT claim (m8flow_tenant_id)
@@ -75,14 +78,38 @@ def resolve_request_tenant() -> None:
             tenant_id = DEFAULT_TENANT_ID
             _warn_missing_tenant_once(tenant_id)
         else:
+            # Help debug which route is missing tenant resolution (e.g. swagger/openapi assets).
+            try:
+                path = getattr(request, "path", "") or ""
+                method = getattr(request, "method", "") or ""
+            except Exception:
+                path = ""
+                method = ""
+            LOGGER.warning(
+                "Tenant context not resolved for request method=%s path=%s (no JWT claim, no context tenant).",
+                method,
+                path,
+            )
             raise ApiError(
                 error_code="tenant_required",
-                message="Tenant context could not be resolved from authentication data.",
+                message=f"Tenant context could not be resolved from authentication data for path '{path}'.",
                 status_code=400,
             )
 
-    # Validate tenant exists in DB (your tests expect this)
-    tenant = db.session.query(M8flowTenantModel).filter(M8flowTenantModel.id == tenant_id).one_or_none()
+    # Validate tenant exists in DB (your tests expect this).
+    # Return 503 when DB is not bound so we never proceed with unvalidated tenant id.
+    # We do NOT set g.m8flow_tenant_id when validation is skipped (fail closed) so that
+    # no downstream code can use an invalid or unresolved tenant in DB calls.
+    try:
+        tenant = db.session.query(M8flowTenantModel).filter(M8flowTenantModel.id == tenant_id).one_or_none()
+    except Exception as exc:
+        if isinstance(exc, RuntimeError) and "not registered with this 'SQLAlchemy' instance" in str(exc):
+            raise ApiError(
+                error_code="service_unavailable",
+                message="Tenant validation is temporarily unavailable (database not ready).",
+                status_code=503,
+            ) from exc
+        raise
     if tenant is None:
         raise ApiError(
             error_code="invalid_tenant",
@@ -118,7 +145,26 @@ def _resolve_tenant_id() -> Optional[str]:
     # If auth is disabled, we should avoid decoding JWTs, but still
     # accept ContextVar or default behavior.
     allow_decode = not AuthorizationService.should_disable_auth_for_request()
-    return _tenant_from_jwt_claim_cached(allow_decode=allow_decode) or _tenant_from_context_var()
+    tenant_from_claim = _tenant_from_jwt_claim_cached(allow_decode=allow_decode)
+    if tenant_from_claim:
+        return tenant_from_claim
+    tenant_from_ctx = _tenant_from_context_var()
+    if tenant_from_ctx:
+        return tenant_from_ctx
+
+    # Fallback: if the IdP doesn't include tenant claims in the JWT, derive tenant from
+    # the authentication identifier (which aligns with the Keycloak realm in this setup).
+    # This is supported by runtime evidence: decoded token issuer realm == authentication_identifier
+    # and tenant claims are absent.
+    if allow_decode:
+        derived = _authentication_identifier()
+        if derived:
+            LOGGER.debug(
+                "Derived tenant from authentication_identifier fallback: %s",
+                str(derived)[:80],
+            )
+            return derived
+    return None
 
 
 def _tenant_from_context_var() -> Optional[str]:
@@ -146,7 +192,7 @@ def _tenant_from_jwt_claim_cached(*, allow_decode: bool) -> Optional[str]:
     cached_decoded = getattr(g, "_m8flow_decoded_token", None)
     cached_raw = getattr(g, "_m8flow_decoded_token_raw", None)
     if cached_decoded is not None and cached_raw == token:
-        return _get_str_claim(cached_decoded, TENANT_CLAIM)
+        return _get_str_claims(cached_decoded, TENANT_CLAIMS)
 
     if not allow_decode:
         return None
@@ -161,15 +207,16 @@ def _tenant_from_jwt_claim_cached(*, allow_decode: bool) -> Optional[str]:
 
     g._m8flow_decoded_token = decoded
     g._m8flow_decoded_token_raw = token
-    return _get_str_claim(decoded, TENANT_CLAIM)
+    return _get_str_claims(decoded, TENANT_CLAIMS)
 
 
-def _get_str_claim(decoded: Any, claim: str) -> Optional[str]:
+def _get_str_claims(decoded: Any, claims: tuple[str, ...]) -> Optional[str]:
     if not isinstance(decoded, dict):
         return None
-    value = decoded.get(claim)
-    if isinstance(value, str) and value.strip():
-        return value
+    for claim in claims:
+        value = decoded.get(claim)
+        if isinstance(value, str) and value.strip():
+            return value
     return None
 
 

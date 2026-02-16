@@ -1,16 +1,29 @@
 import preact from '@preact/preset-vite';
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import viteTsconfigPaths from 'vite-tsconfig-paths';
 import svgr from 'vite-plugin-svgr';
 import path from 'path';
 import { overrideResolver } from './vite-plugin-override-resolver';
 
+// Load repo root .env so MULTI_TENANT_ON is available even when npm start is run without sourcing .env
+const repoRoot = path.resolve(__dirname, '../..');
+const rootEnv = loadEnv(process.env.NODE_ENV || 'development', repoRoot, '');
+if (rootEnv.MULTI_TENANT_ON !== undefined && process.env.VITE_MULTI_TENANT_ON === undefined) {
+  process.env.VITE_MULTI_TENANT_ON = rootEnv.MULTI_TENANT_ON;
+}
+
 const host = process.env.HOST ?? 'localhost';
-const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 8001; // Same port as core
-const backendPort = process.env.BACKEND_PORT ? parseInt(process.env.BACKEND_PORT, 10) : 8000; // Backend port (default: 7000)
+const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 7001; // Match start_dev.sh FRONTEND_PORT
+const backendPort = process.env.BACKEND_PORT ? parseInt(process.env.BACKEND_PORT, 10) : 7000; // Match start_dev.sh backend port
+
+const multiTenantOn =
+  rootEnv.MULTI_TENANT_ON ?? process.env.VITE_MULTI_TENANT_ON ?? 'false';
 
 export default defineConfig({
   base: '/',
+  define: {
+    'import.meta.env.VITE_MULTI_TENANT_ON': JSON.stringify(multiTenantOn),
+  },
   test: {
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     setupFiles: ['src/test/vitest.setup.ts'],
@@ -37,6 +50,10 @@ export default defineConfig({
     open: false,
     host,
     port,
+    // Allow serving files from upstream frontend (e.g. @spiffworkflow-frontend deps resolving to its node_modules)
+    fs: {
+      allow: [path.resolve(__dirname, '../..')],
+    },
     // Proxy API requests to backend to avoid CORS issues
     proxy: {
       '/v1.0': {
@@ -75,7 +92,7 @@ export default defineConfig({
   css: {
     preprocessorOptions: {
       scss: {
-        silenceDeprecations: ['mixed-decls'],
+        silenceDeprecations: ['mixed-decls', 'if-function'],
         // Allow SASS to find modules in extensions/frontend/node_modules
         loadPaths: [
           path.resolve(__dirname, './node_modules'),
