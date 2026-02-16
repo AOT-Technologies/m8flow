@@ -627,6 +627,13 @@ paths:
           schema:
             type: integer
           description: Unique identifier of the template
+        - name: include_contents
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: true
+          description: Whether to include BPMN content in the response. Set to false for better performance when only metadata is needed.
       responses:
         "200":
           description: Template retrieved successfully
@@ -729,13 +736,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/MessageResponse"
         "400":
-          description: Bad request - template already deleted
+          description: Bad request - published template cannot be deleted (immutable)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - user not allowed to delete this template
           content:
             application/json:
               schema:

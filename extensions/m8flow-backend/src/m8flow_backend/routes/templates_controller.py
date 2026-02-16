@@ -353,4 +353,4 @@ def template_import():
 def template_delete_by_id(id: int):
     user = getattr(g, "user", None)
     TemplateService.delete_template_by_id(id, user=user)
-    return "", 204
+    return jsonify({"status": "success", "message": "Template deleted successfully"}), 200

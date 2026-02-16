@@ -570,6 +570,12 @@ class TemplateService:
             content,
         )
 
+        # Update modified_by if user provided
+        if user and hasattr(user, "username"):
+            template.modified_by = user.username
+            template.modified_at = datetime.now(timezone.utc)
+            TemplateModel.commit_with_rollback_on_exception()
+
     @classmethod
     def delete_file_from_template(
         cls,
