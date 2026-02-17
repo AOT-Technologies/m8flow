@@ -1,6 +1,6 @@
 
 services:
-  spiffworkflow-connector:
+  m8flow-connector-proxy:
     build:
       context: m8flow-connector-proxy
       dockerfile: dev.Dockerfile
