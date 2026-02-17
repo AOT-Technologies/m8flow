@@ -12,15 +12,11 @@ FROM quay.io/keycloak/keycloak:26.0.7
 COPY --from=builder /build/realm-info-mapper/target/realm-info-mapper.jar /opt/keycloak/providers/realm-info-mapper.jar
 USER root
 RUN chown keycloak:keycloak /opt/keycloak/providers/realm-info-mapper.jar
-COPY docker/keycloak-entrypoint.sh /opt/keycloak/bin/keycloak-entrypoint.sh
-RUN chown keycloak:keycloak /opt/keycloak/bin/keycloak-entrypoint.sh && chmod +x /opt/keycloak/bin/keycloak-entrypoint.sh
 RUN mkdir -p /opt/keycloak/data/import
 COPY extensions/m8flow-backend/keycloak/realm_exports/tenant-realm-export.json /opt/keycloak/data/import/tenant-a-realm.json
 COPY extensions/m8flow-backend/keycloak/realm_exports/identity-realm-export.json /opt/keycloak/data/import/identity-realm.json
 RUN chown -R keycloak:keycloak /opt/keycloak/data/import
 USER keycloak
-
-ENTRYPOINT ["/opt/keycloak/bin/keycloak-entrypoint.sh"]
 
 # Health, features, log level (align with start_keycloak.sh).
 ENV KC_HEALTH_ENABLED=true
