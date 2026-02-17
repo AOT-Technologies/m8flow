@@ -25,10 +25,10 @@
 **/test
 **/tests
 
-# Docs and env (shrink context; no runtime need)
+# Docs and env (shrink context; no runtime need). .env allowed for frontend build (Vite loadEnv from repo root).
 docs/
-.env
 .env.*
+!.env
 *.md
 
 # Docker files (redundant in build context)

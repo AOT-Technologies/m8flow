@@ -51,8 +51,12 @@ export SPIFFWORKFLOW_BACKEND_RUN_DATA_SETUP="${SPIFFWORKFLOW_BACKEND_RUN_DATA_SE
 
 log_config="$repo_root/uvicorn-log.yaml"
 
+# Only pass --env-file when it exists (Docker has no .env in image; compose injects env)
+env_file_arg=""
+[ -f "$repo_root/.env" ] && env_file_arg="--env-file $repo_root/.env"
+
 python -m uvicorn extensions.app:app \
   --host 0.0.0.0 --port 8000 \
-  --env-file "$repo_root/.env" \
+  $env_file_arg \
   --app-dir "$repo_root" \
   --log-config "$log_config"

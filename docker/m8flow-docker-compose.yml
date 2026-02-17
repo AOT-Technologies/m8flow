@@ -156,7 +156,6 @@ services:
     build:
       context: ..
       dockerfile: docker/m8flow.backend.Dockerfile
-    command: ["./extensions/m8flow-backend/bin/run_m8flow_backend.sh"]
     env_file: ../.env
     environment:
       M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: "${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-/app/process_models}"
@@ -189,19 +188,15 @@ services:
       minio:
         condition: service_started
 
-  # Frontend: nginx on 80. Host port defaults to start_dev.sh value (7001); override with M8FLOW_FRONTEND_PORT (optional).
-  # Build args from host .env so extension frontend gets MULTI_TENANT_ON and VITE_BACKEND_BASE_URL at build time.
-  # For non-default backend port, set VITE_BACKEND_BASE_URL and M8FLOW_BACKEND_PORT in .env.
+  # Frontend: nginx runs as non-root and listens on 8080 in container. Host port defaults to 7001; override with M8FLOW_FRONTEND_PORT.
+  # Extension frontend reads MULTI_TENANT_ON, VITE_BACKEND_BASE_URL, etc. from .env at build time (Dockerfile COPY .env).
   m8flow-frontend:
     build:
       context: ..
       dockerfile: docker/m8flow.frontend.Dockerfile
-      args:
-        MULTI_TENANT_ON: ${MULTI_TENANT_ON:-true}
-        VITE_BACKEND_BASE_URL: ${VITE_BACKEND_BASE_URL:-http://localhost:7000/v1.0}
     env_file: ../.env
     ports:
-      - "${M8FLOW_FRONTEND_PORT:-7001}:80"
+      - "${M8FLOW_FRONTEND_PORT:-7001}:8080"
     depends_on:
       - m8flow-backend
 
