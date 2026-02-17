@@ -46,9 +46,6 @@ PUBLIC_PATH_PREFIXES: tuple[str, ...] = (
     "/m8flow/create-tenant",
 )
 
-# Path suffixes for pre-login tenant selection (no tenant context required). Also included in PUBLIC_PATH_PREFIXES above with /v1.0 prefix.
-TENANT_PUBLIC_PATH_PREFIXES: tuple[str, ...] = ("/tenants/check", "/m8flow/tenant-login-url")
-
 _CONTEXT_TENANT_ID: ContextVar[Optional[str]] = ContextVar("m8flow_tenant_id", default=None)
 
 # "Are we inside a request handler?" (works for ASGI/WSGI alike)
