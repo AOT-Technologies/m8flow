@@ -4,6 +4,11 @@ services:
   m8flow-db:
     image: postgres:15
     env_file: ../.env
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     ports:
       - "1111:5432"
     volumes:
@@ -24,7 +29,7 @@ services:
       context: ..
       dockerfile: docker/m8flow.keycloak.Dockerfile
     env_file: ../.env
-    command: ["start-dev"]
+    command: ["start-dev", "--import-realm"]
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
@@ -34,7 +39,8 @@ services:
       KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak}
       KC_HTTP_PORT: ${KC_HTTP_PORT:-8080}
       KC_HOSTNAME_STRICT: ${KC_HOSTNAME_STRICT:-false}
-      KC_HOSTNAME_STRICT_HTTPS: "false"
+      # Keycloak 26 hostname v2: URL users use to reach Keycloak; set KEYCLOAK_HOSTNAME when accessing from another host (e.g. http://<host>:7002).
+      KC_HOSTNAME: "${KEYCLOAK_HOSTNAME:-http://localhost:7002}"
     ports:
       - "7002:8080"
       - "7009:9000"
@@ -99,32 +105,53 @@ services:
 
   # --- APP SERVICES
 
-  # Backend: .env. Optional: M8FLOW_BACKEND_UPGRADE_DB, M8FLOW_BACKEND_RUN_BOOTSTRAP=false, SPIFFWORKFLOW_BACKEND_RUN_DATA_SETUP.
+  # Backend: .env. Keycloak/Redis URLs overridden for Docker. Migrations run by default (M8FLOW_BACKEND_UPGRADE_DB=false to disable).
+  # Host port defaults to start_dev.sh value (7000); override with M8FLOW_BACKEND_PORT. Container listens on 8000.
+  # If you add a connector proxy service, set M8FLOW_BACKEND_CONNECTOR_PROXY_URL to http://<service-name>:<port> (e.g. http://spiffworkflow-connector:8004).
   m8flow-backend:
     build:
       context: ..
       dockerfile: docker/m8flow.backend.Dockerfile
     command: ["./extensions/m8flow-backend/bin/run_m8flow_backend.sh"]
     env_file: ../.env
+    environment:
+      M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: "${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-/app/process_models}"
+      M8FLOW_BACKEND_DATABASE_URI: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
+      M8FLOW_BACKEND_UPGRADE_DB: "${M8FLOW_BACKEND_UPGRADE_DB:-true}"
+      KEYCLOAK_INTERNAL_URL: "http://keycloak:8080"
+      M8FLOW_KEYCLOAK_INTERNAL_URL: "http://keycloak:8080"
+      M8FLOW_BACKEND_CELERY_BROKER_URL: "${M8FLOW_BACKEND_CELERY_BROKER_URL:-redis://redis:6379/0}"
+      M8FLOW_BACKEND_CELERY_RESULT_BACKEND: "${M8FLOW_BACKEND_CELERY_RESULT_BACKEND:-redis://redis:6379/0}"
+      # When overriding M8FLOW_FRONTEND_PORT, set M8FLOW_BACKEND_URL_FOR_FRONTEND (and CORS) to match.
+      M8FLOW_BACKEND_URL_FOR_FRONTEND: "${M8FLOW_BACKEND_URL_FOR_FRONTEND:-http://localhost:7001}"
     ports:
-      - "8000:8000"
+      - "${M8FLOW_BACKEND_PORT:-7000}:8000"
     volumes:
       - process_models_cache:/app/process_models
       - templates_cache:/app/templates
     depends_on:
-      - m8flow-db
-      - keycloak
-      - redis
-      - minio
+      m8flow-db:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+      redis:
+        condition: service_started
+      minio:
+        condition: service_started
 
-  # Frontend: nginx on 80 (SPIFFWORKFLOW_FRONTEND_INTERNAL_PORT in .env).
+  # Frontend: nginx on 80. Host port defaults to start_dev.sh value (7001); override with M8FLOW_FRONTEND_PORT (optional).
+  # Build args from host .env so extension frontend gets MULTI_TENANT_ON and VITE_BACKEND_BASE_URL at build time.
+  # For non-default backend port, set VITE_BACKEND_BASE_URL and M8FLOW_BACKEND_PORT in .env.
   m8flow-frontend:
     build:
       context: ..
       dockerfile: docker/m8flow.frontend.Dockerfile
+      args:
+        MULTI_TENANT_ON: ${MULTI_TENANT_ON:-true}
+        VITE_BACKEND_BASE_URL: ${VITE_BACKEND_BASE_URL:-http://localhost:7000/v1.0}
     env_file: ../.env
     ports:
-      - "8001:80"
+      - "${M8FLOW_FRONTEND_PORT:-7001}:80"
     depends_on:
       - m8flow-backend
 
