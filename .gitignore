@@ -30,3 +30,4 @@ agent_setup_script_has_completed_successfully
 templates
 *.code-workspace
 keycloak-extensions/realm-info-mapper/target/*
+extensions/m8flow-frontend/node_modules
