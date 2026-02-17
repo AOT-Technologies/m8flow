@@ -41,7 +41,11 @@ def _patched_open_id_endpoint_for_name(cls, name: str, authentication_identifier
 
     config: str = cls.ENDPOINT_CACHE[authentication_identifier].get(name, "")
     external_server_url = cls.server_url(authentication_identifier)
-    if internal is False:
+    if internal is True:
+        discovery_issuer = cls.ENDPOINT_CACHE[authentication_identifier].get("issuer") or ""
+        if discovery_issuer and discovery_issuer != internal_server_url:
+            config = config.replace(discovery_issuer, internal_server_url)
+    elif internal is False:
         if internal_server_url != external_server_url:
             config = config.replace(internal_server_url, external_server_url)
     return config

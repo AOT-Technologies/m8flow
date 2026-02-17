@@ -16,6 +16,7 @@ DEFAULT_TENANT_ID = os.getenv("M8FLOW_DEFAULT_TENANT_ID", "default")
 
 # Include both prefixed and unprefixed paths so we match regardless of SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX.
 PUBLIC_PATH_PREFIXES: tuple[str, ...] = (
+    "/.well-known",
     "/favicon.ico",
     "/v1.0/status",
     "/status",
@@ -44,9 +45,6 @@ PUBLIC_PATH_PREFIXES: tuple[str, ...] = (
     "/v1.0/m8flow/create-tenant",
     "/m8flow/create-tenant",
 )
-
-# Path suffixes for pre-login tenant selection (no tenant context required). Also included in PUBLIC_PATH_PREFIXES above with /v1.0 prefix.
-TENANT_PUBLIC_PATH_PREFIXES: tuple[str, ...] = ("/tenants/check", "/m8flow/tenant-login-url")
 
 _CONTEXT_TENANT_ID: ContextVar[Optional[str]] = ContextVar("m8flow_tenant_id", default=None)
 

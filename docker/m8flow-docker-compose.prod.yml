@@ -1,0 +1,24 @@
+# Production override for AWS Linux / deployment.
+# Use with: docker compose -f docker/m8flow-docker-compose.yml -f docker/m8flow-docker-compose.prod.yml up -d
+# Set production env vars (KEYCLOAK_HOSTNAME, M8FLOW_BACKEND_DATABASE_URI, etc.) before running.
+
+name: m8flow
+
+services:
+  keycloak:
+    command: ["start", "--import-realm"]
+    platform: linux/amd64
+
+  m8flow-backend:
+    build:
+      context: ..
+      dockerfile: docker/m8flow.backend.Dockerfile
+      target: prod
+    platform: linux/amd64
+    user: "0"
+
+  m8flow-frontend:
+    build:
+      context: ..
+      dockerfile: docker/m8flow.frontend.Dockerfile
+    platform: linux/amd64

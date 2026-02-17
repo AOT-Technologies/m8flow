@@ -20,7 +20,6 @@ from m8flow_backend.config import (
     keycloak_url,
     realm_template_path,
     spoke_client_id,
-    spoke_client_secret,
     spoke_keystore_password,
     spoke_keystore_p12_path,
     template_realm_name,
@@ -165,14 +164,15 @@ def realm_exists(realm: str) -> bool:
             discovery_url,
             r.status_code,
         )
-        logger.warning(
-            "realm_exists: realm=%s url=%s status=%s (check KEYCLOAK_URL if realm exists in browser)",
-            realm,
-            discovery_url,
-            r.status_code,
-        )
-        if r.status_code != 200 and r.text:
-            logger.debug("realm_exists: response body (first 200 chars): %s", r.text[:200])
+        if r.status_code not in (200, 403):
+            logger.warning(
+                "realm_exists: realm=%s url=%s status=%s (check KEYCLOAK_URL if realm exists in browser)",
+                realm,
+                discovery_url,
+                r.status_code,
+            )
+            if r.text:
+                logger.debug("realm_exists: response body (first 200 chars): %s", r.text[:200])
         # 200 = discovery public; 403 = discovery restricted but realm often still exists and auth works
         return r.status_code in (200, 403)
     except Exception as e:

@@ -4,6 +4,11 @@ services:
   m8flow-db:
     image: postgres:15
     env_file: ../.env
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     ports:
       - "1111:5432"
     volumes:
@@ -23,8 +28,9 @@ services:
     build:
       context: ..
       dockerfile: docker/m8flow.keycloak.Dockerfile
+    image: m8flow-keycloak
     env_file: ../.env
-    command: ["start-dev"]
+    command: ["start-dev", "--import-realm", "--spi-theme-static-max-age=-1", "--spi-theme-cache-themes=false", "--spi-theme-cache-templates=false"]
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
@@ -34,11 +40,61 @@ services:
       KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak}
       KC_HTTP_PORT: ${KC_HTTP_PORT:-8080}
       KC_HOSTNAME_STRICT: ${KC_HOSTNAME_STRICT:-false}
-      KC_HOSTNAME_STRICT_HTTPS: "false"
+      # Keycloak 26 hostname v2: URL users use to reach Keycloak; set KEYCLOAK_HOSTNAME when accessing from another host (e.g. http://<host>:7002).
+      KC_HOSTNAME: "${KEYCLOAK_HOSTNAME:-http://localhost:7002}"
     ports:
-      - "7002:8080"
+      - "7009:9000"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/9000 && echo -e \"GET /health/ready HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && cat <&3 | head -1 | grep -q 200'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     depends_on:
       - keycloak-db
+
+  keycloak-proxy:
+    image: nginx:alpine
+    ports:
+      - "7002:7002"
+    volumes:
+      - ./nginx-keycloak-proxy.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - keycloak
+
+  keycloak-init:
+    image: m8flow-keycloak
+    env_file: ../.env
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KEYCLOAK_SERVER_URL: "http://keycloak:${KC_HTTP_PORT:-8080}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        BASE="$${KEYCLOAK_SERVER_URL:-http://keycloak:8080}"
+        TIMEOUT=120
+        ELAPSED=0
+        echo "Waiting for Keycloak admin API at $$BASE (up to $${TIMEOUT}s)..."
+        while [ "$$ELAPSED" -lt "$$TIMEOUT" ]; do
+          if /opt/keycloak/bin/kcadm.sh config credentials --server "$$BASE" --realm master \
+            --user "$${KEYCLOAK_ADMIN:-admin}" --password "$${KEYCLOAK_ADMIN_PASSWORD:-admin}" >/dev/null 2>&1; then
+            echo "Keycloak is ready."
+            break
+          fi
+          sleep 2
+          ELAPSED=$$((ELAPSED + 2))
+        done
+        [ "$$ELAPSED" -ge "$$TIMEOUT" ] && echo "WARNING: Keycloak did not become ready within $${TIMEOUT}s; attempting realm update anyway."
+        echo "Configuring realms for HTTP access..."
+        /opt/keycloak/bin/kcadm.sh update realms/master -s sslRequired=NONE 2>/dev/null || true
+        /opt/keycloak/bin/kcadm.sh update realms/tenant-a -s sslRequired=NONE 2>/dev/null || true
+        /opt/keycloak/bin/kcadm.sh update realms/identity -s sslRequired=NONE 2>/dev/null || true
+        echo "Keycloak realm configuration complete."
+    depends_on:
+      keycloak:
+        condition: service_started
+    restart: "no"
 
   redis:
     image: redis:6-alpine
@@ -60,9 +116,7 @@ services:
     volumes:
       - minio_data:/data
 
-  # -------------------------
-  # INIT JOBS (opt-in)
-  # -------------------------
+  # --- INIT JOBS (opt-in)
 
   minio-mc-init:
     profiles: ["init"]
@@ -98,34 +152,57 @@ services:
     entrypoint: ["/bin/sh", "/templates_sync.sh"]
     restart: "no"
 
-  # -------------------------
-  # APP SERVICES
-  # -------------------------
+  # --- APP SERVICES
 
+  # Backend: .env. Keycloak/Redis URLs overridden for Docker. Migrations run by default (M8FLOW_BACKEND_UPGRADE_DB=false to disable).
+  # Host port defaults to start_dev.sh value (7000); override with M8FLOW_BACKEND_PORT. Container listens on 8000.
+  # If you add a connector proxy service, set M8FLOW_BACKEND_CONNECTOR_PROXY_URL to http://<service-name>:<port> (e.g. http://spiffworkflow-connector:8004).
   m8flow-backend:
     build:
       context: ..
       dockerfile: docker/m8flow.backend.Dockerfile
-    command: ["./extensions/m8flow-backend/bin/run_m8flow_backend.sh"]
     env_file: ../.env
+    user: "0"
+    environment:
+      M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: "${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-/app/process_models}"
+      M8FLOW_BACKEND_DATABASE_URI: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
+      M8FLOW_BACKEND_UPGRADE_DB: "${M8FLOW_BACKEND_UPGRADE_DB:-true}"
+      KEYCLOAK_URL: "http://keycloak-proxy:7002"
+      M8FLOW_KEYCLOAK_URL: "http://keycloak-proxy:7002"
+      # So backend accepts token iss when it differs from KEYCLOAK_URL (Keycloak uses this for iss claim).
+      KEYCLOAK_HOSTNAME: "${KEYCLOAK_HOSTNAME:-http://localhost:7002}"
+      M8FLOW_BACKEND_CELERY_BROKER_URL: "${M8FLOW_BACKEND_CELERY_BROKER_URL:-redis://redis:6379/0}"
+      M8FLOW_BACKEND_CELERY_RESULT_BACKEND: "${M8FLOW_BACKEND_CELERY_RESULT_BACKEND:-redis://redis:6379/0}"
+      # When overriding M8FLOW_FRONTEND_PORT, set M8FLOW_BACKEND_URL_FOR_FRONTEND (and CORS) to match.
+      M8FLOW_BACKEND_URL_FOR_FRONTEND: "${M8FLOW_BACKEND_URL_FOR_FRONTEND:-http://localhost:7001}"
     ports:
-      - "8000:8000"
+      - "${M8FLOW_BACKEND_PORT:-7000}:8000"
     volumes:
       - process_models_cache:/app/process_models
       - templates_cache:/app/templates
     depends_on:
-      - m8flow-db
-      - keycloak
-      - redis
-      - minio
+      m8flow-db:
+        condition: service_healthy
+      keycloak-proxy:
+        condition: service_started
+      keycloak:
+        condition: service_healthy
+      keycloak-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+      minio:
+        condition: service_started
 
+  # Frontend: nginx runs as non-root and listens on 8080 in container. Host port defaults to 7001; override with M8FLOW_FRONTEND_PORT.
+  # Extension frontend reads MULTI_TENANT_ON, VITE_BACKEND_BASE_URL, etc. from .env at build time (Dockerfile COPY .env).
   m8flow-frontend:
     build:
       context: ..
       dockerfile: docker/m8flow.frontend.Dockerfile
     env_file: ../.env
     ports:
-      - "8001:80"
+      - "${M8FLOW_FRONTEND_PORT:-7001}:8080"
     depends_on:
       - m8flow-backend
 

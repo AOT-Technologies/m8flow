@@ -18,6 +18,14 @@ def keycloak_url() -> str:
     return url.rstrip("/")
 
 
+def keycloak_public_issuer_base() -> str:
+    """Base URL Keycloak uses for the iss claim in tokens (same as KC_HOSTNAME).
+    When this differs from keycloak_url() (e.g. Docker proxy), set KEYCLOAK_HOSTNAME or
+    M8FLOW_KEYCLOAK_PUBLIC_ISSUER_BASE so the backend accepts the token issuer."""
+    url = _get("KEYCLOAK_HOSTNAME") or _get("M8FLOW_KEYCLOAK_PUBLIC_ISSUER_BASE") or keycloak_url()
+    return url.rstrip("/")
+
+
 def keycloak_admin_user() -> str:
     """Master realm admin username."""
     return _get("KEYCLOAK_ADMIN_USER") or _get("M8FLOW_KEYCLOAK_ADMIN_USER") or "admin"
