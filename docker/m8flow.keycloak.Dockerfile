@@ -25,6 +25,6 @@ USER keycloak
 
 # Health, features, log level (align with start_keycloak.sh).
 ENV KC_HEALTH_ENABLED=true
-ENV JAVA_OPTS_APPEND="-Dkeycloak.profile.feature.token_exchange=enabled -Dkeycloak.profile.feature.admin_fine_grained_authz=enabled -D--spi-theme-static-max-age=-1 -D--spi-theme-cache-themes=false -D--spi-theme-cache-templates=false"
+ENV JAVA_OPTS_APPEND="-Dkeycloak.profile.feature.token_exchange=enabled -Dkeycloak.profile.feature.admin_fine_grained_authz=enabled"
 ENV KEYCLOAK_LOGLEVEL=ALL
 ENV ROOT_LOGLEVEL=ALL

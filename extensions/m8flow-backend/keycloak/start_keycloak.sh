@@ -131,9 +131,9 @@ if ! docker run \
   quay.io/keycloak/keycloak:${keycloak_version} start-dev \
   -Dkeycloak.profile.feature.token_exchange=enabled \
   -Dkeycloak.profile.feature.admin_fine_grained_authz=enabled \
-  -D--spi-theme-static-max-age=-1 \
-  -D--spi-theme-cache-themes=false \
-  -D--spi-theme-cache-templates=false; then
+  --spi-theme-static-max-age=-1 \
+  --spi-theme-cache-themes=false \
+  --spi-theme-cache-templates=false; then
   echo >&2 "ERROR: Failed to start Keycloak container"
   exit 1
 fi
