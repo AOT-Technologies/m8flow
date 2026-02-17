@@ -74,6 +74,9 @@ RUN mkdir -p /app/bin && printf '%s\n' \
   'exec python -m uvicorn extensions.app:app --host 0.0.0.0 --port 8000 --app-dir /app --log-config /app/uvicorn-log.yaml' \
   > /app/bin/run_backend_docker.sh && chmod +x /app/bin/run_backend_docker.sh
 
+# Default to non-root user (SonarQube S6481); compose overrides with user: "0" so entrypoint can chown then gosu
+USER app
+
 # Entrypoint: chown volume dirs then run CMD as app user
 ENTRYPOINT ["/bin/bash", "-c", "chown -R app:app /app/process_models /app/templates 2>/dev/null || true; exec gosu app \"$@\"", "--"]
 CMD ["/app/bin/run_backend_docker.sh"]
@@ -125,6 +128,9 @@ RUN mkdir -p /app/bin && printf '%s\n' \
 # Non-root user (same UID/GID as prod for volume permissions)
 RUN groupadd -r app -g 1000 && useradd -r -u 1000 -g app -d /app -s /bin/bash app \
   && chown -R app:app /app
+
+# Default to non-root user (SonarQube S6481); compose overrides with user: "0" so entrypoint can chown then gosu
+USER app
 
 # Entrypoint: chown volume dirs then run CMD as app user
 ENTRYPOINT ["/bin/bash", "-c", "chown -R app:app /app/process_models /app/templates 2>/dev/null || true; exec gosu app \"$@\"", "--"]

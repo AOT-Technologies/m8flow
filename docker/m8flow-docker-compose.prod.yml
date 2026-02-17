@@ -15,6 +15,7 @@ services:
       dockerfile: docker/m8flow.backend.Dockerfile
       target: prod
     platform: linux/amd64
+    user: "0"
 
   m8flow-frontend:
     build:
