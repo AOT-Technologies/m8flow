@@ -18,10 +18,11 @@ def keycloak_url() -> str:
     return url.rstrip("/")
 
 
-def keycloak_internal_url() -> str:
-    """Keycloak base URL for server-side requests (e.g. token, admin API).
-    Use this when the backend calls Keycloak; use keycloak_url() for URLs returned to the client."""
-    url = _get("KEYCLOAK_INTERNAL_URL") or _get("M8FLOW_KEYCLOAK_INTERNAL_URL") or keycloak_url()
+def keycloak_public_issuer_base() -> str:
+    """Base URL Keycloak uses for the iss claim in tokens (same as KC_HOSTNAME).
+    When this differs from keycloak_url() (e.g. Docker proxy), set KEYCLOAK_HOSTNAME or
+    M8FLOW_KEYCLOAK_PUBLIC_ISSUER_BASE so the backend accepts the token issuer."""
+    url = _get("KEYCLOAK_HOSTNAME") or _get("M8FLOW_KEYCLOAK_PUBLIC_ISSUER_BASE") or keycloak_url()
     return url.rstrip("/")
 
 

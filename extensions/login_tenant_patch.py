@@ -56,7 +56,12 @@ def _ensure_tenant_auth_config(flask_app, tenant: str) -> None:
         return
     template = configs[0]
     try:
-        from m8flow_backend.config import keycloak_url
+        from m8flow_backend.config import (
+            keycloak_public_issuer_base,
+            keycloak_url,
+            spoke_client_id,
+            spoke_client_secret,
+        )
         base = keycloak_url().rstrip("/")
         realm_uri = f"{base}/realms/{tenant}"
         new_config = copy.deepcopy(template)
@@ -64,6 +69,18 @@ def _ensure_tenant_auth_config(flask_app, tenant: str) -> None:
         new_config["label"] = tenant
         new_config["uri"] = realm_uri
         new_config["internal_uri"] = realm_uri
+        public_issuer_base = keycloak_public_issuer_base().rstrip("/")
+        public_realm_issuer = f"{public_issuer_base}/realms/{tenant}"
+        if public_realm_issuer != realm_uri:
+            existing = list(new_config.get("additional_valid_issuers") or [])
+            if public_realm_issuer not in existing:
+                new_config["additional_valid_issuers"] = [*existing, public_realm_issuer]
+        # Use spoke client so login works for realms created via POST /tenant-realms
+        # (template creates client with clientId = spoke_client_id(); redirect must match)
+        new_config["client_id"] = spoke_client_id()
+        spoke_secret = spoke_client_secret()
+        if spoke_secret:
+            new_config["client_secret"] = spoke_secret
         configs.append(new_config)
         logger.info("login_tenant_patch: Added auth config for tenant realm %s", tenant)
     except Exception as e:

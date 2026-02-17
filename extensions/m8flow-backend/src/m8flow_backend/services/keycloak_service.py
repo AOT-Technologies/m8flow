@@ -17,7 +17,6 @@ logger = logging.getLogger(__name__)
 from m8flow_backend.config import (
     keycloak_admin_password,
     keycloak_admin_user,
-    keycloak_internal_url,
     keycloak_url,
     realm_template_path,
     spoke_client_id,
@@ -109,7 +108,7 @@ def _build_client_assertion_jwt(token_url: str, realm: str) -> str:
     """Build JWT for client_assertion (RFC 7523). Signed with spoke keystore private key."""
     import jwt
 
-    base_url = keycloak_internal_url()
+    base_url = keycloak_url()
     realm_issuer = f"{base_url}/realms/{realm}"
     client_id = spoke_client_id()
     now = int(time.time())
@@ -127,7 +126,7 @@ def _build_client_assertion_jwt(token_url: str, realm: str) -> str:
 
 def get_master_admin_token() -> str:
     """Get access token via master realm admin username/password (for Admin API)."""
-    url = f"{keycloak_internal_url()}/realms/master/protocol/openid-connect/token"
+    url = f"{keycloak_url()}/realms/master/protocol/openid-connect/token"
     password = keycloak_admin_password()
     if not password:
         raise ValueError("KEYCLOAK_ADMIN_PASSWORD or M8FLOW_KEYCLOAK_ADMIN_PASSWORD must be set for realm creation.")
@@ -156,7 +155,7 @@ def realm_exists(realm: str) -> bool:
         return False
     realm = str(realm).strip()
     try:
-        base_url = keycloak_internal_url()
+        base_url = keycloak_url()
         # Public endpoint: no admin token required
         discovery_url = f"{base_url}/realms/{realm}/.well-known/openid-configuration"
         r = requests.get(discovery_url, timeout=30)
@@ -178,7 +177,7 @@ def realm_exists(realm: str) -> bool:
         return r.status_code in (200, 403)
     except Exception as e:
         try:
-            _url = f"{keycloak_internal_url()}/realms/{realm}/.well-known/openid-configuration"
+            _url = f"{keycloak_url()}/realms/{realm}/.well-known/openid-configuration"
         except Exception:
             _url = "(could not build URL)"
         logger.debug("realm_exists: realm=%r url=%s error=%r", realm, _url, e)
@@ -370,7 +369,7 @@ def create_realm_from_template(realm_id: str, display_name: str | None = None) -
     }
     
     token = get_master_admin_token()
-    base_url = keycloak_internal_url()
+    base_url = keycloak_url()
 
     r = requests.post(
         f"{base_url}/admin/realms",
@@ -469,7 +468,7 @@ def tenant_login(realm: str, username: str, password: str) -> dict:
     """
     if not realm or not username:
         raise ValueError("realm and username are required")
-    url = f"{keycloak_internal_url()}/realms/{realm}/protocol/openid-connect/token"
+    url = f"{keycloak_url()}/realms/{realm}/protocol/openid-connect/token"
     client_id = spoke_client_id()
     data = {
         "grant_type": "password",
@@ -501,7 +500,7 @@ def create_user_in_realm(
     if not realm or not username:
         raise ValueError("realm and username are required")
     token = get_master_admin_token()
-    base_url = keycloak_internal_url()
+    base_url = keycloak_url()
     
     # Step 1: Create user
     url = f"{base_url}/admin/realms/{realm}/users"
@@ -561,7 +560,7 @@ def delete_realm(realm_id: str, admin_token: str | None = None) -> None:
     realm_id = str(realm_id).strip()
     
     token = admin_token or get_master_admin_token()
-    base_url = keycloak_internal_url()
+    base_url = keycloak_url()
 
     r = requests.delete(
         f"{base_url}/admin/realms/{realm_id}",
@@ -582,7 +581,7 @@ def verify_admin_token(token: str) -> bool:
     """
     if not token:
         return False
-    base_url = keycloak_internal_url()
+    base_url = keycloak_url()
     try:
         r = requests.get(
             f"{base_url}/admin/realms/master",

@@ -16,6 +16,7 @@ DEFAULT_TENANT_ID = os.getenv("M8FLOW_DEFAULT_TENANT_ID", "default")
 
 # Include both prefixed and unprefixed paths so we match regardless of SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX.
 PUBLIC_PATH_PREFIXES: tuple[str, ...] = (
+    "/.well-known",
     "/favicon.ico",
     "/v1.0/status",
     "/status",
