@@ -85,18 +85,14 @@ Edit the `.env` file if adjustments are required for the local setup.
 
 To run the **extensions app** (m8flow backend: tenant login URL, tenant APIs, and DB migrations for m8flow):
 
-1. Ensure `.env` at repo root has `M8FLOW_BACKEND_DATABASE_URI`. Optionally set `M8FLOW_BACKEND_UPGRADE_DB=true` or `M8FLOW_BACKEND_SW_UPGRADE_DB=true` to run SpiffWorkflow and tenant DB migrations before start. Other options: `M8FLOW_BACKEND_RUN_BOOTSTRAP=false`, `SPIFFWORKFLOW_BACKEND_RUN_DATA_SETUP` (see sample.env).
-2. From repo root:
+1. Ensure `.env` at repo root has `M8FLOW_BACKEND_DATABASE_URI`. Optionally set `M8FLOW_BACKEND_UPGRADE_DB=true` to run SpiffWorkflow DB migrations before start. Other options: `M8FLOW_BACKEND_RUN_BOOTSTRAP=false`, `SPIFFWORKFLOW_BACKEND_RUN_DATA_SETUP` (see sample.env).
+2. From repo root, run backend and frontend together (backend in background):
 
 ```bash
-./extensions/m8flow-backend/bin/run_m8flow_backend.sh
+./start_dev.sh
 ```
 
-Backend runs on port **8000**. m8flow migrations run automatically at startup.
-
-**Alternative — uv-based (sync deps + optional migrations):** If you use `uv` and want to sync backend deps and run SpiffWorkflow migrations before starting, use `./extensions/m8flow-backend/bin/setup_and_run_backend.sh` instead. That script uses port 7000 (`M8FLOW_BACKEND_PORT`) and `M8FLOW_BACKEND_UPGRADE_DB=true` for migrations.
-
-To run backend and frontend together (backend in background), use `./start_dev.sh` from repo root instead.
+Backend runs on port **7000** (override with `M8FLOW_BACKEND_PORT`), frontend on **7001**. For backend-only (e.g. in a separate terminal), run from repo root: `cd spiffworkflow-backend && uv sync`; if `M8FLOW_BACKEND_UPGRADE_DB=true`, run `uv run flask db upgrade`; then `export PYTHONPATH="$PWD/..:$PWD/../extensions/m8flow-backend/src:$PWD/src"` and `uv run uvicorn extensions.app:app --reload --host 0.0.0.0 --port ${M8FLOW_BACKEND_PORT:-7000}`.
 
 **Mac Port Errors**: On a Mac, port 7000 (used by the backend) might be hijacked by Airplay. For those who upgraded to macOS 12.1 and are running everything locally, your AirPlay receiver may have started on Port 7000 and your server (which uses port 7000 by default) may fail due to this port already being used. You can disable this port in System Preferences > Sharing > AirPlay receiver.
 
@@ -234,13 +230,11 @@ uv sync --all-groups --active
 cd ..
 ```
 
-To have the backend running locally, on the root of the project, run:
+To have the backend running locally, use `./start_dev.sh` from the repo root (starts backend and frontend). For backend-only, see the "Backend with m8flow extensions" section above.
 
-`./extensions/m8flow-backend/bin/run_m8flow_backend.sh`
+You can test the backend with:
 
-You can test it running:
-
-`curl http://localhost:8000/v1.0/status`
+`curl http://localhost:7000/v1.0/status`
 
 The result should be:
 
