@@ -268,75 +268,78 @@ class TestDeleteTenantRealm:
 
     @patch("m8flow_backend.routes.keycloak_controller.delete_realm")
     @patch("m8flow_backend.routes.keycloak_controller.verify_admin_token")
-    @patch("m8flow_backend.routes.keycloak_controller.request")
-    def test_delete_tenant_realm_success(self, mock_request, mock_verify, mock_delete_realm):
-        mock_request.headers = {"Authorization": "Bearer valid-token"}
+    def test_delete_tenant_realm_success(self, mock_verify, mock_delete_realm):
+        from flask import Flask
+        app = Flask(__name__)
         mock_verify.return_value = True
         tenant_mock = MagicMock()
         tenant_mock.id = "keycloak-uuid-123"
-        mock_query = MagicMock()
-        mock_query.filter.return_value.one_or_none.return_value = tenant_mock
-        with patch(
-            "m8flow_backend.routes.keycloak_controller.db"
-        ) as mock_db:
-            mock_db.session.query.return_value.filter.return_value.one_or_none.return_value = (
-                tenant_mock
-            )
-            result, status = delete_tenant_realm("tenant-a")
-        assert status == 200
-        assert "deleted successfully" in result["message"]
-        mock_delete_realm.assert_called_once_with("tenant-a", admin_token="valid-token")
-        mock_db.session.delete.assert_called_once_with(tenant_mock)
-        mock_db.session.commit.assert_called_once()
+        with app.test_request_context(headers={"Authorization": "Bearer valid-token"}):
+            with patch(
+                "m8flow_backend.routes.keycloak_controller.db"
+            ) as mock_db:
+                mock_db.session.query.return_value.filter.return_value.one_or_none.return_value = (
+                    tenant_mock
+                )
+                result, status = delete_tenant_realm("tenant-a")
+            assert status == 200
+            assert "deleted successfully" in result["message"]
+            mock_delete_realm.assert_called_once_with("tenant-a", admin_token="valid-token")
+            mock_db.session.delete.assert_called_once_with(tenant_mock)
+            mock_db.session.commit.assert_called_once()
 
     @patch("m8flow_backend.routes.keycloak_controller.delete_realm")
     @patch("m8flow_backend.routes.keycloak_controller.verify_admin_token")
-    @patch("m8flow_backend.routes.keycloak_controller.request")
     def test_delete_tenant_realm_no_tenant_row_still_deletes_keycloak(
-        self, mock_request, mock_verify, mock_delete_realm
+        self, mock_verify, mock_delete_realm
     ):
-        mock_request.headers = {"Authorization": "Bearer valid-token"}
+        from flask import Flask
+        app = Flask(__name__)
         mock_verify.return_value = True
-        with patch(
-            "m8flow_backend.routes.keycloak_controller.db"
-        ) as mock_db:
-            mock_db.session.query.return_value.filter.return_value.one_or_none.return_value = None
-            result, status = delete_tenant_realm("missing-slug")
-        assert status == 200
-        mock_delete_realm.assert_called_once_with("missing-slug", admin_token="valid-token")
-        mock_db.session.delete.assert_not_called()
-        mock_db.session.commit.assert_not_called()
+        with app.test_request_context(headers={"Authorization": "Bearer valid-token"}):
+            with patch(
+                "m8flow_backend.routes.keycloak_controller.db"
+            ) as mock_db:
+                mock_db.session.query.return_value.filter.return_value.one_or_none.return_value = None
+                result, status = delete_tenant_realm("missing-slug")
+            assert status == 200
+            mock_delete_realm.assert_called_once_with("missing-slug", admin_token="valid-token")
+            mock_db.session.delete.assert_not_called()
+            mock_db.session.commit.assert_not_called()
 
-    @patch("m8flow_backend.routes.keycloak_controller.request")
-    def test_delete_tenant_realm_no_auth(self, mock_request):
-        mock_request.headers = {}
-        result, status = delete_tenant_realm("tenant-a")
+    def test_delete_tenant_realm_no_auth(self):
+        from flask import Flask
+        app = Flask(__name__)
+        with app.test_request_context(headers={}):
+            result, status = delete_tenant_realm("tenant-a")
         assert status == 401
         assert "Authorization" in result["detail"]
 
     @patch("m8flow_backend.routes.keycloak_controller.verify_admin_token")
-    @patch("m8flow_backend.routes.keycloak_controller.request")
-    def test_delete_tenant_realm_invalid_token(self, mock_request, mock_verify):
-        mock_request.headers = {"Authorization": "Bearer bad-token"}
+    def test_delete_tenant_realm_invalid_token(self, mock_verify):
+        from flask import Flask
+        app = Flask(__name__)
         mock_verify.return_value = False
-        result, status = delete_tenant_realm("tenant-a")
+        with app.test_request_context(headers={"Authorization": "Bearer bad-token"}):
+            result, status = delete_tenant_realm("tenant-a")
         assert status == 401
         assert "Invalid" in result["detail"]
 
     @patch("m8flow_backend.routes.keycloak_controller.delete_realm")
     @patch("m8flow_backend.routes.keycloak_controller.verify_admin_token")
-    @patch("m8flow_backend.routes.keycloak_controller.request")
     def test_delete_tenant_realm_keycloak_failure_does_not_touch_postgres(
-        self, mock_request, mock_verify, mock_delete_realm
+        self, mock_verify, mock_delete_realm
     ):
         """When Keycloak delete_realm raises, we do not delete from Postgres (inverted order)."""
-        mock_request.headers = {"Authorization": "Bearer valid-token"}
+        from flask import Flask
+        app = Flask(__name__)
         mock_verify.return_value = True
         err = requests.HTTPError("502 Bad Gateway")
         err.response = MagicMock(status_code=502, text="Bad Gateway")
         mock_delete_realm.side_effect = err
-        with patch("m8flow_backend.routes.keycloak_controller.db") as mock_db:
-            result, status = delete_tenant_realm("tenant-a")
+        with app.test_request_context(headers={"Authorization": "Bearer valid-token"}):
+            with patch("m8flow_backend.routes.keycloak_controller.db") as mock_db:
+                result, status = delete_tenant_realm("tenant-a")
         assert status == 502
         mock_db.session.delete.assert_not_called()
         mock_db.session.commit.assert_not_called()
