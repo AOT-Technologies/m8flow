@@ -1000,14 +1000,11 @@ paths:
               type: string
       responses:
         "200":
-          description: File updated
+          description: File updated, returns the updated template
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  ok:
-                    type: boolean
+                $ref: "#/components/schemas/Template"
         "400":
           description: Bad request
         "403":

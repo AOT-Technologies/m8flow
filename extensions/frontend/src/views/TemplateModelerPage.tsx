@@ -116,7 +116,7 @@ export default function TemplateModelerPage() {
   const [createProcessModelOpen, setCreateProcessModelOpen] = useState(false);
   const [createProcessModelSuccess, setCreateProcessModelSuccess] = useState<string | null>(null);
 
-  const id = templateId ? parseInt(templateId, 10) : NaN;
+  const id = templateId ? Number.parseInt(templateId, 10) : NaN;
 
   const handleExport = useCallback(() => {
     if (isNaN(id)) return;
@@ -168,8 +168,8 @@ export default function TemplateModelerPage() {
       .then((versions) => {
         // Sort versions: V1, V2, V3... (ascending by version number)
         const sorted = [...versions].sort((a, b) => {
-          const aNum = parseInt(a.version.replace(/^V/i, ''), 10) || 0;
-          const bNum = parseInt(b.version.replace(/^V/i, ''), 10) || 0;
+          const aNum = Number.parseInt(a.version.replace(/^V/i, ''), 10) || 0;
+          const bNum = Number.parseInt(b.version.replace(/^V/i, ''), 10) || 0;
           return aNum - bNum;
         });
         setAllVersions(sorted);
@@ -205,21 +205,21 @@ export default function TemplateModelerPage() {
   const SUCCESS_ALERT_DURATION_MS = 5000;
   useEffect(() => {
     if (!publishSuccess) return;
-    const timer = window.setTimeout(() => setPublishSuccess(false), SUCCESS_ALERT_DURATION_MS);
-    return () => window.clearTimeout(timer);
+    const timer = globalThis.setTimeout(() => setPublishSuccess(false), SUCCESS_ALERT_DURATION_MS);
+    return () => globalThis.clearTimeout(timer);
   }, [publishSuccess]);
 
   useEffect(() => {
     if (!createProcessModelSuccess) return;
-    const timer = window.setTimeout(() => setCreateProcessModelSuccess(null), SUCCESS_ALERT_DURATION_MS);
-    return () => window.clearTimeout(timer);
+    const timer = globalThis.setTimeout(() => setCreateProcessModelSuccess(null), SUCCESS_ALERT_DURATION_MS);
+    return () => globalThis.clearTimeout(timer);
   }, [createProcessModelSuccess]);
 
   const handleCreateProcessModelSuccess = useCallback((processModelId: string) => {
     setCreateProcessModelSuccess(processModelId);
     // Navigate to the new process model after a short delay
     setTimeout(() => {
-      const encodedId = processModelId.replace(/\//g, ':');
+      const encodedId = processModelId.replaceAll('/', ':');
       navigate(`/process-models/${encodedId}`);
     }, 1500);
   }, [navigate]);

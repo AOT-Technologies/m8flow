@@ -298,14 +298,13 @@ def template_delete_file(id: int, file_name: str):
     """Delete a single file from the template.
 
     If the template is published, a draft version is created/reused and the file is deleted there.
-    Returns the template that was actually modified (may be different from the requested ID if published).
     """
     user = getattr(g, "user", None)
     template = TemplateService.get_template_by_id(id, user=user)
     if template is None:
         raise ApiError("not_found", "Template not found", status_code=404)
-    updated_template = TemplateService.delete_file_from_template(template, file_name, user=user)
-    return jsonify(_serialize_template(updated_template)), 200
+    TemplateService.delete_file_from_template(template, file_name, user=user)
+    return "", 204
 
 
 def template_export(id: int):

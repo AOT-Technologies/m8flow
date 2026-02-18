@@ -40,7 +40,7 @@ export default function TemplateFileDiagramPage() {
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const id = templateId ? parseInt(templateId, 10) : NaN;
+  const id = templateId ? Number.parseInt(templateId, 10) : NaN;
   const decodedFileName = fileName ? decodeURIComponent(fileName) : "";
   const firstBpmnFileName = getFirstBpmnFileName(template);
 

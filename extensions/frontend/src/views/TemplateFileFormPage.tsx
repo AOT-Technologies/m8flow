@@ -31,7 +31,7 @@ export default function TemplateFileFormPage() {
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const id = templateId ? parseInt(templateId, 10) : NaN;
+  const id = templateId ? Number.parseInt(templateId, 10) : NaN;
   const decodedFileName = fileName ? decodeURIComponent(fileName) : "";
   const lower = decodedFileName.toLowerCase();
   const isJson = lower.endsWith(".json");
@@ -108,7 +108,7 @@ export default function TemplateFileFormPage() {
     const confirmMsg = template?.isPublished
       ? `Delete file "${decodedFileName}"? A new draft version will be created.`
       : `Delete file "${decodedFileName}"? This cannot be undone.`;
-    if (!window.confirm(confirmMsg)) return;
+    if (!globalThis.confirm(confirmMsg)) return;
     setError(null);
     TemplateService.deleteTemplateFile(id, decodedFileName)
       .then((updatedTemplate) => {

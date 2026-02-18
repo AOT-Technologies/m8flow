@@ -34,7 +34,7 @@ export default function ProcessModelShowWithSaveAsTemplate() {
     : "";
 
   // Convert modified ID (with colons) back to standard format (with slashes) for the API
-  const processModelIdentifier = params.process_model_id?.replace(/:/g, "/") || "";
+  const processModelIdentifier = params.process_model_id?.replaceAll(":", "/") || "";
 
   // Fetch template provenance info
   useEffect(() => {

@@ -41,6 +41,8 @@ MAX_ZIP_ENTRIES = 100
 
 UNIQUE_TEMPLATE_CONSTRAINT = "uq_template_key_version_tenant"  # keep in sync with TemplateModel __table_args__
 
+TENANT_REQUIRED_MESSAGE = "Tenant context required"
+
 
 class TemplateService:
     """Service for CRUD, versioning, and visibility enforcement for templates."""
@@ -113,7 +115,7 @@ class TemplateService:
 
         tenant = tenant_id or getattr(g, "m8flow_tenant_id", None)
         if tenant is None:
-            raise ApiError("tenant_required", "Tenant context required", status_code=400)
+            raise ApiError("tenant_required", TENANT_REQUIRED_MESSAGE, status_code=400)
 
         if not metadata:
             raise ApiError("missing_fields", "metadata is required", status_code=400)
@@ -767,7 +769,7 @@ class TemplateService:
             raise ApiError("unauthorized", "User must be authenticated", status_code=403)
         tenant = tenant_id or getattr(g, "m8flow_tenant_id", None)
         if tenant is None:
-            raise ApiError("tenant_required", "Tenant context required", status_code=400)
+            raise ApiError("tenant_required", TENANT_REQUIRED_MESSAGE, status_code=400)
         template_key = metadata.get("template_key")
         name = metadata.get("name")
         if not template_key or not name:
@@ -856,7 +858,7 @@ class TemplateService:
 
         tenant = tenant_id or getattr(g, "m8flow_tenant_id", None)
         if tenant is None:
-            raise ApiError("tenant_required", "Tenant context required", status_code=400)
+            raise ApiError("tenant_required", TENANT_REQUIRED_MESSAGE, status_code=400)
 
         # Get the template
         template = cls.get_template_by_id(template_id, user=user)
@@ -1031,15 +1033,20 @@ class TemplateService:
         process_id_pattern = re.compile(r'(<bpmn:process[^>]*\s+id=")([^"]+)(")')
 
         new_primary_process_id = None
+        process_counter = 0
 
         def replace_process_id(match: re.Match) -> str:
-            nonlocal new_primary_process_id
+            nonlocal new_primary_process_id, process_counter
             prefix = match.group(1)
-            old_id = match.group(2)
             suffix = match.group(3)
 
-            # Create new unique process ID
-            new_id = f"Process_{underscored_id}_{fuzz}"
+            # Create new unique process ID with counter for uniqueness
+            if process_counter == 0:
+                new_id = f"Process_{underscored_id}_{fuzz}"
+            else:
+                new_id = f"Process_{underscored_id}_{fuzz}_{process_counter}"
+
+            process_counter += 1
 
             if new_primary_process_id is None:
                 new_primary_process_id = new_id

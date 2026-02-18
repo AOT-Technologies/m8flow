@@ -40,8 +40,8 @@ export default function TemplateGalleryPage() {
   const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
 
   // Read page/per_page from URL search params (PaginationForTable manages them)
-  const page = parseInt(searchParams.get('page') || '1', 10) || 1;
-  const perPage = parseInt(searchParams.get('per_page') || String(DEFAULT_PER_PAGE), 10) || DEFAULT_PER_PAGE;
+  const page = Number.parseInt(searchParams.get('page') || '1', 10) || 1;
+  const perPage = Number.parseInt(searchParams.get('per_page') || String(DEFAULT_PER_PAGE), 10) || DEFAULT_PER_PAGE;
 
   // Fetch templates on mount and when filters or pagination change
   useEffect(() => {

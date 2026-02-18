@@ -1,12 +1,14 @@
 import {
   Alert,
   Autocomplete,
+  Box,
   Button,
   CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  Link,
   Stack,
   TextField,
   Typography,
@@ -16,22 +18,8 @@ import { useNavigate } from "react-router-dom";
 import { ProcessGroup, ProcessGroupLite } from "@spiffworkflow-frontend/interfaces";
 import TemplateService from "../services/TemplateService";
 import useProcessGroups from "../hooks/useProcessGroups";
+import { nameToTemplateKey } from "../utils/templateKey";
 import type { Template } from "../types/template";
-
-/**
- * Convert a display name to a valid process model ID.
- * - Converts to lowercase
- * - Replaces spaces and special characters with hyphens
- * - Removes consecutive hyphens
- * - Removes leading/trailing hyphens
- */
-function displayNameToProcessModelId(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-}
 
 /**
  * Flatten process groups into a list of { id, displayName } for the autocomplete.
@@ -71,7 +59,7 @@ export default function CreateProcessModelFromTemplateModal({
   onClose,
   template,
   onSuccess,
-}: CreateProcessModelFromTemplateModalProps) {
+}: Readonly<CreateProcessModelFromTemplateModalProps>) {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -99,16 +87,16 @@ export default function CreateProcessModelFromTemplateModal({
     } else if (template) {
       // Pre-fill display name from template name
       setDisplayName(template.name);
-      setProcessModelId(displayNameToProcessModelId(template.name));
+      setProcessModelId(nameToTemplateKey(template.name));
       setDescription(template.description || "");
     }
-  }, [open, template]);
+  }, [open, template?.id]);
 
   // Auto-generate process model ID from display name (unless manually edited)
   const handleDisplayNameChange = (value: string) => {
     setDisplayName(value);
     if (!idManuallyEdited) {
-      setProcessModelId(displayNameToProcessModelId(value));
+      setProcessModelId(nameToTemplateKey(value));
     }
   };
 
@@ -153,16 +141,16 @@ export default function CreateProcessModelFromTemplateModal({
         description: description.trim() || undefined,
       });
 
-      const fullProcessModelId = `${selectedGroup.id}/${trimmedId}`;
-      onClose();
+      const fullProcessModelId = result.template_info?.process_model_identifier || `${selectedGroup.id}/${trimmedId}`;
       
       if (onSuccess) {
         onSuccess(fullProcessModelId);
       } else {
         // Navigate to the new process model
-        const encodedId = fullProcessModelId.replace(/\//g, ":");
+        const encodedId = fullProcessModelId.replaceAll("/", ":");
         navigate(`/process-models/${encodedId}`);
       }
+      onClose();
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Failed to create process model. Please try again.";
@@ -186,38 +174,49 @@ export default function CreateProcessModelFromTemplateModal({
         <Stack spacing={2.5} sx={{ pt: 1 }}>
           {template && (
             <Alert severity="info" sx={{ mb: 1 }}>
-              Creating from template: <strong>{template.name}</strong> (v{template.version})
+              Creating from template: <strong>{template.name}</strong> ({template.version})
             </Alert>
           )}
           {error && (
             <Alert severity="error" sx={{ mb: 1 }}>{error}</Alert>
           )}
           
-          <Autocomplete
-            options={flattenedGroups}
-            getOptionLabel={(option) => option.displayName}
-            value={selectedGroup}
-            onChange={(_, newValue) => setSelectedGroup(newValue)}
-            loading={groupsLoading}
-            disabled={loading}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                label="Process Group"
-                required
-                placeholder="Select a process group"
-                InputProps={{
-                  ...params.InputProps,
-                  endAdornment: (
-                    <>
-                      {groupsLoading ? <CircularProgress color="inherit" size={20} /> : null}
-                      {params.InputProps.endAdornment}
-                    </>
-                  ),
-                }}
-              />
+          <Box>
+            <Autocomplete
+              options={flattenedGroups}
+              getOptionLabel={(option) => option.displayName}
+              value={selectedGroup}
+              onChange={(_, newValue) => setSelectedGroup(newValue)}
+              loading={groupsLoading}
+              disabled={loading}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Process Group"
+                  required
+                  placeholder="Select a process group"
+                  InputProps={{
+                    ...params.InputProps,
+                    endAdornment: (
+                      <>
+                        {groupsLoading ? <CircularProgress color="inherit" size={20} /> : null}
+                        {params.InputProps.endAdornment}
+                      </>
+                    ),
+                  }}
+                />
+              )}
+            />
+            {!groupsLoading && flattenedGroups.length === 0 && (
+              <Alert severity="warning" sx={{ mt: 1 }}>
+                No process groups found.{" "}
+                <Link href="/process-groups/new" target="_blank" rel="noopener">
+                  Create a process group
+                </Link>{" "}
+                first, then return here.
+              </Alert>
             )}
-          />
+          </Box>
 
           <TextField
             label="Display Name"

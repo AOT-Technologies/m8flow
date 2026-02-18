@@ -461,7 +461,7 @@ const TemplateService = {
     processModelIdentifier: string
   ): Promise<ProcessModelTemplateInfo | null> {
     // Convert slashes to colons for the API path
-    const modifiedId = processModelIdentifier.replace(/\//g, ":");
+    const modifiedId = processModelIdentifier.replaceAll("/", ":");
     return new Promise((resolve, reject) => {
       HttpService.makeCallToBackend({
         path: `${BASE_PATH}/process-models/${modifiedId}/template-info`,
