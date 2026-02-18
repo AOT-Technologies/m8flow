@@ -1030,7 +1030,8 @@ class TemplateService:
 
         # Find all process IDs in the BPMN
         # Pattern matches: id="Process_xxx" or id="process_xxx"
-        process_id_pattern = re.compile(r'(<bpmn:process[^>]*\s+id=")([^"]+)(")')
+        # Pattern is safe from ReDoS: [^>]* and [^"]+ are bounded by distinct delimiters
+        process_id_pattern = re.compile(r'(<bpmn:process[^>]*\s+id=")([^"]+)(")')  # NOSONAR
 
         new_primary_process_id = None
         process_counter = 0

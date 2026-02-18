@@ -30,7 +30,7 @@ import spiffworkflow_backend.load_database_models  # noqa: F401,E402
 
 def test_process_model_template_model_creation() -> None:
     """Test ProcessModelTemplateModel can be created and persisted."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     db.init_app(app)
@@ -95,7 +95,7 @@ def test_process_model_template_model_creation() -> None:
 
 def test_process_model_template_model_unique_constraint() -> None:
     """Test ProcessModelTemplateModel enforces unique process_model_identifier."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     db.init_app(app)
@@ -159,7 +159,7 @@ def test_process_model_template_model_unique_constraint() -> None:
 
 def test_process_model_template_model_serialized() -> None:
     """Test ProcessModelTemplateModel.serialized() returns expected dict."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     db.init_app(app)
@@ -195,7 +195,7 @@ def test_process_model_template_model_serialized() -> None:
 
 def test_process_model_template_model_relationship() -> None:
     """Test ProcessModelTemplateModel has relationship to TemplateModel."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     db.init_app(app)

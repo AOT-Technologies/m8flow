@@ -270,7 +270,7 @@ class TestDeleteTenantRealm:
     @patch("m8flow_backend.routes.keycloak_controller.verify_admin_token")
     def test_delete_tenant_realm_success(self, mock_verify, mock_delete_realm):
         from flask import Flask
-        app = Flask(__name__)
+        app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
         mock_verify.return_value = True
         tenant_mock = MagicMock()
         tenant_mock.id = "keycloak-uuid-123"
@@ -294,7 +294,7 @@ class TestDeleteTenantRealm:
         self, mock_verify, mock_delete_realm
     ):
         from flask import Flask
-        app = Flask(__name__)
+        app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
         mock_verify.return_value = True
         with app.test_request_context(headers={"Authorization": "Bearer valid-token"}):
             with patch(
@@ -309,7 +309,7 @@ class TestDeleteTenantRealm:
 
     def test_delete_tenant_realm_no_auth(self):
         from flask import Flask
-        app = Flask(__name__)
+        app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
         with app.test_request_context(headers={}):
             result, status = delete_tenant_realm("tenant-a")
         assert status == 401
@@ -318,7 +318,7 @@ class TestDeleteTenantRealm:
     @patch("m8flow_backend.routes.keycloak_controller.verify_admin_token")
     def test_delete_tenant_realm_invalid_token(self, mock_verify):
         from flask import Flask
-        app = Flask(__name__)
+        app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
         mock_verify.return_value = False
         with app.test_request_context(headers={"Authorization": "Bearer bad-token"}):
             result, status = delete_tenant_realm("tenant-a")
@@ -332,7 +332,7 @@ class TestDeleteTenantRealm:
     ):
         """When Keycloak delete_realm raises, we do not delete from Postgres (inverted order)."""
         from flask import Flask
-        app = Flask(__name__)
+        app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
         mock_verify.return_value = True
         err = requests.HTTPError("502 Bad Gateway")
         err.response = MagicMock(status_code=502, text="Bad Gateway")

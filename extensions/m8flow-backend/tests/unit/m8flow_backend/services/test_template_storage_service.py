@@ -131,7 +131,7 @@ class TestSanitize:
 @pytest.fixture()
 def storage_app():
     """Create a Flask app with a temp directory for storage tests."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     tmpdir = tempfile.mkdtemp(prefix="test_storage_")
     app.config["TESTING"] = True
     app.config["M8FLOW_TEMPLATES_STORAGE_DIR"] = tmpdir

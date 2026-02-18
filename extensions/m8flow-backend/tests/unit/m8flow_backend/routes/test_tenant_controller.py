@@ -38,7 +38,7 @@ from spiffworkflow_backend.exceptions.api_error import ApiError  # noqa: E402
 @pytest.fixture
 def app():
     """Create Flask app with in-memory database for testing."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"

@@ -104,7 +104,7 @@ class MockTemplateStorageService:
 
 def test_process_model_template_model_serialized() -> None:
     """Test ProcessModelTemplateModel.serialized() returns correct dict."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     db.init_app(app)
@@ -184,7 +184,7 @@ def test_transform_bpmn_content_handles_invalid_encoding() -> None:
 
 def test_get_process_model_template_info_returns_none_when_not_found() -> None:
     """Test get_process_model_template_info returns None for non-template process models."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     db.init_app(app)
@@ -202,7 +202,7 @@ def test_get_process_model_template_info_returns_none_when_not_found() -> None:
 
 def test_get_process_model_template_info_returns_provenance() -> None:
     """Test get_process_model_template_info returns provenance when exists."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     db.init_app(app)
@@ -261,7 +261,7 @@ def test_get_process_model_template_info_returns_provenance() -> None:
 
 def test_get_process_model_template_info_respects_tenant_isolation() -> None:
     """Test get_process_model_template_info only returns provenance for current tenant."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     db.init_app(app)
@@ -327,7 +327,7 @@ def test_get_process_model_template_info_respects_tenant_isolation() -> None:
 
 def test_create_process_model_from_template_requires_authentication() -> None:
     """Test create_process_model_from_template raises error when user is None."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     db.init_app(app)
@@ -351,7 +351,7 @@ def test_create_process_model_from_template_requires_authentication() -> None:
 
 def test_create_process_model_from_template_requires_tenant() -> None:
     """Test create_process_model_from_template raises error when tenant is missing."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     db.init_app(app)
@@ -378,7 +378,7 @@ def test_create_process_model_from_template_requires_tenant() -> None:
 
 def test_create_process_model_from_template_raises_not_found_for_missing_template() -> None:
     """Test create_process_model_from_template raises error when template doesn't exist."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     db.init_app(app)

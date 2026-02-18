@@ -91,7 +91,7 @@ def test_create_user_from_sign_in_no_preferred_username():
 
 def test_realm_extraction_from_issuer():
     """Test realm extraction logic from issuer URL."""
-    test_cases = [
+    test_cases = [  # NOSONAR - test fixtures, not real connections
         ("http://localhost:7002/realms/test-realm", "test-realm"),
         ("http://keycloak:8080/realms/my-tenant", "my-tenant"),
         ("https://auth.example.com/realms/production/", "production"),
@@ -105,7 +105,7 @@ def test_realm_extraction_from_issuer():
 
 def test_realm_extraction_no_realms_path():
     """Test that None is returned when issuer doesn't contain /realms/."""
-    test_cases = [
+    test_cases = [  # NOSONAR - test fixtures, not real connections
         "http://localhost:7002/auth",
         "https://example.com/oauth",
         "",

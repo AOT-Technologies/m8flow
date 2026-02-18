@@ -29,7 +29,7 @@ for path in (extension_src, backend_src):
 @pytest.fixture
 def app():
     """Create Flask app for testing."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     return app
 
 
@@ -192,8 +192,9 @@ def test_realm_from_service():
     """Test _realm_from_service helper function."""
     from m8flow_backend.services.user_service_patch import _realm_from_service
     
-    assert _realm_from_service("http://localhost:7002/realms/test-tenant") == "test-tenant"
-    assert _realm_from_service("http://keycloak:8080/realms/my-realm/") == "my-realm"
+    # NOSONAR - test fixtures, not real connections
+    assert _realm_from_service("http://localhost:7002/realms/test-tenant") == "test-tenant"  # NOSONAR
+    assert _realm_from_service("http://keycloak:8080/realms/my-realm/") == "my-realm"  # NOSONAR
     assert _realm_from_service("") == "unknown"
     assert _realm_from_service(None) == "unknown"
 
@@ -206,9 +207,9 @@ def test_user_belongs_to_tenant():
     assert _user_belongs_to_tenant("alice@test-tenant", "", "test-tenant") is True
     assert _user_belongs_to_tenant("alice@other-tenant", "", "test-tenant") is False
     
-    # User without suffix but with matching service
-    assert _user_belongs_to_tenant("alice", "http://localhost:7002/realms/test-tenant", "test-tenant") is True
-    assert _user_belongs_to_tenant("alice", "http://localhost:7002/realms/other-tenant", "test-tenant") is False
+    # User without suffix but with matching service (NOSONAR - test fixtures, not real connections)
+    assert _user_belongs_to_tenant("alice", "http://localhost:7002/realms/test-tenant", "test-tenant") is True  # NOSONAR
+    assert _user_belongs_to_tenant("alice", "http://localhost:7002/realms/other-tenant", "test-tenant") is False  # NOSONAR
     
     # No tenant context - always matches
     assert _user_belongs_to_tenant("alice", "", "") is True

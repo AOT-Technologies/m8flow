@@ -15,7 +15,7 @@ from m8flow_backend.services.tenant_context_middleware import (
 
 
 def _make_app() -> Flask:
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SQLALCHEMY_EXPIRE_ON_COMMIT"] = False
