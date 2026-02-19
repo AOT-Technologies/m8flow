@@ -13,14 +13,15 @@ if (rootEnv.MULTI_TENANT_ON !== undefined && process.env.VITE_MULTI_TENANT_ON ==
 }
 
 const host = process.env.HOST ?? 'localhost';
-const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 7001; // Match start_dev.sh FRONTEND_PORT
-const backendPort = process.env.BACKEND_PORT ? parseInt(process.env.BACKEND_PORT, 10) : 7000; // Match start_dev.sh backend port
+const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 8001; // Match start_dev.sh FRONTEND_PORT
+const backendPort = process.env.BACKEND_PORT ? parseInt(process.env.BACKEND_PORT, 10) : 8000; // Match start_dev.sh backend port
 
 const multiTenantOn =
   rootEnv.MULTI_TENANT_ON ?? process.env.VITE_MULTI_TENANT_ON ?? 'false';
 
 export default defineConfig({
   base: '/',
+  publicDir: path.resolve(__dirname, '../../spiffworkflow-frontend/public'),
   define: {
     'import.meta.env.VITE_MULTI_TENANT_ON': JSON.stringify(multiTenantOn),
   },
