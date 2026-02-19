@@ -111,17 +111,8 @@ export default function TemplateFileFormPage() {
     if (!globalThis.confirm(confirmMsg)) return;
     setError(null);
     TemplateService.deleteTemplateFile(id, decodedFileName)
-      .then((updatedTemplate) => {
-        // Check if a new version was created (template ID changed)
-        if (updatedTemplate.id !== id) {
-          setNewVersionInfo({ id: updatedTemplate.id, version: updatedTemplate.version });
-          // Navigate to the new version's template page after a short delay
-          setTimeout(() => {
-            navigate(`/templates/${updatedTemplate.id}`);
-          }, 2000);
-        } else {
-          navigate(`/templates/${id}`);
-        }
+      .then(() => {
+        navigate(`/templates/${id}`);
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Delete failed"));
   };

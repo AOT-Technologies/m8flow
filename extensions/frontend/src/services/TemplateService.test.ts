@@ -193,25 +193,12 @@ describe("TemplateService", () => {
       vi.stubGlobal("fetch", fetchMock);
     });
 
-    it("sends DELETE request and returns parsed template on success", async () => {
-      const mockTemplateResponse = {
-        id: 8,
-        template_key: "del-test",
-        name: "Delete Test",
-        version: "V2",
-        visibility: "TENANT",
-        is_published: false,
-        files: [{ file_type: "bpmn", file_name: "diagram.bpmn" }],
-        created_at_in_seconds: 1700000000,
-        updated_at_in_seconds: 1700000002,
-      };
-
+    it("sends DELETE request and resolves on success", async () => {
       fetchMock.mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve(mockTemplateResponse),
       });
 
-      const result = await TemplateService.deleteTemplateFile(4, "form.json");
+      await TemplateService.deleteTemplateFile(4, "form.json");
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(fetchMock).toHaveBeenCalledWith(
@@ -221,10 +208,6 @@ describe("TemplateService", () => {
           credentials: "include",
         })
       );
-
-      expect(result.id).toBe(8);
-      expect(result.version).toBe("V2");
-      expect(result.templateKey).toBe("del-test");
     });
 
     it("rejects with error when response is not ok", async () => {
