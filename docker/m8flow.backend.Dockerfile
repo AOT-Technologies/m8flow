@@ -30,7 +30,7 @@ COPY uvicorn-log.yaml /app/uvicorn-log.yaml
 
 # Create venv and install backend non-editable (prod)
 RUN uv venv /opt/venv \
-  && /opt/venv/bin/uv pip install /app/spiffworkflow-backend
+  && uv pip install --python /opt/venv/bin/python /app/spiffworkflow-backend
 
 # -----------------------------------------------------------------------------
 # Stage: prod - minimal runtime image for AWS Linux / production (non-root)
