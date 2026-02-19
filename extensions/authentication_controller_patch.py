@@ -1,10 +1,8 @@
-# extensions/master_realm_auth_patch.py
-# 1) For create-realm and create-tenant APIs, use Keycloak master realm for token validation
-#    when the request has a Bearer token but no authentication_identifier (cookie/header).
-# 2) On login_return callback, use authentication_identifier from OAuth state so token
-#    decode uses the correct realm's JWKS (cookie is not set yet on that request).
-# 3) When Bearer token is present but cookie/header are not, derive authentication_identifier
-#    from token claims (realm_name or iss) so the frontend does not need to send the header.
+# extensions/authentication_controller_patch.py
+"""Patches to spiffworkflow_backend.routes.authentication_controller:
+- Decode token debug (_get_decoded_token)
+- Master realm auth and identifier from token (_get_authentication_identifier_from_request)
+"""
 
 import ast
 import base64
@@ -13,6 +11,27 @@ from urllib.parse import unquote
 
 logger = logging.getLogger(__name__)
 
+# --- Decode token debug ---
+_DECODE_TOKEN_PATCHED = False
+
+
+def _patched_get_decoded_token(token: str):
+    from spiffworkflow_backend.routes import authentication_controller
+
+    return authentication_controller._original_get_decoded_token(token)
+
+
+def apply_decode_token_debug_patch() -> None:
+    global _DECODE_TOKEN_PATCHED
+    if _DECODE_TOKEN_PATCHED:
+        return
+    import spiffworkflow_backend.routes.authentication_controller as auth_ctrl
+    auth_ctrl._original_get_decoded_token = auth_ctrl._get_decoded_token
+    auth_ctrl._get_decoded_token = _patched_get_decoded_token
+    _DECODE_TOKEN_PATCHED = True
+
+
+# --- Master realm auth ---
 # Path suffixes that may be called with Keycloak master realm tokens (bootstrap/admin).
 M8FLOW_MASTER_REALM_PATH_SUBSTRINGS = ("/m8flow/tenant-realms", "/m8flow/create-tenant")
 LOGIN_RETURN_PATH_SUBSTRING = "/login_return"
@@ -98,11 +117,17 @@ def _authentication_identifier_from_bearer_token() -> str | None:
     return None
 
 
+_MASTER_REALM_PATCHED = False
+
+
 def apply_master_realm_auth_patch() -> None:
     """Patch _get_authentication_identifier_from_request so create-realm/create-tenant
     use 'master' when Bearer token is present, no authentication_identifier is set,
     and an auth config for 'master' exists.
     """
+    global _MASTER_REALM_PATCHED
+    if _MASTER_REALM_PATCHED:
+        return
     from flask import request
 
     from spiffworkflow_backend.routes import authentication_controller
@@ -141,6 +166,7 @@ def apply_master_realm_auth_patch() -> None:
     authentication_controller._get_authentication_identifier_from_request = (
         _patched_get_authentication_identifier_from_request
     )
+    _MASTER_REALM_PATCHED = True
     logger.info(
         "master_realm_auth_patch: create-realm/create-tenant may use 'master' when Bearer present, no identifier, and master config exists."
     )
