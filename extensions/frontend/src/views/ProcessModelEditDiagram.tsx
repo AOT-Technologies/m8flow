@@ -488,7 +488,7 @@ export default function ProcessModelEditDiagram() {
 
   const onJsonSchemaFilesRequested = useCallback(
     (event: any) => {
-      const re = /.*[-.]schema.json/;
+      const re = /[-.]schema\.json$/;
       if (processModel?.files) {
         const jsonFiles = processModel.files.filter((f) => f.name.match(re));
         const options = jsonFiles.map((f) => {
