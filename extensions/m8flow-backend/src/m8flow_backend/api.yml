@@ -1040,6 +1040,30 @@ paths:
         "500":
           description: Internal server error
 
+  /process-models/{modified_process_model_identifier}/template-info:
+    get:
+      summary: Get template info for a process model
+      description: Returns the template provenance info if the process model was created from a template
+      operationId: m8flow_backend.routes.templates_controller.get_process_model_template_info
+      tags:
+        - Template
+      parameters:
+        - name: modified_process_model_identifier
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Process model identifier with slashes replaced by colons
+      responses:
+        "200":
+          description: Template info retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessModelTemplateInfo"
+        "404":
+          description: No template info found for this process model
+
 components:
   schemas:
     CreateTenantRequest:

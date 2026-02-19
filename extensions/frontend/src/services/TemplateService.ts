@@ -259,9 +259,8 @@ const TemplateService = {
   /**
    * Delete a template file by name. Uses auth headers.
    * If the template is published, a new draft version is created and the file is deleted there.
-   * Returns the template that was actually modified (may be a new version).
    */
-  deleteTemplateFile(id: number, fileName: string): Promise<Template> {
+  deleteTemplateFile(id: number, fileName: string): Promise<void> {
     const url = backendPath(
       `${BASE_PATH}/templates/${id}/files/${encodeURIComponent(fileName)}`
     );
@@ -271,8 +270,7 @@ const TemplateService = {
       headers: new Headers(HttpService.getBasicHeaders()),
     }).then((r) => {
       if (!r.ok) throw new Error("Delete failed");
-      return r.json();
-    }).then((data: Record<string, unknown>) => parseTemplateResponse(data));
+    });
   },
 
   /**

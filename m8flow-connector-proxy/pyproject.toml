@@ -17,7 +17,7 @@ spiffworkflow-proxy = {git = "https://github.com/sartography/spiffworkflow-proxy
 m8flow-connector-smtp = { git = "https://github.com/AOT-Technologies/m8flow-connectors.git", subdirectory = "connectors/m8flow-connector-smtp", branch = "main" }
 # Local development example
 # m8flow-connector-smtp = {develop = true, path = "./m8flow-connector-smtp" }
-
+connector-http = {git = "https://github.com/sartography/connector-http.git"} 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
