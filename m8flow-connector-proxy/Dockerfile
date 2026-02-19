@@ -27,7 +27,8 @@ RUN apt-get update \
 COPY pyproject.toml poetry.lock /app/
 
 COPY . /app
-RUN poetry install
+RUN chmod +x bin/*
+RUN poetry lock --no-update && poetry install
 
 
 FROM deployment AS final
