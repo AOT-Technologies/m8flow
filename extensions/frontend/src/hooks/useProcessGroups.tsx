@@ -36,9 +36,6 @@ export default function useProcessGroups({
   const getProcessGroups = async () => {
     setLoading(true);
     
-    // Log the API call
-    console.log('[m8 Extension] Calling Process Groups API:', path);
-    
     HttpService.makeCallToBackend({
       path,
       httpMethod: 'GET',

@@ -52,3 +52,31 @@ export interface CreateTemplateMetadata {
   version?: string;
   is_published?: boolean;
 }
+
+/** Request body for creating a process model from a template. */
+export interface CreateProcessModelFromTemplateRequest {
+  process_group_id: string;
+  process_model_id: string;
+  display_name: string;
+  description?: string;
+}
+
+/** Template provenance info for a process model. */
+export interface ProcessModelTemplateInfo {
+  id: number;
+  process_model_identifier: string;
+  source_template_id: number;
+  source_template_key: string;
+  source_template_version: string;
+  source_template_name: string;
+  m8f_tenant_id: string;
+  created_by: string;
+  created_at_in_seconds: number;
+  updated_at_in_seconds: number;
+}
+
+/** Response from creating a process model from a template. */
+export interface CreateProcessModelFromTemplateResponse {
+  process_model: Record<string, unknown>;
+  template_info: ProcessModelTemplateInfo;
+}

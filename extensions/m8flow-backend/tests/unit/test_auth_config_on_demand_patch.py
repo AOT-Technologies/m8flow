@@ -25,7 +25,7 @@ def test_on_demand_adds_config_when_realm_exists(reset_patched_flag):
     """When identifier is missing and realm_exists returns True, ensure_tenant_auth_config runs and retry returns config."""
     from flask import Flask
 
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"] = [
         {"identifier": "default", "uri": "http://keycloak/realms/default", "label": "default"}
     ]
@@ -62,7 +62,7 @@ def test_re_raises_when_realm_does_not_exist(reset_patched_flag):
     """When identifier is missing and realm_exists returns False, original exception is re-raised."""
     from flask import Flask
 
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"] = [
         {"identifier": "default", "uri": "http://keycloak/realms/default"}
     ]

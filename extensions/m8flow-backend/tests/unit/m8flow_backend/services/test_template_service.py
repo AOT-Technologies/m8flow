@@ -95,7 +95,7 @@ def test_version_key() -> None:
 
 def test_next_version_first_template() -> None:
     """Test _next_version() returns 'V1' for first template."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -112,7 +112,7 @@ def test_next_version_first_template() -> None:
 
 def test_next_version_increments_patch() -> None:
     """Test V-style version incrementing (V1 -> V2 -> V3)."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -162,7 +162,7 @@ def test_next_version_increments_patch() -> None:
 
 def test_next_version_handles_non_numeric() -> None:
     """Non-numeric V suffix (e.g. V1-alpha) falls back to V1 for next version."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -195,7 +195,7 @@ def test_next_version_handles_non_numeric() -> None:
 
 def test_next_version_tenant_scoped() -> None:
     """Verify versions are scoped per tenant."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -238,7 +238,7 @@ def test_next_version_tenant_scoped() -> None:
 
 def test_create_template_with_bpmn_bytes() -> None:
     """Create template with BPMN bytes and metadata."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -289,7 +289,7 @@ def test_create_template_with_bpmn_bytes() -> None:
 
 def test_create_template_with_legacy_data_format() -> None:
     """Legacy data dict format is no longer supported."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -321,7 +321,7 @@ def test_create_template_with_legacy_data_format() -> None:
 
 def test_create_template_without_user() -> None:
     """Should raise ApiError when user is None."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -350,7 +350,7 @@ def test_create_template_without_user() -> None:
 
 def test_create_template_without_tenant() -> None:
     """Should raise ApiError when tenant is missing."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -380,7 +380,7 @@ def test_create_template_without_tenant() -> None:
 
 def test_create_template_without_required_fields() -> None:
     """Should raise ApiError for missing template_key/name."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -426,7 +426,7 @@ def test_create_template_without_required_fields() -> None:
 
 def test_create_template_without_bpmn_content() -> None:
     """Should raise ApiError when BPMN content is missing."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -458,7 +458,7 @@ def test_create_template_without_bpmn_content() -> None:
 
 def test_create_template_auto_versioning() -> None:
     """Verify automatic version assignment."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -497,7 +497,7 @@ def test_create_template_auto_versioning() -> None:
 
 def test_create_template_with_provided_version() -> None:
     """Test explicit version assignment."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -531,7 +531,7 @@ def test_create_template_with_provided_version() -> None:
 
 def test_create_template_tenant_isolation() -> None:
     """Verify templates are scoped to correct tenant."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -582,7 +582,7 @@ def test_create_template_tenant_isolation() -> None:
 
 def test_list_templates_latest_only() -> None:
     """Test listing only latest versions."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -636,7 +636,7 @@ def test_list_templates_latest_only() -> None:
 
 def test_list_templates_all_versions() -> None:
     """Test listing all versions when latest_only=False."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -680,7 +680,7 @@ def test_list_templates_all_versions() -> None:
 
 def test_list_templates_filter_by_category() -> None:
     """Test category filtering."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -726,7 +726,7 @@ def test_list_templates_filter_by_category() -> None:
 
 def test_list_templates_filter_by_tag() -> None:
     """Test tag filtering (JSON array)."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -772,7 +772,7 @@ def test_list_templates_filter_by_tag() -> None:
 
 def test_list_templates_filter_by_owner() -> None:
     """Test owner filtering."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -817,7 +817,7 @@ def test_list_templates_filter_by_owner() -> None:
 
 def test_list_templates_filter_by_visibility() -> None:
     """Test visibility filtering."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -865,7 +865,7 @@ def test_list_templates_filter_by_visibility() -> None:
 
 def test_list_templates_search() -> None:
     """Test text search in name/description."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -911,7 +911,7 @@ def test_list_templates_search() -> None:
 
 def test_list_templates_tenant_isolation() -> None:
     """Verify tenant scoping."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -969,7 +969,7 @@ def test_list_templates_tenant_isolation() -> None:
 
 def test_get_template_by_key_and_version() -> None:
     """Get specific version."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -1006,7 +1006,7 @@ def test_get_template_by_key_and_version() -> None:
 
 def test_get_template_latest() -> None:
     """Get latest version when version=None."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -1061,7 +1061,7 @@ def test_get_template_latest() -> None:
 
 def test_get_template_not_found() -> None:
     """Return None for non-existent template."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -1085,7 +1085,7 @@ def test_get_template_not_found() -> None:
 
 def test_get_template_tenant_isolation() -> None:
     """Verify tenant scoping."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -1144,7 +1144,7 @@ def test_get_template_tenant_isolation() -> None:
 
 def test_get_template_by_id() -> None:
     """Get template by database ID."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -1181,7 +1181,7 @@ def test_get_template_by_id() -> None:
 
 def test_get_template_by_id_visibility_check() -> None:
     """Verify visibility enforcement."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -1223,7 +1223,7 @@ def test_get_template_by_id_visibility_check() -> None:
 
 def test_get_template_suppress_visibility() -> None:
     """Test suppress_visibility flag."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -1269,7 +1269,7 @@ def test_get_template_suppress_visibility() -> None:
 
 def test_update_template_by_key_version() -> None:
     """Update unpublished template."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -1309,7 +1309,7 @@ def test_update_template_by_key_version() -> None:
 
 def test_update_template_published_immutable() -> None:
     """Should raise ApiError for published templates."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -1349,7 +1349,7 @@ def test_update_template_published_immutable() -> None:
 
 def test_update_template_unauthorized() -> None:
     """Should raise ApiError for unauthorized users."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -1392,7 +1392,7 @@ def test_update_template_unauthorized() -> None:
 
 def test_update_template_not_found() -> None:
     """Should raise ApiError for non-existent template."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -1419,7 +1419,7 @@ def test_update_template_not_found() -> None:
 
 def test_update_template_by_id_unpublished() -> None:
     """Update unpublished template in place."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -1460,7 +1460,7 @@ def test_update_template_by_id_unpublished() -> None:
 
 def test_update_template_by_id_publish_sets_status() -> None:
     """Publishing via is_published=True sets status to 'published'."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -1502,7 +1502,7 @@ def test_update_template_by_id_publish_sets_status() -> None:
 
 def test_update_template_by_id_published_creates_new_version() -> None:
     """Published templates create new version."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -1545,7 +1545,7 @@ def test_update_template_by_id_published_creates_new_version() -> None:
 
 def test_update_template_with_bpmn_bytes() -> None:
     """Update BPMN content."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -1586,7 +1586,7 @@ def test_update_template_with_bpmn_bytes() -> None:
 
 def test_update_template_allowed_fields() -> None:
     """Test updating various fields."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -1646,7 +1646,7 @@ def test_update_template_allowed_fields() -> None:
 
 def test_delete_template_by_id() -> None:
     """Soft delete unpublished template."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -1702,7 +1702,7 @@ def test_delete_template_by_id() -> None:
 
 def test_soft_deleted_templates_are_excluded_from_queries() -> None:
     """Ensure soft-deleted templates are excluded from list/get queries."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -1767,7 +1767,7 @@ def test_soft_deleted_templates_are_excluded_from_queries() -> None:
 
 def test_delete_template_published_immutable() -> None:
     """Should raise ApiError for published templates."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -1808,7 +1808,7 @@ def test_delete_template_published_immutable() -> None:
 
 def test_delete_template_unauthorized() -> None:
     """Should raise ApiError for unauthorized users."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -1852,7 +1852,7 @@ def test_delete_template_unauthorized() -> None:
 
 def test_delete_template_not_found() -> None:
     """Should raise ApiError for non-existent template."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -1886,7 +1886,7 @@ def test_delete_template_not_found() -> None:
 
 def test_template_tenant_isolation_across_tenants() -> None:
     """Verify complete tenant isolation."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -1940,7 +1940,7 @@ def test_template_tenant_isolation_across_tenants() -> None:
 
 def test_template_versioning_multiple_tenants() -> None:
     """Same template_key can have different versions per tenant."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -1990,7 +1990,7 @@ def test_template_versioning_multiple_tenants() -> None:
 
 def test_template_visibility_public_tenant_private() -> None:
     """Test all visibility levels."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -2047,7 +2047,7 @@ def test_template_visibility_public_tenant_private() -> None:
 
 def test_template_tags_json_handling() -> None:
     """Test JSON tag storage and filtering."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -2096,7 +2096,7 @@ def test_template_tags_json_handling() -> None:
 
 def test_create_template_with_multiple_files() -> None:
     """Create template with BPMN + JSON files."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -2141,7 +2141,7 @@ def test_create_template_with_multiple_files() -> None:
 
 def test_create_template_with_files_requires_bpmn() -> None:
     """Should raise ApiError when no BPMN file is included."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -2182,7 +2182,7 @@ def test_create_template_with_files_requires_bpmn() -> None:
 
 def test_create_template_with_files_requires_user() -> None:
     """Should raise ApiError when user is None."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -2210,7 +2210,7 @@ def test_create_template_with_files_requires_user() -> None:
 
 def test_create_template_with_files_requires_metadata() -> None:
     """Should raise ApiError when metadata is missing."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -2246,7 +2246,7 @@ def test_create_template_with_files_requires_metadata() -> None:
 
 def test_update_file_content_unpublished() -> None:
     """Update file content for an unpublished template."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -2286,9 +2286,9 @@ def test_update_file_content_unpublished() -> None:
                 )
 
 
-def test_update_file_content_published_rejected() -> None:
-    """Should raise ApiError for published template."""
-    app = Flask(__name__)
+def test_update_file_content_published_creates_draft_version() -> None:
+    """Updating file on published template should create a new draft version."""
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -2318,19 +2318,23 @@ def test_update_file_content_published_rejected() -> None:
             db.session.add(template)
             db.session.commit()
 
-            try:
-                TemplateService.update_file_content(
+            with patch.object(TemplateService, "storage", MockTemplateStorageService()):
+                # Should create a new draft version instead of raising
+                result = TemplateService.update_file_content(
                     template, "diagram.bpmn", b"<bpmn>new</bpmn>", user=user
                 )
-                assert False, "Should have raised ApiError"
-            except ApiError as e:
-                assert e.error_code == "forbidden"
-                assert e.status_code == 403
+
+                # Result should be a new draft version
+                assert result is not None
+                assert result.id != template.id
+                assert result.version == "V2"
+                assert result.is_published is False
+                assert result.template_key == "published-file"
 
 
 def test_update_file_content_file_not_found() -> None:
     """Should raise ApiError when file is not in template files list."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -2370,6 +2374,65 @@ def test_update_file_content_file_not_found() -> None:
                 assert e.status_code == 404
 
 
+def test_update_file_content_published_reuses_existing_draft() -> None:
+    """When a draft version exists, subsequent edits should update that draft instead of creating a new one."""
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = user
+
+            # Create published V1
+            published_template = TemplateModel(
+                template_key="reuse-draft",
+                version="V1",
+                name="Published",
+                m8f_tenant_id="tenant-a",
+                files=[{"file_type": "bpmn", "file_name": "diagram.bpmn"}],
+                is_published=True,
+                created_by="tester",
+                modified_by="tester",
+            )
+            db.session.add(published_template)
+            db.session.commit()
+
+            with patch.object(TemplateService, "storage", MockTemplateStorageService()):
+                # First edit creates V2 draft
+                result1 = TemplateService.update_file_content(
+                    published_template, "diagram.bpmn", b"<bpmn>edit1</bpmn>", user=user
+                )
+                assert result1.version == "V2"
+                assert result1.is_published is False
+                v2_id = result1.id
+
+                # Second edit should reuse V2 draft, not create V3
+                result2 = TemplateService.update_file_content(
+                    published_template, "diagram.bpmn", b"<bpmn>edit2</bpmn>", user=user
+                )
+                assert result2.id == v2_id
+                assert result2.version == "V2"
+                assert result2.is_published is False
+
+                # Verify no V3 was created
+                v3 = TemplateModel.query.filter_by(
+                    template_key="reuse-draft",
+                    version="V3",
+                    m8f_tenant_id="tenant-a",
+                ).first()
+                assert v3 is None
+
+
 # ============================================================================
 # Delete File from Template Tests
 # ============================================================================
@@ -2377,7 +2440,7 @@ def test_update_file_content_file_not_found() -> None:
 
 def test_delete_file_from_template_removes_entry() -> None:
     """Delete a file from template removes it from files list."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -2419,7 +2482,7 @@ def test_delete_file_from_template_removes_entry() -> None:
 
 def test_delete_file_rejects_last_file() -> None:
     """Cannot delete the last file from a template."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -2459,7 +2522,7 @@ def test_delete_file_rejects_last_file() -> None:
 
 def test_delete_file_rejects_only_bpmn() -> None:
     """Cannot delete the only BPMN file (even if other file types remain)."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -2500,9 +2563,9 @@ def test_delete_file_rejects_only_bpmn() -> None:
                 assert e.status_code == 403
 
 
-def test_delete_file_rejects_published() -> None:
-    """Cannot delete files from a published template."""
-    app = Flask(__name__)
+def test_delete_file_from_published_creates_draft() -> None:
+    """Deleting file from published template should create a new draft version."""
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -2535,17 +2598,29 @@ def test_delete_file_rejects_published() -> None:
             db.session.add(template)
             db.session.commit()
 
-            try:
-                TemplateService.delete_file_from_template(template, "form.json", user=user)
-                assert False, "Should have raised ApiError"
-            except ApiError as e:
-                assert e.error_code == "forbidden"
-                assert e.status_code == 403
+            with patch.object(TemplateService, "storage", MockTemplateStorageService()):
+                # Should create a new draft version instead of raising
+                result = TemplateService.delete_file_from_template(template, "form.json", user=user)
+
+                # Result should be a new draft version
+                assert result is not None
+                assert result.id != template.id
+                assert result.version == "V2"
+                assert result.is_published is False
+                assert result.template_key == "published-del-file"
+                # The file should be deleted from the new version
+                assert len(result.files) == 1
+                assert result.files[0]["file_name"] == "diagram.bpmn"
+
+                # Original published template should be unchanged
+                db.session.refresh(template)
+                assert len(template.files) == 2
+                assert template.is_published is True
 
 
 def test_delete_file_not_found() -> None:
     """Should raise ApiError when file is not in template files list."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -2590,7 +2665,7 @@ def test_delete_file_not_found() -> None:
 
 def test_export_template_zip() -> None:
     """Export template as zip returns zip bytes and filename."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -2635,7 +2710,7 @@ def test_export_template_zip() -> None:
 
 def test_export_template_zip_not_found() -> None:
     """Should raise ApiError for non-existent template."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -2661,7 +2736,7 @@ def test_export_template_zip_not_found() -> None:
 
 def test_export_template_zip_no_files() -> None:
     """Should raise ApiError when template has no files."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -2717,7 +2792,7 @@ def _create_zip_bytes(files: dict[str, bytes]) -> bytes:
 
 def test_import_template_from_zip_valid() -> None:
     """Import a valid zip with BPMN and JSON files."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -2759,7 +2834,7 @@ def test_import_template_from_zip_valid() -> None:
 
 def test_import_template_from_zip_no_bpmn() -> None:
     """Should raise ApiError when zip contains no BPMN file."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -2800,7 +2875,7 @@ def test_import_template_from_zip_no_bpmn() -> None:
 
 def test_import_template_from_zip_requires_user() -> None:
     """Should raise ApiError when user is None."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -2831,7 +2906,7 @@ def test_import_template_from_zip_oversized_rejected() -> None:
     """Should raise ApiError when zip exceeds maximum size."""
     from m8flow_backend.services.template_service import MAX_ZIP_SIZE
 
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -2870,7 +2945,7 @@ def test_import_template_from_zip_oversized_rejected() -> None:
 
 def test_import_template_from_zip_missing_fields() -> None:
     """Should raise ApiError when required metadata fields are missing."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -2921,7 +2996,7 @@ def test_import_template_from_zip_missing_fields() -> None:
 
 def test_list_templates_pagination_returns_correct_structure() -> None:
     """list_templates returns (items, pagination) tuple with correct metadata."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -2978,7 +3053,7 @@ def test_list_templates_pagination_returns_correct_structure() -> None:
 
 def test_list_templates_pagination_clamps_page() -> None:
     """Page value is clamped to valid range."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -3024,7 +3099,7 @@ def test_list_templates_pagination_clamps_page() -> None:
 
 def test_list_templates_pagination_per_page_clamped() -> None:
     """per_page is clamped to 1..100."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -3069,7 +3144,7 @@ def test_list_templates_pagination_per_page_clamped() -> None:
 
 def test_list_templates_pagination_empty_results() -> None:
     """Pagination with no results."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -3139,7 +3214,7 @@ def test_safe_content_disposition_unicode() -> None:
 
 def test_get_first_bpmn_content_returns_first_bpmn() -> None:
     """get_first_bpmn_content returns the content of the first BPMN file in list order."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -3197,7 +3272,7 @@ def test_get_first_bpmn_content_returns_first_bpmn() -> None:
 
 def test_get_first_bpmn_content_skips_non_bpmn() -> None:
     """get_first_bpmn_content skips non-BPMN files and returns the first BPMN."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -3239,7 +3314,7 @@ def test_get_first_bpmn_content_skips_non_bpmn() -> None:
 
 def test_get_first_bpmn_content_no_bpmn_returns_none() -> None:
     """get_first_bpmn_content returns None when no BPMN files exist."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -3279,7 +3354,7 @@ def test_get_first_bpmn_content_no_bpmn_returns_none() -> None:
 
 def test_get_first_bpmn_content_empty_files() -> None:
     """get_first_bpmn_content returns None when files list is empty."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"

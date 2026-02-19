@@ -7,6 +7,8 @@ import {
   Alert,
   Stack,
   Typography,
+  Chip,
+  Snackbar,
 } from "@mui/material";
 import ProcessBreadcrumb from "@spiffworkflow-frontend/components/ProcessBreadcrumb";
 import { Editor } from "@monaco-editor/react";
@@ -25,10 +27,11 @@ export default function TemplateFileFormPage() {
   const [fileLoaded, setFileLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [newVersionInfo, setNewVersionInfo] = useState<{ id: number; version: string } | null>(null);
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const id = templateId ? parseInt(templateId, 10) : NaN;
+  const id = templateId ? Number.parseInt(templateId, 10) : NaN;
   const decodedFileName = fileName ? decodeURIComponent(fileName) : "";
   const lower = decodedFileName.toLowerCase();
   const isJson = lower.endsWith(".json");
@@ -80,20 +83,37 @@ export default function TemplateFileFormPage() {
     setError(null);
     const contentType = isMd ? "text/markdown" : "text/plain";
     TemplateService.updateTemplateFile(id, decodedFileName, fileContent, contentType)
-      .then(() => {
-        setSaveSuccess(true);
-        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = setTimeout(() => setSaveSuccess(false), 3000);
+      .then((updatedTemplate) => {
+        // Check if a new version was created (template ID changed)
+        if (updatedTemplate.id !== id) {
+          setNewVersionInfo({ id: updatedTemplate.id, version: updatedTemplate.version });
+          // Navigate to the new version after a short delay
+          setTimeout(() => {
+            navigate(`/templates/${updatedTemplate.id}/form/${encodeURIComponent(decodedFileName)}`);
+          }, 2000);
+        } else {
+          setSaveSuccess(true);
+          if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+          saveTimerRef.current = setTimeout(() => setSaveSuccess(false), 3000);
+        }
       })
-      .catch((err) => setError(err instanceof Error ? err.message : "Save failed"));
+      .catch((err) => {
+        const message = err instanceof Error ? err.message : "Save failed";
+        setError(message);
+      });
   };
 
   const handleDelete = () => {
     if (isNaN(id)) return;
-    if (!window.confirm(`Delete file "${decodedFileName}"? This cannot be undone.`)) return;
+    const confirmMsg = template?.isPublished
+      ? `Delete file "${decodedFileName}"? A new draft version will be created.`
+      : `Delete file "${decodedFileName}"? This cannot be undone.`;
+    if (!globalThis.confirm(confirmMsg)) return;
     setError(null);
     TemplateService.deleteTemplateFile(id, decodedFileName)
-      .then(() => navigate(`/templates/${id}`))
+      .then(() => {
+        navigate(`/templates/${id}`);
+      })
       .catch((err) => setError(err instanceof Error ? err.message : "Delete failed"));
   };
 
@@ -138,9 +158,19 @@ export default function TemplateFileFormPage() {
       <Box sx={{ mb: 1 }}>
         <ProcessBreadcrumb hotCrumbs={hotCrumbs} />
       </Box>
-      <Typography variant="h5" component="h1" sx={{ mb: 1 }}>
-        Template File: {decodedFileName}
-      </Typography>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 1 }}>
+        <Typography variant="h5" component="h1">
+          Template File: {decodedFileName}
+        </Typography>
+        {template?.isPublished && (
+          <Chip label="Published" color="success" size="small" />
+        )}
+      </Box>
+      {template?.isPublished && (
+        <Alert severity="warning" sx={{ mb: 1 }}>
+          This template is published. Saving changes will create a new draft version.
+        </Alert>
+      )}
       {error && (
         <Alert severity="error" sx={{ mb: 1 }} onClose={() => setError(null)}>
           {error}
@@ -152,16 +182,30 @@ export default function TemplateFileFormPage() {
         </Alert>
       )}
       <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
-        <Button variant="contained" color="primary" onClick={handleSave}>
+        <Button
+          variant="contained"
+          color="primary"
+          onClick={handleSave}
+        >
           Save
         </Button>
-        <Button variant="contained" color="error" onClick={handleDelete}>
+        <Button
+          variant="contained"
+          color="error"
+          onClick={handleDelete}
+        >
           Delete
         </Button>
         <Button variant="outlined" onClick={handleDownload}>
           Download
         </Button>
       </Stack>
+      <Snackbar
+        open={!!newVersionInfo}
+        autoHideDuration={4000}
+        onClose={() => setNewVersionInfo(null)}
+        message={`A new draft version (${newVersionInfo?.version}) was created because the template was published. Redirecting...`}
+      />
       {isMd ? (
         <div data-color-mode="light">
           <MDEditor

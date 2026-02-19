@@ -22,7 +22,7 @@ psycopg2-binary = "^2.9.9"
 
 # Local development example
 # m8flow-connector-smtp = {develop = true, path = "./m8flow-connector-smtp" }
-
+connector-http = {git = "https://github.com/sartography/connector-http.git"} 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"

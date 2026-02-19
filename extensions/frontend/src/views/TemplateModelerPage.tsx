@@ -13,11 +13,13 @@ import {
   Select,
   MenuItem,
 } from '@mui/material';
+import AddIcon from '@mui/icons-material/Add';
 import ProcessBreadcrumb from '@spiffworkflow-frontend/components/ProcessBreadcrumb';
 import DateAndTimeService from '@spiffworkflow-frontend/services/DateAndTimeService';
 import HttpService from '../services/HttpService';
 import TemplateService from '../services/TemplateService';
 import TemplateFileList from '../components/TemplateFileList';
+import CreateProcessModelFromTemplateModal from '../components/CreateProcessModelFromTemplateModal';
 import { Template } from '../types/template';
 import { normalizeTemplate } from '../utils/templateHelpers';
 import './TemplateModelerPage.css';
@@ -26,10 +28,12 @@ function TemplateDetailsCard({
   template,
   onExport,
   onPublish,
+  onCreateProcessModel,
 }: {
   template: Template;
   onExport: () => void;
   onPublish: () => void;
+  onCreateProcessModel: () => void;
 }) {
   return (
     <Paper
@@ -65,7 +69,16 @@ function TemplateDetailsCard({
         <Typography variant="caption" color="text.secondary">
           Updated: {DateAndTimeService.convertSecondsToFormattedDateTime(template.updatedAtInSeconds) ?? '—'}
         </Typography>
-        <Button size="small" variant="contained" onClick={onExport} sx={{ ml: 1 }}>
+        <Button
+          size="small"
+          variant="contained"
+          color="success"
+          startIcon={<AddIcon />}
+          onClick={onCreateProcessModel}
+        >
+          Create Process Model
+        </Button>
+        <Button size="small" variant="contained" onClick={onExport}>
           Export template
         </Button>
         {!template.isPublished && (
@@ -98,10 +111,12 @@ export default function TemplateModelerPage() {
   const [error, setError] = useState<string | null>(null);
   const [publishSuccess, setPublishSuccess] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
-  const [publishedVersions, setPublishedVersions] = useState<Template[]>([]);
+  const [allVersions, setAllVersions] = useState<Template[]>([]);
   const [versionsLoading, setVersionsLoading] = useState(false);
+  const [createProcessModelOpen, setCreateProcessModelOpen] = useState(false);
+  const [createProcessModelSuccess, setCreateProcessModelSuccess] = useState<string | null>(null);
 
-  const id = templateId ? parseInt(templateId, 10) : NaN;
+  const id = templateId ? Number.parseInt(templateId, 10) : NaN;
 
   const handleExport = useCallback(() => {
     if (isNaN(id)) return;
@@ -142,17 +157,30 @@ export default function TemplateModelerPage() {
     });
   }, [templateId, id]);
 
-  useEffect(() => {
+  // Fetch all versions when template key changes
+  const fetchAllVersions = useCallback(() => {
     if (!template?.templateKey) {
-      setPublishedVersions([]);
+      setAllVersions([]);
       return;
     }
     setVersionsLoading(true);
-    TemplateService.getPublishedVersions(template.templateKey)
-      .then(setPublishedVersions)
-      .catch(() => setPublishedVersions([]))
+    TemplateService.getAllVersions(template.templateKey)
+      .then((versions) => {
+        // Sort versions: V1, V2, V3... (ascending by version number)
+        const sorted = [...versions].sort((a, b) => {
+          const aNum = Number.parseInt(a.version.replace(/^V/i, ''), 10) || 0;
+          const bNum = Number.parseInt(b.version.replace(/^V/i, ''), 10) || 0;
+          return aNum - bNum;
+        });
+        setAllVersions(sorted);
+      })
+      .catch(() => setAllVersions([]))
       .finally(() => setVersionsLoading(false));
   }, [template?.templateKey]);
+
+  useEffect(() => {
+    fetchAllVersions();
+  }, [fetchAllVersions]);
 
   const handlePublish = useCallback(() => {
     if (!template || isNaN(id)) return;
@@ -165,19 +193,36 @@ export default function TemplateModelerPage() {
       successCallback: (result: Record<string, unknown>) => {
         setTemplate(normalizeTemplate(result));
         setPublishSuccess(true);
+        // Refresh the versions list to reflect the new published state
+        fetchAllVersions();
       },
       failureCallback: (err: any) => {
         setError(err?.message ?? 'Failed to publish template');
       },
     });
-  }, [id, template]);
+  }, [id, template, fetchAllVersions]);
 
   const SUCCESS_ALERT_DURATION_MS = 5000;
   useEffect(() => {
     if (!publishSuccess) return;
-    const timer = window.setTimeout(() => setPublishSuccess(false), SUCCESS_ALERT_DURATION_MS);
-    return () => window.clearTimeout(timer);
+    const timer = globalThis.setTimeout(() => setPublishSuccess(false), SUCCESS_ALERT_DURATION_MS);
+    return () => globalThis.clearTimeout(timer);
   }, [publishSuccess]);
+
+  useEffect(() => {
+    if (!createProcessModelSuccess) return;
+    const timer = globalThis.setTimeout(() => setCreateProcessModelSuccess(null), SUCCESS_ALERT_DURATION_MS);
+    return () => globalThis.clearTimeout(timer);
+  }, [createProcessModelSuccess]);
+
+  const handleCreateProcessModelSuccess = useCallback((processModelId: string) => {
+    setCreateProcessModelSuccess(processModelId);
+    // Navigate to the new process model after a short delay
+    setTimeout(() => {
+      const encodedId = processModelId.replaceAll('/', ':');
+      navigate(`/process-models/${encodedId}`);
+    }, 1500);
+  }, [navigate]);
 
   if (loading && !template) {
     return (
@@ -217,7 +262,7 @@ export default function TemplateModelerPage() {
       <Typography variant="h5" component="h1" sx={{ mb: 1 }}>
         Template: {template.name}
       </Typography>
-      {publishedVersions.length > 0 && (
+      {allVersions.length > 1 && (
         <Paper
           elevation={0}
           sx={{
@@ -228,28 +273,60 @@ export default function TemplateModelerPage() {
             borderRadius: 1,
           }}
         >
-          <FormControl size="small" sx={{ minWidth: 220 }} disabled={versionsLoading}>
-            <InputLabel id="template-version-label">Published versions</InputLabel>
+          <FormControl size="small" sx={{ minWidth: 280 }} disabled={versionsLoading}>
+            <InputLabel id="template-version-label">All versions</InputLabel>
             <Select
               labelId="template-version-label"
-              label="Published versions"
+              label="All versions"
               value={template.id}
               onChange={(e) => {
                 const selectedId = Number(e.target.value);
                 if (selectedId !== template.id) navigate(`/templates/${selectedId}`);
               }}
+              renderValue={(selectedId) => {
+                const selected = allVersions.find((v) => v.id === selectedId);
+                if (!selected) return '';
+                return (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <span>{selected.version}</span>
+                    {selected.isPublished && (
+                      <Chip label="Published" size="small" color="success" sx={{ height: 20 }} />
+                    )}
+                    {!selected.isPublished && (
+                      <Chip label="Draft" size="small" variant="outlined" sx={{ height: 20 }} />
+                    )}
+                  </Box>
+                );
+              }}
             >
-              {publishedVersions.map((v) => (
+              {allVersions.map((v) => (
                 <MenuItem key={v.id} value={v.id}>
-                  {v.version}
-                  {v.id === template.id ? ' (current)' : ''}
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                    <span>{v.version}</span>
+                    {v.isPublished && (
+                      <Chip label="Published" size="small" color="success" sx={{ height: 20 }} />
+                    )}
+                    {!v.isPublished && (
+                      <Chip label="Draft" size="small" variant="outlined" sx={{ height: 20 }} />
+                    )}
+                    {v.id === template.id && (
+                      <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
+                        (current)
+                      </Typography>
+                    )}
+                  </Box>
                 </MenuItem>
               ))}
             </Select>
           </FormControl>
         </Paper>
       )}
-      <TemplateDetailsCard template={template} onExport={handleExport} onPublish={handlePublish} />
+      <TemplateDetailsCard
+        template={template}
+        onExport={handleExport}
+        onPublish={handlePublish}
+        onCreateProcessModel={() => setCreateProcessModelOpen(true)}
+      />
       {exportError && (
         <Alert severity="error" sx={{ mb: 1 }} onClose={() => setExportError(null)}>
           {exportError}
@@ -265,6 +342,18 @@ export default function TemplateModelerPage() {
           Template published successfully.
         </Alert>
       )}
+      {createProcessModelSuccess && (
+        <Alert severity="success" sx={{ mb: 1 }} onClose={() => setCreateProcessModelSuccess(null)}>
+          Process model created successfully! Redirecting to {createProcessModelSuccess}...
+        </Alert>
+      )}
+
+      <CreateProcessModelFromTemplateModal
+        open={createProcessModelOpen}
+        onClose={() => setCreateProcessModelOpen(false)}
+        template={template}
+        onSuccess={handleCreateProcessModelSuccess}
+      />
     </Box>
   );
 }

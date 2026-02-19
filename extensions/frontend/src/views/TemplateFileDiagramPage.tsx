@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Box, Button, CircularProgress, Alert } from "@mui/material";
+import { Box, Button, CircularProgress, Alert, Snackbar } from "@mui/material";
 import ProcessBreadcrumb from "@spiffworkflow-frontend/components/ProcessBreadcrumb";
 import ReactDiagramEditor from "@spiffworkflow-frontend/components/ReactDiagramEditor";
 import HttpService from "../services/HttpService";
@@ -36,10 +36,11 @@ export default function TemplateFileDiagramPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [newVersionInfo, setNewVersionInfo] = useState<{ id: number; version: string } | null>(null);
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const id = templateId ? parseInt(templateId, 10) : NaN;
+  const id = templateId ? Number.parseInt(templateId, 10) : NaN;
   const decodedFileName = fileName ? decodeURIComponent(fileName) : "";
   const firstBpmnFileName = getFirstBpmnFileName(template);
 
@@ -92,6 +93,7 @@ export default function TemplateFileDiagramPage() {
       if (isNaN(id)) return;
       setError(null);
       setSaveSuccess(false);
+      setNewVersionInfo(null);
       const isBpmn = decodedFileName.toLowerCase().endsWith(".bpmn");
       if (isBpmn) {
         HttpService.makeCallToBackend({
@@ -102,12 +104,23 @@ export default function TemplateFileDiagramPage() {
             "X-Template-File-Name": decodedFileName,
           },
           postBody: xml,
-          successCallback: () => {
+          successCallback: (result: Record<string, unknown>) => {
+            const updatedTemplate = normalizeTemplate(result);
             setFileContent(xml);
             setDiagramHasChanges(false);
-            setSaveSuccess(true);
-            if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-            saveTimerRef.current = setTimeout(() => setSaveSuccess(false), 3000);
+
+            // Check if a new version was created (published template was edited)
+            if (updatedTemplate.id !== id) {
+              setNewVersionInfo({ id: updatedTemplate.id, version: updatedTemplate.version });
+              // Navigate to the new version after a short delay
+              setTimeout(() => {
+                navigate(`/templates/${updatedTemplate.id}/files/${encodeURIComponent(decodedFileName)}`);
+              }, 2000);
+            } else {
+              setSaveSuccess(true);
+              if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+              saveTimerRef.current = setTimeout(() => setSaveSuccess(false), 3000);
+            }
           },
           failureCallback: (err: unknown) => {
             setError(err instanceof Error ? err.message : "Save failed");
@@ -125,7 +138,7 @@ export default function TemplateFileDiagramPage() {
           .catch((err) => setError(err instanceof Error ? err.message : "Save failed"));
       }
     },
-    [id, decodedFileName]
+    [id, decodedFileName, navigate]
   );
 
   const onElementsChanged = useCallback(() => {
@@ -225,6 +238,11 @@ export default function TemplateFileDiagramPage() {
       <Box sx={{ mb: 1 }}>
         <ProcessBreadcrumb hotCrumbs={hotCrumbs} />
       </Box>
+      {template?.isPublished && (
+        <Alert severity="warning" sx={{ mb: 1 }}>
+          This template is published. Saving changes will create a new draft version.
+        </Alert>
+      )}
       {error && (
         <Alert severity="error" sx={{ mb: 1 }} onClose={() => setError(null)}>
           {error}
@@ -235,6 +253,16 @@ export default function TemplateFileDiagramPage() {
           File saved successfully.
         </Alert>
       )}
+      <Snackbar
+        open={newVersionInfo !== null}
+        autoHideDuration={5000}
+        onClose={() => setNewVersionInfo(null)}
+        anchorOrigin={{ vertical: "top", horizontal: "center" }}
+      >
+        <Alert severity="info" onClose={() => setNewVersionInfo(null)}>
+          A new draft version ({newVersionInfo?.version}) was created because the template was published. Redirecting...
+        </Alert>
+      </Snackbar>
       <Box
         sx={{
           flex: 1,

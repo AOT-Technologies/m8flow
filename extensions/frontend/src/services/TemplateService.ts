@@ -2,6 +2,9 @@ import { BACKEND_BASE_URL } from "@spiffworkflow-frontend/config";
 import HttpService, { getBasicHeaders } from "./HttpService";
 import type {
   CreateTemplateMetadata,
+  CreateProcessModelFromTemplateRequest,
+  CreateProcessModelFromTemplateResponse,
+  ProcessModelTemplateInfo,
   Template,
   TemplateFile,
 } from "../types/template";
@@ -227,14 +230,16 @@ const TemplateService = {
   },
 
   /**
-   * Update a template file by name. Uses auth headers. Template must not be published.
+   * Update a template file by name. Uses auth headers.
+   * If the template is published, a new draft version is created.
+   * Returns the template that was actually updated (may be a new version).
    */
   updateTemplateFile(
     id: number,
     fileName: string,
     content: string,
     contentType?: string
-  ): Promise<void> {
+  ): Promise<Template> {
     const url = backendPath(
       `${BASE_PATH}/templates/${id}/files/${encodeURIComponent(fileName)}`
     );
@@ -247,11 +252,13 @@ const TemplateService = {
       body: content,
     }).then((r) => {
       if (!r.ok) throw new Error("Update failed");
-    });
+      return r.json();
+    }).then((data: Record<string, unknown>) => parseTemplateResponse(data));
   },
 
   /**
-   * Delete a template file by name. Uses auth headers. Template must not be published.
+   * Delete a template file by name. Uses auth headers.
+   * If the template is published, a new draft version is created and the file is deleted there.
    */
   deleteTemplateFile(id: number, fileName: string): Promise<void> {
     const url = backendPath(
@@ -347,6 +354,38 @@ const TemplateService = {
     });
   },
 
+  /**
+   * Fetch all versions of a template by template key (both published and draft).
+   * Uses GET /templates?template_key=...&latest_only=false.
+   */
+  getAllVersions(templateKey: string): Promise<Template[]> {
+    const query = new URLSearchParams({
+      template_key: templateKey,
+      latest_only: "false",
+    }).toString();
+    return new Promise((resolve, reject) => {
+      HttpService.makeCallToBackend({
+        path: `${BASE_PATH}/templates?${query}`,
+        httpMethod: "GET",
+        successCallback: (result: Record<string, unknown>) => {
+          const results = result.results as Record<string, unknown>[];
+          resolve(
+            Array.isArray(results)
+              ? results.map((r) => parseTemplateResponse(r))
+              : []
+          );
+        },
+        failureCallback: (err: unknown) => {
+          const message =
+            err && typeof err === "object" && "message" in err
+              ? String((err as { message: unknown }).message)
+              : "Failed to fetch template versions";
+          reject(new Error(message));
+        },
+      });
+    });
+  },
+
   importTemplate(
     zipFile: File,
     metadata: CreateTemplateMetadata
@@ -385,6 +424,63 @@ const TemplateService = {
       };
       xhr.onerror = () => reject(new Error("Network error"));
       xhr.send(form);
+    });
+  },
+
+  /**
+   * Create a process model from a template.
+   */
+  createProcessModelFromTemplate(
+    templateId: number,
+    request: CreateProcessModelFromTemplateRequest
+  ): Promise<CreateProcessModelFromTemplateResponse> {
+    return new Promise((resolve, reject) => {
+      HttpService.makeCallToBackend({
+        path: `${BASE_PATH}/templates/${templateId}/create-process-model`,
+        httpMethod: "POST",
+        postBody: request,
+        successCallback: (data: CreateProcessModelFromTemplateResponse) => resolve(data),
+        failureCallback: (err: unknown) => {
+          const message =
+            err && typeof err === "object" && "message" in err
+              ? String((err as { message: unknown }).message)
+              : "Failed to create process model from template";
+          reject(new Error(message));
+        },
+      });
+    });
+  },
+
+  /**
+   * Get template provenance info for a process model.
+   * Returns null if the process model was not created from a template.
+   */
+  getProcessModelTemplateInfo(
+    processModelIdentifier: string
+  ): Promise<ProcessModelTemplateInfo | null> {
+    // Convert slashes to colons for the API path
+    const modifiedId = processModelIdentifier.replaceAll("/", ":");
+    return new Promise((resolve, reject) => {
+      HttpService.makeCallToBackend({
+        path: `${BASE_PATH}/templates/process-models/${modifiedId}/template-info`,
+        httpMethod: "GET",
+        successCallback: (data: ProcessModelTemplateInfo) => resolve(data),
+        failureCallback: (err: unknown) => {
+          // 404 means no template info exists - not an error
+          if (err && typeof err === "object" && "status_code" in err) {
+            const statusCode = (err as { status_code: unknown }).status_code;
+            if (statusCode === 404) {
+              resolve(null);
+              return;
+            }
+          }
+          const message =
+            err && typeof err === "object" && "message" in err
+              ? String((err as { message: unknown }).message)
+              : "Failed to get template info";
+          reject(new Error(message));
+        },
+      });
     });
   },
 };

@@ -1,12 +1,15 @@
-import React, { useState } from "react";
-import { useParams } from "react-router-dom";
-import { Box, Button } from "@mui/material";
+import React, { useState, useEffect } from "react";
+import { useParams, Link } from "react-router-dom";
+import { Box, Button, Chip, Paper, Typography, CircularProgress } from "@mui/material";
 import ProcessModelShow from "@spiffworkflow-frontend/views/ProcessModelShow";
+import DateAndTimeService from "@spiffworkflow-frontend/services/DateAndTimeService";
 import HttpService from "../services/HttpService";
+import TemplateService from "../services/TemplateService";
 import { modifyProcessIdentifierForPathParam } from "../helpers";
 import { sortFilesWithPrimaryFirst } from "../utils/templateHelpers";
 import SaveAsTemplateModal from "../components/SaveAsTemplateModal";
 import type { SaveAsTemplateFile } from "../components/SaveAsTemplateModal";
+import type { ProcessModelTemplateInfo } from "../types/template";
 
 const SUPPORTED_EXT = [".bpmn", ".json", ".dmn", ".md"];
 
@@ -18,14 +21,38 @@ function isSupportedFileName(name: string): boolean {
 /**
  * Wraps ProcessModelShow and adds a "Save as Template" button on the Process Model page.
  * When clicked, opens a modal to save all supported process-model files (.bpmn, .json, .dmn, .md) as a template.
+ * Also displays template provenance info if the process model was created from a template.
  */
 export default function ProcessModelShowWithSaveAsTemplate() {
   const params = useParams<{ process_model_id: string }>();
   const [saveAsTemplateOpen, setSaveAsTemplateOpen] = useState(false);
+  const [templateInfo, setTemplateInfo] = useState<ProcessModelTemplateInfo | null>(null);
+  const [templateInfoLoading, setTemplateInfoLoading] = useState(false);
 
   const modifiedProcessModelId = params.process_model_id
     ? modifyProcessIdentifierForPathParam(params.process_model_id)
     : "";
+
+  // Convert modified ID (with colons) back to standard format (with slashes) for the API
+  const processModelIdentifier = params.process_model_id?.replaceAll(":", "/") || "";
+
+  // Fetch template provenance info
+  useEffect(() => {
+    if (!processModelIdentifier) return;
+
+    setTemplateInfoLoading(true);
+    TemplateService.getProcessModelTemplateInfo(processModelIdentifier)
+      .then((info) => {
+        setTemplateInfo(info);
+      })
+      .catch(() => {
+        // Silently ignore errors - just means no template info
+        setTemplateInfo(null);
+      })
+      .finally(() => {
+        setTemplateInfoLoading(false);
+      });
+  }, [processModelIdentifier]);
 
   const getFiles = (): Promise<SaveAsTemplateFile[]> => {
     return new Promise((resolve, reject) => {
@@ -105,6 +132,63 @@ export default function ProcessModelShowWithSaveAsTemplate() {
           Save as Template
         </Button>
       </Box>
+
+      {/* Template Provenance Info */}
+      {templateInfoLoading && (
+        <Box sx={{ mt: 2, display: "flex", alignItems: "center", gap: 1 }}>
+          <CircularProgress size={16} />
+          <Typography variant="caption" color="text.secondary">
+            Loading template info...
+          </Typography>
+        </Box>
+      )}
+      {templateInfo && !templateInfoLoading && (
+        <Paper
+          elevation={0}
+          sx={{
+            mt: 2,
+            p: 2,
+            border: "1px solid",
+            borderColor: "divider",
+            borderRadius: 1,
+            backgroundColor: "action.hover",
+          }}
+        >
+          <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
+            Created from Template
+          </Typography>
+          <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1.5, alignItems: "center" }}>
+            <Link
+              to={`/templates/${templateInfo.source_template_id}`}
+              style={{ textDecoration: "none" }}
+            >
+              <Chip
+                label={templateInfo.source_template_name}
+                color="primary"
+                size="small"
+                clickable
+              />
+            </Link>
+            <Chip
+              label={`Version: ${templateInfo.source_template_version}`}
+              variant="outlined"
+              size="small"
+            />
+            <Chip
+              label={`Key: ${templateInfo.source_template_key}`}
+              variant="outlined"
+              size="small"
+            />
+            <Typography variant="caption" color="text.secondary">
+              Created by: {templateInfo.created_by}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Created: {DateAndTimeService.convertSecondsToFormattedDateTime(templateInfo.created_at_in_seconds) ?? "—"}
+            </Typography>
+          </Box>
+        </Paper>
+      )}
+
       <SaveAsTemplateModal
         open={saveAsTemplateOpen}
         onClose={() => setSaveAsTemplateOpen(false)}

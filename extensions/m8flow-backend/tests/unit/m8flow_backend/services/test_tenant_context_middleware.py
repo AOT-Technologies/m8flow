@@ -15,7 +15,7 @@ from m8flow_backend.services.tenant_context_middleware import (
 
 
 def _make_app() -> Flask:
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SQLALCHEMY_EXPIRE_ON_COMMIT"] = False
@@ -111,15 +111,23 @@ def test_resolves_tenant_from_jwt_claim() -> None:
 
 
 def test_missing_tenant_raises_by_default() -> None:
+    from unittest.mock import patch
+    
     app = _make_app()
     with app.app_context():
         db.create_all()
         _seed_tenants()
 
         with app.test_request_context("/test"):
-            with pytest.raises(ApiError) as exc:
-                resolve_request_tenant(db)
-            assert exc.value.error_code == "tenant_required"
+            # Mock should_disable_auth_for_request to return True so that
+            # the fallback to _authentication_identifier() is skipped
+            with patch(
+                "m8flow_backend.services.tenant_context_middleware.AuthorizationService"
+            ) as mock_auth:
+                mock_auth.should_disable_auth_for_request.return_value = True
+                with pytest.raises(ApiError) as exc:
+                    resolve_request_tenant(db)
+                assert exc.value.error_code == "tenant_required"
 
 
 def test_missing_tenant_defaults_when_allowed() -> None:

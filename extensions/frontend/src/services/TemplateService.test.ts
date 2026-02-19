@@ -125,4 +125,99 @@ describe("TemplateService", () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe("updateTemplateFile", () => {
+    const fetchMock = vi.fn();
+
+    beforeEach(() => {
+      fetchMock.mockClear();
+      vi.stubGlobal("fetch", fetchMock);
+    });
+
+    it("sends PUT request and returns parsed template on success", async () => {
+      const mockTemplateResponse = {
+        id: 5,
+        template_key: "test-key",
+        name: "Test Template",
+        version: "V2",
+        visibility: "PRIVATE",
+        is_published: false,
+        files: [{ file_type: "json", file_name: "form.json" }],
+        created_at_in_seconds: 1700000000,
+        updated_at_in_seconds: 1700000001,
+      };
+
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(mockTemplateResponse),
+      });
+
+      const result = await TemplateService.updateTemplateFile(
+        3,
+        "form.json",
+        '{"updated": true}',
+        "application/json"
+      );
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/templates/3/files/form.json"),
+        expect.objectContaining({
+          method: "PUT",
+          credentials: "include",
+          body: '{"updated": true}',
+        })
+      );
+
+      expect(result.id).toBe(5);
+      expect(result.version).toBe("V2");
+      expect(result.templateKey).toBe("test-key");
+    });
+
+    it("rejects with error when response is not ok", async () => {
+      fetchMock.mockResolvedValue({ ok: false });
+
+      await expect(
+        TemplateService.updateTemplateFile(3, "form.json", '{"data": true}')
+      ).rejects.toThrow("Update failed");
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("deleteTemplateFile", () => {
+    const fetchMock = vi.fn();
+
+    beforeEach(() => {
+      fetchMock.mockClear();
+      vi.stubGlobal("fetch", fetchMock);
+    });
+
+    it("sends DELETE request and resolves on success", async () => {
+      fetchMock.mockResolvedValue({
+        ok: true,
+      });
+
+      await TemplateService.deleteTemplateFile(4, "form.json");
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/templates/4/files/form.json"),
+        expect.objectContaining({
+          method: "DELETE",
+          credentials: "include",
+        })
+      );
+    });
+
+    it("rejects with error when response is not ok", async () => {
+      fetchMock.mockResolvedValue({ ok: false });
+
+      await expect(
+        TemplateService.deleteTemplateFile(4, "form.json")
+      ).rejects.toThrow("Delete failed");
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+  });
 });
