@@ -462,7 +462,7 @@ const TemplateService = {
     const modifiedId = processModelIdentifier.replaceAll("/", ":");
     return new Promise((resolve, reject) => {
       HttpService.makeCallToBackend({
-        path: `${BASE_PATH}/process-models/${modifiedId}/template-info`,
+        path: `${BASE_PATH}/templates/process-models/${modifiedId}/template-info`,
         httpMethod: "GET",
         successCallback: (data: ProcessModelTemplateInfo) => resolve(data),
         failureCallback: (err: unknown) => {
