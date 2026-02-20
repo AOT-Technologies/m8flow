@@ -26,6 +26,7 @@ import TemplateCard from '../components/TemplateCard';
 import TemplateFilters from '../components/TemplateFilters';
 import ImportTemplateModal from '../components/ImportTemplateModal';
 import PaginationForTable from '@spiffworkflow-frontend/components/PaginationForTable';
+import UserService from "../services/UserService";
 
 const DEFAULT_PER_PAGE = 10;
 
@@ -38,6 +39,7 @@ export default function TemplateGalleryPage() {
   });
   const [importOpen, setImportOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
+  const isViewer = UserService.isViewer();
 
   // Read page/per_page from URL search params (PaginationForTable manages them)
   const page = Number.parseInt(searchParams.get('page') || '1', 10) || 1;
@@ -115,16 +117,20 @@ export default function TemplateGalleryPage() {
               <ViewList />
             </ToggleButton>
           </ToggleButtonGroup>
-          <Button variant="outlined" onClick={() => setImportOpen(true)}>
-            Import template (zip)
-          </Button>
+          {!isViewer && (
+            <Button variant="outlined" onClick={() => setImportOpen(true)}>
+              Import template (zip)
+            </Button>
+          )}
         </Box>
       </Box>
-      <ImportTemplateModal
-        open={importOpen}
-        onClose={() => setImportOpen(false)}
-        onSuccess={handleImportSuccess}
-      />
+      {!isViewer && (
+        <ImportTemplateModal
+          open={importOpen}
+          onClose={() => setImportOpen(false)}
+          onSuccess={handleImportSuccess}
+        />
+      )}
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>

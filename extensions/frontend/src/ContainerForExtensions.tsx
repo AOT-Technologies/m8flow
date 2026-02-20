@@ -86,12 +86,8 @@ function RoleBasedRootGate({
   setAdditionalNavElement: (el: ReactElement | null) => void;
   isMobile: boolean;
 }) {
-  const userRoles = UserService.getUserRoles();
-  const isSuperAdmin = userRoles.includes("super-admin");
-  const isIntegrator =
-    !isSuperAdmin &&
-    userRoles.includes("integrator") &&
-    !userRoles.some((r) => ["tenant-admin", "editor", "viewer"].includes(r));
+  const isSuperAdmin = UserService.isSuperAdmin();
+  const isIntegrator = UserService.isIntegrator();
 
   if (isSuperAdmin) {
     return <Navigate to="/tenants" replace />;

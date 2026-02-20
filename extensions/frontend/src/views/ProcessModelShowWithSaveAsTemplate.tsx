@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Box, Button, Chip, Paper, Typography, CircularProgress } from "@mui/material";
-import ProcessModelShow from "@spiffworkflow-frontend/views/ProcessModelShow";
+import ProcessModelShow from "./ProcessModelShow";
 import DateAndTimeService from "@spiffworkflow-frontend/services/DateAndTimeService";
 import HttpService from "../services/HttpService";
 import TemplateService from "../services/TemplateService";
@@ -10,6 +10,7 @@ import { sortFilesWithPrimaryFirst } from "../utils/templateHelpers";
 import SaveAsTemplateModal from "../components/SaveAsTemplateModal";
 import type { SaveAsTemplateFile } from "../components/SaveAsTemplateModal";
 import type { ProcessModelTemplateInfo } from "../types/template";
+import UserService from "../services/UserService";
 
 const SUPPORTED_EXT = [".bpmn", ".json", ".dmn", ".md"];
 
@@ -28,6 +29,7 @@ export default function ProcessModelShowWithSaveAsTemplate() {
   const [saveAsTemplateOpen, setSaveAsTemplateOpen] = useState(false);
   const [templateInfo, setTemplateInfo] = useState<ProcessModelTemplateInfo | null>(null);
   const [templateInfoLoading, setTemplateInfoLoading] = useState(false);
+  const isViewer = UserService.isViewer();
 
   const modifiedProcessModelId = params.process_model_id
     ? modifyProcessIdentifierForPathParam(params.process_model_id)
@@ -123,15 +125,17 @@ export default function ProcessModelShowWithSaveAsTemplate() {
   return (
     <Box sx={{ position: "relative", padding: "16px" }}>
       <ProcessModelShow />
-      <Box sx={{ position: "absolute", top: 16, right: 16, zIndex: 10 }}>
-        <Button
-          variant="contained"
-          onClick={() => setSaveAsTemplateOpen(true)}
-          data-testid="save-as-template-button"
-        >
-          Save as Template
-        </Button>
-      </Box>
+      {!isViewer && (
+        <Box sx={{ position: "absolute", top: 16, right: 16, zIndex: 10 }}>
+          <Button
+            variant="contained"
+            onClick={() => setSaveAsTemplateOpen(true)}
+            data-testid="save-as-template-button"
+          >
+            Save as Template
+          </Button>
+        </Box>
+      )}
 
       {/* Template Provenance Info */}
       {templateInfoLoading && (
@@ -188,7 +192,6 @@ export default function ProcessModelShowWithSaveAsTemplate() {
           </Box>
         </Paper>
       )}
-
       <SaveAsTemplateModal
         open={saveAsTemplateOpen}
         onClose={() => setSaveAsTemplateOpen(false)}
