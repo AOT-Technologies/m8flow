@@ -6,6 +6,7 @@ import ConfirmButton from '@spiffworkflow-frontend/components/ConfirmButton';
 import ProcessInstanceRun from '@spiffworkflow-frontend/components/ProcessInstanceRun';
 import { ProcessModel } from '@spiffworkflow-frontend/interfaces';
 import type { Ability } from '@casl/ability';
+import UserService from "../services/UserService";
 
 export type DiagramEditorToolbarProps = {
   diagramType: string;
@@ -49,6 +50,7 @@ export default function DiagramEditorToolbar({
   onSetPrimaryFileAvailable,
 }: DiagramEditorToolbarProps) {
   const { t } = useTranslation();
+  const isViewer = UserService.isViewer();
 
   if (diagramType === 'readonly') {
     return null;
@@ -105,7 +107,7 @@ export default function DiagramEditorToolbar({
         a={targetUris.processModelFileShowPath}
         ability={ability}
       >
-        {canViewXml && (
+        {!isViewer && canViewXml && (
           <Button variant="contained" onClick={onViewXml}>
             {t('diagram_view_xml')}
           </Button>

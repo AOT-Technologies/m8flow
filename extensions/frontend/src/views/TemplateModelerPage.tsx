@@ -23,6 +23,7 @@ import CreateProcessModelFromTemplateModal from '../components/CreateProcessMode
 import { Template } from '../types/template';
 import { normalizeTemplate } from '../utils/templateHelpers';
 import './TemplateModelerPage.css';
+import UserService from "../services/UserService";
 
 function TemplateDetailsCard({
   template,
@@ -35,6 +36,7 @@ function TemplateDetailsCard({
   onPublish: () => void;
   onCreateProcessModel: () => void;
 }) {
+  const isViewer = UserService.isViewer();
   return (
     <Paper
       elevation={0}
@@ -81,8 +83,13 @@ function TemplateDetailsCard({
         <Button size="small" variant="contained" onClick={onExport}>
           Export template
         </Button>
-        {!template.isPublished && (
-          <Button size="small" variant="contained" color="primary" onClick={onPublish}>
+        {!isViewer && !template.isPublished && (
+          <Button
+            size="small"
+            variant="contained"
+            color="primary"
+            onClick={onPublish}
+          >
             Publish
           </Button>
         )}

@@ -265,18 +265,9 @@ function SideNav({
     extensionUxElements,
   });
 
-  const userRoles = UserService.getUserRoles();
-  const isSuperAdmin = userRoles.includes("super-admin");
-  const isIntegrator =
-    !isSuperAdmin &&
-    userRoles.includes("integrator") &&
-    !userRoles.some((r) => ["tenant-admin", "editor", "viewer"].includes(r));
-  const isReviewer =
-    !isSuperAdmin &&
-    userRoles.includes("reviewer") &&
-    !userRoles.some((r) =>
-      ["tenant-admin", "editor", "viewer", "integrator"].includes(r),
-    );
+  const isSuperAdmin = UserService.isSuperAdmin();
+  const isIntegrator = UserService.isIntegrator();
+  const isReviewer = UserService.isReviewer();
 
   const roleHiddenRoutes = new Set<string>();
   if (!isSuperAdmin) {

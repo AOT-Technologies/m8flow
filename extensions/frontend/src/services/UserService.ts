@@ -232,7 +232,29 @@ const getUserRoles = (): string[] => {
   return [];
 };
 
-const UserService = {
+const isSuperAdmin = (): boolean => {
+  return getUserRoles().includes('super-admin');
+};
+
+const isIntegrator = (): boolean => {
+  const roles = getUserRoles();
+  return !roles.includes('super-admin') && roles.includes('integrator') &&
+    !roles.some((r) => ['tenant-admin', 'editor', 'viewer'].includes(r));
+};
+
+const isReviewer = (): boolean => {
+  const roles = getUserRoles();
+  return !roles.includes('super-admin') && roles.includes('reviewer') &&
+    !roles.some((r) => ['tenant-admin', 'editor', 'viewer', 'integrator'].includes(r));
+};
+
+const isViewer = (): boolean => {
+  const roles = getUserRoles();
+  return !roles.includes('super-admin') && roles.includes('viewer') &&
+    !roles.some((r) => ['tenant-admin', 'editor'].includes(r));
+};
+
+const  UserService = {
   authenticationDisabled,
   doLogin,
   doLogout,
@@ -248,6 +270,10 @@ const UserService = {
   redirectToLogin,
   setTenantId,
   getUserRoles,
+  isSuperAdmin,
+  isIntegrator,
+  isReviewer,
+  isViewer,
 };
 
 export default UserService;
