@@ -213,6 +213,25 @@ const setTenantId = (tenantId: string | null): void => {
   }
 };
 
+/**
+ * Returns the role/group names for the current user from the access token JWT.
+ * Checks groups[] (primary in this Keycloak setup).
+ */
+const getUserRoles = (): string[] => {
+  const token = getAccessToken();
+  if (!token) return [];
+
+  try {
+    const decoded = jwtDecode(token) as Record<string, unknown>;
+    if (Array.isArray(decoded.groups) && decoded.groups.length > 0) {
+      return (decoded.groups as string[]).map((g) => g.replace(/^\//, '')); // fallback: removing leading slash or prefix
+    }
+  } catch (error) {
+    console.error('Error decoding access token for roles:', error);
+  }
+  return [];
+};
+
 const UserService = {
   authenticationDisabled,
   doLogin,
@@ -228,6 +247,7 @@ const UserService = {
   isPublicUser,
   redirectToLogin,
   setTenantId,
+  getUserRoles,
 };
 
 export default UserService;

@@ -53,7 +53,7 @@ UserService.doLogout = () => {
   originalDoLogout();
 };
 
-/** When ENABLE_MULTITENANT: at "/" show TenantSelectPage if no tenant in localStorage, else show default home (BaseRoutes). */
+/** When ENABLE_MULTITENANT: at "/" show TenantSelectPage if no tenant in localStorage, else show default home (RoleBasedRootGate). */
 function MultitenantRootGate({
   extensionUxElements,
   setAdditionalNavElement,
@@ -66,7 +66,7 @@ function MultitenantRootGate({
   const storedTenant = typeof window !== 'undefined' ? localStorage.getItem(M8FLOW_TENANT_STORAGE_KEY) : null;
   if (storedTenant) {
     return (
-      <BaseRoutes
+      <RoleBasedRootGate
         extensionUxElements={extensionUxElements}
         setAdditionalNavElement={setAdditionalNavElement}
         isMobile={isMobile}
@@ -74,6 +74,38 @@ function MultitenantRootGate({
     );
   }
   return <TenantSelectPage />;
+}
+
+/** Redirects roles that don't have access to Home to their respective default pages. */
+function RoleBasedRootGate({
+  extensionUxElements,
+  setAdditionalNavElement,
+  isMobile,
+}: {
+  extensionUxElements: UiSchemaUxElement[] | null;
+  setAdditionalNavElement: (el: ReactElement | null) => void;
+  isMobile: boolean;
+}) {
+  const userRoles = UserService.getUserRoles();
+  const isSuperAdmin = userRoles.includes("super-admin");
+  const isIntegrator =
+    !isSuperAdmin &&
+    userRoles.includes("integrator") &&
+    !userRoles.some((r) => ["tenant-admin", "editor", "viewer"].includes(r));
+
+  if (isSuperAdmin) {
+    return <Navigate to="/tenants" replace />;
+  }
+  if (isIntegrator) {
+    return <Navigate to="/configuration" replace />;
+  }
+  return (
+    <BaseRoutes
+      extensionUxElements={extensionUxElements}
+      setAdditionalNavElement={setAdditionalNavElement}
+      isMobile={isMobile}
+    />
+  );
 }
 
 // M8Flow Extension: Import Tenant page
@@ -311,7 +343,20 @@ export default function ContainerForExtensions() {
           </>
         )}
         {!ENABLE_MULTITENANT && (
-          <Route path="tenant" element={<Navigate to="/" replace />} />
+          <>
+            {/* Redirect roles with no home access (like super-admin/integrator) to their defaults */}
+            <Route
+              path="/"
+              element={
+                <RoleBasedRootGate
+                  extensionUxElements={extensionUxElements}
+                  setAdditionalNavElement={setAdditionalNavElement}
+                  isMobile={isMobile}
+                />
+              }
+            />
+            <Route path="tenant" element={<Navigate to="/" replace />} />
+          </>
         )}
         {/* Reports route */}
         <Route path="reports" element={<ReportsPage />} />

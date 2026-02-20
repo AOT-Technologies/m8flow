@@ -265,8 +265,40 @@ function SideNav({
     extensionUxElements,
   });
 
+  const userRoles = UserService.getUserRoles();
+  const isSuperAdmin = userRoles.includes("super-admin");
+  const isIntegrator =
+    !isSuperAdmin &&
+    userRoles.includes("integrator") &&
+    !userRoles.some((r) => ["tenant-admin", "editor", "viewer"].includes(r));
+  const isReviewer =
+    !isSuperAdmin &&
+    userRoles.includes("reviewer") &&
+    !userRoles.some((r) =>
+      ["tenant-admin", "editor", "viewer", "integrator"].includes(r),
+    );
+
+  const roleHiddenRoutes = new Set<string>();
+  if (!isSuperAdmin) {
+    roleHiddenRoutes.add("Tenants");
+    if (isIntegrator) {
+      roleHiddenRoutes.add("Templates");
+      roleHiddenRoutes.add("/");
+    }
+    if (isReviewer) {
+      roleHiddenRoutes.add("Templates");
+    }
+  }
+
+  const visibleNavItems = isSuperAdmin
+    ? navItems.filter((item) => item.text === "Tenants")
+    : navItems.filter(
+        (item) =>
+          !roleHiddenRoutes.has(item.text) && !roleHiddenRoutes.has(item.route),
+      );
+
   // 45 * number of nav items like "HOME" and "PROCESS INSTANCES" plus 140
-  const pixelsToRemoveFromAdditionalElement = 45 * navItems.length + 140;
+  const pixelsToRemoveFromAdditionalElement = 45 * visibleNavItems.length + 140;
 
   const extensionUserProfileElement = (uxElement: UiSchemaUxElement) => {
     const navItemPage = `/extensions${uxElement.page}`;
@@ -348,7 +380,7 @@ function SideNav({
             </IconButton>
           </Box>
           <List>
-            {navItems.map((item) => {
+            {visibleNavItems.map((item) => {
               if (checkUserHasAccessToNavItem(item)) {
                 return (
                   <ListItem
