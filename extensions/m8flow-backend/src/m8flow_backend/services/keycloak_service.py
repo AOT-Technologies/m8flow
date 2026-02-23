@@ -20,6 +20,8 @@ from m8flow_backend.config import (
     keycloak_admin_user,
     keycloak_url,
     realm_template_path,
+    redirect_uri_backend_host_and_path,
+    redirect_uri_frontend_host,
     spoke_client_id,
     spoke_keystore_password,
     spoke_keystore_p12_path,
@@ -30,6 +32,8 @@ from m8flow_backend.config import (
 # Only necessary values are changed for a new tenant; roles, groups, users, and clients are preserved.
 # Placeholder in the JSON is replaced at load time with M8FLOW_KEYCLOAK_SPOKE_CLIENT_ID (default: spiffworkflow-backend).
 SPOKE_CLIENT_ID_PLACEHOLDER = "__M8FLOW_SPOKE_CLIENT_ID__"
+BACKEND_REDIRECT_PLACEHOLDER = "replace-me-with-spiff-backend-host-and-path"
+FRONTEND_REDIRECT_PLACEHOLDER = "replace-me-with-spiff-frontend-host-and-path"
 DEFAULT_ROLES_PREFIX = "default-roles-"  # role name "default-roles-{realm}" must be updated
 REALM_URL_PREFIX = "/realms/"  # client baseUrl/redirectUris contain /realms/{realm}/
 ADMIN_CONSOLE_URL_PREFIX = "/admin/"  # security-admin-console has /admin/{realm}/console/
@@ -47,6 +51,36 @@ def _substitute_spoke_client_id(obj: Any, client_id: str) -> Any:
     if isinstance(obj, str) and SPOKE_CLIENT_ID_PLACEHOLDER in obj:
         return obj.replace(SPOKE_CLIENT_ID_PLACEHOLDER, client_id)
     return obj
+
+
+def _replace_redirect_placeholders_in_place(
+    obj: Any, backend_val: str | None, frontend_val: str | None
+) -> None:
+    """Recursively replace redirect host placeholders in string values (mutates in place)."""
+    if isinstance(obj, dict):
+        for k, v in list(obj.items()):
+            if isinstance(v, str):
+                s = v
+                if backend_val is not None and BACKEND_REDIRECT_PLACEHOLDER in s:
+                    s = s.replace(BACKEND_REDIRECT_PLACEHOLDER, backend_val)
+                if frontend_val is not None and FRONTEND_REDIRECT_PLACEHOLDER in s:
+                    s = s.replace(FRONTEND_REDIRECT_PLACEHOLDER, frontend_val)
+                if s != v:
+                    obj[k] = s
+            else:
+                _replace_redirect_placeholders_in_place(v, backend_val, frontend_val)
+    elif isinstance(obj, list):
+        for i, item in enumerate(obj):
+            if isinstance(item, str):
+                s = item
+                if backend_val is not None and BACKEND_REDIRECT_PLACEHOLDER in s:
+                    s = s.replace(BACKEND_REDIRECT_PLACEHOLDER, backend_val)
+                if frontend_val is not None and FRONTEND_REDIRECT_PLACEHOLDER in s:
+                    s = s.replace(FRONTEND_REDIRECT_PLACEHOLDER, frontend_val)
+                if s != item:
+                    obj[i] = s
+            else:
+                _replace_redirect_placeholders_in_place(item, backend_val, frontend_val)
 
 
 def _regenerate_all_ids(obj: Any, id_map: dict[str, str] | None = None) -> dict[str, str]:
@@ -292,6 +326,10 @@ def _fill_realm_template(
                 if isinstance(v, str):
                     attrs[k] = _replace_realm_urls(v)
             client["attributes"] = attrs
+
+    backend_val = redirect_uri_backend_host_and_path()
+    frontend_val = redirect_uri_frontend_host()
+    _replace_redirect_placeholders_in_place(payload, backend_val, frontend_val)
 
     return payload
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 def _get(key: str, default: str | None = None) -> str | None:
@@ -79,3 +80,43 @@ def spoke_client_secret() -> str:
 def template_realm_name() -> str:
     """Realm name in the template (for substitution)."""
     return "spiffworkflow"
+
+
+def app_public_base_url() -> str | None:
+    """Base URL of the app (frontend at /, backend at /api). Used for tenant realm redirect URI substitution.
+    When Keycloak and app are on different hosts, set M8FLOW_APP_PUBLIC_BASE_URL; otherwise KEYCLOAK_HOSTNAME is used."""
+    raw = (
+        _get("M8FLOW_APP_PUBLIC_BASE_URL")
+        or _get("KEYCLOAK_HOSTNAME")
+        or _get("KC_HOSTNAME")
+        or _get("M8FLOW_KEYCLOAK_PUBLIC_ISSUER_BASE")
+    )
+    if not raw:
+        return None
+    return raw.strip().rstrip("/") or None
+
+
+def redirect_uri_backend_host_and_path() -> str | None:
+    """Host and path for backend redirect URIs (e.g. app.example.com/api). Derived from app_public_base_url()."""
+    base = app_public_base_url()
+    if not base:
+        return None
+    if "://" not in base:
+        base = "https://" + base
+    parsed = urlparse(base)
+    if not parsed.netloc:
+        return None
+    return parsed.netloc.rstrip("/") + "/api"
+
+
+def redirect_uri_frontend_host() -> str | None:
+    """Host for frontend redirect URIs (e.g. app.example.com). Derived from app_public_base_url()."""
+    base = app_public_base_url()
+    if not base:
+        return None
+    if "://" not in base:
+        base = "https://" + base
+    parsed = urlparse(base)
+    if not parsed.netloc:
+        return None
+    return parsed.netloc

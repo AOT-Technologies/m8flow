@@ -110,7 +110,7 @@ paths:
   /tenant-realms:
     post:
       summary: Create a spoke realm from the SpiffWorkflow template
-      description: Creates a Keycloak realm from the template and ensures a tenant record exists. Does not require tenant context (bootstrap/admin).
+      description: Creates a Keycloak realm from the template and ensures a tenant record exists. Does not require tenant context (bootstrap/admin). Redirect URIs for the new realm are derived from M8FLOW_APP_PUBLIC_BASE_URL or KEYCLOAK_HOSTNAME (frontend at /, backend at /api).
       operationId: m8flow_backend.routes.keycloak_controller.create_realm
       tags:
         - Keycloak
