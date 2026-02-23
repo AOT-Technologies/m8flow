@@ -132,14 +132,6 @@ def get_master_admin_token() -> str:
         raise ValueError("KEYCLOAK_ADMIN_PASSWORD or M8FLOW_KEYCLOAK_ADMIN_PASSWORD must be set for realm creation.")
     # Testing only: log credentials used for tenant creation. Logging password is a security risk; remove or disable in production.
     username = keycloak_admin_user()
-    logger.debug("get_master_admin_token username=%r", username)
-    if True:
-        logger.debug("get_master_admin_token password=%r (testing only)", password)
-        logger.warning("M8FLOW_LOG_ADMIN_CREDENTIALS is enabled: admin password is being logged; do not use in production.")
-    else:
-        logger.debug(
-            "get_master_admin_token password=*** (set M8FLOW_LOG_ADMIN_CREDENTIALS=1 to log for testing only)"
-        )
     data = {
         "grant_type": "password",
         "client_id": "admin-cli",

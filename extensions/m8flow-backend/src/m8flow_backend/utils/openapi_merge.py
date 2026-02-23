@@ -14,8 +14,8 @@ def patch_connexion_with_extension_spec(extension_api_path: str):
     original_add_api = connexion.FlaskApp.add_api
 
     def unified_add_api(self, specification, **kwargs):
-        # Check if this is the core API initialization ("api.yml" passed from create_app)
-        if specification == "api.yml":
+        # Check if this is the core API initialization (api.yml, possibly as full path from create_app)
+        if os.path.basename(specification) == "api.yml":
             try:
                 logger.info("Merging extension API spec into core API spec...")
                 

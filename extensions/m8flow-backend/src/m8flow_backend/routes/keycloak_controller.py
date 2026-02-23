@@ -30,16 +30,6 @@ def create_realm(body: dict) -> tuple[dict, int]:
     if not realm_id or not str(realm_id).strip():
         return {"detail": "realm_id is required"}, 400
     display_name = body.get("display_name")
-    logger.debug(
-        "create_realm request: realm_id=%r display_name=%r",
-        realm_id,
-        display_name,
-    )
-    logger.debug(
-        "create_realm proxy headers: X-Forwarded-For=%s X-Forwarded-Proto=%s",
-        request.headers.get("X-Forwarded-For") or "missing",
-        request.headers.get("X-Forwarded-Proto") or "missing",
-    )
     try:
         result = create_realm_from_template(
             realm_id=str(realm_id).strip(),
