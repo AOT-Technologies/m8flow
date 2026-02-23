@@ -71,7 +71,7 @@ function TemplateDetailsCard({
         <Typography variant="caption" color="text.secondary">
           Updated: {DateAndTimeService.convertSecondsToFormattedDateTime(template.updatedAtInSeconds) ?? '—'}
         </Typography>
-        <Button
+        {!isViewer && (<Button
           size="small"
           variant="contained"
           color="success"
@@ -79,7 +79,7 @@ function TemplateDetailsCard({
           onClick={onCreateProcessModel}
         >
           Create Process Model
-        </Button>
+        </Button>)}
         <Button size="small" variant="contained" onClick={onExport}>
           Export template
         </Button>
