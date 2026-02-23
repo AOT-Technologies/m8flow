@@ -33,13 +33,14 @@ def patch_connexion_with_extension_spec(extension_api_path: str):
                 with open(extension_api_path, 'r') as f:
                     ext_spec = yaml.safe_load(f)
                 
-                # 3. Define extension path prefix
+                # 3. Define extension path prefix and root-level paths (no prefix)
                 ext_prefix = "/m8flow"
-                
+                ROOT_LEVEL_EXTENSION_PATHS = ("/health",)
+
                 # 4. Merge Paths - keep core paths unchanged, add extension paths with prefix
-                # Core paths remain as-is, extension paths get /m8flow prefix
+                # Core paths remain as-is; root-level extension paths stay as-is, others get /m8flow prefix
                 for path, item in ext_spec.get('paths', {}).items():
-                    prefixed_path = f"{ext_prefix}{path}"
+                    prefixed_path = path if path in ROOT_LEVEL_EXTENSION_PATHS else f"{ext_prefix}{path}"
                     if prefixed_path in core_spec.get('paths', {}):
                         logger.warning(f"Path conflict: {prefixed_path} exists in both core and extension")
                     core_spec.setdefault('paths', {})[prefixed_path] = item
@@ -71,7 +72,11 @@ def patch_connexion_with_extension_spec(extension_api_path: str):
                 # This preserves core API routing at /v1.0/*
                 # Extension APIs will be accessible at base_path + /m8flow/*
                 
-                logger.info(f"Successfully merged extension API spec. Extension paths added under {ext_prefix}")
+                logger.info(
+                    "Successfully merged extension API spec. Root-level paths: %s; others under %s",
+                    ROOT_LEVEL_EXTENSION_PATHS,
+                    ext_prefix,
+                )
                 return original_add_api(self, core_spec, **kwargs)
                 
             except Exception as e:

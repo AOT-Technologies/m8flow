@@ -27,8 +27,8 @@ def keycloak_public_issuer_base() -> str:
 
 
 def keycloak_admin_user() -> str:
-    """Master realm admin username."""
-    return _get("KEYCLOAK_ADMIN_USER") or _get("M8FLOW_KEYCLOAK_ADMIN_USER") or "admin"
+    """Master realm admin username (default: superadmin, created by Keycloak entrypoint)."""
+    return _get("KEYCLOAK_ADMIN_USER") or _get("M8FLOW_KEYCLOAK_ADMIN_USER") or "superadmin"
 
 
 def keycloak_admin_password() -> str:

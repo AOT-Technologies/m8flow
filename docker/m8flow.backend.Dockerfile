@@ -67,8 +67,9 @@ RUN mkdir -p /app/bin && printf '%s\n' \
   'export SPIFFWORKFLOW_BACKEND_DATABASE_URI="${M8FLOW_BACKEND_DATABASE_URI:-$SPIFFWORKFLOW_BACKEND_DATABASE_URI}"' \
   'export SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR="${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-$SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR}"' \
   'cd /app/spiffworkflow-backend' \
-  'if [[ "${M8FLOW_BACKEND_UPGRADE_DB:-}" == "true" || "${M8FLOW_BACKEND_SW_UPGRADE_DB:-}" == "true" ]]; then python -m flask db upgrade; fi' \
-  'if [[ "${M8FLOW_BACKEND_RUN_BOOTSTRAP:-}" != "false" ]]; then python bin/bootstrap.py; fi' \
+  'python -m flask db upgrade' \
+  'cd /app && python -m alembic -c /app/extensions/m8flow-backend/migrations/alembic.ini upgrade head' \
+  'if [[ "${M8FLOW_BACKEND_RUN_BOOTSTRAP:-}" != "false" ]]; then cd /app/spiffworkflow-backend && python bin/bootstrap.py; fi' \
   'cd /app' \
   'export SPIFFWORKFLOW_BACKEND_RUN_DATA_SETUP="${SPIFFWORKFLOW_BACKEND_RUN_DATA_SETUP:-false}"' \
   'exec python -m uvicorn extensions.app:app --host 0.0.0.0 --port 8000 --app-dir /app --log-config /app/uvicorn-log.yaml' \
@@ -118,8 +119,9 @@ RUN mkdir -p /app/bin && printf '%s\n' \
   'export SPIFFWORKFLOW_BACKEND_DATABASE_URI="${M8FLOW_BACKEND_DATABASE_URI:-$SPIFFWORKFLOW_BACKEND_DATABASE_URI}"' \
   'export SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR="${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-$SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR}"' \
   'cd /app/spiffworkflow-backend' \
-  'if [[ "${M8FLOW_BACKEND_UPGRADE_DB:-}" == "true" || "${M8FLOW_BACKEND_SW_UPGRADE_DB:-}" == "true" ]]; then python -m flask db upgrade; fi' \
-  'if [[ "${M8FLOW_BACKEND_RUN_BOOTSTRAP:-}" != "false" ]]; then python bin/bootstrap.py; fi' \
+  'python -m flask db upgrade' \
+  'cd /app && python -m alembic -c /app/extensions/m8flow-backend/migrations/alembic.ini upgrade head' \
+  'if [[ "${M8FLOW_BACKEND_RUN_BOOTSTRAP:-}" != "false" ]]; then cd /app/spiffworkflow-backend && python bin/bootstrap.py; fi' \
   'cd /app' \
   'export SPIFFWORKFLOW_BACKEND_RUN_DATA_SETUP="${SPIFFWORKFLOW_BACKEND_RUN_DATA_SETUP:-false}"' \
   'exec python -m uvicorn extensions.app:app --host 0.0.0.0 --port 8000 --app-dir /app --log-config /app/uvicorn-log.yaml' \

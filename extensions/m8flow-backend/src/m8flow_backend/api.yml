@@ -3,6 +3,22 @@ info:
   version: 1.0.0
   title: m8flow-backend-extension
 paths:
+  /health:
+    get:
+      summary: Health check for load balancers and monitoring
+      description: Returns 200 when the process is up. Public, no authentication required.
+      operationId: m8flow_backend.tenancy.health_check
+      tags:
+        - Health
+      security: []
+      responses:
+        "200":
+          description: The server is running.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
   /create-tenant:
     post:
       summary: Create a new tenant
@@ -751,6 +767,19 @@ paths:
 
 components:
   schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        ok:
+          type: boolean
+          example: true
+        healthy:
+          type: boolean
+          example: true
+
     CreateTenantRequest:
       type: object
       required:

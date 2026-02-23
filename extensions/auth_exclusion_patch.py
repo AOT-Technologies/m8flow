@@ -7,11 +7,13 @@ logger = logging.getLogger(__name__)
 _PATCHED = False
 
 # Endpoints that must be callable without authentication (pre-login tenant selection, tenant login URL,
-# and bootstrap: create realm / create tenant — no tenant in token yet; Keycloak admin is server-side).
+# bootstrap: create realm / create tenant — no tenant in token yet; Keycloak admin is server-side;
+# health for ALB/load balancer checks).
 M8FLOW_AUTH_EXCLUSION_ADDITIONS = [
     "m8flow_backend.routes.keycloak_controller.get_tenant_login_url",
     "m8flow_backend.routes.keycloak_controller.create_realm",
     "m8flow_backend.routes.tenant_controller.create_tenant",
+    "m8flow_backend.tenancy.health_check",
 ]
 
 

@@ -34,4 +34,4 @@ ENV KC_BOOTSTRAP_ADMIN_USERNAME=admin
 ENV KC_BOOTSTRAP_ADMIN_PASSWORD=admin
 # Health and features (align with start_keycloak.sh).
 ENV KC_HEALTH_ENABLED=true
-ENV JAVA_OPTS_APPEND="-Dkeycloak.profile.feature.token_exchange=enabled -Dkeycloak.profile.feature.admin_fine_grained_authz=enabled"
+ENV JAVA_OPTS_APPEND="-Dkeycloak.profile.feature.token_exchange=enabled"

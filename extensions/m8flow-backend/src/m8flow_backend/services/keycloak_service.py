@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import json
 import logging
+import os
 import time
 import uuid
 import warnings
@@ -129,10 +130,20 @@ def get_master_admin_token() -> str:
     password = keycloak_admin_password()
     if not password:
         raise ValueError("KEYCLOAK_ADMIN_PASSWORD or M8FLOW_KEYCLOAK_ADMIN_PASSWORD must be set for realm creation.")
+    # Testing only: log credentials used for tenant creation. Logging password is a security risk; remove or disable in production.
+    username = keycloak_admin_user()
+    logger.debug("get_master_admin_token username=%r", username)
+    if True:
+        logger.debug("get_master_admin_token password=%r (testing only)", password)
+        logger.warning("M8FLOW_LOG_ADMIN_CREDENTIALS is enabled: admin password is being logged; do not use in production.")
+    else:
+        logger.debug(
+            "get_master_admin_token password=*** (set M8FLOW_LOG_ADMIN_CREDENTIALS=1 to log for testing only)"
+        )
     data = {
         "grant_type": "password",
         "client_id": "admin-cli",
-        "username": keycloak_admin_user(),
+        "username": username,
         "password": password,
     }
     r = requests.post(
@@ -143,6 +154,28 @@ def get_master_admin_token() -> str:
     )
     r.raise_for_status()
     return r.json()["access_token"]
+
+
+def _log_admin_token_claims(token: str) -> None:
+    """Decode admin JWT and log exp, iat, and realm_access (roles) at DEBUG. Never raises."""
+    try:
+        import jwt
+        payload = jwt.decode(token, options={"verify_signature": False})
+        exp = payload.get("exp")
+        iat = payload.get("iat")
+        now = int(time.time())
+        expired = exp is not None and exp < now
+        realm_access = payload.get("realm_access") or {}
+        roles = realm_access.get("roles") if isinstance(realm_access, dict) else None
+        logger.debug(
+            "create_realm_from_template admin token: exp=%s iat=%s expired=%s realm_access.roles=%s",
+            exp,
+            iat,
+            expired,
+            roles,
+        )
+    except Exception:
+        logger.debug("Could not decode admin token for logging")
 
 
 def realm_exists(realm: str) -> bool:
@@ -355,6 +388,11 @@ def create_realm_from_template(realm_id: str, display_name: str | None = None) -
     if not realm_id or not realm_id.strip():
         raise ValueError("realm_id is required")
     realm_id = realm_id.strip()
+    logger.debug(
+        "create_realm_from_template: realm_id=%r keycloak_url=%s",
+        realm_id,
+        keycloak_url(),
+    )
     template = load_realm_template()
     # Detect template realm name from JSON if present, else fallback to config
     template_name = template.get("realm") or template_realm_name()
@@ -369,6 +407,7 @@ def create_realm_from_template(realm_id: str, display_name: str | None = None) -
     }
     
     token = get_master_admin_token()
+    _log_admin_token_claims(token)
     base_url = keycloak_url()
 
     r = requests.post(
@@ -378,7 +417,11 @@ def create_realm_from_template(realm_id: str, display_name: str | None = None) -
         timeout=60,
     )
     r.raise_for_status()
-    
+    logger.debug(
+        "create_realm_from_template step 1 OK: POST /admin/realms -> %s",
+        r.status_code,
+    )
+
     # Step 2: Partial import of clients, roles, groups, and users from template.
     # Sanitize ids/containerIds so Keycloak can assign new ones and avoid conflicts.
     clients = copy.deepcopy(full_payload.get("clients", []))
@@ -432,12 +475,31 @@ def create_realm_from_template(realm_id: str, display_name: str | None = None) -
         "defaultOptionalClientScopes": full_payload.get("defaultOptionalClientScopes", []),
     }
 
+    partial_import_url = f"{base_url}/admin/realms/{realm_id}/partialImport"
+    roles_count = 0
+    if isinstance(roles, dict):
+        roles_count = len(roles.get("realm", [])) + len(roles.get("client", {}))
+    logger.debug(
+        "create_realm_from_template step 2: POST %s (clients=%s roles=%s users=%s)",
+        partial_import_url,
+        len(clients),
+        roles_count,
+        len(users),
+    )
     r2 = requests.post(
-        f"{base_url}/admin/realms/{realm_id}/partialImport",
+        partial_import_url,
         json=partial_import_payload,
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
         timeout=120,
     )
+    if not r2.ok:
+        logger.warning(
+            "create_realm_from_template step 2 FAILED: partialImport %s %s url=%s body=%s",
+            r2.status_code,
+            r2.reason,
+            r2.url,
+            (r2.text[:500] if r2.text else None),
+        )
     r2.raise_for_status()
 
     # Step 3: Fetch realm to obtain Keycloak's internal UUID (used as M8flowTenantModel.id)

@@ -100,6 +100,11 @@ try:
     from extensions.login_tenant_patch import apply_login_tenant_patch
 except ImportError:
     pass
+try:
+    from extensions.cookie_path_patch import apply_cookie_path_patch
+    apply_cookie_path_patch()
+except ImportError:
+    pass
 
 from m8flow_backend.services.tenant_context_middleware import resolve_request_tenant
 from spiffworkflow_backend import create_app

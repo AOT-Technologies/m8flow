@@ -30,6 +30,16 @@ def create_realm(body: dict) -> tuple[dict, int]:
     if not realm_id or not str(realm_id).strip():
         return {"detail": "realm_id is required"}, 400
     display_name = body.get("display_name")
+    logger.debug(
+        "create_realm request: realm_id=%r display_name=%r",
+        realm_id,
+        display_name,
+    )
+    logger.debug(
+        "create_realm proxy headers: X-Forwarded-For=%s X-Forwarded-Proto=%s",
+        request.headers.get("X-Forwarded-For") or "missing",
+        request.headers.get("X-Forwarded-Proto") or "missing",
+    )
     try:
         result = create_realm_from_template(
             realm_id=str(realm_id).strip(),
@@ -47,7 +57,20 @@ def create_realm(body: dict) -> tuple[dict, int]:
     except requests.exceptions.HTTPError as e:
         status = e.response.status_code if e.response is not None else 500
         detail = (e.response.text or str(e))[:500] if e.response is not None else str(e)
-        logger.warning("Keycloak create realm HTTP error: %s %s", status, detail)
+        # Debug: log which Keycloak URL failed (create realm vs partialImport vs get realm)
+        failed_url = e.response.url if e.response is not None else None
+        logger.warning(
+            "Keycloak create realm HTTP error: %s %s (url=%s)",
+            status,
+            detail,
+            failed_url,
+        )
+        logger.debug(
+            "Keycloak create realm full response: status=%s url=%s body=%s",
+            status,
+            failed_url,
+            (e.response.text[:1000] if e.response and e.response.text else None),
+        )
         if status == 409:
             return {"detail": "Realm already exists or conflict"}, 409
         return {"detail": detail}, status

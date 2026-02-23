@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, Optional
 
 from flask import g, has_request_context, request
@@ -138,6 +139,11 @@ def _is_public_request() -> bool:
         path = getattr(request, "path", "") or ""
     except Exception:
         return False
+    # When WSGI path prefix is set (e.g. /api), request.path may be full (/api/v1.0/health)
+    # or relative (/v1.0/health). Normalize by stripping the prefix so we match base list.
+    wsgi_prefix = os.getenv("SPIFFWORKFLOW_BACKEND_WSGI_PATH_PREFIX", "").strip()
+    if wsgi_prefix and path.startswith(wsgi_prefix):
+        path = path[len(wsgi_prefix) :] or "/"
     return any(path.startswith(p) for p in PUBLIC_PATH_PREFIXES)
 
 

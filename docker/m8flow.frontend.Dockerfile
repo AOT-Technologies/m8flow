@@ -82,6 +82,9 @@ RUN mkdir -p /app/bin && printf '%s\n' \
   'echo "    listen [::]:\$port;" > /tmp/ipv6.listen' \
   'sed -i "/listen 0.0.0.0:\$port;/r /tmp/ipv6.listen" /etc/nginx/conf.d/default.conf' \
   'rm -f /tmp/ipv6.listen' \
+  'echo '\''window.spiffworkflowFrontendJsenv = window.spiffworkflowFrontendJsenv || {};'\'' > /usr/share/nginx/html/config.js' \
+  'if [ -n "$APP_ROUTING_STRATEGY" ]; then echo "window.spiffworkflowFrontendJsenv.APP_ROUTING_STRATEGY = \"$APP_ROUTING_STRATEGY\";" >> /usr/share/nginx/html/config.js; fi' \
+  'if [ -n "$BACKEND_BASE_URL" ]; then echo "window.spiffworkflowFrontendJsenv.BACKEND_BASE_URL = \"$BACKEND_BASE_URL\";" >> /usr/share/nginx/html/config.js; fi' \
   'exec nginx -g "daemon off;"' \
   > /app/bin/nginx-frontend-start.sh && chmod +x /app/bin/nginx-frontend-start.sh
 
