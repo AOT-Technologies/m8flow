@@ -218,7 +218,7 @@ export default function ProcessModelEditDiagram() {
     });
 
     const worker = new Worker(
-      new URL('/src/workers/python.ts', import.meta.url),
+      new URL('../../../../spiffworkflow-frontend/src/workers/python.ts', import.meta.url),
     );
 
     setPythonWorker(worker);
