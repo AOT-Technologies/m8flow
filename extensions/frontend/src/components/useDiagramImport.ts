@@ -223,18 +223,11 @@ export function useDiagramImport(options: UseDiagramImportOptions) {
 
     if (diagramXML) {
       setDiagramXMLString(diagramXML);
-      return undefined;
-    }
-
-    if (!diagramXML) {
-      if (url) {
-        fetchDiagramFromURL(url);
-        return undefined;
-      }
-      if (fileName) {
-        fetchDiagramFromJsonAPI();
-        return undefined;
-      }
+    } else if (url) {
+      fetchDiagramFromURL(url);
+    } else if (fileName) {
+      fetchDiagramFromJsonAPI();
+    } else {
       let newDiagramFileName = 'new_bpmn_diagram.bpmn';
       let textHandler = bpmnTextHandler;
       if (diagramType === 'dmn') {
@@ -242,10 +235,14 @@ export function useDiagramImport(options: UseDiagramImportOptions) {
         textHandler = dmnTextHandler;
       }
       fetchDiagramFromURL(`/${newDiagramFileName}`, textHandler);
-      return undefined;
     }
 
-    return undefined;
+    // Cleanup: destroy the modeler when effect re-runs or component unmounts
+    return () => {
+      if (diagramModelerState) {
+        (diagramModelerState as any).destroy();
+      }
+    };
   }, [
     diagramModelerState,
     diagramType,
