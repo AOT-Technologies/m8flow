@@ -76,23 +76,18 @@ except ModuleNotFoundError:
 
 
 try:
-    from extensions.openid_discovery_patch import apply_openid_discovery_patch
+    from extensions.authentication_service_patch import apply_openid_discovery_patch
     apply_openid_discovery_patch()
 except ImportError:
     pass
 try:
-    from extensions.auth_token_error_patch import apply_auth_token_error_patch
+    from extensions.authentication_service_patch import apply_auth_token_error_patch
     apply_auth_token_error_patch()
 except ImportError:
     pass
 try:
-    from extensions.decode_token_debug_patch import apply_decode_token_debug_patch
+    from extensions.authentication_controller_patch import apply_decode_token_debug_patch
     apply_decode_token_debug_patch()
-except ImportError:
-    pass
-try:
-    from extensions.create_user_tenant_scope_patch import apply_create_user_tenant_scope_patch
-    apply_create_user_tenant_scope_patch()
 except ImportError:
     pass
 apply_login_tenant_patch = None
@@ -262,6 +257,15 @@ class _CORSFallbackMiddleware:
 # Register on the underlying Flask app
 flask_app = getattr(cnx_app, "app", None)
 
+# UserService patch (multi-tenant add_user_to_group, human task assignments).
+# Must run after create_app() so model loading order avoids duplicate table registration.
+from m8flow_backend.services.user_service_patch import apply as apply_user_service_patch
+apply_user_service_patch()
+
+# Canonical db: set once so tenant resolution and m8flow_backend services use the same instance.
+from m8flow_backend.canonical_db import set_canonical_db
+set_canonical_db(db)
+
 
 def _register_request_active_hooks(app: Flask) -> None:
     @app.before_request
@@ -365,15 +369,9 @@ if os.path.isfile(_m8flow_permissions_yml):
     flask_app.config["SPIFFWORKFLOW_BACKEND_PERMISSIONS_FILE_ABSOLUTE_PATH"] = _abs
     logger.info("M8Flow: using permissions file %s", _abs)
 
-# M8Flow: allow tenant-login-url (and other public endpoints) without authentication
-try:
-    from extensions.auth_exclusion_patch import apply_auth_exclusion_patch
-    apply_auth_exclusion_patch()
-except ImportError:
-    pass
 # M8Flow: create-realm/create-tenant accept Keycloak master realm token when no auth identifier set
 try:
-    from extensions.master_realm_auth_patch import apply_master_realm_auth_patch
+    from extensions.authentication_controller_patch import apply_master_realm_auth_patch
     apply_master_realm_auth_patch()
 except ImportError:
     pass
@@ -386,22 +384,25 @@ if m8flow_templates_dir:
     flask_app.config["M8FLOW_TEMPLATES_STORAGE_DIR"] = m8flow_templates_dir
     logger.info(f"M8FLOW_TEMPLATES_STORAGE_DIR configured: {m8flow_templates_dir}")
 
-# Register the tenant loading function to run after auth hooks.
+# Tenant resolution must run immediately after auth when possible (ordering matters for tenant context).
 # Tenant id (m8flow_tenant_id/m8flow_tenant_name) is resolved from the JWT in resolve_request_tenant (tenant_context_middleware.py).
 if None not in flask_app.before_request_funcs:
     flask_app.before_request_funcs[None] = []
 before_request_funcs = flask_app.before_request_funcs[None]
 try:
     from spiffworkflow_backend.routes.authentication_controller import omni_auth
-    auth_index = before_request_funcs.index(omni_auth)
-    before_request_funcs.insert(auth_index + 1, lambda: resolve_request_tenant(db))
-except Exception:
-    flask_app.before_request(lambda: resolve_request_tenant(db))
+    if omni_auth in before_request_funcs:
+        auth_index = before_request_funcs.index(omni_auth)
+        before_request_funcs.insert(auth_index + 1, lambda: resolve_request_tenant())
+    else:
+        flask_app.before_request(lambda: resolve_request_tenant())
+except (ValueError, AttributeError):
+    flask_app.before_request(lambda: resolve_request_tenant())
 
 if apply_login_tenant_patch is not None:
     apply_login_tenant_patch(flask_app)
 try:
-    from extensions.auth_config_on_demand_patch import apply_auth_config_on_demand_patch
+    from extensions.authentication_service_patch import apply_auth_config_on_demand_patch
     apply_auth_config_on_demand_patch()
 except ImportError:
     pass

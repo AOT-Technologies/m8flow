@@ -41,6 +41,29 @@ def apply() -> None:
     if _PATCHED:
         return
 
+    # Patch 0: create_user — tenant-scoped username when username already exists
+    _original_create_user = user_service.UserService.create_user
+    _original_create_user_func = _original_create_user.__func__
+
+    @classmethod
+    def _patched_create_user(cls, *args: object, **kwargs: object):
+        username = kwargs.get("username", "")
+        service = kwargs.get("service", "")
+        service_id = kwargs.get("service_id", "")
+        existing_by_service = (
+            UserModel.query.filter(UserModel.service == service).filter(UserModel.service_id == service_id).first()
+        )
+        if existing_by_service is not None:
+            return _original_create_user_func(cls, **kwargs)
+        if UserModel.query.filter(UserModel.username == username).first() is not None:
+            realm = _realm_from_service(service)
+            kwargs = dict(kwargs, username=f"{username}@{realm}")
+            logger.debug("create_user_tenant_scope_patch: using tenant-scoped username %s", kwargs["username"])
+        return _original_create_user_func(cls, **kwargs)
+
+    user_service.UserService.create_user = _patched_create_user
+    logger.info("create_user_tenant_scope_patch: applied (tenant-scoped username when username already exists)")
+
     # Patch 1: add_user_to_group_or_add_to_waiting — multi-tenant email handling (HEAD)
     try:
         from flask import g

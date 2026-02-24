@@ -14,6 +14,10 @@ LOGGER = logging.getLogger(__name__)
 # This must exist in the database before runtime/migrations that backfill tenant ids.
 DEFAULT_TENANT_ID = os.getenv("M8FLOW_DEFAULT_TENANT_ID", "default")
 
+# JWT claim name used to resolve tenant id. From M8FLOW_TENANT_CLAIM.
+TENANT_CLAIM = (os.getenv("M8FLOW_TENANT_CLAIM") or "").strip() or "m8flow_tenant_id"
+
+
 # Include both prefixed and unprefixed paths so we match regardless of SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX.
 PUBLIC_PATH_PREFIXES: tuple[str, ...] = (
     "/favicon.ico",

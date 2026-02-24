@@ -28,4 +28,7 @@ agent_setup_script_has_completed_successfully
 *.p12
 .venv*
 templates
+extensions/m8flow-frontend/node_modules
+keycloak-extensions/realm-info-mapper/target/*
+*.code-workspace
 email_attachments

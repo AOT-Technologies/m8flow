@@ -26,6 +26,10 @@ def _make_app() -> Flask:
 
     db.init_app(app)
 
+    from m8flow_backend.canonical_db import set_canonical_db
+
+    set_canonical_db(db)
+
     # Ensure ContextVar is reset between requests (including test_client requests).
     app.teardown_request(teardown_request_tenant_context)
 
@@ -106,7 +110,7 @@ def test_resolves_tenant_from_jwt_claim() -> None:
         db.session.commit()
 
         with app.test_request_context("/test", headers={"Authorization": f"Bearer {token}"}):
-            resolve_request_tenant(db)
+            resolve_request_tenant()
             assert g.m8flow_tenant_id == "tenant-b"
 
 
@@ -126,7 +130,7 @@ def test_missing_tenant_raises_by_default() -> None:
             ) as mock_auth:
                 mock_auth.should_disable_auth_for_request.return_value = True
                 with pytest.raises(ApiError) as exc:
-                    resolve_request_tenant(db)
+                    resolve_request_tenant()
                 assert exc.value.error_code == "tenant_required"
 
 
@@ -141,7 +145,7 @@ def test_missing_tenant_defaults_when_allowed() -> None:
         _seed_tenants()
 
         with app.test_request_context("/test"):
-            resolve_request_tenant(db)
+            resolve_request_tenant()
             assert g.m8flow_tenant_id == "default"
 
 
@@ -167,7 +171,7 @@ def test_invalid_tenant_raises() -> None:
 
         with app.test_request_context("/test", headers={"Authorization": f"Bearer {token}"}):
             with pytest.raises(ApiError) as exc:
-                resolve_request_tenant(db)
+                resolve_request_tenant()
             assert exc.value.error_code == "invalid_tenant"
 
 
@@ -175,6 +179,7 @@ def test_tenant_validation_raises_503_when_db_not_bound() -> None:
     """When db session raises 'not registered with this SQLAlchemy instance', raise 503 instead of failing open."""
     from unittest.mock import MagicMock
 
+    from m8flow_backend.canonical_db import get_canonical_db, set_canonical_db
     from spiffworkflow_backend.models.user import UserModel
 
     app = _make_app()
@@ -200,11 +205,16 @@ def test_tenant_validation_raises_503_when_db_not_bound() -> None:
         mock_db.session.query.return_value.filter.return_value.one_or_none.side_effect = (
             runtime_error
         )
-        with app.test_request_context("/test", headers={"Authorization": f"Bearer {token}"}):
-            with pytest.raises(ApiError) as exc:
-                resolve_request_tenant(mock_db)
-            assert exc.value.error_code == "service_unavailable"
-            assert exc.value.status_code == 503
+        prev = get_canonical_db()
+        set_canonical_db(mock_db)
+        try:
+            with app.test_request_context("/test", headers={"Authorization": f"Bearer {token}"}):
+                with pytest.raises(ApiError) as exc:
+                    resolve_request_tenant()
+                assert exc.value.error_code == "service_unavailable"
+                assert exc.value.status_code == 503
+        finally:
+            set_canonical_db(prev)
 
 
 def test_tenant_override_forbidden() -> None:
@@ -230,7 +240,7 @@ def test_tenant_override_forbidden() -> None:
         with app.test_request_context("/test", headers={"Authorization": f"Bearer {token}"}):
             g.m8flow_tenant_id = "tenant-a"
             with pytest.raises(ApiError) as exc:
-                resolve_request_tenant(db)
+                resolve_request_tenant()
             assert exc.value.error_code == "tenant_override_forbidden"
 
 
@@ -250,14 +260,14 @@ def test_tenant_context_propagates_to_queries() -> None:
     # Exercise the real lifecycle (including teardown_request reset of ContextVar)
     @app.get("/add/<name>")
     def _add(name: str) -> str:
-        resolve_request_tenant(db)
+        resolve_request_tenant()
         db.session.add(TestItem(name=name))
         db.session.commit()
         return "ok"
 
     @app.get("/list")
     def _list() -> str:
-        resolve_request_tenant(db)
+        resolve_request_tenant()
         rows = TestItem.query.order_by(TestItem.name).all()
         return ",".join([r.name for r in rows])
 
