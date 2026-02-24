@@ -26,17 +26,6 @@ def apply_extension_patches() -> None:
         apply_decode_token_debug_patch()
     except ImportError:
         pass
-    try:
-        from extensions.user_service_patch import apply_create_user_tenant_scope_patch
-        apply_create_user_tenant_scope_patch()
-    except ImportError:
-        pass
-    # M8Flow: allow tenant-login-url (and other public endpoints) without authentication
-    try:
-        from extensions.authorization_service_patch import apply_auth_exclusion_patch
-        apply_auth_exclusion_patch()
-    except ImportError:
-        pass
     # M8Flow: create-realm/create-tenant accept Keycloak master realm token when no auth identifier set
     try:
         from extensions.authentication_controller_patch import apply_master_realm_auth_patch
@@ -47,7 +36,7 @@ def apply_extension_patches() -> None:
 
 def bootstrap() -> None:
     from m8flow_backend.services.authorization_service_patch import apply as apply_authorization_service_patch
-    from m8flow_backend.services.auth_controller_patch import apply as apply_auth_controller_patch
+    from m8flow_backend.services.authentication_controller_patch import apply as apply_auth_controller_patch
     from m8flow_backend.services.spiff_config_patch import apply as apply_spiff_config_patch
     from m8flow_backend.services.model_override_patch import apply as apply_model_override_patch
     from m8flow_backend.services.file_system_service_patch import apply as apply_file_system_service_patch

@@ -54,7 +54,7 @@ def resolve_request_tenant() -> None:
     db = get_canonical_db()
     if db is None:
         raise RuntimeError(
-            "Canonical db not set; ensure app has been initialized (extensions/app.py calls set_canonical_db)."
+            "Canonical db not set; ensure app has been initialized (set_canonical_db must be called during startup)."
         )
 
     if _is_public_request():

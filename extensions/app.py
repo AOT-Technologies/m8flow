@@ -90,11 +90,6 @@ try:
     apply_decode_token_debug_patch()
 except ImportError:
     pass
-try:
-    from extensions.user_service_patch import apply_create_user_tenant_scope_patch
-    apply_create_user_tenant_scope_patch()
-except ImportError:
-    pass
 apply_login_tenant_patch = None
 try:
     from extensions.login_tenant_patch import apply_login_tenant_patch
@@ -337,12 +332,6 @@ if os.path.isfile(_m8flow_permissions_yml):
     flask_app.config["SPIFFWORKFLOW_BACKEND_PERMISSIONS_FILE_ABSOLUTE_PATH"] = _abs
     logger.info("M8Flow: using permissions file %s", _abs)
 
-# M8Flow: allow tenant-login-url (and other public endpoints) without authentication
-try:
-    from extensions.authorization_service_patch import apply_auth_exclusion_patch
-    apply_auth_exclusion_patch()
-except ImportError:
-    pass
 # M8Flow: create-realm/create-tenant accept Keycloak master realm token when no auth identifier set
 try:
     from extensions.authentication_controller_patch import apply_master_realm_auth_patch
