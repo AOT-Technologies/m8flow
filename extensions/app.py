@@ -188,6 +188,10 @@ def _assert_model_identity() -> None:
 # Assert identity BEFORE create_app (fail fast on import/override ordering issues)
 _assert_model_identity()
 
+# Fixes M8F-93
+from m8flow_backend.services.user_service_patch import apply as apply_user_service_patch
+apply_user_service_patch()
+
 # Ensure m8flow models that use AuditDateTimeMixin participate in Spiff's
 # timestamp listeners (created_at_in_seconds / updated_at_in_seconds).
 ensure_m8flow_audit_timestamps()
@@ -309,6 +313,39 @@ def _m8flow_migration(app: Flask) -> None:
 
 _register_request_active_hooks(flask_app)
 _register_request_tenant_context_hooks(flask_app)
+
+
+def _register_template_file_fallback_routes(app: Flask) -> None:
+    """
+    Register explicit Flask routes for PUT/DELETE template file so they work even
+    if Connexion does not register them (e.g. when spec is passed as dict and
+    operationId resolution fails). Fixes 405 Method Not Allowed on Save.
+    """
+    from m8flow_backend.routes.templates_controller import (
+        template_put_file,
+        template_delete_file,
+    )
+
+    base_path = app.config.get("SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX", "/v1.0")
+    rule = f"{base_path}/m8flow/templates/<int:id>/files/<path:file_name>"
+
+    def put_view(id: int, file_name: str):
+        return template_put_file(id, file_name)
+
+    def delete_view(id: int, file_name: str):
+        return template_delete_file(id, file_name)
+
+    app.add_url_rule(rule, "m8flow_template_put_file", put_view, methods=["PUT"])
+    app.add_url_rule(rule, "m8flow_template_delete_file", delete_view, methods=["DELETE"])
+
+
+if flask_app is None:
+    raise RuntimeError("Could not access underlying Flask app from Connexion app")
+
+try:
+    _register_template_file_fallback_routes(flask_app)
+except Exception:
+    logger.warning("Failed to register template file fallback routes – may already exist", exc_info=True)
 
 # Assert again AFTER create_app (catches re-init/duplicate db/base during app creation)
 _assert_model_identity()

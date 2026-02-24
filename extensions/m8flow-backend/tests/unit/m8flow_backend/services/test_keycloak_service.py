@@ -177,31 +177,31 @@ def test_fill_realm_template_client_attributes() -> None:
     assert "/realms/tenant-i/account" in result["clients"][0]["attributes"]["post.logout.redirect.uris"]
 
 
-@patch("m8flow_backend.services.keycloak_service.get_master_admin_token")
+@patch("m8flow_backend.services.keycloak_service.keycloak_url")
 @patch("m8flow_backend.services.keycloak_service.requests.get")
-def test_realm_exists_true(mock_get, mock_token) -> None:
-    """realm_exists returns True when Keycloak returns 200."""
-    mock_token.return_value = "admin-token"
+def test_realm_exists_true(mock_get, mock_keycloak_url) -> None:
+    """realm_exists returns True when Keycloak returns 200 from public discovery endpoint."""
+    mock_keycloak_url.return_value = "http://localhost:7002"
     mock_get.return_value = MagicMock(status_code=200)
     assert realm_exists("tenant-a") is True
     mock_get.assert_called_once()
     call_url = mock_get.call_args[0][0]
-    assert "/admin/realms/tenant-a" in call_url
+    assert "/realms/tenant-a/.well-known/openid-configuration" in call_url
 
 
-@patch("m8flow_backend.services.keycloak_service.get_master_admin_token")
+@patch("m8flow_backend.services.keycloak_service.keycloak_url")
 @patch("m8flow_backend.services.keycloak_service.requests.get")
-def test_realm_exists_false_404(mock_get, mock_token) -> None:
+def test_realm_exists_false_404(mock_get, mock_keycloak_url) -> None:
     """realm_exists returns False when Keycloak returns 404."""
-    mock_token.return_value = "admin-token"
+    mock_keycloak_url.return_value = "http://localhost:7002"
     mock_get.return_value = MagicMock(status_code=404)
     assert realm_exists("missing-realm") is False
 
 
-@patch("m8flow_backend.services.keycloak_service.get_master_admin_token")
-def test_realm_exists_false_on_exception(mock_token) -> None:
+@patch("m8flow_backend.services.keycloak_service.keycloak_url")
+def test_realm_exists_false_on_exception(mock_keycloak_url) -> None:
     """realm_exists returns False when request raises."""
-    mock_token.side_effect = Exception("network error")
+    mock_keycloak_url.side_effect = Exception("network error")
     assert realm_exists("tenant-a") is False
 
 

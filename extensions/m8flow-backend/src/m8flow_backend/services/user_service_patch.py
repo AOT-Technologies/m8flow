@@ -15,7 +15,7 @@ _PATCHED = False
 logger = logging.getLogger(__name__)
 
 
-def _realm_from_service(service: str) -> str:
+def _realm_from_service(service: str | None) -> str:
     """Extract realm from Keycloak issuer URL, e.g. http://localhost:7002/realms/foo -> foo."""
     if not service:
         return "unknown"

@@ -1,4 +1,5 @@
 import {
+  Alert,
   Button,
   Dialog,
   DialogActions,
@@ -13,6 +14,7 @@ import {
 } from "@mui/material";
 import { useEffect, useState } from "react";
 import TemplateService from "../services/TemplateService";
+import { nameToTemplateKey } from "../utils/templateKey";
 import type { CreateTemplateMetadata, Template, TemplateVisibility } from "../types/template";
 
 const VISIBILITY_OPTIONS: { value: TemplateVisibility; label: string }[] = [
@@ -20,23 +22,30 @@ const VISIBILITY_OPTIONS: { value: TemplateVisibility; label: string }[] = [
   { value: "TENANT", label: "Tenant-wide (all users in your tenant)" },
 ];
 
+const SUPPORTED_EXT = [".bpmn", ".json", ".dmn", ".md"];
+
+export interface SaveAsTemplateFile {
+  name: string;
+  content: Blob;
+}
+
 export interface SaveAsTemplateModalProps {
   open: boolean;
   onClose: () => void;
   onSuccess?: (template?: Template) => void;
-  getBpmnXml: () => Promise<string>;
+  /** Return all files to save with the template (at least one must be .bpmn). */
+  getFiles: () => Promise<SaveAsTemplateFile[]>;
 }
 
 export default function SaveAsTemplateModal({
   open,
   onClose,
   onSuccess,
-  getBpmnXml,
+  getFiles,
 }: SaveAsTemplateModalProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [templateKey, setTemplateKey] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("");
@@ -45,7 +54,6 @@ export default function SaveAsTemplateModal({
 
   useEffect(() => {
     if (!open) {
-      setTemplateKey("");
       setName("");
       setDescription("");
       setCategory("");
@@ -56,28 +64,36 @@ export default function SaveAsTemplateModal({
   }, [open]);
 
   const handleSubmit = async () => {
-    const trimmedKey = templateKey.trim();
     const trimmedName = name.trim();
-    if (!trimmedKey) {
-      setError("Template key is required.");
-      return;
-    }
     if (!trimmedName) {
       setError("Name is required.");
+      return;
+    }
+    const template_key = nameToTemplateKey(trimmedName);
+    if (!template_key) {
+      setError("Name must contain at least one letter or number.");
       return;
     }
 
     setLoading(true);
     setError(null);
     try {
-      const bpmnXml = await getBpmnXml();
-      if (!bpmnXml || !bpmnXml.trim()) {
-        setError("Could not get diagram content. Please try again.");
+      const files = await getFiles();
+      if (!files?.length) {
+        setError("No files to save. Please try again.");
+        setLoading(false);
+        return;
+      }
+      const hasBpmn = files.some((f) =>
+        f.name.toLowerCase().endsWith(".bpmn")
+      );
+      if (!hasBpmn) {
+        setError("At least one BPMN file is required.");
         setLoading(false);
         return;
       }
       const metadata: CreateTemplateMetadata = {
-        template_key: trimmedKey,
+        template_key,
         name: trimmedName,
         visibility,
       };
@@ -86,7 +102,11 @@ export default function SaveAsTemplateModal({
       if (tags.trim()) {
         metadata.tags = tags.split(",").map((s) => s.trim()).filter(Boolean);
       }
-      const template = await TemplateService.createTemplate(bpmnXml, metadata);
+      const filesForApi = files.map((f) => ({ name: f.name, content: f.content }));
+      const template = await TemplateService.createTemplateWithFiles(
+        metadata,
+        filesForApi
+      );
       onClose();
       onSuccess?.(template);
     } catch (err: unknown) {
@@ -111,27 +131,8 @@ export default function SaveAsTemplateModal({
       <DialogContent>
         <Stack spacing={2.5} sx={{ pt: 1 }}>
           {error && (
-            <TextField
-              fullWidth
-              size="small"
-              value={error}
-              error
-              multiline
-              minRows={1}
-              InputProps={{ readOnly: true }}
-              sx={{ "& .MuiInputBase-input": { color: "error.main" } }}
-            />
+            <Alert severity="error" sx={{ mb: 1 }}>{error}</Alert>
           )}
-          <TextField
-            label="Template key"
-            fullWidth
-            required
-            placeholder="e.g. approval-workflow"
-            value={templateKey}
-            onChange={(e) => setTemplateKey(e.target.value)}
-            disabled={loading}
-            helperText="Unique identifier (letters, numbers, hyphens)"
-          />
           <TextField
             label="Name"
             fullWidth

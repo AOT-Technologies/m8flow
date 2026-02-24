@@ -127,9 +127,9 @@ export default function TemplateCard({
             )}
             {template.tags && template.tags.length > 0 && (
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
-                {template.tags.slice(0, 3).map((tag, index) => (
+                {template.tags.slice(0, 3).map((tag) => (
                   <Chip
-                    key={index}
+                    key={tag}
                     label={tag}
                     size="small"
                     variant="outlined"
