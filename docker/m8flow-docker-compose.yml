@@ -103,7 +103,7 @@ services:
       - minio
     entrypoint: ["/bin/sh", "/minio_mc_init.sh"]
     volumes:
-      - ../extensions/m8flow-backend/bin/minio_mc_init.sh:/minio_mc_init.sh:ro
+      - ./minio_mc_init.sh:/minio_mc_init.sh:ro
     restart: "no"
 
   process-models-sync:

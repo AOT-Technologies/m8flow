@@ -132,6 +132,16 @@ To stop containers and remove associated volumes (this deletes local database da
 docker compose -f docker/m8flow-docker-compose.yml down -v
 ```
 
+### Production MinIO
+
+For production, a dedicated MinIO compose file adds hardening (pinned image, restart policy, resource limits, env-based credentials). Set `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` in `.env` (no defaults in the file).
+
+- **Standalone** (MinIO only):  
+  `docker compose -f docker/minio.production.docker-compose.yml up -d`
+- **Override** (use production MinIO with the full stack):  
+  `docker compose -f docker/m8flow-docker-compose.yml -f docker/minio.production.docker-compose.yml up -d`
+- **With bucket init**: add `--profile init` to create `m8flow-process-models` and `m8flow-templates` buckets.
+
 ---
 
 ## Quick Start Summary

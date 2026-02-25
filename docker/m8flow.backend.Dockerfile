@@ -44,6 +44,7 @@ RUN apt-get update \
   && apt-get install -y -q \
     bash \
     ca-certificates \
+    git \
     libpq5 \
     gosu \
   && apt-get clean \

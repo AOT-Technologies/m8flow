@@ -36,7 +36,7 @@ This directory contains the Docker setup for running M8Flow: Compose files, Dock
 
 | Service | Image | Purpose | Configuration |
 |---------|-------|---------|----------------|
-| **minio-mc-init** | minio/mc | One-off: create MinIO buckets (via `minio_mc_init.sh`). | Mounts script from `extensions/m8flow-backend/bin/`. |
+| **minio-mc-init** | minio/mc | One-off: create MinIO buckets (via `minio_mc_init.sh`). | Mounts script from `docker/minio_mc_init.sh`. |
 | **process-models-sync** | rclone/rclone | One-off: sync process models into MinIO (uses `process_models_sync.sh`, `rclone.conf`). | Uses volume `process_models_cache`. |
 | **templates-sync** | rclone/rclone | One-off: sync templates into MinIO (uses `templates_sync.sh`, `rclone.conf`). | Uses volume `templates_cache`. |
 
