@@ -111,6 +111,19 @@ services:
       - ../extensions/m8flow-backend/bin/smtp_attachments_sync.sh:/smtp_attachments_sync.sh:ro
     restart: "no"
 
+  slack-attachments-sync:
+    profiles: ["init"]
+    image: alpine:3.20
+    entrypoint:
+      - /bin/sh
+      - /slack_attachments_sync.sh
+      - ${M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_USER_ACCESS_DIR:-/slack_attachments}
+    volumes:
+      - slack_attachments:${M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_USER_ACCESS_DIR:-/slack_attachments}
+      - ${M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_DIR:-../slack_attachments}:/host_attachments:ro
+      - ../extensions/m8flow-backend/bin/slack_attachments_sync.sh:/slack_attachments_sync.sh:ro
+    restart: "no"
+
   # -------------------------
   # APP SERVICES
   # -------------------------
@@ -155,6 +168,10 @@ services:
         source: "smtp_attachments"
         target: "${M8FLOW_CONNECTOR_SMTP_ATTACHMENTS_USER_ACCESS_DIR:-/email_attachments}"
         read_only: true
+      - type: volume
+        source: "slack_attachments"
+        target: "${M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_USER_ACCESS_DIR:-/slack_attachments}"
+        read_only: true
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:${CONNECTOR_PROXY_PORT:-8004}/liveness || exit 1"]
       interval: 10s
@@ -175,4 +192,6 @@ volumes:
   minio_data:
     driver: local
   smtp_attachments:
+    driver: local
+  slack_attachments:
     driver: local

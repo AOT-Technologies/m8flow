@@ -16,7 +16,7 @@ spiffworkflow-proxy = {git = "https://github.com/sartography/spiffworkflow-proxy
 # m8flow-connector-http = { git = "https://github.com/AOT-Technologies/m8flow-connectors.git", subdirectory = "connectors/m8flow-connector-http", branch = "main" }
 m8flow-connector-smtp = { git = "https://github.com/AOT-Technologies/m8flow-connectors.git", subdirectory = "connectors/m8flow-connector-smtp", branch = "main" }
 connector-postgres-v2 = {git = "https://github.com/sartography/connector-postgres.git"}
-
+connector-slack = { git = "https://github.com/AOT-Technologies/m8flow-connectors.git", subdirectory = "connectors/connector-slack", branch = "main" }
 # dependencies for connector
 psycopg2-binary = "^2.9.9"
 
