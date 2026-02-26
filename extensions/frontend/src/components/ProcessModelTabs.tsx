@@ -17,7 +17,6 @@ import ProcessInstanceListTable from './ProcessInstanceListTable';
 import ProcessModelFileList from './ProcessModelFileList';
 import { ProcessFile } from '../interfaces';
 import ProcessModelReadmeArea from './ProcessModelReadmeArea';
-import UserService from '../services/UserService';
 
 interface ProcessModelTabsProps {
   processModel: any;
@@ -67,7 +66,6 @@ export default function ProcessModelTabs({
 }: ProcessModelTabsProps) {
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const isViewer = UserService.isViewer();
 
   if (!processModel) {
     return null;
@@ -143,7 +141,7 @@ export default function ProcessModelTabs({
       >
         <Tab value={0} label={t("about")} />
         <Tab value={1} label={t("files")} data-testid="process-model-files" />
-        {!isViewer && (
+        {ability.can("POST", targetUris.processInstanceListForMePath) && (
           <Tab
             value={2}
             label={t("my_process_instances")}
@@ -190,27 +188,28 @@ export default function ProcessModelTabs({
           </Grid>
         </Grid>
       </TabPanel>
-      {!isViewer && selectedTabIndex === 2 && (
-        <TabPanel value={selectedTabIndex} index={2}>
-          <Can
-            I="POST"
-            a={targetUris.processInstanceListForMePath}
-            ability={ability}
-          >
-            <ProcessInstanceListTable
-              additionalReportFilters={[
-                {
-                  field_name: "process_model_identifier",
-                  field_value: processModel.id,
-                },
-              ]}
-              perPageOptions={[2, 5, 25]}
-              showLinkToReport
-              variant="for-me"
-            />
-          </Can>
-        </TabPanel>
-      )}
+      {ability.can("POST", targetUris.processInstanceListForMePath) &&
+        selectedTabIndex === 2 && (
+          <TabPanel value={selectedTabIndex} index={2}>
+            <Can
+              I="POST"
+              a={targetUris.processInstanceListForMePath}
+              ability={ability}
+            >
+              <ProcessInstanceListTable
+                additionalReportFilters={[
+                  {
+                    field_name: "process_model_identifier",
+                    field_value: processModel.id,
+                  },
+                ]}
+                perPageOptions={[2, 5, 25]}
+                showLinkToReport
+                variant="for-me"
+              />
+            </Can>
+          </TabPanel>
+        )}
     </>
   );
 }

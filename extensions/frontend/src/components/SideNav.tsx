@@ -95,12 +95,16 @@ function SideNav({
 
   const { targetUris } = useUriListForPermissions();
   const permissionRequestData: PermissionsToCheck = {
-    [targetUris.authenticationListPath]: ['GET'],
-    [targetUris.dataStoreListPath]: ['GET'],
-    [targetUris.messageInstanceListPath]: ['GET'],
-    [targetUris.processGroupListPath]: ['GET'],
-    [targetUris.processInstanceListForMePath]: ['POST'],
-    [targetUris.secretListPath]: ['GET'],
+    [targetUris.authenticationListPath]: ["GET"],
+    [targetUris.dataStoreListPath]: ["GET"],
+    [targetUris.messageInstanceListPath]: ["GET"],
+    [targetUris.processGroupListPath]: ["GET"],
+    [targetUris.processInstanceListPath]: ["GET"],
+    [targetUris.processInstanceListForMePath]: ["POST"],
+    [targetUris.secretListPath]: ["GET"],
+    "/tasks/*": ["GET"],
+    "/m8flow/tenants": ["GET"],
+    "/m8flow/templates": ["GET"],
   };
   const { ability, permissionsLoaded } = usePermissionFetcher(
     permissionRequestData,
@@ -195,6 +199,7 @@ function SideNav({
       icon: <Home />,
       route: '/',
       id: routeIdentifiers.HOME,
+      permissionRoutes: ["/tasks/*"],
     },
     {
       text: t('processes'),
@@ -208,7 +213,7 @@ function SideNav({
       icon: <Timeline />,
       route: '/process-instances',
       id: routeIdentifiers.PROCESS_INSTANCES,
-      permissionRoutes: [targetUris.processInstanceListForMePath],
+      permissionRoutes: [targetUris.processInstanceListPath],
     },
     {
       text: t('data_stores'),
@@ -239,6 +244,7 @@ function SideNav({
       icon: <Description />,
       route: '/templates',
       id: routeIdentifiers.TEMPLATES,
+      permissionRoutes: ["/m8flow/templates"],
     },
   ];
 
@@ -265,28 +271,7 @@ function SideNav({
     extensionUxElements,
   });
 
-  const isSuperAdmin = UserService.isSuperAdmin();
-  const isIntegrator = UserService.isIntegrator();
-  const isReviewer = UserService.isReviewer();
-
-  const roleHiddenRoutes = new Set<string>();
-  if (!isSuperAdmin) {
-    roleHiddenRoutes.add("Tenants");
-    if (isIntegrator) {
-      roleHiddenRoutes.add("Templates");
-      roleHiddenRoutes.add("/");
-    }
-    if (isReviewer) {
-      roleHiddenRoutes.add("Templates");
-    }
-  }
-
-  const visibleNavItems = isSuperAdmin
-    ? navItems.filter((item) => item.text === "Tenants")
-    : navItems.filter(
-        (item) =>
-          !roleHiddenRoutes.has(item.text) && !roleHiddenRoutes.has(item.route),
-      );
+  const visibleNavItems = navItems;
 
   // 45 * number of nav items like "HOME" and "PROCESS INSTANCES" plus 140
   const pixelsToRemoveFromAdditionalElement = 45 * visibleNavItems.length + 140;

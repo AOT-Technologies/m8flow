@@ -10,7 +10,7 @@ import { sortFilesWithPrimaryFirst } from "../utils/templateHelpers";
 import SaveAsTemplateModal from "../components/SaveAsTemplateModal";
 import type { SaveAsTemplateFile } from "../components/SaveAsTemplateModal";
 import type { ProcessModelTemplateInfo } from "../types/template";
-import UserService from "../services/UserService";
+import { usePermissionFetcher } from "@spiffworkflow-frontend/hooks/PermissionService";
 
 const SUPPORTED_EXT = [".bpmn", ".json", ".dmn", ".md"];
 
@@ -29,7 +29,9 @@ export default function ProcessModelShowWithSaveAsTemplate() {
   const [saveAsTemplateOpen, setSaveAsTemplateOpen] = useState(false);
   const [templateInfo, setTemplateInfo] = useState<ProcessModelTemplateInfo | null>(null);
   const [templateInfoLoading, setTemplateInfoLoading] = useState(false);
-  const isViewer = UserService.isViewer();
+  const { ability, permissionsLoaded } = usePermissionFetcher({
+    "/m8flow/templates": ["POST"],
+  });
 
   const modifiedProcessModelId = params.process_model_id
     ? modifyProcessIdentifierForPathParam(params.process_model_id)
@@ -122,10 +124,12 @@ export default function ProcessModelShowWithSaveAsTemplate() {
     });
   };
 
+  if (!permissionsLoaded) return null;
+
   return (
     <Box sx={{ position: "relative", padding: "16px" }}>
       <ProcessModelShow />
-      {!isViewer && (
+      {ability.can("POST", "/m8flow/templates") && (
         <Box sx={{ position: "absolute", top: 16, right: 16, zIndex: 10 }}>
           <Button
             variant="contained"

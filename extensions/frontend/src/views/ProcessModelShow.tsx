@@ -39,7 +39,6 @@ import ProcessModelFileUploadModal from '../components/ProcessModelFileUploadMod
 import ProcessModelCopyModal from '../components/ProcessModelCopyModal';
 import SpiffTooltip from '../components/SpiffTooltip';
 import { useConfirmationDialog } from '../hooks/useConfirmationDialog';
-import UserService from "../services/UserService";
 
 
 export default function ProcessModelShow() {
@@ -59,7 +58,6 @@ export default function ProcessModelShow() {
   const [readmeFile, setReadmeFile] = useState<ProcessFile | null>(null);
   const [actionsMenuAnchor, setActionsMenuAnchor] =
     useState<null | HTMLElement>(null);
-  const isViewer = UserService.isViewer();
 
   // Functions that need to be available before hook declarations
   const navigateToProcessModels = (_result: any) => {
@@ -320,16 +318,18 @@ export default function ProcessModelShow() {
           </Typography>
 
           {/* More Actions Menu */}
-          {/* If user is not a viewer, show the more actions menu */}
-          {!isViewer && (
-          <SpiffTooltip title={t('more_actions')} placement="top">
-            <IconButton
-              data-testid="more-actions-button"
-              onClick={handleActionsMenuOpen}
-            >
-              <MoreVert />
-            </IconButton>
-          </SpiffTooltip>
+          {/* If user can edit, delete, or publish, show the more actions menu */}
+          {(ability.can("PUT", targetUris.processModelShowPath) ||
+            ability.can("DELETE", targetUris.processModelShowPath) ||
+            ability.can("POST", targetUris.processModelPublishPath)) && (
+            <SpiffTooltip title={t("more_actions")} placement="top">
+              <IconButton
+                data-testid="more-actions-button"
+                onClick={handleActionsMenuOpen}
+              >
+                <MoreVert />
+              </IconButton>
+            </SpiffTooltip>
           )}
 
           <Menu
