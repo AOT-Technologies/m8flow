@@ -6,7 +6,6 @@ import ConfirmButton from '@spiffworkflow-frontend/components/ConfirmButton';
 import ProcessInstanceRun from '@spiffworkflow-frontend/components/ProcessInstanceRun';
 import { ProcessModel } from '@spiffworkflow-frontend/interfaces';
 import type { Ability } from '@casl/ability';
-import UserService from "../services/UserService";
 
 export type DiagramEditorToolbarProps = {
   diagramType: string;
@@ -50,7 +49,6 @@ export default function DiagramEditorToolbar({
   onSetPrimaryFileAvailable,
 }: DiagramEditorToolbarProps) {
   const { t } = useTranslation();
-  const isViewer = UserService.isViewer();
 
   if (diagramType === 'readonly') {
     return null;
@@ -102,16 +100,13 @@ export default function DiagramEditorToolbar({
           {t('diagram_download')}
         </Button>
       </Can>
-      <Can
-        I="GET"
-        a={targetUris.processModelFileShowPath}
-        ability={ability}
-      >
-        {!isViewer && canViewXml && (
-          <Button variant="contained" onClick={onViewXml}>
-            {t('diagram_view_xml')}
-          </Button>
-        )}
+      <Can I="GET" a={targetUris.processModelFileShowPath} ability={ability}>
+        {ability.can("PUT", targetUris.processModelFileShowPath) &&
+          canViewXml && (
+            <Button variant="contained" onClick={onViewXml}>
+              {t("diagram_view_xml")}
+            </Button>
+          )}
       </Can>
       {/* Save as Template moved to Process Model page (not in diagram editor) */}
       {referencesButton}

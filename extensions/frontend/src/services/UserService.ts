@@ -213,48 +213,7 @@ const setTenantId = (tenantId: string | null): void => {
   }
 };
 
-/**
- * Returns the role/group names for the current user from the access token JWT.
- * Checks groups[] (primary in this Keycloak setup).
- */
-const getUserRoles = (): string[] => {
-  const token = getAccessToken();
-  if (!token) return [];
-
-  try {
-    const decoded = jwtDecode(token) as Record<string, unknown>;
-    if (Array.isArray(decoded.groups) && decoded.groups.length > 0) {
-      return (decoded.groups as string[]).map((g) => g.replace(/^\//, '')); // fallback: removing leading slash or prefix
-    }
-  } catch (error) {
-    console.error('Error decoding access token for roles:', error);
-  }
-  return [];
-};
-
-const isSuperAdmin = (): boolean => {
-  return getUserRoles().includes('super-admin');
-};
-
-const isIntegrator = (): boolean => {
-  const roles = getUserRoles();
-  return !roles.includes('super-admin') && roles.includes('integrator') &&
-    !roles.some((r) => ['tenant-admin', 'editor', 'viewer'].includes(r));
-};
-
-const isReviewer = (): boolean => {
-  const roles = getUserRoles();
-  return !roles.includes('super-admin') && roles.includes('reviewer') &&
-    !roles.some((r) => ['tenant-admin', 'editor', 'viewer', 'integrator'].includes(r));
-};
-
-const isViewer = (): boolean => {
-  const roles = getUserRoles();
-  return !roles.includes('super-admin') && roles.includes('viewer') &&
-    !roles.some((r) => ['tenant-admin', 'editor'].includes(r));
-};
-
-const  UserService = {
+const UserService = {
   authenticationDisabled,
   doLogin,
   doLogout,
@@ -269,11 +228,6 @@ const  UserService = {
   isPublicUser,
   redirectToLogin,
   setTenantId,
-  getUserRoles,
-  isSuperAdmin,
-  isIntegrator,
-  isReviewer,
-  isViewer,
 };
 
 export default UserService;

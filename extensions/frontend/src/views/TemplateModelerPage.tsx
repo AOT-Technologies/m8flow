@@ -23,7 +23,7 @@ import CreateProcessModelFromTemplateModal from '../components/CreateProcessMode
 import { Template } from '../types/template';
 import { normalizeTemplate } from '../utils/templateHelpers';
 import './TemplateModelerPage.css';
-import UserService from "../services/UserService";
+import { usePermissionFetcher } from '@spiffworkflow-frontend/hooks/PermissionService';
 
 function TemplateDetailsCard({
   template,
@@ -36,7 +36,15 @@ function TemplateDetailsCard({
   onPublish: () => void;
   onCreateProcessModel: () => void;
 }) {
-  const isViewer = UserService.isViewer();
+  const { ability, permissionsLoaded } = usePermissionFetcher({
+    "/m8flow/templates": ["POST", "PUT"],
+  });
+
+  const canCreate = ability.can("POST", "/m8flow/templates");
+  const canPublish = ability.can("PUT", "/m8flow/templates");
+
+  if (!permissionsLoaded) return null;
+
   return (
     <Paper
       elevation={0}
@@ -71,19 +79,21 @@ function TemplateDetailsCard({
         <Typography variant="caption" color="text.secondary">
           Updated: {DateAndTimeService.convertSecondsToFormattedDateTime(template.updatedAtInSeconds) ?? '—'}
         </Typography>
-        {!isViewer && (<Button
-          size="small"
-          variant="contained"
-          color="success"
-          startIcon={<AddIcon />}
-          onClick={onCreateProcessModel}
-        >
-          Create Process Model
-        </Button>)}
+        {canCreate && (
+          <Button
+            size="small"
+            variant="contained"
+            color="success"
+            startIcon={<AddIcon />}
+            onClick={onCreateProcessModel}
+          >
+            Create Process Model
+          </Button>
+        )}
         <Button size="small" variant="contained" onClick={onExport}>
           Export template
         </Button>
-        {!isViewer && !template.isPublished && (
+        {canPublish && !template.isPublished && (
           <Button
             size="small"
             variant="contained"

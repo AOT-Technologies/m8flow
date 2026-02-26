@@ -1,7 +1,8 @@
 import React from "react";
 import { Box, Tabs, Tab } from "@mui/material";
 import { useTranslation } from "react-i18next";
-import UserService from "../services/UserService";
+import { useUriListForPermissions } from "@spiffworkflow-frontend/hooks/UriListForPermissions";
+import { usePermissionFetcher } from "@spiffworkflow-frontend/hooks/PermissionService";
 
 type HeaderTabsProps = {
   value: number;
@@ -15,9 +16,12 @@ export default function HeaderTabs({
   taskControlElement,
 }: HeaderTabsProps) {
   const { t } = useTranslation();
+  const { targetUris } = useUriListForPermissions();
+  const { ability, permissionsLoaded } = usePermissionFetcher({
+    [targetUris.processInstanceListForMePath]: ["POST"],
+  });
 
-  const isReviewer = UserService.isReviewer();
-  const isViewer = UserService.isViewer();
+  if (!permissionsLoaded) return null;
 
   return (
     <Box
@@ -40,8 +44,8 @@ export default function HeaderTabs({
         sx={{ flexGrow: 1 }} // Make the Tabs container flexible
       >
         <Tab label={t("tasks_assigned_to_me")} sx={{ textTransform: "none" }} />
-        {/* Hide Workflows created by me for pure reviewer or viewer roles */}
-        {!isReviewer && !isViewer && (
+        {/* Hide Workflows created by me if user cannot start process instances for me */}
+        {ability.can("POST", targetUris.processInstanceListForMePath) && (
           <Tab
             label={t("workflows_created_by_me")}
             sx={{ textTransform: "none" }}

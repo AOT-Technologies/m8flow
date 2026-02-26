@@ -58,10 +58,14 @@ function MultitenantRootGate({
   extensionUxElements,
   setAdditionalNavElement,
   isMobile,
+  ability,
+  targetUris,
 }: {
   extensionUxElements: UiSchemaUxElement[] | null;
   setAdditionalNavElement: (el: ReactElement | null) => void;
   isMobile: boolean;
+  ability: any;
+  targetUris: any;
 }) {
   const storedTenant = typeof window !== 'undefined' ? localStorage.getItem(M8FLOW_TENANT_STORAGE_KEY) : null;
   if (storedTenant) {
@@ -70,6 +74,8 @@ function MultitenantRootGate({
         extensionUxElements={extensionUxElements}
         setAdditionalNavElement={setAdditionalNavElement}
         isMobile={isMobile}
+        ability={ability}
+        targetUris={targetUris}
       />
     );
   }
@@ -81,20 +87,69 @@ function RoleBasedRootGate({
   extensionUxElements,
   setAdditionalNavElement,
   isMobile,
+  ability,
+  targetUris,
 }: {
   extensionUxElements: UiSchemaUxElement[] | null;
   setAdditionalNavElement: (el: ReactElement | null) => void;
   isMobile: boolean;
+  ability: any;
+  targetUris: any;
 }) {
-  const isSuperAdmin = UserService.isSuperAdmin();
-  const isIntegrator = UserService.isIntegrator();
-
-  if (isSuperAdmin) {
+  // Super-admin: always go to tenant management
+  if (ability.can("GET", "/m8flow/tenants")) {
     return <Navigate to="/tenants" replace />;
   }
-  if (isIntegrator) {
-    return <Navigate to="/configuration" replace />;
+
+  // User has Home access (anyone with task access: reviewer, viewer, editor, tenant-admin)
+  if (ability.can("GET", "/tasks/*") || ability.can("GET", targetUris.processInstanceListForMePath)) {
+    return (
+      <BaseRoutes
+        extensionUxElements={extensionUxElements}
+        setAdditionalNavElement={setAdditionalNavElement}
+        isMobile={isMobile}
+      />
+    );
   }
+
+  // No Home access: find the first available nav route in sidebar order
+  const fallbackRoutes: Array<{ route: string; method: string; uri: string }> =
+    [
+      {
+        route: "/process-groups",
+        method: "GET",
+        uri: targetUris.processGroupListPath,
+      },
+      {
+        route: "/process-instances",
+        method: "GET",
+        uri: targetUris.processInstanceListPath,
+      },
+      {
+        route: "/data-stores",
+        method: "GET",
+        uri: targetUris.dataStoreListPath,
+      },
+      {
+        route: "/messages",
+        method: "GET",
+        uri: targetUris.messageInstanceListPath,
+      },
+      {
+        route: "/configuration",
+        method: "GET",
+        uri: targetUris.secretListPath,
+      },
+      { route: "/templates", method: "GET", uri: "/m8flow/templates" },
+    ];
+  const firstAvailable = fallbackRoutes.find(({ method, uri }) =>
+    ability.can(method, uri),
+  );
+  if (firstAvailable) {
+    return <Navigate to={firstAvailable.route} replace />;
+  }
+
+  // No accessible routes at all — show BaseRoutes and let it handle access denied
   return (
     <BaseRoutes
       extensionUxElements={extensionUxElements}
@@ -132,7 +187,14 @@ export default function ContainerForExtensions() {
 
   const { targetUris } = useUriListForPermissions();
   const permissionRequestData: PermissionsToCheck = {
-    [targetUris.extensionListPath]: ['GET'],
+    [targetUris.extensionListPath]: ["GET"],
+    [targetUris.processInstanceListForMePath]: ["POST"],
+    [targetUris.processGroupListPath]: ["GET"],
+    [targetUris.dataStoreListPath]: ["GET"],
+    [targetUris.messageInstanceListPath]: ["GET"],
+    [targetUris.secretListPath]: ["GET"],
+    "/m8flow/tenants": ["GET"],
+    "/m8flow/templates": ["GET"],
   };
   const { ability, permissionsLoaded } = usePermissionFetcher(
     permissionRequestData,
@@ -332,6 +394,8 @@ export default function ContainerForExtensions() {
                   extensionUxElements={extensionUxElements}
                   setAdditionalNavElement={setAdditionalNavElement}
                   isMobile={isMobile}
+                  ability={ability}
+                  targetUris={targetUris}
                 />
               }
             />
@@ -348,6 +412,8 @@ export default function ContainerForExtensions() {
                   extensionUxElements={extensionUxElements}
                   setAdditionalNavElement={setAdditionalNavElement}
                   isMobile={isMobile}
+                  ability={ability}
+                  targetUris={targetUris}
                 />
               }
             />
@@ -476,12 +542,16 @@ export default function ContainerForExtensions() {
                   setAdditionalNavElement={setAdditionalNavElement}
                   extensionUxElements={[
                     ...(extensionUxElements || []),
-                    {
-                      page: "/../tenants",
-                      label: "Tenants",
-                      display_location:
-                        UiSchemaDisplayLocation.primary_nav_item,
-                    } as UiSchemaUxElement,
+                    ...(ability?.can("GET", "/m8flow/tenants")
+                      ? [
+                          {
+                            page: "/../tenants",
+                            label: "Tenants",
+                            display_location:
+                              UiSchemaDisplayLocation.primary_nav_item,
+                          } as UiSchemaUxElement,
+                        ]
+                      : []),
                   ]}
                 />
               )}
