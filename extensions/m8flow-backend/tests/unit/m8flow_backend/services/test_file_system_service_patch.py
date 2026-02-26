@@ -27,7 +27,7 @@ def test_get_tenant_id_defaults_without_request_context_in_dev_mode(monkeypatch)
 
 def test_get_tenant_id_raises_when_request_tenant_empty_in_strict_mode(monkeypatch) -> None:
     monkeypatch.delenv("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", raising=False)
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     with app.test_request_context("/"):
         g.m8flow_tenant_id = ""
         with pytest.raises(RuntimeError, match="Missing tenant id in request context"):
@@ -36,7 +36,7 @@ def test_get_tenant_id_raises_when_request_tenant_empty_in_strict_mode(monkeypat
 
 def test_get_tenant_id_defaults_when_request_tenant_empty_in_dev_mode(monkeypatch) -> None:
     monkeypatch.setenv("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", "1")
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     with app.test_request_context("/"):
         g.m8flow_tenant_id = ""
         assert patch._get_tenant_id() == DEFAULT_TENANT_ID
@@ -50,7 +50,7 @@ def test_apply_scopes_root_path_for_request_tenant(monkeypatch, tmp_path) -> Non
 
     monkeypatch.delenv("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", raising=False)
 
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     base_dir = tmp_path / "process_models"
     app.config["SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR"] = str(base_dir)
     print("config BPMN dir:", app.config.get("SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR"))
@@ -74,7 +74,7 @@ def test_apply_scopes_root_path_for_request_tenant(monkeypatch, tmp_path) -> Non
 @pytest.mark.parametrize("bad_tid", ["../evil", "tenant/evil", r"tenant\evil", "tenant..a"])
 def test_tenant_bpmn_root_rejects_unsafe_tenant_id(monkeypatch, bad_tid) -> None:
     monkeypatch.delenv("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", raising=False)
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     with app.test_request_context("/"):
         g.m8flow_tenant_id = bad_tid
         with pytest.raises(RuntimeError, match="Unsafe tenant id"):

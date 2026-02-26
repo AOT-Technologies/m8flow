@@ -28,8 +28,21 @@ def check_tenant_exists(identifier: str):
     return success_response(result, 200)
 
 
+def _require_authenticated_user():
+    """Check if user is authenticated and return user, or raise ApiError."""
+    user = getattr(g, 'user', None)
+    if not user:
+        raise ApiError(
+            error_code="not_authenticated",
+            message="User not authenticated",
+            status_code=401
+        )
+    return user
+
+
 @handle_api_errors
 def create_tenant(body):
+    user = _require_authenticated_user()
     body = body or {}
 
     tenant_id = body.get('id', str(uuid.uuid4()))
@@ -42,7 +55,7 @@ def create_tenant(body):
         name=name,
         slug=slug,
         status_str=status_str,
-        user_id=g.user.username
+        user_id=user.username
     )
     
     return success_response(_serialize_tenant(tenant), 201)
@@ -71,7 +84,8 @@ def get_all_tenants():
 @handle_api_errors
 def delete_tenant(tenant_id):
     """Soft delete a tenant by setting status to DELETED."""
-    tenant = TenantService.delete_tenant(tenant_id, g.user.username)
+    user = _require_authenticated_user()
+    tenant = TenantService.delete_tenant(tenant_id, user.username)
     
     return success_response({
         "message": f"Tenant '{tenant.name}' has been successfully deleted."
@@ -80,6 +94,7 @@ def delete_tenant(tenant_id):
 @handle_api_errors
 def update_tenant(tenant_id, body):
     """Update tenant name and status. Slug cannot be updated."""
+    user = _require_authenticated_user()
     body = body or {}
 
     if 'slug' in body: 
@@ -93,7 +108,7 @@ def update_tenant(tenant_id, body):
         tenant_id=tenant_id,
         name=body.get('name'),
         status_str=body.get('status'),
-        user_id=g.user.username
+        user_id=user.username
     )
     
     return success_response({

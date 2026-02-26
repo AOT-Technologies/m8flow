@@ -13,6 +13,7 @@ _OVERRIDES = {
     "spiffworkflow_backend.models.bpmn_process": "m8flow_backend.models.bpmn_process",
     "spiffworkflow_backend.models.bpmn_process_definition": "m8flow_backend.models.bpmn_process_definition",
     "spiffworkflow_backend.models.bpmn_process_definition_relationship": "m8flow_backend.models.bpmn_process_definition_relationship",
+    "spiffworkflow_backend.models.configuration": "m8flow_backend.models.configuration",
     "spiffworkflow_backend.models.future_task": "m8flow_backend.models.future_task",
     "spiffworkflow_backend.models.human_task": "m8flow_backend.models.human_task",
     "spiffworkflow_backend.models.human_task_user": "m8flow_backend.models.human_task_user",
@@ -34,13 +35,16 @@ _OVERRIDES = {
     "spiffworkflow_backend.models.process_instance_queue": "m8flow_backend.models.process_instance_queue",
     "spiffworkflow_backend.models.process_instance_report": "m8flow_backend.models.process_instance_report",
     "spiffworkflow_backend.models.process_model_cycle": "m8flow_backend.models.process_model_cycle",
+    "spiffworkflow_backend.models.pkce_code_verifier": "m8flow_backend.models.pkce_code_verifier",
     "spiffworkflow_backend.models.reference_cache": "m8flow_backend.models.reference_cache",
+    "spiffworkflow_backend.models.refresh_token": "m8flow_backend.models.refresh_token",
     "spiffworkflow_backend.models.secret_model": "m8flow_backend.models.secret_model",
     "spiffworkflow_backend.models.service_account": "m8flow_backend.models.service_account",
     "spiffworkflow_backend.models.task": "m8flow_backend.models.task",
     "spiffworkflow_backend.models.task_definition": "m8flow_backend.models.task_definition",
     "spiffworkflow_backend.models.task_draft_data": "m8flow_backend.models.task_draft_data",
     "spiffworkflow_backend.models.task_instructions_for_end_user": "m8flow_backend.models.task_instructions_for_end_user",
+    "spiffworkflow_backend.models.typeahead": "m8flow_backend.models.typeahead",
 }
 
 _PATCHED = False

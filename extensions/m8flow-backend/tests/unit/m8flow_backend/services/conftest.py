@@ -40,6 +40,6 @@ def _isolate_tenant_scoping_patch():
 
 @pytest.fixture()
 def app() -> Flask:
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["TESTING"] = True
     return app

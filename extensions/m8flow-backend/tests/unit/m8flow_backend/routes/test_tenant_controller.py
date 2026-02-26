@@ -38,7 +38,7 @@ from spiffworkflow_backend.exceptions.api_error import ApiError  # noqa: E402
 @pytest.fixture
 def app():
     """Create Flask app with in-memory database for testing."""
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
@@ -60,18 +60,10 @@ def mock_admin_user():
     return user
 
 
-@pytest.fixture
-def mock_auth_service():
-    """Mock AuthorizationService to always grant permission."""
-    with patch("m8flow_backend.routes.tenant_controller.AuthorizationService") as mock_auth:
-        mock_auth.user_has_permission.return_value = True
-        yield mock_auth
-
-
 class TestTenantController:
     """Test suite for tenant controller routes."""
 
-    def test_create_tenant_success(self, app, mock_admin_user, mock_auth_service):
+    def test_create_tenant_success(self, app, mock_admin_user):
         """Test successful tenant creation."""
         with app.app_context():
             with app.test_request_context("/"):
@@ -93,7 +85,7 @@ class TestTenantController:
                 assert tenant.name == "Test Tenant"
                 assert tenant.status == TenantStatus.ACTIVE
 
-    def test_create_tenant_without_name_fails(self, app, mock_admin_user, mock_auth_service):
+    def test_create_tenant_without_name_fails(self, app, mock_admin_user):
         """Test that creating tenant without name raises error."""
         with app.app_context():
             with app.test_request_context("/"):
@@ -107,7 +99,7 @@ class TestTenantController:
                 assert response.status_code == 400
                 assert response.get_json()["error_code"] == "missing_name"
 
-    def test_create_tenant_without_slug_fails(self, app, mock_admin_user, mock_auth_service):
+    def test_create_tenant_without_slug_fails(self, app, mock_admin_user):
         """Test that creating tenant without slug raises error."""
         with app.app_context():
             with app.test_request_context("/"):
@@ -121,7 +113,7 @@ class TestTenantController:
                 assert response.status_code == 400
                 assert response.get_json()["error_code"] == "missing_slug"
 
-    def test_create_tenant_duplicate_slug_fails(self, app, mock_admin_user, mock_auth_service):
+    def test_create_tenant_duplicate_slug_fails(self, app, mock_admin_user):
         """Test that creating tenant with duplicate slug raises error."""
         with app.app_context():
             with app.test_request_context("/"):
@@ -149,7 +141,7 @@ class TestTenantController:
                 assert response.status_code == 409
                 assert response.get_json()["error_code"] == "tenant_slug_exists"
 
-    def test_create_tenant_generates_id_if_not_provided(self, app, mock_admin_user, mock_auth_service):
+    def test_create_tenant_generates_id_if_not_provided(self, app, mock_admin_user):
         """Test that tenant ID is auto-generated if not provided."""
         with app.app_context():
             with app.test_request_context("/"):
@@ -169,7 +161,7 @@ class TestTenantController:
                 assert tenant.id is not None
                 assert len(tenant.id) > 0
 
-    def test_get_tenant_by_id_success(self, app, mock_admin_user, mock_auth_service):
+    def test_get_tenant_by_id_success(self, app, mock_admin_user):
         """Test successfully retrieving tenant by ID."""
         with app.app_context():
             with app.test_request_context("/"):
@@ -191,7 +183,7 @@ class TestTenantController:
                 response = tenant_controller.get_tenant_by_id("get-tenant-1")
                 assert response.status_code == 200
 
-    def test_get_tenant_by_id_not_found(self, app, mock_admin_user, mock_auth_service):
+    def test_get_tenant_by_id_not_found(self, app, mock_admin_user):
         """Test getting non-existent tenant by ID raises error."""
         with app.app_context():
             with app.test_request_context("/"):
@@ -201,7 +193,7 @@ class TestTenantController:
                 assert response.status_code == 404
                 assert response.get_json()["error_code"] == "tenant_not_found"
 
-    def test_get_tenant_by_id_default_forbidden(self, app, mock_admin_user, mock_auth_service):
+    def test_get_tenant_by_id_default_forbidden(self, app, mock_admin_user):
         """Test that getting default tenant by ID is forbidden."""
         with app.app_context():
             with app.test_request_context("/"):
@@ -211,7 +203,7 @@ class TestTenantController:
                 assert response.status_code == 403
                 assert response.get_json()["error_code"] == "forbidden_tenant"
 
-    def test_get_tenant_by_slug_success(self, app, mock_admin_user, mock_auth_service):
+    def test_get_tenant_by_slug_success(self, app, mock_admin_user):
         """Test successfully retrieving tenant by slug."""
         with app.app_context():
             with app.test_request_context("/"):
@@ -233,7 +225,7 @@ class TestTenantController:
                 response = tenant_controller.get_tenant_by_slug("slug-tenant")
                 assert response.status_code == 200
 
-    def test_get_tenant_by_slug_not_found(self, app, mock_admin_user, mock_auth_service):
+    def test_get_tenant_by_slug_not_found(self, app, mock_admin_user):
         """Test getting non-existent tenant by slug raises error."""
         with app.app_context():
             with app.test_request_context("/"):
@@ -243,7 +235,7 @@ class TestTenantController:
                 assert response.status_code == 404
                 assert response.get_json()["error_code"] == "tenant_not_found"
 
-    def test_get_all_tenants_excludes_default(self, app, mock_admin_user, mock_auth_service):
+    def test_get_all_tenants_excludes_default(self, app, mock_admin_user):
         """Test that get_all_tenants excludes the default tenant."""
         with app.app_context():
             with app.test_request_context("/"):
@@ -291,7 +283,7 @@ class TestTenantController:
                 tenant_ids = [t["id"] for t in data]
                 assert "default" not in tenant_ids
 
-    def test_update_tenant_name_success(self, app, mock_admin_user, mock_auth_service):
+    def test_update_tenant_name_success(self, app, mock_admin_user):
         """Test successfully updating tenant name."""
         with app.app_context():
             with app.test_request_context("/"):
@@ -318,7 +310,7 @@ class TestTenantController:
                 updated_tenant = M8flowTenantModel.query.filter_by(id="update-tenant-1").first()
                 assert updated_tenant.name == "Updated Name"
 
-    def test_update_tenant_status_success(self, app, mock_admin_user, mock_auth_service):
+    def test_update_tenant_status_success(self, app, mock_admin_user):
         """Test successfully updating tenant status."""
         with app.app_context():
             with app.test_request_context("/"):
@@ -345,7 +337,7 @@ class TestTenantController:
                 updated_tenant = M8flowTenantModel.query.filter_by(id="status-tenant-1").first()
                 assert updated_tenant.status == TenantStatus.INACTIVE
 
-    def test_update_tenant_slug_forbidden(self, app, mock_admin_user, mock_auth_service):
+    def test_update_tenant_slug_forbidden(self, app, mock_admin_user):
         """Test that updating tenant slug is forbidden."""
         with app.app_context():
             with app.test_request_context("/"):
@@ -370,7 +362,7 @@ class TestTenantController:
                 assert response.status_code == 400
                 assert response.get_json()["error_code"] == "slug_update_forbidden"
 
-    def test_update_deleted_tenant_forbidden(self, app, mock_admin_user, mock_auth_service):
+    def test_update_deleted_tenant_forbidden(self, app, mock_admin_user):
         """Test that updating a deleted tenant is forbidden."""
         with app.app_context():
             with app.test_request_context("/"):
@@ -395,7 +387,7 @@ class TestTenantController:
                 assert response.status_code == 400
                 assert response.get_json()["error_code"] == "tenant_deleted"
 
-    def test_delete_tenant_soft_delete(self, app, mock_admin_user, mock_auth_service):
+    def test_delete_tenant_soft_delete(self, app, mock_admin_user):
         """Test soft deleting a tenant."""
         with app.app_context():
             with app.test_request_context("/"):
@@ -422,7 +414,7 @@ class TestTenantController:
                 assert deleted_tenant is not None  # Still exists in DB
                 assert deleted_tenant.status == TenantStatus.DELETED
 
-    def test_delete_already_deleted_tenant_fails(self, app, mock_admin_user, mock_auth_service):
+    def test_delete_already_deleted_tenant_fails(self, app, mock_admin_user):
         """Test that deleting an already deleted tenant raises error."""
         with app.app_context():
             with app.test_request_context("/"):
@@ -445,7 +437,7 @@ class TestTenantController:
                 assert response.status_code == 400
                 assert response.get_json()["error_code"] == "tenant_already_deleted"
 
-    def test_delete_default_tenant_forbidden(self, app, mock_admin_user, mock_auth_service):
+    def test_delete_default_tenant_forbidden(self, app, mock_admin_user):
         """Test that deleting default tenant is forbidden."""
         with app.app_context():
             with app.test_request_context("/"):
@@ -467,18 +459,23 @@ class TestTenantController:
                 assert response.status_code == 401
                 assert response.get_json()["error_code"] == "not_authenticated"
 
-    def test_permission_check_insufficient_permissions(self, app, mock_admin_user):
-        """Test that operations fail when user lacks permissions."""
+    def test_permission_check_delete_no_user(self, app):
+        """Test that delete fails when user is not authenticated."""
         with app.app_context():
             with app.test_request_context("/"):
-                g.user = mock_admin_user
+                # No user in g
                 
-                # Mock AuthorizationService to deny permission
-                with patch("m8flow_backend.routes.tenant_controller.AuthorizationService") as mock_auth:
-                    mock_auth.user_has_permission.return_value = False
-                    
-                    body = {"name": "Test", "slug": "test"}
-                    
-                    response = tenant_controller.create_tenant(body)
-                    assert response.status_code == 403
-                    assert response.get_json()["error_code"] == "insufficient_permissions"
+                response = tenant_controller.delete_tenant("some-tenant")
+                assert response.status_code == 401
+                assert response.get_json()["error_code"] == "not_authenticated"
+
+    def test_permission_check_update_no_user(self, app):
+        """Test that update fails when user is not authenticated."""
+        with app.app_context():
+            with app.test_request_context("/"):
+                # No user in g
+                
+                body = {"name": "New Name"}
+                response = tenant_controller.update_tenant("some-tenant", body)
+                assert response.status_code == 401
+                assert response.get_json()["error_code"] == "not_authenticated"

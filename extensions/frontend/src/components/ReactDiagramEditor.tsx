@@ -26,7 +26,6 @@ import { useDiagramImport } from './useDiagramImport';
 import ReferencesModal from './ReferencesModal';
 import DiagramEditorToolbar from './DiagramEditorToolbar';
 import DiagramEditorControls from './DiagramEditorControls';
-import SaveAsTemplateModal from './SaveAsTemplateModal';
 import type { ReactDiagramEditorProps } from './ReactDiagramEditor.types';
 
 export default function ReactDiagramEditor(props: ReactDiagramEditorProps) {
@@ -50,7 +49,6 @@ export default function ReactDiagramEditor(props: ReactDiagramEditorProps) {
 
   const [performingXmlUpdates, setPerformingXmlUpdates] = useState(false);
   const [showingReferences, setShowingReferences] = useState(false);
-  const [saveAsTemplateModalOpen, setSaveAsTemplateModalOpen] = useState(false);
 
   const { targetUris } = useUriListForPermissions();
   const permissionRequestData: PermissionsToCheck = {};
@@ -166,7 +164,6 @@ export default function ReactDiagramEditor(props: ReactDiagramEditorProps) {
         onViewXml={() =>
           navigate(`/process-models/${processModelId}/form/${fileName}`)
         }
-        onSaveAsTemplate={() => setSaveAsTemplateModalOpen(true)}
         referencesButton={referencesButton}
         activeUserElement={activeUserElement}
         onSetPrimaryFileAvailable={!!onSetPrimaryFile}
@@ -175,18 +172,6 @@ export default function ReactDiagramEditor(props: ReactDiagramEditorProps) {
         open={showingReferences}
         onClose={() => setShowingReferences(false)}
         callers={callers}
-      />
-      <SaveAsTemplateModal
-        open={saveAsTemplateModalOpen}
-        onClose={() => setSaveAsTemplateModalOpen(false)}
-        onSuccess={() => setSaveAsTemplateModalOpen(false)}
-        getBpmnXml={() =>
-          diagramModelerState
-            ? (diagramModelerState as any)
-                .saveXML({ format: true })
-                .then((xmlObject: any) => xmlObject.xml)
-            : Promise.resolve('')
-        }
       />
       <DiagramEditorControls
         onZoomIn={() => zoom(1)}

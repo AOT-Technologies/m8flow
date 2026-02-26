@@ -38,7 +38,7 @@ class FakeConnection:
 
 def test_postgres_sets_tenant_context_from_request() -> None:
     os.environ.pop("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", None)
-    app = Flask(__name__)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     connection = FakeConnection("postgresql")
 
     with app.test_request_context("/"):
