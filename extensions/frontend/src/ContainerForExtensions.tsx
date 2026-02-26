@@ -53,18 +53,56 @@ UserService.doLogout = () => {
   originalDoLogout();
 };
 
-/** When ENABLE_MULTITENANT: at "/" show TenantSelectPage if no tenant in localStorage, else show default home (BaseRoutes). */
+/** When ENABLE_MULTITENANT: at "/" show TenantSelectPage if no tenant in localStorage, else show default home (RoleBasedRootGate). */
 function MultitenantRootGate({
   extensionUxElements,
   setAdditionalNavElement,
   isMobile,
+  ability,
+  targetUris,
 }: {
   extensionUxElements: UiSchemaUxElement[] | null;
   setAdditionalNavElement: (el: ReactElement | null) => void;
   isMobile: boolean;
+  ability: any;
+  targetUris: any;
 }) {
   const storedTenant = typeof window !== 'undefined' ? localStorage.getItem(M8FLOW_TENANT_STORAGE_KEY) : null;
   if (storedTenant) {
+    return (
+      <RoleBasedRootGate
+        extensionUxElements={extensionUxElements}
+        setAdditionalNavElement={setAdditionalNavElement}
+        isMobile={isMobile}
+        ability={ability}
+        targetUris={targetUris}
+      />
+    );
+  }
+  return <TenantSelectPage />;
+}
+
+/** Redirects roles that don't have access to Home to their respective default pages. */
+function RoleBasedRootGate({
+  extensionUxElements,
+  setAdditionalNavElement,
+  isMobile,
+  ability,
+  targetUris,
+}: {
+  extensionUxElements: UiSchemaUxElement[] | null;
+  setAdditionalNavElement: (el: ReactElement | null) => void;
+  isMobile: boolean;
+  ability: any;
+  targetUris: any;
+}) {
+  // Super-admin: always go to tenant management
+  if (ability.can("GET", "/m8flow/tenants")) {
+    return <Navigate to="/tenants" replace />;
+  }
+
+  // User has Home access (anyone with task access: reviewer, viewer, editor, tenant-admin)
+  if (ability.can("GET", "/tasks/*") || ability.can("GET", targetUris.processInstanceListForMePath)) {
     return (
       <BaseRoutes
         extensionUxElements={extensionUxElements}
@@ -73,7 +111,52 @@ function MultitenantRootGate({
       />
     );
   }
-  return <TenantSelectPage />;
+
+  // No Home access: find the first available nav route in sidebar order
+  const fallbackRoutes: Array<{ route: string; method: string; uri: string }> =
+    [
+      {
+        route: "/process-groups",
+        method: "GET",
+        uri: targetUris.processGroupListPath,
+      },
+      {
+        route: "/process-instances",
+        method: "GET",
+        uri: targetUris.processInstanceListPath,
+      },
+      {
+        route: "/data-stores",
+        method: "GET",
+        uri: targetUris.dataStoreListPath,
+      },
+      {
+        route: "/messages",
+        method: "GET",
+        uri: targetUris.messageInstanceListPath,
+      },
+      {
+        route: "/configuration",
+        method: "GET",
+        uri: targetUris.secretListPath,
+      },
+      { route: "/templates", method: "GET", uri: "/m8flow/templates" },
+    ];
+  const firstAvailable = fallbackRoutes.find(({ method, uri }) =>
+    ability.can(method, uri),
+  );
+  if (firstAvailable) {
+    return <Navigate to={firstAvailable.route} replace />;
+  }
+
+  // No accessible routes at all — show BaseRoutes and let it handle access denied
+  return (
+    <BaseRoutes
+      extensionUxElements={extensionUxElements}
+      setAdditionalNavElement={setAdditionalNavElement}
+      isMobile={isMobile}
+    />
+  );
 }
 
 // M8Flow Extension: Import Tenant page
@@ -104,7 +187,14 @@ export default function ContainerForExtensions() {
 
   const { targetUris } = useUriListForPermissions();
   const permissionRequestData: PermissionsToCheck = {
-    [targetUris.extensionListPath]: ['GET'],
+    [targetUris.extensionListPath]: ["GET"],
+    [targetUris.processInstanceListForMePath]: ["POST"],
+    [targetUris.processGroupListPath]: ["GET"],
+    [targetUris.dataStoreListPath]: ["GET"],
+    [targetUris.messageInstanceListPath]: ["GET"],
+    [targetUris.secretListPath]: ["GET"],
+    "/m8flow/tenants": ["GET"],
+    "/m8flow/templates": ["GET"],
   };
   const { ability, permissionsLoaded } = usePermissionFetcher(
     permissionRequestData,
@@ -304,6 +394,8 @@ export default function ContainerForExtensions() {
                   extensionUxElements={extensionUxElements}
                   setAdditionalNavElement={setAdditionalNavElement}
                   isMobile={isMobile}
+                  ability={ability}
+                  targetUris={targetUris}
                 />
               }
             />
@@ -311,7 +403,22 @@ export default function ContainerForExtensions() {
           </>
         )}
         {!ENABLE_MULTITENANT && (
-          <Route path="tenant" element={<Navigate to="/" replace />} />
+          <>
+            {/* Redirect roles with no home access (like super-admin/integrator) to their defaults */}
+            <Route
+              path="/"
+              element={
+                <RoleBasedRootGate
+                  extensionUxElements={extensionUxElements}
+                  setAdditionalNavElement={setAdditionalNavElement}
+                  isMobile={isMobile}
+                  ability={ability}
+                  targetUris={targetUris}
+                />
+              }
+            />
+            <Route path="tenant" element={<Navigate to="/" replace />} />
+          </>
         )}
         {/* Reports route */}
         <Route path="reports" element={<ReportsPage />} />
@@ -435,12 +542,16 @@ export default function ContainerForExtensions() {
                   setAdditionalNavElement={setAdditionalNavElement}
                   extensionUxElements={[
                     ...(extensionUxElements || []),
-                    {
-                      page: "/../tenants",
-                      label: "Tenants",
-                      display_location:
-                        UiSchemaDisplayLocation.primary_nav_item,
-                    } as UiSchemaUxElement,
+                    ...(ability?.can("GET", "/m8flow/tenants")
+                      ? [
+                          {
+                            page: "/../tenants",
+                            label: "Tenants",
+                            display_location:
+                              UiSchemaDisplayLocation.primary_nav_item,
+                          } as UiSchemaUxElement,
+                        ]
+                      : []),
                   ]}
                 />
               )}

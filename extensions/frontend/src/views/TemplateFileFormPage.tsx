@@ -17,9 +17,13 @@ import HttpService from "../services/HttpService";
 import TemplateService from "../services/TemplateService";
 import type { Template } from "../types/template";
 import { normalizeTemplate } from "../utils/templateHelpers";
+import { usePermissionFetcher } from "@spiffworkflow-frontend/hooks/PermissionService";
 
 export default function TemplateFileFormPage() {
-  const { templateId, fileName } = useParams<{ templateId: string; fileName: string }>();
+  const { templateId, fileName } = useParams<{
+    templateId: string;
+    fileName: string;
+  }>();
   const navigate = useNavigate();
   const [template, setTemplate] = useState<Template | null>(null);
   const [fileContent, setFileContent] = useState<string>("");
@@ -27,7 +31,17 @@ export default function TemplateFileFormPage() {
   const [fileLoaded, setFileLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [newVersionInfo, setNewVersionInfo] = useState<{ id: number; version: string } | null>(null);
+  const [newVersionInfo, setNewVersionInfo] = useState<{
+    id: number;
+    version: string;
+  } | null>(null);
+
+  const { ability, permissionsLoaded } = usePermissionFetcher({
+    "/m8flow/templates": ["PUT", "DELETE"],
+  });
+
+  const canEdit = ability.can("PUT", "/m8flow/templates");
+  const canDelete = ability.can("DELETE", "/m8flow/templates");
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -82,14 +96,24 @@ export default function TemplateFileFormPage() {
     if (isNaN(id)) return;
     setError(null);
     const contentType = isMd ? "text/markdown" : "text/plain";
-    TemplateService.updateTemplateFile(id, decodedFileName, fileContent, contentType)
+    TemplateService.updateTemplateFile(
+      id,
+      decodedFileName,
+      fileContent,
+      contentType,
+    )
       .then((updatedTemplate) => {
         // Check if a new version was created (template ID changed)
         if (updatedTemplate.id !== id) {
-          setNewVersionInfo({ id: updatedTemplate.id, version: updatedTemplate.version });
+          setNewVersionInfo({
+            id: updatedTemplate.id,
+            version: updatedTemplate.version,
+          });
           // Navigate to the new version after a short delay
           setTimeout(() => {
-            navigate(`/templates/${updatedTemplate.id}/form/${encodeURIComponent(decodedFileName)}`);
+            navigate(
+              `/templates/${updatedTemplate.id}/form/${encodeURIComponent(decodedFileName)}`,
+            );
           }, 2000);
         } else {
           setSaveSuccess(true);
@@ -114,17 +138,19 @@ export default function TemplateFileFormPage() {
       .then(() => {
         navigate(`/templates/${id}`);
       })
-      .catch((err) => setError(err instanceof Error ? err.message : "Delete failed"));
+      .catch((err) =>
+        setError(err instanceof Error ? err.message : "Delete failed"),
+      );
   };
 
   const handleDownload = () => {
     if (isNaN(id)) return;
     TemplateService.downloadTemplateFile(id, decodedFileName).catch((err) =>
-      setError(err instanceof Error ? err.message : "Download failed")
+      setError(err instanceof Error ? err.message : "Download failed"),
     );
   };
 
-  if (loading) {
+  if (loading || !permissionsLoaded) {
     return (
       <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}>
         <CircularProgress />
@@ -168,7 +194,8 @@ export default function TemplateFileFormPage() {
       </Box>
       {template?.isPublished && (
         <Alert severity="warning" sx={{ mb: 1 }}>
-          This template is published. Saving changes will create a new draft version.
+          This template is published. Saving changes will create a new draft
+          version.
         </Alert>
       )}
       {error && (
@@ -177,25 +204,25 @@ export default function TemplateFileFormPage() {
         </Alert>
       )}
       {saveSuccess && (
-        <Alert severity="success" sx={{ mb: 1 }} onClose={() => setSaveSuccess(false)}>
+        <Alert
+          severity="success"
+          sx={{ mb: 1 }}
+          onClose={() => setSaveSuccess(false)}
+        >
           File saved successfully.
         </Alert>
       )}
       <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
-        <Button
-          variant="contained"
-          color="primary"
-          onClick={handleSave}
-        >
-          Save
-        </Button>
-        <Button
-          variant="contained"
-          color="error"
-          onClick={handleDelete}
-        >
-          Delete
-        </Button>
+        {canEdit && (
+          <Button variant="contained" color="primary" onClick={handleSave}>
+            Save
+          </Button>
+        )}
+        {canDelete && (
+          <Button variant="contained" color="error" onClick={handleDelete}>
+            Delete
+          </Button>
+        )}
         <Button variant="outlined" onClick={handleDownload}>
           Download
         </Button>

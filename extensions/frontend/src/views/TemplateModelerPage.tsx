@@ -23,6 +23,7 @@ import CreateProcessModelFromTemplateModal from '../components/CreateProcessMode
 import { Template } from '../types/template';
 import { normalizeTemplate } from '../utils/templateHelpers';
 import './TemplateModelerPage.css';
+import { usePermissionFetcher } from '@spiffworkflow-frontend/hooks/PermissionService';
 
 function TemplateDetailsCard({
   template,
@@ -35,6 +36,15 @@ function TemplateDetailsCard({
   onPublish: () => void;
   onCreateProcessModel: () => void;
 }) {
+  const { ability, permissionsLoaded } = usePermissionFetcher({
+    "/m8flow/templates": ["POST", "PUT"],
+  });
+
+  const canCreate = ability.can("POST", "/m8flow/templates");
+  const canPublish = ability.can("PUT", "/m8flow/templates");
+
+  if (!permissionsLoaded) return null;
+
   return (
     <Paper
       elevation={0}
@@ -69,20 +79,27 @@ function TemplateDetailsCard({
         <Typography variant="caption" color="text.secondary">
           Updated: {DateAndTimeService.convertSecondsToFormattedDateTime(template.updatedAtInSeconds) ?? '—'}
         </Typography>
-        <Button
-          size="small"
-          variant="contained"
-          color="success"
-          startIcon={<AddIcon />}
-          onClick={onCreateProcessModel}
-        >
-          Create Process Model
-        </Button>
+        {canCreate && (
+          <Button
+            size="small"
+            variant="contained"
+            color="success"
+            startIcon={<AddIcon />}
+            onClick={onCreateProcessModel}
+          >
+            Create Process Model
+          </Button>
+        )}
         <Button size="small" variant="contained" onClick={onExport}>
           Export template
         </Button>
-        {!template.isPublished && (
-          <Button size="small" variant="contained" color="primary" onClick={onPublish}>
+        {canPublish && !template.isPublished && (
+          <Button
+            size="small"
+            variant="contained"
+            color="primary"
+            onClick={onPublish}
+          >
             Publish
           </Button>
         )}
