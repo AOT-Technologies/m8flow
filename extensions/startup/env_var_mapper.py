@@ -67,7 +67,7 @@ M8FLOW_TO_SPIFF = {
 }
 
 
-def apply_spiff_env_mapping() -> None:
+def apply_m8flow_env_mapping() -> None:
     for m8_key, spiff_key in M8FLOW_TO_SPIFF.items():
         value = os.getenv(m8_key)
         if value is not None:
