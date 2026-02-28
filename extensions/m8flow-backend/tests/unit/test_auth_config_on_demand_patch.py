@@ -1,4 +1,4 @@
-"""Unit tests for extensions.auth_config_on_demand_patch (on-demand tenant auth config)."""
+"""Unit tests for m8flow_backend.services.authentication_service_patch (on-demand auth config)."""
 
 import sys
 from pathlib import Path
@@ -15,10 +15,13 @@ if str(_workspace_root) not in sys.path:
 @pytest.fixture
 def reset_patched_flag():
     """Allow the patch to be applied in tests."""
-    import extensions.auth_config_on_demand_patch as mod
-    mod._PATCHED = False
+    from m8flow_backend.services.authentication_service_patch import (
+        reset_auth_config_on_demand_patch,
+    )
+
+    reset_auth_config_on_demand_patch()
     yield
-    mod._PATCHED = True  # avoid affecting other tests
+    reset_auth_config_on_demand_patch()
 
 
 def test_on_demand_adds_config_when_realm_exists(reset_patched_flag):
@@ -42,11 +45,11 @@ def test_on_demand_adds_config_when_realm_exists(reset_patched_flag):
             return_value=True,
         ),
         patch(
-            "extensions.login_tenant_patch._ensure_tenant_auth_config",
+            "m8flow_backend.services.auth_config_service.ensure_tenant_auth_config",
             side_effect=ensure_adds_config,
         ),
     ):
-        from extensions.auth_config_on_demand_patch import apply_auth_config_on_demand_patch
+        from m8flow_backend.services.authentication_service_patch import apply_auth_config_on_demand_patch
 
         with app.app_context():
             apply_auth_config_on_demand_patch()
@@ -71,7 +74,7 @@ def test_re_raises_when_realm_does_not_exist(reset_patched_flag):
         "m8flow_backend.services.keycloak_service.realm_exists",
         return_value=False,
     ):
-        from extensions.auth_config_on_demand_patch import apply_auth_config_on_demand_patch
+        from m8flow_backend.services.authentication_service_patch import apply_auth_config_on_demand_patch
         from spiffworkflow_backend.services.authentication_service import (
             AuthenticationOptionNotFoundError,
             AuthenticationService,
