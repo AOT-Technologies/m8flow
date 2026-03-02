@@ -1,0 +1,10 @@
+/**
+ * Template modeler overrides (extensions only; no changes in spiffworkflow-frontend).
+ * Hides Delete (2), View XML (5), and slot 6 so Save (1), Set Primary (3), and Download (4) remain visible; Publish is in the page layout.
+ * Indices may need adjustment if the editor toolbar structure or DOM order differs.
+ */
+.template-modeler-editor-wrap .MuiStack-root > *:nth-child(2),
+.template-modeler-editor-wrap .MuiStack-root > *:nth-child(4),
+.template-modeler-editor-wrap .MuiStack-root > *:nth-child(6) {
+  display: none !important;
+}

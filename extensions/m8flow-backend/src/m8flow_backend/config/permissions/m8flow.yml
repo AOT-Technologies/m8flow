@@ -1,0 +1,155 @@
+# This is M8Flow permissions configuration file. It defines users, groups and permissions for the M8FLow backend.
+# The permissions defined here are used to control access to different parts of the frontend and backend API.
+# The users and groups defined here should be managed in an OIDC provider, and mapped to these names.
+# The permissions are defined with a name, a list of groups that have the permission, a list of actions that are allowed, and a URI pattern that defines the scope of the permission.
+# The URI patterns can include macros like PG:ALL or PM:ALL, which are expanded to all process groups or process models respectively.
+# The groups and permissions defined here are appended to the tables in the database on login, so changes to this file will take effect on the next login of each user.
+# If a permission needs to be removed, it should be done in the database directly.
+
+
+# Users should be created in OIDC provider.
+users:
+
+# Groups should be managed in OIDC provider or user management system and mapped to these names.
+groups:
+  # The "super-admin" group has access to tenants management only.
+  "super-admin":
+    users: []
+  # The "tenant-admin" group has access to everything within a tenant, but does not have access to tenant management features. 
+  # This group should be assigned to users that need full control over the tenant, but should not have access to manage other tenants.
+  "tenant-admin":
+    users: []
+  # The "editor" group has access to most features in the frontend and backend, but does not have access to tenant management or some sensitive features like secrets management. 
+  "editor":
+    users: []
+  # The "viewer" group has read-only access to most features in the frontend and backend, but does not have access to tenant management or any features that allow modifying data.
+  "viewer":
+    users: []
+  # The "integrator" group has access to features that are relevant for integrating M8Flow with other systems, such as managing authentications and secrets, 
+  # but does not have access to tenant management or most frontend features.
+  "integrator":
+    users: []
+  # The "reviewer" group has access to features that are relevant for reviewing and monitoring processes, such as viewing tasks and process instances, 
+  # but does not have access to tenant management or most frontend features.
+  "reviewer":
+    users: []
+  # The "everybody" group is a special group that includes all users, and is used to assign permissions that should be available to everyone.
+  
+# Permissions defined here are appended to the permissions in the database on login, so changes to this file will take effect on the next login of each user.
+permissions:
+  # Very basic permissions for general access to the frontend and onboarding, assigned to everybody.
+  frontend-access:    
+    groups: ["everybody"]
+    actions: [read]
+    uri: /frontend-access
+  onboarding:
+    groups: ["everybody"]
+    actions: [read]
+    uri: /onboarding
+
+
+  # Super Admins have access to tenants management only.
+  super-admin:
+    groups: ["super-admin"]
+    actions: [all]
+    uri: /m8flow/tenants/*
+  read-all-process-groups:
+    groups: ["viewer"]
+    actions: [read]
+    uri: PG:ALL
+  manage-all-process-groups:
+    groups: ["tenant-admin", "editor"]
+    actions: [all]
+    uri: PG:ALL
+  read-all-process-models:
+    groups: ["viewer", "reviewer"]
+    actions: [read]
+    uri: PM:ALL
+  manage-all-process-models:
+    groups: ["tenant-admin", "editor"]
+    actions: [all]
+    uri: PM:ALL
+  read-processes:
+    groups: ["tenant-admin", "editor", "viewer", "reviewer"]
+    actions: [read]
+    uri: /processes/*
+  run-all-process-models:
+    groups: ["tenant-admin", "editor"]
+    actions: [start]
+    uri: PM:ALL
+  read-process-instances:
+    groups: ["tenant-admin", "editor", "viewer"]
+    actions: [read]
+    uri: /process-instances/*
+  read-user-groups-items:
+    groups: ["tenant-admin", "editor", "viewer"]
+    actions: [read]
+    uri: /user-groups/*
+  read-script-assist-items:
+    groups: ["tenant-admin", "editor", "viewer"]
+    actions: [read]
+    uri: /script-assist/*
+  read-service-tasks:
+    groups: ["tenant-admin", "editor", "viewer"]
+    actions: [read]
+    uri: /service-tasks/*
+  manage-data-stores:
+    groups: ["tenant-admin", "editor"]
+    actions: [all]
+    uri: /data-stores/*
+  manage-data-stores-types:
+    groups: ["tenant-admin", "editor"]
+    actions: [all]
+    uri: /data-stores/types/
+  manage-messages:
+    groups: ["tenant-admin", "editor"]
+    actions: [all]
+    uri: /messages
+  manage-secrets:
+    groups: ["tenant-admin", "integrator"]
+    actions: [all]
+    uri: /secrets
+  manage-secret-items:
+    groups: ["tenant-admin", "integrator"]
+    actions: [all]
+    uri: /secrets/*
+  # authentication (singular)
+  manage-authentication-items:
+    groups: ["tenant-admin", "integrator"]
+    actions: [all]
+    uri: /authentication/*
+  # authentications (plural)
+  manage-authentications:
+    groups: ["tenant-admin", "integrator"]
+    actions: [all]
+    uri: /authentications
+  manage-authentications-items:
+    groups: ["tenant-admin", "integrator"]
+    actions: [all]
+    uri: /authentications/*
+  manage-templates:
+    groups: ["tenant-admin", "editor"]
+    actions: [all]
+    uri: /m8flow/templates
+  manage-template-items:
+    groups: ["tenant-admin", "editor"]
+    actions: [all]
+    uri: /m8flow/templates/*
+  read-templates:
+    groups: ["viewer"]
+    actions: [read]
+    uri: /m8flow/templates
+  viewer-template-items:
+    groups: ["viewer"]
+    actions: [read]
+    uri: /m8flow/templates/*
+  manage-tasks:
+    groups: ["tenant-admin", "editor", "reviewer"]
+    actions: [all]
+    uri: /tasks/*
+  read-tasks:
+    groups: ["viewer"]
+    actions: [read]
+    uri: /tasks/*
+
+  

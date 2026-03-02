@@ -16,6 +16,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      issues: write
     
     steps:
       - name: Checkout repository
@@ -42,13 +43,18 @@ jobs:
       - name: Add upstream remote
         run: |
           # Check if upstream remote exists, if not add it
+          # Default to the original sartography/spiff-arena upstream
+          UPSTREAM_URL="${{ secrets.UPSTREAM_REPO_URL }}"
+          if [[ -z "$UPSTREAM_URL" ]]; then
+            UPSTREAM_URL="https://github.com/sartography/spiff-arena.git"
+          fi
+          
           if ! git remote | grep -q "^upstream$"; then
-            echo "Adding upstream remote..."
-            git remote add upstream ${{ secrets.UPSTREAM_REPO_URL || 'https://github.com/AOT-Technologies/m8flow.git' }}
+            echo "Adding upstream remote: $UPSTREAM_URL"
+            git remote add upstream "$UPSTREAM_URL"
           else
-            echo "Upstream remote already exists"
-            # Update the URL in case it changed
-            git remote set-url upstream ${{ secrets.UPSTREAM_REPO_URL || 'https://github.com/AOT-Technologies/m8flow.git' }}
+            echo "Upstream remote already exists, updating URL"
+            git remote set-url upstream "$UPSTREAM_URL"
           fi
 
       - name: Fetch upstream
@@ -104,8 +110,8 @@ jobs:
           while IFS= read -r file; do
             if [[ -n "$file" ]] && [[ "$file" =~ ^(spiffworkflow-backend|spiffworkflow-frontend)/ ]]; then
               echo "  Applying: $file"
-              # Checkout the file from upstream commit
-              if echo "$UPSTREAM_FILES" | grep -q "^$file$"; then
+              # Checkout the file from upstream commit - use grep with here-string to avoid broken pipe
+              if grep -qxF "$file" <<< "$UPSTREAM_FILES"; then
                 git checkout "$UPSTREAM_COMMIT" -- "$file" 2>/dev/null || echo "    Warning: Could not checkout $file"
               else
                 # File was deleted in upstream - remove it to match upstream exactly
@@ -120,9 +126,12 @@ jobs:
           # Also handle files that exist locally but not in upstream (complete sync)
           LOCAL_FILES=$(git ls-files spiffworkflow-backend/ spiffworkflow-frontend/ || true)
           while IFS= read -r file; do
-            if [[ -n "$file" ]] && ! echo "$UPSTREAM_FILES" | grep -q "^$file$"; then
-              echo "  Deleting: $file (not in upstream)"
-              git rm "$file" 2>/dev/null || rm -f "$file"
+            if [[ -n "$file" ]]; then
+              # Use grep with || true to avoid broken pipe errors
+              if ! grep -qxF "$file" <<< "$UPSTREAM_FILES"; then
+                echo "  Deleting: $file (not in upstream)"
+                git rm "$file" 2>/dev/null || rm -f "$file"
+              fi
             fi
           done <<< "$LOCAL_FILES"
 
@@ -161,36 +170,54 @@ jobs:
 
       - name: Create Pull Request
         if: steps.check-commit.outputs.has_commit == 'true'
-        uses: peter-evans/create-pull-request@v6
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          branch: ${{ env.BRANCH_NAME }}
-          base: main
-          title: "Sync upstream changes (backend & frontend only)"
-          body: |
-            This PR syncs selective changes from upstream that affect only:
-            - `spiffworkflow-backend/`
-            - `spiffworkflow-frontend/`
+        id: create-pr
+        env:
+          # Use PAT_TOKEN if configured (recommended for forks/org repos), fallback to GITHUB_TOKEN
+          GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          # Check which token is being used
+          if [[ -n "${{ secrets.PAT_TOKEN }}" ]]; then
+            echo "✓ Using PAT_TOKEN for authentication"
+          else
+            echo "⚠️  Using GITHUB_TOKEN (PAT_TOKEN not configured)"
+            echo "   For forked repositories or org restrictions, configure PAT_TOKEN"
+          fi
+          
+          PR_BODY="This PR syncs selective changes from upstream that affect only:
+          - \`spiffworkflow-backend/\`
+          - \`spiffworkflow-frontend/\`
 
-            ## Changes included:
-            
-            ${{ steps.check-changes.outputs.changes }}
+          ## Changes included:
 
-            ## Notes:
-            - Other upstream changes (root files, .github/, docs/, etc.) were intentionally ignored
-            - This maintains the repository restructure while keeping backend/frontend up to date
-            - Triggered manually via GitHub Actions workflow
+          ${{ steps.check-changes.outputs.changes }}
 
-            **Review carefully before merging.**
-          labels: |
-            upstream-sync
-            automated
-          delete-branch: true
+          ## Notes:
+          - Other upstream changes (root files, .github/, docs/, etc.) were intentionally ignored
+          - This maintains the repository restructure while keeping backend/frontend up to date
+          - Triggered manually via GitHub Actions workflow
+
+          **Review carefully before merging.**"
+
+          # Create the PR in the same repository (explicit repo to avoid confusion with upstream)
+          PR_URL=$(gh pr create \
+            --repo "${{ github.repository }}" \
+            --base main \
+            --head "${{ env.BRANCH_NAME }}" \
+            --title "Sync upstream changes (backend & frontend only)" \
+            --body "$PR_BODY")
+          
+          # Try to add labels (ignore failures - labels might not exist or no permission)
+          gh pr edit "$PR_URL" --add-label "upstream-sync" 2>/dev/null || echo "Note: Could not add 'upstream-sync' label"
+          gh pr edit "$PR_URL" --add-label "automated" 2>/dev/null || echo "Note: Could not add 'automated' label"
+          
+          echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
+          echo "Created PR: $PR_URL"
 
       - name: Summary
         run: |
           HAS_CHANGES="${{ steps.check-changes.outputs.has_changes }}"
           HAS_COMMIT="${{ steps.check-commit.outputs.has_commit || 'false' }}"
+          PR_URL="${{ steps.create-pr.outputs.pr_url }}"
           
           if [[ "$HAS_CHANGES" != "true" ]]; then
             echo "✅ No relevant changes found in upstream. Nothing to sync."
@@ -198,8 +225,6 @@ jobs:
             echo "✅ Changes found but files are identical. Nothing to commit."
           else
             echo "✅ Successfully created PR with upstream changes"
-            BRANCH_NAME="${{ env.BRANCH_NAME }}"
-            if [[ -n "$BRANCH_NAME" ]]; then
-              echo "   Branch: $BRANCH_NAME"
-            fi
+            echo "   Branch: ${{ env.BRANCH_NAME }}"
+            echo "   PR: $PR_URL"
           fi

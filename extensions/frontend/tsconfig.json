@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "jsx": "react-jsx",
+    "skipLibCheck": true,
+    "strict": true,
+    "resolveJsonModule": true,
+
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "types": ["vite/client", "node"],
+
+    "module": "esnext",
+    "target": "ESNext",
+    "moduleResolution": "Node",
+
+    "isolatedModules": true,
+    
+    "baseUrl": ".",
+    "paths": {
+      "@spiffworkflow-frontend/*": ["../spiffworkflow-frontend/src/*"],
+      "@spiffworkflow-frontend-assets/*": ["../spiffworkflow-frontend/src/assets/*"]
+    }
+  },
+  "include": ["src"]
+}

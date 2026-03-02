@@ -19,8 +19,19 @@ UNKNOWN.egg-info/
 __pycache__/
 
 sample-process-models/
+/extensions/frontend/node_modules
+/spiffworkflow-frontend/node_modules
 agent_setup_script_has_completed_successfully
 .venv/
 extensions/frontend/node_modules
 spiffworkflow-frontend/node_modules
 .cursor
+/test/*
+.cursor/*
+*.p12
+.venv*
+templates
+extensions/m8flow-frontend/node_modules
+keycloak-extensions/realm-info-mapper/target/*
+*.code-workspace
+email_attachments
