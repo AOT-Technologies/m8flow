@@ -25,6 +25,7 @@ _WSGI_PATH_PREFIX = os.getenv("SPIFFWORKFLOW_BACKEND_WSGI_PATH_PREFIX", "").stri
 _BASE_PUBLIC_PREFIXES: tuple[str, ...] = (
     "/.well-known",
     "/favicon.ico",
+    "/v1.0/health",
     "/v1.0/healthy",
     "/v1.0/status",
     "/v1.0/openapi.json",
