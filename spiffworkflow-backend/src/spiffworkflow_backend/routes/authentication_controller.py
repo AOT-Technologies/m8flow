@@ -171,7 +171,11 @@ def login_return(
                 g.user = user_model
                 g.token = auth_token_object["id_token"]
                 if "refresh_token" in auth_token_object:
-                    AuthenticationService.store_refresh_token(user_model.id, auth_token_object["refresh_token"])
+                    AuthenticationService.store_refresh_token(
+                        user_model.id,
+                        auth_token_object["refresh_token"],
+                        tenant_id=_tenant_for_refresh_tokens(decoded_token),
+                    )
                 redirect_url = state_redirect_url
                 tld = current_app.config["THREAD_LOCAL_DATA"]
                 tld.new_access_token = auth_token_object["id_token"]
@@ -350,7 +354,8 @@ def _get_user_model_from_token(decoded_token: dict) -> UserModel | None:
                     # Try to refresh the token
                     user = UserService.get_user_by_service_and_service_id(decoded_token["iss"], decoded_token["sub"])
                     if user:
-                        refresh_token = AuthenticationService.get_refresh_token(user.id)
+                        tenant_id = _tenant_for_refresh_tokens(decoded_token)
+                        refresh_token = AuthenticationService.get_refresh_token(user.id, tenant_id=tenant_id)
                         if refresh_token:
                             # Multiple near-simultaneous requests to this endpoint can cause race conditions: an auth server
                             # that enforces strict refresh token revocation can respond with an an error response, i.e.,
@@ -370,7 +375,11 @@ def _get_user_model_from_token(decoded_token: dict) -> UserModel | None:
                                     "iss": user.service,
                                 }
                                 if "refresh_token" in auth_token:
-                                    AuthenticationService.store_refresh_token(user.id, auth_token["refresh_token"])
+                                    AuthenticationService.store_refresh_token(
+                                        user.id,
+                                        auth_token["refresh_token"],
+                                        tenant_id=tenant_id,
+                                    )
 
                     if user_info is None:
                         AuthenticationService.set_user_has_logged_out()
@@ -458,6 +467,14 @@ def _get_authentication_identifier_from_request() -> str:
         authentication_identifier: str = request.headers["SpiffWorkflow-Authentication-Identifier"]
         return authentication_identifier
     return "default"
+
+
+def _tenant_for_refresh_tokens(decoded_token: dict | None = None) -> str:
+    if isinstance(decoded_token, dict):
+        tenant_from_claim = decoded_token.get("m8flow_tenant_id")
+        if isinstance(tenant_from_claim, str) and tenant_from_claim:
+            return tenant_from_claim
+    return _get_authentication_identifier_from_request()
 
 
 def _check_if_request_is_public() -> None:

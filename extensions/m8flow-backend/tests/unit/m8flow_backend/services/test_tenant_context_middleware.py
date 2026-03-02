@@ -9,6 +9,7 @@ from flask import Flask, g
 from spiffworkflow_backend.exceptions.api_error import ApiError
 from spiffworkflow_backend.models.db import db
 from m8flow_backend.services.tenant_context_middleware import (
+    _is_public_request,
     resolve_request_tenant,
     teardown_request_tenant_context,
 )
@@ -309,3 +310,9 @@ def test_tenant_context_propagates_to_queries() -> None:
 
     resp = client.get("/list", headers={"Authorization": f"Bearer {token_tenant_a}"})
     assert resp.get_data(as_text=True) == "A"
+
+
+def test_login_return_path_is_not_public_by_prefix_collision() -> None:
+    app = _make_app()
+    with app.test_request_context("/v1.0/login_return"):
+        assert _is_public_request() is False
