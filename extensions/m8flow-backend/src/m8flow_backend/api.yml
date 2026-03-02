@@ -3,6 +3,22 @@ info:
   version: 1.0.0
   title: m8flow-backend-extension
 paths:
+  /health:
+    get:
+      summary: Health check for load balancers and monitoring
+      description: Returns 200 when the process is up. Public, no authentication required.
+      operationId: m8flow_backend.tenancy.health_check
+      tags:
+        - Health
+      security: []
+      responses:
+        "200":
+          description: The server is running.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
   /create-tenant:
     post:
       summary: Create a new tenant
@@ -94,7 +110,7 @@ paths:
   /tenant-realms:
     post:
       summary: Create a spoke realm from the SpiffWorkflow template
-      description: Creates a Keycloak realm from the template and ensures a tenant record exists. Does not require tenant context (bootstrap/admin).
+      description: Creates a Keycloak realm from the template and ensures a tenant record exists. Does not require tenant context (bootstrap/admin). Redirect URIs for the new realm are derived from M8FLOW_APP_PUBLIC_BASE_URL or KEYCLOAK_HOSTNAME (frontend at /, backend at /api).
       operationId: m8flow_backend.routes.keycloak_controller.create_realm
       tags:
         - Keycloak
@@ -1066,6 +1082,19 @@ paths:
 
 components:
   schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        ok:
+          type: boolean
+          example: true
+        healthy:
+          type: boolean
+          example: true
+
     CreateTenantRequest:
       type: object
       required:

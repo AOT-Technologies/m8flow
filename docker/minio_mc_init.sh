@@ -2,7 +2,9 @@
 set -e
 
 echo "Waiting for MinIO..."
-until mc alias set local http://minio:9000 minioadmin minioadmin >/dev/null 2>&1; do
+MC_USER="${MINIO_ROOT_USER:-minioadmin}"
+MC_PASS="${MINIO_ROOT_PASSWORD:-minioadmin}"
+until mc alias set local http://minio:9000 "$MC_USER" "$MC_PASS" >/dev/null 2>&1; do
   sleep 1
 done
 echo "MinIO is ready."

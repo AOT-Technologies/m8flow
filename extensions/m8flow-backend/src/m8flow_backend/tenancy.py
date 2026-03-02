@@ -17,40 +17,39 @@ DEFAULT_TENANT_ID = os.getenv("M8FLOW_DEFAULT_TENANT_ID", "default")
 # JWT claim name used to resolve tenant id. From M8FLOW_TENANT_CLAIM.
 TENANT_CLAIM = (os.getenv("M8FLOW_TENANT_CLAIM") or "").strip() or "m8flow_tenant_id"
 
+# Single source of truth: base path prefixes when no WSGI path prefix is set.
+# When SPIFFWORKFLOW_BACKEND_WSGI_PATH_PREFIX is set (e.g. "/api"), we also add
+# prefix + each path so both prefixed and unprefixed deployments work.
+_WSGI_PATH_PREFIX = os.getenv("SPIFFWORKFLOW_BACKEND_WSGI_PATH_PREFIX", "").strip()
 
-# Include both prefixed and unprefixed paths so we match regardless of SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX.
-PUBLIC_PATH_PREFIXES: tuple[str, ...] = (
+_BASE_PUBLIC_PREFIXES: tuple[str, ...] = (
+    "/.well-known",
     "/favicon.ico",
+    "/v1.0/health",
+    "/v1.0/healthy",
     "/v1.0/status",
-    "/status",
     "/v1.0/openapi.json",
-    "/openapi.json",
     "/v1.0/openapi.yaml",
-    "/openapi.yaml",
     "/v1.0/ui",
-    "/ui",
     "/v1.0/static",
-    "/static",
     "/v1.0/logout",
-    "/logout",
     "/v1.0/authentication-options",
-    "/authentication-options",
     "/v1.0/login",
-    "/login",
-    # Pre-login tenant selection endpoints (must not require tenant context)
     "/v1.0/tenants/check",
-    "/tenants/check",
     "/v1.0/m8flow/tenant-login-url",
-    "/m8flow/tenant-login-url",
-    # Bootstrap/admin: create realm and create tenant (no tenant in token yet)
     "/v1.0/m8flow/tenant-realms",
-    "/m8flow/tenant-realms",
     "/v1.0/m8flow/create-tenant",
-    "/m8flow/create-tenant",
 )
 
-# Path suffixes for pre-login tenant selection (no tenant context required). Also included in PUBLIC_PATH_PREFIXES above with /v1.0 prefix.
-TENANT_PUBLIC_PATH_PREFIXES: tuple[str, ...] = ("/tenants/check", "/m8flow/tenant-login-url")
+if _WSGI_PATH_PREFIX:
+    _prefixed = tuple(
+        _WSGI_PATH_PREFIX + p for p in _BASE_PUBLIC_PREFIXES if p not in ("/.well-known", "/favicon.ico")
+    )
+    # Connexion may also serve UI at prefix + "/ui"
+    _extra_ui = (_WSGI_PATH_PREFIX + "/ui",) if _WSGI_PATH_PREFIX == "/api" else ()
+    PUBLIC_PATH_PREFIXES = _BASE_PUBLIC_PREFIXES + _prefixed + _extra_ui
+else:
+    PUBLIC_PATH_PREFIXES = _BASE_PUBLIC_PREFIXES
 
 _CONTEXT_TENANT_ID: ContextVar[Optional[str]] = ContextVar("m8flow_tenant_id", default=None)
 
@@ -98,6 +97,16 @@ def clear_tenant_context() -> None:
     """Clear tenant context variables to prevent cross-request leakage."""
     _CONTEXT_TENANT_ID.set(None)
     _CONTEXT_WARNED_DEFAULT.set(False)
+
+
+def get_healthy_response() -> tuple[dict, int]:
+    """Return the canonical healthy response (payload, status_code) for reuse by health endpoints and callers."""
+    return ({"status": "ok", "ok": True, "healthy": True}, 200)
+
+
+def health_check():
+    """Public health check for load balancers and monitoring. Returns 200 when the process is up."""
+    return get_healthy_response()
 
 
 def is_public_request() -> bool:

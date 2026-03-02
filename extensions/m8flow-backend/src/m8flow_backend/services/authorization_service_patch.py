@@ -13,6 +13,7 @@ M8FLOW_AUTH_EXCLUSION_ADDITIONS = [
     "m8flow_backend.routes.keycloak_controller.get_tenant_login_url",
     "m8flow_backend.routes.keycloak_controller.create_realm",
     "m8flow_backend.routes.tenant_controller.create_tenant",
+    "m8flow_backend.tenancy.health_check",
 ]
 
 

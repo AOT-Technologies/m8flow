@@ -45,6 +45,10 @@ After generating, set in your environment (or `.env`):
 
 The script requires the `cryptography` package (provided by the backend venv).
 
+## Admin user for realm APIs
+
+The backend’s create-realm and partial-import APIs use a Keycloak master-realm admin user. When using the Keycloak Docker image with the standard entrypoint (`keycloak-entrypoint.sh`), a permanent **superadmin** user is created with roles needed for realm creation and partial import. The backend defaults to username **superadmin**. Set `KEYCLOAK_ADMIN_PASSWORD` or `M8FLOW_KEYCLOAK_ADMIN_PASSWORD` to the superadmin password (same as `KEYCLOAK_SUPERADMIN_PASSWORD` in the Keycloak container) so the backend can authenticate. Override the username with `KEYCLOAK_ADMIN_USER` or `M8FLOW_KEYCLOAK_ADMIN_USER` if you use a different admin user.
+
 ## Usage
 
 ```bash

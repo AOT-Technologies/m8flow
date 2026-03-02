@@ -104,7 +104,7 @@ permissions:
   manage-messages:
     groups: ["tenant-admin", "editor"]
     actions: [all]
-    uri: /messages
+    uri: /messages/*
   manage-secrets:
     groups: ["tenant-admin", "integrator"]
     actions: [all]
