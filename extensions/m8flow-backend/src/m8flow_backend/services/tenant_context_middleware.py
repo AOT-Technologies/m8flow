@@ -23,6 +23,7 @@ from m8flow_backend.tenancy import (
     TENANT_CLAIM,
     allow_missing_tenant_context,
     get_context_tenant_id,
+    path_matches_any_prefix,
     reset_context_tenant_id,
     set_context_tenant_id,
 )
@@ -151,7 +152,7 @@ def _is_public_request() -> bool:
         path = getattr(request, "path", "") or ""
     except Exception:
         return False
-    return any(path.startswith(p) for p in PUBLIC_PATH_PREFIXES)
+    return path_matches_any_prefix(path, PUBLIC_PATH_PREFIXES)
 
 
 def _resolve_tenant_id() -> Optional[str]:

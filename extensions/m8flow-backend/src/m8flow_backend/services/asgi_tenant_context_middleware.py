@@ -9,6 +9,7 @@ from typing import Callable, Optional
 from m8flow_backend.tenancy import (
     PUBLIC_PATH_PREFIXES,
     TENANT_CLAIM,
+    path_matches_any_prefix,
     reset_context_tenant_id,
     set_context_tenant_id,
 )
@@ -75,7 +76,7 @@ def _extract_tenant(scope) -> Optional[str]:
 
 def _is_public_path(scope) -> bool:
     path = scope.get("path") or ""
-    return any(path.startswith(p) for p in PUBLIC_PATH_PREFIXES)
+    return path_matches_any_prefix(path, PUBLIC_PATH_PREFIXES)
 
 
 class AsgiTenantContextMiddleware:
