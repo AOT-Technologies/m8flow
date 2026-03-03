@@ -106,12 +106,15 @@ function RoleBasedRootGate({
   if (!permissionsLoaded) return null;
 
   // Super-admin: always go to tenant management
-  if (ability.can("GET", "/m8flow/tenants")) {
+  if (ability.can("GET", targetUris.m8flowTenantListPath)) {
     return <Navigate to="/tenants" replace />;
   }
 
   // User has Home access (anyone with task access: reviewer, viewer, editor, tenant-admin)
-  if (ability.can("GET", "/tasks/*") || ability.can("GET", targetUris.processInstanceListForMePath)) {
+  if (
+    ability.can("GET", "/tasks/*") ||
+    ability.can("GET", targetUris.processInstanceListForMePath)
+  ) {
     return (
       <BaseRoutes
         extensionUxElements={extensionUxElements}
@@ -149,7 +152,11 @@ function RoleBasedRootGate({
         method: "GET",
         uri: targetUris.secretListPath,
       },
-      { route: "/templates", method: "GET", uri: "/m8flow/templates" },
+      {
+        route: "/templates",
+        method: "GET",
+        uri: targetUris.m8flowTemplateListPath,
+      },
     ];
   const firstAvailable = fallbackRoutes.find(({ method, uri }) =>
     ability.can(method, uri),
@@ -203,8 +210,8 @@ export default function ContainerForExtensions() {
     [targetUris.messageInstanceListPath]: ["GET"],
     [targetUris.secretListPath]: ["GET"],
     "/tasks/*": ["GET"],
-    "/m8flow/tenants": ["GET"],
-    "/m8flow/templates": ["GET"],
+    [targetUris.m8flowTenantListPath]: ["GET"],
+    [targetUris.m8flowTemplateListPath]: ["GET"],
   };
   const { ability, permissionsLoaded } = usePermissionFetcher(
     permissionRequestData,
@@ -554,7 +561,7 @@ export default function ContainerForExtensions() {
                   setAdditionalNavElement={setAdditionalNavElement}
                   extensionUxElements={[
                     ...(extensionUxElements || []),
-                    ...(ability?.can("GET", "/m8flow/tenants")
+                    ...(ability?.can("GET", targetUris.m8flowTenantListPath)
                       ? [
                           {
                             page: "/../tenants",
