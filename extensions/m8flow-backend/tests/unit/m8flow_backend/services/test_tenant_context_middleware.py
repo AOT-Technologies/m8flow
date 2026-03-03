@@ -27,9 +27,13 @@ def _make_app() -> Flask:
     db.init_app(app)
 
     from m8flow_backend.canonical_db import set_canonical_db
-
     set_canonical_db(db)
 
+
+    # satisfy railguard for unit tests
+    from extensions.startup.guard import set_phase, BootPhase
+    set_phase(BootPhase.APP_CREATED)
+    
     # Ensure ContextVar is reset between requests (including test_client requests).
     app.teardown_request(teardown_request_tenant_context)
 
@@ -58,6 +62,8 @@ def _clean_env():
 def _seed_tenants() -> None:
     from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
 
+    now = int(datetime.now(timezone.utc).timestamp())
+
     db.session.add(
         M8flowTenantModel(
             id="default",
@@ -65,6 +71,8 @@ def _seed_tenants() -> None:
             slug="default",
             created_by="test",
             modified_by="test",
+            created_at_in_seconds=now,
+            updated_at_in_seconds=now,
         )
     )
     db.session.add(
@@ -74,6 +82,8 @@ def _seed_tenants() -> None:
             slug="tenant-a",
             created_by="test",
             modified_by="test",
+            created_at_in_seconds=now,
+            updated_at_in_seconds=now,
         )
     )
     db.session.add(
@@ -83,10 +93,11 @@ def _seed_tenants() -> None:
             slug="tenant-b",
             created_by="test",
             modified_by="test",
+            created_at_in_seconds=now,
+            updated_at_in_seconds=now,
         )
     )
     db.session.commit()
-
 
 
 def test_resolves_tenant_from_jwt_claim() -> None:

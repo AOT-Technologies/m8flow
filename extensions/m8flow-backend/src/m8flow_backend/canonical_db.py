@@ -6,10 +6,10 @@ Set by extensions/app.py after create_app(). Used by tenant resolution and other
 m8flow_backend services so they share the same db reference without depending on
 the extensions package.
 """
-
 from __future__ import annotations
 
 from typing import Any
+from extensions.startup.guard import require_at_least, BootPhase
 
 _canonical_db: Any = None
 
@@ -21,5 +21,7 @@ def set_canonical_db(db: Any) -> None:
 
 
 def get_canonical_db() -> Any:
-    """Return the canonical SQLAlchemy instance, or None if not set."""
+    require_at_least(BootPhase.APP_CREATED, what="get_canonical_db()")
+    if _canonical_db is None:
+        raise RuntimeError("Canonical db is not set. set_canonical_db() must be called after create_app().")
     return _canonical_db
