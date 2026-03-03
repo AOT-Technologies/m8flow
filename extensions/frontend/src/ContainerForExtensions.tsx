@@ -17,7 +17,7 @@ import { ErrorBoundaryFallback } from '@spiffworkflow-frontend/ErrorBoundaryFall
 import SideNav from './components/SideNav';
 
 import Extension from '@spiffworkflow-frontend/views/Extension';
-import { useUriListForPermissions } from '@spiffworkflow-frontend/hooks/UriListForPermissions';
+import { useM8flowUriListForPermissions as useUriListForPermissions } from './hooks/M8flowUriListForPermissions';
 import { PermissionsToCheck, ProcessFile, ProcessModel } from '@spiffworkflow-frontend/interfaces';
 import { usePermissionFetcher } from '@spiffworkflow-frontend/hooks/PermissionService';
 import {
@@ -60,13 +60,17 @@ function MultitenantRootGate({
   isMobile,
   ability,
   targetUris,
+  permissionsLoaded,
 }: {
   extensionUxElements: UiSchemaUxElement[] | null;
   setAdditionalNavElement: (el: ReactElement | null) => void;
   isMobile: boolean;
   ability: any;
   targetUris: any;
+  permissionsLoaded: boolean;
 }) {
+  if (!permissionsLoaded) return null;
+
   const storedTenant = typeof window !== 'undefined' ? localStorage.getItem(M8FLOW_TENANT_STORAGE_KEY) : null;
   if (storedTenant) {
     return (
@@ -76,6 +80,7 @@ function MultitenantRootGate({
         isMobile={isMobile}
         ability={ability}
         targetUris={targetUris}
+        permissionsLoaded={permissionsLoaded}
       />
     );
   }
@@ -89,13 +94,17 @@ function RoleBasedRootGate({
   isMobile,
   ability,
   targetUris,
+  permissionsLoaded,
 }: {
   extensionUxElements: UiSchemaUxElement[] | null;
   setAdditionalNavElement: (el: ReactElement | null) => void;
   isMobile: boolean;
   ability: any;
   targetUris: any;
+  permissionsLoaded: boolean;
 }) {
+  if (!permissionsLoaded) return null;
+
   // Super-admin: always go to tenant management
   if (ability.can("GET", "/m8flow/tenants")) {
     return <Navigate to="/tenants" replace />;
@@ -188,11 +197,12 @@ export default function ContainerForExtensions() {
   const { targetUris } = useUriListForPermissions();
   const permissionRequestData: PermissionsToCheck = {
     [targetUris.extensionListPath]: ["GET"],
-    [targetUris.processInstanceListForMePath]: ["POST"],
+    [targetUris.processInstanceListForMePath]: ["GET", "POST"],
     [targetUris.processGroupListPath]: ["GET"],
     [targetUris.dataStoreListPath]: ["GET"],
     [targetUris.messageInstanceListPath]: ["GET"],
     [targetUris.secretListPath]: ["GET"],
+    "/tasks/*": ["GET"],
     "/m8flow/tenants": ["GET"],
     "/m8flow/templates": ["GET"],
   };
@@ -396,6 +406,7 @@ export default function ContainerForExtensions() {
                   isMobile={isMobile}
                   ability={ability}
                   targetUris={targetUris}
+                  permissionsLoaded={permissionsLoaded}
                 />
               }
             />
@@ -414,6 +425,7 @@ export default function ContainerForExtensions() {
                   isMobile={isMobile}
                   ability={ability}
                   targetUris={targetUris}
+                  permissionsLoaded={permissionsLoaded}
                 />
               }
             />

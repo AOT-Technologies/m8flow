@@ -1,7 +1,7 @@
 import React from "react";
 import { Box, Tabs, Tab } from "@mui/material";
 import { useTranslation } from "react-i18next";
-import { useUriListForPermissions } from "@spiffworkflow-frontend/hooks/UriListForPermissions";
+import { useM8flowUriListForPermissions as useUriListForPermissions } from "../hooks/M8flowUriListForPermissions";
 import { usePermissionFetcher } from "@spiffworkflow-frontend/hooks/PermissionService";
 
 type HeaderTabsProps = {

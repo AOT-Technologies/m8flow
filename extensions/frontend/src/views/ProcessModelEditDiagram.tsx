@@ -64,7 +64,7 @@ import ActiveUsers from '@spiffworkflow-frontend/components/ActiveUsers';
 import useScriptAssistEnabled from '@spiffworkflow-frontend/hooks/useScriptAssistEnabled';
 import useProcessScriptAssistMessage from '@spiffworkflow-frontend/hooks/useProcessScriptAssistQuery';
 import { MessageEditor } from '@spiffworkflow-frontend/components/messages/MessageEditor';
-import { useUriListForPermissions } from '@spiffworkflow-frontend/hooks/UriListForPermissions';
+import { useM8flowUriListForPermissions as useUriListForPermissions } from '../hooks/M8flowUriListForPermissions';
 import { usePermissionFetcher } from '@spiffworkflow-frontend/hooks/PermissionService';
 
 function TabPanel(props: {

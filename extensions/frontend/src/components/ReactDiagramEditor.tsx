@@ -17,7 +17,7 @@ import 'dmn-js/dist/assets/dmn-font/css/dmn-embedded.css';
 import 'dmn-js-properties-panel/dist/assets/properties-panel.css';
 import 'bpmn-js-spiffworkflow/app/css/app.css';
 
-import { useUriListForPermissions } from '@spiffworkflow-frontend/hooks/UriListForPermissions';
+import { useM8flowUriListForPermissions as useUriListForPermissions } from '../hooks/M8flowUriListForPermissions';
 import { PermissionsToCheck } from '@spiffworkflow-frontend/interfaces';
 import { usePermissionFetcher } from '@spiffworkflow-frontend/hooks/PermissionService';
 

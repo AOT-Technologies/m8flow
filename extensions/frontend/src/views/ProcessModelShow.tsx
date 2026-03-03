@@ -30,7 +30,7 @@ import {
 } from '../helpers';
 import { PermissionsToCheck, ProcessFile, ProcessModel } from '../interfaces';
 import { usePermissionFetcher } from '../hooks/PermissionService';
-import { useUriListForPermissions } from '../hooks/UriListForPermissions';
+import { useM8flowUriListForPermissions as useUriListForPermissions } from '../hooks/M8flowUriListForPermissions';
 import ProcessInstanceRun from '../components/ProcessInstanceRun';
 import { Notification } from '../components/Notification';
 import ProcessModelTestRun from '../components/ProcessModelTestRun';
@@ -269,7 +269,7 @@ export default function ProcessModelShow() {
           title="Model Published:"
           onClose={() => setProcessModelPublished(false)}
         >
-          <a href={prUrl} target="_void()">
+          <a href={prUrl} target="_blank" rel="noreferrer">
             {t('view_changes_create_pr')}
           </a>
         </Notification>
