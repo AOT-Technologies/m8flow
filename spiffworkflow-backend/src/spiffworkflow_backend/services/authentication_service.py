@@ -41,7 +41,6 @@ import jwt
 import requests
 from flask import current_app
 from flask import g
-from flask import has_request_context
 from flask import redirect
 from flask import request
 from werkzeug.wrappers import Response
@@ -580,48 +579,12 @@ class AuthenticationService:
         return valid
 
     @staticmethod
-    def _refresh_token_is_tenant_scoped() -> bool:
-        return hasattr(RefreshTokenModel, "m8f_tenant_id")
-
-    @staticmethod
-    def _resolve_refresh_token_tenant_id(tenant_id: str | None = None) -> str | None:
-        if tenant_id:
-            return tenant_id
-
-        if has_request_context():
-            tenant_from_g = getattr(g, "m8flow_tenant_id", None)
-            if isinstance(tenant_from_g, str) and tenant_from_g:
-                return tenant_from_g
-
-            cookie_identifier = request.cookies.get("authentication_identifier")
-            if cookie_identifier:
-                return cookie_identifier
-
-            header_identifier = request.headers.get("SpiffWorkflow-Authentication-Identifier")
-            if header_identifier:
-                return header_identifier
-
-        return None
-
-    @staticmethod
-    def store_refresh_token(user_id: int, refresh_token: str, tenant_id: str | None = None) -> None:
-        query = RefreshTokenModel.query.filter(RefreshTokenModel.user_id == user_id)
-
-        effective_tenant_id: str | None = None
-        if AuthenticationService._refresh_token_is_tenant_scoped():
-            effective_tenant_id = AuthenticationService._resolve_refresh_token_tenant_id(tenant_id)
-            if not effective_tenant_id:
-                raise RefreshTokenStorageError("We could not store the refresh token: missing tenant context.")
-            query = query.filter(RefreshTokenModel.m8f_tenant_id == effective_tenant_id)
-
-        refresh_token_model = query.first()
+    def store_refresh_token(user_id: int, refresh_token: str) -> None:
+        refresh_token_model = RefreshTokenModel.query.filter(RefreshTokenModel.user_id == user_id).first()
         if refresh_token_model:
             refresh_token_model.token = refresh_token
         else:
-            create_values: dict[str, Any] = {"user_id": user_id, "token": refresh_token}
-            if effective_tenant_id:
-                create_values["m8f_tenant_id"] = effective_tenant_id
-            refresh_token_model = RefreshTokenModel(**create_values)
+            refresh_token_model = RefreshTokenModel(user_id=user_id, token=refresh_token)
         db.session.add(refresh_token_model)
         try:
             db.session.commit()
@@ -632,16 +595,8 @@ class AuthenticationService:
             ) from e
 
     @staticmethod
-    def get_refresh_token(user_id: int, tenant_id: str | None = None) -> str | None:
-        query = RefreshTokenModel.query.filter(RefreshTokenModel.user_id == user_id)
-
-        if AuthenticationService._refresh_token_is_tenant_scoped():
-            effective_tenant_id = AuthenticationService._resolve_refresh_token_tenant_id(tenant_id)
-            if not effective_tenant_id:
-                return None
-            query = query.filter(RefreshTokenModel.m8f_tenant_id == effective_tenant_id)
-
-        refresh_token_object: RefreshTokenModel = query.first()
+    def get_refresh_token(user_id: int) -> str | None:
+        refresh_token_object: RefreshTokenModel = RefreshTokenModel.query.filter(RefreshTokenModel.user_id == user_id).first()
         if refresh_token_object:
             return refresh_token_object.token
         return None

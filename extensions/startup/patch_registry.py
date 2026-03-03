@@ -140,6 +140,14 @@ POST_APP_CORE_PATCH_SPECS: tuple[PatchSpec, ...] = (
         target="m8flow_backend.routes.authentication_controller_patch:apply_master_realm_auth_patch",
         minimum_phase=BootPhase.APP_CREATED,
     ),
+    PatchSpec(
+        target="m8flow_backend.services.authentication_service_patch:apply_refresh_token_tenant_patch",
+        minimum_phase=BootPhase.APP_CREATED,
+    ),
+    PatchSpec(
+        target="m8flow_backend.routes.authentication_controller_patch:apply_refresh_token_tenant_patch",
+        minimum_phase=BootPhase.APP_CREATED,
+    ),
 )
 
 
