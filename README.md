@@ -94,6 +94,55 @@ To run the **extensions app** (m8flow backend: tenant login URL, tenant APIs, an
 
 Backend runs on port **8000**. m8flow migrations run automatically at startup.
 
+To run a Celery worker with the same extension bootstrap/patch path, use:
+
+```bash
+./extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh
+```
+
+On Windows PowerShell:
+
+```powershell
+.\extensions\m8flow-backend\bin\run_m8flow_celery_worker.ps1
+```
+
+To run Flower (Celery monitoring UI) with the same bootstrap path:
+
+```bash
+./extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh flower
+```
+
+On Windows PowerShell:
+
+```powershell
+.\extensions\m8flow-backend\bin\run_m8flow_celery_worker.ps1 flower
+```
+
+Local backend + container worker (hybrid):
+
+1. Start backend locally with `.\extensions\m8flow-backend\bin\run_m8flow_backend.ps1` (or `./extensions/m8flow-backend/bin/run_m8flow_backend.sh`).
+2. Start infra + local worker profile from repo root:
+
+```bash
+docker compose -f docker/m8flow-docker-compose.yml --profile local-backend up -d --build m8flow-db redis keycloak minio m8flow-celery-worker-local
+```
+
+3. If `m8flow-celery-worker` is already running, stop/remove it so only one worker consumes the queue:
+
+```bash
+docker compose -f docker/m8flow-docker-compose.yml stop m8flow-celery-worker
+docker compose -f docker/m8flow-docker-compose.yml rm -f m8flow-celery-worker
+```
+
+4. Optional monitoring (Flower) for hybrid mode:
+
+```bash
+docker compose -f docker/m8flow-docker-compose.yml --profile local-backend up -d --build m8flow-celery-flower-local
+```
+
+Open `http://<LOCAL_IP>:5555`.
+
+
 **Alternative — uv-based (sync deps + optional migrations):** If you use `uv` and want to sync backend deps and run SpiffWorkflow migrations before starting, use `./extensions/m8flow-backend/bin/setup_and_run_backend.sh` instead. That script uses port 7000 (`M8FLOW_BACKEND_PORT`) and `M8FLOW_BACKEND_UPGRADE_DB=true` for migrations.
 
 To run backend and frontend together (backend in background), use `./start_dev.sh` from repo root instead.
@@ -307,3 +356,5 @@ m8flow builds upon the outstanding work of the **SpiffWorkflow community** and c
 ## License
 
 m8flow is released under the **GNU Lesser General Public License (LGPL)**.
+
+
