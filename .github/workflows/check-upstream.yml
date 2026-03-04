@@ -15,7 +15,7 @@ on:
 jobs:
   check-upstream:
     runs-on: ubuntu-latest
-    if: (vars.AUTO_BUILD != 'true' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    if: (vars.AUTO_BUILD == 'true' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     permissions:
       contents: read
       actions: write  # Required to trigger other workflows

@@ -48,7 +48,7 @@ jobs:
   # -------------------------
   validate:
     name: Validate Final Release
-    if: vars.AUTO_BUILD != 'true' || github.event_name == 'workflow_dispatch'
+    if: vars.AUTO_BUILD == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     outputs:
       release_tag: ${{ steps.tag.outputs.tag }}

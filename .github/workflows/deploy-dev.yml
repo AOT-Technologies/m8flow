@@ -3,7 +3,7 @@ name: Deploy to Dev
 on:
   push:
     tags:
-      - "v*-rc*"
+      - "v*-rc"
   workflow_dispatch:
 
 permissions:
@@ -21,7 +21,7 @@ env:
 jobs:
   build:
     name: Build & Push Images (RC)
-    if: vars.AUTO_BUILD != 'true' || github.event_name == 'workflow_dispatch'
+    if: vars.AUTO_BUILD == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     outputs:
       backend_digest: ${{ steps.digest.outputs.backend }}
