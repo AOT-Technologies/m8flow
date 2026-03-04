@@ -18,6 +18,7 @@ concurrency:
 
 env:
   REGISTRY: docker.io
+  IMAGE_REPOSITORY: m8flow
   PROJECT: m8flow
 
 jobs:
@@ -43,7 +44,6 @@ jobs:
         run: |
           TAG="${{ github.event.inputs.rc_tag || github.ref_name }}"
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
-          echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
@@ -64,9 +64,7 @@ jobs:
           context: .
           file: docker/m8flow.backend.Dockerfile
           push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.PROJECT }}-backend:${{ steps.meta.outputs.sha }}
-            ${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.PROJECT }}-backend:${{ steps.meta.outputs.tag }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-backend:${{ steps.meta.outputs.tag }}
           provenance: true
           sbom: true
 
@@ -80,9 +78,7 @@ jobs:
           context: .
           file: docker/m8flow.frontend.Dockerfile
           push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.PROJECT }}-frontend:${{ steps.meta.outputs.sha }}
-            ${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.PROJECT }}-frontend:${{ steps.meta.outputs.tag }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-frontend:${{ steps.meta.outputs.tag }}
           provenance: true
           sbom: true
 
@@ -96,9 +92,7 @@ jobs:
           context: .
           file: docker/m8flow.keycloak.Dockerfile
           push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.PROJECT }}-keycloak:${{ steps.meta.outputs.sha }}
-            ${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.PROJECT }}-keycloak:${{ steps.meta.outputs.tag }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-keycloak:${{ steps.meta.outputs.tag }}
           provenance: true
           sbom: true
 
@@ -112,9 +106,7 @@ jobs:
           context: m8flow-connector-proxy
           file: m8flow-connector-proxy/Dockerfile
           push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.PROJECT }}-connector-proxy:${{ steps.meta.outputs.sha }}
-            ${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.PROJECT }}-connector-proxy:${{ steps.meta.outputs.tag }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-connector-proxy:${{ steps.meta.outputs.tag }}
           provenance: true
           sbom: true
 
