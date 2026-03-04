@@ -1,10 +1,12 @@
 name: Deploy to Dev
 
 on:
-  push:
-    tags:
-      - "v*-rc"
   workflow_dispatch:
+    inputs:
+      rc_tag:
+        description: "RC tag name (e.g. v1.2.3-rc)"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -33,13 +35,15 @@ jobs:
       - name: Checkout tagged commit
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.inputs.rc_tag || github.ref }}
           fetch-depth: 0
 
       - name: Extract metadata
         id: meta
         run: |
-          echo "tag=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
-          echo "sha=${GITHUB_SHA}" >> $GITHUB_OUTPUT
+          TAG="${{ github.event.inputs.rc_tag || github.ref_name }}"
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
