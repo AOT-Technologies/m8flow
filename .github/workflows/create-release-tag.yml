@@ -9,7 +9,7 @@ on:
         default: ""
         type: string
       tag_name:
-        description: "Tag name (vX.Y.Z or vX.Y.Z-rcN). Leave empty to use latest tag on main."
+        description: "Tag name (vX.Y.Z or vX.Y.Z-rc). Leave empty to use latest tag on main."
         required: false
         default: ""
         type: string
@@ -70,15 +70,15 @@ jobs:
               exit 1
             fi
             # increment $LATEST by one patch
-            # If $LATEST is v1.2.3(-rcN), produce v1.2.4 (drop rc if present)
-            if [[ "$LATEST" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)(-rc[0-9]+)?$ ]]; then
+            # If $LATEST is v1.2.3 or v1.2.3-rc, produce v1.2.4 or v1.2.4-rc
+            if [[ "$LATEST" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)(-rc)?$ ]]; then
               MAJOR="${BASH_REMATCH[1]}"
               MINOR="${BASH_REMATCH[2]}"
               PATCH="${BASH_REMATCH[3]}"
               # Always increment patch
               NEXT_PATCH=$((PATCH + 1))
               if [[ "${{ inputs.release_type }}" == "release-candidate" ]]; then
-                echo "tag=v${MAJOR}.${MINOR}.${NEXT_PATCH}-rc0" >> $GITHUB_OUTPUT
+                echo "tag=v${MAJOR}.${MINOR}.${NEXT_PATCH}-rc" >> $GITHUB_OUTPUT
               else
                 echo "tag=v${MAJOR}.${MINOR}.${NEXT_PATCH}" >> $GITHUB_OUTPUT
               fi
@@ -114,9 +114,9 @@ jobs:
       - name: Validate tag format
         run: |
           TAG="${{ steps.resolve_tag.outputs.tag }}"
-          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$ ]]; then
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc)?$ ]]; then
             echo "::error::Invalid tag format: $TAG"
-            echo "Expected: vX.Y.Z or vX.Y.Z-rcN"
+            echo "Expected: vX.Y.Z or vX.Y.Z-rc"
             exit 1
           fi
 
