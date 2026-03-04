@@ -4,8 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       commit_sha:
-        description: "Commit SHA to tag (must be on main)"
-        required: true
+        description: "Commit SHA to tag (must be on main). Leave empty to use latest commit on main."
+        required: false
+        default: ""
         type: string
       tag_name:
         description: "Tag name (vX.Y.Z or vX.Y.Z-rcN)"
@@ -30,6 +31,19 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      # -------------------------
+      # Resolve commit to tag
+      # -------------------------
+      - name: Resolve commit to tag
+        id: resolve_commit
+        run: |
+          git fetch origin main
+          if [[ -n "${{ inputs.commit_sha }}" ]]; then
+            echo "sha=${{ inputs.commit_sha }}" >> $GITHUB_OUTPUT
+          else
+            echo "sha=$(git rev-parse origin/main)" >> $GITHUB_OUTPUT
+          fi
 
       # -------------------------
       # Maintainer / Permission Check
@@ -67,9 +81,7 @@ jobs:
       # -------------------------
       - name: Verify commit exists on main branch
         run: |
-          COMMIT="${{ inputs.commit_sha }}"
-
-          git fetch origin main
+          COMMIT="${{ steps.resolve_commit.outputs.sha }}"
 
           if ! git cat-file -e "$COMMIT^{commit}"; then
             echo "::error::Commit $COMMIT does not exist"
@@ -106,7 +118,7 @@ jobs:
       - name: Create annotated tag
         env:
           TAG: ${{ inputs.tag_name }}
-          COMMIT: ${{ inputs.commit_sha }}
+          COMMIT: ${{ steps.resolve_commit.outputs.sha }}
           MESSAGE: ${{ inputs.tag_message }}
         run: |
           if [[ -z "$MESSAGE" ]]; then
@@ -134,7 +146,7 @@ jobs:
           body: |
             Release ${{ inputs.tag_name }}
 
-            Commit: ${{ inputs.commit_sha }}
+            Commit: ${{ steps.resolve_commit.outputs.sha }}
           draft: false
           prerelease: false
 
@@ -148,7 +160,7 @@ jobs:
           echo "## Release Tag Created 🏷️" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Tag:** \`${{ inputs.tag_name }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** \`${{ inputs.commit_sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${{ steps.resolve_commit.outputs.sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Type:** $([ "$IS_RC" == "true" ] && echo "Release Candidate" || echo "Final Release")" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
