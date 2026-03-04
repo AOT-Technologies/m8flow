@@ -98,6 +98,17 @@ def _seed_tenants() -> None:
             updated_at_in_seconds=now,
         )
     )
+    db.session.add(
+        M8flowTenantModel(
+            id="tenant-it-id",
+            name="Tenant IT",
+            slug="it",
+            created_by="test",
+            modified_by="test",
+            created_at_in_seconds=now,
+            updated_at_in_seconds=now,
+        )
+    )
     db.session.commit()
 
 
@@ -316,3 +327,22 @@ def test_login_return_path_is_not_public_by_prefix_collision() -> None:
     app = _make_app()
     with app.test_request_context("/v1.0/login_return"):
         assert _is_public_request() is False
+
+
+def test_login_return_resolves_tenant_from_state_when_auth_is_excluded() -> None:
+    import base64
+
+    app = _make_app()
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+
+        state_payload = {
+            "final_url": "http://localhost:7000/",
+            "authentication_identifier": "it",
+        }
+        state = base64.b64encode(bytes(str(state_payload), "utf-8")).decode("utf-8")
+
+        with app.test_request_context(f"/v1.0/login_return?state={state}"):
+            resolve_request_tenant()
+            assert g.m8flow_tenant_id == "tenant-it-id"

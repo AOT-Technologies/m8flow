@@ -3,11 +3,13 @@ from __future__ import annotations
 import ast
 import base64
 from contextlib import contextmanager
+from functools import wraps
 import logging
 from urllib.parse import unquote
 from urllib.parse import urlsplit
 
 from m8flow_backend.services.tenant_context_middleware import resolve_request_tenant
+from m8flow_backend.tenancy import TENANT_CLAIM
 from spiffworkflow_backend.routes import authentication_controller
 
 logger = logging.getLogger(__name__)
@@ -62,7 +64,7 @@ def _tenant_for_refresh_tokens(
     from flask import g, has_request_context, request
 
     if isinstance(decoded_token, dict):
-        tenant_from_claim = decoded_token.get("m8flow_tenant_id")
+        tenant_from_claim = decoded_token.get(TENANT_CLAIM)
         if isinstance(tenant_from_claim, str) and tenant_from_claim.strip():
             return tenant_from_claim
 
@@ -125,6 +127,7 @@ def apply_refresh_token_tenant_patch() -> None:
     original_login_return = authentication_controller.login_return
     original_get_user_model_from_token = authentication_controller._get_user_model_from_token
 
+    @wraps(original_login_return)
     def patched_login_return(*args, **kwargs):
         state = kwargs.get("state")
         if state is None and args:
@@ -133,6 +136,7 @@ def apply_refresh_token_tenant_patch() -> None:
         with _temporary_request_tenant(tenant_id):
             return original_login_return(*args, **kwargs)
 
+    @wraps(original_get_user_model_from_token)
     def patched_get_user_model_from_token(decoded_token: dict):
         tenant_id = _tenant_for_refresh_tokens(decoded_token=decoded_token)
         with _temporary_request_tenant(tenant_id):
