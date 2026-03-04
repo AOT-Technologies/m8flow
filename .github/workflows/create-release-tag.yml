@@ -9,9 +9,17 @@ on:
         default: ""
         type: string
       tag_name:
-        description: "Tag name (vX.Y.Z or vX.Y.Z-rcN)"
-        required: true
+        description: "Tag name (vX.Y.Z or vX.Y.Z-rcN). Leave empty to use latest tag on main."
+        required: false
+        default: ""
         type: string
+      release_type:
+        description: "Release candidate or final release"
+        required: true
+        type: choice
+        options:
+          - release-candidate
+          - final-release
       tag_message:
         description: "Optional annotated tag message"
         required: false
@@ -46,6 +54,42 @@ jobs:
           fi
 
       # -------------------------
+      # Resolve tag name
+      # -------------------------
+      - name: Resolve tag name
+        id: resolve_tag
+        run: |
+          git fetch origin --tags 2>/dev/null || true
+          if [[ -n "${{ inputs.tag_name }}" ]]; then
+            echo "tag=${{ inputs.tag_name }}" >> $GITHUB_OUTPUT
+            echo "user_provided=true" >> $GITHUB_OUTPUT
+          else
+            LATEST=$(git describe --tags --abbrev=0 origin/main 2>/dev/null || true)
+            if [[ -z "$LATEST" ]]; then
+              echo "::error::No tag found on main. Provide a tag name or create a tag first."
+              exit 1
+            fi
+            # increment $LATEST by one patch
+            # If $LATEST is v1.2.3(-rcN), produce v1.2.4 (drop rc if present)
+            if [[ "$LATEST" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)(-rc[0-9]+)?$ ]]; then
+              MAJOR="${BASH_REMATCH[1]}"
+              MINOR="${BASH_REMATCH[2]}"
+              PATCH="${BASH_REMATCH[3]}"
+              # Always increment patch
+              NEXT_PATCH=$((PATCH + 1))
+              if [[ "${{ inputs.release_type }}" == "release-candidate" ]]; then
+                echo "tag=v${MAJOR}.${MINOR}.${NEXT_PATCH}-rc0" >> $GITHUB_OUTPUT
+              else
+                echo "tag=v${MAJOR}.${MINOR}.${NEXT_PATCH}" >> $GITHUB_OUTPUT
+              fi
+            else
+              echo "::error::Cannot parse last tag '$LATEST'"
+              exit 1
+            fi
+            echo "user_provided=false" >> $GITHUB_OUTPUT
+          fi
+
+      # -------------------------
       # Maintainer / Permission Check
       # -------------------------
       - name: Verify user has write permissions
@@ -69,7 +113,7 @@ jobs:
       # -------------------------
       - name: Validate tag format
         run: |
-          TAG="${{ inputs.tag_name }}"
+          TAG="${{ steps.resolve_tag.outputs.tag }}"
           if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$ ]]; then
             echo "::error::Invalid tag format: $TAG"
             echo "Expected: vX.Y.Z or vX.Y.Z-rcN"
@@ -98,7 +142,7 @@ jobs:
       # -------------------------
       - name: Check tag does not already exist
         run: |
-          TAG="${{ inputs.tag_name }}"
+          TAG="${{ steps.resolve_tag.outputs.tag }}"
           if git rev-parse "$TAG" >/dev/null 2>&1; then
             echo "::error::Tag $TAG already exists"
             exit 1
@@ -117,7 +161,7 @@ jobs:
       # -------------------------
       - name: Create annotated tag
         env:
-          TAG: ${{ inputs.tag_name }}
+          TAG: ${{ steps.resolve_tag.outputs.tag }}
           COMMIT: ${{ steps.resolve_commit.outputs.sha }}
           MESSAGE: ${{ inputs.tag_message }}
         run: |
@@ -132,19 +176,19 @@ jobs:
       # -------------------------
       - name: Push tag to origin
         run: |
-          git push origin "${{ inputs.tag_name }}"
+          git push origin "${{ steps.resolve_tag.outputs.tag }}"
 
       # -------------------------
       # Create GitHub Release (final tags only)
       # -------------------------
       - name: Create GitHub Release
-        if: ${{ !contains(inputs.tag_name, '-rc') }}
+        if: ${{ !contains(steps.resolve_tag.outputs.tag, '-rc') }}
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.tag_name }}
-          name: ${{ inputs.tag_name }}
+          tag_name: ${{ steps.resolve_tag.outputs.tag }}
+          name: ${{ steps.resolve_tag.outputs.tag }}
           body: |
-            Release ${{ inputs.tag_name }}
+            Release ${{ steps.resolve_tag.outputs.tag }}
 
             Commit: ${{ steps.resolve_commit.outputs.sha }}
           draft: false
@@ -155,11 +199,12 @@ jobs:
       # -------------------------
       - name: Tag creation summary
         run: |
-          IS_RC=${{ contains(inputs.tag_name, '-rc') }}
+          IS_RC=${{ contains(steps.resolve_tag.outputs.tag, '-rc') }}
+          USER_PROVIDED=${{ steps.resolve_tag.outputs.user_provided }}
 
-          echo "## Release Tag Created 🏷️" >> $GITHUB_STEP_SUMMARY
+          echo "## Release Tag 🏷️" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Tag:** \`${{ inputs.tag_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** \`${{ steps.resolve_tag.outputs.tag }}\`$([ "$USER_PROVIDED" = "false" ] && echo " (auto-generated next version)")" >> $GITHUB_STEP_SUMMARY
           echo "**Commit:** \`${{ steps.resolve_commit.outputs.sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Type:** $([ "$IS_RC" == "true" ] && echo "Release Candidate" || echo "Final Release")" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
