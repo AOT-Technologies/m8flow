@@ -5,6 +5,7 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
 
 # Default: safe for fork PRs
 permissions:
@@ -14,12 +15,14 @@ permissions:
 
 jobs:
   changes:
+    if: vars.AUTO_BUILD != 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
       extensions: ${{ steps.filter.outputs.extensions }}
       migrations: ${{ steps.filter.outputs.migrations }}
+      docker_m8flow: ${{ steps.filter.outputs.docker_m8flow }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v2
@@ -35,13 +38,16 @@ jobs:
               - 'spiffworkflow-backend/**'
             migrations:
               - 'spiffworkflow-backend/migrations/versions/*.py'
+            docker_m8flow:
+              - 'docker/**'
+              - 'm8flow-connector-proxy/**'
 
   # -------------------------
   # Backend CI
   # -------------------------
   backend:
     needs: changes
-    if: ${{ needs.changes.outputs.backend == 'true' }}
+    if: ${{ (vars.AUTO_BUILD != 'true' || github.event_name == 'workflow_dispatch') && needs.changes.outputs.backend == 'true' }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -67,7 +73,7 @@ jobs:
   # -------------------------
   frontend:
     needs: changes
-    if: ${{ needs.changes.outputs.frontend == 'true' }}
+    if: ${{ (vars.AUTO_BUILD != 'true' || github.event_name == 'workflow_dispatch') && needs.changes.outputs.frontend == 'true' }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -91,7 +97,7 @@ jobs:
   # -------------------------
   extensions:
     needs: changes
-    if: ${{ needs.changes.outputs.extensions == 'true' }}
+    if: ${{ (vars.AUTO_BUILD != 'true' || github.event_name == 'workflow_dispatch') && needs.changes.outputs.extensions == 'true' }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -116,7 +122,7 @@ jobs:
   codeql:
     name: CodeQL Scan
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    if: ${{ (vars.AUTO_BUILD != 'true' || github.event_name == 'workflow_dispatch') && github.event_name == 'pull_request' }}
     strategy:
       matrix:
         language: [ 'python', 'javascript' ]
@@ -135,7 +141,7 @@ jobs:
   trivy:
     name: Trivy Security Scan
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    if: ${{ (vars.AUTO_BUILD != 'true' || github.event_name == 'workflow_dispatch') && github.event_name == 'pull_request' }}
     steps:
       - uses: actions/checkout@v4
       - uses: aquasecurity/trivy-action@0.20.0
@@ -152,7 +158,7 @@ jobs:
   migration-check:
     name: Migration Compatibility Check
     needs: changes
-    if: ${{ needs.changes.outputs.migrations == 'true' && github.event_name == 'pull_request' }}
+    if: ${{ (vars.AUTO_BUILD != 'true' || github.event_name == 'workflow_dispatch') && needs.changes.outputs.migrations == 'true' && github.event_name == 'pull_request' }}
     uses: ./.github/workflows/check-migrations.yml
     with:
       migrations_changed: true
@@ -164,21 +170,35 @@ jobs:
     name: Docker Build Dry Run
     needs: changes
     runs-on: ubuntu-latest
-    if: ${{ (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true') && github.event_name == 'pull_request' }}
+    if: ${{ (vars.AUTO_BUILD != 'true' || github.event_name == 'workflow_dispatch') && (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true' || needs.changes.outputs.extensions == 'true' || needs.changes.outputs.docker_m8flow == 'true') && github.event_name == 'pull_request' }}
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
       - name: Backend image build (no push)
         run: |
           docker buildx build \
-            --file spiffworkflow-backend/Dockerfile \
+            --file docker/m8flow.backend.Dockerfile \
             --tag backend:pr-test \
             --load \
-            spiffworkflow-backend
+            .
       - name: Frontend image build (no push)
         run: |
           docker buildx build \
-            --file spiffworkflow-frontend/Dockerfile \
+            --file docker/m8flow.frontend.Dockerfile \
             --tag frontend:pr-test \
             --load \
-            spiffworkflow-frontend
+            .
+      - name: Keycloak image build (no push)
+        run: |
+          docker buildx build \
+            --file docker/m8flow.keycloak.Dockerfile \
+            --tag keycloak:pr-test \
+            --load \
+            .
+      - name: Connector-proxy image build (no push)
+        run: |
+          docker buildx build \
+            --file m8flow-connector-proxy/Dockerfile \
+            --tag connector-proxy:pr-test \
+            --load \
+            m8flow-connector-proxy

@@ -23,6 +23,14 @@ on:
         description: "Frontend image digest (sha256:...) for rollback"
         required: true
         type: string
+      keycloak_image_digest:
+        description: "Keycloak image digest (sha256:...) for rollback"
+        required: true
+        type: string
+      connector_proxy_image_digest:
+        description: "Connector-proxy image digest (sha256:...) for rollback"
+        required: true
+        type: string
       create_rollback_tag:
         description: "Create rollback tag (e.g. v1.5.0-rb1)"
         required: false
@@ -38,7 +46,7 @@ concurrency:
 
 env:
   REGISTRY: docker.io
-  PROJECT: spiffworkflow
+  PROJECT: m8flow
 
 jobs:
   # -------------------------
@@ -78,6 +86,20 @@ jobs:
         run: |
           [[ "${{ inputs.frontend_image_digest }}" =~ ^sha256:[a-f0-9]{64}$ ]] || {
             echo "::error::Invalid frontend image digest"
+            exit 1
+          }
+
+      - name: Validate keycloak digest format
+        run: |
+          [[ "${{ inputs.keycloak_image_digest }}" =~ ^sha256:[a-f0-9]{64}$ ]] || {
+            echo "::error::Invalid keycloak image digest"
+            exit 1
+          }
+
+      - name: Validate connector-proxy digest format
+        run: |
+          [[ "${{ inputs.connector_proxy_image_digest }}" =~ ^sha256:[a-f0-9]{64}$ ]] || {
+            echo "::error::Invalid connector-proxy image digest"
             exit 1
           }
 
@@ -131,6 +153,22 @@ jobs:
           kubectl -n ${{ inputs.environment }} set image deployment/spiffworkflow-frontend \
             frontend=${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.PROJECT }}-frontend@${{ inputs.frontend_image_digest }}
 
+      # -------------------------
+      # Rollback Keycloak
+      # -------------------------
+      - name: Rollback keycloak (digest)
+        run: |
+          kubectl -n ${{ inputs.environment }} set image deployment/keycloak \
+            keycloak=${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.PROJECT }}-keycloak@${{ inputs.keycloak_image_digest }}
+
+      # -------------------------
+      # Rollback Connector-Proxy
+      # -------------------------
+      - name: Rollback connector-proxy (digest)
+        run: |
+          kubectl -n ${{ inputs.environment }} set image deployment/m8flow-connector-proxy \
+            connector-proxy=${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.PROJECT }}-connector-proxy@${{ inputs.connector_proxy_image_digest }}
+
       - name: Wait for rollout
         run: |
           echo "Waiting for backend rollout..."
@@ -147,6 +185,20 @@ jobs:
             exit 1
           }
 
+          echo "Waiting for keycloak rollout..."
+          kubectl -n ${{ inputs.environment }} rollout status deployment/keycloak --timeout=300s || {
+            echo "::error::Keycloak rollout failed"
+            kubectl -n ${{ inputs.environment }} describe deployment/keycloak
+            exit 1
+          }
+
+          echo "Waiting for connector-proxy rollout..."
+          kubectl -n ${{ inputs.environment }} rollout status deployment/m8flow-connector-proxy --timeout=300s || {
+            echo "::error::Connector-proxy rollout failed"
+            kubectl -n ${{ inputs.environment }} describe deployment/m8flow-connector-proxy
+            exit 1
+          }
+
       - name: Smoke tests after rollback
         run: |
           # Determine URLs based on environment
@@ -154,14 +206,20 @@ jobs:
             dev)
               BACKEND_URL="${{ secrets.DEV_BACKEND_URL }}"
               FRONTEND_URL="${{ secrets.DEV_FRONTEND_URL }}"
+              KEYCLOAK_URL="${{ secrets.DEV_KEYCLOAK_URL }}"
+              CONNECTOR_PROXY_URL="${{ secrets.DEV_CONNECTOR_PROXY_URL }}"
               ;;
             qa)
               BACKEND_URL="${{ secrets.QA_BACKEND_URL }}"
               FRONTEND_URL="${{ secrets.QA_FRONTEND_URL }}"
+              KEYCLOAK_URL="${{ secrets.QA_KEYCLOAK_URL }}"
+              CONNECTOR_PROXY_URL="${{ secrets.QA_CONNECTOR_PROXY_URL }}"
               ;;
             prod)
               BACKEND_URL="${{ secrets.PROD_BACKEND_URL }}"
               FRONTEND_URL="${{ secrets.PROD_FRONTEND_URL }}"
+              KEYCLOAK_URL="${{ secrets.PROD_KEYCLOAK_URL }}"
+              CONNECTOR_PROXY_URL="${{ secrets.PROD_CONNECTOR_PROXY_URL }}"
               ;;
           esac
 
@@ -185,6 +243,26 @@ jobs:
             echo "::warning::Frontend URL not configured, skipping health check"
           fi
 
+          if [[ -n "$KEYCLOAK_URL" ]]; then
+            echo "Checking keycloak health after rollback..."
+            curl --fail --silent --show-error --max-time 30 --retry 3 --retry-delay 5 "${KEYCLOAK_URL}/health" || {
+              echo "::error::Keycloak health check failed after rollback"
+              exit 1
+            }
+          else
+            echo "::warning::Keycloak URL not configured, skipping health check"
+          fi
+
+          if [[ -n "$CONNECTOR_PROXY_URL" ]]; then
+            echo "Checking connector-proxy health after rollback..."
+            curl --fail --silent --show-error --max-time 30 --retry 3 --retry-delay 5 "${CONNECTOR_PROXY_URL}/liveness" || {
+              echo "::error::Connector-proxy health check failed after rollback"
+              exit 1
+            }
+          else
+            echo "::warning::Connector-proxy URL not configured, skipping health check"
+          fi
+
           echo "Smoke tests passed after rollback"
 
       - name: Cleanup kubeconfig
@@ -202,6 +280,8 @@ jobs:
           echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| Backend | \`${{ inputs.backend_image_digest }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Frontend | \`${{ inputs.frontend_image_digest }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Keycloak | \`${{ inputs.keycloak_image_digest }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Connector-Proxy | \`${{ inputs.connector_proxy_image_digest }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Rolled back at:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
           echo "**Initiated by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY

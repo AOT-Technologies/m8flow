@@ -22,6 +22,14 @@ on:
         description: "Frontend image digest (sha256:...)"
         required: true
         type: string
+      keycloak_image_digest:
+        description: "Keycloak image digest (sha256:...)"
+        required: true
+        type: string
+      connector_proxy_image_digest:
+        description: "Connector-proxy image digest (sha256:...)"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -32,7 +40,7 @@ concurrency:
 
 env:
   REGISTRY: docker.io
-  PROJECT: spiffworkflow
+  PROJECT: m8flow
 
 jobs:
   # -------------------------
@@ -40,11 +48,14 @@ jobs:
   # -------------------------
   validate:
     name: Validate Final Release
+    if: vars.AUTO_BUILD != 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     outputs:
       release_tag: ${{ steps.tag.outputs.tag }}
       backend_digest: ${{ steps.digests.outputs.backend }}
       frontend_digest: ${{ steps.digests.outputs.frontend }}
+      keycloak_digest: ${{ steps.digests.outputs.keycloak }}
+      connector_proxy_digest: ${{ steps.digests.outputs.connector_proxy }}
 
     steps:
       - name: Determine release tag
@@ -109,6 +120,8 @@ jobs:
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             BACKEND="${{ inputs.backend_image_digest }}"
             FRONTEND="${{ inputs.frontend_image_digest }}"
+            KEYCLOAK="${{ inputs.keycloak_image_digest }}"
+            CONNECTOR_PROXY="${{ inputs.connector_proxy_image_digest }}"
 
             # Validate format
             if [[ ! "$BACKEND" =~ ^sha256:[a-f0-9]{64}$ ]]; then
@@ -119,9 +132,19 @@ jobs:
               echo "::error::Invalid frontend image digest format"
               exit 1
             fi
+            if [[ ! "$KEYCLOAK" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+              echo "::error::Invalid keycloak image digest format"
+              exit 1
+            fi
+            if [[ ! "$CONNECTOR_PROXY" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+              echo "::error::Invalid connector-proxy image digest format"
+              exit 1
+            fi
 
             echo "backend=$BACKEND" >> $GITHUB_OUTPUT
             echo "frontend=$FRONTEND" >> $GITHUB_OUTPUT
+            echo "keycloak=$KEYCLOAK" >> $GITHUB_OUTPUT
+            echo "connector_proxy=$CONNECTOR_PROXY" >> $GITHUB_OUTPUT
             echo "Using provided digests"
             exit 0
           fi
@@ -163,8 +186,17 @@ jobs:
             exit 1
           fi
 
+          for f in backend-image-digest.txt frontend-image-digest.txt keycloak-image-digest.txt connector-proxy-image-digest.txt; do
+            if [[ ! -f "./digests/$f" ]]; then
+              echo "::error::Missing digest file: $f (artifact must contain all four)"
+              exit 1
+            fi
+          done
+
           BACKEND=$(cat ./digests/backend-image-digest.txt)
           FRONTEND=$(cat ./digests/frontend-image-digest.txt)
+          KEYCLOAK=$(cat ./digests/keycloak-image-digest.txt)
+          CONNECTOR_PROXY=$(cat ./digests/connector-proxy-image-digest.txt)
 
           # Validate retrieved digests
           if [[ ! "$BACKEND" =~ ^sha256:[a-f0-9]{64}$ ]]; then
@@ -175,9 +207,19 @@ jobs:
             echo "::error::Retrieved frontend digest is invalid: $FRONTEND"
             exit 1
           fi
+          if [[ ! "$KEYCLOAK" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo "::error::Retrieved keycloak digest is invalid: $KEYCLOAK"
+            exit 1
+          fi
+          if [[ ! "$CONNECTOR_PROXY" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo "::error::Retrieved connector-proxy digest is invalid: $CONNECTOR_PROXY"
+            exit 1
+          fi
 
           echo "backend=$BACKEND" >> $GITHUB_OUTPUT
           echo "frontend=$FRONTEND" >> $GITHUB_OUTPUT
+          echo "keycloak=$KEYCLOAK" >> $GITHUB_OUTPUT
+          echo "connector_proxy=$CONNECTOR_PROXY" >> $GITHUB_OUTPUT
           echo "Retrieved digests from Dev build artifacts"
 
   # -------------------------
@@ -185,6 +227,7 @@ jobs:
   # -------------------------
   deploy:
     name: Deploy to Production (Digest-Based)
+    if: (vars.AUTO_BUILD != 'true' || github.event_name == 'workflow_dispatch') && vars.Prod_Deploy == 'true'
     needs: validate
     runs-on: ubuntu-latest
 
@@ -230,6 +273,32 @@ jobs:
             exit 1
           }
 
+      # -------------------------
+      # Deploy Keycloak
+      # -------------------------
+      - name: Deploy keycloak (digest only)
+        run: |
+          echo "Deploying keycloak with digest: ${{ needs.validate.outputs.keycloak_digest }}"
+          kubectl -n prod set image deployment/keycloak \
+            keycloak=${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.PROJECT }}-keycloak@${{ needs.validate.outputs.keycloak_digest }} || {
+            echo "::error::Failed to update keycloak deployment"
+            kubectl -n prod describe deployment/keycloak
+            exit 1
+          }
+
+      # -------------------------
+      # Deploy Connector-Proxy
+      # -------------------------
+      - name: Deploy connector-proxy (digest only)
+        run: |
+          echo "Deploying connector-proxy with digest: ${{ needs.validate.outputs.connector_proxy_digest }}"
+          kubectl -n prod set image deployment/m8flow-connector-proxy \
+            connector-proxy=${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.PROJECT }}-connector-proxy@${{ needs.validate.outputs.connector_proxy_digest }} || {
+            echo "::error::Failed to update connector-proxy deployment"
+            kubectl -n prod describe deployment/m8flow-connector-proxy
+            exit 1
+          }
+
       - name: Wait for rollout
         run: |
           echo "Waiting for backend rollout..."
@@ -245,6 +314,22 @@ jobs:
             echo "::error::Frontend rollout failed or timed out"
             kubectl -n prod describe deployment/spiffworkflow-frontend
             kubectl -n prod logs deployment/spiffworkflow-frontend --tail=50 || true
+            exit 1
+          }
+
+          echo "Waiting for keycloak rollout..."
+          kubectl -n prod rollout status deployment/keycloak --timeout=300s || {
+            echo "::error::Keycloak rollout failed or timed out"
+            kubectl -n prod describe deployment/keycloak
+            kubectl -n prod logs deployment/keycloak --tail=50 || true
+            exit 1
+          }
+
+          echo "Waiting for connector-proxy rollout..."
+          kubectl -n prod rollout status deployment/m8flow-connector-proxy --timeout=300s || {
+            echo "::error::Connector-proxy rollout failed or timed out"
+            kubectl -n prod describe deployment/m8flow-connector-proxy
+            kubectl -n prod logs deployment/m8flow-connector-proxy --tail=50 || true
             exit 1
           }
 
@@ -264,6 +349,8 @@ jobs:
         run: |
           BACKEND_URL="${{ secrets.PROD_BACKEND_URL }}"
           FRONTEND_URL="${{ secrets.PROD_FRONTEND_URL }}"
+          KEYCLOAK_URL="${{ secrets.PROD_KEYCLOAK_URL }}"
+          CONNECTOR_PROXY_URL="${{ secrets.PROD_CONNECTOR_PROXY_URL }}"
 
           if [[ -n "$BACKEND_URL" ]]; then
             echo "Checking production backend health..."
@@ -283,6 +370,26 @@ jobs:
             }
           else
             echo "::warning::PROD_FRONTEND_URL not configured, skipping frontend verification"
+          fi
+
+          if [[ -n "$KEYCLOAK_URL" ]]; then
+            echo "Checking production keycloak health..."
+            curl --fail --silent --show-error --max-time 30 "${KEYCLOAK_URL}/health" || {
+              echo "::error::Production keycloak health check failed"
+              exit 1
+            }
+          else
+            echo "::warning::PROD_KEYCLOAK_URL not configured, skipping keycloak verification"
+          fi
+
+          if [[ -n "$CONNECTOR_PROXY_URL" ]]; then
+            echo "Checking production connector-proxy health..."
+            curl --fail --silent --show-error --max-time 30 "${CONNECTOR_PROXY_URL}/liveness" || {
+              echo "::error::Production connector-proxy health check failed"
+              exit 1
+            }
+          else
+            echo "::warning::PROD_CONNECTOR_PROXY_URL not configured, skipping connector-proxy verification"
           fi
 
           echo "Post-deploy verification passed"
@@ -307,6 +414,8 @@ jobs:
           echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| Backend | \`${{ needs.validate.outputs.backend_digest }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Frontend | \`${{ needs.validate.outputs.frontend_digest }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Keycloak | \`${{ needs.validate.outputs.keycloak_digest }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Connector-Proxy | \`${{ needs.validate.outputs.connector_proxy_digest }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Deployed at:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
