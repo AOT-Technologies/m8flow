@@ -50,9 +50,8 @@ services:
 
   nats:
     container_name: m8flow-nats
-    build:
-      context: ..
-      dockerfile: docker/m8flow.nats.Dockerfile
+    image: nats:2.10-alpine
+    command: ["-js", "--store_dir=/data/nats"]
     ports:
       - "${M8FLOW_NATS_PORT:-4222}:4222/tcp" # client
       - "8222:8222/tcp" # monitoring HTTP (optional)
@@ -71,15 +70,18 @@ services:
       context: ..
       dockerfile: docker/m8flow.backend.Dockerfile
     command:
-      [
-        "sh",
-        "-c",
-        "uv pip install --system nats-py httpx python-dotenv && PYTHONPATH=/app:/app/extensions/m8flow-backend/src:/app/spiffworkflow-backend/src python m8flow-nats-consumer/consumer.py",
-      ]
+      - "sh"
+      - "-c"
+      - |
+        uv pip install --system nats-py httpx python-dotenv &&
+        PYTHONPATH=/app:/app/extensions/m8flow-backend/src:/app/spiffworkflow-backend/src \
+        exec python m8flow-nats-consumer/consumer.py
     env_file: ../.env
     depends_on:
-      - nats
-      - m8flow-backend
+      nats:
+        condition: service_healthy
+      m8flow-backend:
+        condition: service_started
     volumes:
       - ../process_models:/app/process_models
       - ../m8flow-nats-consumer:/app/m8flow-nats-consumer

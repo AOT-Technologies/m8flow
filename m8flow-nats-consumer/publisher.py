@@ -1,12 +1,22 @@
 """
-publisher.py - M8Flow NATS Publisher Dev Utility
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+publisher.py - M8Flow NATS Event Publisher (Dev Utility)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Utility for developers to inject M8Flow events directly into NATS
-to test the m8flow-nats-consumer service.
+Fetches a Keycloak JWT via Client Credentials Grant, then publishes
+a signed M8Flow event to NATS JetStream to test the consumer service.
 
 Usage:
-  python publisher.py --tenant_id my-tenant --process_identifier my-group/my-model
+  uv run python publisher.py \\
+    --tenant_id          <m8flow-tenant-uuid> \\
+    --realm              spiffworkflow \\
+    --client_id          spiffworkflow-backend \\
+    --client_secret      <client-secret> \\
+    --username           john.doe@company.com \\
+    --process_identifier <process-group/process-model>
+
+Note:
+  --realm is the Keycloak realm name, NOT the M8Flow tenant UUID.
+  KEYCLOAK_URL must be set in the environment (e.g. http://192.168.1.89:7002).
 """
 import argparse
 import asyncio
@@ -16,77 +26,107 @@ import os
 import sys
 import uuid
 
+import httpx
+from dotenv import load_dotenv
 from nats.aio.client import Client as NATS
 from nats.js.errors import NotFoundError
-from dotenv import load_dotenv
 
 load_dotenv()
 
+logger = logging.getLogger("m8flow.nats.publisher")
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 
-NATS_URL = os.environ.get("M8FLOW_NATS_URL", "nats://localhost:4222")
-STREAM_NAME = os.environ.get("M8FLOW_NATS_STREAM_NAME", "M8FLOW_EVENTS")
+NATS_URL     = os.environ["M8FLOW_NATS_URL"]
+STREAM_NAME  = os.environ["M8FLOW_NATS_STREAM_NAME"]
+KEYCLOAK_URL = os.environ["KEYCLOAK_URL"]
 
 
-async def main():
-    parser = argparse.ArgumentParser(description="Publish M8Flow NATS events")
-    parser.add_argument("--tenant_id", required=True, help="Target tenant slug or id")
-    parser.add_argument(
-        "--process_identifier", required=True, help="e.g. process-group/process-model"
-    )
-    parser.add_argument("--username", default="system", help="User triggering event")
-    parser.add_argument("--api_key", default=None, help="Optional SpiffWorkflow API Key for this event")
-    parser.add_argument(
-        "--payload", default="{}", help="JSON payload to inject as data"
-    )
+async def fetch_token(keycloak_base_url: str, realm: str, client_id: str, client_secret: str) -> str | None:
+    """Fetch an access token from Keycloak using Client Credentials Grant."""
+    token_url = f"{keycloak_base_url.rstrip('/')}/realms/{realm}/protocol/openid-connect/token"
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                token_url,
+                data={"grant_type": "client_credentials", "client_id": client_id, "client_secret": client_secret},
+                timeout=5.0,
+            )
+            resp.raise_for_status()
+            return resp.json().get("access_token")
+    except Exception as e:
+        logger.error(f"Failed to fetch token from {token_url}: {e}")
+        return None
 
+
+async def main() -> None:
+    parser = argparse.ArgumentParser(description="Publish a signed M8Flow NATS event")
+    parser.add_argument("--tenant_id",          required=True,  help="M8Flow tenant UUID")
+    parser.add_argument("--process_identifier", required=True,  help="BPMN process path, e.g. group/process-model")
+    parser.add_argument("--username",           required=True,  help="M8Flow user who will own the process instance")
+    parser.add_argument("--realm",              required=True,  help="Keycloak realm name (e.g. 'spiffworkflow')")
+    parser.add_argument("--client_id",          required=True,  help="Keycloak client ID (e.g. 'spiffworkflow-backend')")
+    parser.add_argument("--client_secret",      required=True,  help="Keycloak client secret")
+    parser.add_argument("--payload",            default="{}",   help="JSON string injected as process variables")
     args = parser.parse_args()
 
     try:
         payload_dict = json.loads(args.payload)
     except json.JSONDecodeError:
-        logging.error("Invalid JSON payload.")
+        logger.error("--payload is not valid JSON.")
         sys.exit(1)
 
+
+    # Fetch JWT
+    logger.info(f"Fetching token from Keycloak (realm={args.realm}, client={args.client_id})...")
+    auth_token = await fetch_token(KEYCLOAK_URL, args.realm, args.client_id, args.client_secret)
+    if not auth_token:
+        logger.error("Could not obtain auth token. Exiting.")
+        sys.exit(1)
+    logger.info("Token obtained successfully.")
+
+    # Connect to NATS
     nc = NATS()
     try:
         await nc.connect(NATS_URL)
     except Exception as e:
-        logging.error(f"Failed to connect to NATS at {NATS_URL}: {e}")
+        logger.error(f"Failed to connect to NATS at {NATS_URL}: {e}")
         sys.exit(1)
 
     js = nc.jetstream()
-
-    # Build the EventMessage payload
-    event_id = str(uuid.uuid4())
     subject = f"m8flow.events.{args.tenant_id}.trigger"
 
+    event_id = str(uuid.uuid4())
     event_data = {
-        "id": event_id,
-        "subject": subject,
-        "tenant_id": args.tenant_id,
-        "username": args.username,
+        "id":                 event_id,
+        "subject":            subject,
+        "tenant_id":          args.tenant_id,
         "process_identifier": args.process_identifier,
-        "payload": payload_dict,
+        "username":           args.username,
+        "auth_token":         auth_token,
+        "payload":            payload_dict,
     }
 
-    if args.api_key:
-        event_data["api_key"] = args.api_key
-
-    event_json = json.dumps(event_data).encode("utf-8")
-
-    logging.info(f"Publishing to subject: {subject}")
-    logging.info(f"Data: {json.dumps(event_data, indent=2)}")
+    # Log without the token to avoid leaking credentials
+    loggable = {k: v for k, v in event_data.items() if k != "auth_token"}
+    logger.info(f"Publishing to subject: {subject}")
+    logger.info(f"Event data: {json.dumps(loggable, indent=2)}")
 
     try:
-        ack = await js.publish(subject, event_json)
-        logging.info(f"Successfully published! stream={ack.stream}, seq={ack.seq}")
+        # Nats-Msg-Id enables JetStream broker-level deduplication:
+        # if the same event_id is published again within the dedup window
+        # (default 2 min), the server discards the duplicate silently.
+        ack = await js.publish(
+            subject,
+            json.dumps(event_data).encode("utf-8"),
+            headers={"Nats-Msg-Id": event_id},
+        )
+        logger.info(f"Published successfully. stream={ack.stream}, seq={ack.seq}")
     except NotFoundError:
-         logging.error(f"Stream '{STREAM_NAME}' does not exist. Start consumer or NATS server first.")
+        logger.error(f"Stream '{STREAM_NAME}' does not exist. Ensure the NATS server is running.")
     except Exception as e:
-        logging.error(f"Publish failed: {e}")
-
-    await nc.close()
+        logger.error(f"Publish failed: {e}")
+    finally:
+        await nc.close()
 
 
 if __name__ == "__main__":

@@ -6,68 +6,103 @@ This document explains how to configure, run, and test the NATS Event-Driven Arc
 
 ## 1. Prerequisites
 
-In `.env`, ensure your NATS Config is assigned correctly:
+### Environment Variables
+
+In `.env`, ensure the following are set:
 
 ```env
-# Consumer Config
+# NATS Consumer Config
 M8FLOW_NATS_URL=nats://nats:4222
 M8FLOW_NATS_STREAM_NAME=M8FLOW_EVENTS
 M8FLOW_NATS_SUBJECT=m8flow.events.>
+M8FLOW_NATS_DEDUP_BUCKET=m8flow-dedup
+M8FLOW_NATS_DEDUP_TTL=86400
+
+
+# Keycloak (required for JWT validation in the consumer and token fetching in the publisher)
+# Base URL only — the consumer resolves the realm automatically from the JWT's iss claim.
+KEYCLOAK_URL=http://<LOCAL_IP>:7002
 ```
+
+### Keycloak Client
+
+M8Flow's Keycloak realm already includes the **`spiffworkflow-backend`** client with Service Accounts Roles enabled. Use it directly — no new client needs to be created.
+
+> The `client_id` + `client_secret` authenticate the **publisher** (who is allowed to send events). They do not control which M8Flow user runs the workflow — that is set by `--username`.
+
+### M8Flow User
+
+The `username` you pass to the publisher must already exist as an M8Flow `UserModel` in the database. Ensure the target user has logged in or been provisioned before publishing events.
 
 ---
 
 ## 2. Starting the Infrastructure
-
-The NATS consumer and NATS server are fully integrated into the main `docker-compose` setup located in the `docker/` directory.
 
 ```bash
 cd docker
 docker compose -f m8flow-docker-compose.yml up -d
 ```
 
-This commands starts:
-
-1. `m8flow-db` (PostgreSQL)
-2. `m8flow-nats` (Customized NATS server that automatically creates the required JetStream streams on boot)
-3. `m8flow-backend` (The SpiffWorkflow API)
-4. `m8flow-nats-consumer` (The standalone application daemon that securely directly runs Python services context, without requiring HTTP requests)
+This starts `m8flow-db`, `m8flow-nats`, `m8flow-backend`, and `m8flow-nats-consumer`.
 
 ---
 
-## 3. How to Test Manually
+## 3. Publishing a Test Event
 
-Once the ecosystem is running, you can simulate an external system (like a billing service or an e-commerce storefront) publishing an event into NATS.
-
-We provide a developer utility script inside the `m8flow-nats-consumer` source directory specifically for this purpose.
-
-> **Important:** You must use a valid `tenant_id` and an existing `process_identifier` that has been deployed in M8Flow.
+Use `publisher.py` to send an authenticated event that triggers a workflow:
 
 ```bash
 cd m8flow-nats-consumer
 
-# Run using the modern `uv` Python package manager
 uv run python publisher.py \
-  --tenant_id "your-tenant-id" \
-  --username "tenant-admin@spiffworkflow" \
+  --tenant_id          "your-m8flow-tenant-uuid" \
+  --realm              "spiffworkflow" \
+  --client_id          "spiffworkflow-backend" \
+  --client_secret      "<spiffworkflow-backend-client-secret>" \
+  --username           "john.doe@company.com" \
   --process_identifier "new-workflow/nats-event-trigger-test" \
-  --payload '{"customer_id": "123", "amount": 500}'
+  --payload            '{"customer_id": "123", "amount": 500}'
 ```
 
-### 3.1 Verify Execution
+**What happens:**
 
-First, check the consumer container logs to see it receive and process the message successfully:
+| Step | Who            | What                                                                               |
+| ---- | -------------- | ---------------------------------------------------------------------------------- |
+| 1    | `publisher.py` | Calls Keycloak Client Credentials Grant → receives signed JWT                      |
+| 2    | `publisher.py` | Publishes `{tenant_id, process_identifier, username, auth_token, payload}` to NATS |
+| 3    | `consumer.py`  | Idempotency check: creates NATS KV `tenant_id-event_id` (discards if exists)       |
+| 4    | `consumer.py`  | Validates JWT signature via JWKS                                                   |
+| 5    | `consumer.py`  | Looks up `username` in M8Flow DB                                                   |
+| 6    | `consumer.py`  | Runs `ProcessInstanceService` natively as that user                                |
+
+---
+
+## 4. Verify Execution
+
+### Consumer Logs
 
 ```bash
 docker logs m8flow-nats-consumer
 ```
 
-Expected output:
+Expected on success:
 
 ```
-[INFO] Starting M8Flow NATS Consumer...
-[INFO] Subscribing to m8flow.events.>
-[INFO] Process instance created | tenant=c29... identifier=some/process instance_id=45
+[INFO]  Subscribing to m8flow.events.> (durable: m8flow-engine-consumer)
+[DEBUG] Authenticated event | publisher='service-account-...' target_user='john.doe@company.com'
+[INFO]  Process instance created natively | tenant=9f5d... identifier=new-workflow/... instance_id=42
 ```
 
-Second, log into the M8Flow UI (`http://localhost:8001`), switch to the correct tenant context, and verify that a new instance of your workflow has been executed.
+Common error logs and causes:
+
+| Error                                | Cause                                                                           |
+| ------------------------------------ | ------------------------------------------------------------------------------- |
+| `Missing 'auth_token'`               | Publisher did not fetch a JWT — check `--client_id`/`--client_secret`/`--realm` |
+| `Token is missing 'iss' claim`       | Malformed JWT                                                                   |
+| `Invalid or expired auth_token`      | Keycloak unreachable from inside Docker, or token expired in flight             |
+| `User 'x' not found in the database` | The `--username` does not exist as an M8Flow user                               |
+| `Process model ... not found`        | Wrong `--process_identifier` or process not deployed                            |
+
+### M8Flow UI
+
+Log into the M8Flow UI, switch to the correct tenant, and verify that a new process instance appeared.
