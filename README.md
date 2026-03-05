@@ -100,27 +100,15 @@ To run a Celery worker with the same extension bootstrap/patch path, use:
 ./extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh
 ```
 
-On Windows PowerShell:
-
-```powershell
-.\extensions\m8flow-backend\bin\run_m8flow_celery_worker.ps1
-```
-
 To run Flower (Celery monitoring UI) with the same bootstrap path:
 
 ```bash
 ./extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh flower
 ```
 
-On Windows PowerShell:
-
-```powershell
-.\extensions\m8flow-backend\bin\run_m8flow_celery_worker.ps1 flower
-```
-
 Local backend + container worker (hybrid):
 
-1. Start backend locally with `.\extensions\m8flow-backend\bin\run_m8flow_backend.ps1` (or `./extensions/m8flow-backend/bin/run_m8flow_backend.sh`).
+1. Start backend locally with `./extensions/m8flow-backend/bin/run_m8flow_backend.sh`).
 2. Configure worker/flower mounts to use host model directories:
 
 ```bash
