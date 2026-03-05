@@ -911,6 +911,12 @@ class TemplateService:
 
         logger.info(f"Copying {len(template.files)} files from template {template_id} to process model {full_process_model_id}")
 
+        fuzz = "".join(random.SystemRandom().choice(string.ascii_lowercase + string.digits) for _ in range(7))
+
+        dmn_files: list[dict] = []
+        bpmn_files: list[dict] = []
+        other_files: list[dict] = []
+
         for file_entry in template.files:
             file_name = file_entry.get("file_name")
             file_type = file_entry.get("file_type")
@@ -919,7 +925,18 @@ class TemplateService:
                 logger.warning(f"Skipping file entry with no file_name: {file_entry}")
                 continue
 
-            logger.debug(f"Copying file: {file_name} (type: {file_type})")
+            if file_type == "dmn":
+                dmn_files.append(file_entry)
+            elif file_type == "bpmn":
+                bpmn_files.append(file_entry)
+            else:
+                other_files.append(file_entry)
+
+        dmn_id_map: dict[str, str] = {}
+
+        for file_entry in dmn_files:
+            file_name = file_entry.get("file_name")
+            logger.debug(f"Processing DMN file: {file_name}")
 
             try:
                 content = cls.get_file_content(template, file_name)
@@ -939,16 +956,84 @@ class TemplateService:
                     status_code=500,
                 )
 
-            # For BPMN files, we need to replace process IDs to make them unique
-            if file_type == "bpmn":
-                content, new_process_id = cls._transform_bpmn_content(
-                    content, process_model_id
-                )
-                if primary_file_name is None:
-                    primary_file_name = file_name
-                    primary_process_id = new_process_id
+            content, file_id_map = cls._transform_dmn_content(content, process_model_id, fuzz)
+            dmn_id_map.update(file_id_map)
 
-            # Write the file to the process model
+            try:
+                SpecFileService.update_file(process_model_info, file_name, content)
+                files_copied += 1
+                logger.debug(f"Successfully wrote DMN file {file_name} to process model")
+            except Exception as e:
+                logger.error(f"Failed to write file {file_name} to process model: {str(e)}")
+                raise ApiError(
+                    "file_write_failed",
+                    f"Failed to write file '{file_name}' to process model: {str(e)}",
+                    status_code=500,
+                )
+
+        for file_entry in bpmn_files:
+            file_name = file_entry.get("file_name")
+            logger.debug(f"Processing BPMN file: {file_name}")
+
+            try:
+                content = cls.get_file_content(template, file_name)
+                logger.debug(f"Retrieved {len(content)} bytes for {file_name}")
+            except ApiError as e:
+                logger.error(f"Failed to get file content for {file_name} from template {template_id}: {e.message}")
+                raise ApiError(
+                    "file_copy_failed",
+                    f"Failed to copy file '{file_name}' from template: {e.message}",
+                    status_code=500,
+                )
+            except Exception as e:
+                logger.error(f"Unexpected error getting file {file_name}: {str(e)}")
+                raise ApiError(
+                    "file_copy_failed",
+                    f"Failed to copy file '{file_name}' from template: {str(e)}",
+                    status_code=500,
+                )
+
+            content, new_process_id = cls._transform_bpmn_content(
+                content, process_model_id, fuzz, dmn_id_map if dmn_id_map else None
+            )
+            if primary_file_name is None:
+                primary_file_name = file_name
+                primary_process_id = new_process_id
+
+            try:
+                SpecFileService.update_file(process_model_info, file_name, content)
+                files_copied += 1
+                logger.debug(f"Successfully wrote BPMN file {file_name} to process model")
+            except Exception as e:
+                logger.error(f"Failed to write file {file_name} to process model: {str(e)}")
+                raise ApiError(
+                    "file_write_failed",
+                    f"Failed to write file '{file_name}' to process model: {str(e)}",
+                    status_code=500,
+                )
+
+        for file_entry in other_files:
+            file_name = file_entry.get("file_name")
+            logger.debug(f"Copying file: {file_name}")
+
+            try:
+                content = cls.get_file_content(template, file_name)
+                logger.debug(f"Retrieved {len(content)} bytes for {file_name}")
+            except ApiError as e:
+                logger.error(f"Failed to get file content for {file_name} from template {template_id}: {e.message}")
+                raise ApiError(
+                    "file_copy_failed",
+                    f"Failed to copy file '{file_name}' from template: {e.message}",
+                    status_code=500,
+                )
+            except Exception as e:
+                logger.error(f"Unexpected error getting file {file_name}: {str(e)}")
+                raise ApiError(
+                    "file_copy_failed",
+                    f"Failed to copy file '{file_name}' from template: {str(e)}",
+                    status_code=500,
+                )
+
             try:
                 SpecFileService.update_file(process_model_info, file_name, content)
                 files_copied += 1
@@ -1007,12 +1092,16 @@ class TemplateService:
         cls,
         content: bytes,
         process_model_id: str,
+        fuzz: str | None = None,
+        dmn_id_map: dict[str, str] | None = None,
     ) -> tuple[bytes, str | None]:
         """Transform BPMN content by replacing process IDs with unique ones.
 
         Args:
             content: The original BPMN file content
             process_model_id: The process model ID to use as base for new process IDs
+            fuzz: Optional random suffix for uniqueness (generated if not provided)
+            dmn_id_map: Optional mapping of old DMN decision IDs to new ones for updating decisionRef attributes
 
         Returns:
             Tuple of (transformed content, new primary process ID)
@@ -1022,10 +1111,9 @@ class TemplateService:
         except UnicodeDecodeError:
             return content, None
 
-        # Generate a unique suffix
-        fuzz = "".join(random.SystemRandom().choice(string.ascii_lowercase + string.digits) for _ in range(7))
+        if fuzz is None:
+            fuzz = "".join(random.SystemRandom().choice(string.ascii_lowercase + string.digits) for _ in range(7))
 
-        # Convert dashes to underscores for process id
         underscored_id = process_model_id.replace("-", "_")
 
         # Find all process IDs in the BPMN
@@ -1041,7 +1129,6 @@ class TemplateService:
             prefix = match.group(1)
             suffix = match.group(3)
 
-            # Create new unique process ID with counter for uniqueness
             if process_counter == 0:
                 new_id = f"Process_{underscored_id}_{fuzz}"
             else:
@@ -1054,10 +1141,88 @@ class TemplateService:
 
             return f"{prefix}{new_id}{suffix}"
 
-        # Replace process IDs
         content_str = process_id_pattern.sub(replace_process_id, content_str)
 
+        if dmn_id_map:
+            decision_ref_pattern = re.compile(r'(camunda:decisionRef=")([^"]+)(")')
+
+            def replace_decision_ref(match: re.Match) -> str:
+                prefix = match.group(1)
+                old_ref = match.group(2)
+                suffix = match.group(3)
+
+                if old_ref in dmn_id_map:
+                    return f"{prefix}{dmn_id_map[old_ref]}{suffix}"
+                return match.group(0)
+
+            content_str = decision_ref_pattern.sub(replace_decision_ref, content_str)
+
         return content_str.encode("utf-8"), new_primary_process_id
+
+    @classmethod
+    def _transform_dmn_content(
+        cls,
+        content: bytes,
+        process_model_id: str,
+        fuzz: str | None = None,
+    ) -> tuple[bytes, dict[str, str]]:
+        """Transform DMN content by replacing decision IDs with unique ones.
+
+        Args:
+            content: The original DMN file content
+            process_model_id: The process model ID to use as base for new decision IDs
+            fuzz: Optional random suffix for uniqueness (generated if not provided)
+
+        Returns:
+            Tuple of (transformed content, mapping of old_id -> new_id)
+        """
+        try:
+            content_str = content.decode("utf-8")
+        except UnicodeDecodeError:
+            return content, {}
+
+        if fuzz is None:
+            fuzz = "".join(random.SystemRandom().choice(string.ascii_lowercase + string.digits) for _ in range(7))
+
+        underscored_id = process_model_id.replace("-", "_")
+
+        id_map: dict[str, str] = {}
+        decision_counter = 0
+
+        decision_id_pattern = re.compile(r'(<decision\s[^>]*id=")([^"]+)(")')
+
+        def replace_decision_id(match: re.Match) -> str:
+            nonlocal decision_counter
+            prefix = match.group(1)
+            old_id = match.group(2)
+            suffix = match.group(3)
+
+            if decision_counter == 0:
+                new_id = f"Decision_{underscored_id}_{fuzz}"
+            else:
+                new_id = f"Decision_{underscored_id}_{fuzz}_{decision_counter}"
+
+            decision_counter += 1
+            id_map[old_id] = new_id
+
+            return f"{prefix}{new_id}{suffix}"
+
+        content_str = decision_id_pattern.sub(replace_decision_id, content_str)
+
+        dmn_element_ref_pattern = re.compile(r'(dmnElementRef=")([^"]+)(")')
+
+        def replace_dmn_element_ref(match: re.Match) -> str:
+            prefix = match.group(1)
+            old_ref = match.group(2)
+            suffix = match.group(3)
+
+            if old_ref in id_map:
+                return f"{prefix}{id_map[old_ref]}{suffix}"
+            return match.group(0)
+
+        content_str = dmn_element_ref_pattern.sub(replace_dmn_element_ref, content_str)
+
+        return content_str.encode("utf-8"), id_map
 
     @classmethod
     def get_process_model_template_info(

@@ -3388,3 +3388,220 @@ def test_get_first_bpmn_content_empty_files() -> None:
                 content = TemplateService.get_first_bpmn_content(template)
 
             assert content is None
+
+
+# ============================================================================
+# DMN Transformation Tests
+# ============================================================================
+
+
+def test_transform_dmn_content_replaces_decision_id() -> None:
+    """_transform_dmn_content replaces decision IDs with unique values."""
+    dmn_content = b'''<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="Definitions_1">
+  <decision id="shipping_costs" name="Shipping Costs">
+    <decisionTable id="DecisionTable_1">
+      <input id="Input_1">
+        <inputExpression id="InputExpression_1" typeRef="string">
+          <text>shipping_method</text>
+        </inputExpression>
+      </input>
+      <output id="Output_1" name="cost" typeRef="long" />
+    </decisionTable>
+  </decision>
+</definitions>'''
+
+    transformed, id_map = TemplateService._transform_dmn_content(
+        dmn_content, "my-process-model", fuzz="abc1234"
+    )
+
+    transformed_str = transformed.decode("utf-8")
+    assert 'id="Decision_my_process_model_abc1234"' in transformed_str
+    assert 'id="shipping_costs"' not in transformed_str
+    assert "shipping_costs" in id_map
+    assert id_map["shipping_costs"] == "Decision_my_process_model_abc1234"
+
+
+def test_transform_dmn_content_multiple_decisions() -> None:
+    """_transform_dmn_content handles multiple decision elements."""
+    dmn_content = b'''<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="Definitions_1">
+  <decision id="decision_one" name="Decision One">
+    <decisionTable id="DecisionTable_1" />
+  </decision>
+  <decision id="decision_two" name="Decision Two">
+    <decisionTable id="DecisionTable_2" />
+  </decision>
+</definitions>'''
+
+    transformed, id_map = TemplateService._transform_dmn_content(
+        dmn_content, "test-model", fuzz="xyz7890"
+    )
+
+    transformed_str = transformed.decode("utf-8")
+    assert 'id="Decision_test_model_xyz7890"' in transformed_str
+    assert 'id="Decision_test_model_xyz7890_1"' in transformed_str
+    assert len(id_map) == 2
+    assert id_map["decision_one"] == "Decision_test_model_xyz7890"
+    assert id_map["decision_two"] == "Decision_test_model_xyz7890_1"
+
+
+def test_transform_dmn_content_updates_dmn_element_ref() -> None:
+    """_transform_dmn_content updates dmnElementRef attributes in DMNDI section."""
+    dmn_content = b'''<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" xmlns:dmndi="https://www.omg.org/spec/DMN/20191111/DMNDI/" id="Definitions_1">
+  <decision id="my_decision" name="My Decision">
+    <decisionTable id="DecisionTable_1" />
+  </decision>
+  <dmndi:DMNDI>
+    <dmndi:DMNDiagram>
+      <dmndi:DMNShape dmnElementRef="my_decision">
+      </dmndi:DMNShape>
+    </dmndi:DMNDiagram>
+  </dmndi:DMNDI>
+</definitions>'''
+
+    transformed, id_map = TemplateService._transform_dmn_content(
+        dmn_content, "ref-test", fuzz="ref1234"
+    )
+
+    transformed_str = transformed.decode("utf-8")
+    assert 'dmnElementRef="Decision_ref_test_ref1234"' in transformed_str
+    assert 'dmnElementRef="my_decision"' not in transformed_str
+
+
+def test_transform_dmn_content_handles_non_utf8() -> None:
+    """_transform_dmn_content returns original content for non-UTF8 data."""
+    binary_content = b'\x80\x81\x82\x83'
+
+    transformed, id_map = TemplateService._transform_dmn_content(
+        binary_content, "test-model"
+    )
+
+    assert transformed == binary_content
+    assert id_map == {}
+
+
+def test_transform_dmn_content_converts_dashes_to_underscores() -> None:
+    """_transform_dmn_content converts dashes in model ID to underscores."""
+    dmn_content = b'''<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="Definitions_1">
+  <decision id="test_decision" name="Test">
+    <decisionTable id="DecisionTable_1" />
+  </decision>
+</definitions>'''
+
+    transformed, id_map = TemplateService._transform_dmn_content(
+        dmn_content, "my-dashed-model-id", fuzz="abc1234"
+    )
+
+    transformed_str = transformed.decode("utf-8")
+    assert 'id="Decision_my_dashed_model_id_abc1234"' in transformed_str
+    assert "-" not in id_map["test_decision"]
+
+
+def test_transform_bpmn_content_updates_decision_ref() -> None:
+    """_transform_bpmn_content updates camunda:decisionRef when dmn_id_map provided."""
+    bpmn_content = b'''<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn">
+  <bpmn:process id="Process_1" isExecutable="true">
+    <bpmn:businessRuleTask id="Activity_1" name="Check Shipping" camunda:decisionRef="shipping_costs">
+    </bpmn:businessRuleTask>
+  </bpmn:process>
+</bpmn:definitions>'''
+
+    dmn_id_map = {"shipping_costs": "Decision_new_model_abc1234"}
+
+    transformed, process_id = TemplateService._transform_bpmn_content(
+        bpmn_content, "new-model", fuzz="xyz7890", dmn_id_map=dmn_id_map
+    )
+
+    transformed_str = transformed.decode("utf-8")
+    assert 'camunda:decisionRef="Decision_new_model_abc1234"' in transformed_str
+    assert 'camunda:decisionRef="shipping_costs"' not in transformed_str
+
+
+def test_transform_bpmn_content_updates_multiple_decision_refs() -> None:
+    """_transform_bpmn_content updates multiple decisionRef attributes."""
+    bpmn_content = b'''<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn">
+  <bpmn:process id="Process_1" isExecutable="true">
+    <bpmn:businessRuleTask id="Activity_1" camunda:decisionRef="decision_a">
+    </bpmn:businessRuleTask>
+    <bpmn:businessRuleTask id="Activity_2" camunda:decisionRef="decision_b">
+    </bpmn:businessRuleTask>
+  </bpmn:process>
+</bpmn:definitions>'''
+
+    dmn_id_map = {
+        "decision_a": "Decision_model_abc_0",
+        "decision_b": "Decision_model_abc_1",
+    }
+
+    transformed, _ = TemplateService._transform_bpmn_content(
+        bpmn_content, "model", fuzz="xyz", dmn_id_map=dmn_id_map
+    )
+
+    transformed_str = transformed.decode("utf-8")
+    assert 'camunda:decisionRef="Decision_model_abc_0"' in transformed_str
+    assert 'camunda:decisionRef="Decision_model_abc_1"' in transformed_str
+    assert 'camunda:decisionRef="decision_a"' not in transformed_str
+    assert 'camunda:decisionRef="decision_b"' not in transformed_str
+
+
+def test_transform_bpmn_content_preserves_unmapped_decision_refs() -> None:
+    """_transform_bpmn_content preserves decisionRef not in the map."""
+    bpmn_content = b'''<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn">
+  <bpmn:process id="Process_1" isExecutable="true">
+    <bpmn:businessRuleTask id="Activity_1" camunda:decisionRef="external_decision">
+    </bpmn:businessRuleTask>
+  </bpmn:process>
+</bpmn:definitions>'''
+
+    dmn_id_map = {"other_decision": "Decision_other_abc"}
+
+    transformed, _ = TemplateService._transform_bpmn_content(
+        bpmn_content, "model", fuzz="xyz", dmn_id_map=dmn_id_map
+    )
+
+    transformed_str = transformed.decode("utf-8")
+    assert 'camunda:decisionRef="external_decision"' in transformed_str
+
+
+def test_transform_bpmn_content_without_dmn_map() -> None:
+    """_transform_bpmn_content works without dmn_id_map (backward compatibility)."""
+    bpmn_content = b'''<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn">
+  <bpmn:process id="Process_1" isExecutable="true">
+    <bpmn:businessRuleTask id="Activity_1" camunda:decisionRef="some_decision">
+    </bpmn:businessRuleTask>
+  </bpmn:process>
+</bpmn:definitions>'''
+
+    transformed, process_id = TemplateService._transform_bpmn_content(
+        bpmn_content, "model", fuzz="xyz"
+    )
+
+    transformed_str = transformed.decode("utf-8")
+    assert 'camunda:decisionRef="some_decision"' in transformed_str
+    assert process_id is not None
+
+
+def test_transform_bpmn_content_with_empty_dmn_map() -> None:
+    """_transform_bpmn_content handles empty dmn_id_map."""
+    bpmn_content = b'''<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn">
+  <bpmn:process id="Process_1" isExecutable="true">
+    <bpmn:businessRuleTask id="Activity_1" camunda:decisionRef="some_decision">
+    </bpmn:businessRuleTask>
+  </bpmn:process>
+</bpmn:definitions>'''
+
+    transformed, process_id = TemplateService._transform_bpmn_content(
+        bpmn_content, "model", fuzz="xyz", dmn_id_map={}
+    )
+
+    transformed_str = transformed.decode("utf-8")
+    assert 'camunda:decisionRef="some_decision"' in transformed_str
+    assert process_id is not None
