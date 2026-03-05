@@ -18,7 +18,6 @@ const DIAGRAM_EDITOR_NOOP_PROPS = {
   onSearchProcessModels: noop,
   onDataStoresRequested: noop,
   onMessagesRequested: noop,
-  onServiceTasksRequested: noop,
 };
 
 function getFirstBpmnFileName(template: Template | null): string | null {
@@ -190,6 +189,21 @@ export default function TemplateFileDiagramPage() {
     [id, navigate]
   );
 
+  const makeServiceTasksApiHandler = (event: any) => {
+    return function fireEvent(results: any) {
+      event.eventBus.fire("spiff.service_tasks.returned", {
+        serviceTaskOperators: results,
+      });
+    };
+  };
+
+  const onServiceTasksRequested = useCallback((event: any) => {
+    HttpService.makeCallToBackend({
+      path: `/service-tasks`,
+      successCallback: makeServiceTasksApiHandler(event),
+    });
+  }, []);
+
   if (loading && !fileContent) {
     return (
       <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}>
@@ -285,6 +299,7 @@ export default function TemplateFileDiagramPage() {
             onJsonSchemaFilesRequested={onJsonSchemaFilesRequested}
             onDmnFilesRequested={onDmnFilesRequested}
             onLaunchJsonSchemaEditor={onLaunchJsonSchemaEditor}
+            onServiceTasksRequested={onServiceTasksRequested}
             {...DIAGRAM_EDITOR_NOOP_PROPS}
           />
         </Box>
