@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import ast
 import base64
+from contextlib import contextmanager
+from functools import wraps
 import logging
 from urllib.parse import unquote
 from urllib.parse import urlsplit
 
 from m8flow_backend.services.tenant_context_middleware import resolve_request_tenant
+from m8flow_backend.tenancy import TENANT_CLAIM
 from spiffworkflow_backend.routes import authentication_controller
 
 logger = logging.getLogger(__name__)
@@ -14,10 +17,12 @@ logger = logging.getLogger(__name__)
 _PATCHED = False
 _DECODE_TOKEN_PATCHED = False
 _MASTER_REALM_PATCHED = False
+_REFRESH_TOKEN_TENANT_PATCHED = False
 
 # Path suffixes that may be called with Keycloak master realm tokens (bootstrap/admin).
 M8FLOW_MASTER_REALM_PATH_SUBSTRINGS = ("/m8flow/tenant-realms", "/m8flow/create-tenant")
 LOGIN_RETURN_PATH_SUBSTRING = "/login_return"
+_MISSING = object()
 
 
 def apply() -> None:
@@ -36,6 +41,110 @@ def apply() -> None:
 
     authentication_controller.omni_auth = patched_omni_auth  # type: ignore[assignment]
     _PATCHED = True
+
+
+def _decode_state_authentication_identifier(state: str | None) -> str | None:
+    if not state:
+        return None
+    try:
+        raw = base64.b64decode(unquote(state)).decode("utf-8")
+        state_dict = ast.literal_eval(raw)
+    except Exception:
+        return None
+    identifier = state_dict.get("authentication_identifier") if isinstance(state_dict, dict) else None
+    if isinstance(identifier, str) and identifier.strip():
+        return identifier
+    return None
+
+
+def _tenant_for_refresh_tokens(
+    decoded_token: dict | None = None,
+    state: str | None = None,
+) -> str | None:
+    from flask import g, has_request_context, request
+
+    if isinstance(decoded_token, dict):
+        tenant_from_claim = decoded_token.get(TENANT_CLAIM)
+        if isinstance(tenant_from_claim, str) and tenant_from_claim.strip():
+            return tenant_from_claim
+
+    state_identifier = _decode_state_authentication_identifier(state)
+    if state_identifier:
+        return state_identifier
+
+    if not has_request_context():
+        return None
+
+    existing_tenant = getattr(g, "m8flow_tenant_id", None)
+    if isinstance(existing_tenant, str) and existing_tenant.strip():
+        return existing_tenant
+
+    request_state_identifier = _decode_state_authentication_identifier(request.args.get("state"))
+    if request_state_identifier:
+        return request_state_identifier
+
+    cookie_identifier = request.cookies.get("authentication_identifier")
+    if cookie_identifier:
+        return cookie_identifier
+
+    header_identifier = request.headers.get("SpiffWorkflow-Authentication-Identifier")
+    if header_identifier:
+        return header_identifier
+
+    return None
+
+
+@contextmanager
+def _temporary_request_tenant(tenant_id: str | None):
+    from flask import g, has_request_context
+
+    if not has_request_context() or not tenant_id:
+        yield
+        return
+
+    previous = getattr(g, "m8flow_tenant_id", _MISSING)
+    if previous is _MISSING or previous is None:
+        g.m8flow_tenant_id = tenant_id
+    try:
+        yield
+    finally:
+        if previous is _MISSING:
+            if hasattr(g, "m8flow_tenant_id"):
+                delattr(g, "m8flow_tenant_id")
+        else:
+            g.m8flow_tenant_id = previous
+
+
+def apply_refresh_token_tenant_patch() -> None:
+    """
+    Ensure refresh-token operations have tenant context during auth controller
+    flows that run before tenant-resolution hooks.
+    """
+    global _REFRESH_TOKEN_TENANT_PATCHED
+    if _REFRESH_TOKEN_TENANT_PATCHED:
+        return
+
+    original_login_return = authentication_controller.login_return
+    original_get_user_model_from_token = authentication_controller._get_user_model_from_token
+
+    @wraps(original_login_return)
+    def patched_login_return(*args, **kwargs):
+        state = kwargs.get("state")
+        if state is None and args:
+            state = args[0]
+        tenant_id = _tenant_for_refresh_tokens(state=state if isinstance(state, str) else None)
+        with _temporary_request_tenant(tenant_id):
+            return original_login_return(*args, **kwargs)
+
+    @wraps(original_get_user_model_from_token)
+    def patched_get_user_model_from_token(decoded_token: dict):
+        tenant_id = _tenant_for_refresh_tokens(decoded_token=decoded_token)
+        with _temporary_request_tenant(tenant_id):
+            return original_get_user_model_from_token(decoded_token)
+
+    authentication_controller.login_return = patched_login_return  # type: ignore[assignment]
+    authentication_controller._get_user_model_from_token = patched_get_user_model_from_token  # type: ignore[assignment]
+    _REFRESH_TOKEN_TENANT_PATCHED = True
 
 
 def _patched_get_decoded_token(token: str):
