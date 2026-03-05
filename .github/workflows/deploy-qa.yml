@@ -25,7 +25,7 @@ on:
         required: true
         type: string
 
-  # Optional: automatic call from deploy-dev.yml
+  # Optional: automatic call from deploy-docker.yml
   workflow_call:
     inputs:
       rc_tag:

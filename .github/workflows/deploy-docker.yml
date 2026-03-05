@@ -1,0 +1,244 @@
+# Build and push Docker images (backend, frontend, keycloak, connector-proxy) to Docker Hub.
+# Triggered by Create Release Tag (workflow_run) or manually with an RC tag.
+name: Deploy Docker
+
+on:
+  workflow_dispatch:
+    inputs:
+      rc_tag:
+        description: "RC tag name (e.g. 1.2.3-rc)"
+        required: true
+        type: string
+  workflow_run:
+    workflows: ["Create Release Tag"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: deploy-docker
+  cancel-in-progress: true
+
+env:
+  REGISTRY: docker.io
+  IMAGE_REPOSITORY: m8flow
+  PROJECT: m8flow
+
+outputs:
+  backend_digest: ${{ jobs.digests.outputs.backend_digest }}
+  frontend_digest: ${{ jobs.digests.outputs.frontend_digest }}
+  keycloak_digest: ${{ jobs.digests.outputs.keycloak_digest }}
+  connector_proxy_digest: ${{ jobs.digests.outputs.connector_proxy_digest }}
+
+jobs:
+  prepare:
+    name: Prepare
+    if: |
+      (vars.AUTO_BUILD == 'true' || github.event_name == 'workflow_dispatch') &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      ref: ${{ steps.ref.outputs.ref }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.rc_tag || (github.event_name == 'workflow_run' && github.event.workflow_run.head_sha) || github.ref }}
+          fetch-depth: 0
+
+      - name: Extract metadata
+        id: meta
+        run: |
+          if [[ -n "${{ github.event.inputs.rc_tag }}" ]]; then
+            TAG="${{ github.event.inputs.rc_tag }}"
+          elif [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+            git fetch origin --tags 2>/dev/null || true
+            TAG=$(git tag --points-at HEAD | sort -V | tail -1)
+            if [[ -z "$TAG" ]]; then
+              echo "::error::No tag found pointing at HEAD (workflow_run.head_sha). Deploy Docker may only be triggered by Create Release Tag when tagging the latest commit."
+              exit 1
+            fi
+          else
+            TAG="${{ github.ref_name }}"
+          fi
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+
+      - name: Output ref
+        id: ref
+        run: echo "ref=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+  backend:
+    name: Build & Push Backend
+    needs: prepare
+    runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
+          fetch-depth: 0
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & Push Backend Image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/m8flow.backend.Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-backend:${{ needs.prepare.outputs.tag }}
+          cache-from: type=gha,scope=m8flow-backend
+          cache-to: type=gha,mode=max,scope=m8flow-backend
+          provenance: true
+          sbom: true
+
+  frontend:
+    name: Build & Push Frontend
+    needs: prepare
+    runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
+          fetch-depth: 0
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & Push Frontend Image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/m8flow.frontend.Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-frontend:${{ needs.prepare.outputs.tag }}
+          cache-from: type=gha,scope=m8flow-frontend
+          cache-to: type=gha,mode=max,scope=m8flow-frontend
+          provenance: true
+          sbom: true
+
+  keycloak:
+    name: Build & Push Keycloak
+    needs: prepare
+    runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
+          fetch-depth: 0
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & Push Keycloak Image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/m8flow.keycloak.Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-keycloak:${{ needs.prepare.outputs.tag }}
+          cache-from: type=gha,scope=m8flow-keycloak
+          cache-to: type=gha,mode=max,scope=m8flow-keycloak
+          provenance: true
+          sbom: true
+
+  connector-proxy:
+    name: Build & Push Connector-Proxy
+    needs: prepare
+    runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
+          fetch-depth: 0
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & Push Connector-Proxy Image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: m8flow-connector-proxy
+          file: m8flow-connector-proxy/Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-connector-proxy:${{ needs.prepare.outputs.tag }}
+          cache-from: type=gha,scope=m8flow-connector-proxy
+          cache-to: type=gha,mode=max,scope=m8flow-connector-proxy
+          provenance: true
+          sbom: true
+
+  digests:
+    name: Capture digests
+    needs: [backend, frontend, keycloak, connector-proxy]
+    runs-on: ubuntu-latest
+    outputs:
+      backend_digest: ${{ steps.write.outputs.backend_digest }}
+      frontend_digest: ${{ steps.write.outputs.frontend_digest }}
+      keycloak_digest: ${{ steps.write.outputs.keycloak_digest }}
+      connector_proxy_digest: ${{ steps.write.outputs.connector_proxy_digest }}
+    steps:
+      - name: Write digest files
+        id: write
+        run: |
+          echo "${{ needs.backend.outputs.digest }}" > backend-image-digest.txt
+          echo "${{ needs.frontend.outputs.digest }}" > frontend-image-digest.txt
+          echo "${{ needs.keycloak.outputs.digest }}" > keycloak-image-digest.txt
+          echo "${{ needs.connector-proxy.outputs.digest }}" > connector-proxy-image-digest.txt
+          echo "backend_digest=${{ needs.backend.outputs.digest }}" >> $GITHUB_OUTPUT
+          echo "frontend_digest=${{ needs.frontend.outputs.digest }}" >> $GITHUB_OUTPUT
+          echo "keycloak_digest=${{ needs.keycloak.outputs.digest }}" >> $GITHUB_OUTPUT
+          echo "connector_proxy_digest=${{ needs.connector-proxy.outputs.digest }}" >> $GITHUB_OUTPUT
+
+      - name: Upload digest artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-digests
+          path: |
+            backend-image-digest.txt
+            frontend-image-digest.txt
+            keycloak-image-digest.txt
+            connector-proxy-image-digest.txt

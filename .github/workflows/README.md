@@ -82,9 +82,9 @@ All other upstream changes (root files, `.github/`, `docs/`, etc.) are ignored t
 
 ### 3. Deploy and rollback workflows
 
-**`deploy-dev.yml`**, **`deploy-qa.yml`**, **`deploy-prod.yml`**, and **`rollback.yml`** no longer perform Kubernetes deployments. They are build- or validate-only:
+**`deploy-docker.yml`**, **`deploy-qa.yml`**, **`deploy-prod.yml`**, and **`rollback.yml`** no longer perform Kubernetes deployments. They are build- or validate-only:
 
-- **deploy-dev.yml:** Builds and pushes Docker images (backend, frontend, keycloak, connector-proxy) to Docker Hub on RC tags or manual run. Requires `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets.
+- **deploy-docker.yml:** Builds and pushes Docker images (backend, frontend, keycloak, connector-proxy) to Docker Hub on RC tags or manual run. Requires `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets.
 - **deploy-qa.yml** / **deploy-prod.yml:** Validate promotion inputs and release digests only; no deploy step.
 - **rollback.yml:** Validates rollback inputs only; rollback must be performed manually (e.g. via ECS/console).
 

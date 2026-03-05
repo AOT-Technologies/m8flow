@@ -156,15 +156,15 @@ jobs:
           echo "Looking for RC artifacts for version $VERSION..."
 
           # Find the latest RC workflow run for this version
-          # This searches for deploy-dev runs with matching RC tag
+          # This searches for deploy-docker runs with matching RC tag
           RC_PATTERN="v${VERSION}-rc"
 
-          # Download artifacts from the most recent successful deploy-dev run
+          # Download artifacts from the most recent successful deploy-docker run
           # that matches our version's RC tags
           ARTIFACT_FOUND=false
 
-          # List recent workflow runs for deploy-dev
-          RUNS=$(gh run list --workflow=deploy-dev.yml --status=success --limit=20 --json databaseId,headBranch)
+          # List recent workflow runs for deploy-docker
+          RUNS=$(gh run list --workflow=deploy-docker.yml --status=success --limit=20 --json databaseId,headBranch)
 
           for RUN_ID in $(echo "$RUNS" | jq -r '.[].databaseId'); do
             BRANCH=$(echo "$RUNS" | jq -r ".[] | select(.databaseId==$RUN_ID) | .headBranch")
