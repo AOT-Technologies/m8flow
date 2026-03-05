@@ -139,8 +139,7 @@ services:
     command: ["bash", "./extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh"]
     env_file: ../.env
     volumes:
-      - process_models_cache:/app/process_models
-      - templates_cache:/app/templates
+      - ${M8FLOW_BACKEND_CELERY_PROCESS_MODELS_MOUNT_SOURCE:-process_models_cache}:/app/process_models
     depends_on:
       - m8flow-db
       - keycloak
@@ -155,46 +154,6 @@ services:
     env_file: ../.env
     ports:
       - "5555:5555"
-    volumes:
-      - process_models_cache:/app/process_models
-      - templates_cache:/app/templates
-    depends_on:
-      - m8flow-db
-      - keycloak
-      - redis
-      - minio
-
-  # Use this worker when backend runs locally (run_m8flow_backend.ps1/.sh).
-  # It bind-mounts host process_models/templates so worker and local backend
-  # see the same tenant-scoped model files.
-  m8flow-celery-worker-local:
-    profiles: ["local-backend"]
-    build:
-      context: ..
-      dockerfile: docker/m8flow.backend.Dockerfile
-    command: ["bash", "./extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh"]
-    env_file: ../.env
-    volumes:
-      - ../process_models:/app/process_models
-      - ../templates:/app/templates
-    depends_on:
-      - m8flow-db
-      - keycloak
-      - redis
-      - minio
-
-  m8flow-celery-flower-local:
-    profiles: ["local-backend"]
-    build:
-      context: ..
-      dockerfile: docker/m8flow.backend.Dockerfile
-    command: ["bash", "./extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh", "flower"]
-    env_file: ../.env
-    ports:
-      - "5555:5555"
-    volumes:
-      - ../process_models:/app/process_models
-      - ../templates:/app/templates
     depends_on:
       - m8flow-db
       - keycloak

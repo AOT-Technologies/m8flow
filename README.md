@@ -121,23 +121,22 @@ On Windows PowerShell:
 Local backend + container worker (hybrid):
 
 1. Start backend locally with `.\extensions\m8flow-backend\bin\run_m8flow_backend.ps1` (or `./extensions/m8flow-backend/bin/run_m8flow_backend.sh`).
-2. Start infra + local worker profile from repo root:
+2. Configure worker/flower mounts to use host model directories:
 
 ```bash
-docker compose -f docker/m8flow-docker-compose.yml --profile local-backend up -d --build m8flow-db redis keycloak minio m8flow-celery-worker-local
+export M8FLOW_BACKEND_CELERY_PROCESS_MODELS_MOUNT_SOURCE=../process_models
 ```
 
-3. If `m8flow-celery-worker` is already running, stop/remove it so only one worker consumes the queue:
+3. Start infra + worker from repo root:
 
 ```bash
-docker compose -f docker/m8flow-docker-compose.yml stop m8flow-celery-worker
-docker compose -f docker/m8flow-docker-compose.yml rm -f m8flow-celery-worker
+docker compose -f docker/m8flow-docker-compose.yml up -d --build m8flow-db redis keycloak minio m8flow-celery-worker
 ```
 
 4. Optional monitoring (Flower) for hybrid mode:
 
 ```bash
-docker compose -f docker/m8flow-docker-compose.yml --profile local-backend up -d --build m8flow-celery-flower-local
+docker compose -f docker/m8flow-docker-compose.yml up -d --build m8flow-celery-flower
 ```
 
 Open `http://<LOCAL_IP>:5555`.
@@ -356,5 +355,4 @@ m8flow builds upon the outstanding work of the **SpiffWorkflow community** and c
 ## License
 
 m8flow is released under the **GNU Lesser General Public License (LGPL)**.
-
 

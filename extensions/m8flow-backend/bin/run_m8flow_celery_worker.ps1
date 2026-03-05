@@ -105,6 +105,31 @@ if ($Mode -eq "worker") {
     $workerArgs += "-E"
   }
 
+  # --- Concurrency / pool sizing (env-configurable) ---
+  # NOTE: Flower autoscale requires Celery worker to start with --autoscale=max,min
+  $autoscaleMin = $env:M8FLOW_BACKEND_CELERY_AUTOSCALE_MIN
+  $autoscaleMax = $env:M8FLOW_BACKEND_CELERY_AUTOSCALE_MAX
+  $concurrency = $env:M8FLOW_BACKEND_CELERY_CONCURRENCY
+  $pool = $env:M8FLOW_BACKEND_CELERY_POOL
+  if (-not $pool) { $pool = "prefork" }
+
+  # Prefer prefork because it's the pool type that supports resizing reliably.
+  $workerArgs += "--pool=$pool"
+
+  # If autoscale is configured, enable it.
+  if ($autoscaleMin -and $autoscaleMax) {
+    $workerArgs += "--autoscale=$autoscaleMax,$autoscaleMin"
+    # Optional: set initial concurrency to min if not explicitly set
+    if (-not $concurrency) {
+      $concurrency = $autoscaleMin
+    }
+  }
+
+  # If concurrency is explicitly configured (or set from min), apply it.
+  if ($concurrency) {
+    $workerArgs += "--concurrency=$concurrency"
+  }
+
   python -m celery -A "m8flow_backend.background_processing.celery_worker:celery_app" @workerArgs @PassthroughArgs
   exit $LASTEXITCODE
 }

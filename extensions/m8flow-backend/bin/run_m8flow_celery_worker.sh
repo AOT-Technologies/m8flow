@@ -65,10 +65,37 @@ log_level="${M8FLOW_BACKEND_CELERY_LOG_LEVEL:-info}"
 if [[ "$mode" == "worker" ]]; then
   enable_events="${M8FLOW_BACKEND_CELERY_ENABLE_EVENTS:-true}"
   enable_events="${enable_events,,}"
+
   worker_args=(worker --loglevel "$log_level")
+
   if [[ "$enable_events" == "1" || "$enable_events" == "true" || "$enable_events" == "yes" || "$enable_events" == "on" ]]; then
     worker_args+=("-E")
   fi
+
+  # --- Concurrency / pool sizing (env-configurable) ---
+  # NOTE: Flower autoscale requires Celery worker to start with --autoscale=max,min
+  autoscale_min="${M8FLOW_BACKEND_CELERY_AUTOSCALE_MIN:-}"
+  autoscale_max="${M8FLOW_BACKEND_CELERY_AUTOSCALE_MAX:-}"
+  concurrency="${M8FLOW_BACKEND_CELERY_CONCURRENCY:-}"
+  pool="${M8FLOW_BACKEND_CELERY_POOL:-prefork}"
+
+  # Prefer prefork because it's the pool type that supports resizing reliably.
+  worker_args+=("--pool=$pool")
+
+  # If autoscale is configured, enable it.
+  if [[ -n "$autoscale_min" && -n "$autoscale_max" ]]; then
+    worker_args+=("--autoscale=${autoscale_max},${autoscale_min}")
+    # Optional: set initial concurrency to min if not explicitly set
+    if [[ -z "$concurrency" ]]; then
+      concurrency="$autoscale_min"
+    fi
+  fi
+
+  # If concurrency is explicitly configured (or set from min), apply it
+  if [[ -n "$concurrency" ]]; then
+    worker_args+=("--concurrency=$concurrency")
+  fi
+
   exec python -m celery -A m8flow_backend.background_processing.celery_worker:celery_app "${worker_args[@]}" "$@"
 fi
 
@@ -98,6 +125,7 @@ if [[ "$mode" == "flower" ]]; then
   if [[ -n "${M8FLOW_BACKEND_CELERY_FLOWER_BASIC_AUTH:-}" ]]; then
     flower_args+=("--basic-auth=${M8FLOW_BACKEND_CELERY_FLOWER_BASIC_AUTH}")
   fi
+
   exec python -m celery -A m8flow_backend.background_processing.celery_worker:celery_app "${flower_args[@]}" "$@"
 fi
 
