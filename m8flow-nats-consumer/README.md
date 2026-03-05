@@ -11,23 +11,28 @@ Standalone Python service that bridges NATS JetStream to M8Flow's SpiffWorkflow 
    - `username` — the M8Flow user who should own the process instance
    - `tenant_id`, `process_identifier`, and optional `payload`
 2. **Consumer** pulls the event from the durable JetStream subscription
-3. **JWT validated** via JWKS (public keys fetched from Keycloak's `{iss}/protocol/openid-connect/certs` endpoint and cached)
-4. **User resolved** — `username` looked up in `UserModel`; event discarded if not found
-5. **Process instantiated** — `ProcessInstanceService` called directly within a Flask app context and multi-tenant DB schema
+3. **Idempotency check** — NATS KV lookup using `tenant_id-event_id`. Duplicate events are immediately acked and discarded.
+4. **JWT validated** via JWKS (public keys fetched from Keycloak's `{iss}/protocol/openid-connect/certs` endpoint and cached)
+5. **User resolved** — `username` looked up in `UserModel`; event discarded if not found
+6. **Process instantiated** — `ProcessInstanceService` called directly within a Flask app context and multi-tenant DB schema
 
 ---
 
 ## Environment Variables
 
-| Variable                    | Default                  | Description                                                                                                                                                              |
-| --------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `M8FLOW_NATS_URL`           | `nats://localhost:4222`  | NATS server URL                                                                                                                                                          |
-| `M8FLOW_NATS_STREAM_NAME`   | `M8FLOW_EVENTS`          | JetStream stream name                                                                                                                                                    |
-| `M8FLOW_NATS_SUBJECT`       | `m8flow.events.>`        | Subject filter for subscription                                                                                                                                          |
-| `M8FLOW_NATS_DURABLE_NAME`  | `m8flow-engine-consumer` | Durable consumer name                                                                                                                                                    |
-| `M8FLOW_NATS_FETCH_BATCH`   | `10`                     | Pull batch size per loop iteration                                                                                                                                       |
-| `M8FLOW_NATS_FETCH_TIMEOUT` | `2.0`                    | Fetch timeout in seconds                                                                                                                                                 |
-| `KEYCLOAK_URL`              | _(required)_             | Keycloak base URL, e.g. `http://192.168.1.89:7002`. Used by the publisher to construct the token endpoint. The consumer derives realm from the JWT `iss` claim directly. |
+All variables are strictly required and must be provided via `.env` or the Docker environment. There are no fallbacks.
+
+| Variable                    | Example                    | Description                                                                                                                             |
+| --------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `M8FLOW_NATS_URL`           | `nats://localhost:4222`    | NATS server URL                                                                                                                         |
+| `M8FLOW_NATS_STREAM_NAME`   | `M8FLOW_EVENTS`            | JetStream stream name                                                                                                                   |
+| `M8FLOW_NATS_SUBJECT`       | `m8flow.events.>`          | Subject filter for subscription                                                                                                         |
+| `M8FLOW_NATS_DURABLE_NAME`  | `m8flow-engine-consumer`   | Durable consumer name                                                                                                                   |
+| `M8FLOW_NATS_FETCH_BATCH`   | `10`                       | Pull batch size per loop iteration                                                                                                      |
+| `M8FLOW_NATS_FETCH_TIMEOUT` | `2.0`                      | Fetch timeout in seconds                                                                                                                |
+| `M8FLOW_NATS_DEDUP_BUCKET`  | `m8flow-dedup`             | Name of the NATS KV Bucket used for deduplication.                                                                                      |
+| `M8FLOW_NATS_DEDUP_TTL`     | `86400`                    | Time in seconds to remember an event to block duplicate processing.                                                                     |
+| `KEYCLOAK_URL`              | `http://192.168.1.89:7002` | Keycloak base URL. Used by the publisher to construct the token endpoint. The consumer derives realm from the JWT `iss` claim directly. |
 
 ---
 
@@ -60,15 +65,15 @@ uv run python publisher.py \
   --payload            '{"customer_id": "123"}'
 ```
 
-| Argument               | Required | Description                                                |
-| ---------------------- | -------- | ---------------------------------------------------------- |
-| `--tenant_id`          | ✅       | M8Flow tenant UUID                                         |
-| `--process_identifier` | ✅       | BPMN process path                                          |
-| `--username`           | ✅       | M8Flow user who will own the process instance              |
-| `--realm`              | ✅\*     | Keycloak realm name — **not** the tenant UUID              |
-| `--client_id`          | No       | Service account client ID (needed to include `auth_token`) |
-| `--client_secret`      | No       | Service account client secret                              |
-| `--payload`            | No       | JSON string of additional process variables                |
+| Argument               | Required | Description                                              |
+| ---------------------- | -------- | -------------------------------------------------------- |
+| `--tenant_id`          | ✅       | M8Flow tenant UUID                                       |
+| `--process_identifier` | ✅       | BPMN process path                                        |
+| `--username`           | ✅       | M8Flow user who will own the process instance            |
+| `--realm`              | ✅       | Keycloak realm name — **not** the tenant UUID            |
+| `--client_id`          | ✅       | Service account client ID (needed to fetch `auth_token`) |
+| `--client_secret`      | ✅       | Service account client secret                            |
+| `--payload`            | No       | JSON string of additional process variables              |
 
 ---
 

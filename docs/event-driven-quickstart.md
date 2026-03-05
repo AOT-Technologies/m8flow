@@ -11,13 +11,15 @@ This document explains how to configure, run, and test the NATS Event-Driven Arc
 In `.env`, ensure the following are set:
 
 ```env
-# NATS Consumer Config
+# NATS Consumer Config (All are strictly required; no defaults)
 M8FLOW_NATS_URL=nats://nats:4222
 M8FLOW_NATS_STREAM_NAME=M8FLOW_EVENTS
 M8FLOW_NATS_SUBJECT=m8flow.events.>
+M8FLOW_NATS_DURABLE_NAME=m8flow-engine-consumer
+M8FLOW_NATS_FETCH_BATCH=10
+M8FLOW_NATS_FETCH_TIMEOUT=2.0
 M8FLOW_NATS_DEDUP_BUCKET=m8flow-dedup
 M8FLOW_NATS_DEDUP_TTL=86400
-
 
 # Keycloak (required for JWT validation in the consumer and token fetching in the publisher)
 # Base URL only — the consumer resolves the realm automatically from the JWT's iss claim.

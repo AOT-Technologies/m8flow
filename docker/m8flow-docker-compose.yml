@@ -51,7 +51,7 @@ services:
   nats:
     container_name: m8flow-nats
     image: nats:2.10-alpine
-    command: ["-js", "--store_dir=/data/nats"]
+    command: ["-js", "--store_dir=/data/nats", "-m", "8222"]
     ports:
       - "${M8FLOW_NATS_PORT:-4222}:4222/tcp" # client
       - "8222:8222/tcp" # monitoring HTTP (optional)
