@@ -82,10 +82,11 @@ All other upstream changes (root files, `.github/`, `docs/`, etc.) are ignored t
 
 ### 3. Deploy and rollback workflows
 
-**`deploy-docker.yml`**, **`deploy-qa.yml`**, **`deploy-prod.yml`**, and **`rollback.yml`** no longer perform Kubernetes deployments. They are build- or validate-only:
+**`deploy-docker.yml`**, **`deploy-qa.yml`**, **`deploy-prod.yml`**, and **`rollback.yml`**:
 
-- **deploy-docker.yml:** Builds and pushes Docker images (backend, frontend, keycloak, connector-proxy) to Docker Hub on RC tags or manual run. Requires `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets.
-- **deploy-qa.yml** / **deploy-prod.yml:** Validate promotion inputs and release digests only; no deploy step.
+- **deploy-docker.yml:** Builds and pushes Docker images (backend, frontend, keycloak, connector-proxy) to Docker Hub on RC tags (from Create Release Tag) or manual run. Requires `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets.
+- **deploy-qa.yml:** Manual only (`workflow_dispatch`). Takes a single input **`rc_tag`** (e.g. `1.2.3-rc`) and deploys the four app services (backend, frontend, keycloak, connector-proxy) to ECS QA by rendering the current task definition with the new image tag and forcing a new deployment. Uses the **QA** GitHub Environment: deploy jobs run with `environment: QA` and read **environment variables** `AWS_REGION` and `ECS_CLUSTER` from that environment (e.g. `us-east-2`, `m8flow-qa-main-cluster`). Configure these under **Settings → Environments → QA → Environment variables**. Repository secrets `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` are still required; the IAM user/role must have `ecs:DescribeTaskDefinition`, `ecs:RegisterTaskDefinition`, `ecs:UpdateService`, `ecs:DescribeServices`, and `iam:PassRole` for the task execution role.
+- **deploy-prod.yml:** Validate promotion inputs and release digests only; no deploy step.
 - **rollback.yml:** Validates rollback inputs only; rollback must be performed manually (e.g. via ECS/console).
 
 Variables `Dev_Deploy`, `QA_Deploy`, and `Prod_Deploy`, and secrets such as `KUBECONFIG_*` and `*_BACKEND_URL` / `*_FRONTEND_URL` etc., are no longer used by these workflows.

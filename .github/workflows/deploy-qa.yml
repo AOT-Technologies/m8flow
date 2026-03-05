@@ -1,46 +1,10 @@
 name: Deploy to QA
 
 on:
-  # Manual promotion
   workflow_dispatch:
     inputs:
       rc_tag:
-        description: "RC tag name (e.g. v1.2.3-rc1)"
-        required: true
-        type: string
-      backend_image_digest:
-        description: "Backend image digest (sha256:...) from Dev build"
-        required: true
-        type: string
-      frontend_image_digest:
-        description: "Frontend image digest (sha256:...) from Dev build"
-        required: true
-        type: string
-      keycloak_image_digest:
-        description: "Keycloak image digest (sha256:...) from Dev build"
-        required: true
-        type: string
-      connector_proxy_image_digest:
-        description: "Connector-proxy image digest (sha256:...) from Dev build"
-        required: true
-        type: string
-
-  # Optional: automatic call from deploy-docker.yml
-  workflow_call:
-    inputs:
-      rc_tag:
-        required: true
-        type: string
-      backend_image_digest:
-        required: true
-        type: string
-      frontend_image_digest:
-        required: true
-        type: string
-      keycloak_image_digest:
-        required: true
-        type: string
-      connector_proxy_image_digest:
+        description: "RC tag used for Docker images (e.g. 1.2.3-rc). Must match the tag used in Deploy to Docker."
         required: true
         type: string
 
@@ -54,11 +18,9 @@ concurrency:
 env:
   REGISTRY: docker.io
   PROJECT: m8flow
+  IMAGE_BASE: docker.io/m8flow/m8flow
 
 jobs:
-  # -------------------------
-  # Validate Inputs
-  # -------------------------
   validate:
     name: Validate Promotion Inputs
     runs-on: ubuntu-latest
@@ -66,48 +28,148 @@ jobs:
       - name: Validate RC tag format
         run: |
           TAG="${{ inputs.rc_tag }}"
-          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc[0-9]+$ ]]; then
-            echo "::error::Invalid RC tag: $TAG"
+          if [[ ! "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc$ ]]; then
+            echo "::error::Invalid RC tag: $TAG (expected X.Y.Z-rc, e.g. 1.2.3-rc)"
             exit 1
           fi
 
-      - name: Validate backend digest format
+  prepare:
+    name: Prepare (check images exist)
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Docker images exist
         run: |
-          DIGEST="${{ inputs.backend_image_digest }}"
-          [[ "$DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]] || {
-            echo "::error::Invalid backend image digest"
-            exit 1
-          }
-
-      - name: Validate frontend digest format
-        run: |
-          DIGEST="${{ inputs.frontend_image_digest }}"
-          [[ "$DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]] || {
-            echo "::error::Invalid frontend image digest"
-            exit 1
-          }
-
-      - name: Validate keycloak digest format
-        run: |
-          DIGEST="${{ inputs.keycloak_image_digest }}"
-          [[ "$DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]] || {
-            echo "::error::Invalid keycloak image digest"
-            exit 1
-          }
-
-      - name: Validate connector-proxy digest format
-        run: |
-          DIGEST="${{ inputs.connector_proxy_image_digest }}"
-          [[ "$DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]] || {
-            echo "::error::Invalid connector-proxy image digest"
-            exit 1
-          }
-
-      - name: Reject tag-based references
-        run: |
-          for v in "${{ inputs.backend_image_digest }}" "${{ inputs.frontend_image_digest }}" "${{ inputs.keycloak_image_digest }}" "${{ inputs.connector_proxy_image_digest }}"; do
-            if [[ "$v" == *":"* && "$v" != sha256:* ]]; then
-              echo "::error::Tag-based image reference detected. Digest required."
-              exit 1
+          TAG="${{ inputs.rc_tag }}"
+          NAMESPACE="m8flow"
+          REPOS="m8flow-backend m8flow-frontend m8flow-keycloak m8flow-connector-proxy"
+          MISSING=""
+          for REPO in $REPOS; do
+            URL="https://hub.docker.com/v2/repositories/${NAMESPACE}/${REPO}/tags?page_size=1&name=${TAG}"
+            COUNT=$(curl -sS "$URL" | jq -r '.count // 0')
+            if [[ "$COUNT" != "1" ]]; then
+              MISSING="${MISSING} ${NAMESPACE}/${REPO}:${TAG}"
             fi
           done
+          if [[ -n "$MISSING" ]]; then
+            echo "::error::Docker image(s) not found for tag ${TAG}:${MISSING}"
+            echo "Run Deploy to Docker with this tag first, or use an existing tag."
+            exit 1
+          fi
+          echo "All four images found for tag ${TAG}."
+
+  deploy-backend:
+    name: Deploy Backend
+    needs: prepare
+    runs-on: ubuntu-latest
+    environment: QA
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Render task definition (backend)
+        id: render
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition-family: m8flow-qa-backend
+          container-name: backend
+          image: ${{ env.IMAGE_BASE }}-backend:${{ inputs.rc_tag }}
+
+      - name: Deploy backend
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render.outputs.task-definition }}
+          service: m8flow-qa-backend
+          cluster: ${{ vars.ECS_CLUSTER }}
+          force-new-deployment: true
+
+  deploy-frontend:
+    name: Deploy Frontend
+    needs: prepare
+    runs-on: ubuntu-latest
+    environment: QA
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Render task definition (frontend)
+        id: render
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition-family: m8flow-qa-frontend
+          container-name: frontend
+          image: ${{ env.IMAGE_BASE }}-frontend:${{ inputs.rc_tag }}
+
+      - name: Deploy frontend
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render.outputs.task-definition }}
+          service: m8flow-qa-frontend
+          cluster: ${{ vars.ECS_CLUSTER }}
+          force-new-deployment: true
+
+  deploy-keycloak:
+    name: Deploy Keycloak
+    needs: prepare
+    runs-on: ubuntu-latest
+    environment: QA
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Render task definition (keycloak)
+        id: render
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition-family: m8flow-qa-keycloak
+          container-name: keycloak
+          image: ${{ env.IMAGE_BASE }}-keycloak:${{ inputs.rc_tag }}
+
+      - name: Deploy keycloak
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render.outputs.task-definition }}
+          service: m8flow-qa-keycloak
+          cluster: ${{ vars.ECS_CLUSTER }}
+          force-new-deployment: true
+
+  deploy-connector-proxy:
+    name: Deploy Connector-Proxy
+    needs: prepare
+    runs-on: ubuntu-latest
+    environment: QA
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Render task definition (connector-proxy)
+        id: render
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition-family: m8flow-qa-connector-proxy
+          container-name: connector-proxy
+          image: ${{ env.IMAGE_BASE }}-connector-proxy:${{ inputs.rc_tag }}
+
+      - name: Deploy connector-proxy
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render.outputs.task-definition }}
+          service: m8flow-qa-connector-proxy
+          cluster: ${{ vars.ECS_CLUSTER }}
+          force-new-deployment: true
