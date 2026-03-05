@@ -1,10 +1,10 @@
-name: Deploy to Dev
+name: Deploy to Docker
 
 on:
   workflow_dispatch:
     inputs:
       rc_tag:
-        description: "RC tag name (e.g. v1.2.3-rc)"
+        description: "RC tag name (e.g. 1.2.3-rc)"
         required: true
         type: string
   workflow_run:
@@ -26,17 +26,15 @@ env:
   PROJECT: m8flow
 
 jobs:
-  build:
-    name: Build & Push Images (RC)
+  prepare:
+    name: Prepare (resolve ref & tag)
     if: |
       (vars.AUTO_BUILD == 'true' || github.event_name == 'workflow_dispatch') &&
       (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     outputs:
-      backend_digest: ${{ steps.digest.outputs.backend }}
-      frontend_digest: ${{ steps.digest.outputs.frontend }}
-      keycloak_digest: ${{ steps.digest.outputs.keycloak }}
-      connector_proxy_digest: ${{ steps.digest.outputs.connector_proxy }}
+      ref: ${{ steps.meta.outputs.ref }}
+      tag: ${{ steps.meta.outputs.tag }}
 
     steps:
       - name: Checkout
@@ -61,6 +59,25 @@ jobs:
             TAG="${{ github.ref_name }}"
           fi
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "ref=${{ github.sha }}" >> $GITHUB_OUTPUT
+
+  build-backend:
+    name: Build & Push Backend
+    needs: prepare
+    if: |
+      (vars.AUTO_BUILD == 'true' || github.event_name == 'workflow_dispatch') &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
+          fetch-depth: 0
+
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
@@ -70,76 +87,150 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # -------------------------
-      # Build & Push Backend
-      # -------------------------
       - name: Build & Push Backend Image
-        id: backend
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: .
           file: docker/m8flow.backend.Dockerfile
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-backend:${{ steps.meta.outputs.tag }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-backend:${{ needs.prepare.outputs.tag }}
           provenance: true
           sbom: true
 
-      # -------------------------
-      # Build & Push Frontend
-      # -------------------------
+  build-frontend:
+    name: Build & Push Frontend
+    needs: prepare
+    if: |
+      (vars.AUTO_BUILD == 'true' || github.event_name == 'workflow_dispatch') &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
+          fetch-depth: 0
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build & Push Frontend Image
-        id: frontend
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: .
           file: docker/m8flow.frontend.Dockerfile
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-frontend:${{ steps.meta.outputs.tag }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-frontend:${{ needs.prepare.outputs.tag }}
           provenance: true
           sbom: true
 
-      # -------------------------
-      # Build & Push Keycloak
-      # -------------------------
+  build-keycloak:
+    name: Build & Push Keycloak
+    needs: prepare
+    if: |
+      (vars.AUTO_BUILD == 'true' || github.event_name == 'workflow_dispatch') &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
+          fetch-depth: 0
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build & Push Keycloak Image
-        id: keycloak
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: .
           file: docker/m8flow.keycloak.Dockerfile
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-keycloak:${{ steps.meta.outputs.tag }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-keycloak:${{ needs.prepare.outputs.tag }}
           provenance: true
           sbom: true
 
-      # -------------------------
-      # Build & Push Connector-Proxy
-      # -------------------------
+  build-connector-proxy:
+    name: Build & Push Connector-Proxy
+    needs: prepare
+    if: |
+      (vars.AUTO_BUILD == 'true' || github.event_name == 'workflow_dispatch') &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
+          fetch-depth: 0
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build & Push Connector-Proxy Image
-        id: connector-proxy
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: m8flow-connector-proxy
           file: m8flow-connector-proxy/Dockerfile
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-connector-proxy:${{ steps.meta.outputs.tag }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-connector-proxy:${{ needs.prepare.outputs.tag }}
           provenance: true
           sbom: true
 
-      # -------------------------
-      # Capture Image Digests
-      # -------------------------
-      - name: Capture image digests
-        id: digest
+  combine:
+    name: Combine digests & upload artifact
+    needs: [build-backend, build-frontend, build-keycloak, build-connector-proxy]
+    runs-on: ubuntu-latest
+    outputs:
+      backend_digest: ${{ needs.build-backend.outputs.digest }}
+      frontend_digest: ${{ needs.build-frontend.outputs.digest }}
+      keycloak_digest: ${{ needs.build-keycloak.outputs.digest }}
+      connector_proxy_digest: ${{ needs.build-connector-proxy.outputs.digest }}
+
+    steps:
+      - name: Write per-image digest files
         run: |
-          echo "backend=${{ steps.backend.outputs.digest }}" >> $GITHUB_OUTPUT
-          echo "frontend=${{ steps.frontend.outputs.digest }}" >> $GITHUB_OUTPUT
-          echo "keycloak=${{ steps.keycloak.outputs.digest }}" >> $GITHUB_OUTPUT
-          echo "connector_proxy=${{ steps.connector-proxy.outputs.digest }}" >> $GITHUB_OUTPUT
-          echo "${{ steps.backend.outputs.digest }}" > backend-image-digest.txt
-          echo "${{ steps.frontend.outputs.digest }}" > frontend-image-digest.txt
-          echo "${{ steps.keycloak.outputs.digest }}" > keycloak-image-digest.txt
-          echo "${{ steps.connector-proxy.outputs.digest }}" > connector-proxy-image-digest.txt
+          echo "${{ needs.build-backend.outputs.digest }}" > backend-image-digest.txt
+          echo "${{ needs.build-frontend.outputs.digest }}" > frontend-image-digest.txt
+          echo "${{ needs.build-keycloak.outputs.digest }}" > keycloak-image-digest.txt
+          echo "${{ needs.build-connector-proxy.outputs.digest }}" > connector-proxy-image-digest.txt
+
+      - name: Combine all digests into one output
+        run: |
+          printf '%s\n' '{ "backend": "${{ needs.build-backend.outputs.digest }}", "frontend": "${{ needs.build-frontend.outputs.digest }}", "keycloak": "${{ needs.build-keycloak.outputs.digest }}", "connector_proxy": "${{ needs.build-connector-proxy.outputs.digest }}" }' > all-digests.json
+
       - name: Upload digest artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -149,3 +240,4 @@ jobs:
             frontend-image-digest.txt
             keycloak-image-digest.txt
             connector-proxy-image-digest.txt
+            all-digests.json
