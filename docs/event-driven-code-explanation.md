@@ -47,11 +47,12 @@ If the user does not exist, the event is discarded with an error log. The `usern
 
 #### Delivery Guarantees
 
-| Outcome                   | Action                                                 |
-| ------------------------- | ------------------------------------------------------ |
-| Success                   | `db.session.commit()` → `msg.ack()`                    |
-| Auth / validation failure | `msg.ack()` (discard — retrying won't help)            |
-| Transient DB error        | `db.session.rollback()` → `msg.nak(delay=5)` (requeue) |
+| Outcome                   | Action                                                |
+| ------------------------- | ----------------------------------------------------- |
+| Success                   | `db.session.commit()` → `msg.ack()`                   |
+| Auth / validation failure | `msg.ack()` (discard — retrying won't help)           |
+| Duplicate Event (NATS KV) | `msg.ack()` (discard — already processed)             |
+| Transient DB error        | `kv.delete()` → `db.session.rollback()` → `msg.nak()` |
 
 ---
 
@@ -70,12 +71,12 @@ Arguments:
 | `--tenant_id`          | ✅       | M8Flow tenant UUID                                                   |
 | `--process_identifier` | ✅       | Target BPMN process path                                             |
 | `--username`           | ✅       | M8Flow user who will own the process instance                        |
-| `--realm`              | ✅\*     | Keycloak realm name (e.g. `spiffworkflow`) — **not** the tenant UUID |
-| `--client_id`          | No†      | Service account client ID (required to include `auth_token`)         |
-| `--client_secret`      | No†      | Service account client secret                                        |
+| `--realm`              | ✅       | Keycloak realm name (e.g. `spiffworkflow`) — **not** the tenant UUID |
+| `--client_id`          | ✅       | Service account client ID (required to fetch `auth_token`)           |
+| `--client_secret`      | ✅       | Service account client secret                                        |
 | `--payload`            | No       | JSON string injected as event data                                   |
 
-> †`client_id` and `client_secret` are only used for authentication — they prove the publisher is authorized. They have no relation to the `username` field.
+> `client_id` and `client_secret` are only used for authentication — they prove the publisher is authorized. They have no relation to the `username` field.
 
 ---
 
@@ -93,8 +94,6 @@ Lean image — `uv pip install --system` installs dependencies, then runs `consu
 
 ### `m8flow.nats.Dockerfile`
 
-Built over `nats:alpine`. Runs `setup_stream.sh` on startup to create the `M8FLOW_EVENTS` JetStream stream automatically:
+Lean image built directly from the official `nats:alpine` base image.
 
-```
-nats stream add M8FLOW_EVENTS --subjects="m8flow.events.>"
-```
+> **Stream & KV Creation:** Stream creation (`M8FLOW_EVENTS`) and Key-Value bucket creation (`m8flow-dedup`) are handled natively on startup by `consumer.py` using `js.add_stream()` and `js.create_key_value()`.

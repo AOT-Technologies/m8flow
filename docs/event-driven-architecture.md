@@ -150,9 +150,9 @@ sequenceDiagram
 
 ## 6. Environment Variables
 
-The `consumer.py` uses the following NATS configurations, all overridable via `.env`:
+The `consumer.py` uses the following NATS configurations. **All of these must be defined in your `.env` file** (there are no fallbacks; the service will fail-fast if they are missing):
 
-| Variable                    | Default Value            | Description                                                      |
+| Variable                    | Example Value            | Description                                                      |
 | :-------------------------- | :----------------------- | :--------------------------------------------------------------- |
 | `M8FLOW_NATS_URL`           | `nats://localhost:4222`  | Connection string for NATS JetStream server.                     |
 | `M8FLOW_NATS_STREAM_NAME`   | `M8FLOW_EVENTS`          | The JetStream stream to create/listen to.                        |
@@ -161,4 +161,4 @@ The `consumer.py` uses the following NATS configurations, all overridable via `.
 | `M8FLOW_NATS_FETCH_BATCH`   | `10`                     | Max messages to pull in one polling cycle.                       |
 | `M8FLOW_NATS_FETCH_TIMEOUT` | `2.0`                    | Polling wait time in seconds.                                    |
 | `M8FLOW_NATS_DEDUP_BUCKET`  | `m8flow-dedup`           | Name of the NATS KV Bucket used for deduplication.               |
-| `M8FLOW_NATS_DEDUP_TTL`     | `86400` (24h)            | Time in seconds to remember an event block duplicate processing. |
+| `M8FLOW_NATS_DEDUP_TTL`     | `86400`                  | Time in seconds to remember an event block duplicate processing. |
