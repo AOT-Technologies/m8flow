@@ -7,6 +7,10 @@ on:
         description: "RC tag name (e.g. v1.2.3-rc)"
         required: true
         type: string
+  workflow_run:
+    workflows: ["Create Release Tag"]
+    types: [completed]
+    branches: [main]
 
 permissions:
   contents: read
@@ -24,7 +28,9 @@ env:
 jobs:
   build:
     name: Build & Push Images (RC)
-    if: vars.AUTO_BUILD == 'true' || github.event_name == 'workflow_dispatch'
+    if: |
+      (vars.AUTO_BUILD == 'true' || github.event_name == 'workflow_dispatch') &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     outputs:
       backend_digest: ${{ steps.digest.outputs.backend }}
@@ -33,16 +39,27 @@ jobs:
       connector_proxy_digest: ${{ steps.digest.outputs.connector_proxy }}
 
     steps:
-      - name: Checkout tagged commit
+      - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.rc_tag || github.ref }}
+          ref: ${{ github.event.inputs.rc_tag || (github.event_name == 'workflow_run' && github.event.workflow_run.head_sha) || github.ref }}
           fetch-depth: 0
 
       - name: Extract metadata
         id: meta
         run: |
-          TAG="${{ github.event.inputs.rc_tag || github.ref_name }}"
+          if [[ -n "${{ github.event.inputs.rc_tag }}" ]]; then
+            TAG="${{ github.event.inputs.rc_tag }}"
+          elif [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+            git fetch origin --tags 2>/dev/null || true
+            TAG=$(git tag --points-at HEAD | sort -V | tail -1)
+            if [[ -z "$TAG" ]]; then
+              echo "::error::No tag found pointing at HEAD (workflow_run.head_sha). Deploy to Dev may only be triggered by Create Release Tag when tagging the latest commit."
+              exit 1
+            fi
+          else
+            TAG="${{ github.ref_name }}"
+          fi
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
 
       - name: Login to Docker Hub
