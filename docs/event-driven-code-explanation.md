@@ -1,46 +1,100 @@
 # M8Flow NATS Code Organization
 
-This document acts as an index for the codebase related to the Event-Driven Architecture. We use a high-performance Native Database Integration approach where the consumer lives separately but executes process instances directly within the backend's Python application context.
+This document is an index for the Event-Driven Architecture codebase. The consumer performs JWT authentication then runs process instances directly within the backend's Python application context.
 
 ---
 
 ## 1. NATS Consumer Service (`m8flow-nats-consumer/`)
 
-This is a standalone Python application living at the root of the repository. It is responsible for listening to events and natively instantiating processes.
-
 ### `consumer.py`
 
-The main ingestion daemon. It connects to NATS using the modern `asyncio` loop with `nats-py`, and integrates directly with the M8Flow backend context:
+The main ingestion daemon. Connects to NATS, authenticates every event via Keycloak JWT, and instantiates processes natively.
 
-- **Environment & Initialization:** The application uses `load_dotenv()` to pull configuration and forcefully sets absolute directory paths for BPMN models. By arranging the import order specifically, it ensures backend components read the correct environment flags.
-- **Durable Pull Subscription:** The consumer requests batches of messages from the JetStream `M8FLOW_EVENTS` stream (e.g., `batch=10` with a `timeout=2.0s`).
-- **Native Invocation:** For each message, it extracts the JSON payload (`tenant_id`, `process_identifier`, `username`, and `payload`). It creates a Flask `app_context()` and dynamically sets the active tenant context using `set_context_tenant_id(tenant_id)`.
-- **Process Instantiation:** It queries the database for the relevant user, dynamically resolves the targeted `ProcessModel` using `ProcessModelService`, and synchronously invokes `ProcessInstanceService.create_and_run_process_instance(...)`.
-- **Delivery Guarantees:**
-  - Upon successful commit to the database, it explicitly calls `msg.ack()`, deleting the event from NATS.
-  - On exceptions (like transient DB errors), it performs a rollback and calls `msg.nak(delay=5)`, formatting JetStream to wait 5 seconds and automatically resubmit it to the queue.
+#### Required Event Fields
+
+The consumer immediately discards any message missing these fields:
+
+| Field                | Purpose                                                          |
+| -------------------- | ---------------------------------------------------------------- |
+| `tenant_id`          | Identifies the M8Flow tenant (used for DB schema switching)      |
+| `process_identifier` | BPMN process path to instantiate                                 |
+| `username`           | M8Flow user who will own the process instance                    |
+| `auth_token`         | Keycloak JWT — proves the publisher is authorized to send events |
+
+#### JWT Authentication Layer (`get_public_keys`, `validate_token`)
+
+- **Issuer discovery:** `iss` claim decoded from the JWT (unverified read only) to determine the Keycloak realm URL. No realm config required — the token carries its own origin.
+- **JWKS fetch & cache:** Public keys fetched from `{iss}/protocol/openid-connect/certs` and cached in `jwks_cache` by issuer URL.
+- **Signature verification:** `jwt.decode` validates RSA signature, expiry, and issuer. Key rotation handled by cache invalidation and re-fetch.
+
+#### User Resolution
+
+After the JWT is verified, the `username` from the payload is looked up in the M8Flow database:
+
+```python
+user = UserModel.query.filter_by(username=username).first()
+```
+
+If the user does not exist, the event is discarded with an error log. The `username` payload field controls _process ownership_; the JWT controls _publisher authorization_ — these are two distinct identities.
+
+#### Process Instantiation
+
+- Flask `app_context()` established
+- `set_context_tenant_id(tenant_id)` switches the active DB schema
+- `ProcessModelService.get_process_model(process_identifier)` resolves the BPMN
+- `ProcessInstanceService.create_and_run_process_instance(process_model, user)` runs the workflow
+- `db.session.commit()` persists, `reset_context_tenant_id()` cleans up
+
+#### Delivery Guarantees
+
+| Outcome                   | Action                                                 |
+| ------------------------- | ------------------------------------------------------ |
+| Success                   | `db.session.commit()` → `msg.ack()`                    |
+| Auth / validation failure | `msg.ack()` (discard — retrying won't help)            |
+| Transient DB error        | `db.session.rollback()` → `msg.nak(delay=5)` (requeue) |
+
+---
 
 ### `publisher.py`
 
-A simple CLI wrapper to formulate the correct JSON schema and publish the message into the NATS Server directly. Extremely useful for developers testing pipelines locally. It accepts parameters like `--tenant_id`, `--username`, and `--process_identifier`.
+CLI developer utility to publish signed test events. It:
+
+1. Fetches a Keycloak JWT using Client Credentials Grant (`--client_id` + `--client_secret`)
+2. Embeds the JWT as `auth_token` in the event payload
+3. Publishes the event to NATS JetStream
+
+Arguments:
+
+| Argument               | Required | Description                                                          |
+| ---------------------- | -------- | -------------------------------------------------------------------- |
+| `--tenant_id`          | ✅       | M8Flow tenant UUID                                                   |
+| `--process_identifier` | ✅       | Target BPMN process path                                             |
+| `--username`           | ✅       | M8Flow user who will own the process instance                        |
+| `--realm`              | ✅\*     | Keycloak realm name (e.g. `spiffworkflow`) — **not** the tenant UUID |
+| `--client_id`          | No†      | Service account client ID (required to include `auth_token`)         |
+| `--client_secret`      | No†      | Service account client secret                                        |
+| `--payload`            | No       | JSON string injected as event data                                   |
+
+> †`client_id` and `client_secret` are only used for authentication — they prove the publisher is authorized. They have no relation to the `username` field.
+
+---
 
 ### `pyproject.toml`
 
-Uses the `uv` package manager (and Poetry standards) to manage dependencies, declaring `spiffworkflow-backend` as a relative path dependency so the consumer can natively share the local repository's Python source files for backend instantiation.
+Uses `uv` to declare `spiffworkflow-backend` as a local path dependency, giving the consumer native access to the backend's Python modules.
 
 ### `Dockerfile`
 
-A multi-stage Docker build utilizing `uv` to install dependencies and deploy the consumer daemon efficiently without container bloat.
+Lean image — `uv pip install --system` installs dependencies, then runs `consumer.py` as the entrypoint.
 
 ---
 
 ## 2. Infrastructure (`docker/`)
 
-Because NATS JetStream requires specific stream initialization, we cannot always use the raw `nats` image out of the box easily.
-
 ### `m8flow.nats.Dockerfile`
 
-We construct over `nats:alpine`. We pre-install `nats-cli` and bind to a script (`setup_stream.sh`) that daemonizes the nats server, waits 2 seconds, and executes a terminal command equivalent to:
-`nats stream add M8FLOW_EVENTS --subjects="m8flow.events.>"`
+Built over `nats:alpine`. Runs `setup_stream.sh` on startup to create the `M8FLOW_EVENTS` JetStream stream automatically:
 
-This ensures zero manual setup is required when deploying via `docker-compose`.
+```
+nats stream add M8FLOW_EVENTS --subjects="m8flow.events.>"
+```
