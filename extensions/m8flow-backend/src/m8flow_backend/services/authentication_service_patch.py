@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import ast
+import base64
+import json
+
 import requests
 from security import safe_requests  # type: ignore
 
 from spiffworkflow_backend.config import HTTP_REQUEST_TIMEOUT_SECONDS
 from spiffworkflow_backend.exceptions.api_error import ApiError
 from spiffworkflow_backend.exceptions.error import OpenIdConnectionError
+from spiffworkflow_backend.exceptions.error import RefreshTokenStorageError
 from spiffworkflow_backend.services.authentication_service import (
     AuthenticationOptionNotFoundError,
     AuthenticationService,
@@ -16,6 +21,9 @@ _ORIGINAL_AUTH_OPTION_FOR_IDENTIFIER = None
 _ORIGINAL_GET_AUTH_TOKEN_OBJECT = None
 _TOKEN_ERROR_PATCHED = False
 _OPENID_PATCHED = False
+_REFRESH_TOKEN_TENANT_PATCHED = False
+_ORIGINAL_STORE_REFRESH_TOKEN = None
+_ORIGINAL_GET_REFRESH_TOKEN = None
 
 
 def apply_auth_config_on_demand_patch() -> None:
@@ -136,3 +144,205 @@ def apply_openid_discovery_patch() -> None:
         _patched_open_id_endpoint_for_name
     )
     _OPENID_PATCHED = True
+
+
+def _decode_state_authentication_identifier(state: str | None) -> str | None:
+    if not state:
+        return None
+    try:
+        raw = base64.b64decode(state).decode("utf-8")
+        state_dict = ast.literal_eval(raw)
+    except Exception:
+        return None
+    identifier = state_dict.get("authentication_identifier") if isinstance(state_dict, dict) else None
+    if isinstance(identifier, str) and identifier.strip():
+        return identifier
+    return None
+
+
+def _jwt_payload_without_verification(token: str) -> dict | None:
+    parts = token.split(".")
+    if len(parts) < 2:
+        return None
+    payload_b64 = parts[1] + "=" * (-len(parts[1]) % 4)
+    try:
+        payload = base64.urlsafe_b64decode(payload_b64.encode("ascii")).decode("utf-8")
+        loaded = json.loads(payload)
+        return loaded if isinstance(loaded, dict) else None
+    except Exception:
+        return None
+
+
+def _tenant_from_request_token() -> str | None:
+    from flask import has_request_context, request
+
+    if not has_request_context():
+        return None
+
+    auth_header = (request.headers.get("Authorization") or "").strip()
+    token: str | None = None
+    if auth_header.startswith("Bearer ") and len(auth_header) > 7:
+        token = auth_header[7:].strip() or None
+    if not token:
+        token = request.cookies.get("access_token")
+    if not token:
+        return None
+
+    payload = _jwt_payload_without_verification(token)
+    if not payload:
+        return None
+    tenant_id = payload.get("m8flow_tenant_id")
+    if isinstance(tenant_id, str) and tenant_id.strip():
+        return tenant_id
+    return None
+
+
+def _authentication_identifier_from_request() -> str | None:
+    from flask import has_request_context, request
+
+    if not has_request_context():
+        return None
+
+    try:
+        from spiffworkflow_backend.routes.authentication_controller import _get_authentication_identifier_from_request
+
+        identifier = _get_authentication_identifier_from_request()
+        if isinstance(identifier, str) and identifier.strip():
+            return identifier
+    except Exception:
+        pass
+
+    identifier = request.cookies.get("authentication_identifier")
+    if identifier:
+        return identifier
+    identifier = request.headers.get("SpiffWorkflow-Authentication-Identifier")
+    if identifier:
+        return identifier
+    return _decode_state_authentication_identifier(request.args.get("state"))
+
+
+def _resolve_refresh_token_tenant_id(
+    tenant_id: str | None = None,
+    decoded_token: dict | None = None,
+) -> str | None:
+    from flask import g, has_request_context
+
+    if tenant_id:
+        return tenant_id
+
+    if isinstance(decoded_token, dict):
+        claim_tenant = decoded_token.get("m8flow_tenant_id")
+        if isinstance(claim_tenant, str) and claim_tenant.strip():
+            return claim_tenant
+
+    if has_request_context():
+        tenant_from_g = getattr(g, "m8flow_tenant_id", None)
+        if isinstance(tenant_from_g, str) and tenant_from_g:
+            return tenant_from_g
+
+    identifier = _authentication_identifier_from_request()
+    if identifier:
+        return identifier
+
+    return _tenant_from_request_token()
+
+
+def _ensure_refresh_token_originals() -> None:
+    global _ORIGINAL_STORE_REFRESH_TOKEN, _ORIGINAL_GET_REFRESH_TOKEN
+    if _ORIGINAL_STORE_REFRESH_TOKEN is None:
+        _ORIGINAL_STORE_REFRESH_TOKEN = AuthenticationService.store_refresh_token
+    if _ORIGINAL_GET_REFRESH_TOKEN is None:
+        _ORIGINAL_GET_REFRESH_TOKEN = AuthenticationService.get_refresh_token
+
+
+def _original_store_refresh_token_fn():
+    if _ORIGINAL_STORE_REFRESH_TOKEN is None:
+        raise RuntimeError("Original AuthenticationService.store_refresh_token was not captured.")
+    return _ORIGINAL_STORE_REFRESH_TOKEN
+
+
+def _original_get_refresh_token_fn():
+    if _ORIGINAL_GET_REFRESH_TOKEN is None:
+        raise RuntimeError("Original AuthenticationService.get_refresh_token was not captured.")
+    return _ORIGINAL_GET_REFRESH_TOKEN
+
+
+def _patched_store_refresh_token(
+    user_id: int,
+    refresh_token: str,
+    tenant_id: str | None = None,
+    decoded_token: dict | None = None,
+) -> None:
+    from spiffworkflow_backend.models.db import db
+    from spiffworkflow_backend.models.refresh_token import RefreshTokenModel
+
+    if not hasattr(RefreshTokenModel, "m8f_tenant_id"):
+        _original_store_refresh_token_fn()(user_id, refresh_token)
+        return
+
+    effective_tenant_id = _resolve_refresh_token_tenant_id(tenant_id=tenant_id, decoded_token=decoded_token)
+    if not effective_tenant_id:
+        raise RefreshTokenStorageError("We could not store the refresh token: missing tenant context.")
+
+    refresh_token_model = (
+        RefreshTokenModel.query.filter(RefreshTokenModel.user_id == user_id)
+        .filter(RefreshTokenModel.m8f_tenant_id == effective_tenant_id)
+        .first()
+    )
+    if refresh_token_model:
+        refresh_token_model.token = refresh_token
+    else:
+        refresh_token_model = RefreshTokenModel(
+            user_id=user_id,
+            token=refresh_token,
+            m8f_tenant_id=effective_tenant_id,
+        )
+
+    db.session.add(refresh_token_model)
+    try:
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        raise RefreshTokenStorageError(
+            f"We could not store the refresh token. Original error is {exc}",
+        ) from exc
+
+
+def _patched_get_refresh_token(
+    user_id: int,
+    tenant_id: str | None = None,
+    decoded_token: dict | None = None,
+) -> str | None:
+    from spiffworkflow_backend.models.refresh_token import RefreshTokenModel
+
+    if not hasattr(RefreshTokenModel, "m8f_tenant_id"):
+        return _original_get_refresh_token_fn()(user_id)
+
+    effective_tenant_id = _resolve_refresh_token_tenant_id(tenant_id=tenant_id, decoded_token=decoded_token)
+    if not effective_tenant_id:
+        return None
+
+    refresh_token_object = (
+        RefreshTokenModel.query.filter(RefreshTokenModel.user_id == user_id)
+        .filter(RefreshTokenModel.m8f_tenant_id == effective_tenant_id)
+        .first()
+    )
+    if refresh_token_object:
+        return refresh_token_object.token
+    return None
+
+
+def apply_refresh_token_tenant_patch() -> None:
+    """
+    Patch AuthenticationService refresh-token persistence/read to be tenant-aware
+    when RefreshTokenModel is tenant scoped.
+    """
+    global _REFRESH_TOKEN_TENANT_PATCHED
+    if _REFRESH_TOKEN_TENANT_PATCHED:
+        return
+
+    _ensure_refresh_token_originals()
+
+    AuthenticationService.store_refresh_token = staticmethod(_patched_store_refresh_token)
+    AuthenticationService.get_refresh_token = staticmethod(_patched_get_refresh_token)
+    _REFRESH_TOKEN_TENANT_PATCHED = True

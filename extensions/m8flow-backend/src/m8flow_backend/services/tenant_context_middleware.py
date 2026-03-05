@@ -1,10 +1,14 @@
 # extensions/m8flow-backend/src/m8flow_backend/services/tenant_context_middleware.py
 from __future__ import annotations
 
+import ast
+import base64
 import logging
 from typing import Any, Optional
+from urllib.parse import unquote
 
 from flask import g, has_request_context, request
+from sqlalchemy import or_
 
 from spiffworkflow_backend.exceptions.api_error import ApiError
 from spiffworkflow_backend.services.authentication_service import AuthenticationService
@@ -23,6 +27,7 @@ from m8flow_backend.tenancy import (
     TENANT_CLAIM,
     allow_missing_tenant_context,
     get_context_tenant_id,
+    path_matches_any_prefix,
     reset_context_tenant_id,
     set_context_tenant_id,
 )
@@ -111,7 +116,11 @@ def resolve_request_tenant() -> None:
     # Flask-SQLAlchemy may raise RuntimeError when model not bound; message check for backward compatibility.
     # InvalidRequestError used when applicable (SQLAlchemy mapping/registry errors).
     try:
-        tenant = db.session.query(M8flowTenantModel).filter(M8flowTenantModel.id == tenant_id).one_or_none()
+        tenant = (
+            db.session.query(M8flowTenantModel)
+            .filter(or_(M8flowTenantModel.id == tenant_id, M8flowTenantModel.slug == tenant_id))
+            .one_or_none()
+        )
     except Exception as exc:
         _exc_tuple = (InvalidRequestError, RuntimeError) if InvalidRequestError is not None else (RuntimeError,)
         if isinstance(exc, _exc_tuple):
@@ -130,8 +139,9 @@ def resolve_request_tenant() -> None:
             status_code=401,
         )
 
-    g.m8flow_tenant_id = tenant_id
-    g._m8flow_ctx_token = set_context_tenant_id(tenant_id)
+    canonical_tenant_id = tenant.id
+    g.m8flow_tenant_id = canonical_tenant_id
+    g._m8flow_ctx_token = set_context_tenant_id(canonical_tenant_id)
 
 
 def teardown_request_tenant_context(_exc: Exception | None = None) -> None:
@@ -151,7 +161,7 @@ def _is_public_request() -> bool:
         path = getattr(request, "path", "") or ""
     except Exception:
         return False
-    return any(path.startswith(p) for p in PUBLIC_PATH_PREFIXES)
+    return path_matches_any_prefix(path, PUBLIC_PATH_PREFIXES)
 
 
 def _resolve_tenant_id() -> Optional[str]:
@@ -165,18 +175,16 @@ def _resolve_tenant_id() -> Optional[str]:
     if tenant_from_ctx:
         return tenant_from_ctx
 
-    # Fallback: if the IdP doesn't include tenant claims in the JWT, derive tenant from
-    # the authentication identifier (which aligns with the Keycloak realm in this setup).
-    # This is supported by runtime evidence: decoded token issuer realm == authentication_identifier
-    # and tenant claims are absent.
-    if allow_decode:
-        derived = _authentication_identifier()
-        if derived:
-            LOGGER.debug(
-                "Derived tenant from authentication_identifier fallback: %s",
-                str(derived)[:80],
-            )
-            return derived
+    # Fallback: derive tenant from authentication identifier.
+    # For auth-disabled paths (e.g., login_return), only trust explicit identifiers
+    # from state/cookies/headers and do not default implicitly.
+    derived = _authentication_identifier(include_default=allow_decode)
+    if derived:
+        LOGGER.debug(
+            "Derived tenant from authentication_identifier fallback: %s",
+            str(derived)[:80],
+        )
+        return derived
     return None
 
 
@@ -211,7 +219,8 @@ def _tenant_from_jwt_claim_cached(*, allow_decode: bool) -> Optional[str]:
         return None
 
     try:
-        decoded = AuthenticationService.parse_jwt_token(_authentication_identifier(), token)
+        authentication_identifier = _authentication_identifier() or DEFAULT_TENANT_ID
+        decoded = AuthenticationService.parse_jwt_token(authentication_identifier, token)
     except Exception as exc:
         if not getattr(g, "_m8flow_warned_decode_token", False):
             g._m8flow_warned_decode_token = True
@@ -249,7 +258,29 @@ def _token_from_request() -> Optional[str]:
     return None
 
 
-def _authentication_identifier() -> str:
+def _decode_state_authentication_identifier(state: str | None) -> Optional[str]:
+    if not state:
+        return None
+    try:
+        raw = base64.b64decode(unquote(state)).decode("utf-8")
+        state_dict = ast.literal_eval(raw)
+    except Exception:
+        return None
+    if not isinstance(state_dict, dict):
+        return None
+    identifier = state_dict.get("authentication_identifier")
+    if isinstance(identifier, str) and identifier.strip():
+        return identifier
+    return None
+
+
+def _authentication_identifier(*, include_default: bool = True) -> Optional[str]:
+    path = (getattr(request, "path", "") or "").strip()
+    if "/login_return" in path:
+        state_identifier = _decode_state_authentication_identifier(request.args.get("state"))
+        if state_identifier:
+            return state_identifier
+
     cookie_identifier = request.cookies.get("authentication_identifier")
     if cookie_identifier:
         return cookie_identifier
@@ -258,4 +289,6 @@ def _authentication_identifier() -> str:
     if header_identifier:
         return header_identifier
 
-    return DEFAULT_TENANT_ID
+    if include_default:
+        return DEFAULT_TENANT_ID
+    return None
