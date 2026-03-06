@@ -130,12 +130,17 @@ def instantiate_process(
     """
     # Lazy imports: these modules require env vars and Flask context to be ready.
     # They cannot be imported at module level before load_dotenv() + bpmn_dir setup.
-    from extensions.app import flask_app
+    from extensions.app import app as asgi_app
     from spiffworkflow_backend.models.db import db
     from spiffworkflow_backend.models.user import UserModel
     from spiffworkflow_backend.services.process_model_service import ProcessModelService
     from spiffworkflow_backend.services.process_instance_service import ProcessInstanceService
     from m8flow_backend.tenancy import set_context_tenant_id, reset_context_tenant_id
+
+    # The extensions.app object is an AsgiTenantContextMiddleware wrapping a Connexion app.
+    # We need the inner Flask app to create a context.
+    # asgi_app -> connexion app -> flask app
+    flask_app = asgi_app.app.app
 
     with flask_app.app_context():
         token = set_context_tenant_id(tenant_id)
