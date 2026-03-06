@@ -20,6 +20,7 @@ import { nameToTemplateKey } from "../utils/templateKey";
 const VISIBILITY_OPTIONS: { value: TemplateVisibility; label: string }[] = [
   { value: "PRIVATE", label: "Private (only you)" },
   { value: "TENANT", label: "Tenant-wide (all users in your tenant)" },
+  { value: "PUBLIC", label: "Public (all authenticated users)" },
 ];
 
 export interface CreateTemplateModalProps {
