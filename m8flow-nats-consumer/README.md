@@ -70,7 +70,7 @@ uv run python publisher.py \
 | `--tenant_id`          | ✅       | M8Flow tenant UUID                                       |
 | `--process_identifier` | ✅       | BPMN process path                                        |
 | `--username`           | ✅       | M8Flow user who will own the process instance            |
-| `--realm`              | ✅       | Keycloak realm name — **not** the tenant UUID            |
+| `--realm`              | ✅       | Keycloak realm name                                      |
 | `--client_id`          | ✅       | Service account client ID (needed to fetch `auth_token`) |
 | `--client_secret`      | ✅       | Service account client secret                            |
 | `--payload`            | No       | JSON string of additional process variables              |
