@@ -48,6 +48,45 @@ services:
     volumes:
       - redis-data:/data
 
+  nats:
+    container_name: m8flow-nats
+    image: nats:2.10-alpine
+    command: ["-js", "--store_dir=/data/nats", "-m", "8222"]
+    ports:
+      - "${M8FLOW_NATS_PORT:-4222}:4222/tcp" # client
+      - "8222:8222/tcp" # monitoring HTTP (optional)
+    volumes:
+      - nats_data:/data/nats
+    healthcheck:
+      test: "wget -qO- http://localhost:8222/healthz || exit 1"
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  m8flow-nats-consumer:
+    container_name: m8flow-nats-consumer
+    build:
+      context: ..
+      dockerfile: docker/m8flow.backend.Dockerfile
+    command:
+      - "sh"
+      - "-c"
+      - |
+        uv pip install --system nats-py httpx python-dotenv &&
+        PYTHONPATH=/app:/app/extensions/m8flow-backend/src:/app/spiffworkflow-backend/src \
+        exec python m8flow-nats-consumer/consumer.py
+    env_file: ../.env
+    depends_on:
+      nats:
+        condition: service_healthy
+      m8flow-backend:
+        condition: service_started
+    volumes:
+      - ../process_models:/app/process_models
+      - ../m8flow-nats-consumer:/app/m8flow-nats-consumer
+    restart: unless-stopped
+
   minio:
     image: minio/minio:RELEASE.2025-01-20T14-49-07Z
     command: server /data --console-address ":9001"
@@ -144,6 +183,10 @@ services:
       - keycloak
       - redis
       - minio
+      - nats
+    environment:
+      M8FLOW_NATS_ENABLED: "true"
+      M8FLOW_NATS_URL: "nats://nats:4222"
 
   m8flow-frontend:
     build:
@@ -173,7 +216,11 @@ services:
         target: "${M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_USER_ACCESS_DIR:-/slack_attachments}"
         read_only: true
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:${CONNECTOR_PROXY_PORT:-8004}/liveness || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS http://localhost:${CONNECTOR_PROXY_PORT:-8004}/liveness || exit 1",
+        ]
       interval: 10s
       timeout: 5s
       retries: 20
@@ -194,4 +241,6 @@ volumes:
   smtp_attachments:
     driver: local
   slack_attachments:
+    driver: local
+  nats_data:
     driver: local
