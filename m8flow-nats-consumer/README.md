@@ -12,9 +12,10 @@ Standalone Python service that bridges NATS JetStream to M8Flow's SpiffWorkflow 
    - `tenant_id`, `process_identifier`, and optional `payload`
 2. **Consumer** pulls the event from the durable JetStream subscription
 3. **Idempotency check** — NATS KV lookup using `tenant_id-event_id`. Duplicate events are immediately acked and discarded.
-4. **JWT validated** via JWKS (public keys fetched from Keycloak's `{iss}/protocol/openid-connect/certs` endpoint and cached)
-5. **User resolved** — `username` looked up in `UserModel`; event discarded if not found
-6. **Process instantiated** — `ProcessInstanceService` called directly within a Flask app context and multi-tenant DB schema
+4. **Realm resolved** — The `tenant_id` from the payload is used to look up the `tenant_slug` in the M8Flow database (`M8flowTenantModel`). This slug is used as the Keycloak realm name.
+5. **JWT validated** via JWKS — Public keys are fetched from the resolved Keycloak realm and the token signature is strictly verified.
+6. **User resolved** — `username` looked up in `UserModel`; event discarded if not found
+7. **Process instantiated** — `ProcessInstanceService` called directly within a Flask app context and multi-tenant DB schema
 
 ---
 
@@ -22,17 +23,17 @@ Standalone Python service that bridges NATS JetStream to M8Flow's SpiffWorkflow 
 
 All variables are strictly required and must be provided via `.env` or the Docker environment. There are no fallbacks.
 
-| Variable                    | Example                    | Description                                                                                                                             |
-| --------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `M8FLOW_NATS_URL`           | `nats://localhost:4222`    | NATS server URL                                                                                                                         |
-| `M8FLOW_NATS_STREAM_NAME`   | `M8FLOW_EVENTS`            | JetStream stream name                                                                                                                   |
-| `M8FLOW_NATS_SUBJECT`       | `m8flow.events.>`          | Subject filter for subscription                                                                                                         |
-| `M8FLOW_NATS_DURABLE_NAME`  | `m8flow-engine-consumer`   | Durable consumer name                                                                                                                   |
-| `M8FLOW_NATS_FETCH_BATCH`   | `10`                       | Pull batch size per loop iteration                                                                                                      |
-| `M8FLOW_NATS_FETCH_TIMEOUT` | `2.0`                      | Fetch timeout in seconds                                                                                                                |
-| `M8FLOW_NATS_DEDUP_BUCKET`  | `m8flow-dedup`             | Name of the NATS KV Bucket used for deduplication.                                                                                      |
-| `M8FLOW_NATS_DEDUP_TTL`     | `86400`                    | Time in seconds to remember an event to block duplicate processing.                                                                     |
-| `KEYCLOAK_URL`              | `http://192.168.1.89:7002` | Keycloak base URL. Used by the publisher to construct the token endpoint. The consumer derives realm from the JWT `iss` claim directly. |
+| Variable                    | Example                    | Description                                                                                              |
+| --------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `M8FLOW_NATS_URL`           | `nats://localhost:4222`    | NATS server URL                                                                                          |
+| `M8FLOW_NATS_STREAM_NAME`   | `M8FLOW_EVENTS`            | JetStream stream name                                                                                    |
+| `M8FLOW_NATS_SUBJECT`       | `m8flow.events.>`          | Subject filter for subscription                                                                          |
+| `M8FLOW_NATS_DURABLE_NAME`  | `m8flow-engine-consumer`   | Durable consumer name                                                                                    |
+| `M8FLOW_NATS_FETCH_BATCH`   | `10`                       | Pull batch size per loop iteration                                                                       |
+| `M8FLOW_NATS_FETCH_TIMEOUT` | `2.0`                      | Fetch timeout in seconds                                                                                 |
+| `M8FLOW_NATS_DEDUP_BUCKET`  | `m8flow-dedup`             | Name of the NATS KV Bucket used for deduplication.                                                       |
+| `M8FLOW_NATS_DEDUP_TTL`     | `86400`                    | Time in seconds to remember an event to block duplicate processing.                                      |
+| `KEYCLOAK_URL`              | `http://192.168.1.89:7002` | Keycloak base URL. Used to construct the JWKS endpoint after resolving the realm name from the database. |
 
 ---
 
