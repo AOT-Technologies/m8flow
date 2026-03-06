@@ -18,13 +18,15 @@ RUN apt-get update \
   && git config --global http.sslCAInfo /etc/ssl/certs/ca-certificates.crt
 
 RUN pip install --upgrade pip \
-  && pip install uv
+  && pip install uv flower
 
 COPY . /app
 
 RUN cd /app/spiffworkflow-backend && uv pip install --system -e .
 
 # Fix line endings (CRLF to LF) for shell scripts before running
-RUN sed -i 's/\r$//' /app/extensions/m8flow-backend/bin/run_m8flow_backend.sh && chmod +x /app/extensions/m8flow-backend/bin/run_m8flow_backend.sh
+RUN sed -i 's/\r$//' /app/extensions/m8flow-backend/bin/run_m8flow_backend.sh \
+  && sed -i 's/\r$//' /app/extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh \
+  && chmod +x /app/extensions/m8flow-backend/bin/run_m8flow_backend.sh /app/extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh
 
 CMD ["./extensions/m8flow-backend/bin/run_m8flow_backend.sh"]

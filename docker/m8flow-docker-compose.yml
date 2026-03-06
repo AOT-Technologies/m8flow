@@ -145,6 +145,34 @@ services:
       - redis
       - minio
 
+  m8flow-celery-worker:
+    build:
+      context: ..
+      dockerfile: docker/m8flow.backend.Dockerfile
+    command: ["bash", "./extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh"]
+    env_file: ../.env
+    volumes:
+      - ${M8FLOW_BACKEND_CELERY_PROCESS_MODELS_MOUNT_SOURCE:-process_models_cache}:/app/process_models
+    depends_on:
+      - m8flow-db
+      - keycloak
+      - redis
+      - minio
+
+  m8flow-celery-flower:
+    build:
+      context: ..
+      dockerfile: docker/m8flow.backend.Dockerfile
+    command: ["bash", "./extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh", "flower"]
+    env_file: ../.env
+    ports:
+      - "5555:5555"
+    depends_on:
+      - m8flow-db
+      - keycloak
+      - redis
+      - minio
+
   m8flow-frontend:
     build:
       context: ..
