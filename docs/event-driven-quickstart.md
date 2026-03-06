@@ -22,7 +22,7 @@ M8FLOW_NATS_DEDUP_BUCKET=m8flow-dedup
 M8FLOW_NATS_DEDUP_TTL=86400
 
 # Keycloak (required for JWT validation in the consumer and token fetching in the publisher)
-# Base URL only — the consumer resolves the realm automatically from the JWT's iss claim.
+# Base URL only — the consumer resolves the realm name from the M8Flow database via tenant_id.
 KEYCLOAK_URL=http://<LOCAL_IP>:7002
 ```
 
@@ -73,9 +73,10 @@ uv run python publisher.py \
 | 1    | `publisher.py` | Calls Keycloak Client Credentials Grant → receives signed JWT                      |
 | 2    | `publisher.py` | Publishes `{tenant_id, process_identifier, username, auth_token, payload}` to NATS |
 | 3    | `consumer.py`  | Idempotency check: creates NATS KV `tenant_id-event_id` (discards if exists)       |
-| 4    | `consumer.py`  | Validates JWT signature via JWKS                                                   |
-| 5    | `consumer.py`  | Looks up `username` in M8Flow DB                                                   |
-| 6    | `consumer.py`  | Runs `ProcessInstanceService` natively as that user                                |
+| 4    | `consumer.py`  | Resolves Realm: queries M8Flow DB using `tenant_id` to get the `tenant_slug`       |
+| 5    | `consumer.py`  | Validates JWT signature via JWKS from the resolved realm                           |
+| 6    | `consumer.py`  | Looks up `username` in M8Flow DB                                                   |
+| 7    | `consumer.py`  | Runs `ProcessInstanceService` natively as that user                                |
 
 ---
 

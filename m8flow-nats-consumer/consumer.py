@@ -56,6 +56,9 @@ running = True
 # Cache for Keycloak public keys — avoids a JWKS fetch on every message
 jwks_cache: dict = {}
 
+# Global Flask App injected on startup
+flask_app = None
+
 
 async def get_public_keys(issuer_url: str) -> dict | None:
     """Fetch and cache the JWKS public keys from a Keycloak/OIDC issuer."""
@@ -130,17 +133,11 @@ def instantiate_process(
     """
     # Lazy imports: these modules require env vars and Flask context to be ready.
     # They cannot be imported at module level before load_dotenv() + bpmn_dir setup.
-    from extensions.app import app as asgi_app
     from spiffworkflow_backend.models.db import db
     from spiffworkflow_backend.models.user import UserModel
     from spiffworkflow_backend.services.process_model_service import ProcessModelService
     from spiffworkflow_backend.services.process_instance_service import ProcessInstanceService
     from m8flow_backend.tenancy import set_context_tenant_id, reset_context_tenant_id
-
-    # The extensions.app object is an AsgiTenantContextMiddleware wrapping a Connexion app.
-    # We need the inner Flask app to create a context.
-    # asgi_app -> connexion app -> flask app
-    flask_app = asgi_app.app.app
 
     with flask_app.app_context():
         token = set_context_tenant_id(tenant_id)
@@ -192,17 +189,37 @@ async def check_idempotency(kv: KeyValue | None, tenant_id: str, event_id: str) 
     return dedup_key
 
 
-async def authenticate_event(auth_token: str, username: str) -> bool:
+async def authenticate_event(auth_token: str, username: str, tenant_id: str) -> bool:
     """Validate JWT signature and issuer. Returns True if valid, False otherwise."""
-    # The iss claim contains the full Keycloak issuer URL (e.g. http://host:7002/realms/myrealm).
-    # We read it without verification first so we know where to fetch the JWKS from.
+    keycloak_url = os.environ.get("KEYCLOAK_URL", "").rstrip("/")
+    if not keycloak_url:
+        logger.error("KEYCLOAK_URL environment variable is missing.")
+        return False
+        
     try:
-        issuer_url = jwt.decode(auth_token, options={"verify_signature": False}).get("iss")
-        if not issuer_url:
-            logger.error("Token missing 'iss' claim. Cannot determine Keycloak issuer. Discarding.")
-            return False
+        import asyncio
+        
+        # Run DB query in a sync thread to avoid blocking asyncio loop
+        def get_tenant_slug():
+            from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
+            with flask_app.app_context():
+                try:
+                    tenant = M8flowTenantModel.query.filter_by(id=tenant_id).first()
+                    if tenant:
+                        return tenant.slug
+                except Exception as e:
+                    logger.error(f"DB lookup failed for tenant: {e}")
+                    return None
+                return None
+                
+        realm_name = await asyncio.to_thread(get_tenant_slug)
+        if not realm_name:
+             logger.error(f"Could not resolve Keycloak realm for tenant_id: {tenant_id}")
+             return False
+             
+        issuer_url = f"{keycloak_url}/realms/{realm_name}"
     except Exception as e:
-        logger.error(f"Failed to decode token claims: {e}. Discarding.")
+        logger.error(f"Error resolving Keycloak realm from database: {e}")
         return False
 
     decoded_token = await validate_token(auth_token, issuer_url)
@@ -257,7 +274,7 @@ async def process_message(msg: Any, kv: KeyValue | None) -> None:
             logger.warning("Event has no 'id' field — idempotency cannot be guaranteed.")
 
     # --- 5. Authenticate: derive issuer from JWT, then validate signature ---
-    if not await authenticate_event(auth_token, username):
+    if not await authenticate_event(auth_token, username, tenant_id):
         await msg.ack()
         return
 
@@ -299,8 +316,14 @@ async def process_message(msg: Any, kv: KeyValue | None) -> None:
 
 
 async def main() -> None:
-    logger.info("Starting M8Flow NATS Consumer...")
+    global flask_app
+    
+    logger.info("Initializing M8Flow core application context...")
+    from extensions.app import app as asgi_app
+    flask_app = asgi_app.app.app
+    from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
 
+    logger.info("Starting M8Flow NATS Consumer...")
     nc = NATS()
 
     async def disconnected_cb():

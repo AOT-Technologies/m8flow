@@ -19,12 +19,14 @@ flowchart TB
 
         subgraph Consumer[m8flow-nats-consumer]
             Daemon(Asyncio Python Daemon)
+            RealmLookup(DB Lookup\nM8flowTenantModel by tenant_id)
             Auth(JWT Validation\nvia JWKS)
             UserLookup(UserModel Lookup\nby payload username)
             FlaskCtx(Flask Application Context)
             SpiffSvc(ProcessInstanceService)
 
-            Daemon -->|extract auth_token| Auth
+            Daemon -->|tenant_id| RealmLookup
+            RealmLookup -->|realm/slug found| Auth
             Auth -->|verified| UserLookup
             UserLookup -->|user resolved| FlaskCtx
             FlaskCtx -->|native invocation| SpiffSvc
@@ -65,8 +67,8 @@ Every NATS event must carry the following JSON fields:
 
 ## 3. Core Concepts
 
-- **JWT-Gated Ingestion:** Every event must carry a valid Keycloak JWT (`auth_token`). The consumer verifies the signature before any action — unauthenticated events are discarded.
-- **Dynamic Realm Discovery:** The `iss` claim in the JWT contains the full Keycloak issuer URL. The consumer derives the JWKS endpoint from it automatically — no realm configuration required.
+- **Keycloak Realm Resolution:** The consumer uses the `tenant_id` from the event payload to query the M8Flow database for the corresponding `tenant_slug`. This slug is used as the Keycloak realm name to fetch public keys.
+- **Strict JWT Verification:** Once the realm is resolved, the token signature, expiry, and issuer are cryptographically verified using the Keycloak JWKS endpoint. Unauthenticated events are discarded.
 - **Required Username:** The `username` field is required and must match an existing M8Flow `UserModel`. The JWT authenticates the _publisher_; the username controls _process ownership_.
 - **Native Database Integration:** After authentication, `ProcessInstanceService` is invoked directly inside a Flask application context — no HTTP API hop.
 - **Durable Pull Consumer:** JetStream pull subscriptions provide backpressure — a high influx of events cannot overwhelm the backend.
@@ -79,8 +81,8 @@ Every NATS event must carry the following JSON fields:
 
 1. **Required fields validated** — `tenant_id`, `process_identifier`, `username`, and `auth_token` must all be present or the event is discarded.
 2. **Idempotency check** — `consumer.py` attempts to atomically create a NATS KV entry `tenant_id-event_id`. If `KeyWrongLastSequenceError` is raised, it's a duplicate and is discarded.
-3. **Issuer discovery** — `iss` decoded from JWT (unverified) to locate the Keycloak JWKS endpoint.
-4. **JWKS fetch & signature verification** — public keys fetched and cached; JWT signature, expiry, and issuer fully validated.
+3. **Realm resolution** — `M8flowTenantModel` queried by `tenant_id` to get the `tenant_slug` (which maps to the Keycloak realm).
+4. **JWKS fetch & signature verification** — Public keys fetched from `{KEYCLOAK_URL}/realms/{tenant_slug}` and cached; JWT signature, expiry, and issuer fully validated.
 5. **User lookup** — `UserModel` queried by `username` from the payload. If not found, event is discarded.
 6. **Context activation** — Flask app context + `set_context_tenant_id(tenant_id)`.
 7. **Process instantiation** — `ProcessInstanceService.create_and_run_process_instance` called directly.
@@ -118,31 +120,37 @@ sequenceDiagram
     else Key created (New Event)
         NATS-->>Consumer: Success
 
-        Consumer->>Consumer: Decode JWT header → read iss claim (unverified)
-        Consumer->>Keycloak: GET {iss}/protocol/openid-connect/certs
-        Keycloak-->>Consumer: JWKS (public keys, cached)
-        Consumer->>Consumer: Verify JWT signature + expiry + issuer
-
-        alt Token invalid or expired
+        Consumer->>DB: M8flowTenantModel.query.filter_by(id=tenant_id)
+        alt Tenant not found
+            DB-->>Consumer: None
             Consumer->>NATS: msg.ack() — event discarded
-        else Token valid
-            Consumer->>DB: UserModel.query.filter_by(username=username)
-            alt User not found
-                DB-->>Consumer: None
+        else Tenant found (slug = realm)
+            DB-->>Consumer: M8flowTenantModel
+            Consumer->>Keycloak: GET {KEYCLOAK_URL}/realms/{slug}/protocol/openid-connect/certs
+            Keycloak-->>Consumer: JWKS (public keys, cached)
+            Consumer->>Consumer: Verify JWT signature + expiry + issuer against {KEYCLOAK_URL}/realms/{slug}
+
+            alt Token invalid or expired
                 Consumer->>NATS: msg.ack() — event discarded
-            else User found
-                DB-->>Consumer: UserModel
+            else Token valid
+                Consumer->>DB: UserModel.query.filter_by(username=username)
+                alt User not found
+                    DB-->>Consumer: None
+                    Consumer->>NATS: msg.ack() — event discarded
+                else User found
+                    DB-->>Consumer: UserModel
 
-                activate Consumer
-                Note over Consumer: within flask_app.app_context()
-                Consumer->>Consumer: set_context_tenant_id(tenant_id)
-                Consumer->>DB: ProcessInstanceService.create_and_run_process_instance(process_model, user)
-                DB-->>Consumer: process_instance_id
-                Note over Consumer: db.session.commit()
-                Consumer->>Consumer: reset_context_tenant_id()
-                deactivate Consumer
+                    activate Consumer
+                    Note over Consumer: within flask_app.app_context()
+                    Consumer->>Consumer: set_context_tenant_id(tenant_id)
+                    Consumer->>DB: ProcessInstanceService.create_and_run_process_instance(process_model, user)
+                    DB-->>Consumer: process_instance_id
+                    Note over Consumer: db.session.commit()
+                    Consumer->>Consumer: reset_context_tenant_id()
+                    deactivate Consumer
 
-                Consumer->>NATS: msg.ack()
+                    Consumer->>NATS: msg.ack()
+                end
             end
         end
     end
