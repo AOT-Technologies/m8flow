@@ -12,8 +12,12 @@ COPY README.md .
 # Install dependencies into system site-packages so python can find them directly
 RUN uv pip install --system .
 
+# Create a non-root user and switch to it
+RUN useradd -m -s /bin/bash m8flow
+USER m8flow
+
 # Copy source
-COPY consumer.py .
+COPY --chown=m8flow:m8flow consumer.py .
 
 # Run consumer
 CMD ["python", "consumer.py"]
