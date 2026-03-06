@@ -9,6 +9,7 @@ packages = [{include = "connector_example", from = "src" }]
 [tool.poetry.dependencies]
 python = "^3.9"
 spiffworkflow-connector-command = {git = "https://github.com/sartography/spiffworkflow-connector-command.git", rev = "main"}
+urllib3 = "^2.6.3"
 
 [tool.poetry.group.dev.dependencies]
 mypy = "^1.6.0"
