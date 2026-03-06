@@ -16,8 +16,9 @@ RUN uv pip install --system .
 RUN useradd -m -s /bin/bash m8flow
 USER m8flow
 
-# Copy source
-COPY --chown=m8flow:m8flow consumer.py .
+# Copy source without changing ownership to the non-root user
+# This prevents the m8flow user from modifying the executable source code
+COPY consumer.py .
 
 # Run consumer
 CMD ["python", "consumer.py"]
