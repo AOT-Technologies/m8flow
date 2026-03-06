@@ -904,14 +904,25 @@ class TemplateService:
         )
         ProcessModelService.add_process_model(process_model_info)
 
-        # Copy template files to the process model
+        # Copy template files to the process model.
+        # Two-pass approach: DMN files first (to collect decision ID mappings),
+        # then BPMN/other files (so calledDecisionId references can be updated).
         primary_file_name = None
         primary_process_id = None
         files_copied = 0
+        decision_id_map: dict[str, str] = {}
 
         logger.info(f"Copying {len(template.files)} files from template {template_id} to process model {full_process_model_id}")
 
+        dmn_entries = []
+        other_entries = []
         for file_entry in template.files:
+            if file_entry.get("file_type") == "dmn":
+                dmn_entries.append(file_entry)
+            else:
+                other_entries.append(file_entry)
+
+        for file_entry in dmn_entries + other_entries:
             file_name = file_entry.get("file_name")
             file_type = file_entry.get("file_type")
 
@@ -939,10 +950,14 @@ class TemplateService:
                     status_code=500,
                 )
 
-            # For BPMN files, we need to replace process IDs to make them unique
-            if file_type == "bpmn":
-                content, new_process_id = cls._transform_bpmn_content(
+            if file_type == "dmn":
+                content, file_decision_map = cls._transform_dmn_content(
                     content, process_model_id
+                )
+                decision_id_map.update(file_decision_map)
+            elif file_type == "bpmn":
+                content, new_process_id = cls._transform_bpmn_content(
+                    content, process_model_id, decision_id_map=decision_id_map or None
                 )
                 if primary_file_name is None:
                     primary_file_name = file_name
@@ -1007,12 +1022,15 @@ class TemplateService:
         cls,
         content: bytes,
         process_model_id: str,
+        decision_id_map: dict[str, str] | None = None,
     ) -> tuple[bytes, str | None]:
         """Transform BPMN content by replacing process IDs with unique ones.
 
         Args:
             content: The original BPMN file content
             process_model_id: The process model ID to use as base for new process IDs
+            decision_id_map: Optional mapping of old DMN decision IDs to new ones;
+                when provided, calledDecisionId references are updated accordingly.
 
         Returns:
             Tuple of (transformed content, new primary process ID)
@@ -1057,7 +1075,66 @@ class TemplateService:
         # Replace process IDs
         content_str = process_id_pattern.sub(replace_process_id, content_str)
 
+        # Update calledDecisionId references to match renamed DMN decision IDs
+        if decision_id_map:
+            for old_id, new_id in decision_id_map.items():
+                content_str = content_str.replace(
+                    f"<spiffworkflow:calledDecisionId>{old_id}</spiffworkflow:calledDecisionId>",
+                    f"<spiffworkflow:calledDecisionId>{new_id}</spiffworkflow:calledDecisionId>",
+                )
+
         return content_str.encode("utf-8"), new_primary_process_id
+
+    @classmethod
+    def _transform_dmn_content(
+        cls,
+        content: bytes,
+        process_model_id: str,
+    ) -> tuple[bytes, dict[str, str]]:
+        """Transform DMN content by replacing decision IDs with unique ones.
+
+        Args:
+            content: The original DMN file content
+            process_model_id: The process model ID to use as base for new decision IDs
+
+        Returns:
+            Tuple of (transformed content, mapping of old decision ID -> new decision ID)
+        """
+        decision_id_map: dict[str, str] = {}
+        try:
+            content_str = content.decode("utf-8")
+        except UnicodeDecodeError:
+            return content, decision_id_map
+
+        fuzz = "".join(random.SystemRandom().choice(string.ascii_lowercase + string.digits) for _ in range(7))
+        underscored_id = process_model_id.replace("-", "_")
+
+        # \s after "decision" prevents matching <decisionTable> elements.
+        # Pattern is safe from ReDoS: [^>]* and [^"]+ are bounded by distinct delimiters.
+        decision_id_pattern = re.compile(r'(<decision\s[^>]*id=")([^"]+)(")')  # NOSONAR
+        decision_counter = 0
+
+        def replace_decision_id(match: re.Match) -> str:
+            nonlocal decision_counter
+            prefix = match.group(1)
+            old_id = match.group(2)
+            suffix = match.group(3)
+
+            if decision_counter == 0:
+                new_id = f"Decision_{underscored_id}_{fuzz}"
+            else:
+                new_id = f"Decision_{underscored_id}_{fuzz}_{decision_counter}"
+
+            decision_counter += 1
+            decision_id_map[old_id] = new_id
+            return f"{prefix}{new_id}{suffix}"
+
+        content_str = decision_id_pattern.sub(replace_decision_id, content_str)
+
+        for old_id, new_id in decision_id_map.items():
+            content_str = content_str.replace(f'dmnElementRef="{old_id}"', f'dmnElementRef="{new_id}"')
+
+        return content_str.encode("utf-8"), decision_id_map
 
     @classmethod
     def get_process_model_template_info(
