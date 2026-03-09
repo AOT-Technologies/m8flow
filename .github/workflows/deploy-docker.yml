@@ -71,7 +71,7 @@ jobs:
 
       - name: Login to Docker Hub
         run: |
-          echo "${{ secrets.DOCKERHUB_TOKEN }}" | regctl registry login ${{ env.REGISTRY }} -u "${{ secrets.DOCKERHUB_USERNAME }}" --stdin
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | regctl registry login ${{ env.REGISTRY }} -u "${{ secrets.DOCKERHUB_USERNAME }}" --pass-stdin
 
       - name: Manage Backup Tags
         env:
