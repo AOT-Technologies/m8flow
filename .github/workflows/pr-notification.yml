@@ -21,7 +21,7 @@ jobs:
             echo "::error::PR_NOTIFICATION secret is not set. Add the Google Chat webhook URL as repository secret PR_NOTIFICATION."
             exit 1
           fi
-          MESSAGE="📌 *New GitHub PR Created!*\n*Title:* ${PR_TITLE}\n*Created by:* ${PR_CREATOR}\n🔗 ${PR_URL}"
+          MESSAGE=$'📌 *New GitHub PR*\n\n*Title:* '"${PR_TITLE}"$'\n*Author:* '"${PR_CREATOR}"$'\n\n🔗 '"${PR_URL}"
           PAYLOAD=$(jq -n --arg text "$MESSAGE" '{text: $text}') || {
             echo "::error::Failed to build JSON payload"
             exit 1
