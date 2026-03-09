@@ -13,10 +13,6 @@ on:
         required: false
         default: ""
         type: string
-      tag_message:
-        description: "Optional annotated tag message"
-        required: false
-        type: string
 
 permissions:
   contents: write
@@ -32,6 +28,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          fetch-tags: true
 
       # -------------------------
       # Resolve commit to tag

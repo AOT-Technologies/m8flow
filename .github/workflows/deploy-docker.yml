@@ -61,9 +61,87 @@ jobs:
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
           echo "ref=${{ github.sha }}" >> $GITHUB_OUTPUT
 
+  backup-existing-tags:
+    name: Backup existing tags on Docker Hub
+    needs: prepare
+    if: |
+      (vars.AUTO_BUILD == 'true' || github.event_name == 'workflow_dispatch') &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    env:
+      REGISTRY_URL: https://registry-1.docker.io/v2
+      AUTH_URL: https://auth.docker.io/token
+    steps:
+      - name: Backup existing image tags to tag-backup
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          # Use Registry V2 REST API (not docker pull/tag/push) because we must delete the
+          # existing backup tag remotely; the Docker CLI has no "delete remote tag" command.
+          set -e
+          TAG_BACKUP="${TAG}-backup"
+          SCOPES="repository:m8flow/m8flow-backend:pull,push&scope=repository:m8flow/m8flow-frontend:pull,push&scope=repository:m8flow/m8flow-keycloak:pull,push&scope=repository:m8flow/m8flow-connector-proxy:pull,push"
+          TOKEN=$(curl -sS -u "${DOCKERHUB_USERNAME}:${DOCKERHUB_TOKEN}" "${AUTH_URL}?service=registry.docker.io&${SCOPES}" | jq -r '.token')
+          if [[ -z "$TOKEN" || "$TOKEN" == "null" ]]; then
+            echo "::error::Failed to obtain Docker Hub token"
+            exit 1
+          fi
+
+          for IMAGE in m8flow-backend m8flow-frontend m8flow-keycloak m8flow-connector-proxy; do
+            echo "Checking ${IMAGE}:${TAG}..."
+            HTTP=$(curl -sS -D /tmp/headers -o /tmp/manifest.body -w "%{http_code}" \
+              -H "Authorization: Bearer ${TOKEN}" \
+              -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
+              -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json" \
+              "${REGISTRY_URL}/m8flow/${IMAGE}/manifests/${TAG}")
+            if [[ "$HTTP" == "404" ]]; then
+              echo "  Tag ${TAG} does not exist, skipping."
+              continue
+            fi
+            if [[ "$HTTP" != "200" ]]; then
+              echo "::error::GET ${IMAGE}:${TAG} returned ${HTTP}"
+              exit 1
+            fi
+            CONTENT_TYPE=$(grep -i content-type /tmp/headers | tail -1 | tr -d '\r' | cut -d' ' -f2- | tr -d '\r')
+            MANIFEST_DIGEST=$(grep -i docker-content-digest /tmp/headers | tail -1 | tr -d '\r' | cut -d' ' -f2 | tr -d '\r')
+            if [[ -z "$CONTENT_TYPE" || -z "$MANIFEST_DIGEST" ]]; then
+              echo "::error::Could not read manifest headers for ${IMAGE}:${TAG}"
+              exit 1
+            fi
+            # If tag-backup exists, delete it by digest
+            BACKUP_HTTP=$(curl -sS -o /dev/null -w "%{http_code}" \
+              -H "Authorization: Bearer ${TOKEN}" \
+              "${REGISTRY_URL}/m8flow/${IMAGE}/manifests/${TAG_BACKUP}")
+            if [[ "$BACKUP_HTTP" == "200" ]]; then
+              BACKUP_DIGEST=$(curl -sS -D - -o /dev/null \
+                -H "Authorization: Bearer ${TOKEN}" \
+                -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
+                "${REGISTRY_URL}/m8flow/${IMAGE}/manifests/${TAG_BACKUP}" | grep -i docker-content-digest | tr -d '\r' | cut -d' ' -f2 | tr -d '\r')
+              if [[ -n "$BACKUP_DIGEST" ]]; then
+                echo "  Deleting existing ${IMAGE}:${TAG_BACKUP} (${BACKUP_DIGEST})"
+                curl -sS -o /dev/null -w "%{http_code}" -X DELETE \
+                  -H "Authorization: Bearer ${TOKEN}" \
+                  "${REGISTRY_URL}/m8flow/${IMAGE}/manifests/${BACKUP_DIGEST}" || true
+              fi
+            fi
+            echo "  Retagging ${IMAGE}:${TAG} -> ${IMAGE}:${TAG_BACKUP}"
+            PUT_HTTP=$(curl -sS -o /dev/null -w "%{http_code}" -X PUT \
+              -H "Authorization: Bearer ${TOKEN}" \
+              -H "Content-Type: ${CONTENT_TYPE}" \
+              --data-binary @/tmp/manifest.body \
+              "${REGISTRY_URL}/m8flow/${IMAGE}/manifests/${TAG_BACKUP}")
+            if [[ "$PUT_HTTP" != "201" && "$PUT_HTTP" != "200" ]]; then
+              echo "::error::PUT ${IMAGE}:${TAG_BACKUP} returned ${PUT_HTTP}"
+              exit 1
+            fi
+            echo "  Backed up ${IMAGE}:${TAG} -> ${TAG_BACKUP}"
+          done
+
   build-backend:
     name: Build & Push Backend
-    needs: prepare
+    needs: [prepare, backup-existing-tags]
     if: |
       (vars.AUTO_BUILD == 'true' || github.event_name == 'workflow_dispatch') &&
       (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
@@ -102,7 +180,7 @@ jobs:
 
   build-frontend:
     name: Build & Push Frontend
-    needs: prepare
+    needs: [prepare, backup-existing-tags]
     if: |
       (vars.AUTO_BUILD == 'true' || github.event_name == 'workflow_dispatch') &&
       (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
@@ -141,7 +219,7 @@ jobs:
 
   build-keycloak:
     name: Build & Push Keycloak
-    needs: prepare
+    needs: [prepare, backup-existing-tags]
     if: |
       (vars.AUTO_BUILD == 'true' || github.event_name == 'workflow_dispatch') &&
       (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
@@ -180,7 +258,7 @@ jobs:
 
   build-connector-proxy:
     name: Build & Push Connector-Proxy
-    needs: prepare
+    needs: [prepare, backup-existing-tags]
     if: |
       (vars.AUTO_BUILD == 'true' || github.event_name == 'workflow_dispatch') &&
       (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
