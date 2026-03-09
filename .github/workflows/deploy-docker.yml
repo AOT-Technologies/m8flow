@@ -67,7 +67,7 @@ jobs:
         component: ${{ fromJson(needs.prepare.outputs.components) }}
     steps:
       - name: Setup regctl
-        uses: regclient/actions/regctl-installer@v1
+        uses: regclient/actions/regctl-installer@v0.1.0
 
       - name: Login to Docker Hub
         run: |
@@ -80,18 +80,19 @@ jobs:
         run: |
           # 1. Check if the current tag exists.
           if ! regctl image inspect "${FULL_REPO}:${TAG}" > /dev/null 2>&1; then
-            echo "Tag ${TAG} not found. Nothing to backup."
+            echo "Tag ${TAG} not found on remote. Nothing to backup."
             exit 0
           fi
 
-          # 2. If backup tag exists, delete it first to allow overwrite.
+          # 2. If a backup already exists, delete it so we can overwrite it.
+          # Some registries don't allow overwriting a tag via 'copy' if it exists.
           if regctl image inspect "${FULL_REPO}:${TAG}-backup" > /dev/null 2>&1; then
-            echo "Deleting existing backup: ${TAG}-backup"
-            regctl tag rm "${FULL_REPO}:${TAG}-backup"
+            echo "Found existing backup. Deleting..."
+            regctl tag rm "${FULL_REPO}:${TAG}-backup" || true
           fi
 
-          # 3. Fast-copy (server-side retag)
-          echo "Retagging ${TAG} to ${TAG}-backup"
+          # 3. Server-side retag (No layer download)
+          echo "Backing up ${TAG} to ${TAG}-backup..."
           regctl image copy "${FULL_REPO}:${TAG}" "${FULL_REPO}:${TAG}-backup"
 
   build:
