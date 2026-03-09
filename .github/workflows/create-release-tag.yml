@@ -57,20 +57,21 @@ jobs:
             # Only consider tags matching X.Y.Z-rc that are reachable from main
             RC_TAGS=$(git tag -l --merged origin/main | grep -E '^[0-9]+\.[0-9]+\.[0-9]+-rc$' || true)
             if [[ -z "$RC_TAGS" ]]; then
-              echo "::error::No X.Y.Z-rc tag found on main. Create an initial RC tag (e.g. 0.0.1-rc) or provide a tag name."
-              exit 1
-            fi
-            LATEST=$(echo "$RC_TAGS" | sort -V | tail -1)
-            # increment patch for next RC
-            if [[ "$LATEST" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)-rc$ ]]; then
-              MAJOR="${BASH_REMATCH[1]}"
-              MINOR="${BASH_REMATCH[2]}"
-              PATCH="${BASH_REMATCH[3]}"
-              NEXT_PATCH=$((PATCH + 1))
-              echo "tag=${MAJOR}.${MINOR}.${NEXT_PATCH}-rc" >> $GITHUB_OUTPUT
+              echo "No existing RC tag on main; using first RC 0.0.1-rc"
+              echo "tag=0.0.1-rc" >> $GITHUB_OUTPUT
             else
-              echo "::error::Cannot parse RC tag '$LATEST'"
-              exit 1
+              LATEST=$(echo "$RC_TAGS" | sort -V | tail -1)
+              # increment patch for next RC
+              if [[ "$LATEST" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)-rc$ ]]; then
+                MAJOR="${BASH_REMATCH[1]}"
+                MINOR="${BASH_REMATCH[2]}"
+                PATCH="${BASH_REMATCH[3]}"
+                NEXT_PATCH=$((PATCH + 1))
+                echo "tag=${MAJOR}.${MINOR}.${NEXT_PATCH}-rc" >> $GITHUB_OUTPUT
+              else
+                echo "::error::Cannot parse RC tag '$LATEST'"
+                exit 1
+              fi
             fi
             echo "user_provided=false" >> $GITHUB_OUTPUT
           fi

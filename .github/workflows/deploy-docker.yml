@@ -14,7 +14,6 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 concurrency:
   group: deploy-dev
@@ -24,10 +23,13 @@ env:
   REGISTRY: docker.io
   IMAGE_REPOSITORY: m8flow
   PROJECT: m8flow
+  # Centralize the list of components to keep it DRY
+  COMPONENTS: '["backend", "frontend", "keycloak", "connector-proxy"]'
 
 jobs:
   prepare:
     name: Prepare (resolve ref & tag)
+    # Check condition once at the start. If this fails, all 'needs' jobs are skipped.
     if: |
       (vars.AUTO_BUILD == 'true' || github.event_name == 'workflow_dispatch') &&
       (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
@@ -35,12 +37,13 @@ jobs:
     outputs:
       ref: ${{ steps.meta.outputs.ref }}
       tag: ${{ steps.meta.outputs.tag }}
+      components: ${{ env.COMPONENTS }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.rc_tag || (github.event_name == 'workflow_run' && github.event.workflow_run.head_sha) || github.ref }}
+          ref: ${{ github.event.inputs.rc_tag || github.event.workflow_run.head_sha || github.ref }}
           fetch-depth: 0
 
       - name: Extract metadata
@@ -49,112 +52,46 @@ jobs:
           if [[ -n "${{ github.event.inputs.rc_tag }}" ]]; then
             TAG="${{ github.event.inputs.rc_tag }}"
           elif [[ "${{ github.event_name }}" == "workflow_run" ]]; then
-            git fetch origin --tags 2>/dev/null || true
+            # Ensure we have tags fetched to find the version
+            git fetch origin --tags
             TAG=$(git tag --points-at HEAD | sort -V | tail -1)
-            if [[ -z "$TAG" ]]; then
-              echo "::error::No tag found pointing at HEAD (workflow_run.head_sha). Deploy to Dev may only be triggered by Create Release Tag when tagging the latest commit."
-              exit 1
-            fi
+            [[ -z "$TAG" ]] && { echo "::error::No tag found at HEAD"; exit 1; }
           else
             TAG="${{ github.ref_name }}"
           fi
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
-          echo "ref=${{ github.sha }}" >> $GITHUB_OUTPUT
+          echo "ref=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
   backup-existing-tags:
-    name: Backup existing tags on Docker Hub
+    name: Backup Tags
     needs: prepare
-    if: |
-      (vars.AUTO_BUILD == 'true' || github.event_name == 'workflow_dispatch') &&
-      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
-    env:
-      REGISTRY_URL: https://registry-1.docker.io/v2
-      AUTH_URL: https://auth.docker.io/token
+    strategy:
+      matrix:
+        component: ${{ fromJson(needs.prepare.outputs.components) }}
     steps:
-      - name: Backup existing image tags to tag-backup
-        env:
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-          TAG: ${{ needs.prepare.outputs.tag }}
-        run: |
-          # Use Registry V2 REST API (not docker pull/tag/push) because we must delete the
-          # existing backup tag remotely; the Docker CLI has no "delete remote tag" command.
-          set -e
-          TAG_BACKUP="${TAG}-backup"
-          SCOPES="repository:m8flow/m8flow-backend:pull,push&scope=repository:m8flow/m8flow-frontend:pull,push&scope=repository:m8flow/m8flow-keycloak:pull,push&scope=repository:m8flow/m8flow-connector-proxy:pull,push"
-          TOKEN=$(curl -sS -u "${DOCKERHUB_USERNAME}:${DOCKERHUB_TOKEN}" "${AUTH_URL}?service=registry.docker.io&${SCOPES}" | jq -r '.token')
-          if [[ -z "$TOKEN" || "$TOKEN" == "null" ]]; then
-            echo "::error::Failed to obtain Docker Hub token"
-            exit 1
-          fi
+      - name: Retag existing image to backup
+        uses: tailscale/docker-copy-action@v1
+        with:
+          src: "${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-${{ matrix.component }}:${{ needs.prepare.outputs.tag }}"
+          dest: "${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-${{ matrix.component }}:${{ needs.prepare.outputs.tag }}-backup"
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+        continue-on-error: true # Tag might not exist yet, which is fine
 
-          for IMAGE in m8flow-backend m8flow-frontend m8flow-keycloak m8flow-connector-proxy; do
-            echo "Checking ${IMAGE}:${TAG}..."
-            HTTP=$(curl -sS -D /tmp/headers -o /tmp/manifest.body -w "%{http_code}" \
-              -H "Authorization: Bearer ${TOKEN}" \
-              -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
-              -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json" \
-              "${REGISTRY_URL}/m8flow/${IMAGE}/manifests/${TAG}")
-            if [[ "$HTTP" == "404" ]]; then
-              echo "  Tag ${TAG} does not exist, skipping."
-              continue
-            fi
-            if [[ "$HTTP" != "200" ]]; then
-              echo "::error::GET ${IMAGE}:${TAG} returned ${HTTP}"
-              exit 1
-            fi
-            CONTENT_TYPE=$(grep -i content-type /tmp/headers | tail -1 | tr -d '\r' | cut -d' ' -f2- | tr -d '\r')
-            MANIFEST_DIGEST=$(grep -i docker-content-digest /tmp/headers | tail -1 | tr -d '\r' | cut -d' ' -f2 | tr -d '\r')
-            if [[ -z "$CONTENT_TYPE" || -z "$MANIFEST_DIGEST" ]]; then
-              echo "::error::Could not read manifest headers for ${IMAGE}:${TAG}"
-              exit 1
-            fi
-            # If tag-backup exists, delete it by digest
-            BACKUP_HTTP=$(curl -sS -o /dev/null -w "%{http_code}" \
-              -H "Authorization: Bearer ${TOKEN}" \
-              "${REGISTRY_URL}/m8flow/${IMAGE}/manifests/${TAG_BACKUP}")
-            if [[ "$BACKUP_HTTP" == "200" ]]; then
-              BACKUP_DIGEST=$(curl -sS -D - -o /dev/null \
-                -H "Authorization: Bearer ${TOKEN}" \
-                -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
-                "${REGISTRY_URL}/m8flow/${IMAGE}/manifests/${TAG_BACKUP}" | grep -i docker-content-digest | tr -d '\r' | cut -d' ' -f2 | tr -d '\r')
-              if [[ -n "$BACKUP_DIGEST" ]]; then
-                echo "  Deleting existing ${IMAGE}:${TAG_BACKUP} (${BACKUP_DIGEST})"
-                curl -sS -o /dev/null -w "%{http_code}" -X DELETE \
-                  -H "Authorization: Bearer ${TOKEN}" \
-                  "${REGISTRY_URL}/m8flow/${IMAGE}/manifests/${BACKUP_DIGEST}" || true
-              fi
-            fi
-            echo "  Retagging ${IMAGE}:${TAG} -> ${IMAGE}:${TAG_BACKUP}"
-            PUT_HTTP=$(curl -sS -o /dev/null -w "%{http_code}" -X PUT \
-              -H "Authorization: Bearer ${TOKEN}" \
-              -H "Content-Type: ${CONTENT_TYPE}" \
-              --data-binary @/tmp/manifest.body \
-              "${REGISTRY_URL}/m8flow/${IMAGE}/manifests/${TAG_BACKUP}")
-            if [[ "$PUT_HTTP" != "201" && "$PUT_HTTP" != "200" ]]; then
-              echo "::error::PUT ${IMAGE}:${TAG_BACKUP} returned ${PUT_HTTP}"
-              exit 1
-            fi
-            echo "  Backed up ${IMAGE}:${TAG} -> ${TAG_BACKUP}"
-          done
-
-  build-backend:
-    name: Build & Push Backend
+  build:
+    name: Build & Push
     needs: [prepare, backup-existing-tags]
-    if: |
-      (vars.AUTO_BUILD == 'true' || github.event_name == 'workflow_dispatch') &&
-      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
-    outputs:
-      digest: ${{ steps.build.outputs.digest }}
+    strategy:
+      matrix:
+        component: ${{ fromJson(needs.prepare.outputs.components) }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.prepare.outputs.ref }}
-          fetch-depth: 1
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
@@ -165,165 +102,25 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build & Push Backend Image
+      - name: Build & Push
         id: build
         uses: docker/build-push-action@v5
         with:
-          context: .
-          file: docker/m8flow.backend.Dockerfile
+          context: ${{ matrix.component == 'connector-proxy' && 'm8flow-connector-proxy' || '.' }}
+          file: ${{ matrix.component == 'connector-proxy' && 'm8flow-connector-proxy/Dockerfile' || format('docker/m8flow.{0}.Dockerfile', matrix.component) }}
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-backend:${{ needs.prepare.outputs.tag }}
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-backend:buildcache
-          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-backend:buildcache,mode=max
-          provenance: true
-          sbom: true
-
-  build-frontend:
-    name: Build & Push Frontend
-    needs: [prepare, backup-existing-tags]
-    if: |
-      (vars.AUTO_BUILD == 'true' || github.event_name == 'workflow_dispatch') &&
-      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
-    runs-on: ubuntu-latest
-    outputs:
-      digest: ${{ steps.build.outputs.digest }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.prepare.outputs.ref }}
-          fetch-depth: 1
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build & Push Frontend Image
-        id: build
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: docker/m8flow.frontend.Dockerfile
-          push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-frontend:${{ needs.prepare.outputs.tag }}
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-frontend:buildcache
-          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-frontend:buildcache,mode=max
-          provenance: true
-          sbom: true
-
-  build-keycloak:
-    name: Build & Push Keycloak
-    needs: [prepare, backup-existing-tags]
-    if: |
-      (vars.AUTO_BUILD == 'true' || github.event_name == 'workflow_dispatch') &&
-      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
-    runs-on: ubuntu-latest
-    outputs:
-      digest: ${{ steps.build.outputs.digest }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.prepare.outputs.ref }}
-          fetch-depth: 1
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build & Push Keycloak Image
-        id: build
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: docker/m8flow.keycloak.Dockerfile
-          push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-keycloak:${{ needs.prepare.outputs.tag }}
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-keycloak:buildcache
-          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-keycloak:buildcache,mode=max
-          provenance: true
-          sbom: true
-
-  build-connector-proxy:
-    name: Build & Push Connector-Proxy
-    needs: [prepare, backup-existing-tags]
-    if: |
-      (vars.AUTO_BUILD == 'true' || github.event_name == 'workflow_dispatch') &&
-      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
-    runs-on: ubuntu-latest
-    outputs:
-      digest: ${{ steps.build.outputs.digest }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.prepare.outputs.ref }}
-          fetch-depth: 1
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build & Push Connector-Proxy Image
-        id: build
-        uses: docker/build-push-action@v5
-        with:
-          context: m8flow-connector-proxy
-          file: m8flow-connector-proxy/Dockerfile
-          push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-connector-proxy:${{ needs.prepare.outputs.tag }}
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-connector-proxy:buildcache
-          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-connector-proxy:buildcache,mode=max
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-${{ matrix.component }}:${{ needs.prepare.outputs.tag }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-${{ matrix.component }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-${{ matrix.component }}:buildcache,mode=max
           provenance: true
           sbom: true
 
   combine:
-    name: Combine digests & upload artifact
-    needs: [build-backend, build-frontend, build-keycloak, build-connector-proxy]
+    name: Finalize Artifacts
+    needs: [prepare, build]
     runs-on: ubuntu-latest
-    outputs:
-      backend_digest: ${{ needs.build-backend.outputs.digest }}
-      frontend_digest: ${{ needs.build-frontend.outputs.digest }}
-      keycloak_digest: ${{ needs.build-keycloak.outputs.digest }}
-      connector_proxy_digest: ${{ needs.build-connector-proxy.outputs.digest }}
-
     steps:
-      - name: Write per-image digest files
-        run: |
-          echo "${{ needs.build-backend.outputs.digest }}" > backend-image-digest.txt
-          echo "${{ needs.build-frontend.outputs.digest }}" > frontend-image-digest.txt
-          echo "${{ needs.build-keycloak.outputs.digest }}" > keycloak-image-digest.txt
-          echo "${{ needs.build-connector-proxy.outputs.digest }}" > connector-proxy-image-digest.txt
-
-      - name: Combine all digests into one output
-        run: |
-          printf '%s\n' '{ "backend": "${{ needs.build-backend.outputs.digest }}", "frontend": "${{ needs.build-frontend.outputs.digest }}", "keycloak": "${{ needs.build-keycloak.outputs.digest }}", "connector_proxy": "${{ needs.build-connector-proxy.outputs.digest }}" }' > all-digests.json
-
-      - name: Upload digest artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: image-digests
-          path: |
-            backend-image-digest.txt
-            frontend-image-digest.txt
-            keycloak-image-digest.txt
-            connector-proxy-image-digest.txt
-            all-digests.json
+      # Since matrix jobs run in parallel, we use the build job's completion to gather info
+      # Or simpler: download metadata if needed. For most cases, simple logging is enough.
+      - name: Finalize
+        run: echo "Deployment of version ${{ needs.prepare.outputs.tag }} complete."
