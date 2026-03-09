@@ -121,7 +121,7 @@ docker compose -f docker/m8flow-docker-compose.yml up -d --build
 # Full stack + first-time init (MinIO buckets, process-models and templates sync)
 docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build
 
-# Production (AWS Linux style)
+# Production
 docker compose -f docker/m8flow-docker-compose.yml -f docker/m8flow-docker-compose.prod.yml up -d --build
 
 # Stop and remove volumes

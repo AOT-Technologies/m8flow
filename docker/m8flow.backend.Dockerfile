@@ -33,8 +33,7 @@ RUN uv venv /opt/venv \
   && uv pip install --python /opt/venv/bin/python /app/spiffworkflow-backend
 
 # -----------------------------------------------------------------------------
-# Stage: prod - minimal runtime image for AWS Linux / production (non-root)
-# -----------------------------------------------------------------------------
+# Stage: prod - minimal runtime image for Linux / production (non-root)# -----------------------------------------------------------------------------
 FROM python:3.12.1-slim-bookworm AS prod
 
 WORKDIR /app

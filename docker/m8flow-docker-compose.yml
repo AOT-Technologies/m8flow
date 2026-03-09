@@ -40,7 +40,6 @@ services:
       KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak}
       KC_HTTP_PORT: ${KC_HTTP_PORT:-8080}
       KC_HOSTNAME_STRICT: ${KC_HOSTNAME_STRICT:-false}
-      # Keycloak 26 hostname v2: URL users use to reach Keycloak; set KEYCLOAK_HOSTNAME when accessing from another host (e.g. http://<host>:7002).
       KC_HOSTNAME: "${KEYCLOAK_HOSTNAME:-http://localhost:7002}"
     ports:
       - "7009:9000"
@@ -94,8 +93,6 @@ services:
     volumes:
       - minio_data:/data
 
-  # --- INIT JOBS (opt-in)
-
   minio-mc-init:
     profiles: ["init"]
     image: minio/mc:RELEASE.2025-02-21T16-00-46Z
@@ -143,11 +140,6 @@ services:
       - ../extensions/m8flow-backend/bin/smtp_attachments_sync.sh:/smtp_attachments_sync.sh:ro
     restart: "no"
 
-  # --- APP SERVICES
-
-  # Backend: .env. Keycloak/Redis URLs overridden for Docker. Migrations run by default (M8FLOW_BACKEND_UPGRADE_DB=false to disable).
-  # Host port defaults to start_dev.sh value (7000); override with M8FLOW_BACKEND_PORT. Container listens on 8000.
-  # If you add a connector proxy service, set M8FLOW_BACKEND_CONNECTOR_PROXY_URL to http://<service-name>:<port> (e.g. http://spiffworkflow-connector:8004).
   m8flow-backend:
     build:
       context: ..
@@ -160,11 +152,9 @@ services:
       M8FLOW_BACKEND_UPGRADE_DB: "${M8FLOW_BACKEND_UPGRADE_DB:-true}"
       KEYCLOAK_URL: "http://keycloak-proxy:7002"
       M8FLOW_KEYCLOAK_URL: "http://keycloak-proxy:7002"
-      # So backend accepts token iss when it differs from KEYCLOAK_URL (Keycloak uses this for iss claim).
       KEYCLOAK_HOSTNAME: "${KEYCLOAK_HOSTNAME:-http://localhost:7002}"
       M8FLOW_BACKEND_CELERY_BROKER_URL: "${M8FLOW_BACKEND_CELERY_BROKER_URL:-redis://redis:6379/0}"
       M8FLOW_BACKEND_CELERY_RESULT_BACKEND: "${M8FLOW_BACKEND_CELERY_RESULT_BACKEND:-redis://redis:6379/0}"
-      # When overriding M8FLOW_FRONTEND_PORT, set M8FLOW_BACKEND_URL_FOR_FRONTEND (and CORS) to match.
       M8FLOW_BACKEND_URL_FOR_FRONTEND: "${M8FLOW_BACKEND_URL_FOR_FRONTEND:-http://localhost:7001}"
     ports:
       - "${M8FLOW_BACKEND_PORT:-7000}:8000"
@@ -185,8 +175,6 @@ services:
       minio:
         condition: service_started
 
-  # Frontend: nginx runs as non-root and listens on 8080 in container. Host port defaults to 7001; override with M8FLOW_FRONTEND_PORT.
-  # Extension frontend reads MULTI_TENANT_ON, VITE_BACKEND_BASE_URL, etc. from .env at build time (Dockerfile COPY .env).
   m8flow-frontend:
     build:
       context: ..
