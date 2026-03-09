@@ -9,6 +9,7 @@ from flask import Flask, g
 from spiffworkflow_backend.exceptions.api_error import ApiError
 from spiffworkflow_backend.models.db import db
 from m8flow_backend.services.tenant_context_middleware import (
+    _is_public_request,
     resolve_request_tenant,
     teardown_request_tenant_context,
 )
@@ -27,9 +28,13 @@ def _make_app() -> Flask:
     db.init_app(app)
 
     from m8flow_backend.canonical_db import set_canonical_db
-
     set_canonical_db(db)
 
+
+    # satisfy railguard for unit tests
+    from extensions.startup.guard import set_phase, BootPhase
+    set_phase(BootPhase.APP_CREATED)
+    
     # Ensure ContextVar is reset between requests (including test_client requests).
     app.teardown_request(teardown_request_tenant_context)
 
@@ -58,6 +63,8 @@ def _clean_env():
 def _seed_tenants() -> None:
     from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
 
+    now = int(datetime.now(timezone.utc).timestamp())
+
     db.session.add(
         M8flowTenantModel(
             id="default",
@@ -65,6 +72,8 @@ def _seed_tenants() -> None:
             slug="default",
             created_by="test",
             modified_by="test",
+            created_at_in_seconds=now,
+            updated_at_in_seconds=now,
         )
     )
     db.session.add(
@@ -74,6 +83,8 @@ def _seed_tenants() -> None:
             slug="tenant-a",
             created_by="test",
             modified_by="test",
+            created_at_in_seconds=now,
+            updated_at_in_seconds=now,
         )
     )
     db.session.add(
@@ -83,10 +94,22 @@ def _seed_tenants() -> None:
             slug="tenant-b",
             created_by="test",
             modified_by="test",
+            created_at_in_seconds=now,
+            updated_at_in_seconds=now,
+        )
+    )
+    db.session.add(
+        M8flowTenantModel(
+            id="tenant-it-id",
+            name="Tenant IT",
+            slug="it",
+            created_by="test",
+            modified_by="test",
+            created_at_in_seconds=now,
+            updated_at_in_seconds=now,
         )
     )
     db.session.commit()
-
 
 
 def test_resolves_tenant_from_jwt_claim() -> None:
@@ -298,3 +321,28 @@ def test_tenant_context_propagates_to_queries() -> None:
 
     resp = client.get("/list", headers={"Authorization": f"Bearer {token_tenant_a}"})
     assert resp.get_data(as_text=True) == "A"
+
+
+def test_login_return_path_is_not_public_by_prefix_collision() -> None:
+    app = _make_app()
+    with app.test_request_context("/v1.0/login_return"):
+        assert _is_public_request() is False
+
+
+def test_login_return_resolves_tenant_from_state_when_auth_is_excluded() -> None:
+    import base64
+
+    app = _make_app()
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+
+        state_payload = {
+            "final_url": "http://localhost:7000/",
+            "authentication_identifier": "it",
+        }
+        state = base64.b64encode(bytes(str(state_payload), "utf-8")).decode("utf-8")
+
+        with app.test_request_context(f"/v1.0/login_return?state={state}"):
+            resolve_request_tenant()
+            assert g.m8flow_tenant_id == "tenant-it-id"

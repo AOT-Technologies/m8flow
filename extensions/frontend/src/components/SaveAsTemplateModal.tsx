@@ -20,6 +20,7 @@ import type { CreateTemplateMetadata, Template, TemplateVisibility } from "../ty
 const VISIBILITY_OPTIONS: { value: TemplateVisibility; label: string }[] = [
   { value: "PRIVATE", label: "Private (only you)" },
   { value: "TENANT", label: "Tenant-wide (all users in your tenant)" },
+  { value: "PUBLIC", label: "Public (all authenticated users)" },
 ];
 
 const SUPPORTED_EXT = [".bpmn", ".json", ".dmn", ".md"];

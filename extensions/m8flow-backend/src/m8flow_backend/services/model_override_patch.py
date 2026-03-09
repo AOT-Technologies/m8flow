@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import importlib
+import importlib.abc
 import importlib.util
-from pathlib import Path
+import logging
 import sys
-import types
+from types import ModuleType
+
 
 # Mapping of spiffworkflow_backend model modules to their m8flow_backend overrides.
 _OVERRIDES = {
@@ -48,48 +50,55 @@ _OVERRIDES = {
 }
 
 _PATCHED = False
+LOGGER = logging.getLogger(__name__)
 
 
-def _clear_spiffworkflow_modules() -> None:
-    """Clear spiffworkflow_backend modules from sys.modules to allow re-import."""
-    for name in list(sys.modules):
-        if name == "spiffworkflow_backend" or name.startswith("spiffworkflow_backend."):
-            del sys.modules[name]
+class _OverrideLoader(importlib.abc.Loader):
+    def __init__(self, target_name: str, source_name: str):
+        self.target_name = target_name
+        self.source_name = source_name
+
+    def create_module(self, spec):
+        # default module creation
+        return None
+
+    def exec_module(self, module: ModuleType) -> None:
+        # Load the real source module, then copy its namespace into the target module.
+        src = importlib.import_module(self.source_name)
+        module.__dict__.update(src.__dict__)
+        module.__dict__["__name__"] = self.target_name
 
 
-def _spiffworkflow_package_path() -> Path:
-    """Locate the spiffworkflow_backend package path."""
-    spec = importlib.util.find_spec("spiffworkflow_backend")
-    if not spec or not spec.submodule_search_locations:
-        raise RuntimeError("Unable to locate spiffworkflow_backend package for model overrides.")
-    return Path(next(iter(spec.submodule_search_locations)))
+class _OverrideFinder(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname: str, path, target=None):
+        source = _OVERRIDES.get(fullname)
+        if not source:
+            return None
+        return importlib.util.spec_from_loader(fullname, _OverrideLoader(fullname, source))
 
 
-def _ensure_stub_package(package_path: Path) -> None:
-    """Ensure spiffworkflow_backend package stubs exist in sys.modules."""
-    if "spiffworkflow_backend" not in sys.modules:
-        stub = types.ModuleType("spiffworkflow_backend")
-        stub.__path__ = [str(package_path)]
-        stub._m8flow_stub = True  # type: ignore[attr-defined]
-        sys.modules["spiffworkflow_backend"] = stub
+def _purge_preimported_override_modules() -> list[str]:
+    """
+    Remove already-imported spiff model modules that should be overridden.
+    They will be re-imported through the override finder.
+    """
+    purged: list[str] = []
+    for target_name in _OVERRIDES:
+        if target_name not in sys.modules:
+            continue
 
-    if "spiffworkflow_backend.models" not in sys.modules:
-        models_stub = types.ModuleType("spiffworkflow_backend.models")
-        models_stub.__path__ = [str(package_path / "models")]
-        sys.modules["spiffworkflow_backend.models"] = models_stub
+        sys.modules.pop(target_name, None)
 
+        parent_name, _, leaf_name = target_name.rpartition(".")
+        parent_module = sys.modules.get(parent_name)
+        if parent_module is not None and hasattr(parent_module, leaf_name):
+            try:
+                delattr(parent_module, leaf_name)
+            except Exception:
+                pass
 
-def _load_db_module(package_path: Path) -> None:
-    """Load spiffworkflow_backend.models.db into sys.modules if not already present."""
-    if "spiffworkflow_backend.models.db" in sys.modules:
-        return
-    db_path = package_path / "models" / "db.py"
-    spec = importlib.util.spec_from_file_location("spiffworkflow_backend.models.db", db_path)
-    if not spec or not spec.loader:
-        raise RuntimeError("Unable to load spiffworkflow_backend.models.db for overrides.")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["spiffworkflow_backend.models.db"] = module
-    spec.loader.exec_module(module)
+        purged.append(target_name)
+    return purged
 
 
 def apply() -> None:
@@ -97,24 +106,19 @@ def apply() -> None:
     if _PATCHED:
         return
 
+    # Ensure config patch is applied early (keep this)
     from m8flow_backend.services.spiff_config_patch import apply as apply_spiff_config_patch
     apply_spiff_config_patch()
 
-    existing = sys.modules.get("spiffworkflow_backend")
-    if existing and not getattr(existing, "_m8flow_stub", False):
-        _clear_spiffworkflow_modules()
+    purged = _purge_preimported_override_modules()
+    if purged:
+        LOGGER.warning(
+            "model_override_patch: purged pre-imported spiff model modules before installing overrides: %s",
+            sorted(purged),
+        )
 
-    # Load the db module and overlays before spiffworkflow_backend.__init__ runs.
-    package_path = _spiffworkflow_package_path()
-    _ensure_stub_package(package_path)
-    _load_db_module(package_path)
-
-    for target, source in _OVERRIDES.items():
-        module = importlib.import_module(source)
-        sys.modules[target] = module
-
-    if getattr(sys.modules.get("spiffworkflow_backend"), "_m8flow_stub", False):
-        sys.modules.pop("spiffworkflow_backend.models", None)
-        sys.modules.pop("spiffworkflow_backend", None)
+    # Install finder once, at the front so it wins
+    if not any(isinstance(f, _OverrideFinder) for f in sys.meta_path):
+        sys.meta_path.insert(0, _OverrideFinder())
 
     _PATCHED = True

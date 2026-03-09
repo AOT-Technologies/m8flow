@@ -4,7 +4,6 @@ from __future__ import annotations
 import logging
 from flask import g, has_request_context
 
-from spiffworkflow_backend.services import logging_service
 from m8flow_backend.tenancy import DEFAULT_TENANT_ID, get_context_tenant_id, is_request_active
 
 _PATCHED = False
@@ -75,6 +74,10 @@ def apply() -> None:
     global _PATCHED, _ORIGINAL_SETUP
     if _PATCHED:
         return
+
+    # Keep this import inside apply() so uvicorn log-config imports of
+    # TenantContextFilter do not pull spiffworkflow_backend too early.
+    from spiffworkflow_backend.services import logging_service
 
     if _ORIGINAL_SETUP is None:
         _ORIGINAL_SETUP = logging_service.setup_logger_for_app

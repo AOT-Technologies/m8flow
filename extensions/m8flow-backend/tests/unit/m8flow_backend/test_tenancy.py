@@ -17,6 +17,7 @@ for path in (extension_src, backend_src):
 
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel  # noqa: E402
 from m8flow_backend.tenancy import create_tenant_if_not_exists  # noqa: E402
+from m8flow_backend.tenancy import path_matches_any_prefix  # noqa: E402
 from spiffworkflow_backend.models.db import db  # noqa: E402
 
 
@@ -83,3 +84,14 @@ def test_create_tenant_if_not_exists_idempotent(app):
         row = db.session.get(M8flowTenantModel, keycloak_realm_id)
         assert row.name == "Once"
         assert row.slug == "once"
+
+
+def test_path_matches_any_prefix_requires_boundary():
+    prefixes = ("/v1.0/login", "/login")
+
+    assert path_matches_any_prefix("/v1.0/login", prefixes)
+    assert path_matches_any_prefix("/v1.0/login/", prefixes)
+    assert path_matches_any_prefix("/v1.0/login/oidc", prefixes)
+
+    # Regression: `/v1.0/login_return` must not match `/v1.0/login`.
+    assert not path_matches_any_prefix("/v1.0/login_return", prefixes)
