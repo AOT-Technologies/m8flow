@@ -23,13 +23,11 @@ env:
   REGISTRY: docker.io
   IMAGE_REPOSITORY: m8flow
   PROJECT: m8flow
-  # Centralize the list of components to keep it DRY
   COMPONENTS: '["backend", "frontend", "keycloak", "connector-proxy"]'
 
 jobs:
   prepare:
     name: Prepare (resolve ref & tag)
-    # Check condition once at the start. If this fails, all 'needs' jobs are skipped.
     if: |
       (vars.AUTO_BUILD == 'true' || github.event_name == 'workflow_dispatch') &&
       (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
@@ -38,13 +36,12 @@ jobs:
       ref: ${{ steps.meta.outputs.ref }}
       tag: ${{ steps.meta.outputs.tag }}
       components: ${{ env.COMPONENTS }}
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.rc_tag || github.event.workflow_run.head_sha || github.ref }}
-          fetch-depth: 0
+          fetch-depth: 0 # Required to find tags at HEAD
 
       - name: Extract metadata
         id: meta
@@ -52,7 +49,6 @@ jobs:
           if [[ -n "${{ github.event.inputs.rc_tag }}" ]]; then
             TAG="${{ github.event.inputs.rc_tag }}"
           elif [[ "${{ github.event_name }}" == "workflow_run" ]]; then
-            # Ensure we have tags fetched to find the version
             git fetch origin --tags
             TAG=$(git tag --points-at HEAD | sort -V | tail -1)
             [[ -z "$TAG" ]] && { echo "::error::No tag found at HEAD"; exit 1; }
@@ -70,14 +66,33 @@ jobs:
       matrix:
         component: ${{ fromJson(needs.prepare.outputs.components) }}
     steps:
-      - name: Retag existing image to backup
-        uses: tailscale/docker-copy-action@v1
-        with:
-          src: "${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-${{ matrix.component }}:${{ needs.prepare.outputs.tag }}"
-          dest: "${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-${{ matrix.component }}:${{ needs.prepare.outputs.tag }}-backup"
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-        continue-on-error: true # Tag might not exist yet, which is fine
+      - name: Setup regctl
+        uses: regclient/actions/regctl-installer@v1
+
+      - name: Login to Docker Hub
+        run: |
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | regctl registry login ${{ env.REGISTRY }} -u "${{ secrets.DOCKERHUB_USERNAME }}" --stdin
+
+      - name: Manage Backup Tags
+        env:
+          FULL_REPO: "${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-${{ matrix.component }}"
+          TAG: "${{ needs.prepare.outputs.tag }}"
+        run: |
+          # 1. Check if the current tag exists.
+          if ! regctl image inspect "${FULL_REPO}:${TAG}" > /dev/null 2>&1; then
+            echo "Tag ${TAG} not found. Nothing to backup."
+            exit 0
+          fi
+
+          # 2. If backup tag exists, delete it first to allow overwrite.
+          if regctl image inspect "${FULL_REPO}:${TAG}-backup" > /dev/null 2>&1; then
+            echo "Deleting existing backup: ${TAG}-backup"
+            regctl tag rm "${FULL_REPO}:${TAG}-backup"
+          fi
+
+          # 3. Fast-copy (server-side retag)
+          echo "Retagging ${TAG} to ${TAG}-backup"
+          regctl image copy "${FULL_REPO}:${TAG}" "${FULL_REPO}:${TAG}-backup"
 
   build:
     name: Build & Push
@@ -86,7 +101,6 @@ jobs:
     strategy:
       matrix:
         component: ${{ fromJson(needs.prepare.outputs.components) }}
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -115,12 +129,35 @@ jobs:
           provenance: true
           sbom: true
 
+      - name: Save Digest
+        run: echo "${{ steps.build.outputs.digest }}" > digest.txt
+
+      - name: Upload Digest Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.component }}
+          path: digest.txt
+          retention-days: 1
+
   combine:
     name: Finalize Artifacts
     needs: [prepare, build]
     runs-on: ubuntu-latest
     steps:
-      # Since matrix jobs run in parallel, we use the build job's completion to gather info
-      # Or simpler: download metadata if needed. For most cases, simple logging is enough.
-      - name: Finalize
-        run: echo "Deployment of version ${{ needs.prepare.outputs.tag }} complete."
+      - name: Download all digests
+        uses: actions/download-artifact@v4
+        with:
+          path: digests
+          pattern: digest-*
+          merge-multiple: false
+
+      - name: Create Summary
+        run: |
+          echo "### Deployment Summary - ${{ needs.prepare.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Digest |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          for f in digests/digest-*/digest.txt; do
+            COMPONENT=$(basename $(dirname $f) | sed 's/digest-//')
+            DIGEST=$(cat $f)
+            echo "| $COMPONENT | \`$DIGEST\` |" >> $GITHUB_STEP_SUMMARY
+          done
