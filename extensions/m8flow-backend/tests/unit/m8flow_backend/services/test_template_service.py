@@ -3388,3 +3388,126 @@ def test_get_first_bpmn_content_empty_files() -> None:
                 content = TemplateService.get_first_bpmn_content(template)
 
             assert content is None
+
+
+# ---------------------------------------------------------------------------
+# DMN / BPMN transform unit tests (pure functions, no DB or Flask needed)
+# ---------------------------------------------------------------------------
+
+
+def test_transform_dmn_content_makes_decision_ids_unique() -> None:
+    """_transform_dmn_content replaces decision IDs with unique values."""
+    dmn_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" '
+        'xmlns:dmndi="https://www.omg.org/spec/DMN/20191111/DMNDI/" '
+        'id="definitions_1">'
+        '<decision id="check_eligibility" name="Check Eligibility">'
+        '<decisionTable id="dt_1"><input id="i1"/></decisionTable>'
+        "</decision>"
+        "<dmndi:DMNDI>"
+        "<dmndi:DMNDiagram>"
+        '<dmndi:DMNShape dmnElementRef="check_eligibility"/>'
+        "</dmndi:DMNDiagram>"
+        "</dmndi:DMNDI>"
+        "</definitions>"
+    )
+    content = dmn_xml.encode("utf-8")
+
+    transformed, id_map = TemplateService._transform_dmn_content(content, "my-model")
+
+    assert len(id_map) == 1
+    old_id = "check_eligibility"
+    assert old_id in id_map
+    new_id = id_map[old_id]
+    assert new_id.startswith("Decision_my_model_")
+    assert new_id != old_id
+
+    transformed_str = transformed.decode("utf-8")
+    assert f'id="{new_id}"' in transformed_str
+    assert f'id="{old_id}"' not in transformed_str
+    assert f'dmnElementRef="{new_id}"' in transformed_str
+    assert f'dmnElementRef="{old_id}"' not in transformed_str
+
+
+def test_transform_dmn_content_handles_multiple_decisions() -> None:
+    """_transform_dmn_content handles multiple decision elements."""
+    dmn_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="d1">'
+        '<decision id="dec_a" name="A"><decisionTable id="dt_a"/></decision>'
+        '<decision id="dec_b" name="B"><decisionTable id="dt_b"/></decision>'
+        "</definitions>"
+    )
+    content = dmn_xml.encode("utf-8")
+
+    transformed, id_map = TemplateService._transform_dmn_content(content, "multi")
+
+    assert len(id_map) == 2
+    assert "dec_a" in id_map
+    assert "dec_b" in id_map
+    assert id_map["dec_a"] != id_map["dec_b"]
+    transformed_str = transformed.decode("utf-8")
+    assert f'id="{id_map["dec_a"]}"' in transformed_str
+    assert f'id="{id_map["dec_b"]}"' in transformed_str
+
+
+def test_transform_dmn_content_non_utf8_returns_unchanged() -> None:
+    """_transform_dmn_content returns content unchanged for non-UTF-8 bytes."""
+    bad_bytes = b"\xff\xfe"
+    transformed, id_map = TemplateService._transform_dmn_content(bad_bytes, "m")
+    assert transformed == bad_bytes
+    assert id_map == {}
+
+
+def test_transform_bpmn_content_updates_called_decision_id() -> None:
+    """_transform_bpmn_content replaces calledDecisionId when decision_id_map is given."""
+    bpmn_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" '
+        'xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core">'
+        '<bpmn:process id="Process_1" isExecutable="true">'
+        '<bpmn:businessRuleTask id="Activity_1">'
+        "<bpmn:extensionElements>"
+        "<spiffworkflow:calledDecisionId>check_eligibility</spiffworkflow:calledDecisionId>"
+        "</bpmn:extensionElements>"
+        "</bpmn:businessRuleTask>"
+        "</bpmn:process>"
+        "</bpmn:definitions>"
+    )
+    content = bpmn_xml.encode("utf-8")
+    decision_map = {"check_eligibility": "Decision_my_model_abc1234"}
+
+    transformed, _ = TemplateService._transform_bpmn_content(
+        content, "my-model", decision_id_map=decision_map
+    )
+
+    transformed_str = transformed.decode("utf-8")
+    assert "Decision_my_model_abc1234" in transformed_str
+    assert (
+        "<spiffworkflow:calledDecisionId>check_eligibility</spiffworkflow:calledDecisionId>"
+        not in transformed_str
+    )
+
+
+def test_transform_bpmn_content_no_decision_map_leaves_refs_intact() -> None:
+    """_transform_bpmn_content leaves calledDecisionId unchanged without a map."""
+    bpmn_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" '
+        'xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core">'
+        '<bpmn:process id="Process_1" isExecutable="true">'
+        '<bpmn:businessRuleTask id="Activity_1">'
+        "<bpmn:extensionElements>"
+        "<spiffworkflow:calledDecisionId>my_decision</spiffworkflow:calledDecisionId>"
+        "</bpmn:extensionElements>"
+        "</bpmn:businessRuleTask>"
+        "</bpmn:process>"
+        "</bpmn:definitions>"
+    )
+    content = bpmn_xml.encode("utf-8")
+
+    transformed, _ = TemplateService._transform_bpmn_content(content, "test-model")
+
+    transformed_str = transformed.decode("utf-8")
+    assert "<spiffworkflow:calledDecisionId>my_decision</spiffworkflow:calledDecisionId>" in transformed_str
