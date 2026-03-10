@@ -511,7 +511,7 @@ function SideNav({
             {username !== userEmail && (
               <Typography variant="body2">{userEmail}</Typography>
             )}
-            <hr />
+            {/* <hr />
             {aboutLinkElement}
             <br />
             <MuiLink
@@ -521,7 +521,7 @@ function SideNav({
               rel="noreferrer"
             >
               {t("documentation")}
-            </MuiLink>
+            </MuiLink> */}
             <ExtensionUxElementForDisplay
               displayLocation="user_profile_item"
               elementCallback={extensionUserProfileElement}
