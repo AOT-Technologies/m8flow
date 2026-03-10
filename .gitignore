@@ -19,7 +19,7 @@ UNKNOWN.egg-info/
 __pycache__/
 
 sample-process-models/
-/extensions/frontend/node_modules
+/extensions/m8flow-frontend/node_modules
 /spiffworkflow-frontend/node_modules
 agent_setup_script_has_completed_successfully
 .venv/

@@ -13,7 +13,7 @@ This is a **standalone application** that extends and overrides components from 
 ## Architecture
 
 ```
-extensions/frontend/
+extensions/m8flow-frontend/
 ├── package.json              # Standalone package with dependencies
 ├── vite.config.ts            # Vite config with aliases to spiffworkflow-frontend
 ├── tsconfig.json             # TypeScript config with path mappings
@@ -129,16 +129,16 @@ The Vite plugin (`vite-plugin-override-resolver.ts`) intercepts **ALL imports** 
 
 1. **Core-to-core imports** (e.g., `SideNav.tsx` imports `./SpiffLogo`):
    - Resolver intercepts the import
-   - Checks if `extensions/frontend/src/components/SpiffLogo.tsx` exists
+   - Checks if `extensions/m8flow-frontend/src/components/SpiffLogo.tsx` exists
    - If yes: uses your override
    - If no: uses core file
 
 2. **Extension imports** (e.g., `./components/SpiffLogo`):
-   - First checks: `extensions/frontend/src/components/SpiffLogo.tsx`
+   - First checks: `extensions/m8flow-frontend/src/components/SpiffLogo.tsx`
    - Falls back to: `spiffworkflow-frontend/src/components/SpiffLogo.tsx`
 
 3. **Alias imports** (e.g., `@spiffworkflow-frontend/components/SpiffLogo`):
-   - First checks for override in: `extensions/frontend/src/components/SpiffLogo.tsx`
+   - First checks for override in: `extensions/m8flow-frontend/src/components/SpiffLogo.tsx`
    - Falls back to: `spiffworkflow-frontend/src/components/SpiffLogo.tsx`
 
 **Key benefit**: You only need to override the specific component you want to change. No need to override parent components in the import chain.

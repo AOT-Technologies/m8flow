@@ -24,7 +24,7 @@ ENV NODE_OPTIONS=--max_old_space_size=4096
 # the core spiffworkflow-frontend and the m8flow extension frontend.
 FROM base AS setup
 
-# Copy the full repo so that both spiffworkflow-frontend and extensions/frontend are available.
+# Copy the full repo so that both spiffworkflow-frontend and extensions/m8flow-frontend are available.
 WORKDIR /app
 COPY . /app
 
@@ -46,7 +46,7 @@ RUN if [ -f package-lock.json ]; then \
 ########################
 # Build the m8flow extension frontend
 ########################
-WORKDIR /app/extensions/frontend
+WORKDIR /app/extensions/m8flow-frontend
 
 # Ensure the python worker from the core frontend is available at the
 # path expected by the build tooling, without modifying upstream code.
@@ -79,7 +79,7 @@ RUN rm -rf /etc/nginx/conf.d/*
 COPY spiffworkflow-frontend/docker_build/nginx.conf.template /var/tmp
 
 # Copy the built static files from the extension frontend into the nginx directory
-COPY --from=setup /app/extensions/frontend/dist /usr/share/nginx/html
+COPY --from=setup /app/extensions/m8flow-frontend/dist /usr/share/nginx/html
 
 # Optionally expose the core frontend dist under a sub-path if needed
 # (keeps behavior flexible without changing upstream code).
