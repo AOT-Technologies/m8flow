@@ -82,6 +82,8 @@ services:
         condition: service_healthy
       m8flow-backend:
         condition: service_started
+    environment:
+      M8FLOW_NATS_URL: "nats://nats:4222"
     volumes:
       - ../process_models:/app/process_models
       - ../m8flow-nats-consumer:/app/m8flow-nats-consumer

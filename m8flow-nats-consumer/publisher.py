@@ -1,23 +1,3 @@
-"""
-publisher.py - M8Flow NATS Event Publisher (Dev Utility)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Fetches a Keycloak JWT via Client Credentials Grant, then publishes
-a signed M8Flow event to NATS JetStream to test the consumer service.
-
-Usage:
-  uv run python publisher.py \\
-    --tenant_id          <m8flow-tenant-uuid> \\
-    --realm              spiffworkflow \\
-    --client_id          spiffworkflow-backend \\
-    --client_secret      <client-secret> \\
-    --username           john.doe@company.com \\
-    --process_identifier <process-group/process-model>
-
-Note:
-  --realm is the Keycloak realm name, NOT the M8Flow tenant UUID.
-  KEYCLOAK_URL must be set in the environment (e.g. http://192.168.1.89:7002).
-"""
 import argparse
 import asyncio
 import json
@@ -106,10 +86,8 @@ async def main() -> None:
         "payload":            payload_dict,
     }
 
-    # Log without the token to avoid leaking credentials
-    loggable = {k: v for k, v in event_data.items() if k != "auth_token"}
     logger.info(f"Publishing to subject: {subject}")
-    logger.info(f"Event data: {json.dumps(loggable, indent=2)}")
+    logger.info(f"Event data: {json.dumps(event_data, indent=2)}")
 
     try:
         # Nats-Msg-Id enables JetStream broker-level deduplication:

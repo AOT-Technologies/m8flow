@@ -28,7 +28,6 @@ load_dotenv()
 
 # Enforce absolute path for process models (overriding any generic relative .env paths)
 bpmn_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "process_models"))
-os.environ["SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR"] = bpmn_dir
 os.environ["M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR"] = bpmn_dir
 
 # Configure Logging
