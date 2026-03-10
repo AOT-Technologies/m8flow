@@ -70,8 +70,11 @@ jobs:
         uses: regclient/actions/regctl-installer@v0.1.0
 
       - name: Login to Docker Hub
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
         run: |
-          echo "${{ secrets.DOCKERHUB_TOKEN }}" | regctl registry login ${{ env.REGISTRY }} -u "${{ secrets.DOCKERHUB_USERNAME }}" --pass-stdin
+          echo "$DOCKERHUB_TOKEN" | regctl registry login ${{ env.REGISTRY }} -u "$DOCKERHUB_USERNAME" --pass-stdin
 
       - name: Manage Backup Tags
         env:
