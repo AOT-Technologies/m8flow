@@ -472,12 +472,11 @@ function SideNav({
                 <Flag />
               </IconButton>
             </SpiffTooltip>
-            {SPIFF_ENVIRONMENT && (
+            {/* {SPIFF_ENVIRONMENT && (
               <SpiffTooltip
                 title={t("environment")}
                 placement={isCollapsed ? "right" : "top"}
               >
-                {/* Use a Box to wrap the Chip and vertically align it */}
                 <Box sx={{ display: "flex", alignItems: "center" }}>
                   <Chip
                     label={SPIFF_ENVIRONMENT}
@@ -489,7 +488,7 @@ function SideNav({
                   />
                 </Box>
               </SpiffTooltip>
-            )}
+            )} */}
           </Box>
         </Box>
         {showUserProfile && (
