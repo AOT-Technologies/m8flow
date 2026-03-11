@@ -85,8 +85,8 @@ services:
     environment:
       M8FLOW_NATS_URL: "nats://nats:4222"
     volumes:
-      - ../process_models:/app/process_models
-      - ../m8flow-nats-consumer:/app/m8flow-nats-consumer
+      - process_models_cache:/app/process_models
+      - ../data/m8flow_nats_consumer:/app/data/m8flow_nats_consumer
     restart: unless-stopped
 
   minio:
