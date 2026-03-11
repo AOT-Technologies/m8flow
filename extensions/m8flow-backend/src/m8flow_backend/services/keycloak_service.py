@@ -37,6 +37,8 @@ REALM_URL_PREFIX = "/realms/"  # client baseUrl/redirectUris contain /realms/{re
 ADMIN_CONSOLE_URL_PREFIX = "/admin/"  # security-admin-console has /admin/{realm}/console/
 BACKEND_URL_PLACEHOLDER = "https://replace-me-with-spiff-backend-host-and-path/*"
 FRONTEND_URL_PLACEHOLDER = "https://replace-me-with-spiff-frontend-host-and-path/*"
+FRONTEND_CLIENT_ID = "spiffworkflow-frontend"
+POST_LOGOUT_REDIRECT_URIS_ATTR = "post.logout.redirect.uris"
 
 
 def _substitute_spoke_client_id(obj: Any, client_id: str) -> Any:
@@ -120,6 +122,78 @@ def _split_keycloak_uri_list(value: str | None) -> list[str]:
     return [item.strip() for item in value.split("##") if item.strip()]
 
 
+def _runtime_client_values(
+    client_id: Any,
+    *,
+    backend_value: str | None,
+    frontend_value: str | None,
+) -> tuple[str | None, ...]:
+    """Return runtime URL values relevant for the given client."""
+    if client_id == spoke_client_id():
+        return (backend_value, frontend_value)
+    if client_id == FRONTEND_CLIENT_ID:
+        return (frontend_value,)
+    return ()
+
+
+def _replace_runtime_placeholders_in_list(
+    values: Any,
+    *,
+    backend_wildcard: str | None,
+    frontend_wildcard: str | None,
+) -> list[Any]:
+    """Replace runtime URL placeholders in a list of client values."""
+    if not isinstance(values, list):
+        return []
+    return [
+        _replace_runtime_url_placeholders(
+            value,
+            backend_wildcard=backend_wildcard,
+            frontend_wildcard=frontend_wildcard,
+        )
+        if isinstance(value, str)
+        else value
+        for value in values
+    ]
+
+
+def _update_runtime_client_attributes(
+    attrs: dict[str, Any],
+    *,
+    backend_wildcard: str | None,
+    frontend_wildcard: str | None,
+) -> None:
+    """Replace runtime placeholders in string-valued client attributes."""
+    for key, value in attrs.items():
+        if isinstance(value, str):
+            attrs[key] = _replace_runtime_url_placeholders(
+                value,
+                backend_wildcard=backend_wildcard,
+                frontend_wildcard=frontend_wildcard,
+            )
+
+
+def _set_post_logout_redirect_uris(
+    attrs: dict[str, Any],
+    client_id: Any,
+    *,
+    backend_wildcard: str | None,
+    frontend_wildcard: str | None,
+) -> None:
+    """Add runtime post-logout redirect URIs for supported clients."""
+    runtime_values = _runtime_client_values(
+        client_id,
+        backend_value=backend_wildcard,
+        frontend_value=frontend_wildcard,
+    )
+    if not runtime_values:
+        return
+
+    post_logout_uris = _split_keycloak_uri_list(attrs.get(POST_LOGOUT_REDIRECT_URIS_ATTR))
+    post_logout_uris.extend(candidate for candidate in runtime_values if candidate)
+    attrs[POST_LOGOUT_REDIRECT_URIS_ATTR] = "##".join(_unique_strings(post_logout_uris))
+
+
 def _apply_runtime_client_urls(
     client: dict[str, Any],
     *,
@@ -130,56 +204,48 @@ def _apply_runtime_client_urls(
 ) -> None:
     """Inject runtime backend/frontend URLs into tenant realm client config."""
     client_id = client.get("clientId")
-    is_spoke_backend_client = client_id == spoke_client_id()
-    is_spoke_frontend_client = client_id == "spiffworkflow-frontend"
+    redirect_uri_values = _runtime_client_values(
+        client_id,
+        backend_value=backend_wildcard,
+        frontend_value=frontend_wildcard,
+    )
+    web_origin_values = _runtime_client_values(
+        client_id,
+        backend_value=backend_origin,
+        frontend_value=frontend_origin,
+    )
 
-    redirect_uris = client.get("redirectUris")
-    updated_redirect_uris: list[str] = []
-    if isinstance(redirect_uris, list):
-        updated_redirect_uris = [
-            _replace_runtime_url_placeholders(
-                value,
-                backend_wildcard=backend_wildcard,
-                frontend_wildcard=frontend_wildcard,
-            )
-            if isinstance(value, str)
-            else value
-            for value in redirect_uris
-        ]
-    if is_spoke_backend_client:
-        updated_redirect_uris.extend(candidate for candidate in (backend_wildcard, frontend_wildcard) if candidate)
-    elif is_spoke_frontend_client:
-        updated_redirect_uris.extend(candidate for candidate in (frontend_wildcard,) if candidate)
+    updated_redirect_uris = _replace_runtime_placeholders_in_list(
+        client.get("redirectUris"),
+        backend_wildcard=backend_wildcard,
+        frontend_wildcard=frontend_wildcard,
+    )
+    updated_redirect_uris.extend(candidate for candidate in redirect_uri_values if candidate)
     if updated_redirect_uris:
         client["redirectUris"] = _unique_strings(updated_redirect_uris)
 
     web_origins = client.get("webOrigins")
     updated_web_origins: list[str] = list(web_origins) if isinstance(web_origins, list) else []
-    if is_spoke_backend_client:
-        updated_web_origins.extend(candidate for candidate in (backend_origin, frontend_origin) if candidate)
-    elif is_spoke_frontend_client:
-        updated_web_origins.extend(candidate for candidate in (frontend_origin,) if candidate)
+    updated_web_origins.extend(candidate for candidate in web_origin_values if candidate)
     if updated_web_origins:
         client["webOrigins"] = _unique_strings(updated_web_origins)
 
     attrs = client.get("attributes") or {}
-    if isinstance(attrs, dict):
-        for key, value in list(attrs.items()):
-            if isinstance(value, str):
-                attrs[key] = _replace_runtime_url_placeholders(
-                    value,
-                    backend_wildcard=backend_wildcard,
-                    frontend_wildcard=frontend_wildcard,
-                )
-        if is_spoke_backend_client:
-            post_logout_uris = _split_keycloak_uri_list(attrs.get("post.logout.redirect.uris"))
-            post_logout_uris.extend(candidate for candidate in (frontend_wildcard, backend_wildcard) if candidate)
-            attrs["post.logout.redirect.uris"] = "##".join(_unique_strings(post_logout_uris))
-        elif is_spoke_frontend_client:
-            post_logout_uris = _split_keycloak_uri_list(attrs.get("post.logout.redirect.uris"))
-            post_logout_uris.extend(candidate for candidate in (frontend_wildcard,) if candidate)
-            attrs["post.logout.redirect.uris"] = "##".join(_unique_strings(post_logout_uris))
-        client["attributes"] = attrs
+    if not isinstance(attrs, dict):
+        return
+
+    _update_runtime_client_attributes(
+        attrs,
+        backend_wildcard=backend_wildcard,
+        frontend_wildcard=frontend_wildcard,
+    )
+    _set_post_logout_redirect_uris(
+        attrs,
+        client_id,
+        backend_wildcard=backend_wildcard,
+        frontend_wildcard=frontend_wildcard,
+    )
+    client["attributes"] = attrs
 
 
 def _regenerate_all_ids(obj: Any, id_map: dict[str, str] | None = None) -> dict[str, str]:
