@@ -1,26 +1,25 @@
 /**
  * Tenant selection page. When ENABLE_MULTITENANT is true this can be the default page.
- * On submit calls tenant-login-url API; only if it returns a redirect URL is the tenant
- * saved to localStorage under m8flow_tenant and the user sent to the default home.
+ * On submit calls tenant-login-url API; only if it succeeds is the tenant saved to localStorage
+ * and the browser sent into the tenant-aware login flow.
  */
 import { Box, Container, Typography, TextField, Button } from '@mui/material';
-import { useNavigate } from 'react-router-dom';
 import { FormEvent, useState } from 'react';
 import { useConfig } from '../utils/useConfig';
-import { useTenantGate } from '../contexts/TenantGateContext';
 
 export const M8FLOW_TENANT_STORAGE_KEY = 'm8flow_tenant';
 
+const getRedirectUrl = () =>
+  encodeURIComponent(`${window.location.origin}/`);
+
 export default function TenantSelectPage() {
   const { ENABLE_MULTITENANT, BACKEND_BASE_URL } = useConfig();
-  const tenantGate = useTenantGate();
-  const navigate = useNavigate();
   const [tenantName, setTenantName] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   if (!ENABLE_MULTITENANT) {
-    navigate('/', { replace: true });
+    window.location.replace('/');
     return null;
   }
 
@@ -39,27 +38,17 @@ export default function TenantSelectPage() {
         if (res.status === 404) {
           setError('Tenant not found. Please check the name or contact your administrator.');
           setSubmitting(false);
-          return null;
+          return;
         }
         if (!res.ok) {
           setError('Unable to verify tenant. Please try again.');
           setSubmitting(false);
-          return null;
-        }
-        return res.json();
-      })
-      .then((data) => {
-        if (!data?.login_url) {
-          setSubmitting(false);
           return;
         }
         localStorage.setItem(M8FLOW_TENANT_STORAGE_KEY, trimmed);
-        setSubmitting(false);
-        if (tenantGate?.onTenantSelected) {
-          tenantGate.onTenantSelected();
-        } else {
-          navigate('/', { replace: true });
-        }
+        const redirectUrl = getRedirectUrl();
+        const loginUrl = `${BACKEND_BASE_URL}/login?redirect_url=${redirectUrl}&tenant=${encodeURIComponent(trimmed)}&authentication_identifier=${encodeURIComponent(trimmed)}`;
+        window.location.assign(loginUrl);
       })
       .catch(() => {
         setError('Unable to verify tenant. Please try again.');

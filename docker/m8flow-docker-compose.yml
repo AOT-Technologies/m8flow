@@ -151,6 +151,11 @@ services:
       dockerfile: docker/m8flow.backend.Dockerfile
     command: ["bash", "./extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh"]
     env_file: ../.env
+    environment:
+      M8FLOW_BACKEND_RUNNING_IN_CELERY_WORKER: "true"
+      M8FLOW_BACKEND_RUN_BACKGROUND_SCHEDULER_IN_CREATE_APP: "false"
+      M8FLOW_BACKEND_UPGRADE_DB: "false"
+      M8FLOW_BACKEND_SW_UPGRADE_DB: "false"
     volumes:
       - ${M8FLOW_BACKEND_CELERY_PROCESS_MODELS_MOUNT_SOURCE:-process_models_cache}:/app/process_models
     depends_on:
@@ -165,6 +170,11 @@ services:
       dockerfile: docker/m8flow.backend.Dockerfile
     command: ["bash", "./extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh", "flower"]
     env_file: ../.env
+    environment:
+      M8FLOW_BACKEND_RUNNING_IN_CELERY_WORKER: "false"
+      M8FLOW_BACKEND_RUN_BACKGROUND_SCHEDULER_IN_CREATE_APP: "false"
+      M8FLOW_BACKEND_UPGRADE_DB: "false"
+      M8FLOW_BACKEND_SW_UPGRADE_DB: "false"
     ports:
       - "5555:5555"
     depends_on:

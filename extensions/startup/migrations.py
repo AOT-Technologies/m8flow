@@ -37,6 +37,7 @@ def load_migration_runner() -> Callable[[], None]:
         spec.loader.exec_module(mod)
         return mod.upgrade_if_enabled
 
+
 def run_migrations_if_enabled(flask_app, upgrade_fn: Callable[[], None]) -> None:
     harden_logging()
     from extensions.startup.flask_hooks import assert_db_engine_bound
