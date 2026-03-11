@@ -10,7 +10,7 @@ import { useConfig } from '../utils/useConfig';
 export const M8FLOW_TENANT_STORAGE_KEY = 'm8flow_tenant';
 
 const getRedirectUrl = () =>
-  encodeURIComponent(`${window.location.origin}/`);
+  encodeURIComponent(`${globalThis.location.origin}/`);
 
 export default function TenantSelectPage() {
   const { ENABLE_MULTITENANT, BACKEND_BASE_URL } = useConfig();
@@ -19,7 +19,7 @@ export default function TenantSelectPage() {
   const [submitting, setSubmitting] = useState(false);
 
   if (!ENABLE_MULTITENANT) {
-    window.location.replace('/');
+    globalThis.location.replace('/');
     return null;
   }
 
@@ -48,7 +48,7 @@ export default function TenantSelectPage() {
         localStorage.setItem(M8FLOW_TENANT_STORAGE_KEY, trimmed);
         const redirectUrl = getRedirectUrl();
         const loginUrl = `${BACKEND_BASE_URL}/login?redirect_url=${redirectUrl}&tenant=${encodeURIComponent(trimmed)}&authentication_identifier=${encodeURIComponent(trimmed)}`;
-        window.location.assign(loginUrl);
+        globalThis.location.assign(loginUrl);
       })
       .catch(() => {
         setError('Unable to verify tenant. Please try again.');
