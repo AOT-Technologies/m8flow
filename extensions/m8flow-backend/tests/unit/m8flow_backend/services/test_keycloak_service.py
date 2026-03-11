@@ -177,6 +177,67 @@ def test_fill_realm_template_client_attributes() -> None:
     assert "/realms/tenant-i/account" in result["clients"][0]["attributes"]["post.logout.redirect.uris"]
 
 
+def test_fill_realm_template_injects_runtime_redirects_for_backend_client(monkeypatch) -> None:
+    """Backend tenant client gets backend/frontend URLs from env instead of placeholder-only defaults."""
+    monkeypatch.setenv("M8FLOW_BACKEND_URL", "http://192.168.1.105:8000")
+    monkeypatch.setenv("M8FLOW_BACKEND_URL_FOR_FRONTEND", "http://192.168.1.105:8001")
+    template = {
+        "id": "spiffworkflow",
+        "realm": "spiffworkflow",
+        "clients": [
+            {
+                "clientId": "spiffworkflow-backend",
+                "redirectUris": [
+                    "http://localhost:7000/*",
+                    "https://replace-me-with-spiff-backend-host-and-path/*",
+                ],
+                "webOrigins": [],
+                "attributes": {
+                    "post.logout.redirect.uris": (
+                        "https://replace-me-with-spiff-frontend-host-and-path/*##http://localhost:7001/*"
+                    ),
+                },
+            }
+        ],
+    }
+
+    result = _fill_realm_template(template, "tenant-runtime", None, "spiffworkflow")
+    client = result["clients"][0]
+
+    assert "http://192.168.1.105:8000/*" in client["redirectUris"]
+    assert "http://192.168.1.105:8001/*" in client["redirectUris"]
+    assert "http://192.168.1.105:8000" in client["webOrigins"]
+    assert "http://192.168.1.105:8001" in client["webOrigins"]
+    assert (
+        client["attributes"]["post.logout.redirect.uris"]
+        == "http://192.168.1.105:8001/*##http://localhost:7001/*##http://192.168.1.105:8000/*"
+    )
+
+
+def test_fill_realm_template_injects_runtime_redirects_for_frontend_client(monkeypatch) -> None:
+    """Frontend tenant client gets the configured frontend origin added."""
+    monkeypatch.setenv("M8FLOW_BACKEND_URL_FOR_FRONTEND", "http://192.168.1.105:8001")
+    template = {
+        "id": "spiffworkflow",
+        "realm": "spiffworkflow",
+        "clients": [
+            {
+                "clientId": "spiffworkflow-frontend",
+                "redirectUris": [],
+                "webOrigins": [],
+                "attributes": {},
+            }
+        ],
+    }
+
+    result = _fill_realm_template(template, "tenant-ui", None, "spiffworkflow")
+    client = result["clients"][0]
+
+    assert client["redirectUris"] == ["http://192.168.1.105:8001/*"]
+    assert client["webOrigins"] == ["http://192.168.1.105:8001"]
+    assert client["attributes"]["post.logout.redirect.uris"] == "http://192.168.1.105:8001/*"
+
+
 @patch("m8flow_backend.services.keycloak_service.keycloak_url")
 @patch("m8flow_backend.services.keycloak_service.requests.get")
 def test_realm_exists_true(mock_get, mock_keycloak_url) -> None:

@@ -83,6 +83,5 @@ $logConfig = Join-Path $repoRoot "uvicorn-log.yaml"
 
 python -m uvicorn extensions.app:app `
   --host 0.0.0.0 --port 8000 `
-  --env-file (Join-Path $repoRoot ".env") `
   --app-dir $repoRoot `
   --log-config $logConfig
