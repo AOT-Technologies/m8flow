@@ -12,9 +12,15 @@ if (rootEnv.MULTI_TENANT_ON !== undefined && process.env.VITE_MULTI_TENANT_ON ==
   process.env.VITE_MULTI_TENANT_ON = rootEnv.MULTI_TENANT_ON;
 }
 
-const host = process.env.HOST ?? 'localhost';
+const host = process.env.HOST ?? '0.0.0.0';
 const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 8001; // Match start_dev.sh FRONTEND_PORT
-const backendPort = process.env.BACKEND_PORT ? parseInt(process.env.BACKEND_PORT, 10) : 8000; // Match start_dev.sh backend port
+const backendPort = process.env.BACKEND_PORT ? parseInt(process.env.BACKEND_PORT, 10) : 8000; // Match start_dev.sh BACKEND_PORT
+
+const backendUrl =
+  rootEnv.M8FLOW_BACKEND_URL_FRONTEND ||
+  rootEnv.M8FLOW_BACKEND_URL ||
+  process.env.M8FLOW_BACKEND_URL ||
+  `http://localhost:${backendPort}`;
 
 const multiTenantOn =
   rootEnv.MULTI_TENANT_ON ?? process.env.VITE_MULTI_TENANT_ON ?? 'false';
@@ -55,18 +61,18 @@ export default defineConfig({
     fs: {
       allow: [path.resolve(__dirname, '../..')],
     },
-    // Proxy API requests to backend to avoid CORS issues
+    // Proxy API requests to the real backend to avoid CORS issues and cookie-domain mismatches.
+    // Without this, the browser would hit the backend IP directly and cookies set by the backend
+    // (domain=192.168.1.77) would not be sent on requests coming from the Vite dev server origin.
     proxy: {
       '/v1.0': {
-        target: `http://localhost:${backendPort}`,
+        target: backendUrl,
         changeOrigin: true,
         secure: false,
-        // Preserve the original path
         rewrite: (path) => path,
       },
-      // Also proxy /api if backend uses that prefix
       '/api': {
-        target: `http://localhost:${backendPort}`,
+        target: backendUrl,
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path,
