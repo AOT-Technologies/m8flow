@@ -1,4 +1,5 @@
 [tool.poetry]
+package-mode = false
 name = "connector-proxy"
 version = "0.1.0"
 description = "M8Flow connector proxy"
@@ -17,6 +18,8 @@ spiffworkflow-proxy = {git = "https://github.com/sartography/spiffworkflow-proxy
 m8flow-connector-smtp = { git = "https://github.com/AOT-Technologies/m8flow-connectors.git", subdirectory = "connectors/m8flow-connector-smtp", branch = "main" }
 connector-postgres-v2 = {git = "https://github.com/sartography/connector-postgres.git"}
 connector-slack = { git = "https://github.com/AOT-Technologies/m8flow-connectors.git", subdirectory = "connectors/connector-slack", branch = "main" }
+connector-salesforce = { git = "https://github.com/AOT-Technologies/m8flow-connectors.git", subdirectory = "connectors/connector-salesforce", branch = "main" }
+connector-stripe = { git = "https://github.com/AOT-Technologies/m8flow-connectors.git", subdirectory = "connectors/connector-stripe", branch = "main" }
 # dependencies for connector
 psycopg2-binary = "^2.9.9"
 
