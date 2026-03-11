@@ -13,12 +13,12 @@ RUN apt-get update \
   && apt-get clean -y \
   && rm -rf /var/lib/apt/lists/*
 
-RUN pip install poetry==2.2.1
+RUN /usr/local/bin/pip install poetry==2.2.1
 
 
 FROM base AS setup
 
-RUN pip install poetry==2.2.1
+RUN /usr/local/bin/pip install poetry==2.2.1
 RUN poetry config virtualenvs.create false
 RUN useradd _gunicorn --no-create-home --user-group
 
