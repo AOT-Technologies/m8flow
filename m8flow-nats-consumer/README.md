@@ -25,6 +25,7 @@ All variables are strictly required and must be provided via `.env` or the Docke
 
 | Variable                    | Example                    | Description                                                                                              |
 | --------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `M8FLOW_NATS_ENABLED`           | `true`    | Enable NATS                                                                                           |
 | `M8FLOW_NATS_URL`           | `nats://localhost:4222`    | NATS server URL                                                                                          |
 | `M8FLOW_NATS_STREAM_NAME`   | `M8FLOW_EVENTS`            | JetStream stream name                                                                                    |
 | `M8FLOW_NATS_SUBJECT`       | `m8flow.events.>`          | Subject filter for subscription                                                                          |
@@ -61,16 +62,16 @@ uv run python publisher.py \
   --realm              "your-keycloak-realm" \
   --client_id          "your-service-account-client-id" \
   --client_secret      "your-service-account-client-secret" \
-  --username           "john.doe@company.com" \
-  --process_identifier "new-workflow/nats-event-trigger-test" \
-  --payload            '{"customer_id": "123"}'
+  --username           "username-with-tenant-name" \
+  --process_identifier "group-name/process-model-name or key" \
+  --payload            '{"example-key" : "example-value"}'
 ```
 
 | Argument               | Required | Description                                              |
 | ---------------------- | -------- | -------------------------------------------------------- |
 | `--tenant_id`          | ✅       | M8Flow tenant UUID                                       |
-| `--process_identifier` | ✅       | BPMN process path                                        |
-| `--username`           | ✅       | M8Flow user who will own the process instance            |
+| `--process_identifier` | ✅       | BPMN process path (group-name/process-model-name or key)      |
+| `--username`           | ✅       | M8Flow username who will own the process instance (username with tenant name)          |
 | `--realm`              | ✅       | Keycloak realm name                                      |
 | `--client_id`          | ✅       | Service account client ID (needed to fetch `auth_token`) |
 | `--client_secret`      | ✅       | Service account client secret                            |
