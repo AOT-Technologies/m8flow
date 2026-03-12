@@ -530,24 +530,39 @@ def _sanitize_groups_for_partial_import(groups: list[dict[str, Any]]) -> list[di
     return out
 
 
+def _sanitize_user_realm_roles(user: dict[str, Any]) -> None:
+    realm_roles = user.get("realmRoles")
+    if not isinstance(realm_roles, list):
+        return
+    user["realmRoles"] = [role for role in realm_roles if role not in GLOBAL_ONLY_REALM_ROLE_NAMES]
+
+
+def _sanitize_user_credential(credential: Any) -> None:
+    if isinstance(credential, dict):
+        credential.pop("id", None)
+
+
+def _sanitize_user_for_partial_import(user: Any) -> dict[str, Any] | Any | None:
+    if not isinstance(user, dict):
+        return user
+    if user.get("username") in GLOBAL_ONLY_USERNAMES:
+        return None
+
+    user.pop("id", None)
+    _sanitize_user_realm_roles(user)
+    for credential in user.get("credentials") or []:
+        _sanitize_user_credential(credential)
+    return user
+
+
 def _sanitize_users_for_partial_import(users: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Strip id from users and their credentials for partial import."""
     out = copy.deepcopy(users)
     sanitized_users = []
     for user in out:
-        if isinstance(user, dict):
-            if user.get("username") in GLOBAL_ONLY_USERNAMES:
-                continue
-            user.pop("id", None)
-            realm_roles = user.get("realmRoles")
-            if isinstance(realm_roles, list):
-                user["realmRoles"] = [
-                    role for role in realm_roles if role not in GLOBAL_ONLY_REALM_ROLE_NAMES
-                ]
-            for cred in user.get("credentials") or []:
-                if isinstance(cred, dict):
-                    cred.pop("id", None)
-        sanitized_users.append(user)
+        sanitized_user = _sanitize_user_for_partial_import(user)
+        if sanitized_user is not None:
+            sanitized_users.append(sanitized_user)
     return sanitized_users
 
 
