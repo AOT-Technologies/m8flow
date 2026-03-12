@@ -1,7 +1,8 @@
 /**
  * When ENABLE_MULTITENANT and a tenant is stored, calls the backend tenant-login-url API.
- * On success redirects to backend /login with tenant param; on 404 shows "Tenant not found".
- * Otherwise renders the default Login view.
+ * On success redirects to backend /login with tenant param. If the stored tenant
+ * no longer exists (for example after resetting Keycloak), clear the stale tenant
+ * selection and return to the tenant picker. Otherwise renders the default Login view.
  */
 import { useEffect, useState } from 'react';
 import { Typography } from '@mui/material';
@@ -19,7 +20,6 @@ const getRedirectUrl = () =>
 
 export default function TenantAwareLogin() {
   const { ENABLE_MULTITENANT, BACKEND_BASE_URL } = useConfig();
-  const [tenantNotFound, setTenantNotFound] = useState(false);
   const [checking, setChecking] = useState(true);
 
   const storedTenant =
@@ -35,8 +35,9 @@ export default function TenantAwareLogin() {
     fetch(url, { method: 'GET', credentials: 'include' })
       .then((res) => {
         if (res.status === 404) {
-          setTenantNotFound(true);
-          setChecking(false);
+          localStorage.removeItem(M8FLOW_TENANT_STORAGE_KEY);
+          localStorage.removeItem('m8f_tenant_id');
+          globalThis.location.replace('/');
           return null;
         }
         if (!res.ok) {
@@ -61,20 +62,6 @@ export default function TenantAwareLogin() {
     return (
       <div style={{ padding: 24, textAlign: 'center' }}>
         <Typography>Redirecting to login…</Typography>
-      </div>
-    );
-  }
-
-  if (tenantNotFound) {
-    return (
-      <div style={{ padding: 24, maxWidth: 400 }}>
-        <Typography variant="h6" color="error">
-          Tenant not found
-        </Typography>
-        <Typography sx={{ mt: 1 }}>
-          The selected tenant does not exist in Keycloak. Please choose another tenant or contact
-          your administrator.
-        </Typography>
       </div>
     );
   }

@@ -88,8 +88,8 @@ def test_fill_realm_template_user_realm_roles() -> None:
     assert result["users"][1]["realmRoles"] == ["default-roles-tenant-f"]
 
 
-RBAC_REALM_ROLES = ("editor", "super-admin", "tenant-admin", "integrator", "reviewer", "viewer")
-RBAC_USERNAMES = ("editor", "integrator", "reviewer", "super-admin", "tenant-admin", "viewer")
+RBAC_REALM_ROLES = ("editor", "tenant-admin", "integrator", "reviewer", "viewer")
+RBAC_USERNAMES = ("editor", "integrator", "reviewer", "tenant-admin", "viewer")
 
 
 def test_fill_realm_template_rbac_roles_and_users() -> None:

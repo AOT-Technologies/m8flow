@@ -39,6 +39,8 @@ BACKEND_URL_PLACEHOLDER = "https://replace-me-with-spiff-backend-host-and-path/*
 FRONTEND_URL_PLACEHOLDER = "https://replace-me-with-spiff-frontend-host-and-path/*"
 FRONTEND_CLIENT_ID = "spiffworkflow-frontend"
 POST_LOGOUT_REDIRECT_URIS_ATTR = "post.logout.redirect.uris"
+GLOBAL_ONLY_REALM_ROLE_NAMES = frozenset({"super-admin"})
+GLOBAL_ONLY_USERNAMES = frozenset({"super-admin"})
 
 
 def _substitute_spoke_client_id(obj: Any, client_id: str) -> Any:
@@ -493,10 +495,16 @@ def _fill_realm_template(
 def _sanitize_roles_for_partial_import(roles: dict[str, Any]) -> dict[str, Any]:
     """Strip id and containerId from realm and client roles so Keycloak can assign new ones."""
     out = copy.deepcopy(roles)
+    realm_roles = []
     for role in out.get("realm") or []:
         if isinstance(role, dict):
+            if role.get("name") in GLOBAL_ONLY_REALM_ROLE_NAMES:
+                continue
             role.pop("id", None)
             role.pop("containerId", None)
+        realm_roles.append(role)
+    if "realm" in out:
+        out["realm"] = realm_roles
     for client_id, role_list in (out.get("client") or {}).items():
         if isinstance(role_list, list):
             for role in role_list:
@@ -525,13 +533,22 @@ def _sanitize_groups_for_partial_import(groups: list[dict[str, Any]]) -> list[di
 def _sanitize_users_for_partial_import(users: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Strip id from users and their credentials for partial import."""
     out = copy.deepcopy(users)
+    sanitized_users = []
     for user in out:
         if isinstance(user, dict):
+            if user.get("username") in GLOBAL_ONLY_USERNAMES:
+                continue
             user.pop("id", None)
+            realm_roles = user.get("realmRoles")
+            if isinstance(realm_roles, list):
+                user["realmRoles"] = [
+                    role for role in realm_roles if role not in GLOBAL_ONLY_REALM_ROLE_NAMES
+                ]
             for cred in user.get("credentials") or []:
                 if isinstance(cred, dict):
                     cred.pop("id", None)
-    return out
+        sanitized_users.append(user)
+    return sanitized_users
 
 
 def _sanitize_client_scopes_for_partial_import(scopes: list[dict[str, Any]]) -> list[dict[str, Any]]:

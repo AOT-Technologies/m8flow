@@ -17,9 +17,17 @@ def test_create_realm_from_template_includes_client_scopes(mock_load, mock_post,
         "defaultDefaultClientScopes": ["profile"],
         "defaultOptionalClientScopes": ["address"],
         "clients": [],
-        "roles": {"realm": []},
+        "roles": {
+            "realm": [
+                {"id": "tenant-admin-id", "name": "tenant-admin", "containerId": "template"},
+                {"id": "super-admin-id", "name": "super-admin", "containerId": "template"},
+            ]
+        },
         "groups": [],
-        "users": []
+        "users": [
+            {"id": "tenant-admin-user", "username": "tenant-admin", "realmRoles": ["tenant-admin"]},
+            {"id": "super-admin-user", "username": "super-admin", "realmRoles": ["super-admin"]},
+        ]
     }
     
     # Mock responses for realm creation (Step 1), partial import (Step 2), and GET realm (Step 3)
@@ -62,6 +70,8 @@ def test_create_realm_from_template_includes_client_scopes(mock_load, mock_post,
     
     assert payload["defaultDefaultClientScopes"] == ["profile"]
     assert payload["defaultOptionalClientScopes"] == ["address"]
+    assert [role["name"] for role in payload["roles"]["realm"]] == ["tenant-admin"]
+    assert [user["username"] for user in payload["users"]] == ["tenant-admin"]
     
     # Verify Step 3 (GET realm for UUID) was called
     mock_get.assert_called_once()

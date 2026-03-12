@@ -23,7 +23,7 @@ from m8flow_backend.canonical_db import get_canonical_db
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
 from m8flow_backend.tenancy import (
     DEFAULT_TENANT_ID,
-    PUBLIC_PATH_PREFIXES,
+    TENANT_CONTEXT_EXEMPT_PATH_PREFIXES,
     TENANT_CLAIM,
     allow_missing_tenant_context,
     get_context_tenant_id,
@@ -33,6 +33,15 @@ from m8flow_backend.tenancy import (
 )
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _is_master_login_return_request(tenant_id: str | None) -> bool:
+    try:
+        path = (getattr(request, "path", "") or "").strip()
+    except Exception:
+        return False
+    return tenant_id == "master" and "/login_return" in path
+
 
 def resolve_request_tenant() -> None:
     """
@@ -62,7 +71,8 @@ def resolve_request_tenant() -> None:
             "Canonical db not set; ensure app has been initialized (set_canonical_db must be called during startup)."
         )
 
-    if _is_public_request():
+    if _is_tenant_context_exempt_request():
+        g._m8flow_tenant_context_exempt_request = True
         g._m8flow_public_request = True
         return
 
@@ -111,6 +121,10 @@ def resolve_request_tenant() -> None:
                 status_code=400,
             )
 
+    if _is_master_login_return_request(tenant_id):
+        LOGGER.debug("Skipping tenant validation for master realm login_return callback.")
+        return
+
     # Validate tenant exists in DB (your tests expect this).
     # Return 503 when DB is not bound so we never proceed with unvalidated tenant id.
     # Flask-SQLAlchemy may raise RuntimeError when model not bound; message check for backward compatibility.
@@ -156,12 +170,16 @@ def teardown_request_tenant_context(_exc: Exception | None = None) -> None:
 # -------------------------
 
 
-def _is_public_request() -> bool:
+def _is_tenant_context_exempt_request() -> bool:
     try:
         path = getattr(request, "path", "") or ""
     except Exception:
         return False
-    return path_matches_any_prefix(path, PUBLIC_PATH_PREFIXES)
+    return path_matches_any_prefix(path, TENANT_CONTEXT_EXEMPT_PATH_PREFIXES)
+
+
+def _is_public_request() -> bool:
+    return _is_tenant_context_exempt_request()
 
 
 def _resolve_tenant_id() -> Optional[str]:

@@ -33,6 +33,21 @@ const getCurrentLocation = (queryParams: string = window.location.search) => {
   );
 };
 
+const getCurrentLocationRaw = (queryParams: string = window.location.search) => {
+  let queryParamString = '';
+  if (queryParams) {
+    queryParamString = `${queryParams}`;
+  }
+  return `${window.location.origin}${window.location.pathname}${queryParamString}`;
+};
+
+const normalizeRedirectUrl = (redirectUrl?: string | null) => {
+  if (!redirectUrl) {
+    return getCurrentLocationRaw();
+  }
+  return new URL(redirectUrl, window.location.origin).toString();
+};
+
 const redirectToLogin = () => {
   const encodedUrl = getCurrentLocation();
   const loginUrl = `/login?original_url=${encodedUrl}`;
@@ -42,7 +57,9 @@ const redirectToLogin = () => {
 const checkPathForTaskShowParams = (
   redirectUrl: string = window.location.href,
 ) => {
-  const pathSegments = parseTaskShowUrl(redirectUrl);
+  const pathSegments = parseTaskShowUrl(
+    normalizeRedirectUrl(redirectUrl),
+  );
   if (pathSegments) {
     return { process_instance_id: pathSegments[1], task_guid: pathSegments[2] };
   }
@@ -77,9 +94,10 @@ const doLogin = (
   authenticationOption?: AuthenticationOption,
   redirectUrl?: string | null,
 ) => {
-  const taskShowParams = checkPathForTaskShowParams(redirectUrl || undefined);
+  const normalizedRedirectUrl = normalizeRedirectUrl(redirectUrl);
+  const taskShowParams = checkPathForTaskShowParams(normalizedRedirectUrl);
   const loginParams = [
-    `redirect_url=${encodeURIComponent(redirectUrl || getCurrentLocation())}`,
+    `redirect_url=${encodeURIComponent(normalizedRedirectUrl)}`,
   ];
   if (taskShowParams) {
     loginParams.push(

@@ -19,6 +19,14 @@ keycloak_version=26.0.7
 keycloak_base_url="http://localhost:7002"
 keycloak_admin_user="admin"
 keycloak_admin_password="admin"
+keycloak_super_admin_user="${KEYCLOAK_SUPER_ADMIN_USER:-super-admin}"
+keycloak_super_admin_password="${KEYCLOAK_SUPER_ADMIN_PASSWORD:-super-admin}"
+keycloak_master_client_id="${M8FLOW_KEYCLOAK_SPOKE_CLIENT_ID:-spiffworkflow-backend}"
+keycloak_master_client_secret="${M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET:-${M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET:-JXeQExm0JhQPLumgHtIIqf52bDalHz0q}}"
+backend_public_url="${SPIFFWORKFLOW_BACKEND_URL:-${M8FLOW_BACKEND_URL:-http://localhost:8000}}"
+frontend_public_url="${SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND:-${M8FLOW_BACKEND_URL_FOR_FRONTEND:-http://localhost:8001}}"
+backend_redirect_uri="${backend_public_url%/}/*"
+frontend_logout_redirect_uri="${frontend_public_url%/}/*"
 
 # Get script directory
 script_dir="$(
@@ -152,6 +160,90 @@ sleep 3
 echo ":: Configuring master realm for HTTP access..."
 docker exec keycloak /opt/keycloak/bin/kcadm.sh config credentials --server http://localhost:8080 --realm master --user admin --password admin 2>/dev/null || true
 docker exec keycloak /opt/keycloak/bin/kcadm.sh update realms/master -s sslRequired=NONE 2>/dev/null || true
+
+function ensure_master_super_admin() {
+  echo ":: Ensuring master realm browser client, super-admin role, and user..."
+
+  local client_id
+  client_id=$(docker exec keycloak /opt/keycloak/bin/kcadm.sh get clients -r master -q clientId="${keycloak_master_client_id}" --fields id,clientId 2>/dev/null | jq -r '.[0].id // empty')
+
+  if [[ -z "$client_id" ]]; then
+    docker exec keycloak /opt/keycloak/bin/kcadm.sh create clients -r master \
+      -s clientId="${keycloak_master_client_id}" \
+      -s enabled=true \
+      -s publicClient=false \
+      -s bearerOnly=false \
+      -s secret="${keycloak_master_client_secret}" \
+      -s standardFlowEnabled=true \
+      -s directAccessGrantsEnabled=true \
+      -s serviceAccountsEnabled=true \
+      -s fullScopeAllowed=true \
+      -s 'defaultClientScopes=["web-origins","acr","profile","roles","email"]' \
+      -s 'optionalClientScopes=["address","phone","offline_access","microprofile-jwt"]' \
+      -s "redirectUris=[\"${backend_redirect_uri}\"]" \
+      -s "webOrigins=[\"${frontend_public_url%/}\"]" \
+      -s "attributes.\"post.logout.redirect.uris\"=${frontend_logout_redirect_uri}" >/dev/null
+    client_id=$(docker exec keycloak /opt/keycloak/bin/kcadm.sh get clients -r master -q clientId="${keycloak_master_client_id}" --fields id,clientId 2>/dev/null | jq -r '.[0].id // empty')
+  fi
+
+  if [[ -z "$client_id" ]]; then
+    echo >&2 "ERROR: Failed to resolve master realm client id for ${keycloak_master_client_id}"
+    return 1
+  fi
+
+  docker exec keycloak /opt/keycloak/bin/kcadm.sh update "clients/${client_id}" -r master \
+    -s enabled=true \
+    -s publicClient=false \
+    -s bearerOnly=false \
+    -s secret="${keycloak_master_client_secret}" \
+    -s standardFlowEnabled=true \
+    -s directAccessGrantsEnabled=true \
+    -s serviceAccountsEnabled=true \
+    -s fullScopeAllowed=true \
+    -s "redirectUris=[\"${backend_redirect_uri}\"]" \
+    -s "webOrigins=[\"${frontend_public_url%/}\"]" \
+    -s "attributes.\"post.logout.redirect.uris\"=${frontend_logout_redirect_uri}" >/dev/null
+
+  if ! docker exec keycloak /opt/keycloak/bin/kcadm.sh get "clients/${client_id}/protocol-mappers/models" -r master 2>/dev/null | jq -e '.[] | select(.name == "groups")' >/dev/null; then
+    docker exec keycloak /opt/keycloak/bin/kcadm.sh create "clients/${client_id}/protocol-mappers/models" -r master \
+      -s name=groups \
+      -s protocol=openid-connect \
+      -s protocolMapper=oidc-usermodel-realm-role-mapper \
+      -s consentRequired=false \
+      -s 'config."introspection.token.claim"=true' \
+      -s 'config.multivalued=true' \
+      -s 'config."userinfo.token.claim"=true' \
+      -s 'config."id.token.claim"=true' \
+      -s 'config."access.token.claim"=true' \
+      -s 'config."claim.name"=groups' \
+      -s 'config."jsonType.label"=String' >/dev/null
+  fi
+
+  docker exec keycloak /opt/keycloak/bin/kcadm.sh get roles/super-admin -r master >/dev/null 2>&1 \
+    || docker exec keycloak /opt/keycloak/bin/kcadm.sh create roles -r master -s name=super-admin >/dev/null
+
+  local user_id
+  user_id=$(docker exec keycloak /opt/keycloak/bin/kcadm.sh get users -r master -q username="${keycloak_super_admin_user}" --fields id,username 2>/dev/null | jq -r '.[0].id // empty')
+
+  if [[ -z "$user_id" ]]; then
+    docker exec keycloak /opt/keycloak/bin/kcadm.sh create users -r master \
+      -s username="${keycloak_super_admin_user}" \
+      -s enabled=true \
+      -s firstName="Super" \
+      -s lastName="Admin" >/dev/null
+    user_id=$(docker exec keycloak /opt/keycloak/bin/kcadm.sh get users -r master -q username="${keycloak_super_admin_user}" --fields id,username 2>/dev/null | jq -r '.[0].id // empty')
+  fi
+
+  if [[ -z "$user_id" ]]; then
+    echo >&2 "ERROR: Failed to resolve master realm super-admin user id"
+    return 1
+  fi
+
+  docker exec keycloak /opt/keycloak/bin/kcadm.sh set-password -r master --username "${keycloak_super_admin_user}" --new-password "${keycloak_super_admin_password}" >/dev/null
+  docker exec keycloak /opt/keycloak/bin/kcadm.sh add-roles -r master --uusername "${keycloak_super_admin_user}" --rolename super-admin >/dev/null 2>&1 || true
+}
+
+ensure_master_super_admin
 
 # Get admin token
 function get_admin_token() {

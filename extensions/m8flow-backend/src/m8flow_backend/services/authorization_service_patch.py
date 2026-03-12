@@ -14,6 +14,44 @@ M8FLOW_AUTH_EXCLUSION_ADDITIONS = [
     "m8flow_backend.routes.keycloak_controller.create_realm",
     "m8flow_backend.routes.tenant_controller.create_tenant",
 ]
+M8FLOW_ROLE_GROUP_IDENTIFIERS = frozenset(
+    {"super-admin", "tenant-admin", "editor", "viewer", "integrator", "reviewer"}
+)
+
+
+def _extract_realm_from_issuer(iss: str | None) -> str | None:
+    """Extract the Keycloak realm name from an issuer URL."""
+    if isinstance(iss, str) and "/realms/" in iss:
+        return iss.split("/realms/")[-1].split("/")[0]
+    return None
+
+
+def _apply_username_suffix(username: str, realm: str) -> str:
+    """Append @realm once so usernames stay unique across realms."""
+    suffix = f"@{realm}"
+    if username.endswith(suffix):
+        return username
+    return f"{username}{suffix}"
+
+
+def _keycloak_realm_roles_as_groups(user_info: dict[str, Any]) -> list[str]:
+    """
+    Fallback for tokens that do not expose a top-level groups claim.
+
+    Master-realm admin tokens commonly carry application roles in
+    realm_access.roles instead.
+    """
+    realm_access = user_info.get("realm_access")
+    if not isinstance(realm_access, dict):
+        return []
+    roles = realm_access.get("roles")
+    if not isinstance(roles, list):
+        return []
+    return [
+        role
+        for role in roles
+        if isinstance(role, str) and role in M8FLOW_ROLE_GROUP_IDENTIFIERS
+    ]
 
 
 def apply() -> None:
@@ -57,14 +95,19 @@ def apply() -> None:
             iss = user_info["iss"]
             sub = user_info.get("sub") or ""
 
-            # Extract realm from issuer URL, e.g., http://.../realms/my-realm
-            if "/realms/" in iss:
-                realm = iss.split("/realms/")[-1].split("/")[0]
-                # Only append if not already appended (idempotency)
-                suffix = f"@{realm}"
-                if not username.endswith(suffix):
+            if "groups" not in user_info:
+                derived_groups = _keycloak_realm_roles_as_groups(user_info)
+                if derived_groups:
                     user_info = user_info.copy()
-                    user_info["preferred_username"] = f"{username}{suffix}"
+                    user_info["groups"] = derived_groups
+
+            realm = _extract_realm_from_issuer(iss)
+            if realm:
+                # Only append if not already appended (idempotency)
+                desired_username = _apply_username_suffix(username, realm)
+                if desired_username != username:
+                    user_info = user_info.copy()
+                    user_info["preferred_username"] = desired_username
 
             # Avoid UniqueViolation on update: if an existing user (same iss+sub) would be
             # updated to desired_username but that username is already taken by a different user,

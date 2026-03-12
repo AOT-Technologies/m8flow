@@ -7,6 +7,14 @@ logger = logging.getLogger(__name__)
 
 # Realm name used by Keycloak and by the frontend cookie authentication_identifier.
 SPIFFWORKFLOW_LOCAL_REALM = "spiffworkflow-local"
+MASTER_REALM = "master"
+
+
+def _append_csv_value(existing: str | None, value: str) -> str:
+    items = [item.strip() for item in (existing or "").split(",") if item.strip()]
+    if value not in items:
+        items.append(value)
+    return ",".join(items)
 
 
 def ensure_realm_identifier_in_auth_configs(flask_app) -> None:
@@ -67,3 +75,33 @@ def ensure_tenant_auth_config(flask_app, tenant: str) -> None:
         logger.info("auth_config_service: added auth config for tenant realm %s", tenant)
     except Exception as exc:
         logger.warning("auth_config_service: failed to add auth config for %s: %s", tenant, exc)
+
+
+def ensure_master_auth_config(flask_app) -> None:
+    """Ensure SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS has an entry for the Keycloak master realm."""
+    configs = flask_app.config.get("SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS") or []
+    if any(c.get("identifier") == MASTER_REALM for c in configs):
+        return
+
+    try:
+        from m8flow_backend.config import keycloak_url, master_client_secret, spoke_client_id
+
+        realm_uri = f"{keycloak_url().rstrip('/')}/realms/{MASTER_REALM}"
+        template = copy.deepcopy(configs[0]) if configs else {}
+        new_config = template if isinstance(template, dict) else {}
+        new_config["identifier"] = MASTER_REALM
+        new_config["label"] = "Master"
+        new_config["uri"] = realm_uri
+        new_config["internal_uri"] = realm_uri
+        new_config["client_id"] = new_config.get("client_id") or spoke_client_id()
+        new_config["client_secret"] = new_config.get("client_secret") or master_client_secret()
+        new_config["additional_valid_client_ids"] = _append_csv_value(
+            new_config.get("additional_valid_client_ids"),
+            "admin-cli",
+        )
+        if new_config.get("additional_valid_issuers") is None:
+            new_config["additional_valid_issuers"] = []
+        configs.append(new_config)
+        logger.info("auth_config_service: added auth config for master realm")
+    except Exception as exc:
+        logger.warning("auth_config_service: failed to add auth config for master realm: %s", exc)

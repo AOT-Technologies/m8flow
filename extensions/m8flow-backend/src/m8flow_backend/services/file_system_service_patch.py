@@ -7,7 +7,7 @@ from m8flow_backend.tenancy import (
     DEFAULT_TENANT_ID,
     allow_missing_tenant_context,
     get_context_tenant_id,
-    is_public_request,
+    is_tenant_context_exempt_request,
 )
 
 _ORIGINALS: Dict[str, Any] = {}
@@ -15,7 +15,7 @@ _PATCHED = False
 
 def _get_tenant_id() -> str:
     """Get the current tenant id from context."""
-    if is_public_request():
+    if is_tenant_context_exempt_request():
         tid: Optional[str] = getattr(g, "m8flow_tenant_id", None)
         if tid:
             return tid

@@ -19,8 +19,12 @@ _DECODE_TOKEN_PATCHED = False
 _MASTER_REALM_PATCHED = False
 _REFRESH_TOKEN_TENANT_PATCHED = False
 
-# Path suffixes that may be called with Keycloak master realm tokens (bootstrap/admin).
-M8FLOW_MASTER_REALM_PATH_SUBSTRINGS = ("/m8flow/tenant-realms", "/m8flow/create-tenant")
+# Path suffixes that may be called with Keycloak master realm tokens (bootstrap/global admin).
+M8FLOW_MASTER_REALM_PATH_SUBSTRINGS = (
+    "/m8flow/tenant-realms",
+    "/m8flow/create-tenant",
+    "/m8flow/tenants",
+)
 LOGIN_RETURN_PATH_SUBSTRING = "/login_return"
 _MISSING = object()
 
@@ -274,7 +278,7 @@ def apply_master_realm_auth_patch() -> None:
     )
     _MASTER_REALM_PATCHED = True
     logger.info(
-        "master_realm_auth_patch: create-realm/create-tenant may use 'master' when Bearer present, no identifier, and master config exists."
+        "master_realm_auth_patch: global tenant-management endpoints may use 'master' when Bearer is present, no identifier is supplied, and a master auth config exists."
     )
 
 
@@ -373,9 +377,13 @@ def apply_login_tenant_patch(flask_app) -> None:
     if getattr(flask_app, "_m8flow_login_tenant_patch_applied", False):
         return
 
-    from m8flow_backend.services.auth_config_service import ensure_realm_identifier_in_auth_configs
+    from m8flow_backend.services.auth_config_service import (
+        ensure_master_auth_config,
+        ensure_realm_identifier_in_auth_configs,
+    )
 
     ensure_realm_identifier_in_auth_configs(flask_app)
+    ensure_master_auth_config(flask_app)
 
     def before_login_tenant():
         resp = _handle_tenant_login_request(flask_app)
