@@ -48,6 +48,5 @@ log_config="$repo_root/uvicorn-log.yaml"
 
 python -m uvicorn extensions.app:app \
   --host 0.0.0.0 --port 8000 \
-  --env-file "$repo_root/.env" \
   --app-dir "$repo_root" \
   --log-config "$log_config"

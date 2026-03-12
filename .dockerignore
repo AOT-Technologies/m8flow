@@ -1,43 +1,35 @@
-# Virtual envs (keep as-is for backward compatibility)
+# Virtualenvs
 .venv
 .venv/**
 **/.venv
 **/.venv/**
 
-# Git and IDE
+# VCS / CI
 .git
-.gitignore
-.gitattributes
+.github
 
-# Dependencies and build artifacts
+# Connector-proxy (not needed by backend, frontend, or keycloak contexts)
+m8flow-connector-proxy
+
+# Node (backend/keycloak don't need; frontend builds in-container)
+node_modules
 **/node_modules
+
+# Build artifacts and caches
 **/dist
+**/build
+**/.pytest_cache
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.log
+**/.mypy_cache
+**/.ruff_cache
+
+# Additional caches
 **/.cache
 
-# Python
-**/__pycache__
-**/.pytest_cache
-*.pyc
-*.pyo
-*.pyd
-
-# Tests (not needed in images)
-**/test
-**/tests
-
-# Docs and env (shrink context; no runtime need). .env allowed for frontend build (Vite loadEnv from repo root).
-docs/
-.env.*
-!.env
-*.md
-
-# Docker files (redundant in build context)
-docker/*.yml
-docker/*.conf
-docker/*.Dockerfile
-
 # Misc
-*.log
 .DS_Store
 *.swp
 *.swo

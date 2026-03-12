@@ -92,7 +92,47 @@ To run the **extensions app** (m8flow backend: tenant login URL, tenant APIs, an
 ./start_dev.sh
 ```
 
-Backend runs on port **7000** (override with `M8FLOW_BACKEND_PORT`), frontend on **7001**. For backend-only (e.g. in a separate terminal), run from repo root: `cd spiffworkflow-backend && uv sync`; if `M8FLOW_BACKEND_UPGRADE_DB=true`, run `uv run flask db upgrade`; then `export PYTHONPATH="$PWD/..:$PWD/../extensions/m8flow-backend/src:$PWD/src"` and `uv run uvicorn extensions.app:app --reload --host 0.0.0.0 --port ${M8FLOW_BACKEND_PORT:-7000}`.
+Backend runs on port **7000** (override with `M8FLOW_BACKEND_PORT`), frontend on **7001**. m8flow migrations run automatically at startup.
+
+To run a Celery worker with the same extension bootstrap/patch path, use:
+
+```bash
+./extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh
+```
+
+To run Flower (Celery monitoring UI) with the same bootstrap path:
+
+```bash
+./extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh flower
+```
+
+Local backend + container worker (hybrid):
+
+1. Start backend locally with `./extensions/m8flow-backend/bin/run_m8flow_backend.sh`.
+2. Configure worker/flower mounts to use host model directories:
+
+```bash
+export M8FLOW_BACKEND_CELERY_PROCESS_MODELS_MOUNT_SOURCE=../process_models
+```
+
+3. Start infra + worker from repo root:
+
+```bash
+docker compose -f docker/m8flow-docker-compose.yml up -d --build m8flow-db redis keycloak minio m8flow-celery-worker
+```
+
+4. Optional monitoring (Flower) for hybrid mode:
+
+```bash
+docker compose -f docker/m8flow-docker-compose.yml up -d --build m8flow-celery-flower
+```
+
+Open `http://<LOCAL_IP>:5555`.
+
+
+**Alternative — uv-based (sync deps + optional migrations):** If you use `uv` and want to sync backend deps and run SpiffWorkflow migrations before starting, use `./extensions/m8flow-backend/bin/setup_and_run_backend.sh` instead. That script uses port 7000 (`M8FLOW_BACKEND_PORT`) and `M8FLOW_BACKEND_UPGRADE_DB=true` for migrations.
+
+To run backend and frontend together (backend in background), use `./start_dev.sh` from repo root instead.
 
 **Mac Port Errors**: On a Mac, port 7000 (used by the backend) might be hijacked by Airplay. For those who upgraded to macOS 12.1 and are running everything locally, your AirPlay receiver may have started on Port 7000 and your server (which uses port 7000 by default) may fail due to this port already being used. You can disable this port in System Preferences > Sharing > AirPlay receiver.
 
@@ -313,3 +353,4 @@ m8flow builds upon the outstanding work of the **SpiffWorkflow community** and c
 ## License
 
 m8flow is released under the **GNU Lesser General Public License (LGPL)**.
+

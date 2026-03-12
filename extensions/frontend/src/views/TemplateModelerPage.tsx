@@ -13,6 +13,7 @@ import {
   Select,
   MenuItem,
 } from '@mui/material';
+import type { SelectChangeEvent } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import ProcessBreadcrumb from '@spiffworkflow-frontend/components/ProcessBreadcrumb';
 import DateAndTimeService from '@spiffworkflow-frontend/services/DateAndTimeService';
@@ -20,21 +21,45 @@ import HttpService from '../services/HttpService';
 import TemplateService from '../services/TemplateService';
 import TemplateFileList from '../components/TemplateFileList';
 import CreateProcessModelFromTemplateModal from '../components/CreateProcessModelFromTemplateModal';
-import { Template } from '../types/template';
+import { Template, TemplateVisibility } from '../types/template';
 import { normalizeTemplate } from '../utils/templateHelpers';
 import './TemplateModelerPage.css';
+import { usePermissionFetcher } from '@spiffworkflow-frontend/hooks/PermissionService';
+
+const VISIBILITY_OPTIONS: { value: TemplateVisibility; label: string }[] = [
+  { value: 'PRIVATE', label: 'Private (only you)' },
+  { value: 'TENANT', label: 'Tenant-wide (all users in your tenant)' },
+  { value: 'PUBLIC', label: 'Public (all authenticated users)' },
+];
 
 function TemplateDetailsCard({
   template,
   onExport,
   onPublish,
   onCreateProcessModel,
+  pendingVisibility,
+  onVisibilityChange,
+  onSaveVisibility,
+  isSaving,
 }: {
   template: Template;
   onExport: () => void;
   onPublish: () => void;
   onCreateProcessModel: () => void;
+  pendingVisibility: TemplateVisibility | null;
+  onVisibilityChange: (visibility: TemplateVisibility) => void;
+  onSaveVisibility: () => void;
+  isSaving: boolean;
 }) {
+  const { ability, permissionsLoaded } = usePermissionFetcher({
+    "/m8flow/templates": ["POST", "PUT"],
+  });
+
+  const canCreate = ability.can("POST", "/m8flow/templates");
+  const canPublish = ability.can("PUT", "/m8flow/templates");
+
+  if (!permissionsLoaded) return null;
+
   return (
     <Paper
       elevation={0}
@@ -54,7 +79,39 @@ function TemplateDetailsCard({
         {template.category && (
           <Chip size="small" label={`Category: ${template.category}`} variant="outlined" />
         )}
-        <Chip size="small" label={`Visibility: ${template.visibility}`} variant="outlined" />
+        {canPublish && !template.isPublished ? (
+          <>
+            <FormControl size="small" sx={{ minWidth: 140 }}>
+              <Select
+                value={pendingVisibility ?? template.visibility}
+                onChange={(e: SelectChangeEvent) =>
+                  onVisibilityChange(e.target.value as TemplateVisibility)
+                }
+                variant="outlined"
+                sx={{ height: 24, fontSize: '0.8125rem' }}
+              >
+                {VISIBILITY_OPTIONS.map((opt) => (
+                  <MenuItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            {pendingVisibility && pendingVisibility !== template.visibility && (
+              <Button
+                size="small"
+                variant="contained"
+                color="primary"
+                onClick={onSaveVisibility}
+                disabled={isSaving}
+              >
+                {isSaving ? 'Saving...' : 'Save'}
+              </Button>
+            )}
+          </>
+        ) : (
+          <Chip size="small" label={`Visibility: ${template.visibility}`} variant="outlined" />
+        )}
         {template.status && (
           <Chip size="small" label={`Status: ${template.status}`} variant="outlined" />
         )}
@@ -69,20 +126,27 @@ function TemplateDetailsCard({
         <Typography variant="caption" color="text.secondary">
           Updated: {DateAndTimeService.convertSecondsToFormattedDateTime(template.updatedAtInSeconds) ?? '—'}
         </Typography>
-        <Button
-          size="small"
-          variant="contained"
-          color="success"
-          startIcon={<AddIcon />}
-          onClick={onCreateProcessModel}
-        >
-          Create Process Model
-        </Button>
+        {canCreate && (
+          <Button
+            size="small"
+            variant="contained"
+            color="success"
+            startIcon={<AddIcon />}
+            onClick={onCreateProcessModel}
+          >
+            Create Process Model
+          </Button>
+        )}
         <Button size="small" variant="contained" onClick={onExport}>
           Export template
         </Button>
-        {!template.isPublished && (
-          <Button size="small" variant="contained" color="primary" onClick={onPublish}>
+        {canPublish && !template.isPublished && (
+          <Button
+            size="small"
+            variant="contained"
+            color="primary"
+            onClick={onPublish}
+          >
             Publish
           </Button>
         )}
@@ -115,6 +179,9 @@ export default function TemplateModelerPage() {
   const [versionsLoading, setVersionsLoading] = useState(false);
   const [createProcessModelOpen, setCreateProcessModelOpen] = useState(false);
   const [createProcessModelSuccess, setCreateProcessModelSuccess] = useState<string | null>(null);
+  const [pendingVisibility, setPendingVisibility] = useState<TemplateVisibility | null>(null);
+  const [isSavingVisibility, setIsSavingVisibility] = useState(false);
+  const [saveVisibilitySuccess, setSaveVisibilitySuccess] = useState(false);
 
   const id = templateId ? Number.parseInt(templateId, 10) : NaN;
 
@@ -214,6 +281,42 @@ export default function TemplateModelerPage() {
     const timer = globalThis.setTimeout(() => setCreateProcessModelSuccess(null), SUCCESS_ALERT_DURATION_MS);
     return () => globalThis.clearTimeout(timer);
   }, [createProcessModelSuccess]);
+
+  useEffect(() => {
+    if (!saveVisibilitySuccess) return;
+    const timer = globalThis.setTimeout(() => setSaveVisibilitySuccess(false), SUCCESS_ALERT_DURATION_MS);
+    return () => globalThis.clearTimeout(timer);
+  }, [saveVisibilitySuccess]);
+
+  const handleVisibilityChange = useCallback(
+    (visibility: TemplateVisibility) => {
+      if (!template) return;
+      if (visibility === template.visibility) {
+        setPendingVisibility(null);
+      } else {
+        setPendingVisibility(visibility);
+      }
+    },
+    [template],
+  );
+
+  const handleSaveVisibility = useCallback(() => {
+    if (!template || isNaN(id) || !pendingVisibility) return;
+    setError(null);
+    setIsSavingVisibility(true);
+    TemplateService.updateTemplate(id, { visibility: pendingVisibility })
+      .then((updated) => {
+        setTemplate(updated);
+        setPendingVisibility(null);
+        setSaveVisibilitySuccess(true);
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : 'Failed to update visibility');
+      })
+      .finally(() => {
+        setIsSavingVisibility(false);
+      });
+  }, [id, template, pendingVisibility]);
 
   const handleCreateProcessModelSuccess = useCallback((processModelId: string) => {
     setCreateProcessModelSuccess(processModelId);
@@ -326,6 +429,10 @@ export default function TemplateModelerPage() {
         onExport={handleExport}
         onPublish={handlePublish}
         onCreateProcessModel={() => setCreateProcessModelOpen(true)}
+        pendingVisibility={pendingVisibility}
+        onVisibilityChange={handleVisibilityChange}
+        onSaveVisibility={handleSaveVisibility}
+        isSaving={isSavingVisibility}
       />
       {exportError && (
         <Alert severity="error" sx={{ mb: 1 }} onClose={() => setExportError(null)}>
@@ -340,6 +447,11 @@ export default function TemplateModelerPage() {
       {publishSuccess && (
         <Alert severity="success" sx={{ mb: 1 }} onClose={() => setPublishSuccess(false)}>
           Template published successfully.
+        </Alert>
+      )}
+      {saveVisibilitySuccess && (
+        <Alert severity="success" sx={{ mb: 1 }} onClose={() => setSaveVisibilitySuccess(false)}>
+          Visibility updated successfully.
         </Alert>
       )}
       {createProcessModelSuccess && (

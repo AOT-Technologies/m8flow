@@ -100,16 +100,13 @@ export default function DiagramEditorToolbar({
           {t('diagram_download')}
         </Button>
       </Can>
-      <Can
-        I="GET"
-        a={targetUris.processModelFileShowPath}
-        ability={ability}
-      >
-        {canViewXml && (
-          <Button variant="contained" onClick={onViewXml}>
-            {t('diagram_view_xml')}
-          </Button>
-        )}
+      <Can I="GET" a={targetUris.processModelFileShowPath} ability={ability}>
+        {ability.can("PUT", targetUris.processModelFileShowPath) &&
+          canViewXml && (
+            <Button variant="contained" onClick={onViewXml}>
+              {t("diagram_view_xml")}
+            </Button>
+          )}
       </Can>
       {/* Save as Template moved to Process Model page (not in diagram editor) */}
       {referencesButton}

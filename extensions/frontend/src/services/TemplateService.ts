@@ -191,7 +191,7 @@ const TemplateService = {
       HttpService.makeCallToBackend({
         path: `${BASE_PATH}/templates/${id}`,
         httpMethod: "PUT",
-        postBody: bpmnXml !== undefined ? bpmnXml : JSON.stringify(updates),
+        postBody: bpmnXml !== undefined ? bpmnXml : updates,
         extraHeaders:
           Object.keys(extraHeaders).length > 0 ? extraHeaders : undefined,
         successCallback: (data: Record<string, unknown>) =>

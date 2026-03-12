@@ -1,11 +1,12 @@
-# extensions/cors_fallback_middleware.py
 """ASGI middleware that adds CORS headers when missing and handles OPTIONS preflight."""
 
-LOCAL_CORS_ORIGINS = frozenset([
-    "http://localhost:7001",
-    "http://127.0.0.1:7001",
-    "http://localhost:5173",
-])
+LOCAL_CORS_ORIGINS = frozenset(
+    [
+        "http://localhost:7001",
+        "http://127.0.0.1:7001",
+        "http://localhost:5173",
+    ]
+)
 
 
 def cors_headers(origin: str) -> list[tuple[bytes, bytes]]:
@@ -38,11 +39,13 @@ class CORSFallbackMiddleware:
 
         # Handle preflight: respond immediately with 200 + CORS headers.
         if scope.get("method") == "OPTIONS" and origin and origin in self.origins:
-            await send({
-                "type": "http.response.start",
-                "status": 200,
-                "headers": cors_headers(origin),
-            })
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 200,
+                    "headers": cors_headers(origin),
+                }
+            )
             await send({"type": "http.response.body", "body": b"", "more_body": False})
             return
 
@@ -55,7 +58,4 @@ class CORSFallbackMiddleware:
                     message = {**message, "headers": headers}
             await send(message)
 
-        try:
-            await self.app(scope, receive, send_with_cors)
-        except Exception:
-            raise
+        await self.app(scope, receive, send_with_cors)

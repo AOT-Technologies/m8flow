@@ -140,6 +140,23 @@ services:
       - ../extensions/m8flow-backend/bin/smtp_attachments_sync.sh:/smtp_attachments_sync.sh:ro
     restart: "no"
 
+  slack-attachments-sync:
+    profiles: ["init"]
+    image: alpine:3.20
+    entrypoint:
+      - /bin/sh
+      - /slack_attachments_sync.sh
+      - ${M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_USER_ACCESS_DIR:-/slack_attachments}
+    volumes:
+      - slack_attachments:${M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_USER_ACCESS_DIR:-/slack_attachments}
+      - ${M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_DIR:-../slack_attachments}:/host_attachments:ro
+      - ../extensions/m8flow-backend/bin/slack_attachments_sync.sh:/slack_attachments_sync.sh:ro
+    restart: "no"
+
+  # -------------------------
+  # APP SERVICES
+  # -------------------------
+
   m8flow-backend:
     build:
       context: ..
@@ -175,6 +192,44 @@ services:
       minio:
         condition: service_started
 
+  m8flow-celery-worker:
+    build:
+      context: ..
+      dockerfile: docker/m8flow.backend.Dockerfile
+    command: ["bash", "./extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh"]
+    env_file: ../.env
+    environment:
+      M8FLOW_BACKEND_RUNNING_IN_CELERY_WORKER: "true"
+      M8FLOW_BACKEND_RUN_BACKGROUND_SCHEDULER_IN_CREATE_APP: "false"
+      M8FLOW_BACKEND_UPGRADE_DB: "false"
+      M8FLOW_BACKEND_SW_UPGRADE_DB: "false"
+    volumes:
+      - ${M8FLOW_BACKEND_CELERY_PROCESS_MODELS_MOUNT_SOURCE:-process_models_cache}:/app/process_models
+    depends_on:
+      - m8flow-db
+      - keycloak
+      - redis
+      - minio
+
+  m8flow-celery-flower:
+    build:
+      context: ..
+      dockerfile: docker/m8flow.backend.Dockerfile
+    command: ["bash", "./extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh", "flower"]
+    env_file: ../.env
+    environment:
+      M8FLOW_BACKEND_RUNNING_IN_CELERY_WORKER: "false"
+      M8FLOW_BACKEND_RUN_BACKGROUND_SCHEDULER_IN_CREATE_APP: "false"
+      M8FLOW_BACKEND_UPGRADE_DB: "false"
+      M8FLOW_BACKEND_SW_UPGRADE_DB: "false"
+    ports:
+      - "5555:5555"
+    depends_on:
+      - m8flow-db
+      - keycloak
+      - redis
+      - minio
+
   m8flow-frontend:
     build:
       context: ..
@@ -198,6 +253,10 @@ services:
         source: "smtp_attachments"
         target: "${M8FLOW_CONNECTOR_SMTP_ATTACHMENTS_USER_ACCESS_DIR:-/email_attachments}"
         read_only: true
+      - type: volume
+        source: "slack_attachments"
+        target: "${M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_USER_ACCESS_DIR:-/slack_attachments}"
+        read_only: true
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:${CONNECTOR_PROXY_PORT:-8004}/liveness || exit 1"]
       interval: 10s
@@ -218,4 +277,6 @@ volumes:
   minio_data:
     driver: local
   smtp_attachments:
+    driver: local
+  slack_attachments:
     driver: local

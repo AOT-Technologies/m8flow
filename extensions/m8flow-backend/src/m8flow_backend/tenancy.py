@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import os
 from contextvars import ContextVar, Token
+from collections.abc import Iterable
 from typing import Optional, cast
 
 from flask import g, has_request_context
@@ -65,6 +66,24 @@ def allow_missing_tenant_context() -> bool:
     if value is None:
         return False
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def path_matches_prefix(path: str, prefix: str) -> bool:
+    """
+    True when path is exactly prefix or is a child path of prefix.
+
+    This avoids prefix-collision bugs like `/v1.0/login_return` matching
+    `/v1.0/login`.
+    """
+    if path == prefix:
+        return True
+    normalized_prefix = prefix if prefix.endswith("/") else f"{prefix}/"
+    return path.startswith(normalized_prefix)
+
+
+def path_matches_any_prefix(path: str, prefixes: Iterable[str]) -> bool:
+    """True when path matches any API prefix using segment-boundary semantics."""
+    return any(path_matches_prefix(path, prefix) for prefix in prefixes)
 
 
 def begin_request_context() -> Token:

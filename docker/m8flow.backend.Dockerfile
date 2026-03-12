@@ -59,28 +59,17 @@ RUN groupadd -r app -g 1000 && useradd -r -u 1000 -g app -d /app -s /bin/bash ap
 ENV PATH="/opt/venv/bin:$PATH"
 ENV VIRTUAL_ENV=/opt/venv
 
-# In-container startup: migrations, bootstrap, uvicorn (no external script; env from compose)
-RUN mkdir -p /app/bin && printf '%s\n' \
-  '#!/usr/bin/env bash' \
-  'set -e' \
-  'export PYTHONPATH="/app:/app/spiffworkflow-backend:/app/spiffworkflow-backend/src:/app/extensions/m8flow-backend/src:$PYTHONPATH"' \
-  'export SPIFFWORKFLOW_BACKEND_DATABASE_URI="${M8FLOW_BACKEND_DATABASE_URI:-$SPIFFWORKFLOW_BACKEND_DATABASE_URI}"' \
-  'export SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR="${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-$SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR}"' \
-  'cd /app/spiffworkflow-backend' \
-  'python -m flask db upgrade' \
-  'cd /app && python -m alembic -c /app/extensions/m8flow-backend/migrations/alembic.ini upgrade head' \
-  'if [[ "${M8FLOW_BACKEND_RUN_BOOTSTRAP:-}" != "false" ]]; then cd /app/spiffworkflow-backend && python bin/bootstrap.py; fi' \
-  'cd /app' \
-  'export SPIFFWORKFLOW_BACKEND_RUN_DATA_SETUP="${SPIFFWORKFLOW_BACKEND_RUN_DATA_SETUP:-false}"' \
-  'exec python -m uvicorn extensions.app:app --host 0.0.0.0 --port 8000 --app-dir /app --log-config /app/uvicorn-log.yaml' \
-  > /app/bin/run_backend_docker.sh && chmod +x /app/bin/run_backend_docker.sh
+# Fix CRLF issues for Windows users and ensure scripts are executable
+RUN sed -i 's/\r$//' /app/extensions/m8flow-backend/bin/run_m8flow_backend.sh \
+  && sed -i 's/\r$//' /app/extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh \
+  && chmod +x /app/extensions/m8flow-backend/bin/run_m8flow_backend.sh /app/extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh
 
 # Default to non-root user (SonarQube S6481); compose overrides with user: "0" so entrypoint can chown then gosu
 USER app
 
 # Entrypoint: chown volume dirs then run CMD as app user
 ENTRYPOINT ["/bin/bash", "-c", "chown -R app:app /app/process_models /app/templates 2>/dev/null || true; exec gosu app \"$@\"", "--"]
-CMD ["/app/bin/run_backend_docker.sh"]
+CMD ["/app/extensions/m8flow-backend/bin/run_m8flow_backend.sh"]
 
 # -----------------------------------------------------------------------------
 # Stage: dev (default) - full repo, editable install for local development (non-root)
@@ -111,21 +100,10 @@ COPY . /app
 
 RUN cd /app/spiffworkflow-backend && uv pip install --system -e .
 
-# In-container startup (same as prod): migrations, bootstrap, uvicorn
-RUN mkdir -p /app/bin && printf '%s\n' \
-  '#!/usr/bin/env bash' \
-  'set -e' \
-  'export PYTHONPATH="/app:/app/spiffworkflow-backend:/app/spiffworkflow-backend/src:/app/extensions/m8flow-backend/src:$PYTHONPATH"' \
-  'export SPIFFWORKFLOW_BACKEND_DATABASE_URI="${M8FLOW_BACKEND_DATABASE_URI:-$SPIFFWORKFLOW_BACKEND_DATABASE_URI}"' \
-  'export SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR="${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-$SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR}"' \
-  'cd /app/spiffworkflow-backend' \
-  'python -m flask db upgrade' \
-  'cd /app && python -m alembic -c /app/extensions/m8flow-backend/migrations/alembic.ini upgrade head' \
-  'if [[ "${M8FLOW_BACKEND_RUN_BOOTSTRAP:-}" != "false" ]]; then cd /app/spiffworkflow-backend && python bin/bootstrap.py; fi' \
-  'cd /app' \
-  'export SPIFFWORKFLOW_BACKEND_RUN_DATA_SETUP="${SPIFFWORKFLOW_BACKEND_RUN_DATA_SETUP:-false}"' \
-  'exec python -m uvicorn extensions.app:app --host 0.0.0.0 --port 8000 --app-dir /app --log-config /app/uvicorn-log.yaml' \
-  > /app/bin/run_backend_docker.sh && chmod +x /app/bin/run_backend_docker.sh
+# Fix CRLF issues for Windows users and ensure scripts are executable
+RUN sed -i 's/\r$//' /app/extensions/m8flow-backend/bin/run_m8flow_backend.sh \
+  && sed -i 's/\r$//' /app/extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh \
+  && chmod +x /app/extensions/m8flow-backend/bin/run_m8flow_backend.sh /app/extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh
 
 # Non-root user (same UID/GID as prod for volume permissions)
 RUN groupadd -r app -g 1000 && useradd -r -u 1000 -g app -d /app -s /bin/bash app \
@@ -136,4 +114,4 @@ USER app
 
 # Entrypoint: chown volume dirs then run CMD as app user
 ENTRYPOINT ["/bin/bash", "-c", "chown -R app:app /app/process_models /app/templates 2>/dev/null || true; exec gosu app \"$@\"", "--"]
-CMD ["/app/bin/run_backend_docker.sh"]
+CMD ["/app/extensions/m8flow-backend/bin/run_m8flow_backend.sh"]
