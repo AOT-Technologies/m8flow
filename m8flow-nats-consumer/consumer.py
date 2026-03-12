@@ -13,22 +13,19 @@ from nats.errors import ConnectionClosedError, TimeoutError, NoServersError
 from nats.js.errors import NotFoundError, KeyWrongLastSequenceError
 from nats.js.kv import KeyValue
 
-# Load environment variables (docker-compose passes env_file from root)
 load_dotenv()
 
-# Enforce absolute path for process models (overriding any generic relative .env paths)
 bpmn_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "process_models"))
 os.environ["M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR"] = bpmn_dir
 
-# Configure Logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] [%(name)s] %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger("m8flow.nats.consumer")
+logging.getLogger("m8flow.nats.token_service").setLevel(logging.DEBUG)
 
-# Config from Env (Strict production mode: fail-fast if missing)
 NATS_URL          = os.environ["M8FLOW_NATS_URL"]
 STREAM_NAME       = os.environ["M8FLOW_NATS_STREAM_NAME"]
 SUBJECT           = os.environ["M8FLOW_NATS_SUBJECT"]
@@ -36,13 +33,11 @@ DURABLE_NAME      = os.environ["M8FLOW_NATS_DURABLE_NAME"]
 FETCH_BATCH       = int(os.environ["M8FLOW_NATS_FETCH_BATCH"])
 FETCH_TIMEOUT     = float(os.environ["M8FLOW_NATS_FETCH_TIMEOUT"])
 
-# NATS KV config — used for event dedup
 DEDUP_BUCKET      = os.environ["M8FLOW_NATS_DEDUP_BUCKET"]
 DEDUP_TTL_SECONDS = int(os.environ["M8FLOW_NATS_DEDUP_TTL"])
 
 running = True
 
-# Global Flask App injected on startup
 flask_app = None
 
 def instantiate_process(
@@ -58,8 +53,6 @@ def instantiate_process(
     Returns the new process instance ID, or None if a pre-condition is not met.
     Raises on transient errors (e.g. DB failure) so the caller can requeue.
     """
-    # Lazy imports: these modules require env vars and Flask context to be ready.
-    # They cannot be imported at module level before load_dotenv() + bpmn_dir setup.
     from spiffworkflow_backend.models.db import db
     from spiffworkflow_backend.models.user import UserModel
     from spiffworkflow_backend.services.process_model_service import ProcessModelService
@@ -98,12 +91,11 @@ def instantiate_process(
 
 async def check_idempotency(kv: KeyValue | None, tenant_id: str, event_id: str) -> str | None:
     """Check if event is duplicate. Returns dedup_key if new/uncheckable, None if confirmed duplicate."""
-    dedup_key = f"{tenant_id}-{event_id}"  # NATS KV keys cannot contain colons
+    dedup_key = f"{tenant_id}-{event_id}"
     if kv:
         try:
             await kv.create(dedup_key, b"1")
         except KeyWrongLastSequenceError:
-            # KeyWrongLastSequenceError means the key already exists
             logger.warning(
                 "Duplicate event id='%s' for tenant='%s' — already processed. Discarding.",
                 event_id, tenant_id,
@@ -116,7 +108,6 @@ async def check_idempotency(kv: KeyValue | None, tenant_id: str, event_id: str) 
 
 async def process_message(msg: Any, kv: KeyValue | None) -> None:
     """Authenticate and process a single NATS event."""
-    # --- 1. Parse ---
     try:
         data = json.loads(msg.data.decode("utf-8"))
         logger.debug("Received event: %s", data)
@@ -125,13 +116,12 @@ async def process_message(msg: Any, kv: KeyValue | None) -> None:
         await msg.ack()
         return
 
-    # --- 2. Extract fields ---
     tenant_id          = data.get("tenant_id")
     process_identifier = data.get("process_identifier")
     username           = data.get("username")
     event_id           = data.get("id")
+    api_key            = data.get("api_key")
 
-    # --- 3. Validate required fields ---
     if not all([tenant_id, process_identifier, username]):
         logger.error(
             "Message missing required fields (tenant_id, process_identifier, username). "
@@ -140,7 +130,28 @@ async def process_message(msg: Any, kv: KeyValue | None) -> None:
         await msg.ack()
         return
 
-    # --- 4. Idempotency check (NATS KV) ---
+    if not api_key:
+        logger.error("Rejecting event: 'api_key' is missing. tenant=%s", tenant_id)
+        await msg.ack()
+        return
+
+    def _verify():
+        from m8flow_backend.services.nats_token_service import NatsTokenService
+        from m8flow_backend.tenancy import set_context_tenant_id, reset_context_tenant_id
+        with flask_app.app_context():
+            token = set_context_tenant_id(tenant_id)
+            try:
+                return NatsTokenService.verify_token(tenant_id, api_key)
+            finally:
+                reset_context_tenant_id(token)
+
+    is_valid = await asyncio.to_thread(_verify)
+
+    if not is_valid:
+        logger.error("Rejecting event: Invalid api_key for tenant %s", tenant_id)
+        await msg.ack()
+        return
+
     dedup_key = None
     if event_id and tenant_id:
         dedup_key = await check_idempotency(kv, tenant_id, event_id)
@@ -151,7 +162,6 @@ async def process_message(msg: Any, kv: KeyValue | None) -> None:
         if not event_id:
             logger.warning("Event has no 'id' field — idempotency cannot be guaranteed.")
 
-    # --- 6. Instantiate process (sync DB work in a thread) ---
     try:
         instance_id = await asyncio.to_thread(
             instantiate_process,
@@ -163,7 +173,6 @@ async def process_message(msg: Any, kv: KeyValue | None) -> None:
 
         if instance_id is None:
             logger.warning("Event processing aborted: pre-condition not met (see errors above).")
-            # Remove the dedup key so a corrected retry is accepted
             if dedup_key and kv:
                 try:
                     await kv.delete(dedup_key)
@@ -179,13 +188,12 @@ async def process_message(msg: Any, kv: KeyValue | None) -> None:
         await msg.ack()
     except Exception as e:
         logger.error("Process instantiation failed: %s", e)
-        # Remove the dedup key so the event can be requeued and retried
         if dedup_key and kv:
             try:
                 await kv.delete(dedup_key)
             except Exception:
                 pass
-        await msg.nak(delay=5)  # Requeue — likely a transient DB error
+        await msg.nak(delay=5)
 
 async def main() -> None:
     global flask_app
@@ -193,7 +201,6 @@ async def main() -> None:
     logger.info("Initializing M8Flow core application context...")
     from extensions.app import app as asgi_app
     flask_app = asgi_app.app.app
-    from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
 
     logger.info("Starting M8Flow NATS Consumer...")
     nc = NATS()
@@ -221,21 +228,19 @@ async def main() -> None:
 
     js = nc.jetstream()
 
-    # --- NATS KV store (for event deduplication) ---
     kv: KeyValue | None = None
     try:
         kv = await js.create_key_value(
             bucket=DEDUP_BUCKET,
             ttl=DEDUP_TTL_SECONDS,
-            max_bytes=0, # no limit
-            history=1,   # only need 1 revision
+            max_bytes=0,
+            history=1,
         )
         logger.info(f"NATS KV dedup bucket '{DEDUP_BUCKET}' ready (TTL: {DEDUP_TTL_SECONDS}s)")
     except Exception as e:
         logger.warning(f"KV dedup bucket unavailable ({e}) — dedup guard disabled. Events will be processed without idempotency protection.")
         kv = None
 
-    # Ensure the stream exists — create it if it doesn't (idempotent on restart)
     try:
         await js.stream_info(STREAM_NAME)
         logger.info(f"Stream '{STREAM_NAME}' already exists.")
@@ -259,7 +264,7 @@ async def main() -> None:
             for msg in msgs:
                 await process_message(msg, kv)
         except TimeoutError:
-            pass  # Normal — no messages in this poll window
+            pass
         except ConnectionClosedError:
             logger.warning("NATS connection closed, exiting loop.")
             break

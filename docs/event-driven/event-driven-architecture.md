@@ -9,24 +9,20 @@ M8Flow supports automatic triggering by external business events (e.g., "Order P
 ```mermaid
 flowchart TB
     subgraph External[External System]
-        Publisher(Event Publisher\ne.g., Billing Service)
-        Keycloak_fetch(Keycloak\nClient Credentials)
+        Publisher(Event Publisher e.g., Billing Service)
     end
 
     subgraph Infrastructure[M8Flow Docker Infrastructure]
         NATS(NATS JetStream Server)
-        Keycloak(Keycloak\nIdentity Provider)
 
         subgraph Consumer[m8flow-nats-consumer]
             Daemon(Asyncio Python Daemon)
-            RealmLookup(DB Lookup\nM8flowTenantModel by tenant_id)
-            Auth(JWT Validation\nvia JWKS)
-            UserLookup(UserModel Lookup\nby payload username)
+            Auth(API Key Validation NatsTokenService)
+            UserLookup(UserModel Lookup by payload username)
             FlaskCtx(Flask Application Context)
             SpiffSvc(ProcessInstanceService)
 
-            Daemon -->|tenant_id| RealmLookup
-            RealmLookup -->|realm/slug found| Auth
+            Daemon -->|tenant_id & api_key| Auth
             Auth -->|verified| UserLookup
             UserLookup -->|user resolved| FlaskCtx
             FlaskCtx -->|native invocation| SpiffSvc
@@ -36,14 +32,11 @@ flowchart TB
         Backend(M8Flow Backend API)
     end
 
-    Publisher -->|1. fetch JWT| Keycloak_fetch
-    Keycloak_fetch -->|signed JWT| Publisher
-    Publisher -->|2. publish event + JWT + username| NATS
+    Publisher -->|1. publish event + api_key + username| NATS
     NATS -->|durable pull fetch| Daemon
-    Auth -->|fetch JWKS| Keycloak
-    Keycloak -->|public keys| Auth
+    Auth -->|verify HMAC hash| DB
     SpiffSvc -->|direct transactions| DB
-    Backend -->|standard operations| DB
+    Backend -->|manage nats-tokens| DB
 ```
 
 ---
@@ -57,19 +50,18 @@ Every NATS event must carry the following JSON fields:
 | `tenant_id`          | ✅       | M8Flow tenant UUID — used for DB context switching |
 | `process_identifier` | ✅       | BPMN process path, e.g. `billing/invoice-paid`     |
 | `username`           | ✅       | M8Flow username who owns the process instance      |
-| `auth_token`         | ✅       | Keycloak JWT — proves the publisher is authorized  |
+| `api_key`            | ✅       | M8Flow API Key (from `/nats-tokens` API)           |
 | `payload`            | No       | Arbitrary JSON injected as process variables       |
 | `id`                 | No       | Event UUID — used for NATS KV idempotency/dedup    |
 
-> **Separation of concerns:** `auth_token` authenticates the publisher (who is allowed to send events). `username` controls which M8Flow user the workflow runs as. These are two distinct identities.
+> **Separation of concerns:** `api_key` authenticates the publisher system (proving they are allowed to send events for the tenant). `username` controls which M8Flow user the workflow runs as.
 
 ---
 
 ## 3. Core Concepts
 
-- **Keycloak Realm Resolution:** The consumer uses the `tenant_id` from the event payload to query the M8Flow database for the corresponding `tenant_slug`. This slug is used as the Keycloak realm name to fetch public keys.
-- **Strict JWT Verification:** Once the realm is resolved, the token signature, expiry, and issuer are cryptographically verified using the Keycloak JWKS endpoint. Unauthenticated events are discarded.
-- **Required Username:** The `username` field is required and must match an existing M8Flow `UserModel`. The JWT authenticates the _publisher_; the username controls _process ownership_.
+- **API Key Security:** The consumer reads the `api_key` from the event payload and verifies it securely. The provided key is hashed using HMAC-SHA256 with a salt, and compared via `NatsTokenService` against the hashed token stored in the tenant's `m8flow_nats_tokens` database table. Invalid keys result in the event being discarded.
+- **Required Username:** The `username` field is required and must match an existing M8Flow `UserModel`. The `api_key` authenticates the _publisher_; the username controls _process ownership_.
 - **Native Database Integration:** After authentication, `ProcessInstanceService` is invoked directly inside a Flask application context — no HTTP API hop.
 - **Durable Pull Consumer:** JetStream pull subscriptions provide backpressure — a high influx of events cannot overwhelm the backend.
 - **Tenant-Scoped Idempotency:** Uses NATS Key-Value (KV) store for exact-once processing. Events with the same `id` and `tenant_id` within the `M8FLOW_NATS_DEDUP_TTL` window (default 24h) are atomically discarded.
@@ -79,10 +71,9 @@ Every NATS event must carry the following JSON fields:
 
 ## 4. Security & Execution Model
 
-1. **Required fields validated** — `tenant_id`, `process_identifier`, `username`, and `auth_token` must all be present or the event is discarded.
+1. **Required fields validated** — `tenant_id`, `process_identifier`, `username`, and `api_key` must all be present or the event is discarded.
 2. **Idempotency check** — `consumer.py` attempts to atomically create a NATS KV entry `tenant_id-event_id`. If `KeyWrongLastSequenceError` is raised, it's a duplicate and is discarded.
-3. **Realm resolution** — `M8flowTenantModel` queried by `tenant_id` to get the `tenant_slug` (which maps to the Keycloak realm).
-4. **JWKS fetch & signature verification** — Public keys fetched from `{KEYCLOAK_URL}/realms/{tenant_slug}` and cached; JWT signature, expiry, and issuer fully validated.
+3. **API Key verification** — `NatsTokenService` computes the HMAC sum of the `api_key` and queries the database to compare against the hash stored in `NatsTokenModel` for that `tenant_id`.
 5. **User lookup** — `UserModel` queried by `username` from the payload. If not found, event is discarded.
 6. **Context activation** — Flask app context + `set_context_tenant_id(tenant_id)`.
 7. **Process instantiation** — `ProcessInstanceService.create_and_run_process_instance` called directly.
@@ -95,23 +86,19 @@ Every NATS event must carry the following JSON fields:
 ```mermaid
 sequenceDiagram
     participant External as External System / Publisher
-    participant Keycloak as Keycloak (OIDC)
     participant NATS as NATS Server (JetStream)
     participant Consumer as m8flow-nats-consumer
     participant DB as M8Flow Database
 
     Note over NATS: On boot, stream M8FLOW_EVENTS is auto-created
 
-    External->>Keycloak: Client Credentials Grant (client_id + secret)
-    Keycloak-->>External: Signed JWT (auth_token)
-
-    External->>NATS: Publish JSON {tenant_id, process_identifier, username, auth_token, payload}
+    External->>NATS: Publish JSON {tenant_id, process_identifier, username, api_key, payload}
     NATS-->>NATS: Message persisted to disk
 
     Consumer->>NATS: fetch(batch=10, timeout=2s)
     NATS-->>Consumer: Message
 
-    Consumer->>Consumer: Validate required fields (tenant_id, process_identifier, username, auth_token)
+    Consumer->>Consumer: Validate required fields (tenant_id, process_identifier, username, api_key)
 
     Consumer->>NATS: KV Create `tenant_id-event_id`
     alt Key already exists (Duplicate)
@@ -120,37 +107,28 @@ sequenceDiagram
     else Key created (New Event)
         NATS-->>Consumer: Success
 
-        Consumer->>DB: M8flowTenantModel.query.filter_by(id=tenant_id)
-        alt Tenant not found
-            DB-->>Consumer: None
+        Consumer->>DB: NatsTokenService.verify_token(tenant_id, api_key)
+        DB-->>Consumer: Boolean result
+        alt Invalid API Key
             Consumer->>NATS: msg.ack() — event discarded
-        else Tenant found (slug = realm)
-            DB-->>Consumer: M8flowTenantModel
-            Consumer->>Keycloak: GET {KEYCLOAK_URL}/realms/{slug}/protocol/openid-connect/certs
-            Keycloak-->>Consumer: JWKS (public keys, cached)
-            Consumer->>Consumer: Verify JWT signature + expiry + issuer against {KEYCLOAK_URL}/realms/{slug}
-
-            alt Token invalid or expired
+        else Valid API Key
+            Consumer->>DB: UserModel.query.filter_by(username=username)
+            alt User not found
+                DB-->>Consumer: None
                 Consumer->>NATS: msg.ack() — event discarded
-            else Token valid
-                Consumer->>DB: UserModel.query.filter_by(username=username)
-                alt User not found
-                    DB-->>Consumer: None
-                    Consumer->>NATS: msg.ack() — event discarded
-                else User found
-                    DB-->>Consumer: UserModel
+            else User found
+                DB-->>Consumer: UserModel
 
-                    activate Consumer
-                    Note over Consumer: within flask_app.app_context()
-                    Consumer->>Consumer: set_context_tenant_id(tenant_id)
-                    Consumer->>DB: ProcessInstanceService.create_and_run_process_instance(process_model, user)
-                    DB-->>Consumer: process_instance_id
-                    Note over Consumer: db.session.commit()
-                    Consumer->>Consumer: reset_context_tenant_id()
-                    deactivate Consumer
+                activate Consumer
+                Note over Consumer: within flask_app.app_context()
+                Consumer->>Consumer: set_context_tenant_id(tenant_id)
+                Consumer->>DB: ProcessInstanceService.create_and_run_process_instance(process_model, user)
+                DB-->>Consumer: process_instance_id
+                Note over Consumer: db.session.commit()
+                Consumer->>Consumer: reset_context_tenant_id()
+                deactivate Consumer
 
-                    Consumer->>NATS: msg.ack()
-                end
+                Consumer->>NATS: msg.ack()
             end
         end
     end

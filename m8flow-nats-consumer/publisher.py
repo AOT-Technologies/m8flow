@@ -24,7 +24,12 @@ async def main() -> None:
     parser.add_argument("--process_identifier", required=True,  help="BPMN process path, e.g. group/process-model")
     parser.add_argument("--username",           required=True,  help="M8Flow user who will own the process instance")
     parser.add_argument("--payload",            default="{}",   help="JSON string injected as process variables")
+    parser.add_argument("--api_key",            required=True,  help="M8Flow API key (from /nats-tokens API)")
     args = parser.parse_args()
+
+    if not args.api_key:
+        logger.error("--api_key is required.")
+        sys.exit(1)
 
     try:
         payload_dict = json.loads(args.payload)
@@ -32,7 +37,6 @@ async def main() -> None:
         logger.error("--payload is not valid JSON.")
         sys.exit(1)
 
-    # Connect to NATS
     nc = NATS()
     try:
         await nc.connect(NATS_URL)
@@ -48,18 +52,16 @@ async def main() -> None:
         "id":                 event_id,
         "subject":            subject,
         "tenant_id":          args.tenant_id,
+        "api_key":            args.api_key,
         "process_identifier": args.process_identifier,
         "username":           args.username,
         "payload":            payload_dict,
     }
 
     logger.info(f"Publishing to subject: {subject}")
-    logger.info(f"Event data: {json.dumps(event_data, indent=2)}")
+    logger.info(f"Event data: {event_data}")
 
     try:
-        # Nats-Msg-Id enables JetStream broker-level deduplication:
-        # if the same event_id is published again within the dedup window
-        # (default 2 min), the server discards the duplicate silently.
         ack = await js.publish(
             subject,
             json.dumps(event_data).encode("utf-8"),

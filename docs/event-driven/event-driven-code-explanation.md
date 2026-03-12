@@ -1,6 +1,6 @@
 # M8Flow NATS Code Organization
 
-This document is an index for the Event-Driven Architecture codebase. The consumer performs JWT authentication then runs process instances directly within the backend's Python application context.
+This document is an index for the Event-Driven Architecture codebase. The consumer performs API Key validation then runs process instances directly within the backend's Python application context.
 
 ---
 
@@ -8,7 +8,7 @@ This document is an index for the Event-Driven Architecture codebase. The consum
 
 ### `consumer.py`
 
-The main ingestion daemon. Connects to NATS, authenticates every event via Keycloak JWT, and instantiates processes natively.
+The main ingestion daemon. Connects to NATS, authenticates every event via an M8Flow API Key, and instantiates processes natively.
 
 #### Required Event Fields
 
@@ -19,13 +19,13 @@ The consumer immediately discards any message missing these fields:
 | `tenant_id`          | Identifies the M8Flow tenant (used for DB schema switching)      |
 | `process_identifier` | BPMN process path to instantiate                                 |
 | `username`           | M8Flow user who will own the process instance                    |
-| `auth_token`         | Keycloak JWT — proves the publisher is authorized to send events |
+| `api_key`            | M8Flow API Key — proves the publisher is authorized to send events |
 
-#### JWT Authentication Layer (`get_public_keys`, `validate_token`)
+#### API Key Authentication Layer (`NatsTokenService`)
 
-- **Issuer discovery:** `iss` claim decoded from the JWT (unverified read only) to determine the Keycloak realm URL. No realm config required — the token carries its own origin.
-- **JWKS fetch & cache:** Public keys fetched from `{iss}/protocol/openid-connect/certs` and cached in `jwks_cache` by issuer URL.
-- **Signature verification:** `jwt.decode` validates RSA signature, expiry, and issuer. Key rotation handled by cache invalidation and re-fetch.
+- **Secure Verification:** The `api_key` provided in the message payload is sent directly to `NatsTokenService.verify_token(tenant_id, api_key)`.
+- **HMAC Storage:** M8Flow never stores plain API keys. The incoming key is hashed securely via HMAC-SHA256, applying an internal salt.
+- **Comparison:** This hash is queried and compared cryptographically against the hash stored for the given tenant ID in `NatsTokenModel`.
 
 #### User Resolution
 
@@ -35,7 +35,7 @@ After the JWT is verified, the `username` from the payload is looked up in the M
 user = UserModel.query.filter_by(username=username).first()
 ```
 
-If the user does not exist, the event is discarded with an error log. The `username` payload field controls _process ownership_; the JWT controls _publisher authorization_ — these are two distinct identities.
+If the user does not exist, the event is discarded with an error log. The `username` payload field controls _process ownership_; the API key controls _publisher authorization_ — these are two distinct identities.
 
 #### Process Instantiation
 
@@ -58,10 +58,10 @@ If the user does not exist, the event is discarded with an error log. The `usern
 
 ### `publisher.py`
 
-CLI developer utility to publish signed test events. It:
+CLI developer utility to publish authenticated test events. It:
 
-1. Fetches a Keycloak JWT using Client Credentials Grant (`--client_id` + `--client_secret`)
-2. Embeds the JWT as `auth_token` in the event payload
+1. Takes an M8Flow API Key as the `--api_key` argument
+2. Embeds the API Key as `api_key` in the event payload
 3. Publishes the event to NATS JetStream
 
 Arguments:
@@ -71,12 +71,10 @@ Arguments:
 | `--tenant_id`          | ✅       | M8Flow tenant UUID                                                   |
 | `--process_identifier` | ✅       | Target BPMN process path                                             |
 | `--username`           | ✅       | M8Flow user who will own the process instance                        |
-| `--realm`              | ✅       | Keycloak realm name (e.g. `spiffworkflow`) — **not** the tenant UUID |
-| `--client_id`          | ✅       | Service account client ID (required to fetch `auth_token`)           |
-| `--client_secret`      | ✅       | Service account client secret                                        |
+| `--api_key`            | ✅       | M8Flow API Key (generated from `/m8flow/nats-tokens` API endpoint)   |
 | `--payload`            | No       | JSON string injected as event data                                   |
 
-> `client_id` and `client_secret` are only used for authentication — they prove the publisher is authorized. They have no relation to the `username` field.
+> The `api_key` is only used for authentication — it proves the publisher is authorized for the tenant. It has no relation to the `username` field.
 
 ---
 
