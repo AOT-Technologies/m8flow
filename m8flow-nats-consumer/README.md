@@ -6,16 +6,13 @@ Standalone Python service that bridges NATS JetStream to M8Flow's SpiffWorkflow 
 
 ## How it Works
 
-1. **Publisher** fetches a JWT from Keycloak (Client Credentials Grant) and publishes an event to NATS that includes:
-   - `auth_token` — the JWT (proves the publisher is authorized)
+1. **Publisher** publishes an event to NATS that includes:
    - `username` — the M8Flow user who should own the process instance
    - `tenant_id`, `process_identifier`, and optional `payload`
 2. **Consumer** pulls the event from the durable JetStream subscription
 3. **Idempotency check** — NATS KV lookup using `tenant_id-event_id`. Duplicate events are immediately acked and discarded.
-4. **Realm resolved** — The `tenant_id` from the payload is used to look up the `tenant_slug` in the M8Flow database (`M8flowTenantModel`). This slug is used as the Keycloak realm name.
-5. **JWT validated** via JWKS — Public keys are fetched from the resolved Keycloak realm and the token signature is strictly verified.
-6. **User resolved** — `username` looked up in `UserModel`; event discarded if not found
-7. **Process instantiated** — `ProcessInstanceService` called directly within a Flask app context and multi-tenant DB schema
+4. **User resolved** — `username` looked up in `UserModel`; event discarded if not found
+5. **Process instantiated** — `ProcessInstanceService` called directly within a Flask app context and multi-tenant DB schema
 
 ---
 
@@ -34,7 +31,6 @@ All variables are strictly required and must be provided via `.env` or the Docke
 | `M8FLOW_NATS_FETCH_TIMEOUT` | `2.0`                      | Fetch timeout in seconds                                                                                 |
 | `M8FLOW_NATS_DEDUP_BUCKET`  | `m8flow-dedup`             | Name of the NATS KV Bucket used for deduplication.                                                       |
 | `M8FLOW_NATS_DEDUP_TTL`     | `86400`                    | Time in seconds to remember an event to block duplicate processing.                                      |
-| `KEYCLOAK_URL`              | `http://192.168.1.89:7002` | Keycloak base URL. Used to construct the JWKS endpoint after resolving the realm name from the database. |
 
 ---
 
@@ -47,10 +43,8 @@ Every event must carry these fields — the consumer discards any message that i
 | `tenant_id`          | M8Flow tenant UUID                                |
 | `process_identifier` | BPMN process path, e.g. `billing/invoice-paid`    |
 | `username`           | M8Flow username who will own the process instance |
-| `auth_token`         | Keycloak JWT — authenticates the publisher        |
 | `payload`            | _(optional)_ JSON injected as process variables   |
 
-> `auth_token` and `username` serve different purposes. The JWT proves _who published the event_ (authorization). The `username` controls _which M8Flow user runs the workflow_ (process ownership). They can be different identities.
 
 ---
 
@@ -59,9 +53,6 @@ Every event must carry these fields — the consumer discards any message that i
 ```bash
 uv run python publisher.py \
   --tenant_id          "your-m8flow-tenant-uuid" \
-  --realm              "your-keycloak-realm" \
-  --client_id          "your-service-account-client-id" \
-  --client_secret      "your-service-account-client-secret" \
   --username           "username-with-tenant-name" \
   --process_identifier "group-name/process-model-name or key" \
   --payload            '{"example-key" : "example-value"}'
@@ -72,9 +63,6 @@ uv run python publisher.py \
 | `--tenant_id`          | ✅       | M8Flow tenant UUID                                       |
 | `--process_identifier` | ✅       | BPMN process path (group-name/process-model-name or key)      |
 | `--username`           | ✅       | M8Flow username who will own the process instance (username with tenant name)          |
-| `--realm`              | ✅       | Keycloak realm name                                      |
-| `--client_id`          | ✅       | Service account client ID (needed to fetch `auth_token`) |
-| `--client_secret`      | ✅       | Service account client secret                            |
 | `--payload`            | No       | JSON string of additional process variables              |
 
 ---
@@ -83,8 +71,6 @@ uv run python publisher.py \
 
 | Log                                  | Cause                                                                              |
 | ------------------------------------ | ---------------------------------------------------------------------------------- |
-| `Missing required fields`            | `tenant_id`, `process_identifier`, `username`, or `auth_token` absent from payload |
-| `Failed to fetch public keys`        | Keycloak unreachable from inside Docker (check `KEYCLOAK_URL` and network)         |
-| `Invalid or expired auth_token`      | JWT expired or wrong Keycloak realm/client                                         |
+| `Missing required fields`            | `tenant_id`, `process_identifier`, or `username` absent from payload |
 | `User 'x' not found in the database` | `--username` does not exist as an M8Flow user                                      |
 | `Process model ... not found`        | Wrong `--process_identifier` or process not deployed in M8Flow                     |

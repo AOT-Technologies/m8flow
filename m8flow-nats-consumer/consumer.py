@@ -1,11 +1,3 @@
-"""
-consumer.py - M8Flow NATS Consumer Service
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Standalone Python service that listens to NATS JetStream, validates
-incoming JWT tokens via Keycloak JWKS, and natively creates process
-instances in the M8Flow backend.
-"""
 import asyncio
 import json
 import logging
@@ -14,8 +6,6 @@ import signal
 import sys
 from typing import Any
 
-import httpx
-import jwt
 
 from dotenv import load_dotenv
 from nats.aio.client import Client as NATS
@@ -52,70 +42,8 @@ DEDUP_TTL_SECONDS = int(os.environ["M8FLOW_NATS_DEDUP_TTL"])
 
 running = True
 
-# Cache for Keycloak public keys — avoids a JWKS fetch on every message
-jwks_cache: dict = {}
-
 # Global Flask App injected on startup
 flask_app = None
-
-
-async def get_public_keys(issuer_url: str) -> dict | None:
-    """Fetch and cache the JWKS public keys from a Keycloak/OIDC issuer."""
-    if issuer_url in jwks_cache:
-        return jwks_cache[issuer_url]
-
-    jwks_url = f"{issuer_url.rstrip('/')}/protocol/openid-connect/certs"
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(jwks_url, timeout=5.0)
-            resp.raise_for_status()
-            public_keys = {
-                jwk["kid"]: jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(jwk))
-                for jwk in resp.json().get("keys", [])
-                if "kid" in jwk
-            }
-            jwks_cache[issuer_url] = public_keys
-            return public_keys
-    except Exception as e:
-        logger.error(f"Failed to fetch public keys from {jwks_url}: {e}")
-        return None
-
-
-async def validate_token(token: str, issuer_url: str) -> dict | None:
-    """Validate a JWT against the OIDC issuer. Returns decoded claims or None."""
-    try:
-        kid = jwt.get_unverified_header(token).get("kid")
-        if not kid:
-            logger.error("Token has no 'kid' in header.")
-            return None
-
-        public_keys = await get_public_keys(issuer_url)
-        if not public_keys or kid not in public_keys:
-            # Keys may have rotated — evict cache and retry once
-            jwks_cache.pop(issuer_url, None)
-            public_keys = await get_public_keys(issuer_url)
-            if not public_keys or kid not in public_keys:
-                logger.error(f"Could not find public key for kid: {kid}")
-                return None
-
-        # Audience validation is skipped: service account tokens may carry
-        # different audiences depending on Keycloak client scope configuration.
-        # Signature, expiry, and issuer are still fully validated.
-        return jwt.decode(
-            token,
-            key=public_keys[kid],
-            algorithms=["RS256"],
-            issuer=issuer_url,
-            options={"verify_aud": False},
-        )
-    except jwt.ExpiredSignatureError:
-        logger.error("Token has expired.")
-    except jwt.InvalidTokenError as e:
-        logger.error(f"Invalid token: {e}")
-    except Exception as e:
-        logger.error(f"Unexpected error validating token: {e}")
-    return None
-
 
 def instantiate_process(
     tenant_id: str,
@@ -168,7 +96,6 @@ def instantiate_process(
         finally:
             reset_context_tenant_id(token)
 
-
 async def check_idempotency(kv: KeyValue | None, tenant_id: str, event_id: str) -> str | None:
     """Check if event is duplicate. Returns dedup_key if new/uncheckable, None if confirmed duplicate."""
     dedup_key = f"{tenant_id}-{event_id}"  # NATS KV keys cannot contain colons
@@ -187,53 +114,6 @@ async def check_idempotency(kv: KeyValue | None, tenant_id: str, event_id: str) 
             
     return dedup_key
 
-
-async def authenticate_event(auth_token: str, username: str, tenant_id: str) -> bool:
-    """Validate JWT signature and issuer. Returns True if valid, False otherwise."""
-    keycloak_url = os.environ.get("KEYCLOAK_URL", "").rstrip("/")
-    if not keycloak_url:
-        logger.error("KEYCLOAK_URL environment variable is missing.")
-        return False
-        
-    try:
-        import asyncio
-        
-        # Run DB query in a sync thread to avoid blocking asyncio loop
-        def get_tenant_slug():
-            from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
-            with flask_app.app_context():
-                try:
-                    tenant = M8flowTenantModel.query.filter_by(id=tenant_id).first()
-                    if tenant:
-                        return tenant.slug
-                except Exception as e:
-                    logger.error(f"DB lookup failed for tenant: {e}")
-                    return None
-                return None
-                
-        realm_name = await asyncio.to_thread(get_tenant_slug)
-        if not realm_name:
-             logger.error(f"Could not resolve Keycloak realm for tenant_id: {tenant_id}")
-             return False
-             
-        issuer_url = f"{keycloak_url}/realms/{realm_name}"
-    except Exception as e:
-        logger.error(f"Error resolving Keycloak realm from database: {e}")
-        return False
-
-    decoded_token = await validate_token(auth_token, issuer_url)
-    if not decoded_token:
-        logger.error("Invalid or expired auth_token. Unauthorized. Event discarded.")
-        return False
-
-    logger.debug(
-        "Authenticated event | publisher='%s' target_user='%s'",
-        decoded_token.get("preferred_username"),
-        username,
-    )
-    return True
-
-
 async def process_message(msg: Any, kv: KeyValue | None) -> None:
     """Authenticate and process a single NATS event."""
     # --- 1. Parse ---
@@ -249,13 +129,12 @@ async def process_message(msg: Any, kv: KeyValue | None) -> None:
     tenant_id          = data.get("tenant_id")
     process_identifier = data.get("process_identifier")
     username           = data.get("username")
-    auth_token         = data.get("auth_token")
     event_id           = data.get("id")
 
     # --- 3. Validate required fields ---
-    if not all([tenant_id, process_identifier, username, auth_token]):
+    if not all([tenant_id, process_identifier, username]):
         logger.error(
-            "Message missing required fields (tenant_id, process_identifier, username, auth_token). "
+            "Message missing required fields (tenant_id, process_identifier, username). "
             "Discarding. data=%s", data,
         )
         await msg.ack()
@@ -271,11 +150,6 @@ async def process_message(msg: Any, kv: KeyValue | None) -> None:
     else:
         if not event_id:
             logger.warning("Event has no 'id' field — idempotency cannot be guaranteed.")
-
-    # --- 5. Authenticate: derive issuer from JWT, then validate signature ---
-    if not await authenticate_event(auth_token, username, tenant_id):
-        await msg.ack()
-        return
 
     # --- 6. Instantiate process (sync DB work in a thread) ---
     try:
@@ -312,7 +186,6 @@ async def process_message(msg: Any, kv: KeyValue | None) -> None:
             except Exception:
                 pass
         await msg.nak(delay=5)  # Requeue — likely a transient DB error
-
 
 async def main() -> None:
     global flask_app
@@ -362,7 +235,6 @@ async def main() -> None:
         logger.warning(f"KV dedup bucket unavailable ({e}) — dedup guard disabled. Events will be processed without idempotency protection.")
         kv = None
 
-
     # Ensure the stream exists — create it if it doesn't (idempotent on restart)
     try:
         await js.stream_info(STREAM_NAME)
@@ -399,13 +271,10 @@ async def main() -> None:
     await nc.close()
     logger.info("Consumer shutdown complete.")
 
-
-
 def handle_shutdown(sig, frame) -> None:
     global running
     logger.info("Shutdown signal received, gracefully stopping...")
     running = False
-
 
 if __name__ == "__main__":
     signal.signal(signal.SIGINT, handle_shutdown)
