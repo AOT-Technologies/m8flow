@@ -30,7 +30,8 @@ COPY uvicorn-log.yaml /app/uvicorn-log.yaml
 
 # Create venv and install backend non-editable (prod)
 RUN uv venv /opt/venv \
-  && uv pip install --python /opt/venv/bin/python /app/spiffworkflow-backend
+  && uv pip install --python /opt/venv/bin/python /app/spiffworkflow-backend \
+  && /opt/venv/bin/pip install flower
 
 # -----------------------------------------------------------------------------
 # Stage: prod - minimal runtime image for Linux / production (non-root)# -----------------------------------------------------------------------------
@@ -64,11 +65,15 @@ RUN sed -i 's/\r$//' /app/extensions/m8flow-backend/bin/run_m8flow_backend.sh \
   && sed -i 's/\r$//' /app/extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh \
   && chmod +x /app/extensions/m8flow-backend/bin/run_m8flow_backend.sh /app/extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh
 
+# Entrypoint script: safe for root and non-root
+COPY docker/m8flow-backend-entrypoint.sh /opt/m8flow-backend-entrypoint.sh
+RUN chmod +x /opt/m8flow-backend-entrypoint.sh
+
 # Default to non-root user (SonarQube S6481); compose overrides with user: "0" so entrypoint can chown then gosu
 USER app
 
-# Entrypoint: chown volume dirs then run CMD as app user
-ENTRYPOINT ["/bin/bash", "-c", "chown -R app:app /app/process_models /app/templates 2>/dev/null || true; exec gosu app \"$@\"", "--"]
+# Entrypoint: if root, chown volume dirs then drop to app; else exec directly
+ENTRYPOINT ["/opt/m8flow-backend-entrypoint.sh"]
 CMD ["/app/extensions/m8flow-backend/bin/run_m8flow_backend.sh"]
 
 # -----------------------------------------------------------------------------
@@ -94,7 +99,7 @@ RUN apt-get update \
   && git config --global http.sslVerify true \
   && git config --global http.sslCAInfo /etc/ssl/certs/ca-certificates.crt
 
-RUN pip install --upgrade pip && pip install uv
+RUN pip install --upgrade pip && pip install uv flower
 
 COPY . /app
 
@@ -105,6 +110,10 @@ RUN sed -i 's/\r$//' /app/extensions/m8flow-backend/bin/run_m8flow_backend.sh \
   && sed -i 's/\r$//' /app/extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh \
   && chmod +x /app/extensions/m8flow-backend/bin/run_m8flow_backend.sh /app/extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh
 
+# Entrypoint script: safe for root and non-root
+COPY docker/m8flow-backend-entrypoint.sh /opt/m8flow-backend-entrypoint.sh
+RUN chmod +x /opt/m8flow-backend-entrypoint.sh
+
 # Non-root user (same UID/GID as prod for volume permissions)
 RUN groupadd -r app -g 1000 && useradd -r -u 1000 -g app -d /app -s /bin/bash app \
   && chown -R app:app /app
@@ -112,6 +121,6 @@ RUN groupadd -r app -g 1000 && useradd -r -u 1000 -g app -d /app -s /bin/bash ap
 # Default to non-root user (SonarQube S6481); compose overrides with user: "0" so entrypoint can chown then gosu
 USER app
 
-# Entrypoint: chown volume dirs then run CMD as app user
-ENTRYPOINT ["/bin/bash", "-c", "chown -R app:app /app/process_models /app/templates 2>/dev/null || true; exec gosu app \"$@\"", "--"]
+# Entrypoint: if root, chown volume dirs then drop to app; else exec directly
+ENTRYPOINT ["/opt/m8flow-backend-entrypoint.sh"]
 CMD ["/app/extensions/m8flow-backend/bin/run_m8flow_backend.sh"]

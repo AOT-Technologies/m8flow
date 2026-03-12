@@ -7,6 +7,7 @@ from spiffworkflow_backend.routes import authentication_controller
 import m8flow_backend.routes.authentication_controller_patch as auth_patch_module
 from m8flow_backend.routes.authentication_controller_patch import (
     _handle_tenant_login_request,
+    _is_allowed_frontend_redirect_url,
     apply_refresh_token_tenant_patch,
     apply_login_tenant_patch,
 )
@@ -23,6 +24,30 @@ def test_handle_tenant_login_request_rejects_prefix_trick_redirect_url() -> None
 
     assert status_code == 400
     assert response.get_json()["detail"] == "Invalid redirect_url"
+
+
+def test_is_allowed_frontend_redirect_url_allows_relative_paths() -> None:
+    frontend = "https://app.example.com"
+    assert _is_allowed_frontend_redirect_url("/tasks", frontend) is True
+    assert _is_allowed_frontend_redirect_url("/tasks?foo=bar", frontend) is True
+
+
+def test_is_allowed_frontend_redirect_url_allows_exact_origin_match() -> None:
+    frontend = "https://app.example.com"
+    assert _is_allowed_frontend_redirect_url("https://app.example.com/tasks", frontend) is True
+
+
+def test_is_allowed_frontend_redirect_url_rejects_mismatched_origin() -> None:
+    frontend = "https://app.example.com"
+    assert _is_allowed_frontend_redirect_url("https://evil.example.com/tasks", frontend) is False
+
+
+def test_is_allowed_frontend_redirect_url_rejects_scheme_relative_and_prefix_tricks() -> None:
+    frontend = "https://app.example.com"
+    assert _is_allowed_frontend_redirect_url("//evil.com/tasks", frontend) is False
+    assert (
+        _is_allowed_frontend_redirect_url("https://app.example.com.evil.com/tasks", frontend) is False
+    )
 
 
 def test_apply_login_tenant_patch_is_idempotent(monkeypatch) -> None:

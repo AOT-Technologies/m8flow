@@ -54,7 +54,12 @@ def ensure_tenant_auth_config(flask_app, tenant: str) -> None:
 
     template = configs[0]
     try:
-        from m8flow_backend.config import keycloak_url
+        from m8flow_backend.config import (
+            keycloak_public_issuer_base,
+            keycloak_url,
+            spoke_client_id,
+            spoke_client_secret,
+        )
 
         base = keycloak_url().rstrip("/")
         realm_uri = f"{base}/realms/{tenant}"
@@ -63,7 +68,33 @@ def ensure_tenant_auth_config(flask_app, tenant: str) -> None:
         new_config["label"] = tenant
         new_config["uri"] = realm_uri
         new_config["internal_uri"] = realm_uri
+
+        # Additional valid issuers: include the public issuer when different from internal realm URI.
+        public_issuer_base = keycloak_public_issuer_base().rstrip("/")
+        public_realm_issuer = f"{public_issuer_base}/realms/{tenant}"
+        if public_realm_issuer and public_realm_issuer != realm_uri:
+            existing_additional = list(new_config.get("additional_valid_issuers") or [])
+            if public_realm_issuer not in existing_additional:
+                new_config["additional_valid_issuers"] = [*existing_additional, public_realm_issuer]
+
+        # Use the spoke client for tenant realms created via POST /tenant-realms so redirect URIs match.
+        new_config["client_id"] = spoke_client_id()
+        spoke_secret = spoke_client_secret()
+        if spoke_secret:
+            new_config["client_secret"] = spoke_secret
+
         configs.append(new_config)
         logger.info("auth_config_service: added auth config for tenant realm %s", tenant)
+
+        try:
+            from m8flow_backend.services.keycloak_service import ensure_backend_redirect_uri_in_keycloak_client
+
+            ensure_backend_redirect_uri_in_keycloak_client(tenant)
+        except Exception as exc:
+            logger.debug(
+                "auth_config_service: ensure_backend_redirect_uri_in_keycloak_client for %s: %s",
+                tenant,
+                exc,
+            )
     except Exception as exc:
         logger.warning("auth_config_service: failed to add auth config for %s: %s", tenant, exc)

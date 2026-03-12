@@ -6,7 +6,7 @@ m8flow_backend.services.auth_config_service (or mocks thereof).
 
 import sys
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -93,3 +93,45 @@ def test_re_raises_when_realm_does_not_exist(reset_patched_flag):
             with pytest.raises(AuthenticationOptionNotFoundError) as exc_info:
                 AuthenticationService.authentication_option_for_identifier("unknown-realm")
             assert "unknown-realm" in str(exc_info.value)
+
+
+def test_openid_endpoint_internal_uses_internal_host() -> None:
+    """
+    When discovery returns a token_endpoint on a public host, the patched
+    open_id_endpoint_for_name(internal=True) must rewrite it to use the internal
+    server_url host/port while preserving the path and query.
+    """
+    from m8flow_backend.services.authentication_service_patch import (
+        _patched_open_id_endpoint_for_name,
+    )
+
+    class DummyAuthService:
+        ENDPOINT_CACHE = {}
+        JSON_WEB_KEYSET_CACHE = {}
+
+        @classmethod
+        def server_url(cls, authentication_identifier: str, internal: bool = False) -> str:  # type: ignore[override]
+            if internal:
+                return "http://keycloak-proxy:7002/realms/m8flow"
+            return "http://localhost:7002/realms/m8flow"
+
+    auth_cls: MagicMock = MagicMock(spec=DummyAuthService)
+    auth_cls.ENDPOINT_CACHE = {
+        "m8flow": {
+            "token_endpoint": "http://localhost:7002/realms/m8flow/protocol/openid-connect/token?param=1",
+        },
+    }
+    auth_cls.JSON_WEB_KEYSET_CACHE = {}
+    auth_cls.server_url = DummyAuthService.server_url
+
+    url = _patched_open_id_endpoint_for_name(
+        auth_cls,
+        "token_endpoint",
+        authentication_identifier="m8flow",
+        internal=True,
+    )
+
+    assert (
+        url
+        == "http://keycloak-proxy:7002/realms/m8flow/protocol/openid-connect/token?param=1"
+    )

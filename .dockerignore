@@ -28,8 +28,3 @@ node_modules
 
 # Additional caches
 **/.cache
-
-# Misc
-.DS_Store
-*.swp
-*.swo

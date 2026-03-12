@@ -453,6 +453,102 @@ def tenant_login_authorization_url(realm: str) -> str:
     return f"{keycloak_url()}/realms/{realm}/protocol/openid-connect/auth"
 
 
+def ensure_backend_redirect_uri_in_keycloak_client(realm_id: str) -> None:
+    """Ensure the spiffworkflow-backend client in the given realm has the current backend and frontend
+    redirect URIs / web origins. Idempotent; safe to call on every ensure_tenant_auth_config.
+    Uses Keycloak Admin API; logs and skips on failure (e.g. missing admin credentials)."""
+    if not realm_id or not str(realm_id).strip():
+        return
+    realm_id = str(realm_id).strip()
+    backend_origin = _origin_from_url(
+        _env_public_url("SPIFFWORKFLOW_BACKEND_URL", "M8FLOW_BACKEND_URL")
+    )
+    frontend_origin = _origin_from_url(
+        _env_public_url("SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND", "M8FLOW_BACKEND_URL_FOR_FRONTEND")
+    )
+    backend_wildcard = _wildcard_from_origin(backend_origin)
+    frontend_wildcard = _wildcard_from_origin(frontend_origin)
+    if not backend_wildcard:
+        return
+    try:
+        token = get_master_admin_token()
+    except Exception as e:
+        logger.debug(
+            "ensure_backend_redirect_uri_in_keycloak_client: cannot get admin token for realm %s: %s",
+            realm_id,
+            e,
+        )
+        return
+    base_url = keycloak_url()
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    list_url = f"{base_url}/admin/realms/{realm_id}/clients?clientId={spoke_client_id()}"
+    try:
+        r = requests.get(list_url, headers=headers, timeout=30)
+        r.raise_for_status()
+        clients = r.json()
+    except Exception as e:
+        logger.warning(
+            "ensure_backend_redirect_uri_in_keycloak_client: list clients realm=%s error=%s",
+            realm_id,
+            e,
+        )
+        return
+    if not isinstance(clients, list) or len(clients) == 0:
+        return
+    client_internal_id = clients[0].get("id")
+    if not client_internal_id:
+        return
+    get_url = f"{base_url}/admin/realms/{realm_id}/clients/{client_internal_id}"
+    try:
+        r2 = requests.get(get_url, headers=headers, timeout=30)
+        r2.raise_for_status()
+        client = r2.json()
+    except Exception as e:
+        logger.warning(
+            "ensure_backend_redirect_uri_in_keycloak_client: get client realm=%s id=%s error=%s",
+            realm_id,
+            client_internal_id,
+            e,
+        )
+        return
+    redirect_uris = list(client.get("redirectUris") or [])
+    updated = False
+    if backend_wildcard and backend_wildcard not in redirect_uris:
+        redirect_uris.append(backend_wildcard)
+        updated = True
+    if frontend_wildcard and frontend_wildcard not in redirect_uris:
+        redirect_uris.append(frontend_wildcard)
+        updated = True
+    if updated:
+        client["redirectUris"] = _unique_strings(redirect_uris)
+    web_origins = list(client.get("webOrigins") or [])
+    if backend_origin and backend_origin not in web_origins:
+        web_origins.append(backend_origin)
+        updated = True
+    if frontend_origin and frontend_origin not in web_origins:
+        web_origins.append(frontend_origin)
+        updated = True
+    if updated:
+        client["webOrigins"] = _unique_strings(web_origins)
+    if not updated:
+        return
+    put_url = f"{base_url}/admin/realms/{realm_id}/clients/{client_internal_id}"
+    try:
+        r3 = requests.put(put_url, json=client, headers=headers, timeout=30)
+        r3.raise_for_status()
+        logger.info(
+            "ensure_backend_redirect_uri_in_keycloak_client: updated redirectUris/webOrigins for client %s in realm %s",
+            spoke_client_id(),
+            realm_id,
+        )
+    except Exception as e:
+        logger.warning(
+            "ensure_backend_redirect_uri_in_keycloak_client: PUT client realm=%s error=%s",
+            realm_id,
+            e,
+        )
+
+
 def _fill_realm_template(
     template: dict[str, Any], realm_id: str, display_name: str | None, template_name: str
 ) -> dict[str, Any]:
