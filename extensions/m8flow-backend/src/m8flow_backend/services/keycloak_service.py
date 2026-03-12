@@ -495,23 +495,36 @@ def _fill_realm_template(
 def _sanitize_roles_for_partial_import(roles: dict[str, Any]) -> dict[str, Any]:
     """Strip id and containerId from realm and client roles so Keycloak can assign new ones."""
     out = copy.deepcopy(roles)
-    realm_roles = []
-    for role in out.get("realm") or []:
-        if isinstance(role, dict):
-            if role.get("name") in GLOBAL_ONLY_REALM_ROLE_NAMES:
-                continue
-            role.pop("id", None)
-            role.pop("containerId", None)
-        realm_roles.append(role)
     if "realm" in out:
-        out["realm"] = realm_roles
-    for client_id, role_list in (out.get("client") or {}).items():
-        if isinstance(role_list, list):
-            for role in role_list:
-                if isinstance(role, dict):
-                    role.pop("id", None)
-                    role.pop("containerId", None)
+        out["realm"] = _sanitize_realm_roles_for_partial_import(out.get("realm") or [])
+    _sanitize_client_roles_for_partial_import(out.get("client"))
     return out
+
+
+def _sanitize_role_identifiers(role: Any) -> None:
+    if isinstance(role, dict):
+        role.pop("id", None)
+        role.pop("containerId", None)
+
+
+def _sanitize_realm_roles_for_partial_import(realm_roles: list[Any]) -> list[Any]:
+    sanitized_roles = []
+    for role in realm_roles:
+        if isinstance(role, dict) and role.get("name") in GLOBAL_ONLY_REALM_ROLE_NAMES:
+            continue
+        _sanitize_role_identifiers(role)
+        sanitized_roles.append(role)
+    return sanitized_roles
+
+
+def _sanitize_client_roles_for_partial_import(client_roles: Any) -> None:
+    if not isinstance(client_roles, dict):
+        return
+    for role_list in client_roles.values():
+        if not isinstance(role_list, list):
+            continue
+        for role in role_list:
+            _sanitize_role_identifiers(role)
 
 
 def _sanitize_groups_for_partial_import(groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
