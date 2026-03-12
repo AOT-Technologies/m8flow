@@ -40,11 +40,13 @@ services:
       KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak}
       KC_HTTP_PORT: ${KC_HTTP_PORT:-8080}
       KC_HOSTNAME_STRICT: ${KC_HOSTNAME_STRICT:-false}
-      KC_HOSTNAME: "${KEYCLOAK_HOSTNAME:-http://localhost:7002}"
+      KC_PROXY_HEADERS: ${KC_PROXY_HEADERS:-xforwarded}
+      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-localhost}
+      KC_HOSTNAME_URL: ${KEYCLOAK_HOSTNAME_URL:-http://localhost:7002}
     ports:
       - "7009:9000"
     healthcheck:
-      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/9000 && echo -e \"GET /health/ready HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && cat <&3 | head -1 | grep -q 200'"]
+      test: ["CMD-SHELL", "/opt/keycloak/bin/kcadm.sh config credentials --server \"http://127.0.0.1:$${KC_HTTP_PORT:-8080}$${KC_HTTP_RELATIVE_PATH:-}\" --realm master --user \"$${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}\" --password \"$${KC_BOOTSTRAP_ADMIN_PASSWORD:-admin}\" >/dev/null 2>&1"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -59,19 +61,6 @@ services:
       - ./nginx-keycloak-proxy.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       - keycloak
-
-  keycloak-init:
-    image: m8flow-keycloak
-    env_file: ../.env
-    environment:
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
-      KEYCLOAK_SERVER_URL: "http://keycloak:${KC_HTTP_PORT:-8080}"
-    entrypoint: ["/bin/bash", "/opt/keycloak/bin/keycloak-init-realms.sh"]
-    depends_on:
-      keycloak:
-        condition: service_started
-    restart: "no"
 
   redis:
     image: redis:6-alpine
@@ -185,8 +174,6 @@ services:
         condition: service_started
       keycloak:
         condition: service_healthy
-      keycloak-init:
-        condition: service_completed_successfully
       redis:
         condition: service_started
       minio:
@@ -235,6 +222,8 @@ services:
       context: ..
       dockerfile: docker/m8flow.frontend.Dockerfile
     env_file: ../.env
+    environment:
+      BACKEND_BASE_URL: "${M8FLOW_FRONTEND_BACKEND_BASE_URL:-http://localhost:7000}"
     ports:
       - "${M8FLOW_FRONTEND_PORT:-7001}:8080"
     depends_on:

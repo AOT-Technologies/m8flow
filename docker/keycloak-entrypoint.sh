@@ -3,9 +3,11 @@
 # Start Keycloak, then set sslRequired=NONE on realms for HTTP access (e.g. behind ALB without HTTPS).
 set -e
 
+BOOTSTRAP_USER="${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}"
+
 echo "[keycloak-entrypoint] Running bootstrap-admin user..."
 if /opt/keycloak/bin/kc.sh bootstrap-admin user \
-  --username admin \
+  --username "${BOOTSTRAP_USER}" \
   --password:env KC_BOOTSTRAP_ADMIN_PASSWORD \
   --no-prompt 2>/dev/null; then
   echo "[keycloak-entrypoint] Bootstrap-admin succeeded (master realm and admin created or already exist)."
@@ -22,7 +24,7 @@ KC_PID=$!
 KC_PORT="${KC_HTTP_PORT:-8080}"
 KC_PATH="${KC_HTTP_RELATIVE_PATH:-}"
 BASE="http://127.0.0.1:${KC_PORT}${KC_PATH}"
-USER="admin"
+USER="${BOOTSTRAP_USER}"
 PASS="${KC_BOOTSTRAP_ADMIN_PASSWORD:-admin}"
 TIMEOUT=180
 ELAPSED=0

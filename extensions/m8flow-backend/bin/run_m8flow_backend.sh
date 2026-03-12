@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "${script_dir}/../../.." && pwd)"
@@ -37,16 +38,26 @@ fi
 
 export SPIFFWORKFLOW_BACKEND_DATABASE_URI="${M8FLOW_BACKEND_DATABASE_URI}"
 export SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR="${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR}"
-cd "$repo_root/spiffworkflow-backend"
-if [[ "${M8FLOW_BACKEND_SW_UPGRADE_DB:-}" == "true" ]]; then
-  python -m flask db upgrade
+export SPIFFWORKFLOW_BACKEND_RUN_DATA_SETUP="${SPIFFWORKFLOW_BACKEND_RUN_DATA_SETUP:-false}"
+
+if [[ "${M8FLOW_BACKEND_UPGRADE_DB:-true}" != "false" ]]; then
+  cd "$repo_root/spiffworkflow-backend"
+  if [[ "${M8FLOW_BACKEND_SW_UPGRADE_DB:-true}" != "false" ]]; then
+    python -m flask db upgrade
+  fi
+  cd "$repo_root"
+  python -m alembic -c "$repo_root/extensions/m8flow-backend/migrations/alembic.ini" upgrade head
 fi
-python bin/bootstrap.py
-cd "$repo_root"
+
+if [[ "${M8FLOW_BACKEND_RUN_BOOTSTRAP:-}" != "false" ]]; then
+  cd "$repo_root/spiffworkflow-backend"
+  python bin/bootstrap.py
+  cd "$repo_root"
+fi
 
 log_config="$repo_root/uvicorn-log.yaml"
 
-python -m uvicorn extensions.app:app \
+exec python -m uvicorn extensions.app:app \
   --host 0.0.0.0 --port 8000 \
   --app-dir "$repo_root" \
   --log-config "$log_config"
