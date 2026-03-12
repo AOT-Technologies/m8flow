@@ -29,6 +29,78 @@ _MISSING = object()
 MASTER_REALM_IDENTIFIER = "master"
 
 
+def _call_original_auth_option_for_identifier(cls, authentication_identifier: str):
+    if _ORIGINAL_AUTH_OPTION_FOR_IDENTIFIER is None:
+        raise RuntimeError(
+            "Original AuthenticationService.authentication_option_for_identifier was not captured."
+        )
+    return _ORIGINAL_AUTH_OPTION_FOR_IDENTIFIER.__func__(cls, authentication_identifier)
+
+
+def _current_app_or_none():
+    try:
+        from flask import current_app
+    except ImportError:
+        return None
+    return current_app
+
+
+def _attempt_master_auth_config_retry(cls, authentication_identifier: str):
+    if authentication_identifier != MASTER_REALM_IDENTIFIER:
+        return _MISSING
+
+    try:
+        from m8flow_backend.services.auth_config_service import ensure_master_auth_config
+    except ImportError:
+        return _MISSING
+
+    current_app = _current_app_or_none()
+    if current_app is None:
+        return _MISSING
+
+    ensure_master_auth_config(current_app)
+    return _call_original_auth_option_for_identifier(cls, authentication_identifier)
+
+
+def _realm_exists_or_reraise(
+    authentication_identifier: str,
+    exc: AuthenticationOptionNotFoundError,
+) -> bool:
+    try:
+        from m8flow_backend.services.keycloak_service import realm_exists
+    except ImportError:
+        raise exc from exc
+    return realm_exists(authentication_identifier)
+
+
+def _ensure_tenant_auth_config_or_reraise(
+    authentication_identifier: str,
+    exc: AuthenticationOptionNotFoundError,
+) -> None:
+    try:
+        from m8flow_backend.services.auth_config_service import ensure_tenant_auth_config
+    except ImportError:
+        raise exc from exc
+
+    ensure_tenant_auth_config(_current_app_or_none(), authentication_identifier)
+
+
+@classmethod
+def _patched_authentication_option_for_identifier(cls, authentication_identifier: str):
+    try:
+        return _call_original_auth_option_for_identifier(cls, authentication_identifier)
+    except AuthenticationOptionNotFoundError as exc:
+        master_result = _attempt_master_auth_config_retry(cls, authentication_identifier)
+        if master_result is not _MISSING:
+            return master_result
+
+        if not _realm_exists_or_reraise(authentication_identifier, exc):
+            raise exc from exc
+
+        _ensure_tenant_auth_config_or_reraise(authentication_identifier, exc)
+        return _call_original_auth_option_for_identifier(cls, authentication_identifier)
+
+
 def apply_auth_config_on_demand_patch() -> None:
     """Patch AuthenticationService.authentication_option_for_identifier to add tenant config on demand."""
     global _ON_DEMAND_PATCHED, _ORIGINAL_AUTH_OPTION_FOR_IDENTIFIER
@@ -37,40 +109,6 @@ def apply_auth_config_on_demand_patch() -> None:
 
     if _ORIGINAL_AUTH_OPTION_FOR_IDENTIFIER is None:
         _ORIGINAL_AUTH_OPTION_FOR_IDENTIFIER = AuthenticationService.authentication_option_for_identifier
-
-    original = _ORIGINAL_AUTH_OPTION_FOR_IDENTIFIER
-
-    @classmethod
-    def _patched_authentication_option_for_identifier(cls, authentication_identifier: str):
-        try:
-            return original.__func__(cls, authentication_identifier)
-        except AuthenticationOptionNotFoundError as exc:
-            try:
-                from flask import current_app
-                from m8flow_backend.services.auth_config_service import ensure_master_auth_config
-            except ImportError:
-                current_app = None
-                ensure_master_auth_config = None
-
-            if authentication_identifier == "master" and current_app is not None and ensure_master_auth_config is not None:
-                ensure_master_auth_config(current_app)
-                return original.__func__(cls, authentication_identifier)
-
-            try:
-                from m8flow_backend.services.keycloak_service import realm_exists
-            except ImportError:
-                raise exc from exc
-
-            if not realm_exists(authentication_identifier):
-                raise exc from exc
-
-            try:
-                from m8flow_backend.services.auth_config_service import ensure_tenant_auth_config
-            except ImportError:
-                raise exc from exc
-
-            ensure_tenant_auth_config(current_app, authentication_identifier)
-            return original.__func__(cls, authentication_identifier)
 
     AuthenticationService.authentication_option_for_identifier = (
         _patched_authentication_option_for_identifier

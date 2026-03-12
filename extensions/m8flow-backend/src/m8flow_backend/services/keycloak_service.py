@@ -572,6 +572,74 @@ def _sanitize_idps_for_partial_import(idps: list[dict[str, Any]]) -> list[dict[s
     return out
 
 
+def _minimal_realm_creation_payload(full_payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "realm": full_payload.get("realm"),
+        "displayName": full_payload.get("displayName"),
+        "enabled": full_payload.get("enabled", True),
+        "sslRequired": full_payload.get("sslRequired", "none"),
+    }
+
+
+def _certificate_pem_or_none(client_id_to_find: str) -> str | None:
+    try:
+        return _get_certificate_pem_from_p12()
+    except Exception as e:
+        logger.warning(f"Could not configure JWT certificate for client {client_id_to_find}: {e}")
+        return None
+
+
+def _configure_spoke_client_authentication(client: dict[str, Any], client_id_to_find: str) -> None:
+    if client.get("clientId") != client_id_to_find:
+        return
+
+    cert_pem = _certificate_pem_or_none(client_id_to_find)
+    if not cert_pem:
+        return
+
+    client["clientAuthenticatorType"] = "client-jwt"
+    client.pop("secret", None)
+    if "attributes" not in client:
+        client["attributes"] = {}
+    client["attributes"]["jwt.credential.certificate"] = cert_pem
+
+
+def _sanitize_client_for_partial_import(client: dict[str, Any], *, client_id_to_find: str) -> None:
+    client.pop("id", None)
+
+    for mapper in client.get("protocolMappers", []):
+        if isinstance(mapper, dict):
+            mapper.pop("id", None)
+
+    # Strip authorization (UMA) settings to avoid Keycloak FK violation during sync:
+    # RESOURCE_SCOPE.SCOPE_ID -> RESOURCE_SERVER_SCOPE.ID delete order can trigger
+    # ModelDuplicateException / JdbcBatchUpdateException in ClientApplicationSynchronizer.
+    client.pop("authorizationSettings", None)
+    if client.get("authorizationServicesEnabled") is True:
+        client["authorizationServicesEnabled"] = False
+
+    _configure_spoke_client_authentication(client, client_id_to_find)
+
+
+def _partial_import_payload(full_payload: dict[str, Any]) -> dict[str, Any]:
+    clients = copy.deepcopy(full_payload.get("clients", []))
+    client_id_to_find = spoke_client_id()
+    for client in clients:
+        _sanitize_client_for_partial_import(client, client_id_to_find=client_id_to_find)
+
+    return {
+        "ifResourceExists": "SKIP",
+        "clients": clients,
+        "roles": _sanitize_roles_for_partial_import(full_payload.get("roles") or {}),
+        "groups": _sanitize_groups_for_partial_import(full_payload.get("groups") or []),
+        "users": _sanitize_users_for_partial_import(full_payload.get("users") or []),
+        "clientScopes": _sanitize_client_scopes_for_partial_import(full_payload.get("clientScopes") or []),
+        "identityProviders": _sanitize_idps_for_partial_import(full_payload.get("identityProviders") or []),
+        "defaultDefaultClientScopes": full_payload.get("defaultDefaultClientScopes", []),
+        "defaultOptionalClientScopes": full_payload.get("defaultOptionalClientScopes", []),
+    }
+
+
 def load_realm_template() -> dict[str, Any]:
     """Load the realm template JSON (spiffworkflow-realm.json). Placeholder __M8FLOW_SPOKE_CLIENT_ID__ is replaced with spoke_client_id() from env."""
     template_path = realm_template_path()
@@ -595,15 +663,10 @@ def create_realm_from_template(realm_id: str, display_name: str | None = None) -
     # Detect template realm name from JSON if present, else fallback to config
     template_name = template.get("realm") or template_realm_name()
     full_payload = _fill_realm_template(template, realm_id, display_name, template_name)
-    
+
     # Step 1: Create minimal realm first (avoids 500 error from full template)
-    minimal_payload = {
-        "realm": full_payload.get("realm"),
-        "displayName": full_payload.get("displayName"),
-        "enabled": full_payload.get("enabled", True),
-        "sslRequired": full_payload.get("sslRequired", "none"),
-    }
-    
+    minimal_payload = _minimal_realm_creation_payload(full_payload)
+
     token = get_master_admin_token()
     base_url = keycloak_url()
 
@@ -614,59 +677,10 @@ def create_realm_from_template(realm_id: str, display_name: str | None = None) -
         timeout=60,
     )
     r.raise_for_status()
-    
+
     # Step 2: Partial import of clients, roles, groups, and users from template.
     # Sanitize ids/containerIds so Keycloak can assign new ones and avoid conflicts.
-    clients = copy.deepcopy(full_payload.get("clients", []))
-    client_id_to_find = spoke_client_id()
-    for client in clients:
-        # Remove id and all nested ids
-        client.pop("id", None)
-        # Remove protocol mappers ids (they cause conflicts)
-        for mapper in client.get("protocolMappers", []):
-            if isinstance(mapper, dict):
-                mapper.pop("id", None)
-        # Strip authorization (UMA) settings to avoid Keycloak FK violation during sync:
-        # RESOURCE_SCOPE.SCOPE_ID -> RESOURCE_SERVER_SCOPE.ID delete order can trigger
-        # ModelDuplicateException / JdbcBatchUpdateException in ClientApplicationSynchronizer.
-        client.pop("authorizationSettings", None)
-        if client.get("authorizationServicesEnabled") is True:
-            client["authorizationServicesEnabled"] = False
-
-        # Configure spiffworkflow-backend client for JWT authentication (only when keystore is available)
-        if client.get("clientId") == client_id_to_find:
-            cert_pem = None
-            try:
-                cert_pem = _get_certificate_pem_from_p12()
-            except Exception as e:
-                logger.warning(f"Could not configure JWT certificate for client {client_id_to_find}: {e}")
-            if cert_pem:
-                client["clientAuthenticatorType"] = "client-jwt"
-                client.pop("secret", None)
-                if "attributes" not in client:
-                    client["attributes"] = {}
-                client["attributes"]["jwt.credential.certificate"] = cert_pem
-            else:
-                # Keystore missing: leave client as confidential with secret so upstream Basic auth token exchange works
-                pass  # do not set client-jwt, do not remove secret
-    
-    roles = _sanitize_roles_for_partial_import(full_payload.get("roles") or {})
-    groups = _sanitize_groups_for_partial_import(full_payload.get("groups") or [])
-    users = _sanitize_users_for_partial_import(full_payload.get("users") or [])
-    client_scopes = _sanitize_client_scopes_for_partial_import(full_payload.get("clientScopes") or [])
-    idps = _sanitize_idps_for_partial_import(full_payload.get("identityProviders") or [])
-
-    partial_import_payload = {
-        "ifResourceExists": "SKIP",
-        "clients": clients,
-        "roles": roles,
-        "groups": groups,
-        "users": users,
-        "clientScopes": client_scopes,
-        "identityProviders": idps,
-        "defaultDefaultClientScopes": full_payload.get("defaultDefaultClientScopes", []),
-        "defaultOptionalClientScopes": full_payload.get("defaultOptionalClientScopes", []),
-    }
+    partial_import_payload = _partial_import_payload(full_payload)
 
     r2 = requests.post(
         f"{base_url}/admin/realms/{realm_id}/partialImport",

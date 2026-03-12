@@ -27,6 +27,7 @@ backend_public_url="${SPIFFWORKFLOW_BACKEND_URL:-${M8FLOW_BACKEND_URL:-http://lo
 frontend_public_url="${SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND:-${M8FLOW_BACKEND_URL_FOR_FRONTEND:-http://localhost:8001}}"
 backend_redirect_uri="${backend_public_url%/}/*"
 frontend_logout_redirect_uri="${frontend_public_url%/}/*"
+JQ_FIRST_ID_EXPR='.[0].id // empty'
 
 # Get script directory
 script_dir="$(
@@ -165,7 +166,7 @@ function ensure_master_super_admin() {
   echo ":: Ensuring master realm browser client, super-admin role, and user..."
 
   local client_id
-  client_id=$(docker exec keycloak /opt/keycloak/bin/kcadm.sh get clients -r master -q clientId="${keycloak_master_client_id}" --fields id,clientId 2>/dev/null | jq -r '.[0].id // empty')
+  client_id=$(docker exec keycloak /opt/keycloak/bin/kcadm.sh get clients -r master -q clientId="${keycloak_master_client_id}" --fields id,clientId 2>/dev/null | jq -r "${JQ_FIRST_ID_EXPR}")
 
   if [[ -z "$client_id" ]]; then
     docker exec keycloak /opt/keycloak/bin/kcadm.sh create clients -r master \
@@ -183,7 +184,7 @@ function ensure_master_super_admin() {
       -s "redirectUris=[\"${backend_redirect_uri}\"]" \
       -s "webOrigins=[\"${frontend_public_url%/}\"]" \
       -s "attributes.\"post.logout.redirect.uris\"=${frontend_logout_redirect_uri}" >/dev/null
-    client_id=$(docker exec keycloak /opt/keycloak/bin/kcadm.sh get clients -r master -q clientId="${keycloak_master_client_id}" --fields id,clientId 2>/dev/null | jq -r '.[0].id // empty')
+    client_id=$(docker exec keycloak /opt/keycloak/bin/kcadm.sh get clients -r master -q clientId="${keycloak_master_client_id}" --fields id,clientId 2>/dev/null | jq -r "${JQ_FIRST_ID_EXPR}")
   fi
 
   if [[ -z "$client_id" ]]; then
@@ -223,7 +224,7 @@ function ensure_master_super_admin() {
     || docker exec keycloak /opt/keycloak/bin/kcadm.sh create roles -r master -s name=super-admin >/dev/null
 
   local user_id
-  user_id=$(docker exec keycloak /opt/keycloak/bin/kcadm.sh get users -r master -q username="${keycloak_super_admin_user}" --fields id,username 2>/dev/null | jq -r '.[0].id // empty')
+  user_id=$(docker exec keycloak /opt/keycloak/bin/kcadm.sh get users -r master -q username="${keycloak_super_admin_user}" --fields id,username 2>/dev/null | jq -r "${JQ_FIRST_ID_EXPR}")
 
   if [[ -z "$user_id" ]]; then
     docker exec keycloak /opt/keycloak/bin/kcadm.sh create users -r master \
@@ -231,7 +232,7 @@ function ensure_master_super_admin() {
       -s enabled=true \
       -s firstName="Super" \
       -s lastName="Admin" >/dev/null
-    user_id=$(docker exec keycloak /opt/keycloak/bin/kcadm.sh get users -r master -q username="${keycloak_super_admin_user}" --fields id,username 2>/dev/null | jq -r '.[0].id // empty')
+    user_id=$(docker exec keycloak /opt/keycloak/bin/kcadm.sh get users -r master -q username="${keycloak_super_admin_user}" --fields id,username 2>/dev/null | jq -r "${JQ_FIRST_ID_EXPR}")
   fi
 
   if [[ -z "$user_id" ]]; then

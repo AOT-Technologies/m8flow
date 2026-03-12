@@ -23,39 +23,39 @@ const getCookie = (key: string) => {
   return null;
 };
 
-const getCurrentLocation = (queryParams: string = window.location.search) => {
+const getCurrentLocation = (queryParams: string = globalThis.location.search) => {
   let queryParamString = '';
   if (queryParams) {
     queryParamString = `${queryParams}`;
   }
   return encodeURIComponent(
-    `${window.location.origin}${window.location.pathname}${queryParamString}`,
+    `${globalThis.location.origin}${globalThis.location.pathname}${queryParamString}`,
   );
 };
 
-const getCurrentLocationRaw = (queryParams: string = window.location.search) => {
+const getCurrentLocationRaw = (queryParams: string = globalThis.location.search) => {
   let queryParamString = '';
   if (queryParams) {
     queryParamString = `${queryParams}`;
   }
-  return `${window.location.origin}${window.location.pathname}${queryParamString}`;
+  return `${globalThis.location.origin}${globalThis.location.pathname}${queryParamString}`;
 };
 
 const normalizeRedirectUrl = (redirectUrl?: string | null) => {
   if (!redirectUrl) {
     return getCurrentLocationRaw();
   }
-  return new URL(redirectUrl, window.location.origin).toString();
+  return new URL(redirectUrl, globalThis.location.origin).toString();
 };
 
 const redirectToLogin = () => {
   const encodedUrl = getCurrentLocation();
   const loginUrl = `/login?original_url=${encodedUrl}`;
-  window.location.replace(loginUrl);
+  globalThis.location.replace(loginUrl);
 };
 
 const checkPathForTaskShowParams = (
-  redirectUrl: string = window.location.href,
+  redirectUrl: string = globalThis.location.href,
 ) => {
   const pathSegments = parseTaskShowUrl(
     normalizeRedirectUrl(redirectUrl),
@@ -111,13 +111,13 @@ const doLogin = (
     );
   }
   const url = `${BACKEND_BASE_URL}/login?${loginParams.join('&')}`;
-  window.location.href = url;
+  globalThis.location.href = url;
 };
 
 const doLogout = () => {
   const idToken = getIdToken();
 
-  const frontendBaseUrl = window.location.origin;
+  const frontendBaseUrl = globalThis.location.origin;
   let logoutRedirectUrl = `${BACKEND_BASE_URL}/logout?redirect_url=${frontendBaseUrl}&id_token=${idToken}&authentication_identifier=${getAuthenticationIdentifier()}`;
 
   // edge case. if the user is already logged out, just take them somewhere that will force them to sign in.
@@ -127,7 +127,7 @@ const doLogout = () => {
     logoutRedirectUrl += '&backend_only=true';
   }
 
-  window.location.href = logoutRedirectUrl;
+  globalThis.location.href = logoutRedirectUrl;
 };
 
 const getUserEmail = () => {
