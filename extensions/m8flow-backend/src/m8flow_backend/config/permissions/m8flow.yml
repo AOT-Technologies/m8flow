@@ -151,5 +151,7 @@ permissions:
     groups: ["viewer"]
     actions: [read]
     uri: /tasks/*
-
-  
+  manage-nats-tokens:
+    groups: ["tenant-admin", "integrator"]
+    actions: [all]
+    uri: /m8flow/nats-tokens
