@@ -4,18 +4,11 @@ These tests require m8flow_backend.services.keycloak_service and
 m8flow_backend.services.auth_config_service (or mocks thereof).
 """
 
-import sys
-from pathlib import Path
 from types import ModuleType
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
-
-# Ensure extensions is importable when tests run from workspace root
-_workspace_root = Path(__file__).resolve().parents[4]
-if str(_workspace_root) not in sys.path:
-    sys.path.insert(0, str(_workspace_root))
 
 # Skip entire module if optional deps not available (minimal/alternate test env)
 pytest.importorskip("m8flow_backend.services.keycloak_service")
@@ -141,6 +134,8 @@ def test_refresh_token_storage_tenant_maps_master_to_default() -> None:
 
 
 def test_store_refresh_token_uses_default_storage_scope_for_master(monkeypatch) -> None:
+    import sys
+
     from flask import Flask, g
 
     from m8flow_backend.services.authentication_service_patch import _patched_store_refresh_token
@@ -203,6 +198,8 @@ def test_store_refresh_token_uses_default_storage_scope_for_master(monkeypatch) 
 
 
 def test_get_refresh_token_uses_default_storage_scope_for_master(monkeypatch) -> None:
+    import sys
+
     from flask import Flask, g
 
     from m8flow_backend.services.authentication_service_patch import _patched_get_refresh_token
