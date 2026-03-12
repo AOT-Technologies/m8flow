@@ -4,7 +4,9 @@ import ast
 import base64
 from contextlib import contextmanager
 from functools import wraps
+from ipaddress import ip_address
 import logging
+import re
 from urllib.parse import unquote
 from urllib.parse import urlsplit
 
@@ -15,6 +17,7 @@ from spiffworkflow_backend.routes import authentication_controller
 logger = logging.getLogger(__name__)
 
 _PATCHED = False
+_COOKIE_DOMAIN_PATCHED = False
 _DECODE_TOKEN_PATCHED = False
 _MASTER_REALM_PATCHED = False
 _REFRESH_TOKEN_TENANT_PATCHED = False
@@ -30,7 +33,9 @@ _MISSING = object()
 
 
 def apply() -> None:
-    """Patch the authentication controller to resolve tenant after auth."""
+    """Patch the authentication controller with m8flow auth behavior."""
+    apply_cookie_domain_patch()
+
     global _PATCHED
     if _PATCHED:
         return
@@ -45,6 +50,74 @@ def apply() -> None:
 
     authentication_controller.omni_auth = patched_omni_auth  # type: ignore[assignment]
     _PATCHED = True
+
+
+def _frontend_cookie_domain(frontend_url: str) -> str | None:
+    """
+    Return a valid cookie domain for the configured frontend URL.
+
+    Browsers reject cookie Domain values that include a port, and they are also
+    picky about localhost/IP literals. For local development on localhost or a
+    LAN IP, host-only cookies are the most reliable choice, so return None.
+    """
+    candidate = (frontend_url or "").strip()
+    if not candidate:
+        return None
+
+    try:
+        parsed = urlsplit(candidate)
+        hostname = parsed.hostname
+    except ValueError:
+        hostname = None
+
+    if not hostname:
+        hostname = re.sub(r"^https?:\/\/", "", candidate).split("/")[0].split(":")[0].strip() or None
+
+    if not hostname:
+        return None
+
+    if hostname == "localhost" or "." not in hostname:
+        return None
+
+    try:
+        ip_address(hostname)
+        return None
+    except ValueError:
+        return hostname
+
+
+@contextmanager
+def _temporary_frontend_url(frontend_url: str):
+    from flask import current_app
+
+    previous = current_app.config.get("SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND")
+    current_app.config["SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND"] = frontend_url
+    try:
+        yield
+    finally:
+        current_app.config["SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND"] = previous
+
+
+def apply_cookie_domain_patch() -> None:
+    global _COOKIE_DOMAIN_PATCHED
+    if _COOKIE_DOMAIN_PATCHED:
+        return
+
+    original = authentication_controller._set_new_access_token_in_cookie
+
+    @wraps(original)
+    def patched_set_new_access_token_in_cookie(response):
+        from flask import current_app
+
+        frontend_url = str(current_app.config.get("SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND", ""))
+        cookie_domain = _frontend_cookie_domain(frontend_url)
+        patched_frontend_url = "localhost" if cookie_domain is None else f"https://{cookie_domain}"
+
+        with _temporary_frontend_url(patched_frontend_url):
+            return original(response)
+
+    authentication_controller._set_new_access_token_in_cookie = patched_set_new_access_token_in_cookie
+    _COOKIE_DOMAIN_PATCHED = True
 
 
 def _decode_state_authentication_identifier(state: str | None) -> str | None:
