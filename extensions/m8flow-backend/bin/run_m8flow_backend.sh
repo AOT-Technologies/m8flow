@@ -57,7 +57,8 @@ fi
 
 log_config="$repo_root/uvicorn-log.yaml"
 
-exec python -m uvicorn extensions.app:app \
-  --host 0.0.0.0 --port 8000 \
-  --app-dir "$repo_root" \
-  --log-config "$log_config"
+# Only pass --env-file when the file exists (ECS/task definition inject env; no .env in container).
+uvicorn_args=(--host 0.0.0.0 --port 8000 --app-dir "$repo_root" --log-config "$log_config")
+[[ -f "$env_file" ]] && uvicorn_args+=(--env-file "$env_file")
+
+exec python -m uvicorn extensions.app:app "${uvicorn_args[@]}"

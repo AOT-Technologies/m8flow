@@ -7,44 +7,76 @@ function error_handler() {
 trap 'error_handler ${LINENO} $?' ERR
 set -o errtrace -o errexit -o nounset -o pipefail
 
-# sort of like https://lithic.tech/blog/2020-05/react-dynamic-config, but without golang
-react_configs=$(env | grep -E "^SPIFFWORKFLOW_FRONTEND_RUNTIME_CONFIG_" || echo '')
-if [[ -n "$react_configs" ]]; then
+# Known plain env keys (no SPIFFWORKFLOW_FRONTEND_RUNTIME_CONFIG_ prefix) to inject when set.
+# ECS task definitions often set BACKEND_BASE_URL directly; other config.tsx keys can be added here.
+PLAIN_CONFIG_KEYS="BACKEND_BASE_URL"
+
+# Build combined list of KEY=value (prefixed vars first, then plain keys only if not already present).
+config_pairs=""
+while IFS= read -r line; do
+  [[ -z "$line" ]] && continue
+  raw_key="${line%%=*}"
+  key="${raw_key#SPIFFWORKFLOW_FRONTEND_RUNTIME_CONFIG_}"
+  [[ -z "$key" ]] && continue
+  value="${line#*=}"
+  value="$(printf '%s' "$value" | sed -E "s/(^['\"]|['\"]$)//g")"
+  if [[ -n "$value" ]]; then
+    config_pairs="${config_pairs}${key}=${value}"$'\n'
+  fi
+done <<< "$(env | grep -E '^SPIFFWORKFLOW_FRONTEND_RUNTIME_CONFIG_' || true)"
+
+for key in $PLAIN_CONFIG_KEYS; do
+  if echo "$config_pairs" | grep -q "^${key}="; then
+    continue
+  fi
+  value="${!key:-}"
+  if [[ -n "$value" ]]; then
+    config_pairs="${config_pairs}${key}=${value}"$'\n'
+  fi
+done
+
+# If we have any configs, inject them into index.html (single-pass sed).
+if [[ -n "${config_pairs}" ]]; then
   index_html_file="/usr/share/nginx/html/index.html"
   if [[ ! -f "$index_html_file" ]]; then
-    echo >&2 "ERROR: Could not find '${index_html_file}'. Cannot use SPIFFWORKFLOW_FRONTEND_RUNTIME_CONFIG values without it."
+    echo >&2 "ERROR: Could not find '${index_html_file}'. Cannot inject runtime config without it."
     exit 1
   fi
 
   if ! command -v sed >/dev/null; then
-    echo >&2 "ERROR: sed command not found. Cannot use SPIFFWORKFLOW_FRONTEND_RUNTIME_CONFIG values without it."
+    echo >&2 "ERROR: sed command not found. Cannot inject runtime config without it."
     exit 1
   fi
 
-  while IFS= read -r react_config; do
-    [[ -z "$react_config" ]] && continue
+  # Escape value for sed replacement and shell: \ -> \\, & -> \&, / -> \/, ' -> '\'', " -> \"
+  escape_value() {
+    printf '%s' "$1" | sed 's/\\/\\\\/g; s/&/\\&/g; s|/|\\/|g; s/'\''/'\''\\'\'''\''/g; s/"/\\"/g'
+  }
 
-    env_var=$(awk -F '=' '{print $1}' <<<"$react_config" | sed -E 's/^SPIFFWORKFLOW_FRONTEND_RUNTIME_CONFIG_//')
-    env_value=$(awk -F '=' '{print $2}' <<<"$react_config" | sed -E "s/(^['\"]|['\"]$)//g")
-
-    if [[ -z "$env_var" ]]; then
-      echo >&2 "ERROR: Could not parse react config line: '${react_config}'."
+  inject_string=""
+  while IFS= read -r pair; do
+    [[ -z "$pair" ]] && continue
+    key="${pair%%=*}"
+    value="${pair#*=}"
+    if [[ -z "$key" ]]; then
+      echo >&2 "ERROR: Could not parse config pair: '${pair}'."
       exit 1
     fi
-
-    if [[ -n "$env_value" ]]; then
-      escaped_react_config_value=$(sed -E 's|/|\\/|g' <<<"${env_value}")
-      # actually do the search and replace to add the js config to the html page
-      sed -i "s/\(window.spiffworkflowFrontendJsenv *= *{}\)/\1;window.spiffworkflowFrontendJsenv.${env_var} = '${escaped_react_config_value}'/" "$index_html_file"
-
-      env_value_grep_escaped=$(sed -E 's/\[/\\[/g' <<<"$env_value")
-      if ! grep -q "${env_var} = '${env_value_grep_escaped}'" "$index_html_file"; then
-        echo >&2 "ERROR: Could not find \"${env_var} = '${env_value}'\" in '${index_html_file}' after search and replace. It is likely that the assumptions in boot_server_in_docker about the contents of the html page have changed. Fix the glitch in boot_server_in_docker."
-        echo >&2 "index.html: $(cat $index_html_file)"
-        exit 1
-      fi
+    if [[ -z "$value" ]]; then
+      continue
     fi
-  done <<<"$react_configs"
+    escaped_val="$(escape_value "$value")"
+    inject_string="${inject_string};window.spiffworkflowFrontendJsenv.${key} = '${escaped_val}'"
+  done <<< "$config_pairs"
+
+  sed -i "s/\(window.spiffworkflowFrontendJsenv *= *{}\)/\1${inject_string}/" "$index_html_file"
+
+  first_key="$(echo "$config_pairs" | head -1 | cut -d= -f1)"
+  if [[ -n "$first_key" ]] && ! grep -q "spiffworkflowFrontendJsenv.${first_key} =" "$index_html_file"; then
+    echo >&2 "ERROR: Could not find injected config '${first_key}' in '${index_html_file}'. HTML structure may have changed."
+    echo >&2 "index.html: $(cat "$index_html_file")"
+    exit 1
+  fi
 fi
 
 port_to_use="${PORT0:-80}"

@@ -78,6 +78,12 @@ RUN rm -rf /etc/nginx/conf.d/*
 # Copy the nginx configuration file from the core frontend
 COPY spiffworkflow-frontend/docker_build/nginx.conf.template /var/tmp
 
+# Default internal port for nginx inside the container.
+# ECS and docker compose both route traffic to containerPort 8080,
+# so make the image listen on 8080 by default. Can be overridden
+# by setting SPIFFWORKFLOW_FRONTEND_INTERNAL_PORT explicitly.
+ENV SPIFFWORKFLOW_FRONTEND_INTERNAL_PORT=8080
+
 # Copy the built static files from the extension frontend into the nginx directory
 COPY --from=setup /app/extensions/frontend/dist /usr/share/nginx/html
 

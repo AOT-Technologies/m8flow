@@ -1,5 +1,5 @@
 # -----------------------------------------------------------------------------
-# Stage: builder (for prod) - install backend non-editable into venv
+# Stage: builder (for prod) - install backend into venv
 # -----------------------------------------------------------------------------
 FROM python:3.12.1-slim-bookworm AS builder
 
@@ -28,13 +28,15 @@ COPY spiffworkflow-backend /app/spiffworkflow-backend
 COPY extensions /app/extensions
 COPY uvicorn-log.yaml /app/uvicorn-log.yaml
 
-# Create venv and install backend non-editable (prod)
+# Create venv and install backend into it (prod). Use editable install so
+# non-code assets like api.yml remain available from the source tree.
 RUN uv venv /opt/venv \
-  && uv pip install --python /opt/venv/bin/python /app/spiffworkflow-backend \
-  && /opt/venv/bin/pip install flower
+  && uv pip install --python /opt/venv/bin/python -e /app/spiffworkflow-backend \
+  && uv pip install --python /opt/venv/bin/python flower
 
 # -----------------------------------------------------------------------------
-# Stage: prod - minimal runtime image for Linux / production (non-root)# -----------------------------------------------------------------------------
+# Stage: prod - minimal runtime image for Linux / production (non-root)
+# -----------------------------------------------------------------------------
 FROM python:3.12.1-slim-bookworm AS prod
 
 WORKDIR /app
@@ -53,6 +55,13 @@ RUN apt-get update \
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /app /app
 
+# Connexion resolves api.yml relative to the installed package (site-packages), not the source tree.
+# With editable install, uv may not create a physical spiffworkflow_backend dir in site-packages;
+# create it and copy the OpenAPI spec so add_api("api.yml") finds it.
+RUN mkdir -p /opt/venv/lib/python3.12/site-packages/spiffworkflow_backend \
+  && cp /app/spiffworkflow-backend/src/spiffworkflow_backend/api.yml \
+     /opt/venv/lib/python3.12/site-packages/spiffworkflow_backend/api.yml
+
 # Non-root user (fixed UID/GID for volume permissions)
 RUN groupadd -r app -g 1000 && useradd -r -u 1000 -g app -d /app -s /bin/bash app \
   && chown -R app:app /app /opt/venv
@@ -65,9 +74,25 @@ RUN sed -i 's/\r$//' /app/extensions/m8flow-backend/bin/run_m8flow_backend.sh \
   && sed -i 's/\r$//' /app/extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh \
   && chmod +x /app/extensions/m8flow-backend/bin/run_m8flow_backend.sh /app/extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh
 
-# Entrypoint script: safe for root and non-root
-COPY docker/m8flow-backend-entrypoint.sh /opt/m8flow-backend-entrypoint.sh
-RUN chmod +x /opt/m8flow-backend-entrypoint.sh
+# Entrypoint script: safe for root and non-root (written directly in the image)
+RUN cat <<'EOF' >/opt/m8flow-backend-entrypoint.sh \
+  && chmod +x /opt/m8flow-backend-entrypoint.sh
+#!/usr/bin/env bash
+set -e
+
+uid="$(id -u)"
+
+if [ "$uid" -eq 0 ]; then
+  # Best-effort: ensure shared volume mounts are writable by app user.
+  chown -R app:app /app/process_models /app/templates 2>/dev/null || true
+
+  # Drop privileges to app user for the main process.
+  exec gosu app "$@"
+fi
+
+# Already non-root; can't chown or switch users.
+exec "$@"
+EOF
 
 # Default to non-root user (SonarQube S6481); compose overrides with user: "0" so entrypoint can chown then gosu
 USER app
@@ -110,9 +135,25 @@ RUN sed -i 's/\r$//' /app/extensions/m8flow-backend/bin/run_m8flow_backend.sh \
   && sed -i 's/\r$//' /app/extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh \
   && chmod +x /app/extensions/m8flow-backend/bin/run_m8flow_backend.sh /app/extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh
 
-# Entrypoint script: safe for root and non-root
-COPY docker/m8flow-backend-entrypoint.sh /opt/m8flow-backend-entrypoint.sh
-RUN chmod +x /opt/m8flow-backend-entrypoint.sh
+# Entrypoint script: safe for root and non-root (written directly in the image)
+RUN cat <<'EOF' >/opt/m8flow-backend-entrypoint.sh \
+  && chmod +x /opt/m8flow-backend-entrypoint.sh
+#!/usr/bin/env bash
+set -e
+
+uid="$(id -u)"
+
+if [ "$uid" -eq 0 ]; then
+  # Best-effort: ensure shared volume mounts are writable by app user.
+  chown -R app:app /app/process_models /app/templates 2>/dev/null || true
+
+  # Drop privileges to app user for the main process.
+  exec gosu app "$@"
+fi
+
+# Already non-root; can't chown or switch users.
+exec "$@"
+EOF
 
 # Non-root user (same UID/GID as prod for volume permissions)
 RUN groupadd -r app -g 1000 && useradd -r -u 1000 -g app -d /app -s /bin/bash app \
