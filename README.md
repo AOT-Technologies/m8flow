@@ -85,14 +85,14 @@ Edit the `.env` file if adjustments are required for the local setup. Key tenanc
 
 To run the **extensions app** (m8flow backend: tenant login URL, tenant APIs, and DB migrations for m8flow):
 
-1. Ensure `.env` at repo root has `M8FLOW_BACKEND_DATABASE_URI`. Optionally set `M8FLOW_BACKEND_SW_UPGRADE_DB=true` to run SpiffWorkflow DB migrations before start.
-2. From repo root:
+1. Ensure `.env` at repo root has `M8FLOW_BACKEND_DATABASE_URI`. Optionally set `M8FLOW_BACKEND_UPGRADE_DB=true` to run SpiffWorkflow DB migrations before start. Other options: `M8FLOW_BACKEND_RUN_BOOTSTRAP=false`, `SPIFFWORKFLOW_BACKEND_RUN_DATA_SETUP` (see sample.env).
+2. From repo root, run backend and frontend together (backend in background):
 
 ```bash
-./extensions/m8flow-backend/bin/run_m8flow_backend.sh
+./start_dev.sh
 ```
 
-Backend runs on port **8000**. m8flow migrations run automatically at startup.
+Backend runs on port **7000** (override with `M8FLOW_BACKEND_PORT`), frontend on **7001**. m8flow migrations run automatically at startup.
 
 To run a Celery worker with the same extension bootstrap/patch path, use:
 
@@ -108,7 +108,7 @@ To run Flower (Celery monitoring UI) with the same bootstrap path:
 
 Local backend + container worker (hybrid):
 
-1. Start backend locally with `./extensions/m8flow-backend/bin/run_m8flow_backend.sh`).
+1. Start backend locally with `./extensions/m8flow-backend/bin/run_m8flow_backend.sh`.
 2. Configure worker/flower mounts to use host model directories:
 
 ```bash
@@ -164,13 +164,23 @@ If the init containers are not needed:
 docker compose -f docker/m8flow-docker-compose.yml up -d --build
 ```
 
-The Keycloak image is built with the **m8flow realm-info-mapper** provider, so tokens include `m8flow_tenant_id` and `m8flow_tenant_name`. No separate build of the keycloak-extensions JAR is required.
+The Keycloak image is built with the **m8flow realm-info-mapper** provider, so tokens include `m8flow_tenant_id` and `m8flow_tenant_name`. No separate build of the keycloak-extensions JAR is required. Realm import can be done manually in the Keycloak Admin Console (see Keycloak Setup below) or by running `./extensions/m8flow-backend/keycloak/start_keycloak.sh` once after Keycloak is up; the script imports the identity realm and creates tenant-a (expects Keycloak on ports 7002 and 7009, e.g. when using Docker Compose).
 
 To stop containers and remove associated volumes (this deletes local database data):
 
 ```bash
 docker compose -f docker/m8flow-docker-compose.yml down -v
 ```
+
+### Production MinIO
+
+For production, a dedicated MinIO compose file adds hardening (pinned image, restart policy, resource limits, env-based credentials). Set `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` in `.env` (no defaults in the file).
+
+- **Standalone** (MinIO only):  
+  `docker compose -f docker/minio.production.docker-compose.yml up -d`
+- **Override** (use production MinIO with the full stack):  
+  `docker compose -f docker/m8flow-docker-compose.yml -f docker/minio.production.docker-compose.yml up -d`
+- **With bucket init**: add `--profile init` to create `m8flow-process-models` and `m8flow-templates` buckets.
 
 ---
 
@@ -206,6 +216,8 @@ After the containers start, continue below to the Keycloak Setup to import the r
 ## Keycloak Setup
 
 ### Import Realm
+
+You can import realms manually as below, or run `./extensions/m8flow-backend/keycloak/start_keycloak.sh` after starting Docker to import the identity realm and tenant-a.
 
 In the Keycloak Admin Console http://localhost:7002/ log in using the configured administrator credentials.
 
@@ -268,13 +280,11 @@ uv sync --all-groups --active
 cd ..
 ```
 
-To have the backend running locally, on the root of the project, run:
+To have the backend running locally, use `./start_dev.sh` from the repo root (starts backend and frontend). For backend-only, see the "Backend with m8flow extensions" section above.
 
-`./extensions/m8flow-backend/bin/run_m8flow_backend.sh`
+You can test the backend with:
 
-You can test it running:
-
-`curl http://localhost:8000/v1.0/status`
+`curl http://localhost:7000/v1.0/status`
 
 The result should be:
 

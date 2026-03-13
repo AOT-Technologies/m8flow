@@ -15,6 +15,8 @@ RUN apt-get update \
 RUN if ! getent group "$GROUP_ID"; then addgroup --gid $GROUP_ID $GROUP_NAME; fi
 RUN adduser --uid $USER_ID --gid $GROUP_ID $USER_NAME
 
+USER ${USER_NAME}
+
 RUN git config --global --add safe.directory *
 
 RUN pip install --upgrade pip

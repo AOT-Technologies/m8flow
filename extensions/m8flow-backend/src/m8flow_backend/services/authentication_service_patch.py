@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import base64
 import json
+from urllib.parse import urlparse, urlunparse
 
 import requests
 from security import safe_requests  # type: ignore
@@ -127,6 +128,26 @@ def _patched_open_id_endpoint_for_name(
         raise Exception(f"Unknown OpenID Endpoint: {name}. Tried to get from {openid_config_url}")
 
     config: str = cls.ENDPOINT_CACHE[authentication_identifier].get(name, "")
+
+    # For internal calls, rewrite the discovery URL to use the internal host/port while
+    # preserving the path/query/fragment from the discovery document. This ensures that
+    # server-to-Keycloak requests from Docker containers do not attempt to call
+    # localhost:7002 (or other public hosts) when the internal URL is keycloak-proxy:7002.
+    if internal and config:
+        internal_parsed = urlparse(internal_server_url)
+        parsed = urlparse(config)
+        if parsed.scheme and parsed.netloc:
+            config = urlunparse(
+                (
+                    internal_parsed.scheme,
+                    internal_parsed.netloc,
+                    parsed.path,
+                    parsed.params,
+                    parsed.query,
+                    parsed.fragment,
+                )
+            )
+
     external_server_url = cls.server_url(authentication_identifier)
     if internal is False and internal_server_url != external_server_url:
         config = config.replace(internal_server_url, external_server_url)
