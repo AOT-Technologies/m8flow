@@ -3511,3 +3511,67 @@ def test_transform_bpmn_content_no_decision_map_leaves_refs_intact() -> None:
 
     transformed_str = transformed.decode("utf-8")
     assert "<spiffworkflow:calledDecisionId>my_decision</spiffworkflow:calledDecisionId>" in transformed_str
+
+
+def test_transform_bpmn_content_updates_participant_process_ref_for_lanes() -> None:
+    """_transform_bpmn_content updates processRef in participant elements when process IDs are renamed."""
+    bpmn_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">'
+        '<bpmn:collaboration id="Collaboration_1">'
+        '<bpmn:participant id="Participant_1" processRef="Process_original" />'
+        "</bpmn:collaboration>"
+        '<bpmn:process id="Process_original" isExecutable="true">'
+        '<bpmn:laneSet id="LaneSet_1">'
+        '<bpmn:lane id="Lane_publisher" name="Publisher">'
+        "<bpmn:flowNodeRef>StartEvent_1</bpmn:flowNodeRef>"
+        "</bpmn:lane>"
+        '<bpmn:lane id="Lane_reviewer" name="Reviewer">'
+        "<bpmn:flowNodeRef>Task_1</bpmn:flowNodeRef>"
+        "</bpmn:lane>"
+        "</bpmn:laneSet>"
+        '<bpmn:startEvent id="StartEvent_1" />'
+        '<bpmn:manualTask id="Task_1" name="Review" />'
+        "</bpmn:process>"
+        "</bpmn:definitions>"
+    )
+    content = bpmn_xml.encode("utf-8")
+
+    transformed, new_process_id = TemplateService._transform_bpmn_content(content, "my-model")
+
+    transformed_str = transformed.decode("utf-8")
+    assert new_process_id is not None
+    assert f'id="{new_process_id}"' in transformed_str
+    assert f'processRef="{new_process_id}"' in transformed_str
+    assert 'processRef="Process_original"' not in transformed_str
+    assert 'id="Process_original"' not in transformed_str
+
+
+def test_transform_bpmn_content_updates_multiple_participant_process_refs() -> None:
+    """_transform_bpmn_content updates processRef for multiple participants in a collaboration."""
+    bpmn_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">'
+        '<bpmn:collaboration id="Collaboration_1">'
+        '<bpmn:participant id="Participant_1" processRef="Process_A" />'
+        '<bpmn:participant id="Participant_2" processRef="Process_B" />'
+        "</bpmn:collaboration>"
+        '<bpmn:process id="Process_A" isExecutable="true">'
+        '<bpmn:startEvent id="Start_A" />'
+        "</bpmn:process>"
+        '<bpmn:process id="Process_B" isExecutable="true">'
+        '<bpmn:startEvent id="Start_B" />'
+        "</bpmn:process>"
+        "</bpmn:definitions>"
+    )
+    content = bpmn_xml.encode("utf-8")
+
+    transformed, primary_id = TemplateService._transform_bpmn_content(content, "multi-pool")
+
+    transformed_str = transformed.decode("utf-8")
+    assert primary_id is not None
+    assert 'processRef="Process_A"' not in transformed_str
+    assert 'processRef="Process_B"' not in transformed_str
+    assert 'id="Process_A"' not in transformed_str
+    assert 'id="Process_B"' not in transformed_str
+    assert f'processRef="{primary_id}"' in transformed_str
