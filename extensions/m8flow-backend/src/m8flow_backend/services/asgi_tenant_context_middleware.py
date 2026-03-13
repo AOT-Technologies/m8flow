@@ -7,7 +7,7 @@ from http.cookies import SimpleCookie
 from typing import Callable, Optional
 
 from m8flow_backend.tenancy import (
-    PUBLIC_PATH_PREFIXES,
+    TENANT_CONTEXT_EXEMPT_PATH_PREFIXES,
     TENANT_CLAIM,
     path_matches_any_prefix,
     reset_context_tenant_id,
@@ -74,9 +74,9 @@ def _extract_tenant(scope) -> Optional[str]:
     return None
 
 
-def _is_public_path(scope) -> bool:
+def _is_tenant_context_exempt_path(scope) -> bool:
     path = scope.get("path") or ""
-    return path_matches_any_prefix(path, PUBLIC_PATH_PREFIXES)
+    return path_matches_any_prefix(path, TENANT_CONTEXT_EXEMPT_PATH_PREFIXES)
 
 
 class AsgiTenantContextMiddleware:
@@ -88,7 +88,7 @@ class AsgiTenantContextMiddleware:
         self.app = app
 
     async def __call__(self, scope, receive, send):
-        if scope.get("type") == "http" and _is_public_path(scope):
+        if scope.get("type") == "http" and _is_tenant_context_exempt_path(scope):
             token = set_context_tenant_id("public")
             try:
                 return await self.app(scope, receive, send)

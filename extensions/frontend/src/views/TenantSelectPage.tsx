@@ -1,7 +1,8 @@
 /**
  * Tenant selection page. When ENABLE_MULTITENANT is true this can be the default page.
  * On submit calls tenant-login-url API; only if it succeeds is the tenant saved to localStorage
- * and the browser sent into the tenant-aware login flow.
+ * and the browser sent into the tenant-aware login flow. Global admins can bypass
+ * tenant selection and sign in through the master realm.
  */
 import { Box, Container, Typography, TextField, Button } from '@mui/material';
 import { FormEvent, useState } from 'react';
@@ -11,6 +12,9 @@ export const M8FLOW_TENANT_STORAGE_KEY = 'm8flow_tenant';
 
 const getRedirectUrl = () =>
   encodeURIComponent(`${globalThis.location.origin}/`);
+const GLOBAL_ADMIN_LANDING_PATH = '/tenants';
+const getGlobalAdminLandingUrl = () =>
+  `${globalThis.location.origin}${GLOBAL_ADMIN_LANDING_PATH}`;
 
 export default function TenantSelectPage() {
   const { ENABLE_MULTITENANT, BACKEND_BASE_URL } = useConfig();
@@ -22,6 +26,13 @@ export default function TenantSelectPage() {
     globalThis.location.replace('/');
     return null;
   }
+
+  const handleGlobalAdminSignIn = () => {
+    const redirectUrl = encodeURIComponent(getGlobalAdminLandingUrl());
+    globalThis.location.assign(
+      `${BACKEND_BASE_URL}/login?redirect_url=${redirectUrl}&authentication_identifier=master`
+    );
+  };
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -73,9 +84,14 @@ export default function TenantSelectPage() {
             autoFocus
             sx={{ mb: 2 }}
           />
-          <Button type="submit" variant="contained" disabled={submitting}>
-            {submitting ? 'Saving…' : 'Continue'}
-          </Button>
+          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+            <Button type="submit" variant="contained" disabled={submitting}>
+              {submitting ? 'Saving…' : 'Continue'}
+            </Button>
+            <Button variant="text" onClick={handleGlobalAdminSignIn}>
+              Global admin sign in
+            </Button>
+          </Box>
         </form>
       </Box>
     </Container>

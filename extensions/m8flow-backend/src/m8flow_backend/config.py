@@ -4,6 +4,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+DEFAULT_KEYCLOAK_CLIENT_SECRET = "JXeQExm0JhQPLumgHtIIqf52bDalHz0q"
+
 
 def _get(key: str, default: str | None = None) -> str | None:
     value = os.environ.get(key)
@@ -66,6 +68,15 @@ def spoke_client_id() -> str:
 def spoke_client_secret() -> str:
     """Client secret for spoke realm client (from env only). Set M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET when using client-secret auth."""
     return _get("M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET") or ""
+
+
+def master_client_secret() -> str:
+    """Client secret for master realm browser login."""
+    return (
+        _get("M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET")
+        or spoke_client_secret()
+        or DEFAULT_KEYCLOAK_CLIENT_SECRET
+    )
 
 
 def template_realm_name() -> str:
