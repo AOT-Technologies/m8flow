@@ -3,60 +3,6 @@ info:
   version: 1.0.0
   title: m8flow-backend-extension
 paths:
-  /health:
-    get:
-      summary: Health check for load balancers and monitoring
-      description: Returns 200 when the process is up. Public, no authentication required.
-      operationId: m8flow_backend.tenancy.health_check
-      tags:
-        - Health
-      security: []
-      responses:
-        "200":
-          description: The server is running.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/HealthResponse"
-
-  /create-tenant:
-    post:
-      summary: Create a new tenant
-      operationId: m8flow_backend.routes.tenant_controller.create_tenant
-      tags:
-        - Tenant
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateTenantRequest"
-      responses:
-        "201":
-          description: Tenant created successfully
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/TenantResponse"
-        "400":
-          description: Bad request - missing required fields
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "401":
-          description: Unauthorized - user not authenticated
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "409":
-          description: Conflict - tenant with ID or slug already exists
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
   /tenant-login-url:
     get:
       summary: Get Keycloak login URL for a tenant realm (unauthenticated)
@@ -384,44 +330,6 @@ paths:
         "500":
           description: Internal server error
 
-    delete:
-      summary: Soft delete a tenant
-      description: Sets the tenant status to DELETED without removing from database
-      operationId: m8flow_backend.routes.tenant_controller.delete_tenant
-      tags:
-        - Tenant
-      parameters:
-        - name: tenant_id
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Unique identifier of the tenant to delete
-      responses:
-        "200":
-          description: Tenant soft deleted successfully
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MessageResponse"
-        "400":
-          description: Bad request - tenant already deleted
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "401":
-          description: Unauthorized - user not authenticated
-        "403":
-          description: Forbidden - cannot delete default tenant
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: Tenant not found
-        "500":
-          description: Internal server error
 
   /templates:
     get:
