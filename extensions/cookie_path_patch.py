@@ -23,7 +23,7 @@ def _set_new_access_token_in_cookie_with_path(
     domain_for_frontend_cookie: str | None = re.sub(
         r"^https?:\/\/",
         "",
-        current_app.config["SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND"],
+        current_app.config.get("SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND", ""),
     )
     if domain_for_frontend_cookie and domain_for_frontend_cookie.startswith("localhost"):
         domain_for_frontend_cookie = None

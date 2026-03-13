@@ -925,8 +925,14 @@ def create_user_in_realm(
         timeout=30,
     )
     r.raise_for_status()
-    user_id = r.headers["Location"].split("/")[-1]
-    
+    location = r.headers.get("Location")
+    if not (location and location.strip()):
+        raise ValueError(
+            "Keycloak did not return a Location header when creating user; "
+            "check Keycloak version and configuration"
+        )
+    user_id = location.strip().rstrip("/").split("/")[-1]
+
     # Step 2: Fetch user and update to clear required actions
     # Keycloak may add default required actions, so we need to explicitly clear them
     get_url = f"{base_url}/admin/realms/{realm}/users/{user_id}"
