@@ -46,8 +46,6 @@ PUBLIC_PATH_PREFIXES: tuple[str, ...] = (
     # Bootstrap/admin: create realm and create tenant (no tenant in token yet)
     "/v1.0/m8flow/tenant-realms",
     "/m8flow/tenant-realms",
-    "/v1.0/m8flow/create-tenant",
-    "/m8flow/create-tenant",
 )
 
 # Path suffixes for pre-login tenant selection (no tenant context required). Also included in PUBLIC_PATH_PREFIXES above with /v1.0 prefix.
