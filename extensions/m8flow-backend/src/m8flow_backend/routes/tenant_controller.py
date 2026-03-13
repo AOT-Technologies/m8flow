@@ -59,26 +59,3 @@ def get_all_tenants():
     tenants = TenantService.get_all_tenants()
     return success_response([_serialize_tenant(t) for t in tenants], 200)
 
-@handle_api_errors
-def update_tenant(tenant_id, body):
-    """Update tenant name and status. Slug cannot be updated."""
-    user = _require_authenticated_user()
-    body = body or {}
-
-    if 'slug' in body: 
-        raise ApiError(
-            error_code="slug_update_forbidden",
-            message="Slug cannot be updated. It is immutable after creation.",
-            status_code=400
-        )
-
-    tenant = TenantService.update_tenant(
-        tenant_id=tenant_id,
-        name=body.get('name'),
-        status_str=body.get('status'),
-        user_id=user.username
-    )
-    
-    return success_response({
-        "message": f"Tenant '{tenant.name}' has been successfully updated."
-    }, 200)

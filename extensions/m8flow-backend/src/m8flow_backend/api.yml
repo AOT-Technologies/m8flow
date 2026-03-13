@@ -275,9 +275,9 @@ paths:
           description: Tenant not found
 
     put:
-      summary: Update a tenant
-      description: Updates tenant name and/or status. Slug cannot be updated. Cannot update DELETED tenants.
-      operationId: m8flow_backend.routes.tenant_controller.update_tenant
+      summary: Update tenant display name
+      description: Updates the tenant's human-readable name in both the local database and the Keycloak realm (displayName). Restricted to 'super-admin' role. The slug and ID are immutable and cannot be changed.
+      operationId: m8flow_backend.routes.keycloak_controller.update_tenant_name
       tags:
         - Tenant
       parameters:
@@ -286,24 +286,21 @@ paths:
           required: true
           schema:
             type: string
-          description: Unique identifier of the tenant to update
+          description: Unique identifier (UUID) of the tenant to update
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              required:
+                - name
               properties:
                 name:
                   type: string
-                  description: New name for the tenant
-                status:
-                  type: string
-                  enum: [ACTIVE, INACTIVE, DELETED]
-                  description: New status for the tenant
+                  description: New display name for the tenant
               example:
                 name: "Updated Tenant Name"
-                status: "ACTIVE"
       responses:
         "200":
           description: Tenant updated successfully

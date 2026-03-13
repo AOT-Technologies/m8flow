@@ -793,6 +793,38 @@ def delete_realm(realm_id: str, admin_token: str | None = None) -> None:
     logger.info("Deleted Keycloak realm: %s", realm_id)
 
 
+def update_realm(realm_id: str, display_name: str, admin_token: str | None = None) -> None:
+    """Update a realm in Keycloak (specifically displayName)."""
+    if not realm_id or not str(realm_id).strip():
+        raise ValueError("realm_id is required")
+
+    if not display_name or not str(display_name).strip():
+        raise ValueError("display_name is required")
+    
+    if not admin_token or not str(admin_token).strip():
+        raise ValueError("admin_token is required")
+
+    realm_id = str(realm_id).strip()
+    display_name = str(display_name).strip()
+    admin_token = str(admin_token).strip()
+
+    base_url = keycloak_url()
+
+    payload = {
+        "realm": realm_id,
+        "displayName": display_name
+    }
+
+    r = requests.put(
+        f"{base_url}/admin/realms/{realm_id}",
+        json=payload,
+        headers={"Authorization": f"Bearer {admin_token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    r.raise_for_status()
+    logger.info("Updated Keycloak realm %s: displayName=%s", realm_id, display_name)
+
+
 def verify_admin_token(token: str) -> bool:
     """
     Verify that the provided token is a valid admin token.
