@@ -13,14 +13,10 @@ if (rootEnv.MULTI_TENANT_ON !== undefined && process.env.VITE_MULTI_TENANT_ON ==
 }
 
 const host = process.env.HOST ?? '0.0.0.0';
-const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 8001; // Match start_dev.sh FRONTEND_PORT
-const backendPort = process.env.BACKEND_PORT ? parseInt(process.env.BACKEND_PORT, 10) : 8000; // Match start_dev.sh BACKEND_PORT
+const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 8001;
+const backendPort = process.env.BACKEND_PORT ? parseInt(process.env.BACKEND_PORT, 10) : 8000;
 
-const backendUrl =
-  rootEnv.M8FLOW_BACKEND_URL_FRONTEND ||
-  rootEnv.M8FLOW_BACKEND_URL ||
-  process.env.M8FLOW_BACKEND_URL ||
-  `http://localhost:${backendPort}`;
+const backendUrl = rootEnv.M8FLOW_BACKEND_URL_FRONTEND;
 
 const multiTenantOn =
   rootEnv.MULTI_TENANT_ON ?? process.env.VITE_MULTI_TENANT_ON ?? 'false';
