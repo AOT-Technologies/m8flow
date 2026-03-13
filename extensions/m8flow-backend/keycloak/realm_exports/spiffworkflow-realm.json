@@ -541,15 +541,15 @@
       "email": "admin@example.com",
       "credentials": [
         {
-          "id": "644ff652-31d1-4349-9340-ce3b5fb76b5c",
           "type": "password",
-          "createdDate": 1676302139645,
-          "secretData": "{\"value\":\"/eyBI5r6kp5hOkRW6fgSm++rGDA4XA/9n0wSLTGqt1o=\",\"salt\":\"dPH+V7T4+ch7YqNtPBaLPA==\",\"additionalParameters\":{}}",
-          "credentialData": "{\"hashIterations\":27500,\"algorithm\":\"pbkdf2-sha256\",\"additionalParameters\":{}}"
+          "value": "admin",
+          "temporary": true
         }
       ],
       "disableableCredentialTypes": [],
-      "requiredActions": [],
+      "requiredActions": [
+        "UPDATE_PASSWORD"
+      ],
       "realmRoles": [
         "default-roles-spiffworkflow",
         "tenant-admin"
@@ -595,16 +595,17 @@
       "enabled": true,
       "totp": false,
       "disableableCredentialTypes": [],
-      "requiredActions": [],
+      "requiredActions": [
+        "UPDATE_PASSWORD"
+      ],
       "realmRoles": ["default-roles-spiffworkflow", "editor"],
       "notBefore": 0,
       "groups": [],
       "credentials": [
         {
           "type": "password",
-          "userLabel": "My password",
-          "secretData": "{\"value\":\"+EHCzekdXnLi3tKjueEFXzb1zGD2AhG9uRr94iGfLlM=\",\"salt\":\"Wx4upd39HaO0AQ1fcZ4HZA==\",\"additionalParameters\":{}}",
-          "credentialData": "{\"hashIterations\":5,\"algorithm\":\"argon2\",\"additionalParameters\":{\"hashLength\":[\"32\"],\"memory\":[\"7168\"],\"type\":[\"id\"],\"version\":[\"1.3\"],\"parallelism\":[\"1\"]}}"
+          "value": "editor",
+          "temporary": true
         }
       ]
     },
@@ -617,16 +618,17 @@
       "enabled": true,
       "totp": false,
       "disableableCredentialTypes": [],
-      "requiredActions": [],
+      "requiredActions": [
+        "UPDATE_PASSWORD"
+      ],
       "realmRoles": ["default-roles-spiffworkflow", "integrator"],
       "notBefore": 0,
       "groups": [],
       "credentials": [
         {
           "type": "password",
-          "userLabel": "My password",
-          "secretData": "{\"value\":\"+EHCzekdXnLi3tKjueEFXzb1zGD2AhG9uRr94iGfLlM=\",\"salt\":\"Wx4upd39HaO0AQ1fcZ4HZA==\",\"additionalParameters\":{}}",
-          "credentialData": "{\"hashIterations\":5,\"algorithm\":\"argon2\",\"additionalParameters\":{\"hashLength\":[\"32\"],\"memory\":[\"7168\"],\"type\":[\"id\"],\"version\":[\"1.3\"],\"parallelism\":[\"1\"]}}"
+          "value": "integrator",
+          "temporary": true
         }
       ]
     },
@@ -639,16 +641,17 @@
       "enabled": true,
       "totp": false,
       "disableableCredentialTypes": [],
-      "requiredActions": [],
+      "requiredActions": [
+        "UPDATE_PASSWORD"
+      ],
       "realmRoles": ["default-roles-spiffworkflow", "reviewer"],
       "notBefore": 0,
       "groups": [],
       "credentials": [
         {
           "type": "password",
-          "userLabel": "My password",
-          "secretData": "{\"value\":\"+EHCzekdXnLi3tKjueEFXzb1zGD2AhG9uRr94iGfLlM=\",\"salt\":\"Wx4upd39HaO0AQ1fcZ4HZA==\",\"additionalParameters\":{}}",
-          "credentialData": "{\"hashIterations\":5,\"algorithm\":\"argon2\",\"additionalParameters\":{\"hashLength\":[\"32\"],\"memory\":[\"7168\"],\"type\":[\"id\"],\"version\":[\"1.3\"],\"parallelism\":[\"1\"]}}"
+          "value": "reviewer",
+          "temporary": true
         }
       ]
     },
@@ -661,16 +664,17 @@
       "enabled": true,
       "totp": false,
       "disableableCredentialTypes": [],
-      "requiredActions": [],
+      "requiredActions": [
+        "UPDATE_PASSWORD"
+      ],
       "realmRoles": ["default-roles-spiffworkflow", "tenant-admin"],
       "notBefore": 0,
       "groups": [],
       "credentials": [
         {
           "type": "password",
-          "userLabel": "My password",
-          "secretData": "{\"value\":\"+EHCzekdXnLi3tKjueEFXzb1zGD2AhG9uRr94iGfLlM=\",\"salt\":\"Wx4upd39HaO0AQ1fcZ4HZA==\",\"additionalParameters\":{}}",
-          "credentialData": "{\"hashIterations\":5,\"algorithm\":\"argon2\",\"additionalParameters\":{\"hashLength\":[\"32\"],\"memory\":[\"7168\"],\"type\":[\"id\"],\"version\":[\"1.3\"],\"parallelism\":[\"1\"]}}"
+          "value": "tenant-admin",
+          "temporary": true
         }
       ]
     },
@@ -683,16 +687,17 @@
       "enabled": true,
       "totp": false,
       "disableableCredentialTypes": [],
-      "requiredActions": [],
+      "requiredActions": [
+        "UPDATE_PASSWORD"
+      ],
       "realmRoles": ["default-roles-spiffworkflow", "viewer"],
       "notBefore": 0,
       "groups": [],
       "credentials": [
         {
           "type": "password",
-          "userLabel": "My password",
-          "secretData": "{\"value\":\"+EHCzekdXnLi3tKjueEFXzb1zGD2AhG9uRr94iGfLlM=\",\"salt\":\"Wx4upd39HaO0AQ1fcZ4HZA==\",\"additionalParameters\":{}}",
-          "credentialData": "{\"hashIterations\":5,\"algorithm\":\"argon2\",\"additionalParameters\":{\"hashLength\":[\"32\"],\"memory\":[\"7168\"],\"type\":[\"id\"],\"version\":[\"1.3\"],\"parallelism\":[\"1\"]}}"
+          "value": "viewer",
+          "temporary": true
         }
       ]
     }
