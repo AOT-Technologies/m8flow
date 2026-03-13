@@ -71,3 +71,7 @@ def spoke_client_secret() -> str:
 def template_realm_name() -> str:
     """Realm name in the template (for substitution)."""
     return "spiffworkflow"
+
+def nats_token_salt() -> str:
+    """Get the NATS token salt from environment variables."""
+    return _get("M8FLOW_NATS_TOKEN_SALT") or "m8flow_default_salt"
