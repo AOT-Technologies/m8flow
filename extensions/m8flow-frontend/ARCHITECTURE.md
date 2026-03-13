@@ -30,7 +30,7 @@ The `extensions/frontend` is a **standalone React application** that extends and
 ### Key Components
 
 ```
-extensions/frontend/
+extensions/m8flow-frontend/
 ├── package.json                    # Standalone package with all dependencies
 ├── vite.config.ts                  # Vite configuration with aliases and plugins
 ├── tsconfig.json                   # TypeScript path mappings
@@ -70,7 +70,7 @@ Core modules are accessed via Vite aliases (`@spiffworkflow-frontend`), enabling
 - Automatic fallback to core when overrides don't exist
 
 ### 5. **Dependency Isolation**
-All dependencies are installed in `extensions/frontend/node_modules`, ensuring:
+All dependencies are installed in `extensions/m8flow-frontend/node_modules`, ensuring:
 - No dependency conflicts with core
 - Independent version management
 - Proper resolution of bare module imports from core files
@@ -146,10 +146,10 @@ All dependencies are installed in `extensions/frontend/node_modules`, ensuring:
 3. Calculates path: "components/SpiffLogo"
                     │
                     ▼
-4. Checks: extensions/frontend/src/components/SpiffLogo.tsx
+4. Checks: extensions/m8flow-frontend/src/components/SpiffLogo.tsx
                     │
                     ▼
-5. Override exists? YES → Use extensions/frontend/src/components/SpiffLogo.tsx
+5. Override exists? YES → Use extensions/m8flow-frontend/src/components/SpiffLogo.tsx
                    NO  → Use spiffworkflow-frontend/src/components/SpiffLogo.tsx
 ```
 
@@ -164,7 +164,7 @@ The module resolution system is the core of the extension architecture. It enabl
 The resolver intercepts **all imports** - including imports between core files. This means:
 
 - When core's `SideNav.tsx` imports `./SpiffLogo`, the resolver checks for an override
-- If `extensions/frontend/src/components/SpiffLogo.tsx` exists, it's used instead
+- If `extensions/m8flow-frontend/src/components/SpiffLogo.tsx` exists, it's used instead
 - **No need to manually override intermediate components** in the import chain
 
 ### Resolution Flow
@@ -218,20 +218,20 @@ Import Statement (from ANY file)
 
 1. **Relative Imports from Core Files** (`./SpiffLogo` in `SideNav.tsx`)
    - Calculates relative path from core's `src/` directory
-   - Checks if override exists at same path in `extensions/frontend/src/`
+   - Checks if override exists at same path in `extensions/m8flow-frontend/src/`
    - If override exists: uses override
    - If no override: lets Vite resolve to core file
 
 2. **Relative Imports from Extension Files** (`./Component`)
-   - First checks: `extensions/frontend/src/` (relative to importer)
+   - First checks: `extensions/m8flow-frontend/src/` (relative to importer)
    - Falls back to: `spiffworkflow-frontend/src/` (same relative path)
 
 3. **Alias Imports** (`@spiffworkflow-frontend/components/SpiffLogo`)
-   - First checks: `extensions/frontend/src/components/SpiffLogo.tsx`
+   - First checks: `extensions/m8flow-frontend/src/components/SpiffLogo.tsx`
    - Falls back to: `spiffworkflow-frontend/src/components/SpiffLogo.tsx`
 
 4. **Bare Module Imports** (`jwt-decode`, `@mui/material`)
-   - If importer is from `spiffworkflow-frontend/`, resolves from `extensions/frontend/node_modules`
+   - If importer is from `spiffworkflow-frontend/`, resolves from `extensions/m8flow-frontend/node_modules`
    - Otherwise, uses standard Vite resolution
 
 5. **Asset Imports** (`.css`, `.scss`, `.svg`, `.png`, etc.)
@@ -291,12 +291,12 @@ if (importerInCore && source.startsWith('.')) {
 **Example**: When `spiffworkflow-frontend/src/components/SideNav.tsx` imports `./SpiffLogo`:
 1. Resolver detects importer is in core
 2. Calculates relative path: `components/SpiffLogo`
-3. Checks if `extensions/frontend/src/components/SpiffLogo.tsx` exists
+3. Checks if `extensions/m8flow-frontend/src/components/SpiffLogo.tsx` exists
 4. If yes, returns the override path
 
 #### 2. Bare Module Resolution (from Core Files)
 
-When a file in `spiffworkflow-frontend` imports a bare module (e.g., `import { jwtDecode } from 'jwt-decode'`), Vite needs to resolve it from `extensions/frontend/node_modules`:
+When a file in `spiffworkflow-frontend` imports a bare module (e.g., `import { jwtDecode } from 'jwt-decode'`), Vite needs to resolve it from `extensions/m8flow-frontend/node_modules`:
 
 ```typescript
 // Handle bare module imports from spiffworkflow-frontend files
@@ -372,7 +372,7 @@ plugins: [
 
 ### Deep Override Example
 
-When you create `extensions/frontend/src/components/SpiffLogo.tsx`, it's automatically used **everywhere** in the application - even when core files import it:
+When you create `extensions/m8flow-frontend/src/components/SpiffLogo.tsx`, it's automatically used **everywhere** in the application - even when core files import it:
 
 ```
 Core Import Chain:
@@ -380,7 +380,7 @@ ContainerForExtensions.tsx → SideNav.tsx → SpiffLogo.tsx
                                               ↓
                               Override resolver intercepts!
                                               ↓
-                              extensions/frontend/src/components/SpiffLogo.tsx
+                              extensions/m8flow-frontend/src/components/SpiffLogo.tsx
 ```
 
 **You don't need to override `SideNav.tsx` or `ContainerForExtensions.tsx`** - the resolver automatically uses your override.
@@ -396,7 +396,7 @@ export default function SpiffLogo() {
 }
 ```
 
-**Override**: `extensions/frontend/src/components/SpiffLogo.tsx`
+**Override**: `extensions/m8flow-frontend/src/components/SpiffLogo.tsx`
 ```typescript
 export default function SpiffLogo() {
   return <div>M8Flow</div>;
@@ -408,7 +408,7 @@ export default function SpiffLogo() {
 #### Example 2: Wrapping Core Component
 
 ```typescript
-// extensions/frontend/src/components/SpiffLogo.tsx
+// extensions/m8flow-frontend/src/components/SpiffLogo.tsx
 import CoreSpiffLogo from '@spiffworkflow-frontend/components/SpiffLogo';
 import { useConfig } from '../utils/useConfig';
 
@@ -427,7 +427,7 @@ export default function SpiffLogo() {
 #### Example 3: Conditional Override
 
 ```typescript
-// extensions/frontend/src/components/SpiffLogo.tsx
+// extensions/m8flow-frontend/src/components/SpiffLogo.tsx
 import CoreSpiffLogo from '@spiffworkflow-frontend/components/SpiffLogo';
 import { useConfig } from '../utils/useConfig';
 
@@ -472,10 +472,10 @@ To add a new route (e.g., `/reports`), follow these steps:
 
 #### Step 1: Create the Page Component
 
-Create a new view component in `extensions/frontend/src/views/`:
+Create a new view component in `extensions/m8flow-frontend/src/views/`:
 
 ```typescript
-// extensions/frontend/src/views/ReportsPage.tsx
+// extensions/m8flow-frontend/src/views/ReportsPage.tsx
 import { Box, Typography } from '@mui/material';
 
 export default function ReportsPage() {
@@ -494,7 +494,7 @@ export default function ReportsPage() {
 Create an override of `ContainerForExtensions.tsx`:
 
 ```typescript
-// extensions/frontend/src/ContainerForExtensions.tsx
+// extensions/m8flow-frontend/src/ContainerForExtensions.tsx
 // Copy the entire contents from spiffworkflow-frontend/src/ContainerForExtensions.tsx
 // Then modify the imports and add your route
 ```
@@ -553,7 +553,7 @@ const routeComponents = () => {
 **Important**: The override resolver may not always intercept the `@spiffworkflow-frontend/ContainerForExtensions` import in `App.tsx`. To ensure your override is used, change the import to use a relative path:
 
 ```typescript
-// extensions/frontend/src/App.tsx
+// extensions/m8flow-frontend/src/App.tsx
 
 // Change from:
 import ContainerForExtensions from '@spiffworkflow-frontend/ContainerForExtensions';
@@ -588,7 +588,7 @@ When adding routes, order is important:
 
 Here's a minimal example of adding a `/reports` route:
 
-**1. Create the page** (`extensions/frontend/src/views/ReportsPage.tsx`):
+**1. Create the page** (`extensions/m8flow-frontend/src/views/ReportsPage.tsx`):
 
 ```typescript
 import { Box, Typography } from '@mui/material';
@@ -604,7 +604,7 @@ export default function ReportsPage() {
 }
 ```
 
-**2. Update App.tsx** (`extensions/frontend/src/App.tsx`):
+**2. Update App.tsx** (`extensions/m8flow-frontend/src/App.tsx`):
 
 ```typescript
 // Use relative import for the override
@@ -645,7 +645,7 @@ This creates:
 
 ### Problem
 
-When Vite processes files from `spiffworkflow-frontend`, those files may import bare modules (e.g., `import { jwtDecode } from 'jwt-decode'`). By default, Vite resolves these from the project root's `node_modules`, but since we're importing from outside the project root, we need to explicitly resolve them from `extensions/frontend/node_modules`.
+When Vite processes files from `spiffworkflow-frontend`, those files may import bare modules (e.g., `import { jwtDecode } from 'jwt-decode'`). By default, Vite resolves these from the project root's `node_modules`, but since we're importing from outside the project root, we need to explicitly resolve them from `extensions/m8flow-frontend/node_modules`.
 
 ### Solution
 
@@ -656,7 +656,7 @@ The override resolver plugin intercepts bare module imports when the importer is
 if (importer && importer.includes('/spiffworkflow-frontend/') 
     && !source.startsWith('.') && !source.startsWith('/')) {
   // This is a bare import from a core file
-  // Resolve it from extensions/frontend/node_modules
+  // Resolve it from extensions/m8flow-frontend/node_modules
   return this.resolve(source, path.resolve(extensionsDir, 'index.tsx'), { 
     skipSelf: true 
   });
@@ -666,8 +666,8 @@ if (importer && importer.includes('/spiffworkflow-frontend/')
 ### How It Works
 
 1. **Detection**: Plugin detects when a file in `spiffworkflow-frontend` imports a bare module
-2. **Context Switch**: Uses `this.resolve()` with a fake importer from `extensions/frontend/src/index.tsx`
-3. **Resolution**: Vite resolves the module from `extensions/frontend/node_modules`
+2. **Context Switch**: Uses `this.resolve()` with a fake importer from `extensions/m8flow-frontend/src/index.tsx`
+3. **Resolution**: Vite resolves the module from `extensions/m8flow-frontend/node_modules`
 
 ### Dependency Management
 
@@ -711,7 +711,7 @@ css: {
 
 1. **SASS Processing**: When Vite processes a `.scss` file, it uses the SASS compiler
 2. **Load Paths**: SASS checks `loadPaths` for `@use` and `@import` statements
-3. **Resolution**: SASS finds `@carbon/react` in `extensions/frontend/node_modules/@carbon/react`
+3. **Resolution**: SASS finds `@carbon/react` in `extensions/m8flow-frontend/node_modules/@carbon/react`
 
 ### Example
 
@@ -721,7 +721,7 @@ css: {
 // ... other styles
 ```
 
-**Resolution**: SASS looks in `extensions/frontend/node_modules/@carbon/react` (via `loadPaths`)
+**Resolution**: SASS looks in `extensions/m8flow-frontend/node_modules/@carbon/react` (via `loadPaths`)
 
 ---
 
@@ -860,7 +860,7 @@ The server runs on `http://localhost:7001` (same port as core - run one at a tim
 ### 3. Create an Override
 
 1. Identify the component to override (e.g., `spiffworkflow-frontend/src/components/SpiffLogo.tsx`)
-2. Create the same path in extensions: `extensions/frontend/src/components/SpiffLogo.tsx`
+2. Create the same path in extensions: `extensions/m8flow-frontend/src/components/SpiffLogo.tsx`
 3. Implement your override
 4. **That's it!** The override is automatically used everywhere in the application
 
@@ -905,7 +905,7 @@ PORT=7002 BACKEND_PORT=8000 npm start
 
 ### Vite Configuration
 
-**File**: `extensions/frontend/vite.config.ts`
+**File**: `extensions/m8flow-frontend/vite.config.ts`
 
 Key configurations:
 
@@ -963,7 +963,7 @@ css: {
 
 ### TypeScript Configuration
 
-**File**: `extensions/frontend/tsconfig.json`
+**File**: `extensions/m8flow-frontend/tsconfig.json`
 
 Key configurations:
 
@@ -984,7 +984,7 @@ Key configurations:
 
 ### Entry Point
 
-**File**: `extensions/frontend/src/index.tsx`
+**File**: `extensions/m8flow-frontend/src/index.tsx`
 
 The entry point:
 1. Imports core styles and i18n via aliases
@@ -994,7 +994,7 @@ The entry point:
 
 ### Application Component
 
-**File**: `extensions/frontend/src/App.tsx`
+**File**: `extensions/m8flow-frontend/src/App.tsx`
 
 The main app component:
 1. Imports core contexts and components via aliases
@@ -1040,6 +1040,6 @@ The architecture is built on:
 
 To change the logo from "Spiffworkflow" to "M8Flow":
 
-1. Create `extensions/frontend/src/components/SpiffLogo.tsx`
+1. Create `extensions/m8flow-frontend/src/components/SpiffLogo.tsx`
 2. Implement your custom logo component
 3. Run `npm start` - your logo appears everywhere automatically!
