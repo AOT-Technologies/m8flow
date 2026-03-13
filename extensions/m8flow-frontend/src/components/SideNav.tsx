@@ -472,12 +472,11 @@ function SideNav({
                 <Flag />
               </IconButton>
             </SpiffTooltip>
-            {SPIFF_ENVIRONMENT && (
+            {/* {SPIFF_ENVIRONMENT && (
               <SpiffTooltip
                 title={t("environment")}
                 placement={isCollapsed ? "right" : "top"}
               >
-                {/* Use a Box to wrap the Chip and vertically align it */}
                 <Box sx={{ display: "flex", alignItems: "center" }}>
                   <Chip
                     label={SPIFF_ENVIRONMENT}
@@ -489,7 +488,7 @@ function SideNav({
                   />
                 </Box>
               </SpiffTooltip>
-            )}
+            )} */}
           </Box>
         </Box>
         {showUserProfile && (
@@ -511,7 +510,7 @@ function SideNav({
             {username !== userEmail && (
               <Typography variant="body2">{userEmail}</Typography>
             )}
-            <hr />
+            {/* <hr />
             {aboutLinkElement}
             <br />
             <MuiLink
@@ -521,7 +520,7 @@ function SideNav({
               rel="noreferrer"
             >
               {t("documentation")}
-            </MuiLink>
+            </MuiLink> */}
             <ExtensionUxElementForDisplay
               displayLocation="user_profile_item"
               elementCallback={extensionUserProfileElement}
