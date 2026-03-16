@@ -1053,19 +1053,21 @@ class TemplateService:
 
         new_primary_process_id = None
         process_counter = 0
+        process_id_map: dict[str, str] = {}
 
         def replace_process_id(match: re.Match) -> str:
             nonlocal new_primary_process_id, process_counter
             prefix = match.group(1)
+            old_id = match.group(2)
             suffix = match.group(3)
 
-            # Create new unique process ID with counter for uniqueness
             if process_counter == 0:
                 new_id = f"Process_{underscored_id}_{fuzz}"
             else:
                 new_id = f"Process_{underscored_id}_{fuzz}_{process_counter}"
 
             process_counter += 1
+            process_id_map[old_id] = new_id
 
             if new_primary_process_id is None:
                 new_primary_process_id = new_id
@@ -1074,6 +1076,13 @@ class TemplateService:
 
         # Replace process IDs
         content_str = process_id_pattern.sub(replace_process_id, content_str)
+
+        # Update participant processRef attributes to match renamed process IDs
+        for old_id, new_id in process_id_map.items():
+            content_str = content_str.replace(
+                f'processRef="{old_id}"',
+                f'processRef="{new_id}"',
+            )
 
         # Update calledDecisionId references to match renamed DMN decision IDs
         if decision_id_map:
