@@ -61,6 +61,22 @@ services:
       - ./nginx-keycloak-proxy.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       - keycloak
+  keycloak-master-admin-init:
+    build:
+      context: ..
+      dockerfile: docker/m8flow.keycloak.Dockerfile
+    env_file: ../.env
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KEYCLOAK_SUPER_ADMIN_USER: ${KEYCLOAK_SUPER_ADMIN_USER:-super-admin}
+      KEYCLOAK_SUPER_ADMIN_PASSWORD: ${KEYCLOAK_SUPER_ADMIN_PASSWORD:-super-admin}
+    depends_on:
+      - keycloak
+    volumes:
+      - ../extensions/m8flow-backend/bin/ensure_keycloak_master_super_admin.sh:/ensure_keycloak_master_super_admin.sh:ro
+    entrypoint: ["/bin/sh", "/ensure_keycloak_master_super_admin.sh"]
+    restart: "no"
 
   redis:
     image: redis:6-alpine
@@ -69,6 +85,47 @@ services:
       - "6379:6379"
     volumes:
       - redis-data:/data
+
+  nats:
+    container_name: m8flow-nats
+    image: nats:2.10-alpine
+    command: ["-js", "--store_dir=/data/nats", "-m", "8222"]
+    ports:
+      - "${M8FLOW_NATS_PORT:-4222}:4222/tcp" # client
+      - "8222:8222/tcp" # monitoring HTTP (optional)
+    volumes:
+      - nats_data:/data/nats
+    healthcheck:
+      test: "wget -qO- http://localhost:8222/healthz || exit 1"
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  m8flow-nats-consumer:
+    container_name: m8flow-nats-consumer
+    build:
+      context: ..
+      dockerfile: docker/m8flow.backend.Dockerfile
+    command:
+      - "sh"
+      - "-c"
+      - |
+        uv pip install --system nats-py httpx python-dotenv &&
+        PYTHONPATH=/app:/app/extensions/m8flow-backend/src:/app/spiffworkflow-backend/src \
+        exec python m8flow-nats-consumer/consumer.py
+    env_file: ../.env
+    depends_on:
+      nats:
+        condition: service_healthy
+      m8flow-backend:
+        condition: service_started
+    environment:
+      M8FLOW_NATS_URL: "nats://nats:4222"
+    volumes:
+      - process_models_cache:/app/process_models
+      - ../data/m8flow_nats_consumer:/app/data/m8flow_nats_consumer
+    restart: unless-stopped
 
   minio:
     image: minio/minio:RELEASE.2025-01-20T14-49-07Z
@@ -151,7 +208,6 @@ services:
       context: ..
       dockerfile: docker/m8flow.backend.Dockerfile
     env_file: ../.env
-    user: "0"
     environment:
       M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: "${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-/app/process_models}"
       M8FLOW_BACKEND_DATABASE_URI: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
@@ -163,6 +219,8 @@ services:
       M8FLOW_BACKEND_URL_FOR_FRONTEND: "${M8FLOW_BACKEND_URL_FOR_FRONTEND:-http://localhost:7001}"
       M8FLOW_BACKEND_CELERY_BROKER_URL: "${M8FLOW_BACKEND_CELERY_BROKER_URL:-redis://redis:6379/0}"
       M8FLOW_BACKEND_CELERY_RESULT_BACKEND: "${M8FLOW_BACKEND_CELERY_RESULT_BACKEND:-redis://redis:6379/0}"
+      M8FLOW_NATS_ENABLED: "true"
+      M8FLOW_NATS_URL: "nats://nats:4222"
     ports:
       - "${M8FLOW_BACKEND_PORT:-7000}:8000"
     volumes:
@@ -175,10 +233,14 @@ services:
         condition: service_started
       keycloak:
         condition: service_healthy
+      keycloak-master-admin-init:
+        condition: service_completed_successfully
       redis:
         condition: service_started
       minio:
         condition: service_started
+      nats:
+        condition: service_healthy
 
   m8flow-celery-worker:
     build:
@@ -198,10 +260,16 @@ services:
     volumes:
       - ${M8FLOW_BACKEND_CELERY_PROCESS_MODELS_MOUNT_SOURCE:-process_models_cache}:/app/process_models
     depends_on:
-      - m8flow-db
-      - keycloak
-      - redis
-      - minio
+      m8flow-db:
+        condition: service_started
+      keycloak:
+        condition: service_started
+      keycloak-master-admin-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+      minio:
+        condition: service_started
 
   m8flow-celery-flower:
     build:
@@ -221,10 +289,16 @@ services:
     ports:
       - "5555:5555"
     depends_on:
-      - m8flow-db
-      - keycloak
-      - redis
-      - minio
+      m8flow-db:
+        condition: service_started
+      keycloak:
+        condition: service_started
+      keycloak-master-admin-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+      minio:
+        condition: service_started
 
   m8flow-frontend:
     build:
@@ -257,7 +331,11 @@ services:
         target: "${M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_USER_ACCESS_DIR:-/slack_attachments}"
         read_only: true
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:${CONNECTOR_PROXY_PORT:-8004}/liveness || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS http://localhost:${CONNECTOR_PROXY_PORT:-8004}/liveness || exit 1",
+        ]
       interval: 10s
       timeout: 5s
       retries: 20
@@ -278,4 +356,6 @@ volumes:
   smtp_attachments:
     driver: local
   slack_attachments:
+    driver: local
+  nats_data:
     driver: local

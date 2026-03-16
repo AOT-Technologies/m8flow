@@ -12,9 +12,11 @@ if (rootEnv.MULTI_TENANT_ON !== undefined && process.env.VITE_MULTI_TENANT_ON ==
   process.env.VITE_MULTI_TENANT_ON = rootEnv.MULTI_TENANT_ON;
 }
 
-const host = process.env.HOST ?? 'localhost';
-const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 8001; // Match start_dev.sh FRONTEND_PORT
-const backendPort = process.env.BACKEND_PORT ? parseInt(process.env.BACKEND_PORT, 10) : 8000; // Match start_dev.sh backend port
+const host = process.env.HOST ?? '0.0.0.0';
+const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 8001;
+const backendPort = process.env.BACKEND_PORT ? parseInt(process.env.BACKEND_PORT, 10) : 8000;
+
+const backendUrl = rootEnv.M8FLOW_BACKEND_URL_FRONTEND;
 
 const multiTenantOn =
   rootEnv.MULTI_TENANT_ON ?? process.env.VITE_MULTI_TENANT_ON ?? 'false';
@@ -55,18 +57,18 @@ export default defineConfig({
     fs: {
       allow: [path.resolve(__dirname, '../..')],
     },
-    // Proxy API requests to backend to avoid CORS issues
+    // Proxy API requests to the real backend to avoid CORS issues and cookie-domain mismatches.
+    // Without this, the browser would hit the backend IP directly and cookies set by the backend
+    // (domain=192.168.1.77) would not be sent on requests coming from the Vite dev server origin.
     proxy: {
       '/v1.0': {
-        target: `http://localhost:${backendPort}`,
+        target: backendUrl,
         changeOrigin: true,
         secure: false,
-        // Preserve the original path
         rewrite: (path) => path,
       },
-      // Also proxy /api if backend uses that prefix
       '/api': {
-        target: `http://localhost:${backendPort}`,
+        target: backendUrl,
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path,
@@ -83,7 +85,7 @@ export default defineConfig({
         process.env.NODE_ENV !== 'production'
           ? 'inferno/dist/index.dev.esm.js'
           : 'inferno/dist/index.esm.js',
-      // Alias to spiffworkflow-frontend source (go up 2 levels from extensions/frontend)
+      // Alias to spiffworkflow-frontend source (go up 2 levels from extensions/m8flow-frontend)
       '@spiffworkflow-frontend': path.resolve(__dirname, '../../spiffworkflow-frontend/src'),
       // Alias to spiffworkflow-frontend assets
       '@spiffworkflow-frontend-assets': path.resolve(__dirname, '../../spiffworkflow-frontend/src/assets'),
@@ -94,7 +96,7 @@ export default defineConfig({
     preprocessorOptions: {
       scss: {
         silenceDeprecations: ['mixed-decls', 'if-function'],
-        // Allow SASS to find modules in extensions/frontend/node_modules
+        // Allow SASS to find modules in extensions/m8flow-frontend/node_modules
         loadPaths: [
           path.resolve(__dirname, './node_modules'),
         ],

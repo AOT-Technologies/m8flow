@@ -1080,6 +1080,39 @@ paths:
         "404":
           description: No template info found for this process model
 
+  /nats-tokens:
+    post:
+      summary: Generate a NATS event token
+      description: Generates a new unique token for a tenant to use when publishing NATS events. Restricted to tenant-admin and integrator.
+      operationId: m8flow_backend.routes.nats_token_controller.generate_token
+      tags:
+        - NATS
+      responses:
+        "201":
+          description: Token generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NatsTokenResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthResponse:
@@ -1340,3 +1373,19 @@ components:
           description: The created process model info
         template_info:
           $ref: "#/components/schemas/ProcessModelTemplateInfo"
+    NatsTokenResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          description: The generated token (key)
+        tenantId:
+          type: string
+        createdAtInSeconds:
+          type: integer
+        createdBy:
+          type: string
+        updatedAtInSeconds:
+          type: integer
+        modifiedBy:
+          type: string

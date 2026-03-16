@@ -87,7 +87,7 @@ fi
 
 echo "Starting frontend (Ctrl+C to stop both)..."
 if [[ -f "$ROOT/extensions/app.py" ]]; then
-  cd "$ROOT/extensions/frontend"
+  cd "$ROOT/extensions/m8flow-frontend"
   echo "Using extensions frontend (tenant gate, MULTI_TENANT_ON from .env)"
   export PORT="${FRONTEND_PORT:-7001}"
   export BACKEND_PORT

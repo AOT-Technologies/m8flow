@@ -23,7 +23,9 @@ TENANT_CLAIM = (os.getenv("M8FLOW_TENANT_CLAIM") or "").strip() or "m8flow_tenan
 # prefix + each path so both prefixed and unprefixed deployments work.
 _WSGI_PATH_PREFIX = os.getenv("SPIFFWORKFLOW_BACKEND_WSGI_PATH_PREFIX", "").strip()
 
-_BASE_PUBLIC_PREFIXES: tuple[str, ...] = (
+# Include both prefixed and unprefixed paths so we match regardless of
+# SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX.
+TENANT_CONTEXT_EXEMPT_PATH_PREFIXES: tuple[str, ...] = (
     "/.well-known",
     "/favicon.ico",
     "/v1.0/health",
@@ -31,6 +33,9 @@ _BASE_PUBLIC_PREFIXES: tuple[str, ...] = (
     "/v1.0/status",
     "/v1.0/openapi.json",
     "/v1.0/openapi.yaml",
+    "/openapi.yaml",
+    "/v1.0/permissions-check",
+    "/permissions-check",
     "/v1.0/ui",
     "/v1.0/static",
     "/v1.0/logout",
@@ -40,17 +45,19 @@ _BASE_PUBLIC_PREFIXES: tuple[str, ...] = (
     "/v1.0/m8flow/tenant-login-url",
     "/v1.0/m8flow/tenant-realms",
     "/v1.0/m8flow/create-tenant",
+    "/m8flow/create-tenant",
+    # Global tenant-management endpoints are authenticated, but they do not belong to a tenant realm.
+    "/v1.0/m8flow/tenants",
+    "/m8flow/tenants",
 )
 
-if _WSGI_PATH_PREFIX:
-    _prefixed = tuple(
-        _WSGI_PATH_PREFIX + p for p in _BASE_PUBLIC_PREFIXES if p not in ("/.well-known", "/favicon.ico")
-    )
-    # Connexion may also serve UI at prefix + "/ui"
-    _extra_ui = (_WSGI_PATH_PREFIX + "/ui",) if _WSGI_PATH_PREFIX == "/api" else ()
-    PUBLIC_PATH_PREFIXES = _BASE_PUBLIC_PREFIXES + _prefixed + _extra_ui
-else:
-    PUBLIC_PATH_PREFIXES = _BASE_PUBLIC_PREFIXES
+# Path suffixes for pre-login tenant selection (no tenant context required). Also included in
+# TENANT_CONTEXT_EXEMPT_PATH_PREFIXES above with /v1.0 prefix.
+PRE_LOGIN_TENANT_SELECTION_PATH_PREFIXES: tuple[str, ...] = ("/tenants/check", "/m8flow/tenant-login-url")
+
+# Backward-compatible aliases while call sites migrate to clearer naming.
+PUBLIC_PATH_PREFIXES = TENANT_CONTEXT_EXEMPT_PATH_PREFIXES
+TENANT_PUBLIC_PATH_PREFIXES = PRE_LOGIN_TENANT_SELECTION_PATH_PREFIXES
 
 _CONTEXT_TENANT_ID: ContextVar[Optional[str]] = ContextVar("m8flow_tenant_id", default=None)
 
@@ -59,6 +66,16 @@ _REQUEST_ACTIVE: ContextVar[bool] = ContextVar("m8flow_request_active", default=
 
 # Local flag to avoid warning spam outside Flask request context
 _CONTEXT_WARNED_DEFAULT: ContextVar[bool] = ContextVar("m8flow_warned_default_tenant", default=False)
+
+
+def get_healthy_response() -> tuple[dict, int]:
+    """Return the canonical healthy response (payload, status_code) for reuse by health endpoints and callers."""
+    return ({"status": "ok", "ok": True, "healthy": True}, 200)
+
+
+def health_check():
+    """Public health check for load balancers and monitoring. Returns 200 when the process is up."""
+    return get_healthy_response()
 
 
 def allow_missing_tenant_context() -> bool:
@@ -117,19 +134,17 @@ def clear_tenant_context() -> None:
     _CONTEXT_TENANT_ID.set(None)
     _CONTEXT_WARNED_DEFAULT.set(False)
 
-
-def get_healthy_response() -> tuple[dict, int]:
-    """Return the canonical healthy response (payload, status_code) for reuse by health endpoints and callers."""
-    return ({"status": "ok", "ok": True, "healthy": True}, 200)
-
-
-def health_check():
-    """Public health check for load balancers and monitoring. Returns 200 when the process is up."""
-    return get_healthy_response()
+def is_tenant_context_exempt_request() -> bool:
+    if not has_request_context():
+        return False
+    return bool(
+        getattr(g, "_m8flow_tenant_context_exempt_request", False)
+        or getattr(g, "_m8flow_public_request", False)
+    )
 
 
 def is_public_request() -> bool:
-    return has_request_context() and bool(getattr(g, "_m8flow_public_request", False))
+    return is_tenant_context_exempt_request()
 
 
 def _warn_default_once(message: str, **extra: object) -> None:

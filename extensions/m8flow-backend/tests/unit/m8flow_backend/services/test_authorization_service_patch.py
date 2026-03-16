@@ -1,13 +1,7 @@
 # extensions/m8flow-backend/tests/unit/m8flow_backend/services/test_authorization_service_patch.py
-"""Unit tests for authorization_service_patch: username uniqueness across realms.
-
-These tests verify the logic used in the patch without actually applying the patch,
-since the patch modifies the real AuthorizationService which has complex dependencies.
-"""
+"""Unit tests for authorization_service_patch helper behavior."""
 import sys
 from pathlib import Path
-
-import pytest
 
 # Ensure m8flow_backend and spiffworkflow_backend are importable
 extension_root = Path(__file__).resolve().parents[4]
@@ -19,20 +13,11 @@ for path in (extension_src, backend_src):
     if path_str not in sys.path:
         sys.path.insert(0, path_str)
 
-
-def _extract_realm_from_issuer(iss: str) -> str | None:
-    """Extract realm from Keycloak issuer URL."""
-    if "/realms/" in iss:
-        return iss.split("/realms/")[-1].split("/")[0]
-    return None
-
-
-def _apply_username_suffix(username: str, realm: str) -> str:
-    """Apply realm suffix to username if not already present."""
-    suffix = f"@{realm}"
-    if not username.endswith(suffix):
-        return f"{username}{suffix}"
-    return username
+from m8flow_backend.services.authorization_service_patch import (  # noqa: E402
+    _apply_username_suffix,
+    _extract_realm_from_issuer,
+    _keycloak_realm_roles_as_groups,
+)
 
 
 def test_create_user_from_sign_in_appends_realm():
@@ -129,3 +114,24 @@ def test_username_suffix_logic():
     for username, realm, expected in test_cases:
         result = _apply_username_suffix(username, realm)
         assert result == expected, f"Failed for ({username}, {realm}): got {result}, expected {expected}"
+
+
+def test_keycloak_realm_roles_as_groups_filters_to_m8flow_roles():
+    user_info = {
+        "realm_access": {
+            "roles": [
+                "offline_access",
+                "default-roles-master",
+                "super-admin",
+                "tenant-admin",
+            ]
+        }
+    }
+
+    assert _keycloak_realm_roles_as_groups(user_info) == ["super-admin", "tenant-admin"]
+
+
+def test_keycloak_realm_roles_as_groups_returns_empty_without_roles():
+    assert _keycloak_realm_roles_as_groups({"realm_access": {"roles": "super-admin"}}) == []
+    assert _keycloak_realm_roles_as_groups({"realm_access": {}}) == []
+    assert _keycloak_realm_roles_as_groups({}) == []

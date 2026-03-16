@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import base64
+from contextlib import contextmanager
 import json
 from urllib.parse import urlparse, urlunparse
 
@@ -25,6 +26,80 @@ _OPENID_PATCHED = False
 _REFRESH_TOKEN_TENANT_PATCHED = False
 _ORIGINAL_STORE_REFRESH_TOKEN = None
 _ORIGINAL_GET_REFRESH_TOKEN = None
+_MISSING = object()
+MASTER_REALM_IDENTIFIER = "master"
+
+
+def _call_original_auth_option_for_identifier(cls, authentication_identifier: str):
+    if _ORIGINAL_AUTH_OPTION_FOR_IDENTIFIER is None:
+        raise RuntimeError(
+            "Original AuthenticationService.authentication_option_for_identifier was not captured."
+        )
+    return _ORIGINAL_AUTH_OPTION_FOR_IDENTIFIER.__func__(cls, authentication_identifier)
+
+
+def _current_app_or_none():
+    try:
+        from flask import current_app
+    except ImportError:
+        return None
+    return current_app
+
+
+def _attempt_master_auth_config_retry(cls, authentication_identifier: str):
+    if authentication_identifier != MASTER_REALM_IDENTIFIER:
+        return _MISSING
+
+    try:
+        from m8flow_backend.services.auth_config_service import ensure_master_auth_config
+    except ImportError:
+        return _MISSING
+
+    current_app = _current_app_or_none()
+    if current_app is None:
+        return _MISSING
+
+    ensure_master_auth_config(current_app)
+    return _call_original_auth_option_for_identifier(cls, authentication_identifier)
+
+
+def _realm_exists_or_reraise(
+    authentication_identifier: str,
+    exc: AuthenticationOptionNotFoundError,
+) -> bool:
+    try:
+        from m8flow_backend.services.keycloak_service import realm_exists
+    except ImportError:
+        raise exc from exc
+    return realm_exists(authentication_identifier)
+
+
+def _ensure_tenant_auth_config_or_reraise(
+    authentication_identifier: str,
+    exc: AuthenticationOptionNotFoundError,
+) -> None:
+    try:
+        from m8flow_backend.services.auth_config_service import ensure_tenant_auth_config
+    except ImportError:
+        raise exc from exc
+
+    ensure_tenant_auth_config(_current_app_or_none(), authentication_identifier)
+
+
+@classmethod
+def _patched_authentication_option_for_identifier(cls, authentication_identifier: str):
+    try:
+        return _call_original_auth_option_for_identifier(cls, authentication_identifier)
+    except AuthenticationOptionNotFoundError as exc:
+        master_result = _attempt_master_auth_config_retry(cls, authentication_identifier)
+        if master_result is not _MISSING:
+            return master_result
+
+        if not _realm_exists_or_reraise(authentication_identifier, exc):
+            raise exc from exc
+
+        _ensure_tenant_auth_config_or_reraise(authentication_identifier, exc)
+        return _call_original_auth_option_for_identifier(cls, authentication_identifier)
 
 
 def apply_auth_config_on_demand_patch() -> None:
@@ -35,30 +110,6 @@ def apply_auth_config_on_demand_patch() -> None:
 
     if _ORIGINAL_AUTH_OPTION_FOR_IDENTIFIER is None:
         _ORIGINAL_AUTH_OPTION_FOR_IDENTIFIER = AuthenticationService.authentication_option_for_identifier
-
-    original = _ORIGINAL_AUTH_OPTION_FOR_IDENTIFIER
-
-    @classmethod
-    def _patched_authentication_option_for_identifier(cls, authentication_identifier: str):
-        try:
-            return original.__func__(cls, authentication_identifier)
-        except AuthenticationOptionNotFoundError as exc:
-            try:
-                from m8flow_backend.services.keycloak_service import realm_exists
-            except ImportError:
-                raise exc from exc
-
-            if not realm_exists(authentication_identifier):
-                raise exc from exc
-
-            try:
-                from flask import current_app
-                from m8flow_backend.services.auth_config_service import ensure_tenant_auth_config
-            except ImportError:
-                raise exc from exc
-
-            ensure_tenant_auth_config(current_app, authentication_identifier)
-            return original.__func__(cls, authentication_identifier)
 
     AuthenticationService.authentication_option_for_identifier = (
         _patched_authentication_option_for_identifier
@@ -268,6 +319,52 @@ def _resolve_refresh_token_tenant_id(
     return _tenant_from_request_token()
 
 
+def _refresh_token_storage_tenant_id(tenant_id: str | None) -> str | None:
+    """
+    Refresh tokens remain tenant-scoped in the database schema.
+
+    Master realm users are global and do not have an m8flow_tenant row, so their
+    refresh tokens must be stored under a real tenant FK. We use the default
+    tenant row only as an internal storage namespace for that case.
+    """
+    if tenant_id == MASTER_REALM_IDENTIFIER:
+        from m8flow_backend.tenancy import DEFAULT_TENANT_ID
+
+        return DEFAULT_TENANT_ID
+    return tenant_id
+
+
+@contextmanager
+def _temporary_refresh_token_tenant_scope(storage_tenant_id: str | None):
+    from flask import g, has_request_context
+
+    if not has_request_context() or not storage_tenant_id:
+        yield
+        return
+
+    from m8flow_backend.tenancy import get_context_tenant_id, reset_context_tenant_id, set_context_tenant_id
+
+    previous_request_tenant = getattr(g, "m8flow_tenant_id", _MISSING)
+    previous_context_tenant = get_context_tenant_id()
+    ctx_token = None
+
+    if previous_request_tenant != storage_tenant_id:
+        g.m8flow_tenant_id = storage_tenant_id
+    if previous_context_tenant != storage_tenant_id:
+        ctx_token = set_context_tenant_id(storage_tenant_id)
+
+    try:
+        yield
+    finally:
+        if ctx_token is not None:
+            reset_context_tenant_id(ctx_token)
+        if previous_request_tenant is _MISSING:
+            if hasattr(g, "m8flow_tenant_id"):
+                delattr(g, "m8flow_tenant_id")
+        else:
+            g.m8flow_tenant_id = previous_request_tenant
+
+
 def _ensure_refresh_token_originals() -> None:
     global _ORIGINAL_STORE_REFRESH_TOKEN, _ORIGINAL_GET_REFRESH_TOKEN
     if _ORIGINAL_STORE_REFRESH_TOKEN is None:
@@ -304,29 +401,31 @@ def _patched_store_refresh_token(
     effective_tenant_id = _resolve_refresh_token_tenant_id(tenant_id=tenant_id, decoded_token=decoded_token)
     if not effective_tenant_id:
         raise RefreshTokenStorageError("We could not store the refresh token: missing tenant context.")
+    storage_tenant_id = _refresh_token_storage_tenant_id(effective_tenant_id)
 
-    refresh_token_model = (
-        RefreshTokenModel.query.filter(RefreshTokenModel.user_id == user_id)
-        .filter(RefreshTokenModel.m8f_tenant_id == effective_tenant_id)
-        .first()
-    )
-    if refresh_token_model:
-        refresh_token_model.token = refresh_token
-    else:
-        refresh_token_model = RefreshTokenModel(
-            user_id=user_id,
-            token=refresh_token,
-            m8f_tenant_id=effective_tenant_id,
+    with _temporary_refresh_token_tenant_scope(storage_tenant_id):
+        refresh_token_model = (
+            RefreshTokenModel.query.filter(RefreshTokenModel.user_id == user_id)
+            .filter(RefreshTokenModel.m8f_tenant_id == storage_tenant_id)
+            .first()
         )
+        if refresh_token_model:
+            refresh_token_model.token = refresh_token
+        else:
+            refresh_token_model = RefreshTokenModel(
+                user_id=user_id,
+                token=refresh_token,
+                m8f_tenant_id=storage_tenant_id,
+            )
 
-    db.session.add(refresh_token_model)
-    try:
-        db.session.commit()
-    except Exception as exc:
-        db.session.rollback()
-        raise RefreshTokenStorageError(
-            f"We could not store the refresh token. Original error is {exc}",
-        ) from exc
+        db.session.add(refresh_token_model)
+        try:
+            db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            raise RefreshTokenStorageError(
+                f"We could not store the refresh token. Original error is {exc}",
+            ) from exc
 
 
 def _patched_get_refresh_token(
@@ -342,14 +441,16 @@ def _patched_get_refresh_token(
     effective_tenant_id = _resolve_refresh_token_tenant_id(tenant_id=tenant_id, decoded_token=decoded_token)
     if not effective_tenant_id:
         return None
+    storage_tenant_id = _refresh_token_storage_tenant_id(effective_tenant_id)
 
-    refresh_token_object = (
-        RefreshTokenModel.query.filter(RefreshTokenModel.user_id == user_id)
-        .filter(RefreshTokenModel.m8f_tenant_id == effective_tenant_id)
-        .first()
-    )
-    if refresh_token_object:
-        return refresh_token_object.token
+    with _temporary_refresh_token_tenant_scope(storage_tenant_id):
+        refresh_token_object = (
+            RefreshTokenModel.query.filter(RefreshTokenModel.user_id == user_id)
+            .filter(RefreshTokenModel.m8f_tenant_id == storage_tenant_id)
+            .first()
+        )
+        if refresh_token_object:
+            return refresh_token_object.token
     return None
 
 

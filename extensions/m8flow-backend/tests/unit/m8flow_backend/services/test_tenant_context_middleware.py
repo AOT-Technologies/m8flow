@@ -9,7 +9,7 @@ from flask import Flask, g
 from spiffworkflow_backend.exceptions.api_error import ApiError
 from spiffworkflow_backend.models.db import db
 from m8flow_backend.services.tenant_context_middleware import (
-    _is_public_request,
+    _is_tenant_context_exempt_request,
     resolve_request_tenant,
     teardown_request_tenant_context,
 )
@@ -323,10 +323,22 @@ def test_tenant_context_propagates_to_queries() -> None:
     assert resp.get_data(as_text=True) == "A"
 
 
-def test_login_return_path_is_not_public_by_prefix_collision() -> None:
+def test_login_return_path_is_not_tenant_context_exempt_by_prefix_collision() -> None:
     app = _make_app()
     with app.test_request_context("/v1.0/login_return"):
-        assert _is_public_request() is False
+        assert _is_tenant_context_exempt_request() is False
+
+
+def test_global_tenant_management_path_is_tenant_context_exempt() -> None:
+    app = _make_app()
+    with app.test_request_context("/v1.0/m8flow/tenants/tenant-a"):
+        assert _is_tenant_context_exempt_request() is True
+
+
+def test_permissions_check_path_is_tenant_context_exempt() -> None:
+    app = _make_app()
+    with app.test_request_context("/v1.0/permissions-check"):
+        assert _is_tenant_context_exempt_request() is True
 
 
 def test_login_return_resolves_tenant_from_state_when_auth_is_excluded() -> None:
@@ -346,3 +358,22 @@ def test_login_return_resolves_tenant_from_state_when_auth_is_excluded() -> None
         with app.test_request_context(f"/v1.0/login_return?state={state}"):
             resolve_request_tenant()
             assert g.m8flow_tenant_id == "tenant-it-id"
+
+
+def test_login_return_skips_tenant_validation_for_master_auth_identifier() -> None:
+    import base64
+
+    app = _make_app()
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+
+        state_payload = {
+            "final_url": "http://localhost:7000/tenants",
+            "authentication_identifier": "master",
+        }
+        state = base64.b64encode(bytes(str(state_payload), "utf-8")).decode("utf-8")
+
+        with app.test_request_context(f"/v1.0/login_return?state={state}"):
+            resolve_request_tenant()
+            assert getattr(g, "m8flow_tenant_id", None) is None
