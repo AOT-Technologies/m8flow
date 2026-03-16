@@ -656,29 +656,6 @@
       ]
     },
     {
-      "username": "tenant-admin",
-      "firstName": "Tenant Admin",
-      "lastName": "M8Flow",
-      "email": "",
-      "emailVerified": true,
-      "enabled": true,
-      "totp": false,
-      "disableableCredentialTypes": [],
-      "requiredActions": [
-        "UPDATE_PASSWORD"
-      ],
-      "realmRoles": ["default-roles-spiffworkflow", "tenant-admin"],
-      "notBefore": 0,
-      "groups": [],
-      "credentials": [
-        {
-          "type": "password",
-          "value": "tenant-admin",
-          "temporary": true
-        }
-      ]
-    },
-    {
       "username": "viewer",
       "firstName": "Viewer",
       "lastName": "M8Flow",
