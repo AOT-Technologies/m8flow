@@ -18,7 +18,7 @@ COPY --from=builder /build/realm-info-mapper/target/realm-info-mapper.jar /opt/k
 USER root
 RUN chown keycloak:keycloak /opt/keycloak/providers/realm-info-mapper.jar
 RUN mkdir -p /opt/keycloak/data/import
-COPY extensions/m8flow-backend/keycloak/realm_exports/tenant-realm-export.json /opt/keycloak/data/import/tenant-a-realm.json
+# COPY extensions/m8flow-backend/keycloak/realm_exports/tenant-realm-export.json /opt/keycloak/data/import/tenant-a-realm.json
 COPY extensions/m8flow-backend/keycloak/realm_exports/identity-realm-export.json /opt/keycloak/data/import/identity-realm.json
 RUN chown -R keycloak:keycloak /opt/keycloak/data/import
 COPY docker/keycloak-init-realms.sh /opt/keycloak/bin/keycloak-init-realms.sh
