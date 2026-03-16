@@ -38,7 +38,7 @@ groups:
 # Permissions defined here are appended to the permissions in the database on login, so changes to this file will take effect on the next login of each user.
 permissions:
   # Very basic permissions for general access to the frontend and onboarding, assigned to everybody.
-  frontend-access:    
+  frontend-access:
     groups: ["everybody"]
     actions: [read]
     uri: /frontend-access
@@ -46,6 +46,10 @@ permissions:
     groups: ["everybody"]
     actions: [read]
     uri: /onboarding
+  active-users:
+    groups: ["everybody"]
+    actions: [create]
+    uri: /active-users/*
 
 
   # Super Admins have access to tenants management only.

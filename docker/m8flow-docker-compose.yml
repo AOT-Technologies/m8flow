@@ -41,7 +41,7 @@ services:
       KC_HTTP_PORT: ${KC_HTTP_PORT:-8080}
       KC_HOSTNAME_STRICT: ${KC_HOSTNAME_STRICT:-false}
       KC_PROXY_HEADERS: ${KC_PROXY_HEADERS:-xforwarded}
-      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-localhost}
+      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME_HOST:-localhost}
       KC_HOSTNAME_URL: ${KEYCLOAK_HOSTNAME_URL:-http://localhost:7002}
     ports:
       - "7009:9000"
@@ -72,7 +72,8 @@ services:
       KEYCLOAK_SUPER_ADMIN_USER: ${KEYCLOAK_SUPER_ADMIN_USER:-super-admin}
       KEYCLOAK_SUPER_ADMIN_PASSWORD: ${KEYCLOAK_SUPER_ADMIN_PASSWORD:-super-admin}
     depends_on:
-      - keycloak
+      keycloak:
+        condition: service_healthy
     volumes:
       - ../extensions/m8flow-backend/bin/ensure_keycloak_master_super_admin.sh:/ensure_keycloak_master_super_admin.sh:ro
     entrypoint: ["/bin/sh", "/ensure_keycloak_master_super_admin.sh"]
@@ -107,11 +108,11 @@ services:
     build:
       context: ..
       dockerfile: docker/m8flow.backend.Dockerfile
+    user: "0"
     command:
       - "sh"
       - "-c"
       - |
-        uv pip install --system nats-py httpx python-dotenv &&
         PYTHONPATH=/app:/app/extensions/m8flow-backend/src:/app/spiffworkflow-backend/src \
         exec python m8flow-nats-consumer/consumer.py
     env_file: ../.env
@@ -122,6 +123,8 @@ services:
         condition: service_started
     environment:
       M8FLOW_NATS_URL: "nats://nats:4222"
+      M8FLOW_BACKEND_DATABASE_URI: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
+      SPIFFWORKFLOW_BACKEND_DATABASE_URI: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
     volumes:
       - process_models_cache:/app/process_models
       - ../data/m8flow_nats_consumer:/app/data/m8flow_nats_consumer
@@ -207,6 +210,7 @@ services:
     build:
       context: ..
       dockerfile: docker/m8flow.backend.Dockerfile
+    user: "0"
     env_file: ../.env
     environment:
       M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: "${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-/app/process_models}"
@@ -246,6 +250,7 @@ services:
     build:
       context: ..
       dockerfile: docker/m8flow.backend.Dockerfile
+    user: "0"
     command: ["bash", "./extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh"]
     env_file: ../.env
     environment:
@@ -275,6 +280,7 @@ services:
     build:
       context: ..
       dockerfile: docker/m8flow.backend.Dockerfile
+    user: "0"
     command: ["bash", "./extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh", "flower"]
     env_file: ../.env
     environment:

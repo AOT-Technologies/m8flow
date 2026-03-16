@@ -49,8 +49,8 @@ else
   fi
 
   # Create permanent admin user with full privileges (idempotent: create may fail if user exists)
-  SUPERADMIN_USER="${KEYCLOAK_SUPERADMIN_USERNAME:-superadmin}"
-  SUPERADMIN_PASS="${KEYCLOAK_SUPERADMIN_PASSWORD:-superpassword}"
+  SUPERADMIN_USER="${KEYCLOAK_SUPER_ADMIN_USER:-superadmin}"
+  SUPERADMIN_PASS="${KEYCLOAK_SUPER_ADMIN_PASSWORD:-superpassword}"
   if /opt/keycloak/bin/kcadm.sh create users -r master -s username="${SUPERADMIN_USER}" -s enabled=true 2>/dev/null; then
     echo "[keycloak-entrypoint] Created permanent admin user ${SUPERADMIN_USER}."
   else
@@ -73,8 +73,8 @@ else
     echo "[keycloak-entrypoint] add-roles (create-realm) for ${SUPERADMIN_USER} skipped or failed." >&2
   fi
 
-  echo "[keycloak-entrypoint] Setting sslRequired=NONE on realms master, tenant-a, identity..."
-  for realm in master tenant-a identity; do
+  echo "[keycloak-entrypoint] Setting sslRequired=NONE on realms master, identity..."
+  for realm in master identity; do
     if /opt/keycloak/bin/kcadm.sh update realms/${realm} -s sslRequired=NONE 2>/dev/null; then
       echo "[keycloak-entrypoint] Realm ${realm}: sslRequired=NONE set successfully."
     else

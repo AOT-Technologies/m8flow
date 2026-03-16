@@ -128,7 +128,8 @@ RUN pip install --upgrade pip && pip install uv flower
 
 COPY . /app
 
-RUN cd /app/spiffworkflow-backend && uv pip install --system -e .
+RUN cd /app/spiffworkflow-backend && uv pip install --system -e . \
+  && pip install nats-py httpx python-dotenv
 
 # Fix CRLF issues for Windows users and ensure scripts are executable
 RUN sed -i 's/\r$//' /app/extensions/m8flow-backend/bin/run_m8flow_backend.sh \
