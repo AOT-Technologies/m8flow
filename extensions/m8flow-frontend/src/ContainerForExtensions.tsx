@@ -53,7 +53,7 @@ UserService.doLogout = () => {
   originalDoLogout();
 };
 
-/** When ENABLE_MULTITENANT: at "/" show TenantSelectPage if no tenant in localStorage, else show default home (RoleBasedRootGate). */
+/** When ENABLE_MULTITENANT: at "/" show TenantSelectPage unless the user can manage tenants globally or already selected a tenant. */
 function MultitenantRootGate({
   extensionUxElements,
   setAdditionalNavElement,
@@ -70,6 +70,19 @@ function MultitenantRootGate({
   permissionsLoaded: boolean;
 }) {
   if (!permissionsLoaded) return null;
+
+  if (ability.can("GET", targetUris.m8flowTenantListPath)) {
+    return (
+      <RoleBasedRootGate
+        extensionUxElements={extensionUxElements}
+        setAdditionalNavElement={setAdditionalNavElement}
+        isMobile={isMobile}
+        ability={ability}
+        targetUris={targetUris}
+        permissionsLoaded={permissionsLoaded}
+      />
+    );
+  }
 
   const storedTenant = typeof window !== 'undefined' ? localStorage.getItem(M8FLOW_TENANT_STORAGE_KEY) : null;
   if (storedTenant) {

@@ -23,25 +23,46 @@ import TenantGateContext from './contexts/TenantGateContext';
 import TenantSelectPage from './views/TenantSelectPage';
 import { useConfig } from './utils/useConfig';
 import { M8FLOW_TENANT_STORAGE_KEY } from './views/TenantSelectPage';
+import UserService from './services/UserService';
 
 const queryClient = new QueryClient();
 
 function getStoredTenant(): boolean {
-  if (typeof window === 'undefined') return false;
+  if (typeof globalThis === 'undefined') return false;
   return !!localStorage.getItem(M8FLOW_TENANT_STORAGE_KEY);
+}
+
+function getCurrentPathname(): string {
+  if (typeof globalThis === 'undefined' || !globalThis.location) {
+    return '/';
+  }
+  return globalThis.location.pathname;
+}
+
+function isTenantSelectionExemptPath(pathname: string): boolean {
+  return (
+    pathname === '/login' ||
+    pathname === '/tenants' ||
+    pathname.startsWith('/public/')
+  );
 }
 
 export default function App() {
   const ability = defineAbility(() => {});
   const { ENABLE_MULTITENANT } = useConfig();
   const [hasTenant, setHasTenant] = useState(getStoredTenant);
+  const currentPathname = getCurrentPathname();
+  const bypassTenantSelectionGate =
+    UserService.isLoggedIn() || isTenantSelectionExemptPath(currentPathname);
 
   // When multitenant is on and no tenant is stored, show only the tenant page.
   // This avoids mounting ContainerForExtensions (and its permission check), which would 401 and redirect to login.
-  if (ENABLE_MULTITENANT && !hasTenant) {
+  if (ENABLE_MULTITENANT && !hasTenant && !bypassTenantSelectionGate) {
     const minimalTheme = createTheme(
       createSpiffTheme(
-        (typeof window !== 'undefined' && (localStorage.getItem('theme') as 'light' | 'dark')) || 'light'
+        (typeof globalThis !== 'undefined' &&
+          (localStorage.getItem('theme') as 'light' | 'dark')) ||
+          'light'
       )
     );
     return (

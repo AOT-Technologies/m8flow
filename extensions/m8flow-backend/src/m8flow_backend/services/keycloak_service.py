@@ -39,6 +39,8 @@ BACKEND_URL_PLACEHOLDER = "https://replace-me-with-spiff-backend-host-and-path/*
 FRONTEND_URL_PLACEHOLDER = "https://replace-me-with-spiff-frontend-host-and-path/*"
 FRONTEND_CLIENT_ID = "spiffworkflow-frontend"
 POST_LOGOUT_REDIRECT_URIS_ATTR = "post.logout.redirect.uris"
+GLOBAL_ONLY_REALM_ROLE_NAMES = frozenset({"super-admin"})
+GLOBAL_ONLY_USERNAMES = frozenset({"super-admin"})
 
 
 def _substitute_spoke_client_id(obj: Any, client_id: str) -> Any:
@@ -493,17 +495,36 @@ def _fill_realm_template(
 def _sanitize_roles_for_partial_import(roles: dict[str, Any]) -> dict[str, Any]:
     """Strip id and containerId from realm and client roles so Keycloak can assign new ones."""
     out = copy.deepcopy(roles)
-    for role in out.get("realm") or []:
-        if isinstance(role, dict):
-            role.pop("id", None)
-            role.pop("containerId", None)
-    for client_id, role_list in (out.get("client") or {}).items():
-        if isinstance(role_list, list):
-            for role in role_list:
-                if isinstance(role, dict):
-                    role.pop("id", None)
-                    role.pop("containerId", None)
+    if "realm" in out:
+        out["realm"] = _sanitize_realm_roles_for_partial_import(out.get("realm") or [])
+    _sanitize_client_roles_for_partial_import(out.get("client"))
     return out
+
+
+def _sanitize_role_identifiers(role: Any) -> None:
+    if isinstance(role, dict):
+        role.pop("id", None)
+        role.pop("containerId", None)
+
+
+def _sanitize_realm_roles_for_partial_import(realm_roles: list[Any]) -> list[Any]:
+    sanitized_roles = []
+    for role in realm_roles:
+        if isinstance(role, dict) and role.get("name") in GLOBAL_ONLY_REALM_ROLE_NAMES:
+            continue
+        _sanitize_role_identifiers(role)
+        sanitized_roles.append(role)
+    return sanitized_roles
+
+
+def _sanitize_client_roles_for_partial_import(client_roles: Any) -> None:
+    if not isinstance(client_roles, dict):
+        return
+    for role_list in client_roles.values():
+        if not isinstance(role_list, list):
+            continue
+        for role in role_list:
+            _sanitize_role_identifiers(role)
 
 
 def _sanitize_groups_for_partial_import(groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -522,16 +543,40 @@ def _sanitize_groups_for_partial_import(groups: list[dict[str, Any]]) -> list[di
     return out
 
 
+def _sanitize_user_realm_roles(user: dict[str, Any]) -> None:
+    realm_roles = user.get("realmRoles")
+    if not isinstance(realm_roles, list):
+        return
+    user["realmRoles"] = [role for role in realm_roles if role not in GLOBAL_ONLY_REALM_ROLE_NAMES]
+
+
+def _sanitize_user_credential(credential: Any) -> None:
+    if isinstance(credential, dict):
+        credential.pop("id", None)
+
+
+def _sanitize_user_for_partial_import(user: Any) -> dict[str, Any] | Any | None:
+    if not isinstance(user, dict):
+        return user
+    if user.get("username") in GLOBAL_ONLY_USERNAMES:
+        return None
+
+    user.pop("id", None)
+    _sanitize_user_realm_roles(user)
+    for credential in user.get("credentials") or []:
+        _sanitize_user_credential(credential)
+    return user
+
+
 def _sanitize_users_for_partial_import(users: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Strip id from users and their credentials for partial import."""
     out = copy.deepcopy(users)
+    sanitized_users = []
     for user in out:
-        if isinstance(user, dict):
-            user.pop("id", None)
-            for cred in user.get("credentials") or []:
-                if isinstance(cred, dict):
-                    cred.pop("id", None)
-    return out
+        sanitized_user = _sanitize_user_for_partial_import(user)
+        if sanitized_user is not None:
+            sanitized_users.append(sanitized_user)
+    return sanitized_users
 
 
 def _sanitize_client_scopes_for_partial_import(scopes: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -553,6 +598,74 @@ def _sanitize_idps_for_partial_import(idps: list[dict[str, Any]]) -> list[dict[s
         if isinstance(idp, dict):
             idp.pop("internalId", None)
     return out
+
+
+def _minimal_realm_creation_payload(full_payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "realm": full_payload.get("realm"),
+        "displayName": full_payload.get("displayName"),
+        "enabled": full_payload.get("enabled", True),
+        "sslRequired": full_payload.get("sslRequired", "none"),
+    }
+
+
+def _certificate_pem_or_none(client_id_to_find: str) -> str | None:
+    try:
+        return _get_certificate_pem_from_p12()
+    except Exception as e:
+        logger.warning(f"Could not configure JWT certificate for client {client_id_to_find}: {e}")
+        return None
+
+
+def _configure_spoke_client_authentication(client: dict[str, Any], client_id_to_find: str) -> None:
+    if client.get("clientId") != client_id_to_find:
+        return
+
+    cert_pem = _certificate_pem_or_none(client_id_to_find)
+    if not cert_pem:
+        return
+
+    client["clientAuthenticatorType"] = "client-jwt"
+    client.pop("secret", None)
+    if "attributes" not in client:
+        client["attributes"] = {}
+    client["attributes"]["jwt.credential.certificate"] = cert_pem
+
+
+def _sanitize_client_for_partial_import(client: dict[str, Any], *, client_id_to_find: str) -> None:
+    client.pop("id", None)
+
+    for mapper in client.get("protocolMappers", []):
+        if isinstance(mapper, dict):
+            mapper.pop("id", None)
+
+    # Strip authorization (UMA) settings to avoid Keycloak FK violation during sync:
+    # RESOURCE_SCOPE.SCOPE_ID -> RESOURCE_SERVER_SCOPE.ID delete order can trigger
+    # ModelDuplicateException / JdbcBatchUpdateException in ClientApplicationSynchronizer.
+    client.pop("authorizationSettings", None)
+    if client.get("authorizationServicesEnabled") is True:
+        client["authorizationServicesEnabled"] = False
+
+    _configure_spoke_client_authentication(client, client_id_to_find)
+
+
+def _partial_import_payload(full_payload: dict[str, Any]) -> dict[str, Any]:
+    clients = copy.deepcopy(full_payload.get("clients", []))
+    client_id_to_find = spoke_client_id()
+    for client in clients:
+        _sanitize_client_for_partial_import(client, client_id_to_find=client_id_to_find)
+
+    return {
+        "ifResourceExists": "SKIP",
+        "clients": clients,
+        "roles": _sanitize_roles_for_partial_import(full_payload.get("roles") or {}),
+        "groups": _sanitize_groups_for_partial_import(full_payload.get("groups") or []),
+        "users": _sanitize_users_for_partial_import(full_payload.get("users") or []),
+        "clientScopes": _sanitize_client_scopes_for_partial_import(full_payload.get("clientScopes") or []),
+        "identityProviders": _sanitize_idps_for_partial_import(full_payload.get("identityProviders") or []),
+        "defaultDefaultClientScopes": full_payload.get("defaultDefaultClientScopes", []),
+        "defaultOptionalClientScopes": full_payload.get("defaultOptionalClientScopes", []),
+    }
 
 
 def load_realm_template() -> dict[str, Any]:
@@ -578,15 +691,10 @@ def create_realm_from_template(realm_id: str, display_name: str | None = None) -
     # Detect template realm name from JSON if present, else fallback to config
     template_name = template.get("realm") or template_realm_name()
     full_payload = _fill_realm_template(template, realm_id, display_name, template_name)
-    
+
     # Step 1: Create minimal realm first (avoids 500 error from full template)
-    minimal_payload = {
-        "realm": full_payload.get("realm"),
-        "displayName": full_payload.get("displayName"),
-        "enabled": full_payload.get("enabled", True),
-        "sslRequired": full_payload.get("sslRequired", "none"),
-    }
-    
+    minimal_payload = _minimal_realm_creation_payload(full_payload)
+
     token = get_master_admin_token()
     base_url = keycloak_url()
 
@@ -597,59 +705,10 @@ def create_realm_from_template(realm_id: str, display_name: str | None = None) -
         timeout=60,
     )
     r.raise_for_status()
-    
+
     # Step 2: Partial import of clients, roles, groups, and users from template.
     # Sanitize ids/containerIds so Keycloak can assign new ones and avoid conflicts.
-    clients = copy.deepcopy(full_payload.get("clients", []))
-    client_id_to_find = spoke_client_id()
-    for client in clients:
-        # Remove id and all nested ids
-        client.pop("id", None)
-        # Remove protocol mappers ids (they cause conflicts)
-        for mapper in client.get("protocolMappers", []):
-            if isinstance(mapper, dict):
-                mapper.pop("id", None)
-        # Strip authorization (UMA) settings to avoid Keycloak FK violation during sync:
-        # RESOURCE_SCOPE.SCOPE_ID -> RESOURCE_SERVER_SCOPE.ID delete order can trigger
-        # ModelDuplicateException / JdbcBatchUpdateException in ClientApplicationSynchronizer.
-        client.pop("authorizationSettings", None)
-        if client.get("authorizationServicesEnabled") is True:
-            client["authorizationServicesEnabled"] = False
-
-        # Configure spiffworkflow-backend client for JWT authentication (only when keystore is available)
-        if client.get("clientId") == client_id_to_find:
-            cert_pem = None
-            try:
-                cert_pem = _get_certificate_pem_from_p12()
-            except Exception as e:
-                logger.warning(f"Could not configure JWT certificate for client {client_id_to_find}: {e}")
-            if cert_pem:
-                client["clientAuthenticatorType"] = "client-jwt"
-                client.pop("secret", None)
-                if "attributes" not in client:
-                    client["attributes"] = {}
-                client["attributes"]["jwt.credential.certificate"] = cert_pem
-            else:
-                # Keystore missing: leave client as confidential with secret so upstream Basic auth token exchange works
-                pass  # do not set client-jwt, do not remove secret
-    
-    roles = _sanitize_roles_for_partial_import(full_payload.get("roles") or {})
-    groups = _sanitize_groups_for_partial_import(full_payload.get("groups") or [])
-    users = _sanitize_users_for_partial_import(full_payload.get("users") or [])
-    client_scopes = _sanitize_client_scopes_for_partial_import(full_payload.get("clientScopes") or [])
-    idps = _sanitize_idps_for_partial_import(full_payload.get("identityProviders") or [])
-
-    partial_import_payload = {
-        "ifResourceExists": "SKIP",
-        "clients": clients,
-        "roles": roles,
-        "groups": groups,
-        "users": users,
-        "clientScopes": client_scopes,
-        "identityProviders": idps,
-        "defaultDefaultClientScopes": full_payload.get("defaultDefaultClientScopes", []),
-        "defaultOptionalClientScopes": full_payload.get("defaultOptionalClientScopes", []),
-    }
+    partial_import_payload = _partial_import_payload(full_payload)
 
     r2 = requests.post(
         f"{base_url}/admin/realms/{realm_id}/partialImport",

@@ -1,21 +1,8 @@
-# extensions/m8flow-backend/tests/unit/m8flow_backend/services/test_postgres_tenant_context.py
 import os
-import sys
-from pathlib import Path
 
 import pytest
 from flask import Flask
 from flask import g
-
-extension_root = Path(__file__).resolve().parents[1]
-repo_root = extension_root.parents[1]
-extension_src = extension_root / "src"
-backend_src = repo_root / "spiffworkflow-backend" / "src"
-
-for path in (extension_src, backend_src):
-    path_str = str(path)
-    if path_str not in sys.path:
-        sys.path.insert(0, path_str)
 
 from m8flow_backend.services import tenant_scoping_patch  # noqa: E402
 from m8flow_backend.tenancy import reset_context_tenant_id  # noqa: E402

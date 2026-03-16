@@ -19,8 +19,9 @@ DEFAULT_TENANT_ID = os.getenv("M8FLOW_DEFAULT_TENANT_ID", "default")
 TENANT_CLAIM = (os.getenv("M8FLOW_TENANT_CLAIM") or "").strip() or "m8flow_tenant_id"
 
 
-# Include both prefixed and unprefixed paths so we match regardless of SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX.
-PUBLIC_PATH_PREFIXES: tuple[str, ...] = (
+# Include both prefixed and unprefixed paths so we match regardless of
+# SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX.
+TENANT_CONTEXT_EXEMPT_PATH_PREFIXES: tuple[str, ...] = (
     "/favicon.ico",
     "/v1.0/status",
     "/status",
@@ -28,6 +29,8 @@ PUBLIC_PATH_PREFIXES: tuple[str, ...] = (
     "/openapi.json",
     "/v1.0/openapi.yaml",
     "/openapi.yaml",
+    "/v1.0/permissions-check",
+    "/permissions-check",
     "/v1.0/ui",
     "/ui",
     "/v1.0/static",
@@ -48,10 +51,18 @@ PUBLIC_PATH_PREFIXES: tuple[str, ...] = (
     "/m8flow/tenant-realms",
     "/v1.0/m8flow/create-tenant",
     "/m8flow/create-tenant",
+    # Global tenant-management endpoints are authenticated, but they do not belong to a tenant realm.
+    "/v1.0/m8flow/tenants",
+    "/m8flow/tenants",
 )
 
-# Path suffixes for pre-login tenant selection (no tenant context required). Also included in PUBLIC_PATH_PREFIXES above with /v1.0 prefix.
-TENANT_PUBLIC_PATH_PREFIXES: tuple[str, ...] = ("/tenants/check", "/m8flow/tenant-login-url")
+# Path suffixes for pre-login tenant selection (no tenant context required). Also included in
+# TENANT_CONTEXT_EXEMPT_PATH_PREFIXES above with /v1.0 prefix.
+PRE_LOGIN_TENANT_SELECTION_PATH_PREFIXES: tuple[str, ...] = ("/tenants/check", "/m8flow/tenant-login-url")
+
+# Backward-compatible aliases while call sites migrate to clearer naming.
+PUBLIC_PATH_PREFIXES = TENANT_CONTEXT_EXEMPT_PATH_PREFIXES
+TENANT_PUBLIC_PATH_PREFIXES = PRE_LOGIN_TENANT_SELECTION_PATH_PREFIXES
 
 _CONTEXT_TENANT_ID: ContextVar[Optional[str]] = ContextVar("m8flow_tenant_id", default=None)
 
@@ -119,8 +130,17 @@ def clear_tenant_context() -> None:
     _CONTEXT_WARNED_DEFAULT.set(False)
 
 
+def is_tenant_context_exempt_request() -> bool:
+    if not has_request_context():
+        return False
+    return bool(
+        getattr(g, "_m8flow_tenant_context_exempt_request", False)
+        or getattr(g, "_m8flow_public_request", False)
+    )
+
+
 def is_public_request() -> bool:
-    return has_request_context() and bool(getattr(g, "_m8flow_public_request", False))
+    return is_tenant_context_exempt_request()
 
 
 def _warn_default_once(message: str, **extra: object) -> None:
