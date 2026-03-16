@@ -85,7 +85,7 @@ export default defineConfig({
         process.env.NODE_ENV !== 'production'
           ? 'inferno/dist/index.dev.esm.js'
           : 'inferno/dist/index.esm.js',
-      // Alias to spiffworkflow-frontend source (go up 2 levels from extensions/frontend)
+      // Alias to spiffworkflow-frontend source (go up 2 levels from extensions/m8flow-frontend)
       '@spiffworkflow-frontend': path.resolve(__dirname, '../../spiffworkflow-frontend/src'),
       // Alias to spiffworkflow-frontend assets
       '@spiffworkflow-frontend-assets': path.resolve(__dirname, '../../spiffworkflow-frontend/src/assets'),
@@ -96,7 +96,7 @@ export default defineConfig({
     preprocessorOptions: {
       scss: {
         silenceDeprecations: ['mixed-decls', 'if-function'],
-        // Allow SASS to find modules in extensions/frontend/node_modules
+        // Allow SASS to find modules in extensions/m8flow-frontend/node_modules
         loadPaths: [
           path.resolve(__dirname, './node_modules'),
         ],

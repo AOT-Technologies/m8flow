@@ -2,9 +2,9 @@
  * Vite Plugin for Override Resolution
  * 
  * This plugin enables automatic component override resolution:
- * 1. When core files import each other, check for overrides in extensions/frontend/src
+ * 1. When core files import each other, check for overrides in extensions/m8flow-frontend/src
  * 2. When importing from @spiffworkflow-frontend, check for overrides first
- * 3. Bare module imports from core files resolve to extensions/frontend/node_modules
+ * 3. Bare module imports from core files resolve to extensions/m8flow-frontend/node_modules
  */
 
 import type { Plugin } from 'vite';
@@ -64,10 +64,10 @@ export function overrideResolver(): Plugin {
       if (!importer) return null;
 
       const importerInCore = importer.includes('/spiffworkflow-frontend/src/');
-      const importerInExtensions = importer.includes('/extensions/frontend/src/');
+      const importerInExtensions = importer.includes('/extensions/m8flow-frontend/src/');
 
       // Handle bare module imports from spiffworkflow-frontend files
-      // These need to be resolved to extensions/frontend/node_modules
+      // These need to be resolved to extensions/m8flow-frontend/node_modules
       if (importerInCore && !source.startsWith('.') && !source.startsWith('/') && !source.startsWith('@spiffworkflow-frontend')) {
         const moduleName = source.startsWith('@') 
           ? source.split('/').slice(0, 2).join('/') // @scope/package
@@ -108,7 +108,7 @@ export function overrideResolver(): Plugin {
         const importerDir = path.dirname(importer);
         const resolvedPath = path.resolve(importerDir, source);
 
-        // Check if resolved path is within extensions/frontend/src
+        // Check if resolved path is within extensions/m8flow-frontend/src
         if (resolvedPath.startsWith(extensionsDir)) {
           // Get relative path from extensions src
           const relativePath = path.relative(extensionsDir, resolvedPath);
