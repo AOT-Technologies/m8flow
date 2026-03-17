@@ -49,8 +49,8 @@ else
   fi
 
   # Create permanent admin user with full privileges (idempotent: create may fail if user exists)
-  SUPERADMIN_USER="${KEYCLOAK_SUPER_ADMIN_USER:-superadmin}"
-  SUPERADMIN_PASS="${KEYCLOAK_SUPER_ADMIN_PASSWORD:-superpassword}"
+  SUPERADMIN_USER="${KEYCLOAK_SUPER_ADMIN_USER:-super-admin}"
+  SUPERADMIN_PASS="${KEYCLOAK_SUPER_ADMIN_PASSWORD:-super-admin}"
   if /opt/keycloak/bin/kcadm.sh create users -r master -s username="${SUPERADMIN_USER}" -s enabled=true 2>/dev/null; then
     echo "[keycloak-entrypoint] Created permanent admin user ${SUPERADMIN_USER}."
   else
