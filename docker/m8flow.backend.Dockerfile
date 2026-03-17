@@ -76,6 +76,7 @@ RUN sed -i 's/\r$//' /app/extensions/m8flow-backend/bin/run_m8flow_backend.sh \
 
 # Entrypoint script: safe for root and non-root (written directly in the image)
 RUN cat <<'EOF' >/opt/m8flow-backend-entrypoint.sh \
+  && sed -i 's/\r$//' /opt/m8flow-backend-entrypoint.sh \
   && chmod +x /opt/m8flow-backend-entrypoint.sh
 #!/usr/bin/env bash
 set -e
@@ -138,6 +139,7 @@ RUN sed -i 's/\r$//' /app/extensions/m8flow-backend/bin/run_m8flow_backend.sh \
 
 # Entrypoint script: safe for root and non-root (written directly in the image)
 RUN cat <<'EOF' >/opt/m8flow-backend-entrypoint.sh \
+  && sed -i 's/\r$//' /opt/m8flow-backend-entrypoint.sh \
   && chmod +x /opt/m8flow-backend-entrypoint.sh
 #!/usr/bin/env bash
 set -e
