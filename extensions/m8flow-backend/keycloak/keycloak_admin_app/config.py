@@ -5,8 +5,8 @@ from pathlib import Path
 # Keycloak
 KEYCLOAK_URL = os.environ.get("KEYCLOAK_URL", "http://localhost:7002").rstrip("/")
 REALM = os.environ.get("KEYCLOAK_REALM", "tenant-a")
-ADMIN_USER = os.environ.get("KEYCLOAK_ADMIN_USER", "admin")
-ADMIN_PASSWORD = os.environ.get("KEYCLOAK_ADMIN_PASSWORD", "admin")
+ADMIN_USER = os.environ.get("KEYCLOAK_ADMIN_USER", "super-admin")
+ADMIN_PASSWORD = os.environ.get("KEYCLOAK_ADMIN_PASSWORD", "super-admin")
 
 # Client used for admin API (service account / client credentials)
 # Use either client_secret or certificate + key for mTLS

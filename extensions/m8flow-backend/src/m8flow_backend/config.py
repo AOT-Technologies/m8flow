@@ -22,7 +22,7 @@ def keycloak_url() -> str:
 
 def keycloak_admin_user() -> str:
     """Master realm admin username."""
-    return _get("KEYCLOAK_ADMIN_USER") or _get("M8FLOW_KEYCLOAK_ADMIN_USER") or "admin"
+    return _get("KEYCLOAK_ADMIN_USER") or _get("M8FLOW_KEYCLOAK_ADMIN_USER") or "super-admin"
 
 
 def keycloak_admin_password() -> str:
