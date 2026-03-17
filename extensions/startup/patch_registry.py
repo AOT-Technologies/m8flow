@@ -125,6 +125,10 @@ POST_APP_CORE_PATCH_SPECS: tuple[PatchSpec, ...] = (
         minimum_phase=BootPhase.APP_CREATED,
     ),
     PatchSpec(
+        target="m8flow_backend.services.cookie_path_patch:apply_cookie_path_patch",
+        minimum_phase=BootPhase.APP_CREATED,
+    ),
+    PatchSpec(
         target="m8flow_backend.services.celery_tenant_context_patch:apply",
         minimum_phase=BootPhase.APP_CREATED,
     ),

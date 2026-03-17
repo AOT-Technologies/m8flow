@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Create bootstrap admin user before first start (avoids "Local access required" behind proxy).
-# Start Keycloak, then set sslRequired=NONE on realms for HTTP access (e.g. behind ALB without HTTPS).
+# Start Keycloak, then set sslRequired=NONE on realms for HTTP access (e.g. behind a reverse proxy without HTTPS termination at Keycloak).
 set -e
 
 BOOTSTRAP_USER="${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}"
@@ -20,7 +20,7 @@ echo "[keycloak-entrypoint] Starting Keycloak in background..."
 /opt/keycloak/bin/kc.sh "$@" &
 KC_PID=$!
 
-# Admin API base URL: must include KC_HTTP_RELATIVE_PATH when set (e.g. /auth on ECS)
+# Admin API base URL: must include KC_HTTP_RELATIVE_PATH when set (e.g. /auth behind a proxy)
 KC_PORT="${KC_HTTP_PORT:-8080}"
 KC_PATH="${KC_HTTP_RELATIVE_PATH:-}"
 BASE="http://127.0.0.1:${KC_PORT}${KC_PATH}"

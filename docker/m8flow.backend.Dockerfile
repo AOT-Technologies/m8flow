@@ -74,26 +74,10 @@ RUN sed -i 's/\r$//' /app/extensions/m8flow-backend/bin/run_m8flow_backend.sh \
   && sed -i 's/\r$//' /app/extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh \
   && chmod +x /app/extensions/m8flow-backend/bin/run_m8flow_backend.sh /app/extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh
 
-# Entrypoint script: safe for root and non-root (written directly in the image)
-RUN cat <<'EOF' >/opt/m8flow-backend-entrypoint.sh \
-  && sed -i 's/\r$//' /opt/m8flow-backend-entrypoint.sh \
+# Entrypoint script: safe for root and non-root
+COPY docker/scripts/m8flow_backend_entrypoint.sh /opt/m8flow-backend-entrypoint.sh
+RUN sed -i 's/\r$//' /opt/m8flow-backend-entrypoint.sh \
   && chmod +x /opt/m8flow-backend-entrypoint.sh
-#!/usr/bin/env bash
-set -e
-
-uid="$(id -u)"
-
-if [ "$uid" -eq 0 ]; then
-  # Best-effort: ensure shared volume mounts are writable by app user.
-  chown -R app:app /app/process_models /app/templates 2>/dev/null || true
-
-  # Drop privileges to app user for the main process.
-  exec gosu app "$@"
-fi
-
-# Already non-root; can't chown or switch users.
-exec "$@"
-EOF
 
 # Default to non-root user (SonarQube S6481); compose overrides with user: "0" so entrypoint can chown then gosu
 USER app
@@ -137,26 +121,10 @@ RUN sed -i 's/\r$//' /app/extensions/m8flow-backend/bin/run_m8flow_backend.sh \
   && sed -i 's/\r$//' /app/extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh \
   && chmod +x /app/extensions/m8flow-backend/bin/run_m8flow_backend.sh /app/extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh
 
-# Entrypoint script: safe for root and non-root (written directly in the image)
-RUN cat <<'EOF' >/opt/m8flow-backend-entrypoint.sh \
-  && sed -i 's/\r$//' /opt/m8flow-backend-entrypoint.sh \
+# Entrypoint script: safe for root and non-root
+COPY docker/scripts/m8flow_backend_entrypoint.sh /opt/m8flow-backend-entrypoint.sh
+RUN sed -i 's/\r$//' /opt/m8flow-backend-entrypoint.sh \
   && chmod +x /opt/m8flow-backend-entrypoint.sh
-#!/usr/bin/env bash
-set -e
-
-uid="$(id -u)"
-
-if [ "$uid" -eq 0 ]; then
-  # Best-effort: ensure shared volume mounts are writable by app user.
-  chown -R app:app /app/process_models /app/templates 2>/dev/null || true
-
-  # Drop privileges to app user for the main process.
-  exec gosu app "$@"
-fi
-
-# Already non-root; can't chown or switch users.
-exec "$@"
-EOF
 
 # Non-root user (same UID/GID as prod for volume permissions)
 RUN groupadd -r app -g 1000 && useradd -r -u 1000 -g app -d /app -s /bin/bash app \

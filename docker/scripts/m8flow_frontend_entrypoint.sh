@@ -12,4 +12,6 @@ if [[ -n "${MULTI_TENANT_ON:-}" ]] && [[ -z "${SPIFFWORKFLOW_FRONTEND_RUNTIME_CO
   export SPIFFWORKFLOW_FRONTEND_RUNTIME_CONFIG_MULTI_TENANT_ON="$MULTI_TENANT_ON"
 fi
 
-exec /app/bin/boot_server_in_docker "$@"
+/app/bin/boot_server_in_docker "$@"
+
+exec nginx -g "daemon off;"

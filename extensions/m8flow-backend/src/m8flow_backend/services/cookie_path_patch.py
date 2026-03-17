@@ -1,6 +1,12 @@
-# extensions/cookie_path_patch.py
-# Set auth cookies with path="/" so the frontend at / receives them when the backend
-# is mounted at /api (Werkzeug 2.3+ otherwise defaults cookie path to the request path).
+"""
+Patch auth cookies to be set with path="/".
+
+When the backend is mounted under /api and the frontend is served at /, Werkzeug 2.3+
+can default cookie path to the request path, which prevents the browser from sending
+auth cookies to the frontend routes. This patch forces cookie path to /.
+"""
+
+from __future__ import annotations
 
 import logging
 import re
@@ -15,8 +21,6 @@ COOKIE_PATH = "/"
 def _set_new_access_token_in_cookie_with_path(
     response: flask.wrappers.Response,
 ) -> flask.wrappers.Response:
-    """Same as upstream _set_new_access_token_in_cookie but with path="/" so cookies
-    are sent to the frontend at / when backend is at /api."""
     from flask import current_app
 
     tld = current_app.config["THREAD_LOCAL_DATA"]
@@ -77,7 +81,6 @@ def _set_new_access_token_in_cookie_with_path(
 
 
 def apply_cookie_path_patch() -> None:
-    """Patch auth cookie setting to use path=/ so frontend at / receives cookies when backend is at /api."""
     from spiffworkflow_backend.routes import authentication_controller
 
     authentication_controller._set_new_access_token_in_cookie = (
