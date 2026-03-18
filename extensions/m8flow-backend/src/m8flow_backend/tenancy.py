@@ -18,37 +18,32 @@ DEFAULT_TENANT_ID = os.getenv("M8FLOW_DEFAULT_TENANT_ID", "default")
 # JWT claim name used to resolve tenant id. From M8FLOW_TENANT_CLAIM.
 TENANT_CLAIM = (os.getenv("M8FLOW_TENANT_CLAIM") or "").strip() or "m8flow_tenant_id"
 
+# Single source of truth: base path prefixes when no WSGI path prefix is set.
+# When SPIFFWORKFLOW_BACKEND_WSGI_PATH_PREFIX is set (e.g. "/api"), we also add
+# prefix + each path so both prefixed and unprefixed deployments work.
+_WSGI_PATH_PREFIX = os.getenv("SPIFFWORKFLOW_BACKEND_WSGI_PATH_PREFIX", "").strip()
 
 # Include both prefixed and unprefixed paths so we match regardless of
 # SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX.
 TENANT_CONTEXT_EXEMPT_PATH_PREFIXES: tuple[str, ...] = (
+    "/.well-known",
     "/favicon.ico",
+    "/v1.0/health",
+    "/v1.0/healthy",
     "/v1.0/status",
-    "/status",
     "/v1.0/openapi.json",
-    "/openapi.json",
     "/v1.0/openapi.yaml",
     "/openapi.yaml",
     "/v1.0/permissions-check",
     "/permissions-check",
     "/v1.0/ui",
-    "/ui",
     "/v1.0/static",
-    "/static",
     "/v1.0/logout",
-    "/logout",
     "/v1.0/authentication-options",
-    "/authentication-options",
     "/v1.0/login",
-    "/login",
-    # Pre-login tenant selection endpoints (must not require tenant context)
     "/v1.0/tenants/check",
-    "/tenants/check",
     "/v1.0/m8flow/tenant-login-url",
-    "/m8flow/tenant-login-url",
-    # Bootstrap/admin: create realm and create tenant (no tenant in token yet)
     "/v1.0/m8flow/tenant-realms",
-    "/m8flow/tenant-realms",
     "/v1.0/m8flow/create-tenant",
     "/m8flow/create-tenant",
     # Global tenant-management endpoints are authenticated, but they do not belong to a tenant realm.
@@ -71,6 +66,16 @@ _REQUEST_ACTIVE: ContextVar[bool] = ContextVar("m8flow_request_active", default=
 
 # Local flag to avoid warning spam outside Flask request context
 _CONTEXT_WARNED_DEFAULT: ContextVar[bool] = ContextVar("m8flow_warned_default_tenant", default=False)
+
+
+def get_healthy_response() -> tuple[dict, int]:
+    """Return the canonical healthy response (payload, status_code) for reuse by health endpoints and callers."""
+    return ({"status": "ok", "ok": True, "healthy": True}, 200)
+
+
+def health_check():
+    """Public health check for load balancers and monitoring. Returns 200 when the process is up."""
+    return get_healthy_response()
 
 
 def allow_missing_tenant_context() -> bool:
@@ -128,7 +133,6 @@ def clear_tenant_context() -> None:
     """Clear tenant context variables to prevent cross-request leakage."""
     _CONTEXT_TENANT_ID.set(None)
     _CONTEXT_WARNED_DEFAULT.set(False)
-
 
 def is_tenant_context_exempt_request() -> bool:
     if not has_request_context():

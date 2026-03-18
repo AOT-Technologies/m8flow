@@ -21,8 +21,9 @@ from m8flow_backend.config import (
     keycloak_admin_user,
     keycloak_url,
     realm_template_path,
+    redirect_uri_backend_host_and_path,
+    redirect_uri_frontend_host,
     spoke_client_id,
-    spoke_client_secret,
     spoke_keystore_password,
     spoke_keystore_p12_path,
     template_realm_name,
@@ -32,6 +33,8 @@ from m8flow_backend.config import (
 # Only necessary values are changed for a new tenant; roles, groups, users, and clients are preserved.
 # Placeholder in the JSON is replaced at load time with M8FLOW_KEYCLOAK_SPOKE_CLIENT_ID (default: spiffworkflow-backend).
 SPOKE_CLIENT_ID_PLACEHOLDER = "__M8FLOW_SPOKE_CLIENT_ID__"
+BACKEND_REDIRECT_PLACEHOLDER = "replace-me-with-spiff-backend-host-and-path"
+FRONTEND_REDIRECT_PLACEHOLDER = "replace-me-with-spiff-frontend-host-and-path"
 DEFAULT_ROLES_PREFIX = "default-roles-"  # role name "default-roles-{realm}" must be updated
 REALM_URL_PREFIX = "/realms/"  # client baseUrl/redirectUris contain /realms/{realm}/
 ADMIN_CONSOLE_URL_PREFIX = "/admin/"  # security-admin-console has /admin/{realm}/console/
@@ -39,6 +42,7 @@ BACKEND_URL_PLACEHOLDER = "https://replace-me-with-spiff-backend-host-and-path/*
 FRONTEND_URL_PLACEHOLDER = "https://replace-me-with-spiff-frontend-host-and-path/*"
 FRONTEND_CLIENT_ID = "spiffworkflow-frontend"
 POST_LOGOUT_REDIRECT_URIS_ATTR = "post.logout.redirect.uris"
+# Names reserved for global (non-tenant) administration; never cloned into tenant realms.
 GLOBAL_ONLY_REALM_ROLE_NAMES = frozenset({"super-admin"})
 GLOBAL_ONLY_USERNAMES = frozenset({"super-admin"})
 
@@ -57,6 +61,34 @@ def _substitute_spoke_client_id(obj: Any, client_id: str) -> Any:
     return obj
 
 
+def _replace_redirect_placeholders_in_place(
+    obj: Any, backend_val: str | None, frontend_val: str | None
+) -> None:
+    """Recursively replace redirect host placeholders in string values (mutates in place)."""
+    if isinstance(obj, dict):
+        for k, v in list(obj.items()):
+            if isinstance(v, str):
+                s = v
+                if backend_val is not None and BACKEND_REDIRECT_PLACEHOLDER in s:
+                    s = s.replace(BACKEND_REDIRECT_PLACEHOLDER, backend_val)
+                if frontend_val is not None and FRONTEND_REDIRECT_PLACEHOLDER in s:
+                    s = s.replace(FRONTEND_REDIRECT_PLACEHOLDER, frontend_val)
+                if s != v:
+                    obj[k] = s
+            else:
+                _replace_redirect_placeholders_in_place(v, backend_val, frontend_val)
+    elif isinstance(obj, list):
+        for i, item in enumerate(obj):
+            if isinstance(item, str):
+                s = item
+                if backend_val is not None and BACKEND_REDIRECT_PLACEHOLDER in s:
+                    s = s.replace(BACKEND_REDIRECT_PLACEHOLDER, backend_val)
+                if frontend_val is not None and FRONTEND_REDIRECT_PLACEHOLDER in s:
+                    s = s.replace(FRONTEND_REDIRECT_PLACEHOLDER, frontend_val)
+                if s != item:
+                    obj[i] = s
+            else:
+                _replace_redirect_placeholders_in_place(item, backend_val, frontend_val)
 def _env_public_url(*keys: str) -> str | None:
     """Return the first non-empty public URL from environment."""
     for key in keys:
@@ -331,10 +363,12 @@ def get_master_admin_token() -> str:
     password = keycloak_admin_password()
     if not password:
         raise ValueError("KEYCLOAK_ADMIN_PASSWORD or M8FLOW_KEYCLOAK_ADMIN_PASSWORD must be set for realm creation.")
+    # Testing only: log credentials used for tenant creation. Logging password is a security risk; remove or disable in production.
+    username = keycloak_admin_user()
     data = {
         "grant_type": "password",
         "client_id": "admin-cli",
-        "username": keycloak_admin_user(),
+        "username": username,
         "password": password,
     }
     r = requests.post(
@@ -345,6 +379,28 @@ def get_master_admin_token() -> str:
     )
     r.raise_for_status()
     return r.json()["access_token"]
+
+
+def _log_admin_token_claims(token: str) -> None:
+    """Decode admin JWT and log exp, iat, and realm_access (roles) at DEBUG. Never raises."""
+    try:
+        import jwt
+        payload = jwt.decode(token, options={"verify_signature": False})
+        exp = payload.get("exp")
+        iat = payload.get("iat")
+        now = int(time.time())
+        expired = exp is not None and exp < now
+        realm_access = payload.get("realm_access") or {}
+        roles = realm_access.get("roles") if isinstance(realm_access, dict) else None
+        logger.debug(
+            "create_realm_from_template admin token: exp=%s iat=%s expired=%s realm_access.roles=%s",
+            exp,
+            iat,
+            expired,
+            roles,
+        )
+    except Exception:
+        logger.debug("Could not decode admin token for logging")
 
 
 def realm_exists(realm: str) -> bool:
@@ -366,14 +422,15 @@ def realm_exists(realm: str) -> bool:
             discovery_url,
             r.status_code,
         )
-        logger.warning(
-            "realm_exists: realm=%s url=%s status=%s (check KEYCLOAK_URL if realm exists in browser)",
-            realm,
-            discovery_url,
-            r.status_code,
-        )
-        if r.status_code != 200 and r.text:
-            logger.debug("realm_exists: response body (first 200 chars): %s", r.text[:200])
+        if r.status_code not in (200, 403):
+            logger.warning(
+                "realm_exists: realm=%s url=%s status=%s (check KEYCLOAK_URL if realm exists in browser)",
+                realm,
+                discovery_url,
+                r.status_code,
+            )
+            if r.text:
+                logger.debug("realm_exists: response body (first 200 chars): %s", r.text[:200])
         # 200 = discovery public; 403 = discovery restricted but realm often still exists and auth works
         return r.status_code in (200, 403)
     except Exception as e:
@@ -397,6 +454,102 @@ def tenant_login_authorization_url(realm: str) -> str:
         raise ValueError("realm is required")
     realm = str(realm).strip()
     return f"{keycloak_url()}/realms/{realm}/protocol/openid-connect/auth"
+
+
+def ensure_backend_redirect_uri_in_keycloak_client(realm_id: str) -> None:
+    """Ensure the spiffworkflow-backend client in the given realm has the current backend and frontend
+    redirect URIs / web origins. Idempotent; safe to call on every ensure_tenant_auth_config.
+    Uses Keycloak Admin API; logs and skips on failure (e.g. missing admin credentials)."""
+    if not realm_id or not str(realm_id).strip():
+        return
+    realm_id = str(realm_id).strip()
+    backend_origin = _origin_from_url(
+        _env_public_url("SPIFFWORKFLOW_BACKEND_URL", "M8FLOW_BACKEND_URL")
+    )
+    frontend_origin = _origin_from_url(
+        _env_public_url("SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND", "M8FLOW_BACKEND_URL_FOR_FRONTEND")
+    )
+    backend_wildcard = _wildcard_from_origin(backend_origin)
+    frontend_wildcard = _wildcard_from_origin(frontend_origin)
+    if not backend_wildcard:
+        return
+    try:
+        token = get_master_admin_token()
+    except Exception as e:
+        logger.debug(
+            "ensure_backend_redirect_uri_in_keycloak_client: cannot get admin token for realm %s: %s",
+            realm_id,
+            e,
+        )
+        return
+    base_url = keycloak_url()
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    list_url = f"{base_url}/admin/realms/{realm_id}/clients?clientId={spoke_client_id()}"
+    try:
+        r = requests.get(list_url, headers=headers, timeout=30)
+        r.raise_for_status()
+        clients = r.json()
+    except Exception as e:
+        logger.warning(
+            "ensure_backend_redirect_uri_in_keycloak_client: list clients realm=%s error=%s",
+            realm_id,
+            e,
+        )
+        return
+    if not isinstance(clients, list) or len(clients) == 0:
+        return
+    client_internal_id = clients[0].get("id")
+    if not client_internal_id:
+        return
+    get_url = f"{base_url}/admin/realms/{realm_id}/clients/{client_internal_id}"
+    try:
+        r2 = requests.get(get_url, headers=headers, timeout=30)
+        r2.raise_for_status()
+        client = r2.json()
+    except Exception as e:
+        logger.warning(
+            "ensure_backend_redirect_uri_in_keycloak_client: get client realm=%s id=%s error=%s",
+            realm_id,
+            client_internal_id,
+            e,
+        )
+        return
+    redirect_uris = list(client.get("redirectUris") or [])
+    updated = False
+    if backend_wildcard and backend_wildcard not in redirect_uris:
+        redirect_uris.append(backend_wildcard)
+        updated = True
+    if frontend_wildcard and frontend_wildcard not in redirect_uris:
+        redirect_uris.append(frontend_wildcard)
+        updated = True
+    if updated:
+        client["redirectUris"] = _unique_strings(redirect_uris)
+    web_origins = list(client.get("webOrigins") or [])
+    if backend_origin and backend_origin not in web_origins:
+        web_origins.append(backend_origin)
+        updated = True
+    if frontend_origin and frontend_origin not in web_origins:
+        web_origins.append(frontend_origin)
+        updated = True
+    if updated:
+        client["webOrigins"] = _unique_strings(web_origins)
+    if not updated:
+        return
+    put_url = f"{base_url}/admin/realms/{realm_id}/clients/{client_internal_id}"
+    try:
+        r3 = requests.put(put_url, json=client, headers=headers, timeout=30)
+        r3.raise_for_status()
+        logger.info(
+            "ensure_backend_redirect_uri_in_keycloak_client: updated redirectUris/webOrigins for client %s in realm %s",
+            spoke_client_id(),
+            realm_id,
+        )
+    except Exception as e:
+        logger.warning(
+            "ensure_backend_redirect_uri_in_keycloak_client: PUT client realm=%s error=%s",
+            realm_id,
+            e,
+        )
 
 
 def _fill_realm_template(
@@ -488,6 +641,10 @@ def _fill_realm_template(
             frontend_origin=frontend_origin,
             frontend_wildcard=frontend_wildcard,
         )
+
+    backend_val = redirect_uri_backend_host_and_path()
+    frontend_val = redirect_uri_frontend_host()
+    _replace_redirect_placeholders_in_place(payload, backend_val, frontend_val)
 
     return payload
 
@@ -654,7 +811,7 @@ def _partial_import_payload(full_payload: dict[str, Any]) -> dict[str, Any]:
     client_id_to_find = spoke_client_id()
     for client in clients:
         _sanitize_client_for_partial_import(client, client_id_to_find=client_id_to_find)
-
+    # Prepare tenant-safe partial import payload: ids stripped, global-only roles/users removed.
     return {
         "ifResourceExists": "SKIP",
         "clients": clients,
@@ -687,6 +844,11 @@ def create_realm_from_template(realm_id: str, display_name: str | None = None) -
     if not realm_id or not realm_id.strip():
         raise ValueError("realm_id is required")
     realm_id = realm_id.strip()
+    logger.debug(
+        "create_realm_from_template: realm_id=%r keycloak_url=%s",
+        realm_id,
+        keycloak_url(),
+    )
     template = load_realm_template()
     # Detect template realm name from JSON if present, else fallback to config
     template_name = template.get("realm") or template_realm_name()
@@ -696,6 +858,7 @@ def create_realm_from_template(realm_id: str, display_name: str | None = None) -
     minimal_payload = _minimal_realm_creation_payload(full_payload)
 
     token = get_master_admin_token()
+    _log_admin_token_claims(token)
     base_url = keycloak_url()
 
     r = requests.post(
@@ -705,17 +868,41 @@ def create_realm_from_template(realm_id: str, display_name: str | None = None) -
         timeout=60,
     )
     r.raise_for_status()
+    logger.debug(
+        "create_realm_from_template step 1 OK: POST /admin/realms -> %s",
+        r.status_code,
+    )
 
     # Step 2: Partial import of clients, roles, groups, and users from template.
     # Sanitize ids/containerIds so Keycloak can assign new ones and avoid conflicts.
     partial_import_payload = _partial_import_payload(full_payload)
 
+    partial_import_url = f"{base_url}/admin/realms/{realm_id}/partialImport"
+    clients_count = len(partial_import_payload.get("clients", []))
+    roles_obj = partial_import_payload.get("roles", {}) or {}
+    roles_count = len(roles_obj.get("realm", [])) + len(roles_obj.get("client", {}))
+    users_count = len(partial_import_payload.get("users", []))
+    logger.debug(
+        "create_realm_from_template step 2: POST %s (clients=%s roles=%s users=%s)",
+        partial_import_url,
+        clients_count,
+        roles_count,
+        users_count,
+    )
     r2 = requests.post(
-        f"{base_url}/admin/realms/{realm_id}/partialImport",
+        partial_import_url,
         json=partial_import_payload,
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
         timeout=120,
     )
+    if not r2.ok:
+        logger.warning(
+            "create_realm_from_template step 2 FAILED: partialImport %s %s url=%s body=%s",
+            r2.status_code,
+            r2.reason,
+            r2.url,
+            (r2.text[:500] if r2.text else None),
+        )
     r2.raise_for_status()
 
     # Step 3: Fetch realm to obtain Keycloak's internal UUID (used as M8flowTenantModel.id)
@@ -799,8 +986,14 @@ def create_user_in_realm(
         timeout=30,
     )
     r.raise_for_status()
-    user_id = r.headers["Location"].split("/")[-1]
-    
+    location = r.headers.get("Location")
+    if not (location and location.strip()):
+        raise ValueError(
+            "Keycloak did not return a Location header when creating user; "
+            "check Keycloak version and configuration"
+        )
+    user_id = location.strip().rstrip("/").split("/")[-1]
+
     # Step 2: Fetch user and update to clear required actions
     # Keycloak may add default required actions, so we need to explicitly clear them
     get_url = f"{base_url}/admin/realms/{realm}/users/{user_id}"
