@@ -29,7 +29,6 @@ import {
   Close as CloseIcon,
   Schema,
   Timeline,
-  Storage,
   Markunread,
   SettingsApplicationsSharp,
   Extension,
@@ -75,7 +74,6 @@ const routeIdentifiers = {
   HOME: "home",
   PROCESSES: "processes",
   PROCESS_INSTANCES: "processInstances",
-  DATA_STORES: "dataStores",
   MESSAGES: "messages",
   CONFIGURATION: "configuration",
   TEMPLATES: "templates",
@@ -98,14 +96,12 @@ function SideNav({
 
   const { targetUris } = useUriListForPermissions();
   const permissionRequestData: PermissionsToCheck = {
-    [targetUris.authenticationListPath]: ["GET"],
-    [targetUris.dataStoreListPath]: ["GET"],
     [targetUris.messageInstanceListPath]: ["GET"],
     [targetUris.processGroupListPath]: ["GET"],
     [targetUris.processInstanceListPath]: ["GET"],
     [targetUris.processInstanceListForMePath]: ["POST"],
     [targetUris.secretListPath]: ["GET"],
-    "/tasks/*": ["GET"],
+    "/tasks/*": ["PUT"],
     "/m8flow/tenants": ["GET"],
     "/m8flow/templates": ["GET"],
   };
@@ -121,8 +117,6 @@ function SideNav({
     selectedTab = routeIdentifiers.PROCESS_INSTANCES;
   } else if (location.pathname.startsWith("/process-")) {
     selectedTab = routeIdentifiers.PROCESSES; // This might need further refinement
-  } else if (location.pathname === "/data-stores") {
-    selectedTab = routeIdentifiers.DATA_STORES;
   } else if (location.pathname === "/messages") {
     selectedTab = routeIdentifiers.MESSAGES;
   } else if (location.pathname.startsWith("/configuration")) {
@@ -219,13 +213,6 @@ function SideNav({
       permissionRoutes: [targetUris.processInstanceListPath],
     },
     {
-      text: t("data_stores"),
-      icon: <Storage />,
-      route: "/data-stores",
-      id: routeIdentifiers.DATA_STORES,
-      permissionRoutes: [targetUris.dataStoreListPath],
-    },
-    {
       text: t("messages"),
       icon: <Markunread />,
       route: "/messages",
@@ -239,7 +226,6 @@ function SideNav({
       id: routeIdentifiers.CONFIGURATION,
       permissionRoutes: [
         targetUris.secretListPath,
-        targetUris.authenticationListPath,
       ],
     },
     {

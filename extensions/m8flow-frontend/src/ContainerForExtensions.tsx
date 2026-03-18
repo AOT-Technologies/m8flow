@@ -125,7 +125,7 @@ function RoleBasedRootGate({
 
   // User has Home access (anyone with task access: reviewer, viewer, editor, tenant-admin)
   if (
-    ability.can("GET", "/tasks/*") ||
+    ability.can("PUT", "/tasks/*") ||
     ability.can("GET", targetUris.processInstanceListForMePath)
   ) {
     return (
@@ -149,11 +149,6 @@ function RoleBasedRootGate({
         route: "/process-instances",
         method: "GET",
         uri: targetUris.processInstanceListPath,
-      },
-      {
-        route: "/data-stores",
-        method: "GET",
-        uri: targetUris.dataStoreListPath,
       },
       {
         route: "/messages",
