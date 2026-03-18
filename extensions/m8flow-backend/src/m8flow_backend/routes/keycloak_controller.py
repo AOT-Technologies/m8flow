@@ -31,6 +31,22 @@ logger = logging.getLogger(__name__)
 
 def create_realm(body: dict) -> tuple[dict, int]:
     """Create a spoke realm from the spiffworkflow template. Returns (response_dict, status_code)."""
+
+    user = getattr(g, 'user', None)
+    if not user:
+        raise ApiError(error_code="not_authenticated", message="User not authenticated", status_code=401)
+    
+    is_authorized = AuthorizationService.user_has_permission(user, "create", request.path)
+        
+    if not is_authorized:
+        logger.warning(
+            "User %s (groups: %s) attempted to create a tenant/realm without required permissions", 
+            user.username, 
+            [getattr(g, 'identifier', g.name) for g in getattr(user, 'groups', [])],
+        )
+        raise ApiError(error_code="forbidden", message="Not authorized to create a tenant.", status_code=403)
+
+
     realm_id = body.get("realm_id")
     if not realm_id or not str(realm_id).strip():
         return {"detail": "realm_id is required"}, 400
@@ -147,15 +163,23 @@ def delete_tenant_realm(realm_id: str) -> tuple[dict, int]:
     with ON DELETE RESTRICT. If any rows still reference this tenant, the delete returns
     409 and the caller must remove or reassign those references first (or use soft delete).
     """
-    auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header.startswith("Bearer "):
-        return {"detail": "Authorization header with Bearer token is required"}, 401
-
-    admin_token = auth_header.split(" ")[1]
-    if not verify_admin_token(admin_token):
-        return {"detail": "Invalid or unauthorized admin token"}, 401
+    user = getattr(g, 'user', None)
+    if not user:
+        raise ApiError(error_code="not_authenticated", message="User not authenticated", status_code=401)
+    
+    is_authorized = AuthorizationService.user_has_permission(user, "delete", request.path)
+        
+    if not is_authorized:
+        logger.warning(
+            "User %s (groups: %s) attempted to delete tenant %s without required permissions", 
+            user.username, 
+            [getattr(g, 'identifier', g.name) for g in getattr(user, 'groups', [])],
+            realm_id
+        )
+        raise ApiError(error_code="forbidden", message="Not authorized to delete a tenant.", status_code=403)
 
     try:
+        admin_token = get_master_admin_token()
         # Delete from Keycloak first. If this raises, we do not touch Postgres.
         delete_realm(realm_id, admin_token=admin_token)
 
