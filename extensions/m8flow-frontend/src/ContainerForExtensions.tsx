@@ -123,11 +123,8 @@ function RoleBasedRootGate({
     return <Navigate to="/tenants" replace />;
   }
 
-  // User has Home access (anyone with task access: reviewer, viewer, editor, tenant-admin)
-  if (
-    ability.can("PUT", "/tasks/*") ||
-    ability.can("GET", targetUris.processInstanceListForMePath)
-  ) {
+  // User has Home access (anyone with task management: reviewer, editor, tenant-admin - excludes viewer)
+  if (ability.can("PUT", "/tasks/*")) {
     return (
       <BaseRoutes
         extensionUxElements={extensionUxElements}
@@ -217,7 +214,7 @@ export default function ContainerForExtensions() {
     [targetUris.dataStoreListPath]: ["GET"],
     [targetUris.messageInstanceListPath]: ["GET"],
     [targetUris.secretListPath]: ["GET"],
-    "/tasks/*": ["GET"],
+    "/tasks/*": ["GET", "PUT"],
     [targetUris.m8flowTenantListPath]: ["GET"],
     [targetUris.m8flowTemplateListPath]: ["GET"],
   };
