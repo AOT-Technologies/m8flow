@@ -47,7 +47,20 @@ def create_realm(body: dict) -> tuple[dict, int]:
     except requests.exceptions.HTTPError as e:
         status = e.response.status_code if e.response is not None else 500
         detail = (e.response.text or str(e))[:500] if e.response is not None else str(e)
-        logger.warning("Keycloak create realm HTTP error: %s %s", status, detail)
+        # Debug: log which Keycloak URL failed (create realm vs partialImport vs get realm)
+        failed_url = e.response.url if e.response is not None else None
+        logger.warning(
+            "Keycloak create realm HTTP error: %s %s (url=%s)",
+            status,
+            detail,
+            failed_url,
+        )
+        logger.debug(
+            "Keycloak create realm full response: status=%s url=%s body=%s",
+            status,
+            failed_url,
+            (e.response.text[:1000] if e.response and e.response.text else None),
+        )
         if status == 409:
             return {"detail": "Realm already exists or conflict"}, 409
         return {"detail": detail}, status

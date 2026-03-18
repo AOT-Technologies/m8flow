@@ -78,6 +78,12 @@ RUN rm -rf /etc/nginx/conf.d/*
 # Copy the nginx configuration file from the core frontend
 COPY spiffworkflow-frontend/docker_build/nginx.conf.template /var/tmp
 
+# Default internal port for nginx inside the container.
+# Orchestrators and docker compose both route traffic to containerPort 8080,
+# so make the image listen on 8080 by default. Can be overridden
+# by setting SPIFFWORKFLOW_FRONTEND_INTERNAL_PORT explicitly.
+ENV SPIFFWORKFLOW_FRONTEND_INTERNAL_PORT=8080
+
 # Copy the built static files from the extension frontend into the nginx directory
 COPY --from=setup /app/extensions/m8flow-frontend/dist /usr/share/nginx/html
 
@@ -88,8 +94,11 @@ COPY --from=setup /app/spiffworkflow-frontend/dist /usr/share/nginx/html/spiff
 # Reuse core frontend helper scripts (including boot_server_in_docker)
 COPY --from=setup /app/spiffworkflow-frontend/bin /app/bin
 
-# Fix line endings (CRLF to LF) for shell scripts using dos2unix
-RUN dos2unix /app/bin/boot_server_in_docker && \
-    chmod +x /app/bin/boot_server_in_docker
+# m8flow wrapper: maps BACKEND_BASE_URL / MULTI_TENANT_ON into SPIFFWORKFLOW_FRONTEND_RUNTIME_CONFIG_* then runs boot_server_in_docker
+COPY docker/scripts/m8flow_frontend_entrypoint.sh /app/bin/
 
-CMD ["/app/bin/boot_server_in_docker"]
+# Fix line endings (CRLF to LF) for shell scripts using dos2unix
+RUN dos2unix /app/bin/boot_server_in_docker /app/bin/m8flow_frontend_entrypoint.sh && \
+    chmod +x /app/bin/boot_server_in_docker /app/bin/m8flow_frontend_entrypoint.sh
+
+CMD ["/app/bin/m8flow_frontend_entrypoint.sh"]

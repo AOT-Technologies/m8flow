@@ -210,6 +210,18 @@ def apply_refresh_token_tenant_patch() -> None:
         if state is None and args:
             state = args[0]
         tenant_id = _tenant_for_refresh_tokens(state=state if isinstance(state, str) else None)
+        auth_identifier = _authentication_identifier_from_state() or (
+            _decode_state_authentication_identifier(state) if isinstance(state, str) else None
+        )
+        if auth_identifier:
+            try:
+                from m8flow_backend.services.keycloak_service import (
+                    ensure_backend_redirect_uri_in_keycloak_client,
+                )
+
+                ensure_backend_redirect_uri_in_keycloak_client(auth_identifier)
+            except Exception:
+                pass
         with _temporary_request_tenant(tenant_id):
             return original_login_return(*args, **kwargs)
 
