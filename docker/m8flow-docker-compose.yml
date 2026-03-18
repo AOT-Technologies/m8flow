@@ -87,23 +87,6 @@ services:
     volumes:
       - redis-data:/data
 
-  nats:
-    profiles: ["nats"]
-    container_name: m8flow-nats
-    image: nats:2.10-alpine
-    command: ["-js", "--store_dir=/data/nats", "-m", "8222"]
-    ports:
-      - "${M8FLOW_NATS_PORT:-4222}:4222/tcp" # client
-      - "8222:8222/tcp" # monitoring HTTP (optional)
-    volumes:
-      - nats_data:/data/nats
-    healthcheck:
-      test: "wget -qO- http://localhost:8222/healthz || exit 1"
-      interval: 5s
-      timeout: 3s
-      retries: 10
-    restart: unless-stopped
-
   m8flow-nats-consumer:
     profiles: ["nats"]
     container_name: m8flow-nats-consumer
@@ -119,9 +102,6 @@ services:
         exec python m8flow-nats-consumer/consumer.py
     env_file: ../.env
     depends_on:
-      nats:
-        condition: service_healthy
-        required: false
       m8flow-backend:
         condition: service_started
     environment:
@@ -375,6 +355,4 @@ volumes:
   smtp_attachments:
     driver: local
   slack_attachments:
-    driver: local
-  nats_data:
     driver: local
