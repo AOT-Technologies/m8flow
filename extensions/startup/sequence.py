@@ -100,6 +100,11 @@ def _configure_created_app(cnx_app: Any, db: Any, upgrade_m8flow_db: Callable[[]
     # Ensure m8flow AuditDateTimeMixin timestamp listeners are attached.
     ensure_m8flow_audit_timestamps()
 
+    # Load sample templates if enabled via env var (after migrations + config).
+    from m8flow_backend.services.sample_template_loader import load_sample_templates_if_enabled
+
+    load_sample_templates_if_enabled(flask_app)
+
 
 def _wrap_asgi_if_needed(cnx_app: Any) -> Any:
     # Wrap ASGI app so logs can see ContextVar tenant.
