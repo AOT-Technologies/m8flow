@@ -276,7 +276,7 @@ paths:
 
     put:
       summary: Update tenant display name
-      description: Updates the tenant's human-readable name in both the local database and the Keycloak realm (displayName). Restricted to 'super-admin' role. The slug and ID are immutable and cannot be changed.
+      description: Updates the tenant's human-readable name in both the local database and the Keycloak realm (displayName). The slug and ID are immutable and cannot be changed.
       operationId: m8flow_backend.routes.keycloak_controller.update_tenant_name
       tags:
         - Tenant

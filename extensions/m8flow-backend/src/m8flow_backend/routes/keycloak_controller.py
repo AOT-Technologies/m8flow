@@ -210,14 +210,11 @@ def delete_tenant_realm(realm_id: str) -> tuple[dict, int]:
 
 @handle_api_errors
 def update_tenant_name(tenant_id: str, body: dict) -> tuple[dict, int]:
-    """Update a tenant's name in both Keycloak (displayName) and Postgres. 
-    Restricted to super-admin role. Uses internal master admin token.
-    """
+    """Update a tenant's display name. Requires appropriate permissions."""
     user = getattr(g, 'user', None)
     if not user:
         raise ApiError(error_code="not_authenticated", message="User not authenticated", status_code=401)
     
-    # Check for super-admin permission via m8flow.yml configuration
     is_authorized = AuthorizationService.user_has_permission(user, "update", request.path)
         
     if not is_authorized:
@@ -227,7 +224,7 @@ def update_tenant_name(tenant_id: str, body: dict) -> tuple[dict, int]:
             [getattr(g, 'identifier', g.name) for g in getattr(user, 'groups', [])],
             tenant_id
         )
-        raise ApiError(error_code="forbidden", message="Only super-admin can update tenant name", status_code=403)
+        raise ApiError(error_code="forbidden", message="Not authorized to update the tenant name.", status_code=403)
 
     new_name = body.get("name")
     if not new_name or not str(new_name).strip():
@@ -243,13 +240,9 @@ def update_tenant_name(tenant_id: str, body: dict) -> tuple[dict, int]:
         if not tenant:
             return {"detail": "Tenant not found"}, 404
 
-        # Fetch Keycloak admin token internally
         admin_token = get_master_admin_token()
 
-        # Update Keycloak realm displayName
         update_realm(tenant.slug, display_name=new_name, admin_token=admin_token)
-
-        # Update Postgres tenant name
         tenant.name = new_name
         db.session.commit()
         logger.info("Updated tenant name: id=%s slug=%s to name=%s (updated by %s)", 
