@@ -70,7 +70,7 @@
     "serve": "vite preview",
     "test": "vitest run",
     "typecheck": "./node_modules/.bin/tsc --noEmit",
-    "postinstall": "node scripts/patch-bpmn-labels.js"
+    "postinstall": "node scripts/patch-bpmn-labels.cjs"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.6.3",
