@@ -16,7 +16,7 @@ const filePath = path.join(
 const replacements = [
   {
     from: "translate('Spiffworkflow Service Properties')",
-    to: "translate('m8flow Service Properties')",
+    to: "translate('M8flow Service Properties')",
   },
 ];
 
