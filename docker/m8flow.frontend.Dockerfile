@@ -58,6 +58,7 @@ RUN mkdir -p public/src/workers && \
 # https://cheatsheetseries.owasp.org/cheatsheets/NPM_Security_Cheat_Sheet.html
 # npx can-i-ignore-scripts can check that it's safe to ignore scripts.
 RUN npm ci --ignore-scripts && \
+    node scripts/patch-bpmn-labels.cjs && \
     npm run build
 
 ######################## - FINAL
