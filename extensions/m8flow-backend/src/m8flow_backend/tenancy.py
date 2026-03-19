@@ -28,7 +28,7 @@ _WSGI_PATH_PREFIX = os.getenv("SPIFFWORKFLOW_BACKEND_WSGI_PATH_PREFIX", "").stri
 TENANT_CONTEXT_EXEMPT_PATH_PREFIXES: tuple[str, ...] = (
     "/.well-known",
     "/favicon.ico",
-    "/v1.0/health",
+    "/v1.0/ping",
     "/v1.0/healthy",
     "/v1.0/status",
     "/v1.0/openapi.json",

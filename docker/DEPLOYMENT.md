@@ -37,7 +37,7 @@ export TAG="latest"
 
 Ensure the image is built from the repo that includes the m8flow-backend extension (tenancy, Keycloak realm APIs, and support for `SPIFFWORKFLOW_BACKEND_WSGI_PATH_PREFIX` and `M8FLOW_KEYCLOAK_ADMIN_PASSWORD`). ECS expects the API under `/api/v1.0/*`.
 
-The backend uses the Keycloak **superadmin** user by default (username `superadmin`, created by the Keycloak image entrypoint). Set `KEYCLOAK_ADMIN_PASSWORD` or `M8FLOW_KEYCLOAK_ADMIN_PASSWORD` to the superadmin password (same as `KEYCLOAK_SUPERADMIN_PASSWORD` when using the Keycloak image entrypoint) so the backend can create realms and run partial import.
+The backend uses the Keycloak **super-admin** user by default (username `super-admin`, created by the Keycloak image entrypoint). Set `KEYCLOAK_ADMIN_PASSWORD` or `M8FLOW_KEYCLOAK_ADMIN_PASSWORD` to the super-admin password (same as `KEYCLOAK_SUPERADMIN_PASSWORD` when using the Keycloak image entrypoint) so the backend can create realms and run partial import.
 
 Build the production backend image (target `prod`, `linux/amd64` for ECS):
 

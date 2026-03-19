@@ -3,7 +3,7 @@ info:
   version: 1.0.0
   title: m8flow-backend-extension
 paths:
-  /health:
+  /ping:
     get:
       summary: Health check for load balancers and monitoring
       description: Returns 200 when the process is up. Public, no authentication required.

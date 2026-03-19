@@ -35,7 +35,7 @@ def patch_connexion_with_extension_spec(extension_api_path: str):
                 
                 # 3. Define extension path prefix and root-level paths (no prefix)
                 ext_prefix = "/m8flow"
-                ROOT_LEVEL_EXTENSION_PATHS = ("/health",)
+                ROOT_LEVEL_EXTENSION_PATHS = ("/ping",)
 
                 # 4. Merge Paths - keep core paths unchanged, add extension paths with prefix
                 # Core paths remain as-is; root-level extension paths stay as-is, others get /m8flow prefix
