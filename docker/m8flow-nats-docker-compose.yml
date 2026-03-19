@@ -41,7 +41,6 @@ services:
 volumes:
   nats_data:
     name: m8flow_nats_data
-    external: true
   nui-db:
     driver: local
 

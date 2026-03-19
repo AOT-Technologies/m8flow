@@ -88,7 +88,6 @@ services:
       - redis-data:/data
 
   m8flow-nats-consumer:
-    profiles: ["nats"]
     container_name: m8flow-nats-consumer
     build:
       context: ..
@@ -98,15 +97,19 @@ services:
       - "sh"
       - "-c"
       - |
-        PYTHONPATH=/app:/app/extensions/m8flow-backend/src:/app/spiffworkflow-backend/src \
-        exec python m8flow-nats-consumer/consumer.py
+        if [ "$$M8FLOW_NATS_ENABLED" = "true" ]; then
+          PYTHONPATH=/app:/app/extensions/m8flow-backend/src:/app/spiffworkflow-backend/src \
+          exec python m8flow-nats-consumer/consumer.py
+        else
+          echo "M8FLOW_NATS_ENABLED is not true. Consumer idling."
+          exec tail -f /dev/null
+        fi
     env_file: ../.env
     depends_on:
       m8flow-backend:
         condition: service_started
     environment:
-      M8FLOW_NATS_ENABLED: "${M8FLOW_NATS_ENABLED:-false}"
-      M8FLOW_NATS_URL: "nats://nats:4222"
+      M8FLOW_NATS_URL: "nats://${M8FLOW_NATS_USER:-admin}:${M8FLOW_NATS_PASSWORD:-admin}@nats:4222"
       M8FLOW_BACKEND_DATABASE_URI: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
       SPIFFWORKFLOW_BACKEND_DATABASE_URI: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
       M8FLOW_BACKEND_UPGRADE_DB: "false"
@@ -214,8 +217,8 @@ services:
       M8FLOW_BACKEND_URL_FOR_FRONTEND: "${M8FLOW_BACKEND_URL_FOR_FRONTEND:-http://localhost:7001}"
       M8FLOW_BACKEND_CELERY_BROKER_URL: "${M8FLOW_BACKEND_CELERY_BROKER_URL:-redis://redis:6379/0}"
       M8FLOW_BACKEND_CELERY_RESULT_BACKEND: "${M8FLOW_BACKEND_CELERY_RESULT_BACKEND:-redis://redis:6379/0}"
-      M8FLOW_NATS_ENABLED: "${M8FLOW_NATS_ENABLED:-false}"
-      M8FLOW_NATS_URL: "nats://nats:4222"
+
+      M8FLOW_NATS_URL: "nats://${M8FLOW_NATS_USER:-admin}:${M8FLOW_NATS_PASSWORD:-admin}@nats:4222"
     ports:
       - "${M8FLOW_BACKEND_PORT:-7000}:8000"
     volumes:
@@ -233,10 +236,7 @@ services:
       redis:
         condition: service_started
       minio:
-        condition: service_started
-      nats:
-        condition: service_healthy
-        required: false      
+        condition: service_started   
 
   m8flow-celery-worker:
     build:
