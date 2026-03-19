@@ -3,7 +3,10 @@ from __future__ import annotations
 import ast
 import base64
 from contextlib import contextmanager
+from functools import wraps
 import json
+import logging
+import time
 from urllib.parse import urlparse, urlunparse
 
 import requests
@@ -18,16 +21,24 @@ from spiffworkflow_backend.services.authentication_service import (
     AuthenticationService,
 )
 
+_logger = logging.getLogger(__name__)
+
 _ON_DEMAND_PATCHED = False
 _ORIGINAL_AUTH_OPTION_FOR_IDENTIFIER = None
 _ORIGINAL_GET_AUTH_TOKEN_OBJECT = None
 _TOKEN_ERROR_PATCHED = False
 _OPENID_PATCHED = False
 _REFRESH_TOKEN_TENANT_PATCHED = False
+_PROMPT_LOGIN_PATCHED = False
+_JWKS_TTL_PATCHED = False
 _ORIGINAL_STORE_REFRESH_TOKEN = None
 _ORIGINAL_GET_REFRESH_TOKEN = None
 _MISSING = object()
 MASTER_REALM_IDENTIFIER = "master"
+
+CACHE_TTL_SECONDS = 300
+_ENDPOINT_CACHE_TIMESTAMPS: dict[str, float] = {}
+_JWKS_CACHE_TIMESTAMPS: dict[str, float] = {}
 
 
 def _call_original_auth_option_for_identifier(cls, authentication_identifier: str):
@@ -155,11 +166,16 @@ def apply_auth_token_error_patch() -> None:
 def _patched_open_id_endpoint_for_name(
     cls, name: str, authentication_identifier: str, internal: bool = False
 ) -> str:
-    """Same as original but raises OpenIdConnectionError when discovery returns non-200."""
+    """Same as original but raises OpenIdConnectionError when discovery returns non-200, with TTL-based cache eviction."""
     if authentication_identifier not in cls.ENDPOINT_CACHE:
         cls.ENDPOINT_CACHE[authentication_identifier] = {}
     if authentication_identifier not in cls.JSON_WEB_KEYSET_CACHE:
         cls.JSON_WEB_KEYSET_CACHE[authentication_identifier] = {}
+
+    cached_ts = _ENDPOINT_CACHE_TIMESTAMPS.get(authentication_identifier, 0)
+    cache_expired = (time.monotonic() - cached_ts) > CACHE_TTL_SECONDS
+    if cache_expired and cls.ENDPOINT_CACHE[authentication_identifier]:
+        cls.ENDPOINT_CACHE[authentication_identifier] = {}
 
     internal_server_url = cls.server_url(authentication_identifier, internal=True)
     openid_config_url = f"{internal_server_url}/.well-known/openid-configuration"
@@ -173,6 +189,7 @@ def _patched_open_id_endpoint_for_name(
                     f"Body: {(response.text or '')[:200]}"
                 )
             cls.ENDPOINT_CACHE[authentication_identifier] = response.json()
+            _ENDPOINT_CACHE_TIMESTAMPS[authentication_identifier] = time.monotonic()
         except requests.exceptions.ConnectionError as ce:
             raise OpenIdConnectionError(f"Cannot connect to given open id url: {openid_config_url}") from ce
     if name not in cls.ENDPOINT_CACHE[authentication_identifier]:
@@ -468,3 +485,47 @@ def apply_refresh_token_tenant_patch() -> None:
     AuthenticationService.store_refresh_token = staticmethod(_patched_store_refresh_token)
     AuthenticationService.get_refresh_token = staticmethod(_patched_get_refresh_token)
     _REFRESH_TOKEN_TENANT_PATCHED = True
+
+
+def apply_prompt_login_patch() -> None:
+    """Append prompt=login to authorization URLs so Keycloak always shows a fresh login form."""
+    global _PROMPT_LOGIN_PATCHED
+    if _PROMPT_LOGIN_PATCHED:
+        return
+
+    original = AuthenticationService.get_login_redirect_url
+
+    @wraps(original)
+    def _patched_get_login_redirect_url(self, authentication_identifier: str, final_url: str | None = None) -> str:
+        url = original(self, authentication_identifier, final_url)
+        if "prompt=" not in url:
+            url += "&prompt=login"
+        return url
+
+    AuthenticationService.get_login_redirect_url = _patched_get_login_redirect_url
+    _PROMPT_LOGIN_PATCHED = True
+    _logger.info("prompt_login_patch: authorization URLs will include prompt=login")
+
+
+def apply_jwks_cache_ttl_patch() -> None:
+    """Add TTL-based eviction to AuthenticationService.get_jwks_config_from_uri."""
+    global _JWKS_TTL_PATCHED
+    if _JWKS_TTL_PATCHED:
+        return
+
+    original = AuthenticationService.get_jwks_config_from_uri
+
+    @classmethod  # type: ignore[misc]
+    def _patched_get_jwks_config_from_uri(cls, jwks_uri: str, force_refresh: bool = False):
+        cached_ts = _JWKS_CACHE_TIMESTAMPS.get(jwks_uri, 0)
+        if (time.monotonic() - cached_ts) > CACHE_TTL_SECONDS:
+            force_refresh = True
+
+        result = original.__func__(cls, jwks_uri, force_refresh=force_refresh)
+        if force_refresh or jwks_uri not in _JWKS_CACHE_TIMESTAMPS:
+            _JWKS_CACHE_TIMESTAMPS[jwks_uri] = time.monotonic()
+        return result
+
+    AuthenticationService.get_jwks_config_from_uri = _patched_get_jwks_config_from_uri
+    _JWKS_TTL_PATCHED = True
+    _logger.info("jwks_cache_ttl_patch: JWKS cache entries expire after %ds", CACHE_TTL_SECONDS)

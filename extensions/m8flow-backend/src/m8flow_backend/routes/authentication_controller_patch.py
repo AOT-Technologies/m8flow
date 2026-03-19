@@ -114,7 +114,11 @@ def apply_cookie_domain_patch() -> None:
         patched_frontend_url = "localhost" if cookie_domain is None else f"https://{cookie_domain}"
 
         with _temporary_frontend_url(patched_frontend_url):
-            return original(response)
+            result = original(response)
+
+        result.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        result.headers["Pragma"] = "no-cache"
+        return result
 
     authentication_controller._set_new_access_token_in_cookie = patched_set_new_access_token_in_cookie
     _COOKIE_DOMAIN_PATCHED = True
@@ -206,9 +210,29 @@ def apply_refresh_token_tenant_patch() -> None:
 
     @wraps(original_login_return)
     def patched_login_return(*args, **kwargs):
+        from flask import redirect
+        from spiffworkflow_backend.services.authentication_service import AuthenticationService
+
         state = kwargs.get("state")
         if state is None and args:
             state = args[0]
+
+        error = kwargs.get("error")
+        error_description = kwargs.get("error_description")
+        if error and error_description and "authentication_expired" in str(error_description):
+            try:
+                state_dict = ast.literal_eval(base64.b64decode(state).decode("utf-8"))
+                auth_id = state_dict.get("authentication_identifier")
+                final_url = state_dict.get("final_url", "/")
+                if auth_id:
+                    login_url = AuthenticationService().get_login_redirect_url(
+                        authentication_identifier=auth_id, final_url=final_url
+                    )
+                    logger.info("authentication_expired detected, retrying login for identifier=%s", auth_id)
+                    return redirect(login_url)
+            except Exception:
+                logger.warning("Failed to auto-retry login after authentication_expired", exc_info=True)
+
         tenant_id = _tenant_for_refresh_tokens(state=state if isinstance(state, str) else None)
         auth_identifier = _authentication_identifier_from_state() or (
             _decode_state_authentication_identifier(state) if isinstance(state, str) else None
