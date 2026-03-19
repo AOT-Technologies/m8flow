@@ -88,6 +88,7 @@ services:
       - redis-data:/data
 
   nats:
+    profiles: ["nats"]
     container_name: m8flow-nats
     image: nats:2.10-alpine
     command: ["-js", "--store_dir=/data/nats", "-m", "8222"]
@@ -104,6 +105,7 @@ services:
     restart: unless-stopped
 
   m8flow-nats-consumer:
+    profiles: ["nats"]
     container_name: m8flow-nats-consumer
     build:
       context: ..
@@ -119,12 +121,16 @@ services:
     depends_on:
       nats:
         condition: service_healthy
+        required: false
       m8flow-backend:
         condition: service_started
     environment:
+      M8FLOW_NATS_ENABLED: "${M8FLOW_NATS_ENABLED:-false}"
       M8FLOW_NATS_URL: "nats://nats:4222"
       M8FLOW_BACKEND_DATABASE_URI: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
       SPIFFWORKFLOW_BACKEND_DATABASE_URI: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
+      M8FLOW_BACKEND_UPGRADE_DB: "false"
+      M8FLOW_BACKEND_SW_UPGRADE_DB: "false"
     volumes:
       - process_models_cache:/app/process_models
       - ../data/m8flow_nats_consumer:/app/data/m8flow_nats_consumer
@@ -216,6 +222,7 @@ services:
       M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: "${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-/app/process_models}"
       M8FLOW_BACKEND_DATABASE_URI: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
       M8FLOW_BACKEND_UPGRADE_DB: "${M8FLOW_BACKEND_UPGRADE_DB:-true}"
+      M8FLOW_BACKEND_CONNECTOR_PROXY_URL: "http://m8flow-connector-proxy:${CONNECTOR_PROXY_PORT:-8004}"
       KEYCLOAK_URL: "http://keycloak-proxy:7002"
       M8FLOW_KEYCLOAK_URL: "http://keycloak-proxy:7002"
       KEYCLOAK_HOSTNAME: "${KEYCLOAK_HOSTNAME:-http://localhost:7002}"
@@ -227,7 +234,7 @@ services:
       M8FLOW_BACKEND_URL_FOR_FRONTEND: "${M8FLOW_BACKEND_URL_FOR_FRONTEND:-http://localhost:7001}"
       M8FLOW_BACKEND_CELERY_BROKER_URL: "${M8FLOW_BACKEND_CELERY_BROKER_URL:-redis://redis:6379/0}"
       M8FLOW_BACKEND_CELERY_RESULT_BACKEND: "${M8FLOW_BACKEND_CELERY_RESULT_BACKEND:-redis://redis:6379/0}"
-      M8FLOW_NATS_ENABLED: "true"
+      M8FLOW_NATS_ENABLED: "${M8FLOW_NATS_ENABLED:-false}"
       M8FLOW_NATS_URL: "nats://nats:4222"
     ports:
       - "${M8FLOW_BACKEND_PORT:-7000}:8000"
@@ -249,6 +256,7 @@ services:
         condition: service_started
       nats:
         condition: service_healthy
+        required: false      
 
   m8flow-celery-worker:
     build:
@@ -260,6 +268,7 @@ services:
     environment:
       M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: "${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-/app/process_models}"
       M8FLOW_BACKEND_DATABASE_URI: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
+      M8FLOW_BACKEND_CONNECTOR_PROXY_URL: "http://m8flow-connector-proxy:${CONNECTOR_PROXY_PORT:-8004}"
       M8FLOW_BACKEND_CELERY_BROKER_URL: "${M8FLOW_BACKEND_CELERY_BROKER_URL:-redis://redis:6379/0}"
       M8FLOW_BACKEND_CELERY_RESULT_BACKEND: "${M8FLOW_BACKEND_CELERY_RESULT_BACKEND:-redis://redis:6379/0}"
       M8FLOW_BACKEND_RUNNING_IN_CELERY_WORKER: "true"

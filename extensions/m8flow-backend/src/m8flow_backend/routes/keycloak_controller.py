@@ -12,20 +12,41 @@ from m8flow_backend.services.keycloak_service import (
     realm_exists,
     tenant_login as tenant_login_svc,
     tenant_login_authorization_url,
+    update_realm,
     verify_admin_token,
+    get_master_admin_token,
 )
 from sqlalchemy.exc import IntegrityError
+from spiffworkflow_backend.exceptions.api_error import ApiError
+from spiffworkflow_backend.services.authorization_service import AuthorizationService
+from m8flow_backend.helpers.response_helper import success_response, handle_api_errors
 
 from m8flow_backend.tenancy import create_tenant_if_not_exists
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
 from spiffworkflow_backend.models.db import db
-from flask import request
+from flask import request, g
 
 logger = logging.getLogger(__name__)
 
 
 def create_realm(body: dict) -> tuple[dict, int]:
     """Create a spoke realm from the spiffworkflow template. Returns (response_dict, status_code)."""
+
+    user = getattr(g, 'user', None)
+    if not user:
+        raise ApiError(error_code="not_authenticated", message="User not authenticated", status_code=401)
+    
+    is_authorized = AuthorizationService.user_has_permission(user, "create", request.path)
+        
+    if not is_authorized:
+        logger.warning(
+            "User %s (groups: %s) attempted to create a tenant/realm without required permissions", 
+            user.username, 
+            [getattr(g, 'identifier', g.name) for g in getattr(user, 'groups', [])],
+        )
+        raise ApiError(error_code="forbidden", message="Not authorized to create a tenant.", status_code=403)
+
+
     realm_id = body.get("realm_id")
     if not realm_id or not str(realm_id).strip():
         return {"detail": "realm_id is required"}, 400
@@ -142,15 +163,23 @@ def delete_tenant_realm(realm_id: str) -> tuple[dict, int]:
     with ON DELETE RESTRICT. If any rows still reference this tenant, the delete returns
     409 and the caller must remove or reassign those references first (or use soft delete).
     """
-    auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header.startswith("Bearer "):
-        return {"detail": "Authorization header with Bearer token is required"}, 401
-
-    admin_token = auth_header.split(" ")[1]
-    if not verify_admin_token(admin_token):
-        return {"detail": "Invalid or unauthorized admin token"}, 401
+    user = getattr(g, 'user', None)
+    if not user:
+        raise ApiError(error_code="not_authenticated", message="User not authenticated", status_code=401)
+    
+    is_authorized = AuthorizationService.user_has_permission(user, "delete", request.path)
+        
+    if not is_authorized:
+        logger.warning(
+            "User %s (groups: %s) attempted to delete tenant %s without required permissions", 
+            user.username, 
+            [getattr(g, 'identifier', g.name) for g in getattr(user, 'groups', [])],
+            realm_id
+        )
+        raise ApiError(error_code="forbidden", message="Not authorized to delete a tenant.", status_code=403)
 
     try:
+        admin_token = get_master_admin_token()
         # Delete from Keycloak first. If this raises, we do not touch Postgres.
         delete_realm(realm_id, admin_token=admin_token)
 
@@ -200,4 +229,57 @@ def delete_tenant_realm(realm_id: str) -> tuple[dict, int]:
         return {"detail": detail}, status
     except Exception as e:
         logger.exception("Error deleting tenant %s", realm_id)
+        return {"detail": str(e)}, 500
+
+
+@handle_api_errors
+def update_tenant_name(tenant_id: str, body: dict) -> tuple[dict, int]:
+    """Update a tenant's display name. Requires appropriate permissions."""
+    user = getattr(g, 'user', None)
+    if not user:
+        raise ApiError(error_code="not_authenticated", message="User not authenticated", status_code=401)
+    
+    is_authorized = AuthorizationService.user_has_permission(user, "update", request.path)
+        
+    if not is_authorized:
+        logger.warning(
+            "User %s (groups: %s) attempted to update tenant %s without required permissions", 
+            user.username, 
+            [getattr(g, 'identifier', g.name) for g in getattr(user, 'groups', [])],
+            tenant_id
+        )
+        raise ApiError(error_code="forbidden", message="Not authorized to update the tenant name.", status_code=403)
+
+    new_name = body.get("name")
+    if not new_name or not str(new_name).strip():
+        return {"detail": "name is required"}, 400
+    new_name = str(new_name).strip()
+
+    try:
+        tenant = (
+            db.session.query(M8flowTenantModel)
+            .filter(M8flowTenantModel.id == tenant_id)
+            .one_or_none()
+        )
+        if not tenant:
+            return {"detail": "Tenant not found"}, 404
+
+        admin_token = get_master_admin_token()
+
+        update_realm(tenant.slug, display_name=new_name, admin_token=admin_token)
+        tenant.name = new_name
+        db.session.commit()
+        logger.info("Updated tenant name: id=%s slug=%s to name=%s (updated by %s)", 
+                    tenant_id, tenant.slug, new_name, user.username)
+
+        return {"message": "Tenant name updated successfully", "name": new_name}, 200
+
+    except requests.exceptions.HTTPError as e:
+        status = e.response.status_code if e.response is not None else 500
+        detail = (e.response.text or str(e))[:500] if e.response is not None else str(e)
+        logger.warning("Keycloak update realm HTTP error: %s %s", status, detail)
+        return {"detail": detail}, status
+    except Exception as e:
+        db.session.rollback()
+        logger.exception("Error updating tenant name %s", tenant_id)
         return {"detail": str(e)}, 500
