@@ -217,7 +217,7 @@ After the containers start, continue below to the Keycloak Setup to import the r
 
 ### Import Realm
 
-You can import realms manually as below, or run `./extensions/m8flow-backend/keycloak/start_keycloak.sh` after starting Docker to import the identity realm and tenant-a.
+You can import realms by running `./extensions/m8flow-backend/keycloak/start_keycloak.sh` after starting Docker to import the identity realm.
 
 In the Keycloak Admin Console http://localhost:7002/ log in using the configured administrator credentials.
 
