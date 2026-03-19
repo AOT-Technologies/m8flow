@@ -57,6 +57,10 @@ permissions:
     groups: ["super-admin"]
     actions: [all]
     uri: /m8flow/tenants/*
+  manage-tenant-realms:
+    groups: ["super-admin"]
+    actions: [all]
+    uri: /m8flow/tenant-realms*
   read-all-process-groups:
     groups: ["viewer"]
     actions: [read]
