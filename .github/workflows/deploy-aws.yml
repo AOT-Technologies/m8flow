@@ -8,7 +8,7 @@ on:
         required: true
         type: choice
         options:
-          - Dev
+          - DEV
           - QA
       image_tag:
         description: "Docker image tag to deploy (e.g. 1.2.3-rc)"
@@ -34,8 +34,8 @@ jobs:
       - name: Validate environment
         run: |
           ENV="${{ inputs.environment }}"
-          if [[ "$ENV" != "Dev" && "$ENV" != "QA" ]]; then
-            echo "::error::Invalid environment: '$ENV'. Must be 'Dev' or 'QA'."
+          if [[ "$ENV" != "DEV" && "$ENV" != "QA" ]]; then
+            echo "::error::Invalid environment: '$ENV'. Must be 'DEV' or 'QA'."
             exit 1
           fi
 
@@ -73,7 +73,7 @@ jobs:
           for REPO in $REPOS; do
             URL="https://hub.docker.com/v2/repositories/${NAMESPACE}/${REPO}/tags?page_size=1&name=${TAG}"
             COUNT=$(curl -sS "$URL" | jq -r '.count // 0')
-            if [[ "$COUNT" != "1" ]]; then
+            if [[ "$COUNT" < "1" ]]; then
               MISSING="${MISSING} ${NAMESPACE}/${REPO}:${TAG}"
             fi
           done
