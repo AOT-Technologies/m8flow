@@ -31,7 +31,7 @@ All variables are strictly required and must be provided via `.env` or the Docke
 | `M8FLOW_NATS_FETCH_TIMEOUT` | `2.0`                      | Fetch timeout in seconds                                                                                 |
 | `M8FLOW_NATS_DEDUP_BUCKET`  | `m8flow-dedup`             | Name of the NATS KV Bucket used for deduplication.                                                       |
 | `M8FLOW_NATS_DEDUP_TTL`     | `86400`                    | Time in seconds to remember an event to block duplicate processing.                                      |
-| `M8FLOW_NATS_SALT`          | `my-random-salt-string`    | Salt used for hashing the NATS API keys.                                                                 |
+| `M8FLOW_NATS_TOKEN_SALT`   | `my-random-salt-string`    | Salt used for hashing the NATS API keys.                                                                 |
   
 ---
 
