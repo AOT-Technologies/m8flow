@@ -89,28 +89,75 @@ jobs:
     needs: [validate, verify-images]
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+      BACKEND_TASK_DEF_FAMILY: ${{ vars.BACKEND_TASK_DEF_FAMILY }}
+      BACKEND_CONTAINER_NAME: ${{ vars.BACKEND_CONTAINER_NAME }}
+      BACKEND_SERVICE_NAME: ${{ vars.BACKEND_SERVICE_NAME }}
+      FRONTEND_TASK_DEF_FAMILY: ${{ vars.FRONTEND_TASK_DEF_FAMILY }}
+      FRONTEND_CONTAINER_NAME: ${{ vars.FRONTEND_CONTAINER_NAME }}
+      FRONTEND_SERVICE_NAME: ${{ vars.FRONTEND_SERVICE_NAME }}
+      KEYCLOAK_TASK_DEF_FAMILY: ${{ vars.KEYCLOAK_TASK_DEF_FAMILY }}
+      KEYCLOAK_CONTAINER_NAME: ${{ vars.KEYCLOAK_CONTAINER_NAME }}
+      KEYCLOAK_SERVICE_NAME: ${{ vars.KEYCLOAK_SERVICE_NAME }}
+      CONNECTOR_PROXY_TASK_DEF_FAMILY: ${{ vars.CONNECTOR_PROXY_TASK_DEF_FAMILY }}
+      CONNECTOR_PROXY_CONTAINER_NAME: ${{ vars.CONNECTOR_PROXY_CONTAINER_NAME }}
+      CONNECTOR_PROXY_SERVICE_NAME: ${{ vars.CONNECTOR_PROXY_SERVICE_NAME }}
     steps:
+      - name: Validate required environment variables
+        shell: bash
+        run: |
+          required=(
+            AWS_REGION
+            ECS_CLUSTER
+            BACKEND_TASK_DEF_FAMILY
+            BACKEND_CONTAINER_NAME
+            BACKEND_SERVICE_NAME
+            FRONTEND_TASK_DEF_FAMILY
+            FRONTEND_CONTAINER_NAME
+            FRONTEND_SERVICE_NAME
+            KEYCLOAK_TASK_DEF_FAMILY
+            KEYCLOAK_CONTAINER_NAME
+            KEYCLOAK_SERVICE_NAME
+            CONNECTOR_PROXY_TASK_DEF_FAMILY
+            CONNECTOR_PROXY_CONTAINER_NAME
+            CONNECTOR_PROXY_SERVICE_NAME
+          )
+
+          missing=()
+          for key in "${required[@]}"; do
+            if [[ -z "${!key:-}" ]]; then
+              missing+=("$key")
+            fi
+          done
+
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::Missing required environment variable(s): ${missing[*]}"
+            exit 1
+          fi
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
 
       # Backend
       - name: Render backend task definition
         id: render-backend
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
-          task-definition-family: ${{ vars.BACKEND_TASK_DEF_FAMILY }}
-          container-name: ${{ vars.BACKEND_CONTAINER_NAME }}
+          task-definition-family: ${{ env.BACKEND_TASK_DEF_FAMILY }}
+          container-name: ${{ env.BACKEND_CONTAINER_NAME }}
           image: ${{ env.IMAGE_BASE }}-backend:${{ inputs.image_tag }}
 
       - name: Deploy backend to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           task-definition: ${{ steps.render-backend.outputs.task-definition }}
-          service: ${{ vars.BACKEND_SERVICE_NAME }}
-          cluster: ${{ vars.ECS_CLUSTER }}
+          service: ${{ env.BACKEND_SERVICE_NAME }}
+          cluster: ${{ env.ECS_CLUSTER }}
           force-new-deployment: true
 
       # Frontend
@@ -118,16 +165,16 @@ jobs:
         id: render-frontend
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
-          task-definition-family: ${{ vars.FRONTEND_TASK_DEF_FAMILY }}
-          container-name: ${{ vars.FRONTEND_CONTAINER_NAME }}
+          task-definition-family: ${{ env.FRONTEND_TASK_DEF_FAMILY }}
+          container-name: ${{ env.FRONTEND_CONTAINER_NAME }}
           image: ${{ env.IMAGE_BASE }}-frontend:${{ inputs.image_tag }}
 
       - name: Deploy frontend to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           task-definition: ${{ steps.render-frontend.outputs.task-definition }}
-          service: ${{ vars.FRONTEND_SERVICE_NAME }}
-          cluster: ${{ vars.ECS_CLUSTER }}
+          service: ${{ env.FRONTEND_SERVICE_NAME }}
+          cluster: ${{ env.ECS_CLUSTER }}
           force-new-deployment: true
 
       # Keycloak
@@ -135,16 +182,16 @@ jobs:
         id: render-keycloak
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
-          task-definition-family: ${{ vars.KEYCLOAK_TASK_DEF_FAMILY }}
-          container-name: ${{ vars.KEYCLOAK_CONTAINER_NAME }}
+          task-definition-family: ${{ env.KEYCLOAK_TASK_DEF_FAMILY }}
+          container-name: ${{ env.KEYCLOAK_CONTAINER_NAME }}
           image: ${{ env.IMAGE_BASE }}-keycloak:${{ inputs.image_tag }}
 
       - name: Deploy keycloak to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           task-definition: ${{ steps.render-keycloak.outputs.task-definition }}
-          service: ${{ vars.KEYCLOAK_SERVICE_NAME }}
-          cluster: ${{ vars.ECS_CLUSTER }}
+          service: ${{ env.KEYCLOAK_SERVICE_NAME }}
+          cluster: ${{ env.ECS_CLUSTER }}
           force-new-deployment: true
 
       # Connector Proxy
@@ -152,16 +199,16 @@ jobs:
         id: render-connector-proxy
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
-          task-definition-family: ${{ vars.CONNECTOR_PROXY_TASK_DEF_FAMILY }}
-          container-name: ${{ vars.CONNECTOR_PROXY_CONTAINER_NAME }}
+          task-definition-family: ${{ env.CONNECTOR_PROXY_TASK_DEF_FAMILY }}
+          container-name: ${{ env.CONNECTOR_PROXY_CONTAINER_NAME }}
           image: ${{ env.IMAGE_BASE }}-connector-proxy:${{ inputs.image_tag }}
 
       - name: Deploy connector-proxy to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           task-definition: ${{ steps.render-connector-proxy.outputs.task-definition }}
-          service: ${{ vars.CONNECTOR_PROXY_SERVICE_NAME }}
-          cluster: ${{ vars.ECS_CLUSTER }}
+          service: ${{ env.CONNECTOR_PROXY_SERVICE_NAME }}
+          cluster: ${{ env.ECS_CLUSTER }}
           force-new-deployment: true
 
   summary:
