@@ -77,7 +77,7 @@ A sample environment file is provided at the repository root. Create a working e
 cp sample.env .env
 ```
 
-Edit the `.env` file if adjustments are required for the local setup. Key tenancy options (`M8FLOW_DEFAULT_TENANT_ID`, `M8FLOW_ALLOW_MISSING_TENANT_CONTEXT`, `M8FLOW_TENANT_CLAIM`) are described in `sample.env`.
+Edit the `.env` file if adjustments are required for the local setup. **Environment variable meanings and examples** are documented in [docs/env-reference.md](docs/env-reference.md) (canonical reference; avoid duplicating long env explanations in this README). Variable names for tenancy and other areas also appear in `sample.env`.
 
 ---
 
@@ -231,6 +231,8 @@ Browse or copy the content of `extensions/m8flow-backend/keycloak/realm_exports/
 <div align="center">
     <img src="./docs/images/keycloak-realm-settings-2.png" />
 </div>
+
+For Keycloak-related URL and issuer settings in `.env`, see [docs/env-reference.md](docs/env-reference.md) (Keycloak URLs).
 
 ### Configure Client
 

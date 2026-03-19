@@ -2,6 +2,8 @@
 
 This directory contains the Docker setup for running M8Flow: Compose files, Dockerfiles for app services, and the Keycloak reverse-proxy config.
 
+**Environment variables:** Full meanings and examples live in [docs/env-reference.md](../docs/env-reference.md). This README only adds Docker Compose–specific behavior; do not duplicate the env reference here.
+
 ---
 
 ## File reference
@@ -99,6 +101,8 @@ Use with: `docker compose -f docker/m8flow-docker-compose.yml -f docker/m8flow-d
 - **m8flow-frontend:** `platform: linux/amd64`.
 
 Set production values in `.env` (e.g. `KEYCLOAK_HOSTNAME`, `M8FLOW_BACKEND_DATABASE_URI`, secrets) before running.
+
+**Docker Compose caveat:** The `m8flow-backend` service sets `KEYCLOAK_URL` and `M8FLOW_KEYCLOAK_URL` to `http://keycloak-proxy:7002` so server-side calls use the proxy, while browsers use the public URL (often `http://localhost:7002` or `http://<host>:7002`). For all other env semantics, see [docs/env-reference.md](../docs/env-reference.md).
 
 ---
 
