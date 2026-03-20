@@ -5,6 +5,7 @@ from flask import Flask
 import pytest
 
 from spiffworkflow_backend.routes import authentication_controller
+from spiffworkflow_backend.exceptions.api_error import ApiError
 
 import m8flow_backend.routes.authentication_controller_patch as auth_patch_module
 from m8flow_backend.routes.authentication_controller_patch import (
@@ -184,3 +185,37 @@ def test_master_realm_auth_patch_handles_global_tenant_routes(monkeypatch) -> No
     finally:
         authentication_controller._get_authentication_identifier_from_request = original
         monkeypatch.setattr(auth_patch_module, "_MASTER_REALM_PATCHED", False)
+
+
+def test_refresh_token_tenant_patch_auto_provisions_missing_user(monkeypatch) -> None:
+    original_login_return = authentication_controller.login_return
+    original_get_user_model_from_token = authentication_controller._get_user_model_from_token
+
+    sentinel_user = object()
+
+    def fake_original(decoded_token):
+        raise ApiError(
+            error_code="invalid_user",
+            message="Invalid user. Please log in.",
+            status_code=401,
+        )
+
+    monkeypatch.setattr(auth_patch_module, "_REFRESH_TOKEN_TENANT_PATCHED", False)
+    monkeypatch.setattr(authentication_controller, "_get_user_model_from_token", fake_original)
+    monkeypatch.setattr(
+        "spiffworkflow_backend.services.authorization_service.AuthorizationService.create_user_from_sign_in",
+        lambda decoded_token: sentinel_user,
+    )
+
+    try:
+        apply_refresh_token_tenant_patch()
+        decoded_token = {
+            "iss": "http://localhost:7002/realms/master",
+            "sub": "subject-123",
+            "preferred_username": "super-admin",
+        }
+        assert authentication_controller._get_user_model_from_token(decoded_token) is sentinel_user
+    finally:
+        authentication_controller.login_return = original_login_return
+        authentication_controller._get_user_model_from_token = original_get_user_model_from_token
+        monkeypatch.setattr(auth_patch_module, "_REFRESH_TOKEN_TENANT_PATCHED", False)

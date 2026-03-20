@@ -113,7 +113,7 @@ RUN pip install --upgrade pip && pip install uv flower
 
 COPY . /app
 
-RUN cd /app/spiffworkflow-backend && uv pip install --system -e . \
+RUN cd /app/spiffworkflow-backend && uv pip install --system -e . --group dev \
   && pip install nats-py httpx python-dotenv
 
 # Fix CRLF issues for Windows users and ensure scripts are executable

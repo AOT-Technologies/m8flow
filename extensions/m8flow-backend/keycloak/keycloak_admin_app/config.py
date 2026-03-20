@@ -4,7 +4,7 @@ from pathlib import Path
 
 # Keycloak
 KEYCLOAK_URL = os.environ.get("KEYCLOAK_URL", "http://localhost:7002").rstrip("/")
-REALM = os.environ.get("KEYCLOAK_REALM", "tenant-a")
+REALM = os.environ.get("KEYCLOAK_REALM", "m8flow")
 ADMIN_USER = os.environ.get("KEYCLOAK_ADMIN_USER", "admin")
 ADMIN_PASSWORD = os.environ.get("KEYCLOAK_ADMIN_PASSWORD", "admin")
 
