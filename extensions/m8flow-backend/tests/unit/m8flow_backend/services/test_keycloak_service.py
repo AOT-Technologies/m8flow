@@ -179,6 +179,8 @@ def test_fill_realm_template_client_attributes() -> None:
 
 def test_fill_realm_template_injects_runtime_redirects_for_backend_client(monkeypatch) -> None:
     """Backend tenant client gets backend/frontend URLs from env instead of placeholder-only defaults."""
+    monkeypatch.delenv("SPIFFWORKFLOW_BACKEND_URL", raising=False)
+    monkeypatch.delenv("SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND", raising=False)
     monkeypatch.setenv("M8FLOW_BACKEND_URL", "http://192.168.1.105:8000")
     monkeypatch.setenv("M8FLOW_BACKEND_URL_FOR_FRONTEND", "http://192.168.1.105:8001")
     template = {
@@ -186,7 +188,7 @@ def test_fill_realm_template_injects_runtime_redirects_for_backend_client(monkey
         "realm": "spiffworkflow",
         "clients": [
             {
-                "clientId": "spiffworkflow-backend",
+                "clientId": "m8flow-backend",
                 "redirectUris": [
                     "http://localhost:7000/*",
                     "https://replace-me-with-spiff-backend-host-and-path/*",

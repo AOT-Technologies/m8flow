@@ -164,7 +164,7 @@ If the init containers are not needed:
 docker compose -f docker/m8flow-docker-compose.yml up -d --build
 ```
 
-The Keycloak image is built with the **m8flow realm-info-mapper** provider, so tokens include `m8flow_tenant_id` and `m8flow_tenant_name`. No separate build of the keycloak-extensions JAR is required. Realm import can be done manually in the Keycloak Admin Console (see Keycloak Setup below) or by running `./extensions/m8flow-backend/keycloak/start_keycloak.sh` once after Keycloak is up; the script imports the identity realm and creates tenant-a (expects Keycloak on ports 7002 and 7009, e.g. when using Docker Compose).
+The Keycloak image is built with the **m8flow realm-info-mapper** provider, so tokens include `m8flow_tenant_id` and `m8flow_tenant_name`. No separate build of the keycloak-extensions JAR is required. Realm import can be done manually in the Keycloak Admin Console (see Keycloak Setup below) or by running `./extensions/m8flow-backend/keycloak/start_keycloak.sh` once after Keycloak is up; the script imports the `m8flow` realm only (expects Keycloak on ports 7002 and 7009, e.g. when using Docker Compose).
 
 To stop containers and remove associated volumes (this deletes local database data):
 
@@ -217,7 +217,7 @@ After the containers start, continue below to the Keycloak Setup to import the r
 
 ### Import Realm
 
-You can import realms by running `./extensions/m8flow-backend/keycloak/start_keycloak.sh` after starting Docker to import the identity realm.
+You can import realms by running `./extensions/m8flow-backend/keycloak/start_keycloak.sh` after starting Docker to import the `m8flow` realm. Tenant realms are created later via the tenant realm API when needed.
 
 In the Keycloak Admin Console http://localhost:7002/ log in using the configured administrator credentials.
 
@@ -227,7 +227,7 @@ Click on "Keycloak master" and then on "Create a realm".
     <img src="./docs/images/keycloak-realm-settings-1.png" />
 </div>
 
-Browse or copy the content of `extensions/m8flow-backend/keycloak/realm_exports/m8flow-rbac-realm.json` and click on "Create". For tenant-aware setup this realm includes token claims `m8flow_tenant_id` and `m8flow_tenant_name`.
+Browse or copy the content of `extensions/m8flow-backend/keycloak/realm_exports/m8flow-tenant-template.json` and click on "Create". For tenant-aware setup this realm includes token claims `m8flow_tenant_id` and `m8flow_tenant_name`.
 <div align="center">
     <img src="./docs/images/keycloak-realm-settings-2.png" />
 </div>
@@ -236,7 +236,7 @@ For Keycloak-related URL and issuer settings in `.env`, see [docs/env-reference.
 
 ### Configure Client
 
-With the realm "spiffworkflow" selected, click on "Clients" and then on the client ID **spiffworkflow-backend**.
+With the realm "m8flow" selected, click on "Clients" and then on the client ID **m8flow-backend**.
 <div align="center">
     <img src="./docs/images/keycloak-realm-settings-3.png" />
 </div>
@@ -355,4 +355,3 @@ m8flow builds upon the outstanding work of the **SpiffWorkflow community** and c
 ## License
 
 m8flow is released under the **GNU Lesser General Public License (LGPL)**.
-

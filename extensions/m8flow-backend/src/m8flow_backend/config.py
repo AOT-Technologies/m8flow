@@ -50,7 +50,7 @@ def realm_template_path() -> str:
     # Default: under m8flow-backend extension root (works regardless of cwd)
     _pkg = Path(__file__).resolve().parent  # .../m8flow_backend
     _root = _pkg.parent.parent  # .../m8flow-backend (keycloak/ lives here)
-    default = _root / "keycloak" / "realm_exports" / "spiffworkflow-realm.json"
+    default = _root / "keycloak" / "realm_exports" / "m8flow-tenant-template.json"
     return str(default)
 
 
@@ -71,7 +71,7 @@ def spoke_keystore_password() -> str:
 
 def spoke_client_id() -> str:
     """Client id used in each spoke realm for token/login."""
-    return _get("M8FLOW_KEYCLOAK_SPOKE_CLIENT_ID") or "spiffworkflow-backend"
+    return _get("M8FLOW_KEYCLOAK_SPOKE_CLIENT_ID") or "m8flow-backend"
 
 
 def spoke_client_secret() -> str:
@@ -90,7 +90,7 @@ def master_client_secret() -> str:
 
 def template_realm_name() -> str:
     """Realm name in the template (for substitution)."""
-    return "spiffworkflow"
+    return "m8flow"
 
 def app_public_base_url() -> str | None:
     """Base URL of the app (frontend at /, backend at /api). Used for tenant realm redirect URI substitution.
