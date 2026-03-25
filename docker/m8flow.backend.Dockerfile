@@ -10,11 +10,7 @@ RUN set -eu; \
     UPSTREAM_URL="$(jq -r '.upstream_url' /tmp/upstream.sources.json)"; \
     DEFAULT_UPSTREAM_TAG="$(jq -r '.upstream_ref' /tmp/upstream.sources.json)"; \
     RESOLVED_UPSTREAM_TAG="${UPSTREAM_TAG:-${DEFAULT_UPSTREAM_TAG}}"; \
-    BACKEND_FOLDERS="$(jq -r '
-      (.backend // [])
-      | map(select(type == "string" and length > 0))
-      | join(" ")
-    ' /tmp/upstream.sources.json)"; \
+    BACKEND_FOLDERS="$(jq -r '(.backend // []) | map(select(type == "string" and length > 0)) | join(" ")' /tmp/upstream.sources.json)"; \
     if [ -z "${UPSTREAM_URL}" ] || [ "${UPSTREAM_URL}" = "null" ]; then \
       echo "Invalid upstream_url in upstream.sources.json" >&2; exit 1; \
     fi; \

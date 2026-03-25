@@ -1,0 +1,30 @@
+# Virtualenvs
+.venv
+.venv/**
+**/.venv
+**/.venv/**
+
+# VCS / CI
+.git
+.github
+
+# Connector-proxy (not needed by backend, frontend, or keycloak contexts)
+m8flow-connector-proxy
+
+# Node (backend/keycloak don't need; frontend builds in-container)
+node_modules
+**/node_modules
+
+# Build artifacts and caches
+**/dist
+**/build
+**/.pytest_cache
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.log
+**/.mypy_cache
+**/.ruff_cache
+
+# Additional caches
+**/.cache
