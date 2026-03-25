@@ -1,0 +1,76 @@
+{
+  "name": "@bpmn-io/feel-lint",
+  "version": "1.4.0",
+  "description": "Linter for FEEL expressions.",
+  "source": "lib/index.js",
+  "main": "dist/index.js",
+  "module": "dist/index.esm.js",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "start": "SINGLE_START=editor npm run dev",
+    "all": "run-s lint test build",
+    "build": "rollup -c --bundleConfigAsCjs",
+    "dev": "npm test -- --auto-watch --no-single-run",
+    "lint": "eslint .",
+    "prepare": "run-s build",
+    "test": "karma start test/karma.config.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bpmn-io/feel-lint.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "bpmn-io",
+    "feel",
+    "linter"
+  ],
+  "author": {
+    "name": "Martin Stamm",
+    "url": "https://github.com/marstamm"
+  },
+  "contributors": [
+    {
+      "name": "bpmn.io contributors",
+      "url": "https://github.com/bpmn-io"
+    }
+  ],
+  "engines": {
+    "node": "*"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@codemirror/lang-json": "^6.0.1",
+    "@codemirror/lint": "^6.8.4",
+    "@codemirror/state": "^6.5.1",
+    "@codemirror/view": "^6.36.2",
+    "@rollup/plugin-commonjs": "^28.0.2",
+    "chai": "^4.5.0",
+    "eslint": "^9.18.0",
+    "eslint-plugin-bpmn-io": "^2.1.0",
+    "karma": "^6.4.4",
+    "karma-chrome-launcher": "^3.2.0",
+    "karma-coverage": "^2.2.1",
+    "karma-debug-launcher": "^0.0.5",
+    "karma-env-preprocessor": "^0.1.1",
+    "karma-mocha": "^2.0.1",
+    "karma-sinon-chai": "^2.0.2",
+    "karma-webpack": "^5.0.1",
+    "lang-feel": "^2.0.0",
+    "mocha": "^10.8.2",
+    "npm-run-all2": "^7.0.2",
+    "puppeteer": "^24.1.0",
+    "rollup": "^4.31.0",
+    "sinon": "^17.0.1",
+    "sinon-chai": "^3.7.0",
+    "webpack": "^5.97.1"
+  },
+  "dependencies": {
+    "@codemirror/language": "^6.10.8",
+    "lezer-feel": "^1.7.0"
+  }
+}

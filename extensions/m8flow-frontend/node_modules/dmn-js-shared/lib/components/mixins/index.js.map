@@ -1,0 +1,1 @@
+{"version":3,"file":"index.js","names":["default","ComponentWithSlots"],"sources":["../../../src/components/mixins/index.js"],"sourcesContent":["export { default as ComponentWithSlots } from './ComponentWithSlots';"],"mappings":"AAAA,SAASA,OAAO,IAAIC,kBAAkB,QAAQ,sBAAsB","ignoreList":[]}

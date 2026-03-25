@@ -1,0 +1,202 @@
+import { getBBox } from '../../util/Elements';
+
+var LOW_PRIORITY = 500;
+
+import {
+  append as svgAppend,
+  attr as svgAttr,
+  create as svgCreate
+} from 'tiny-svg';
+
+import {
+  query as domQuery
+} from 'min-dom';
+
+import {
+  assign,
+  forEach,
+  isFunction
+} from 'min-dash';
+
+var DEFAULT_PRIORITY = 1000;
+
+/**
+ * @typedef {import('../../model/Types').Element} Element
+ *
+ * @typedef {import('./OutlineProvider').default} OutlineProvider
+ * @typedef {import('../../core/EventBus').default} EventBus
+ * @typedef {import('../../draw/Styles').default} Styles
+ */
+
+/**
+ * @class
+ *
+ * A plugin that adds an outline to shapes and connections that may be activated and styled
+ * via CSS classes.
+ *
+ * @param {EventBus} eventBus
+ * @param {Styles} styles
+ */
+export default function Outline(eventBus, styles) {
+
+  this._eventBus = eventBus;
+
+  this.offset = 5;
+
+  var OUTLINE_STYLE = styles.cls('djs-outline', [ 'no-fill' ]);
+
+  var self = this;
+
+  /**
+   * @param {SVGElement} gfx
+   *
+   * @return {SVGElement} outline
+   */
+  function createOutline(gfx) {
+    var outline = svgCreate('rect');
+
+    svgAttr(outline, assign({
+      x: 0,
+      y: 0,
+      rx: 4,
+      width: 100,
+      height: 100
+    }, OUTLINE_STYLE));
+
+    return outline;
+  }
+
+  // A low priortity is necessary, because outlines of labels have to be updated
+  // after the label bounds have been updated in the renderer.
+  eventBus.on([ 'shape.added', 'shape.changed' ], LOW_PRIORITY, function(event) {
+    var element = event.element,
+        gfx = event.gfx;
+
+    var outline = domQuery('.djs-outline', gfx);
+
+    if (!outline) {
+      outline = self.getOutline(element) || createOutline(gfx);
+      svgAppend(gfx, outline);
+    }
+
+    self.updateShapeOutline(outline, element);
+  });
+
+  eventBus.on([ 'connection.added', 'connection.changed' ], function(event) {
+    var element = event.element,
+        gfx = event.gfx;
+
+    var outline = domQuery('.djs-outline', gfx);
+
+    if (!outline) {
+      outline = createOutline(gfx);
+      svgAppend(gfx, outline);
+    }
+
+    self.updateConnectionOutline(outline, element);
+  });
+}
+
+
+/**
+ * Updates the outline of a shape respecting the dimension of the
+ * element and an outline offset.
+ *
+ * @param {SVGElement} outline
+ * @param {Element} element
+ */
+Outline.prototype.updateShapeOutline = function(outline, element) {
+
+  var updated = false;
+  var providers = this._getProviders();
+
+  if (providers.length) {
+    forEach(providers, function(provider) {
+      updated = updated || provider.updateOutline(element, outline);
+    });
+  }
+
+  if (!updated) {
+    svgAttr(outline, {
+      x: -this.offset,
+      y: -this.offset,
+      width: element.width + this.offset * 2,
+      height: element.height + this.offset * 2
+    });
+  }
+};
+
+/**
+ * Updates the outline of a connection respecting the bounding box of
+ * the connection and an outline offset.
+ * Register an outline provider with the given priority.
+ *
+ * @param {SVGElement} outline
+ * @param {Element} connection
+ */
+Outline.prototype.updateConnectionOutline = function(outline, connection) {
+  var bbox = getBBox(connection);
+
+  svgAttr(outline, {
+    x: bbox.x - this.offset,
+    y: bbox.y - this.offset,
+    width: bbox.width + this.offset * 2,
+    height: bbox.height + this.offset * 2
+  });
+};
+
+/**
+ * Register an outline provider with the given priority.
+ *
+ * @param {number} priority
+ * @param {OutlineProvider} provider
+ */
+Outline.prototype.registerProvider = function(priority, provider) {
+  if (!provider) {
+    provider = priority;
+    priority = DEFAULT_PRIORITY;
+  }
+
+  this._eventBus.on('outline.getProviders', priority, function(event) {
+    event.providers.push(provider);
+  });
+};
+
+/**
+ * Returns the registered outline providers.
+ *
+ * @returns {OutlineProvider[]}
+ */
+Outline.prototype._getProviders = function() {
+  var event = this._eventBus.createEvent({
+    type: 'outline.getProviders',
+    providers: []
+  });
+
+  this._eventBus.fire(event);
+
+  return event.providers;
+};
+
+/**
+ * Returns the outline for an element.
+ *
+ * @param {Element} element
+ */
+Outline.prototype.getOutline = function(element) {
+  var outline;
+  var providers = this._getProviders();
+
+  forEach(providers, function(provider) {
+
+    if (!isFunction(provider.getOutline)) {
+      return;
+    }
+
+    outline = outline || provider.getOutline(element);
+  });
+
+  return outline;
+};
+
+Outline.$inject = [ 'eventBus', 'styles', 'elementRegistry' ];

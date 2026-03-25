@@ -1,0 +1,53 @@
+{
+  "name": "tiny-svg",
+  "version": "3.1.3",
+  "description": "A minimal toolbelt for builing fast SVG-based applications",
+  "main": "dist/index.cjs.js",
+  "module": "dist/index.esm.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "all": "run-s lint test distro",
+    "bundle": "rollup -c --bundleConfigAsCjs",
+    "distro": "run-s bundle test:integration",
+    "dev": "npm test -- --auto-watch --no-single-run",
+    "lint": "eslint .",
+    "prepublishOnly": "run-s distro",
+    "test": "karma start",
+    "test:integration": "karma start test/integration/karma.config.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bpmn-io/tiny-svg"
+  },
+  "keywords": [
+    "svg",
+    "library",
+    "geometry"
+  ],
+  "author": {
+    "name": "Nico Rehwaldt",
+    "url": "https://github.com/nikku"
+  },
+  "license": "MIT",
+  "sideEffects": false,
+  "devDependencies": {
+    "@rollup/plugin-terser": "^0.4.4",
+    "chai": "^4.4.1",
+    "eslint": "^8.57.0",
+    "eslint-plugin-bpmn-io": "^1.0.0",
+    "karma": "^6.4.3",
+    "karma-chai": "^0.1.0",
+    "karma-chrome-launcher": "^3.2.0",
+    "karma-firefox-launcher": "^2.1.3",
+    "karma-mocha": "^2.0.1",
+    "karma-webpack": "^5.0.1",
+    "mocha": "^10.3.0",
+    "npm-run-all": "^4.1.5",
+    "puppeteer": "^22.4.0",
+    "rollup": "^4.12.1",
+    "webpack": "^5.90.3"
+  },
+  "files": [
+    "dist"
+  ]
+}

@@ -1,0 +1,30 @@
+[tool.poetry]
+package-mode = false
+name = "connector-proxy"
+version = "0.1.0"
+description = "M8Flow connector proxy"
+license = "Apache-2.0"
+readme = "README.md"
+authors = ["Andre Pestana <andre.pestana@aot-technologies.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+Flask = "^2.2.2"
+gunicorn = "^20.1.0"
+spiffworkflow-proxy = {git = "https://github.com/sartography/spiffworkflow-proxy"}
+m8flow-connector-smtp = { git = "https://github.com/AOT-Technologies/m8flow-connectors.git", subdirectory = "connectors/m8flow-connector-smtp", branch = "main" }
+m8flow-connector-slack = { git = "https://github.com/AOT-Technologies/m8flow-connectors.git", subdirectory = "connectors/m8flow-connector-slack", branch = "main" }
+m8flow-connector-salesforce = { git = "https://github.com/AOT-Technologies/m8flow-connectors.git", subdirectory = "connectors/m8flow-connector-salesforce", branch = "main" }
+m8flow-connector-stripe = { git = "https://github.com/AOT-Technologies/m8flow-connectors.git", subdirectory = "connectors/m8flow-connector-stripe", branch = "main" }
+connector-postgres-v2 = {git = "https://github.com/sartography/connector-postgres.git"}
+connector-http = {git = "https://github.com/sartography/connector-http.git"}
+psycopg2-binary = "^2.9.9"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+pythonpath = [
+  "."
+]

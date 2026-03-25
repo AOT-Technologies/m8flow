@@ -1,0 +1,37 @@
+# CODEOWNERS file
+# This file defines code owners for different parts of the repository.
+# GitHub will automatically request reviews from these owners when PRs are opened.
+# 
+# Format: <pattern> <@username or @team>
+# Patterns are matched in order, so more specific patterns should come first.
+
+# Root configuration files
+/.github/                    @team-backend @team-devops
+/.pre-commit-config.yaml     @team-backend
+/.tool-versions              @team-backend
+/.devcontainer/              @team-backend
+
+# Backend
+/spiffworkflow-backend/      @team-backend
+
+# Frontend
+/spiffworkflow-frontend/     @team-frontend
+
+# Common libraries
+/spiff-arena-common/         @team-backend
+
+# Connector proxies
+/connector-proxies/          @team-backend @team-integrations
+/connector-proxy-demo/       @team-backend
+
+# Infrastructure and deployment
+/docker/                     @team-backend @team-devops
+
+# Build and tooling scripts
+/bin/                        @team-backend @team-devops
+
+# Documentation (if re-added)
+/docs/                       @team-docs
+
+# Default owners for everything else
+*                            @team-backend

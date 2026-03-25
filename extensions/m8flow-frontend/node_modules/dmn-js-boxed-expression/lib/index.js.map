@@ -1,0 +1,1 @@
+{"version":3,"file":"index.js","names":["Viewer","Editor"],"sources":["../src/index.js"],"sourcesContent":["export { Viewer } from './Viewer';\nexport { Editor } from './Editor';\n"],"mappings":"AAAA,SAASA,MAAM,QAAQ,UAAU;AACjC,SAASC,MAAM,QAAQ,UAAU","ignoreList":[]}

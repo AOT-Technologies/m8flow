@@ -1,0 +1,14 @@
+services:
+  minio-local-dev:
+    image: minio/minio:RELEASE.2025-01-20T14-49-07Z
+    command: server /data --console-address ":9001"
+    env_file: ../.env
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "19000:9000"
+      - "19001:9001"
+    volumes:
+      - ${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-./data/bpmn}:/data
+      - ${M8FLOW_TEMPLATES_STORAGE_DIR:-./templates}:/m8flow-templates

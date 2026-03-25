@@ -1,0 +1,41 @@
+# Secrets / local config
+.env
+.env.*
+*.pem
+*.key
+*.crt
+*.p12
+*.jks
+*secrets*
+**/secrets/**
+**/*secret*
+
+# VCS / CI / editor
+.git
+.gitignore
+.github
+.vscode
+.idea
+
+# Python junk / caches
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtualenvs / local tooling
+.venv/
+venv/
+poetry.lock.backup
+pip-wheel-metadata/
+
+# Node / frontend (if any)
+node_modules/
+
+# Build output
+dist/
+build/
+*.log

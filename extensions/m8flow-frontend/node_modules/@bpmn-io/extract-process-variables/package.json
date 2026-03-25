@@ -1,0 +1,61 @@
+{
+  "name": "@bpmn-io/extract-process-variables",
+  "version": "1.0.1",
+  "description": "A util for bpmn-js to extract Camunda BPM process variables from a BPMN 2.0 diagram.",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./zeebe": {
+      "import": "./zeebe/index.mjs",
+      "require": "./zeebe/index.js"
+    }
+  },
+  "source": "src/index.js",
+  "scripts": {
+    "build": "rollup -c",
+    "distro": "run-s build test:build",
+    "lint": "eslint .",
+    "prepare": "run-s distro",
+    "dev": "mocha -r esm --reporter=spec --recursive --watch test/**/*Spec.js",
+    "test": "nyc --reporter=lcov mocha -r esm --reporter=spec --recursive test/**/*Spec.js",
+    "test:build": "mocha --reporter=spec --recursive test/distro",
+    "all": "run-s lint test distro"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bpmn-io/extract-process-variables.git"
+  },
+  "author": "Niklas Kiefer <niklas.kiefer@camunda.com> (https://github.com/pinussilvestrus)",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/bpmn-io/extract-process-variables/issues"
+  },
+  "homepage": "https://github.com/bpmn-io/extract-process-variables#readme",
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^22.0.2",
+    "@rollup/plugin-json": "^4.1.0",
+    "@rollup/plugin-node-resolve": "^14.1.0",
+    "bpmn-moddle": "^8.0.0",
+    "camunda-bpmn-moddle": "^7.0.1",
+    "chai": "^4.2.0",
+    "eslint": "^8.24.0",
+    "eslint-plugin-bpmn-io": "^0.16.0",
+    "esm": "^3.2.25",
+    "mocha": "^8.1.1",
+    "npm-run-all": "^4.1.5",
+    "nyc": "^15.1.0",
+    "rollup": "^2.79.1",
+    "zeebe-bpmn-moddle": "^0.17.0"
+  },
+  "dependencies": {
+    "min-dash": "^4.0.0"
+  },
+  "files": [
+    "dist",
+    "zeebe"
+  ]
+}

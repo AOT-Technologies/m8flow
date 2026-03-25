@@ -1,0 +1,63 @@
+{
+  "name": "feelin",
+  "version": "3.2.0",
+  "description": "A FEEL parser and interpreter",
+  "author": "Nico Rehwaldt <git_nikku@nixis.de>",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.cjs",
+  "module": "dist/index.esm.js",
+  "source": "src/index.ts",
+  "types": "dist/index.d.ts",
+  "devDependencies": {
+    "@rollup/plugin-typescript": "^12.1.1",
+    "@types/chai": "^4.3.20",
+    "@types/luxon": "^3.4.2",
+    "@types/mocha": "^10.0.9",
+    "chai": "^4.5.0",
+    "chokidar-cli": "^3.0.0",
+    "eslint": "^9.14.0",
+    "eslint-plugin-bpmn-io": "^2.0.2",
+    "fast-glob": "^3.3.2",
+    "mocha": "^10.8.2",
+    "npm-run-all2": "^7.0.1",
+    "rollup": "^4.24.4",
+    "saxen": "^10.0.0",
+    "source-map-support": "^0.5.21",
+    "strip-indent": "^4.0.0",
+    "tslib": "^2.8.1",
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.13.0"
+  },
+  "dependencies": {
+    "@lezer/lr": "^1.4.2",
+    "lezer-feel": "^1.4.0",
+    "luxon": "^3.5.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nikku/feelin"
+  },
+  "engines": {
+    "node": "*"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "all": "run-s lint build generate-typings test lint:types",
+    "lint": "eslint .",
+    "lint:types": "tsc --noEmit --lib es2019 test/types.ts",
+    "build": "rollup -c --bundleConfigAsCjs",
+    "build:dev": "npm run build -- --watch",
+    "dev": "run-p *:dev",
+    "generate-typings": "tsc --emitDeclarationOnly --declaration --outDir dist",
+    "prepare": "run-s build generate-typings",
+    "test": "mocha -r source-map-support/register test/*-spec.js",
+    "test:dev": "chokidar '{dist,test}/**/*.js' -c 'npm test'",
+    "tck": "run-s tck:extract tck:test",
+    "tck:extract": "node tasks/extract-tck-tests.js",
+    "tck:test": "mocha --reporter=test/reporters/tck.cjs -r source-map-support/register test/tck/*.js"
+  },
+  "files": [
+    "dist"
+  ]
+}

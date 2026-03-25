@@ -1,0 +1,12 @@
+{
+  "upstream_url": "https://github.com/AOT-Technologies/m8flow-core.git",
+  "upstream_ref": "0.0.1-rc",
+  "backend": [
+    "spiffworkflow-backend",
+    "spiff-arena-common"
+  ],
+  "frontend": [
+    "spiffworkflow-frontend"
+  ],
+  "others": []
+}

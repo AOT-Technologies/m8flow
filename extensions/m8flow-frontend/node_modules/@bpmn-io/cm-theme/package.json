@@ -1,0 +1,49 @@
+{
+  "name": "@bpmn-io/cm-theme",
+  "version": "0.1.0-alpha.2",
+  "description": "Codemirror themes for bpmn-io",
+  "main": "dist/index.js",
+  "module": "dist/index.es.js",
+  "scripts": {
+    "build": "rollup -c",
+    "start": "npm run build && npm run --prefix preview-themes dev"
+  },
+  "author": {
+    "name": "Valentin Serra",
+    "url": "https://github.com/skaiir"
+  },
+  "keywords": [
+    "codemirror",
+    "cm",
+    "theme",
+    "bpmn-io"
+  ],
+  "files": [
+    "dist"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@codemirror/language": "^6.3.1",
+    "@codemirror/view": "^6.5.1",
+    "@lezer/highlight": "^1.1.4"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.20.7",
+    "@babel/core": "^7.20.12",
+    "@babel/preset-env": "^7.20.2",
+    "@babel/register": "^7.18.9",
+    "@lezer/generator": "^1.2.2",
+    "@rollup/plugin-commonjs": "^24.0.1",
+    "@rollup/plugin-json": "^6.0.0",
+    "chai": "^4.3.7",
+    "cross-env": "^7.0.3",
+    "eslint": "^8.33.0",
+    "eslint-plugin-bpmn-io": "^1.0.0",
+    "rollup": "^3.15.0"
+  },
+  "workspaces": {
+    "packages": [
+      "preview-themes"
+    ]
+  }
+}

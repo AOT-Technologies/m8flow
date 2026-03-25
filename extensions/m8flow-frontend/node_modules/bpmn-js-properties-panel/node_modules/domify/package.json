@@ -1,0 +1,47 @@
+{
+	"name": "domify",
+	"version": "2.0.0",
+	"description": "Turn a HTML string into DOM elements, cross-platform",
+	"license": "MIT",
+	"repository": "sindresorhus/domify",
+	"funding": "https://github.com/sponsors/sindresorhus",
+	"exports": {
+		"types": "./index.d.ts",
+		"default": "./index.js"
+	},
+	"main": "./index.js",
+	"types": "./index.d.ts",
+	"sideEffects": false,
+	"engines": {
+		"node": ">=18"
+	},
+	"scripts": {
+		"test": "xo && ava"
+	},
+	"files": [
+		"index.js",
+		"index.d.ts"
+	],
+	"keywords": [
+		"dom",
+		"html",
+		"client",
+		"browser",
+		"component",
+		"element",
+		"elements",
+		"string",
+		"document"
+	],
+	"devDependencies": {
+		"ava": "^5.3.1",
+		"xo": "^0.56.0",
+		"jsdom": "^22.1.0"
+	},
+	"xo": {
+		"rules": {
+			"no-multi-assign": "off",
+			"unicorn/prefer-module": "off"
+		}
+	}
+}

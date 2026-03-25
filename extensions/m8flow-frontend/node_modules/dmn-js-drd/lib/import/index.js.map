@@ -1,0 +1,1 @@
+{"version":3,"file":"index.js","names":["DrdImporter","drdImporter"],"sources":["../../src/import/index.js"],"sourcesContent":["import DrdImporter from './DrdImporter';\n\nexport default {\n  drdImporter: [ 'type', DrdImporter ]\n};"],"mappings":"AAAA,OAAOA,WAAW,MAAM,eAAe;AAEvC,eAAe;EACbC,WAAW,EAAE,CAAE,MAAM,EAAED,WAAW;AACpC,CAAC","ignoreList":[]}

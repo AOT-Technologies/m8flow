@@ -1,0 +1,61 @@
+{
+  "name": "lezer-feel",
+  "version": "1.9.0",
+  "description": "Lezer-based FEEL grammar",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "types": "./dist/index.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "types": "./dist/index.d.ts",
+  "author": "Nico Rehwaldt <https://github.com/nikku>",
+  "license": "MIT",
+  "sideEffects": false,
+  "devDependencies": {
+    "@lezer/generator": "^1.8.0",
+    "@rollup/plugin-node-resolve": "^16.0.1",
+    "@types/chai": "^5.2.2",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^20.19.19",
+    "chai": "^6.0.0",
+    "chokidar-cli": "^3.0.0",
+    "eslint": "^9.36.0",
+    "eslint-plugin-bpmn-io": "^2.2.0",
+    "mocha": "^11.7.4",
+    "npm-run-all2": "^8.0.4",
+    "rollup": "^4.52.4",
+    "source-map-support": "^0.5.21",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@lezer/highlight": "^1.2.1",
+    "@lezer/lr": "^1.4.2",
+    "min-dash": "^4.2.3"
+  },
+  "engines": {
+    "node": "*"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nikku/lezer-feel.git"
+  },
+  "scripts": {
+    "build": "lezer-generator src/feel.grammar -o src/parser && rollup -c",
+    "build-debug": "lezer-generator src/feel.grammar --names -o src/parser && rollup -c",
+    "test": "mocha -r source-map-support/register test/test-*.js",
+    "dev": "run-p dev:*",
+    "dev:build": "chokidar 'src/*.grammar' 'src/{highlight,tokens}.js' --initial -c 'npm run build-debug'",
+    "dev:test": "chokidar '{dist,test}/**/*.{js,cjs,txt}' -c 'npm test'",
+    "all": "run-s lint build check-types test",
+    "lint": "eslint .",
+    "check-types": "tsc --noEmit",
+    "prepare": "run-s build"
+  },
+  "files": [
+    "dist"
+  ]
+}

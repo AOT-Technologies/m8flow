@@ -1,0 +1,1312 @@
+openapi: "3.0.2"
+info:
+  version: 1.0.0
+  title: m8flow-backend-extension
+paths:
+  /ping:
+    get:
+      summary: Health check for load balancers and monitoring
+      description: Returns 200 when the process is up. Public, no authentication required.
+      operationId: m8flow_backend.tenancy.health_check
+      tags:
+        - Health
+      security: []
+      responses:
+        "200":
+          description: The server is running.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /tenant-login-url:
+    get:
+      summary: Get Keycloak login URL for a tenant realm (unauthenticated)
+      description: Checks Keycloak for the tenant realm; if it exists returns the authorization URL for that realm.
+      operationId: m8flow_backend.routes.keycloak_controller.get_tenant_login_url
+      tags:
+        - Keycloak
+      security: []
+      parameters:
+        - name: tenant
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Tenant (realm) name to look up in Keycloak
+      responses:
+        "200":
+          description: Tenant realm exists; login URL returned
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - login_url
+                properties:
+                  login_url:
+                    type: string
+                    description: Keycloak authorization (login) base URL for the tenant realm
+                  realm:
+                    type: string
+                    description: Realm name
+        "400":
+          description: Bad request - tenant missing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+        "404":
+          description: Tenant realm not found in Keycloak
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+
+  /tenant-realms:
+    post:
+      summary: Create a spoke realm from the SpiffWorkflow template
+      description: Creates a Keycloak realm from the template and ensures a tenant record exists. Does not require tenant context (bootstrap/admin). Redirect URIs for the new realm are derived from M8FLOW_APP_PUBLIC_BASE_URL or KEYCLOAK_HOSTNAME (frontend at /, backend at /api).
+      operationId: m8flow_backend.routes.keycloak_controller.create_realm
+      tags:
+        - Keycloak
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - realm_id
+              properties:
+                realm_id:
+                  type: string
+                  description: Keycloak realm id (required)
+                display_name:
+                  type: string
+                  description: Optional display name for the realm
+      responses:
+        "201":
+          description: Realm created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  realm:
+                    type: string
+                    description: Realm name (slug)
+                  displayName:
+                    type: string
+                  keycloak_realm_id:
+                    type: string
+                    description: Keycloak realm UUID (stored as M8flowTenantModel.id)
+                  id:
+                    type: string
+                    description: Same as keycloak_realm_id (Keycloak realm UUID)
+        "400":
+          description: Bad request - realm_id missing or invalid
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+        "409":
+          description: Realm already exists or conflict
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+        "500":
+          description: Keycloak or server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+
+  /tenant-realms/{realm_id}:
+    delete:
+      summary: Delete a Keycloak realm and its associated tenant
+      description: Removes the realm from Keycloak and the tenant record from Postgres. Requires a valid master admin token. The path parameter is the realm name (slug), not the Keycloak realm UUID.
+      operationId: m8flow_backend.routes.keycloak_controller.delete_tenant_realm
+      tags:
+        - Keycloak
+      parameters:
+        - name: realm_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The realm name (slug) of the realm to delete, not the Keycloak UUID
+      responses:
+        "200":
+          description: Tenant deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        "401":
+          description: Unauthorized - missing or invalid admin token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Realm not found in Keycloak
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /tenants/check:
+    get:
+      summary: Check if tenant exists by slug or id (unauthenticated)
+      description: For pre-login tenant selection. Only considers ACTIVE tenants.
+      operationId: m8flow_backend.routes.tenant_controller.check_tenant_exists
+      tags:
+        - Tenant
+      security: []
+      parameters:
+        - name: identifier
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Tenant slug or id to look up
+      responses:
+        "200":
+          description: Check result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantExistsResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /tenants/slug/{slug}:
+    get:
+      summary: Get tenant by slug
+      operationId: m8flow_backend.routes.tenant_controller.get_tenant_by_slug
+      tags:
+        - Tenant
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Human-readable slug identifier of the tenant
+      responses:
+        "200":
+          description: Tenant retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Forbidden - cannot access default tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Tenant not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /tenants:
+    get:
+      summary: Get all tenants
+      operationId: m8flow_backend.routes.tenant_controller.get_all_tenants
+      tags:
+        - Tenant
+      responses:
+        "200":
+          description: List of all tenants
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantListResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /tenants/{tenant_id}:
+    get:
+      summary: Get tenant by ID
+      operationId: m8flow_backend.routes.tenant_controller.get_tenant_by_id
+      tags:
+        - Tenant
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique identifier of the tenant
+      responses:
+        "200":
+          description: Tenant retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Forbidden - cannot access default tenant
+        "404":
+          description: Tenant not found
+
+    put:
+      summary: Update tenant display name
+      description: Updates the tenant's human-readable name in both the local database and the Keycloak realm (displayName). The slug and ID are immutable and cannot be changed.
+      operationId: m8flow_backend.routes.keycloak_controller.update_tenant_name
+      tags:
+        - Tenant
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique identifier (UUID) of the tenant to update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  description: New display name for the tenant
+              example:
+                name: "Updated Tenant Name"
+      responses:
+        "200":
+          description: Tenant updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          description: Bad request - no fields to update, slug update attempted, tenant is deleted, or invalid status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Forbidden - cannot update default tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Tenant not found
+        "500":
+          description: Internal server error
+
+
+  /templates:
+    get:
+      summary: List templates
+      description: Retrieves a list of templates with optional filtering by latest version, category, tag, owner, visibility, and search query
+      operationId: m8flow_backend.routes.templates_controller.template_list
+      tags:
+        - Template
+      parameters:
+        - name: latest_only
+          in: query
+          schema:
+            type: boolean
+          description: Filter to show only the latest version of each template
+        - name: category
+          in: query
+          schema:
+            type: string
+          description: Filter templates by category
+        - name: tag
+          in: query
+          schema:
+            type: string
+          description: Filter templates by tag
+        - name: owner
+          in: query
+          schema:
+            type: string
+          description: Filter templates by owner
+        - name: visibility
+          in: query
+          schema:
+            type: string
+            enum: [PRIVATE, TENANT, PUBLIC]
+          description: Filter templates by visibility level
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Search templates by name or description
+        - name: template_key
+          in: query
+          schema:
+            type: string
+          description: Filter to this template key (returns all versions if latest_only=false)
+        - name: published_only
+          in: query
+          schema:
+            type: boolean
+          description: When true, return only published templates
+        - name: sort_by
+          in: query
+          schema:
+            type: string
+            enum: [created, name]
+          description: Sort results by created date or name
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+          description: Sort order (asc or desc)
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+          description: Page number (1-indexed)
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            default: 10
+          description: Items per page (max 100)
+      responses:
+        "200":
+          description: List of templates retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TemplateListResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    post:
+      summary: Create template
+      description: Creates a new template using BPMN XML content with metadata provided via X-Template-* headers.
+      operationId: m8flow_backend.routes.templates_controller.template_create
+      tags:
+        - Template
+      parameters:
+        - name: X-Template-Key
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Unique key for the template.
+        - name: X-Template-Name
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Human-readable name of the template.
+        - name: X-Template-Description
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Optional description of the template.
+        - name: X-Template-Category
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Optional category for grouping templates.
+        - name: X-Template-Tags
+          in: header
+          required: false
+          schema:
+            type: string
+          description: JSON array string or comma-separated list of tags.
+        - name: X-Template-Visibility
+          in: header
+          required: false
+          schema:
+            type: string
+            enum: [PRIVATE, TENANT, PUBLIC]
+          description: Visibility level of the template. Defaults to PRIVATE.
+        - name: X-Template-Status
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Status of the template. Defaults to draft.
+        - name: X-Template-Is-Published
+          in: header
+          required: false
+          schema:
+            type: string
+            enum: ["true", "false"]
+          description: Whether the template is published. Defaults to false.
+        - name: X-Template-Version
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Optional explicit version identifier (e.g., V1). If omitted, the next version will be generated automatically.
+      requestBody:
+        required: true
+        content:
+          application/xml:
+            schema:
+              type: string
+              description: BPMN XML content (single file)
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+              description: Multiple files (.bpmn, .json, .dmn, .md). At least one .bpmn required. Metadata via X-Template-* headers.
+      responses:
+        "201":
+          description: Template created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Template"
+        "400":
+          description: Bad request - missing required fields or invalid data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Conflict - template with the same key and version already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /templates/{id}:
+    get:
+      summary: Get template by ID
+      description: Retrieves a specific template by its unique identifier
+      operationId: m8flow_backend.routes.templates_controller.template_get_by_id
+      tags:
+        - Template
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Unique identifier of the template
+        - name: include_contents
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: true
+          description: Whether to include BPMN content in the response. Set to false for better performance when only metadata is needed.
+      responses:
+        "200":
+          description: Template retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Template"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Template not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    put:
+      summary: Update template
+      description: Updates an existing template's metadata and optionally its BPMN content. Cannot update template_key or version
+      operationId: m8flow_backend.routes.templates_controller.template_update_by_id
+      tags:
+        - Template
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Unique identifier of the template to update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TemplateUpdateRequest"
+          application/xml:
+            schema:
+              type: string
+              description: Updated BPMN XML content
+      responses:
+        "200":
+          description: Template updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Template"
+        "400":
+          description: Bad request - no fields to update or invalid data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Template not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    delete:
+      summary: Soft delete template
+      description: Marks a template as deleted by setting is_deleted flag to true without removing from database
+      operationId: m8flow_backend.routes.templates_controller.template_delete_by_id
+      tags:
+        - Template
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Unique identifier of the template to delete
+      responses:
+        "200":
+          description: Template soft deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          description: Bad request - published template cannot be deleted (immutable)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - user not allowed to delete this template
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Template not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /templates/{id}/create-process-model:
+    post:
+      summary: Create a process model from a template
+      operationId: m8flow_backend.routes.templates_controller.template_create_process_model
+      tags:
+        - Template
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Template ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProcessModelFromTemplateRequest"
+      responses:
+        "201":
+          description: Process model created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateProcessModelFromTemplateResponse"
+        "400":
+          description: Bad request - missing required fields
+        "401":
+          description: Unauthorized
+        "404":
+          description: Template not found
+
+  /templates/import:
+    post:
+      summary: Import template from zip
+      description: Creates a new template from an uploaded zip file. Metadata via X-Template-* headers. Zip must contain at least one .bpmn file.
+      operationId: m8flow_backend.routes.templates_controller.template_import
+      tags:
+        - Template
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                zip:
+                  type: string
+                  format: binary
+          application/zip:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "201":
+          description: Template created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Template"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /templates/{id}/bpmn:
+    get:
+      summary: Get BPMN XML
+      description: Retrieves the BPMN XML content associated with a specific template
+      operationId: m8flow_backend.routes.templates_controller.template_get_bpmn
+      tags:
+        - Template
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Unique identifier of the template
+      responses:
+        "200":
+          description: BPMN XML retrieved successfully
+          content:
+            application/xml:
+              schema:
+                type: string
+                description: BPMN 2.0 XML content
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Template or BPMN content not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /templates/{id}/export:
+    get:
+      summary: Export template as zip
+      description: Returns a zip file containing all template files for this version
+      operationId: m8flow_backend.routes.templates_controller.template_export
+      tags:
+        - Template
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Zip file
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Template not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /templates/{id}/files/{file_name}:
+    get:
+      summary: Get a template file by name
+      description: Download a single file (BPMN, JSON, DMN, etc.) by filename
+      operationId: m8flow_backend.routes.templates_controller.template_get_file
+      tags:
+        - Template
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: file_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: File content
+          content:
+            application/xml:
+              schema:
+                type: string
+            application/json:
+              schema:
+                type: string
+            text/markdown:
+              schema:
+                type: string
+        "404":
+          description: Template or file not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      summary: Update a template file by name
+      description: Update content of a single file. Template must not be published.
+      operationId: m8flow_backend.routes.templates_controller.template_put_file
+      tags:
+        - Template
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: file_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: string
+          application/xml:
+            schema:
+              type: string
+          text/markdown:
+            schema:
+              type: string
+          text/plain:
+            schema:
+              type: string
+      responses:
+        "200":
+          description: File updated, returns the updated template
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Template"
+        "400":
+          description: Bad request
+        "403":
+          description: Template is published
+        "404":
+          description: Template or file not found
+        "500":
+          description: Internal server error
+    delete:
+      summary: Delete a template file by name
+      description: Remove a file from the template. Template must not be published. Cannot delete last file or only BPMN.
+      operationId: m8flow_backend.routes.templates_controller.template_delete_file
+      tags:
+        - Template
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: file_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: File deleted
+        "403":
+          description: Forbidden (published template or last file or only BPMN)
+        "404":
+          description: Template or file not found
+        "500":
+          description: Internal server error
+
+  /templates/process-models/{modified_process_model_identifier}/template-info:
+    get:
+      summary: Get template info for a process model
+      description: Returns the template provenance info if the process model was created from a template
+      operationId: m8flow_backend.routes.templates_controller.get_process_model_template_info
+      tags:
+        - Template
+      parameters:
+        - name: modified_process_model_identifier
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Process model identifier with slashes replaced by colons
+      responses:
+        "200":
+          description: Template info retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessModelTemplateInfo"
+        "404":
+          description: No template info found for this process model
+
+  /nats-tokens:
+    post:
+      summary: Generate a NATS event token
+      description: Generates a new unique token for a tenant to use when publishing NATS events. Restricted to tenant-admin and integrator.
+      operationId: m8flow_backend.routes.nats_token_controller.generate_token
+      tags:
+        - NATS
+      responses:
+        "201":
+          description: Token generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NatsTokenResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        ok:
+          type: boolean
+          example: true
+        healthy:
+          type: boolean
+          example: true
+
+    CreateTenantRequest:
+      type: object
+      required:
+        - name
+        - slug
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+
+    Tenant:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        modifiedAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+        modifiedBy:
+          type: string
+
+    TenantResponse:
+      $ref: "#/components/schemas/Tenant"
+
+    TenantListResponse:
+      type: array
+      items:
+        $ref: "#/components/schemas/Tenant"
+
+    TenantExistsResponse:
+      type: object
+      required:
+        - exists
+      properties:
+        exists:
+          type: boolean
+          description: Whether an active tenant with the given slug or id exists
+        tenant_id:
+          type: string
+          description: Canonical tenant id when exists is true (for storage/headers)
+
+    TenantActionData:
+      type: object
+      properties:
+        message:
+          type: string
+        tenant:
+          $ref: "#/components/schemas/Tenant"
+
+    TenantActionResponse:
+      $ref: "#/components/schemas/TenantActionData"
+
+    Template:
+      type: object
+      properties:
+        id:
+          type: integer
+        templateKey:
+          type: string
+        version:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        tags:
+          type: array
+          items:
+            type: string
+        category:
+          type: string
+        tenantId:
+          type: string
+        visibility:
+          type: string
+          enum: [PRIVATE, TENANT, PUBLIC]
+        files:
+          type: array
+          items:
+            type: object
+            properties:
+              fileType:
+                type: string
+                enum: [bpmn, json, dmn, md]
+              fileName:
+                type: string
+        isPublished:
+          type: boolean
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+        modifiedBy:
+          type: string
+        bpmnContent:
+          type: string
+        is_deleted:
+          type: boolean
+
+    TemplateListResponse:
+      type: array
+      items:
+        $ref: "#/components/schemas/Template"
+
+    TemplateCreateRequest:
+      type: object
+      required:
+        - template_key
+        - name
+      properties:
+        template_key:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        category:
+          type: string
+        visibility:
+          type: string
+          enum: [PRIVATE, TENANT, PUBLIC]
+        status:
+          type: string
+        is_published:
+          type: boolean
+        version:
+          type: string
+
+    TemplateUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        category:
+          type: string
+        visibility:
+          type: string
+          enum: [PRIVATE, TENANT, PUBLIC]
+        status:
+          type: string
+
+    MessageData:
+      type: object
+      properties:
+        message:
+          type: string
+
+    MessageResponse:
+      $ref: "#/components/schemas/MessageData"
+
+    ErrorData:
+      type: object
+      properties:
+        error_code:
+          type: string
+        message:
+          type: string
+
+    ErrorResponse:
+      $ref: "#/components/schemas/ErrorData"
+
+    CreateProcessModelFromTemplateRequest:
+      type: object
+      required:
+        - process_group_id
+        - process_model_id
+        - display_name
+      properties:
+        process_group_id:
+          type: string
+          description: The process group where the model will be created
+        process_model_id:
+          type: string
+          description: The ID for the new process model (just the model name, not full path)
+        display_name:
+          type: string
+          description: Display name for the new process model
+        description:
+          type: string
+          description: Optional description for the new process model
+
+    ProcessModelTemplateInfo:
+      type: object
+      properties:
+        id:
+          type: integer
+        process_model_identifier:
+          type: string
+        source_template_id:
+          type: integer
+        source_template_key:
+          type: string
+        source_template_version:
+          type: string
+        source_template_name:
+          type: string
+        m8f_tenant_id:
+          type: string
+        created_by:
+          type: string
+        created_at_in_seconds:
+          type: integer
+        updated_at_in_seconds:
+          type: integer
+
+    CreateProcessModelFromTemplateResponse:
+      type: object
+      properties:
+        process_model:
+          type: object
+          description: The created process model info
+        template_info:
+          $ref: "#/components/schemas/ProcessModelTemplateInfo"
+    NatsTokenResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          description: The generated token (key)
+        tenantId:
+          type: string
+        createdAtInSeconds:
+          type: integer
+        createdBy:
+          type: string
+        updatedAtInSeconds:
+          type: integer
+        modifiedBy:
+          type: string
