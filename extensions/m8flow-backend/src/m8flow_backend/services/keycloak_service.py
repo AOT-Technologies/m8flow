@@ -29,17 +29,17 @@ from m8flow_backend.config import (
     template_realm_name,
 )
 
-# Template source: extensions/m8flow-backend/keycloak/realm_exports/spiffworkflow-realm.json
+# Template source: extensions/m8flow-backend/keycloak/realm_exports/m8flow-tenant-template.json
 # Only necessary values are changed for a new tenant; roles, groups, users, and clients are preserved.
-# Placeholder in the JSON is replaced at load time with M8FLOW_KEYCLOAK_SPOKE_CLIENT_ID (default: spiffworkflow-backend).
+# Placeholder in the JSON is replaced at load time with M8FLOW_KEYCLOAK_SPOKE_CLIENT_ID (default: m8flow-backend).
 SPOKE_CLIENT_ID_PLACEHOLDER = "__M8FLOW_SPOKE_CLIENT_ID__"
-BACKEND_REDIRECT_PLACEHOLDER = "replace-me-with-spiff-backend-host-and-path"
-FRONTEND_REDIRECT_PLACEHOLDER = "replace-me-with-spiff-frontend-host-and-path"
+BACKEND_REDIRECT_PLACEHOLDER = "replace-me-with-m8flow-backend-host-and-path"
+FRONTEND_REDIRECT_PLACEHOLDER = "replace-me-with-m8flow-frontend-host-and-path"
 DEFAULT_ROLES_PREFIX = "default-roles-"  # role name "default-roles-{realm}" must be updated
 REALM_URL_PREFIX = "/realms/"  # client baseUrl/redirectUris contain /realms/{realm}/
 ADMIN_CONSOLE_URL_PREFIX = "/admin/"  # security-admin-console has /admin/{realm}/console/
-BACKEND_URL_PLACEHOLDER = "https://replace-me-with-spiff-backend-host-and-path/*"
-FRONTEND_URL_PLACEHOLDER = "https://replace-me-with-spiff-frontend-host-and-path/*"
+BACKEND_URL_PLACEHOLDER = "https://replace-me-with-m8flow-backend-host-and-path/*"
+FRONTEND_URL_PLACEHOLDER = "https://replace-me-with-m8flow-frontend-host-and-path/*"
 FRONTEND_CLIENT_ID = "spiffworkflow-frontend"
 POST_LOGOUT_REDIRECT_URIS_ATTR = "post.logout.redirect.uris"
 # Names reserved for global (non-tenant) administration; never cloned into tenant realms.
@@ -457,7 +457,7 @@ def tenant_login_authorization_url(realm: str) -> str:
 
 
 def ensure_backend_redirect_uri_in_keycloak_client(realm_id: str) -> None:
-    """Ensure the spiffworkflow-backend client in the given realm has the current backend and frontend
+    """Ensure the m8flow-backend client in the given realm has the current backend and frontend
     redirect URIs / web origins. Idempotent; safe to call on every ensure_tenant_auth_config.
     Uses Keycloak Admin API; logs and skips on failure (e.g. missing admin credentials)."""
     if not realm_id or not str(realm_id).strip():
@@ -826,7 +826,7 @@ def _partial_import_payload(full_payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def load_realm_template() -> dict[str, Any]:
-    """Load the realm template JSON (spiffworkflow-realm.json). Placeholder __M8FLOW_SPOKE_CLIENT_ID__ is replaced with spoke_client_id() from env."""
+    """Load the realm template JSON (m8flow-tenant-template.json). Placeholder __M8FLOW_SPOKE_CLIENT_ID__ is replaced with spoke_client_id() from env."""
     template_path = realm_template_path()
     if not Path(template_path).exists():
         raise FileNotFoundError(f"Realm template not found: {template_path}")

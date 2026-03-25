@@ -184,6 +184,8 @@ docker compose -f docker/m8flow-docker-compose.yml up -d --build
 
 ### Docker Compose services
 
+The Keycloak image is built with the **m8flow realm-info-mapper** provider, so tokens include `m8flow_tenant_id` and `m8flow_tenant_name`. No separate build of the keycloak-extensions JAR is required. Realm import can be done manually in the Keycloak Admin Console (see Keycloak Setup below) or by running `./extensions/m8flow-backend/keycloak/start_keycloak.sh` once after Keycloak is up; the script imports the `m8flow` realm only (expects Keycloak on ports 7002 and 7009, e.g. when using Docker Compose).
+
 | Service | Description | Port |
 |---------|-------------|------|
 | `m8flow-db` | PostgreSQL — m8flow application database | 1111 |
@@ -295,25 +297,35 @@ Open `http://localhost:5555`.
 
 ### Automatic import (recommended)
 
-After starting Keycloak, run:
+You can import realms by running `./extensions/m8flow-backend/keycloak/start_keycloak.sh` after starting Docker to import the `m8flow` realm. Tenant realms are created later via the tenant realm API when needed.
 
 ```bash
 ./extensions/m8flow-backend/keycloak/start_keycloak.sh
 ```
 
-This imports the `spiffworkflow` identity realm and creates the default `tenant-a` tenant.
+This imports the `m8flow` realm. Tenant realms are created later via the tenant realm API when needed.
 
 ### Manual import
 
 1. Open the Keycloak Admin Console at `http://localhost:7002/`
 2. Log in with your admin credentials
 3. Click **Keycloak master → Create a realm**
-4. Import `extensions/m8flow-backend/keycloak/realm_exports/m8flow-rbac-realm.json`
+4. Import `extensions/m8flow-backend/keycloak/realm_exports/m8flow-tenant-template.json`
 5. Click **Create**
+
+For tenant-aware setup this realm includes token claims `m8flow_tenant_id` and `m8flow_tenant_name`.
+<div align="center">
+    <img src="./docs/images/keycloak-realm-settings-2.png" />
+</div>
 
 ### Configure the client redirect URIs
 
-With the `spiffworkflow` realm selected → **Clients** → **spiffworkflow-backend**:
+With the realm "m8flow" selected, click on "Clients" and then on the client ID **m8flow-backend**.
+<div align="center">
+    <img src="./docs/images/keycloak-realm-settings-3.png" />
+</div>
+
+Set the following:
 
 **Valid redirect URIs**
 ```

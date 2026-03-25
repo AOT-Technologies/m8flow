@@ -17,6 +17,7 @@ This directory contains the Docker setup for running M8Flow: Compose files, Dock
 | **m8flow.keycloak.Dockerfile** | Builds Keycloak 26 with the realm-info-mapper provider and baked-in realm imports. |
 | **nginx-keycloak-proxy.conf** | Nginx config for the keycloak-proxy service: listen 7002, proxy to keycloak:8080. |
 | **minio.local-dev.docker-compose.yml** | Standalone MinIO for local dev (different ports, mounts local BPMN/templates dirs). |
+| **m8flow-nats-docker-compose.yml** | NATS infrastructure: NATS server (with JetStream) and NATS UI. |
 
 ---
 
@@ -30,7 +31,7 @@ This directory contains the Docker setup for running M8Flow: Compose files, Dock
 | **keycloak-db** | postgres:15 | Keycloak’s database. | (internal) | `KEYCLOAK_DB_NAME/USER/PASSWORD` (default keycloak/keycloak). Data: volume `keycloak-db-data`. |
 | **keycloak** | Built (m8flow.keycloak.Dockerfile) | IdP: auth, realms, realm-info-mapper for `m8flow_tenant_*` claims. | 7009→9000 (management) | `KEYCLOAK_ADMIN*`, `KC_DB_*`, `KC_HTTP_PORT` (8080), `KC_HOSTNAME` (user-facing URL). Dev: `start-dev --import-realm`; prod override uses `start --import-realm`. Realms imported from image. Runs as user `keycloak`. |
 | **keycloak-proxy** | nginx:alpine | Reverse proxy so browser and backend use one URL for Keycloak. | 7002→7002 | Uses `nginx-keycloak-proxy.conf`: listen 7002, `proxy_pass` to keycloak:8080. |
-| **keycloak-init** | m8flow-keycloak (same image) | One-off: wait for Keycloak, then set `sslRequired=NONE` on master, tenant-a, identity. | — | Depends on keycloak. `restart: "no"`. |
+| **keycloak-init** | m8flow-keycloak (same image) | One-off: wait for Keycloak, then set `sslRequired=NONE` on master and m8flow. | — | Depends on keycloak. `restart: "no"`. |
 | **redis** | redis:6-alpine | Celery broker/result backend (optional). | 6379→6379 | Persistence: `redis-data`. |
 | **minio** | minio/minio (pinned) | S3-compatible object store for process models and templates. | 9000, 9001 (console) | `MINIO_ROOT_USER/PASSWORD` from `.env`. Data: volume `minio_data`. |
 
@@ -133,3 +134,40 @@ docker compose -f docker/m8flow-docker-compose.yml down -v
 ```
 
 Access the app at **http://localhost:7001** (or the host/port you set for the frontend). Keycloak admin and auth: **http://localhost:7002**.
+
+---
+
+## NATS Infrastructure (Optional)
+
+If you require event-driven features, you can start the NATS infrastructure (server and UI) using the dedicated compose file.
+
+### Prerequisites
+
+The NATS stack expects the `m8flow_default` network (created when you start the main stack).
+
+1. **Ensure the network exists**:
+   The `m8flow_default` network is automatically created when you start the main `m8flow-docker-compose.yml` stack.
+
+### Running NATS
+
+1. **Start NATS and NATS UI**:
+
+   ```bash
+   docker compose -f docker/m8flow-nats-docker-compose.yml up -d
+   ```
+
+2. **Configure M8Flow**:
+   Set `M8FLOW_NATS_ENABLED=true` in your `.env` file to enable NATS features in the backend.
+
+3. **Start the NATS Consumer**:
+   The `m8flow-nats-consumer` service is included in the main stack under the `nats` profile. Start it with:
+   ```bash
+   docker compose --profile nats -f docker/m8flow-docker-compose.yml up -d
+   ```
+
+NATS Client: `nats://${M8FLOW_NATS_USER:-admin}:${M8FLOW_NATS_PASSWORD:-admin}@localhost:4222`  
+NATS Monitoring: `http://localhost:8222`  
+NATS UI (NUI): `http://localhost:8282`
+
+**NATS Credentials**: 
+The default username/password is `admin:admin`. You can customize these in your `.env` file via `M8FLOW_NATS_USER` and `M8FLOW_NATS_PASSWORD`.

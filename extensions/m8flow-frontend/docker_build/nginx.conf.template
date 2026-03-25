@@ -1,0 +1,33 @@
+server {
+    listen {{SPIFFWORKFLOW_FRONTEND_INTERNAL_PORT}};
+    server_name localhost;
+
+    # The default is 4 8k, which isn't quite enough for all openid tokens
+    # nginx config docs: https://nginx.org/en/docs/http/ngx_http_core_module.html#large_client_header_buffers
+    # repro: curl -s "http://localhost:8001/?token=$(perl -e 'print "a"x8200')"
+    # previously returned nginx error in response body: 414 Request-URI Too Large
+    large_client_header_buffers 4 16k;
+
+    root /usr/share/nginx/html;
+
+    # Hashed assets built by Vite -- safe to cache long-term
+    location /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        try_files $uri =404;
+    }
+
+    # Runtime config must never be stale
+    location = /config.js {
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+    }
+
+    # SPA fallback -- index.html must always be revalidated
+    location / {
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        try_files $uri $uri/ /index.html;
+    }
+}

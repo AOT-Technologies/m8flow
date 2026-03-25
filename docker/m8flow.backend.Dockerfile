@@ -148,7 +148,7 @@ COPY . /app
 COPY --from=fetch-upstream /upstream/spiffworkflow-backend /app/spiffworkflow-backend
 COPY --from=fetch-upstream /upstream/spiff-arena-common /app/spiff-arena-common
 
-RUN cd /app/spiffworkflow-backend && uv pip install --system -e . \
+RUN cd /app/spiffworkflow-backend && uv pip install --system -e . --group dev \
   && uv pip install --system flower nats-py httpx python-dotenv
 
 # Fix CRLF issues for Windows users and ensure scripts are executable

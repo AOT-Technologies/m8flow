@@ -1,6 +1,6 @@
 {
-  "id": "spiffworkflow-local",
-  "realm": "spiffworkflow-local",
+  "id": "m8flow",
+  "realm": "m8flow",
   "notBefore": 0,
   "defaultSignatureAlgorithm": "RS256",
   "revokeRefreshToken": false,
@@ -47,23 +47,11 @@
     "realm": [
       {
         "id": "c9f0ff93-642d-402b-965a-04d70719886b",
-        "name": "default-roles-spiffworkflow",
+        "name": "default-roles-m8flow",
         "description": "${role_default-roles}",
-        "composite": true,
-        "composites": {
-          "realm": [
-            "offline_access",
-            "uma_authorization"
-          ],
-          "client": {
-            "account": [
-              "view-profile",
-              "manage-account"
-            ]
-          }
-        },
+        "composite": false,
         "clientRole": false,
-        "containerId": "spiffworkflow-local",
+        "containerId": "m8flow",
         "attributes": {}
       },
       {
@@ -72,15 +60,7 @@
         "description": "${role_uma_authorization}",
         "composite": false,
         "clientRole": false,
-        "containerId": "spiffworkflow-local",
-        "attributes": {}
-      },
-      {
-        "id": "6738d143-2d1d-4458-8a98-01ea003fde14",
-        "name": "admin",
-        "composite": false,
-        "clientRole": false,
-        "containerId": "spiffworkflow-local",
+        "containerId": "m8flow",
         "attributes": {}
       },
       {
@@ -88,7 +68,7 @@
         "name": "repeat-form-role-realm",
         "composite": false,
         "clientRole": false,
-        "containerId": "spiffworkflow-local",
+        "containerId": "m8flow",
         "attributes": {}
       },
       {
@@ -97,7 +77,52 @@
         "description": "${role_offline-access}",
         "composite": false,
         "clientRole": false,
-        "containerId": "spiffworkflow-local",
+        "containerId": "m8flow",
+        "attributes": {}
+      },
+      {
+        "id": "30e6f20e-decd-438c-9507-f9d220ab2215",
+        "name": "editor",
+        "description": "",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "m8flow",
+        "attributes": {}
+      },
+      {
+        "id": "8a89975d-faa3-4472-beec-c882b87d1f04",
+        "name": "tenant-admin",
+        "description": "",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "m8flow",
+        "attributes": {}
+      },
+      {
+        "id": "8f6b97a0-f67a-474a-9475-2e0eb20a5471",
+        "name": "integrator",
+        "description": "",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "m8flow",
+        "attributes": {}
+      },
+      {
+        "id": "9b72ecf8-32fb-44b7-844b-2831ea11de7e",
+        "name": "reviewer",
+        "description": "",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "m8flow",
+        "attributes": {}
+      },
+      {
+        "id": "a4e63382-1fb0-4f7f-a485-8e162aaf8c16",
+        "name": "viewer",
+        "description": "",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "m8flow",
         "attributes": {}
       }
     ],
@@ -314,10 +339,9 @@
           "attributes": {}
         }
       ],
-      "spiffworkflow-frontend": [],
       "security-admin-console": [],
       "admin-cli": [],
-      "spiffworkflow-backend": [
+      "__M8FLOW_SPOKE_CLIENT_ID__": [
         {
           "id": "4d71d1bb-d627-43c8-bc07-d542f816e04b",
           "name": "spiffworkflow-admin",
@@ -345,16 +369,6 @@
               "repeat-form-role-2-att-value"
             ]
           }
-        }
-      ],
-      "withAuth": [
-        {
-          "id": "87673823-6a5a-4cb2-baa7-6c8b5da5d402",
-          "name": "uma_protection",
-          "composite": false,
-          "clientRole": true,
-          "containerId": "5d94a8c3-f56b-4eff-ac39-8580053a7fbe",
-          "attributes": {}
         }
       ],
       "broker": [
@@ -471,11 +485,11 @@
   ],
   "defaultRole": {
     "id": "c9f0ff93-642d-402b-965a-04d70719886b",
-    "name": "default-roles-spiffworkflow",
+    "name": "default-roles-m8flow",
     "description": "${role_default-roles}",
     "composite": true,
     "clientRole": false,
-    "containerId": "spiffworkflow-local"
+    "containerId": "m8flow"
   },
   "requiredCredentials": [
     "password"
@@ -523,21 +537,22 @@
       "username": "admin",
       "enabled": true,
       "totp": false,
-      "emailVerified": true,
+      "emailVerified": false,
       "email": "admin@example.com",
       "credentials": [
         {
-          "id": "644ff652-31d1-4349-9340-ce3b5fb76b5c",
           "type": "password",
-          "createdDate": 1676302139645,
-          "secretData": "{\"value\":\"nhHncfQqkY1vhJE8QxjD3hwpznBnZNc5+OxS79OFKJc=\",\"salt\":\"EradsPFeRiQ3oMAzGqfWBw==\",\"additionalParameters\":{}}",
-          "credentialData": "{\"hashIterations\":27500,\"algorithm\":\"pbkdf2-sha256\",\"additionalParameters\":{}}"
+          "value": "admin",
+          "temporary": true
         }
       ],
       "disableableCredentialTypes": [],
-      "requiredActions": [],
+      "requiredActions": [
+        "UPDATE_PASSWORD"
+      ],
       "realmRoles": [
-        "default-roles-spiffworkflow"
+        "default-roles-m8flow",
+        "tenant-admin"
       ],
       "clientRoles": {
         "realm-management": [
@@ -550,185 +565,21 @@
       ]
     },
     {
-      "id": "4c436296-8471-4105-b551-80eee96b43bb",
-      "createdTimestamp": 1657139858075,
-      "username": "ciadmin1",
+      "id": "24c7779e-f7d1-442f-8de1-9a5d61aaef0a",
+      "createdTimestamp": 1722366626829,
+      "username": "service-account-__M8FLOW_SPOKE_CLIENT_ID__",
       "enabled": true,
       "totp": false,
       "emailVerified": false,
-      "firstName": "",
-      "lastName": "",
-      "email": "ciadmin1@example.com",
-      "credentials": [
-        {
-          "id": "111b5ea1-c2ab-470a-a16b-2373bc94de7a",
-          "type": "password",
-          "createdDate": 1657139904275,
-          "secretData": "{\"value\":\"e5MjWAk7RPspQIh9gEOKyv3AV/DHNoWk8w1tf+MRLh2oxrKmnnizOj0eFtIadT/q/i5JRfUq5IYBPLL/4nEJDw==\",\"salt\":\"5inqMqqTR6+PBYriy3RPjA==\",\"additionalParameters\":{}}",
-          "credentialData": "{\"hashIterations\":27500,\"algorithm\":\"pbkdf2-sha256\",\"additionalParameters\":{}}"
-        }
-      ],
-      "disableableCredentialTypes": [],
-      "requiredActions": [],
-      "realmRoles": [
-        "default-roles-spiffworkflow",
-        "admin"
-      ],
-      "clientRoles": {
-        "spiffworkflow-backend": [
-          "spiffworkflow-admin",
-          "uma_protection"
-        ]
-      },
-      "notBefore": 0,
-      "groups": []
-    },
-    {
-      "id": "7b9767ac-24dc-43b0-838f-29e16b4fd14e",
-      "createdTimestamp": 1675718483773,
-      "username": "dan",
-      "enabled": true,
-      "totp": false,
-      "emailVerified": false,
-      "email": "dan@example.com",
-      "attributes": {
-        "spiffworkflow-employeeid": [
-          "115"
-        ]
-      },
-      "credentials": [
-        {
-          "id": "8bc911c7-02fa-43fd-8e61-a313721ffc89",
-          "type": "password",
-          "createdDate": 1675718483819,
-          "secretData": "{\"value\":\"pQ/vKJoOG0sNGeNsjm+kVVnGImIjhLMBTjw1lRXj3X5ffW22EzXF7+kYrTBgXnTmFUql2INVpIl838vYmg80RQ==\",\"salt\":\"a0zK/X/EO3VhXUr8Z3P1uA==\",\"additionalParameters\":{}}",
-          "credentialData": "{\"hashIterations\":27500,\"algorithm\":\"pbkdf2-sha256\",\"additionalParameters\":{}}"
-        }
-      ],
-      "disableableCredentialTypes": [],
-      "requiredActions": [],
-      "realmRoles": [
-        "default-roles-spiffworkflow"
-      ],
-      "notBefore": 0,
-      "groups": []
-    },
-    {
-      "id": "3873c0ba-349c-4bec-8be2-5ced8acd56ec",
-      "createdTimestamp": 1675718483992,
-      "username": "elizabeth",
-      "enabled": true,
-      "totp": false,
-      "emailVerified": false,
-      "email": "elizabeth@example.com",
-      "credentials": [
-        {
-          "id": "13dd277b-b5e4-4ff7-aba8-2d648858224e",
-          "type": "password",
-          "createdDate": 1675718484034,
-          "secretData": "{\"value\":\"qN84NNHkapbSOpYDUnEqemMFUiGJSbCdyUfsPJyinbzFWltqnrmgAQ/9j5dJweyJS2uXTEQgOFcV83LmqmIT4Q==\",\"salt\":\"A+gRdmehei+Ob6wNe/cszA==\",\"additionalParameters\":{}}",
-          "credentialData": "{\"hashIterations\":27500,\"algorithm\":\"pbkdf2-sha256\",\"additionalParameters\":{}}"
-        }
-      ],
-      "disableableCredentialTypes": [],
-      "requiredActions": [],
-      "realmRoles": [
-        "default-roles-spiffworkflow"
-      ],
-      "notBefore": 0,
-      "groups": []
-    },
-    {
-      "id": "06f69a51-780c-4d3b-9c32-2c93d01d1e28",
-      "createdTimestamp": 1675718484199,
-      "username": "jason",
-      "enabled": true,
-      "totp": false,
-      "emailVerified": false,
-      "email": "jason@example.com",
-      "credentials": [
-        {
-          "id": "f2330ab2-30ad-483c-af05-190a839bba21",
-          "type": "password",
-          "createdDate": 1675718484243,
-          "secretData": "{\"value\":\"M/HQLqkHOWMCCnUg6Qd5pPdag6apDosVMkPTm+mDbbNa36mwkEvOmVYD48OSwwruUYiMV3dKByBBx8/QZqqbsA==\",\"salt\":\"R1V9v/uSxAXrS0o4Gh9wcw==\",\"additionalParameters\":{}}",
-          "credentialData": "{\"hashIterations\":27500,\"algorithm\":\"pbkdf2-sha256\",\"additionalParameters\":{}}"
-        }
-      ],
-      "disableableCredentialTypes": [],
-      "requiredActions": [],
-      "realmRoles": [
-        "default-roles-spiffworkflow"
-      ],
-      "notBefore": 0,
-      "groups": []
-    },
-    {
-      "id": "0333aaa7-cfe8-4dd2-a8c7-cbefc9ea9c8e",
-      "createdTimestamp": 1675718484299,
-      "username": "jon",
-      "enabled": true,
-      "totp": false,
-      "emailVerified": false,
-      "email": "jon@example.com",
-      "credentials": [
-        {
-          "id": "9dfd7471-8b2a-422f-a1c4-cd2d17f2eebe",
-          "type": "password",
-          "createdDate": 1675718484347,
-          "secretData": "{\"value\":\"wIKYqLU64kVmqRixyS6ctMv3WrP8ADHGY0uIlV+T03Q6Um8jWvxFeyxK+jczQip9/Fe3cnyO3ofDo3IZNeNSEg==\",\"salt\":\"dS4upVR1o9fhRF/Doz/KaA==\",\"additionalParameters\":{}}",
-          "credentialData": "{\"hashIterations\":27500,\"algorithm\":\"pbkdf2-sha256\",\"additionalParameters\":{}}"
-        }
-      ],
-      "disableableCredentialTypes": [],
-      "requiredActions": [],
-      "realmRoles": [
-        "default-roles-spiffworkflow"
-      ],
-      "notBefore": 0,
-      "groups": []
-    },
-    {
-      "id": "cdec7198-19f5-4788-aceb-e8c68f4c277f",
-      "createdTimestamp": 1675718484460,
-      "username": "kevin",
-      "enabled": true,
-      "totp": false,
-      "emailVerified": false,
-      "email": "kevin@example.com",
-      "credentials": [
-        {
-          "id": "c1729585-5811-4b56-976c-c3370d1386f5",
-          "type": "password",
-          "createdDate": 1675718484506,
-          "secretData": "{\"value\":\"bUeoB4qNIQe3nbBytEw269xMmYO+/8rq0GnwNVgwjiEHfeya2t3g+mu3yg0ZmahxUgdh1iTfx9Ja6VGDtGk7Ug==\",\"salt\":\"fbm81DCMYdMXF+NB/92OBw==\",\"additionalParameters\":{}}",
-          "credentialData": "{\"hashIterations\":27500,\"algorithm\":\"pbkdf2-sha256\",\"additionalParameters\":{}}"
-        }
-      ],
-      "disableableCredentialTypes": [],
-      "requiredActions": [],
-      "realmRoles": [
-        "default-roles-spiffworkflow"
-      ],
-      "notBefore": 0,
-      "groups": []
-    },
-    {
-      "id": "d2a86264-e3ca-4a82-99b8-0a6cd714ded4",
-      "createdTimestamp": 1722019421345,
-      "username": "service-account-spiffworkflow-backend",
-      "enabled": true,
-      "totp": false,
-      "emailVerified": false,
-      "serviceAccountClientId": "spiffworkflow-backend",
+      "serviceAccountClientId": "__M8FLOW_SPOKE_CLIENT_ID__",
       "credentials": [],
       "disableableCredentialTypes": [],
       "requiredActions": [],
       "realmRoles": [
-        "default-roles-spiffworkflow"
+        "default-roles-m8flow"
       ],
       "clientRoles": {
-        "spiffworkflow-backend": [
+        "__M8FLOW_SPOKE_CLIENT_ID__": [
           "uma_protection"
         ]
       },
@@ -736,26 +587,96 @@
       "groups": []
     },
     {
-      "id": "bae51d14-9d82-468f-9e9d-1cd2cb507f15",
-      "createdTimestamp": 1722019421396,
-      "username": "service-account-withauth",
+      "username": "editor",
+      "firstName": "Editor",
+      "lastName": "M8Flow",
+      "email": "",
+      "emailVerified": true,
       "enabled": true,
       "totp": false,
-      "emailVerified": false,
-      "serviceAccountClientId": "withAuth",
-      "credentials": [],
       "disableableCredentialTypes": [],
-      "requiredActions": [],
-      "realmRoles": [
-        "default-roles-spiffworkflow"
+      "requiredActions": [
+        "UPDATE_PASSWORD"
       ],
-      "clientRoles": {
-        "withAuth": [
-          "uma_protection"
-        ]
-      },
+      "realmRoles": ["default-roles-m8flow", "editor"],
       "notBefore": 0,
-      "groups": []
+      "groups": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "editor",
+          "temporary": true
+        }
+      ]
+    },
+    {
+      "username": "integrator",
+      "firstName": "Integrator",
+      "lastName": "M8Flow",
+      "email": "",
+      "emailVerified": true,
+      "enabled": true,
+      "totp": false,
+      "disableableCredentialTypes": [],
+      "requiredActions": [
+        "UPDATE_PASSWORD"
+      ],
+      "realmRoles": ["default-roles-m8flow", "integrator"],
+      "notBefore": 0,
+      "groups": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "integrator",
+          "temporary": true
+        }
+      ]
+    },
+    {
+      "username": "reviewer",
+      "firstName": "Reviewer",
+      "lastName": "M8Flow",
+      "email": "",
+      "emailVerified": true,
+      "enabled": true,
+      "totp": false,
+      "disableableCredentialTypes": [],
+      "requiredActions": [
+        "UPDATE_PASSWORD"
+      ],
+      "realmRoles": ["default-roles-m8flow", "reviewer"],
+      "notBefore": 0,
+      "groups": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "reviewer",
+          "temporary": true
+        }
+      ]
+    },
+    {
+      "username": "viewer",
+      "firstName": "Viewer",
+      "lastName": "M8Flow",
+      "email": "",
+      "emailVerified": true,
+      "enabled": true,
+      "totp": false,
+      "disableableCredentialTypes": [],
+      "requiredActions": [
+        "UPDATE_PASSWORD"
+      ],
+      "realmRoles": ["default-roles-m8flow", "viewer"],
+      "notBefore": 0,
+      "groups": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "viewer",
+          "temporary": true
+        }
+      ]
     }
   ],
   "scopeMappings": [
@@ -772,13 +693,13 @@
       "clientId": "account",
       "name": "${client_account}",
       "rootUrl": "${authBaseUrl}",
-      "baseUrl": "/realms/spiffworkflow/account/",
+      "baseUrl": "/realms/m8flow/account/",
       "surrogateAuthRequired": false,
       "enabled": false,
       "alwaysDisplayInConsole": false,
       "clientAuthenticatorType": "client-secret",
       "redirectUris": [
-        "/realms/spiffworkflow/account/*"
+        "/realms/m8flow/account/*"
       ],
       "webOrigins": [],
       "notBefore": 0,
@@ -1044,13 +965,13 @@
       "clientId": "security-admin-console",
       "name": "${client_security-admin-console}",
       "rootUrl": "${authAdminUrl}",
-      "baseUrl": "/admin/spiffworkflow/console/",
+      "baseUrl": "/admin/m8flow/console/",
       "surrogateAuthRequired": false,
       "enabled": false,
       "alwaysDisplayInConsole": false,
       "clientAuthenticatorType": "client-secret",
       "redirectUris": [
-        "/admin/spiffworkflow/console/*"
+        "/admin/m8flow/console/*"
       ],
       "webOrigins": [
         "+"
@@ -1131,7 +1052,7 @@
     },
     {
       "id": "f44558af-3601-4e54-b854-08396a247544",
-      "clientId": "spiffworkflow-backend",
+      "clientId": "__M8FLOW_SPOKE_CLIENT_ID__",
       "name": "",
       "description": "",
       "rootUrl": "",
@@ -1144,8 +1065,7 @@
       "secret": "JXeQExm0JhQPLumgHtIIqf52bDalHz0q",
       "redirectUris": [
         "http://localhost:7000/*",
-        "http://localhost:8000/*",
-        "https://for-local-dev.spiffworkflow.org/*"
+        "https://replace-me-with-m8flow-backend-host-and-path/*"
       ],
       "webOrigins": [],
       "notBefore": 0,
@@ -1163,7 +1083,7 @@
         "saml.force.post.binding": "false",
         "saml.multivalued.roles": "false",
         "frontchannel.logout.session.required": "false",
-        "post.logout.redirect.uris": "https://replace-me-with-spiff-frontend-host-and-path/*##http://localhost:7001/*##http://localhost:8001/*",
+        "post.logout.redirect.uris": "https://replace-me-with-m8flow-frontend-host-and-path/*##http://localhost:7001/*",
         "oauth2.device.authorization.grant.enabled": "false",
         "backchannel.logout.revoke.offline.tokens": "false",
         "saml.server.signature.keyinfo.ext": "false",
@@ -1264,6 +1184,23 @@
             "id.token.claim": "true",
             "access.token.claim": "true"
           }
+        },
+        {
+          "id": "144579f3-168a-4dc3-a8ff-a9ac89dd7658",
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "introspection.token.claim": "true",
+            "multivalued": "true",
+            "userinfo.token.claim": "true",
+            "user.attribute": "foo",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "groups",
+            "jsonType.label": "String"
+          }
         }
       ],
       "defaultClientScopes": [
@@ -1271,6 +1208,7 @@
         "acr",
         "profile",
         "roles",
+        "basic",
         "email"
       ],
       "optionalClientScopes": [
@@ -1308,7 +1246,7 @@
           },
           {
             "name": "Default Resource",
-            "type": "urn:spiffworkflow-backend:resources:default",
+            "type": "urn:m8flow-backend:resources:default",
             "ownerManagedAccess": false,
             "attributes": {},
             "_id": "8e00e4a3-3fff-4521-b7f0-95f66c2f79d2",
@@ -1354,7 +1292,7 @@
             "logic": "POSITIVE",
             "decisionStrategy": "UNANIMOUS",
             "config": {
-              "roles": "[{\"id\":\"spiffworkflow-backend/repeat-form-role-2\",\"required\":false}]"
+              "roles": "[{\"id\":\"__M8FLOW_SPOKE_CLIENT_ID__/repeat-form-role-2\",\"required\":false}]"
             }
           },
           {
@@ -1364,7 +1302,7 @@
             "logic": "POSITIVE",
             "decisionStrategy": "UNANIMOUS",
             "config": {
-              "roles": "[{\"id\":\"spiffworkflow-backend/spiffworkflow-admin\",\"required\":false}]"
+              "roles": "[{\"id\":\"__M8FLOW_SPOKE_CLIENT_ID__/spiffworkflow-admin\",\"required\":false}]"
             }
           },
           {
@@ -1375,7 +1313,7 @@
             "logic": "POSITIVE",
             "decisionStrategy": "AFFIRMATIVE",
             "config": {
-              "roles": "[{\"id\":\"spiffworkflow-backend/repeat-form-role-2\",\"required\":false}]"
+              "roles": "[{\"id\":\"__M8FLOW_SPOKE_CLIENT_ID__/repeat-form-role-2\",\"required\":false}]"
             }
           },
           {
@@ -1409,7 +1347,7 @@
             "logic": "POSITIVE",
             "decisionStrategy": "UNANIMOUS",
             "config": {
-              "defaultResourceType": "urn:spiffworkflow-backend:resources:default",
+              "defaultResourceType": "urn:m8flow-backend:resources:default",
               "applyPolicies": "[\"Default Policy\"]"
             }
           }
@@ -1436,238 +1374,6 @@
             "displayName": "instantiate"
           }
         ],
-        "decisionStrategy": "UNANIMOUS"
-      }
-    },
-    {
-      "id": "9f340eba-2b84-43d0-a976-010e270e3981",
-      "clientId": "spiffworkflow-frontend",
-      "surrogateAuthRequired": false,
-      "enabled": true,
-      "alwaysDisplayInConsole": false,
-      "clientAuthenticatorType": "client-secret",
-      "redirectUris": [
-        "https://api.unused-for-local-dev.spiffworkflow.org/*",
-        "http://localhost:7001/*",
-        "http://localhost:8001/*"
-      ],
-      "webOrigins": [
-        "*"
-      ],
-      "notBefore": 0,
-      "bearerOnly": false,
-      "consentRequired": false,
-      "standardFlowEnabled": true,
-      "implicitFlowEnabled": false,
-      "directAccessGrantsEnabled": true,
-      "serviceAccountsEnabled": false,
-      "publicClient": true,
-      "frontchannelLogout": false,
-      "protocol": "openid-connect",
-      "attributes": {
-        "saml.force.post.binding": "false",
-        "saml.multivalued.roles": "false",
-        "frontchannel.logout.session.required": "false",
-        "post.logout.redirect.uris": "+",
-        "oauth2.device.authorization.grant.enabled": "false",
-        "backchannel.logout.revoke.offline.tokens": "false",
-        "saml.server.signature.keyinfo.ext": "false",
-        "use.refresh.tokens": "true",
-        "oidc.ciba.grant.enabled": "false",
-        "backchannel.logout.session.required": "true",
-        "client_credentials.use_refresh_token": "false",
-        "require.pushed.authorization.requests": "false",
-        "saml.client.signature": "false",
-        "saml.allow.ecp.flow": "false",
-        "id.token.as.detached.signature": "false",
-        "saml.assertion.signature": "false",
-        "saml.encrypt": "false",
-        "saml.server.signature": "false",
-        "exclude.session.state.from.auth.response": "false",
-        "saml.artifact.binding": "false",
-        "saml_force_name_id_format": "false",
-        "acr.loa.map": "{}",
-        "tls.client.certificate.bound.access.tokens": "false",
-        "saml.authnstatement": "false",
-        "display.on.consent.screen": "false",
-        "token.response.type.bearer.lower-case": "false",
-        "saml.onetimeuse.condition": "false"
-      },
-      "authenticationFlowBindingOverrides": {},
-      "fullScopeAllowed": true,
-      "nodeReRegistrationTimeout": -1,
-      "defaultClientScopes": [
-        "web-origins",
-        "acr",
-        "profile",
-        "roles",
-        "email"
-      ],
-      "optionalClientScopes": [
-        "address",
-        "phone",
-        "offline_access",
-        "microprofile-jwt"
-      ]
-    },
-    {
-      "id": "5d94a8c3-f56b-4eff-ac39-8580053a7fbe",
-      "clientId": "withAuth",
-      "surrogateAuthRequired": false,
-      "enabled": true,
-      "alwaysDisplayInConsole": false,
-      "clientAuthenticatorType": "client-secret",
-      "secret": "6o8kIKQznQtejHOdRhWeKorBJclMGcgA",
-      "redirectUris": [
-        "https://api.unused-for-local-dev.spiffworkflow.org/*",
-        "http://localhost:8001/*"
-      ],
-      "webOrigins": [],
-      "notBefore": 0,
-      "bearerOnly": false,
-      "consentRequired": false,
-      "standardFlowEnabled": true,
-      "implicitFlowEnabled": false,
-      "directAccessGrantsEnabled": true,
-      "serviceAccountsEnabled": true,
-      "authorizationServicesEnabled": true,
-      "publicClient": false,
-      "frontchannelLogout": false,
-      "protocol": "openid-connect",
-      "attributes": {
-        "saml.force.post.binding": "false",
-        "saml.multivalued.roles": "false",
-        "frontchannel.logout.session.required": "false",
-        "post.logout.redirect.uris": "+",
-        "oauth2.device.authorization.grant.enabled": "false",
-        "backchannel.logout.revoke.offline.tokens": "false",
-        "saml.server.signature.keyinfo.ext": "false",
-        "use.refresh.tokens": "true",
-        "oidc.ciba.grant.enabled": "false",
-        "backchannel.logout.session.required": "true",
-        "client_credentials.use_refresh_token": "false",
-        "require.pushed.authorization.requests": "false",
-        "saml.client.signature": "false",
-        "saml.allow.ecp.flow": "false",
-        "id.token.as.detached.signature": "false",
-        "saml.assertion.signature": "false",
-        "client.secret.creation.time": "1657055472",
-        "saml.encrypt": "false",
-        "saml.server.signature": "false",
-        "exclude.session.state.from.auth.response": "false",
-        "saml.artifact.binding": "false",
-        "saml_force_name_id_format": "false",
-        "acr.loa.map": "{}",
-        "tls.client.certificate.bound.access.tokens": "false",
-        "saml.authnstatement": "false",
-        "display.on.consent.screen": "false",
-        "token.response.type.bearer.lower-case": "false",
-        "saml.onetimeuse.condition": "false"
-      },
-      "authenticationFlowBindingOverrides": {},
-      "fullScopeAllowed": true,
-      "nodeReRegistrationTimeout": -1,
-      "protocolMappers": [
-        {
-          "id": "abfc756f-fc57-45b4-8a40-0cd0f8081f0c",
-          "name": "Client ID",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-usersessionmodel-note-mapper",
-          "consentRequired": false,
-          "config": {
-            "user.session.note": "clientId",
-            "userinfo.token.claim": "true",
-            "id.token.claim": "true",
-            "access.token.claim": "true",
-            "claim.name": "clientId",
-            "jsonType.label": "String"
-          }
-        },
-        {
-          "id": "c05d38b7-9b4d-4286-b40c-f48b3cca42e3",
-          "name": "Client Host",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-usersessionmodel-note-mapper",
-          "consentRequired": false,
-          "config": {
-            "user.session.note": "clientHost",
-            "userinfo.token.claim": "true",
-            "id.token.claim": "true",
-            "access.token.claim": "true",
-            "claim.name": "clientHost",
-            "jsonType.label": "String"
-          }
-        },
-        {
-          "id": "b27d0bd8-b8d9-43cb-a07a-3ec4bdc818dc",
-          "name": "Client IP Address",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-usersessionmodel-note-mapper",
-          "consentRequired": false,
-          "config": {
-            "user.session.note": "clientAddress",
-            "userinfo.token.claim": "true",
-            "id.token.claim": "true",
-            "access.token.claim": "true",
-            "claim.name": "clientAddress",
-            "jsonType.label": "String"
-          }
-        }
-      ],
-      "defaultClientScopes": [
-        "web-origins",
-        "acr",
-        "profile",
-        "roles",
-        "email"
-      ],
-      "optionalClientScopes": [
-        "address",
-        "phone",
-        "offline_access",
-        "microprofile-jwt"
-      ],
-      "authorizationSettings": {
-        "allowRemoteResourceManagement": true,
-        "policyEnforcementMode": "ENFORCING",
-        "resources": [
-          {
-            "name": "Default Resource",
-            "type": "urn:withAuth:resources:default",
-            "ownerManagedAccess": false,
-            "attributes": {},
-            "_id": "c882ad40-c15d-4f88-ad60-c2ea2f486ce2",
-            "uris": [
-              "/*"
-            ]
-          }
-        ],
-        "policies": [
-          {
-            "id": "b8b338bc-884d-43cf-96d8-3776f2b220f3",
-            "name": "Default Policy",
-            "description": "A policy that grants access only for users within this realm",
-            "type": "role",
-            "logic": "POSITIVE",
-            "decisionStrategy": "AFFIRMATIVE",
-            "config": {
-              "roles": "[{\"id\":\"spiffworkflow-backend/repeat-form-role-2\",\"required\":false}]"
-            }
-          },
-          {
-            "id": "4f5afa22-0fdf-4ed7-97b9-35400591bf6f",
-            "name": "Default Permission",
-            "description": "A permission that applies to the default resource type",
-            "type": "resource",
-            "logic": "POSITIVE",
-            "decisionStrategy": "UNANIMOUS",
-            "config": {
-              "defaultResourceType": "urn:withAuth:resources:default",
-              "applyPolicies": "[\"Default Policy\"]"
-            }
-          }
-        ],
-        "scopes": [],
         "decisionStrategy": "UNANIMOUS"
       }
     }
@@ -1841,20 +1547,6 @@
           }
         },
         {
-          "id": "75c10b23-3a63-4aa6-99cc-7c8b7645d32f",
-          "name": "groups",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-group-membership-mapper",
-          "consentRequired": false,
-          "config": {
-            "full.path": "true",
-            "id.token.claim": "true",
-            "access.token.claim": "true",
-            "claim.name": "groups",
-            "userinfo.token.claim": "true"
-          }
-        },
-        {
           "id": "b05e679c-e00e-427e-8e47-0a4fd411c7a6",
           "name": "updated at",
           "protocol": "openid-connect",
@@ -1867,6 +1559,20 @@
             "access.token.claim": "true",
             "claim.name": "updated_at",
             "jsonType.label": "long"
+          }
+        },
+        {
+          "id": "fe4a096a-cede-4775-affa-b0cc6d630b70",
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "full.path": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "groups",
+            "userinfo.token.claim": "true"
           }
         },
         {
@@ -2202,7 +1908,8 @@
     "role_list",
     "roles",
     "acr",
-    "web-origins"
+    "web-origins",
+    "basic"
   ],
   "defaultOptionalClientScopes": [
     "offline_access",
@@ -2255,14 +1962,14 @@
         "subComponents": {},
         "config": {
           "allowed-protocol-mapper-types": [
-            "saml-user-attribute-mapper",
-            "oidc-sha256-pairwise-sub-mapper",
-            "oidc-usermodel-attribute-mapper",
-            "saml-user-property-mapper",
-            "saml-role-list-mapper",
-            "oidc-address-mapper",
             "oidc-full-name-mapper",
-            "oidc-usermodel-property-mapper"
+            "saml-user-property-mapper",
+            "oidc-sha256-pairwise-sub-mapper",
+            "saml-role-list-mapper",
+            "oidc-usermodel-attribute-mapper",
+            "saml-user-attribute-mapper",
+            "oidc-usermodel-property-mapper",
+            "oidc-address-mapper"
           ]
         }
       },
@@ -2286,14 +1993,14 @@
         "subComponents": {},
         "config": {
           "allowed-protocol-mapper-types": [
-            "oidc-address-mapper",
-            "saml-user-property-mapper",
-            "oidc-full-name-mapper",
-            "saml-user-attribute-mapper",
-            "oidc-usermodel-attribute-mapper",
-            "saml-role-list-mapper",
             "oidc-sha256-pairwise-sub-mapper",
-            "oidc-usermodel-property-mapper"
+            "saml-user-property-mapper",
+            "oidc-usermodel-property-mapper",
+            "oidc-full-name-mapper",
+            "saml-role-list-mapper",
+            "oidc-usermodel-attribute-mapper",
+            "saml-user-attribute-mapper",
+            "oidc-address-mapper"
           ]
         }
       },

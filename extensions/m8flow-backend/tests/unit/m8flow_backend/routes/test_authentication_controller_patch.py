@@ -1,10 +1,14 @@
+import base64
 import inspect
 from types import SimpleNamespace
+from unittest.mock import patch
+from urllib.parse import quote
 
 from flask import Flask
 import pytest
 
 from spiffworkflow_backend.routes import authentication_controller
+from spiffworkflow_backend.exceptions.api_error import ApiError
 
 import m8flow_backend.routes.authentication_controller_patch as auth_patch_module
 from m8flow_backend.routes.authentication_controller_patch import (
@@ -184,3 +188,242 @@ def test_master_realm_auth_patch_handles_global_tenant_routes(monkeypatch) -> No
     finally:
         authentication_controller._get_authentication_identifier_from_request = original
         monkeypatch.setattr(auth_patch_module, "_MASTER_REALM_PATCHED", False)
+
+
+def test_refresh_token_tenant_patch_auto_provisions_missing_user(monkeypatch) -> None:
+    original_login_return = authentication_controller.login_return
+    original_get_user_model_from_token = authentication_controller._get_user_model_from_token
+
+    sentinel_user = object()
+
+    def fake_original(decoded_token):
+        raise ApiError(
+            error_code="invalid_user",
+            message="Invalid user. Please log in.",
+            status_code=401,
+        )
+
+    monkeypatch.setattr(auth_patch_module, "_REFRESH_TOKEN_TENANT_PATCHED", False)
+    monkeypatch.setattr(authentication_controller, "_get_user_model_from_token", fake_original)
+    monkeypatch.setattr(
+        "spiffworkflow_backend.services.authorization_service.AuthorizationService.create_user_from_sign_in",
+        lambda decoded_token: sentinel_user,
+    )
+
+    try:
+        apply_refresh_token_tenant_patch()
+        decoded_token = {
+            "iss": "http://localhost:7002/realms/master",
+            "sub": "subject-123",
+            "preferred_username": "super-admin",
+        }
+        assert authentication_controller._get_user_model_from_token(decoded_token) is sentinel_user
+    finally:
+        authentication_controller.login_return = original_login_return
+        authentication_controller._get_user_model_from_token = original_get_user_model_from_token
+        monkeypatch.setattr(auth_patch_module, "_REFRESH_TOKEN_TENANT_PATCHED", False)
+
+
+# ---------------------------------------------------------------------------
+# Helpers for authentication_expired retry tests
+# ---------------------------------------------------------------------------
+
+def _encode_state(state_dict: dict) -> str:
+    return base64.b64encode(repr(state_dict).encode("utf-8")).decode("utf-8")
+
+
+@pytest.fixture
+def expired_auth_patch(monkeypatch):
+    """Apply refresh_token_tenant_patch so patched_login_return is installed, then restore."""
+    original_login_return = authentication_controller.login_return
+    original_get_user_model = authentication_controller._get_user_model_from_token
+    monkeypatch.setattr(auth_patch_module, "_REFRESH_TOKEN_TENANT_PATCHED", False)
+    apply_refresh_token_tenant_patch()
+    yield
+    authentication_controller.login_return = original_login_return
+    authentication_controller._get_user_model_from_token = original_get_user_model
+    monkeypatch.setattr(auth_patch_module, "_REFRESH_TOKEN_TENANT_PATCHED", False)
+
+
+# ---------------------------------------------------------------------------
+# authentication_expired retry flow
+# ---------------------------------------------------------------------------
+
+
+def test_authentication_expired_retry_with_valid_final_url(expired_auth_patch) -> None:
+    app = Flask(__name__)
+    app.config["SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND"] = "https://app.example.com"
+
+    state = _encode_state({"authentication_identifier": "tenant-a", "final_url": "/tasks"})
+    captured = {}
+
+    def fake_get_login_redirect_url(self, authentication_identifier, final_url=None):
+        captured["auth_id"] = authentication_identifier
+        captured["final_url"] = final_url
+        return "https://keycloak/auth?response_type=code&client_id=app"
+
+    with (
+        app.test_request_context(path="/v1.0/login_return"),
+        patch(
+            "spiffworkflow_backend.services.authentication_service.AuthenticationService.get_login_redirect_url",
+            fake_get_login_redirect_url,
+        ),
+    ):
+        response = authentication_controller.login_return(
+            state=state, error="login_required", error_description="authentication_expired"
+        )
+
+    assert response.status_code == 302
+    assert captured["auth_id"] == "tenant-a"
+    assert captured["final_url"] == "/tasks"
+    assert "prompt=login" in response.headers["Location"]
+
+
+def test_authentication_expired_rejects_evil_absolute_url(expired_auth_patch) -> None:
+    app = Flask(__name__)
+    app.config["SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND"] = "https://app.example.com"
+
+    state = _encode_state({
+        "authentication_identifier": "tenant-a",
+        "final_url": "https://evil.example.com",
+    })
+    captured = {}
+
+    def fake_get_login_redirect_url(self, authentication_identifier, final_url=None):
+        captured["final_url"] = final_url
+        return "https://keycloak/auth?response_type=code&client_id=app"
+
+    with (
+        app.test_request_context(path="/v1.0/login_return"),
+        patch(
+            "spiffworkflow_backend.services.authentication_service.AuthenticationService.get_login_redirect_url",
+            fake_get_login_redirect_url,
+        ),
+    ):
+        response = authentication_controller.login_return(
+            state=state, error="login_required", error_description="authentication_expired"
+        )
+
+    assert response.status_code == 302
+    assert captured["final_url"] == "https://app.example.com"
+
+
+def test_authentication_expired_rejects_scheme_relative_url(expired_auth_patch) -> None:
+    app = Flask(__name__)
+    app.config["SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND"] = "https://app.example.com"
+
+    state = _encode_state({
+        "authentication_identifier": "tenant-a",
+        "final_url": "//evil.com",
+    })
+    captured = {}
+
+    def fake_get_login_redirect_url(self, authentication_identifier, final_url=None):
+        captured["final_url"] = final_url
+        return "https://keycloak/auth?response_type=code&client_id=app"
+
+    with (
+        app.test_request_context(path="/v1.0/login_return"),
+        patch(
+            "spiffworkflow_backend.services.authentication_service.AuthenticationService.get_login_redirect_url",
+            fake_get_login_redirect_url,
+        ),
+    ):
+        response = authentication_controller.login_return(
+            state=state, error="login_required", error_description="authentication_expired"
+        )
+
+    assert response.status_code == 302
+    assert captured["final_url"] == "https://app.example.com"
+
+
+def test_authentication_expired_handles_percent_encoded_state(expired_auth_patch) -> None:
+    app = Flask(__name__)
+    app.config["SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND"] = "https://app.example.com"
+
+    raw_state = _encode_state({"authentication_identifier": "tenant-a", "final_url": "/tasks"})
+    encoded_state = quote(raw_state, safe="")
+    captured = {}
+
+    def fake_get_login_redirect_url(self, authentication_identifier, final_url=None):
+        captured["auth_id"] = authentication_identifier
+        captured["final_url"] = final_url
+        return "https://keycloak/auth?response_type=code&client_id=app"
+
+    with (
+        app.test_request_context(path="/v1.0/login_return"),
+        patch(
+            "spiffworkflow_backend.services.authentication_service.AuthenticationService.get_login_redirect_url",
+            fake_get_login_redirect_url,
+        ),
+    ):
+        response = authentication_controller.login_return(
+            state=encoded_state, error="login_required", error_description="authentication_expired"
+        )
+
+    assert response.status_code == 302
+    assert captured["auth_id"] == "tenant-a"
+    assert captured["final_url"] == "/tasks"
+
+
+def test_authentication_expired_retry_includes_prompt_login(expired_auth_patch) -> None:
+    app = Flask(__name__)
+    app.config["SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND"] = "https://app.example.com"
+
+    state = _encode_state({"authentication_identifier": "tenant-a", "final_url": "/tasks"})
+
+    def fake_get_login_redirect_url(self, authentication_identifier, final_url=None):
+        return "https://keycloak/auth?response_type=code&client_id=app"
+
+    with (
+        app.test_request_context(path="/v1.0/login_return"),
+        patch(
+            "spiffworkflow_backend.services.authentication_service.AuthenticationService.get_login_redirect_url",
+            fake_get_login_redirect_url,
+        ),
+    ):
+        response = authentication_controller.login_return(
+            state=state, error="login_required", error_description="authentication_expired"
+        )
+
+    location = response.headers["Location"]
+    assert "prompt=login" in location
+
+
+def test_normal_login_redirect_does_not_include_prompt_login() -> None:
+    """After removing the global patch, get_login_redirect_url must not append prompt=login."""
+    from spiffworkflow_backend.services.authentication_service import AuthenticationService
+
+    original = AuthenticationService.get_login_redirect_url
+    assert not hasattr(original, "__wrapped__"), (
+        "get_login_redirect_url should not be wrapped by a global prompt=login patch"
+    )
+
+
+def test_tenant_login_does_not_include_prompt_login(monkeypatch) -> None:
+    app = Flask(__name__)
+    app.config["SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"] = "/v1.0"
+    app.config["SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND"] = "https://app.example.com"
+
+    def fake_get_login_redirect_url(self, authentication_identifier, final_url=None):
+        return "https://keycloak/auth?response_type=code&client_id=app"
+
+    with (
+        app.test_request_context(path="/v1.0/login?tenant=tenant-a", method="GET"),
+        patch(
+            "m8flow_backend.services.keycloak_service.realm_exists",
+            return_value=True,
+        ),
+        patch(
+            "m8flow_backend.services.auth_config_service.ensure_tenant_auth_config",
+        ),
+        patch(
+            "spiffworkflow_backend.services.authentication_service.AuthenticationService.get_login_redirect_url",
+            fake_get_login_redirect_url,
+        ),
+    ):
+        result = _handle_tenant_login_request(app)
+
+    assert result is not None
+    assert result.status_code == 302
+    assert "prompt=login" not in result.headers["Location"]

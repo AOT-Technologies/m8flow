@@ -113,8 +113,17 @@ def apply_cookie_domain_patch() -> None:
         cookie_domain = _frontend_cookie_domain(frontend_url)
         patched_frontend_url = "localhost" if cookie_domain is None else f"https://{cookie_domain}"
 
+        cookies_before = len(response.headers.getlist("Set-Cookie"))
+
         with _temporary_frontend_url(patched_frontend_url):
-            return original(response)
+            result = original(response)
+
+        cookies_after = len(result.headers.getlist("Set-Cookie"))
+        if cookies_after != cookies_before:
+            result.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            result.headers["Pragma"] = "no-cache"
+
+        return result
 
     authentication_controller._set_new_access_token_in_cookie = patched_set_new_access_token_in_cookie
     _COOKIE_DOMAIN_PATCHED = True
@@ -206,9 +215,39 @@ def apply_refresh_token_tenant_patch() -> None:
 
     @wraps(original_login_return)
     def patched_login_return(*args, **kwargs):
+        from flask import current_app, redirect
+        from spiffworkflow_backend.services.authentication_service import AuthenticationService
+
         state = kwargs.get("state")
         if state is None and args:
             state = args[0]
+
+        error = kwargs.get("error")
+        error_description = kwargs.get("error_description")
+        if error and error_description and "authentication_expired" in str(error_description):
+            try:
+                decoded_state = unquote(state) if isinstance(state, str) else ""
+                state_dict = ast.literal_eval(base64.b64decode(decoded_state).decode("utf-8"))
+
+                auth_id = state_dict.get("authentication_identifier")
+                final_url = state_dict.get("final_url") or "/"
+                frontend_url = str(current_app.config.get("SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND", ""))
+
+                if not _is_allowed_frontend_redirect_url(final_url, frontend_url):
+                    final_url = frontend_url or "/"
+
+                if auth_id:
+                    login_url = AuthenticationService().get_login_redirect_url(
+                        authentication_identifier=auth_id,
+                        final_url=final_url,
+                    )
+                    if "prompt=" not in login_url:
+                        login_url += "&prompt=login"
+                    logger.info("authentication_expired detected, retrying login for identifier=%s", auth_id)
+                    return redirect(login_url)
+            except Exception:
+                logger.warning("Failed to auto-retry login after authentication_expired", exc_info=True)
+
         tenant_id = _tenant_for_refresh_tokens(state=state if isinstance(state, str) else None)
         auth_identifier = _authentication_identifier_from_state() or (
             _decode_state_authentication_identifier(state) if isinstance(state, str) else None
@@ -229,7 +268,25 @@ def apply_refresh_token_tenant_patch() -> None:
     def patched_get_user_model_from_token(decoded_token: dict):
         tenant_id = _tenant_for_refresh_tokens(decoded_token=decoded_token)
         with _temporary_request_tenant(tenant_id):
-            return original_get_user_model_from_token(decoded_token)
+            try:
+                return original_get_user_model_from_token(decoded_token)
+            except Exception as exc:
+                from spiffworkflow_backend.exceptions.api_error import ApiError
+
+                if not isinstance(exc, ApiError) or exc.error_code != "invalid_user":
+                    raise
+                if not isinstance(decoded_token, dict) or "iss" not in decoded_token or "sub" not in decoded_token:
+                    raise
+
+                from spiffworkflow_backend.services.authorization_service import AuthorizationService
+
+                user_model = AuthorizationService.create_user_from_sign_in(decoded_token)
+                logger.info(
+                    "refresh_token_tenant_patch: auto-provisioned missing user for issuer=%s subject=%s",
+                    decoded_token.get("iss"),
+                    decoded_token.get("sub"),
+                )
+                return user_model
 
     authentication_controller.login_return = patched_login_return  # type: ignore[assignment]
     authentication_controller._get_user_model_from_token = patched_get_user_model_from_token  # type: ignore[assignment]

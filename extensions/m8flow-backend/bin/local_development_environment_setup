@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+
+function error_handler() {
+  echo >&2 "Exited with BAD EXIT CODE '${2}' in ${0} script at line: ${1}."
+  exit "$2"
+}
+trap 'error_handler ${LINENO} $?' ERR
+set -o errtrace -o errexit -o nounset -o pipefail
+
+if [ "${BASH_SOURCE[0]}" -ef "$0" ]; then
+  echo "Hey, you should source this script, not execute it!"
+  exit 1
+fi
+
+PORT="${SPIFFWORKFLOW_BACKEND_PORT:-7000}"
+acceptance_test_mode="false"
+
+use_local_open_id="true"
+if [[ "${1:-}" == "keycloak" ]]; then
+  use_local_open_id="false"
+  shift
+fi
+if [[ "${1:-}" == "acceptance" ]]; then
+  acceptance_test_mode="true"
+  shift
+fi
+
+process_model_dir="${1:-}"
+if [[ -d "$process_model_dir" ]]; then
+  shift
+fi
+
+if [[ -z "${SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-}" ]]; then
+  if [[ -n "${process_model_dir}" ]] && [[ -d "${process_model_dir}" ]]; then
+    SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR="$process_model_dir"
+  else
+    SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR=$(./bin/find_sample_process_models)
+  fi
+  export SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR
+fi
+
+if [[ "$acceptance_test_mode" == "true" ]]; then
+  export SPIFFWORKFLOW_BACKEND_LOAD_FIXTURE_DATA=true
+  export SPIFFWORKFLOW_BACKEND_PERMISSIONS_FILE_NAME=acceptance_tests.yml
+fi
+if [[ "$use_local_open_id" == "true" ]]; then
+  backend_base_url="${SPIFFWORKFLOW_BACKEND_URL:-}"
+  if [[ -z "$backend_base_url" ]]; then
+    backend_base_url="http://localhost:$PORT"
+  fi
+  export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__identifier="default"
+  export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__label="internal openid"
+  export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__uri="${backend_base_url}/openid"
+  export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__additional_valid_issuers__0="http://host.docker.internal:7000/openid"
+  export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__client_id="m8flow-backend"
+  export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__client_secret="JXeQExm0JhQPLumgHtIIqf52bDalHz0q"
+
+# else  # uncomment to test multiple auths
+#   export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__identifier="keycloak_internal"
+#   export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__label="I am a Core Contributor"
+#   export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__uri="http://localhost:7002/realms/m8flow"
+#   export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__client_id="m8flow-backend"
+#   export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__client_secret="JXeQExm0JhQPLumgHtIIqf52bDalHz0q"
+#
+#   export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__1__identifier="openid"
+#   export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__1__label="I am a vendor"
+#   export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__1__uri="http://localhost:$PORT/openid"
+#   export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__1__client_id="m8flow-backend"
+#   export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__1__client_secret="JXeQExm0JhQPLumgHtIIqf52bDalHz0q"
+
+# else # uncomment to test specified
+#   export SPIFFWORKFLOW_BACKEND_OPEN_ID_SERVER_URL="http://localhost:7002/realms/m8flow"
+#   export SPIFFWORKFLOW_BACKEND_OPEN_ID_CLIENT_ID="m8flow-backend"
+#   export SPIFFWORKFLOW_BACKEND_OPEN_ID_CLIENT_SECRET_KEY="JXeQExm0JhQPLumgHtIIqf52bDalHz0q"
+
+fi
+
+if [[ -z "${SPIFFWORKFLOW_BACKEND_ENV:-}" ]]; then
+  export SPIFFWORKFLOW_BACKEND_ENV=local_development
+fi
+
+export FLASK_SESSION_SECRET_KEY="e7711a3ba96c46c68e084a86952de16f"
+export FLASK_DEBUG=1
+
+if [[ -z "${SPIFFWORKFLOW_BACKEND_RUN_BACKGROUND_SCHEDULER_IN_CREATE_APP:-}" ]]; then
+  SPIFFWORKFLOW_BACKEND_RUN_BACKGROUND_SCHEDULER_IN_CREATE_APP=true
+fi
+export SPIFFWORKFLOW_BACKEND_RUN_BACKGROUND_SCHEDULER_IN_CREATE_APP
+
+if [[ -z "${SPIFFWORKFLOW_BACKEND_FAIL_ON_INVALID_PROCESS_MODELS:-}" ]]; then
+  export SPIFFWORKFLOW_BACKEND_FAIL_ON_INVALID_PROCESS_MODELS=false
+fi

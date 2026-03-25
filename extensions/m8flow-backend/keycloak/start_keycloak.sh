@@ -21,12 +21,13 @@ keycloak_admin_user="admin"
 keycloak_admin_password="admin"
 keycloak_super_admin_user="${KEYCLOAK_SUPER_ADMIN_USER:-super-admin}"
 keycloak_super_admin_password="${KEYCLOAK_SUPER_ADMIN_PASSWORD:-super-admin}"
-keycloak_master_client_id="${M8FLOW_KEYCLOAK_SPOKE_CLIENT_ID:-spiffworkflow-backend}"
+keycloak_master_client_id="${M8FLOW_KEYCLOAK_SPOKE_CLIENT_ID:-m8flow-backend}"
 keycloak_master_client_secret="${M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET:-${M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET:-JXeQExm0JhQPLumgHtIIqf52bDalHz0q}}"
 backend_public_url="${SPIFFWORKFLOW_BACKEND_URL:-${M8FLOW_BACKEND_URL:-http://localhost:8000}}"
 frontend_public_url="${SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND:-${M8FLOW_BACKEND_URL_FOR_FRONTEND:-http://localhost:8001}}"
 backend_redirect_uri="${backend_public_url%/}/*"
 frontend_logout_redirect_uri="${frontend_public_url%/}/*"
+placeholder_client_id="__M8FLOW_SPOKE_CLIENT_ID__"
 JQ_FIRST_ID_EXPR='.[0].id // empty'
 
 # Get script directory
@@ -36,9 +37,7 @@ script_dir="$(
 )"
 
 # Realm export file paths
-identity_realm_file="${script_dir}/realm_exports/identity-realm-export.json"
-# Backend default auth uses spiffworkflow-local; must exist and have sslRequired=NONE for HTTP
-spiffworkflow_local_realm_file="${script_dir}/realm_exports/spiffworkflow-local-realm.json"
+m8flow_tenant_template_file="${script_dir}/realm_exports/m8flow-tenant-template.json"
 
 # Realm Info Mapper JAR (from repo root: keycloak-extensions/realm-info-mapper)
 repo_root="$(cd "${script_dir}/../../.." && pwd -P)"
@@ -61,13 +60,8 @@ if ! command -v jq &> /dev/null; then
 fi
 
 # Validate realm export files exist
-if [[ ! -f "$identity_realm_file" ]]; then
-  echo >&2 "ERROR: Identity realm export file not found: $identity_realm_file"
-  exit 1
-fi
-
-if [[ ! -f "$spiffworkflow_local_realm_file" ]]; then
-  echo >&2 "ERROR: Spiffworkflow-local realm export file not found: $spiffworkflow_local_realm_file"
+if [[ ! -f "$m8flow_tenant_template_file" ]]; then
+  echo >&2 "ERROR: m8flow tenant template file not found: $m8flow_tenant_template_file"
   exit 1
 fi
 
@@ -121,6 +115,115 @@ function wait_for_keycloak_to_be_up() {
     sleep 1
   done
   echo ":: Keycloak is ready"
+}
+
+function escape_sed_replacement() {
+  printf '%s' "$1" | sed -e 's/[&|]/\\&/g'
+}
+
+function prepare_realm_file_for_import() {
+  local source_file="$1"
+  local output_file="$2"
+  local escaped_client_id
+  local escaped_backend_redirect
+  local escaped_frontend_redirect
+
+  escaped_client_id="$(escape_sed_replacement "${keycloak_master_client_id}")"
+  escaped_backend_redirect="$(escape_sed_replacement "${backend_redirect_uri}")"
+  escaped_frontend_redirect="$(escape_sed_replacement "${frontend_logout_redirect_uri}")"
+
+  sed \
+    -e "s|__M8FLOW_SPOKE_CLIENT_ID__|${escaped_client_id}|g" \
+    -e "s|https://replace-me-with-m8flow-backend-host-and-path/\\*|${escaped_backend_redirect}|g" \
+    -e "s|https://replace-me-with-m8flow-frontend-host-and-path/\\*|${escaped_frontend_redirect}|g" \
+    "${source_file}" > "${output_file}"
+}
+
+function resolve_client_internal_id() {
+  local realm_name="$1"
+  local client_name="$2"
+  docker exec keycloak /opt/keycloak/bin/kcadm.sh get clients -r "${realm_name}" -q clientId="${client_name}" --fields id,clientId 2>/dev/null \
+    | jq -r "${JQ_FIRST_ID_EXPR}"
+}
+
+function ensure_groups_mapper() {
+  local realm_name="$1"
+  local client_internal_id="$2"
+  if ! docker exec keycloak /opt/keycloak/bin/kcadm.sh get "clients/${client_internal_id}/protocol-mappers/models" -r "${realm_name}" 2>/dev/null | jq -e '.[] | select(.name == "groups")' >/dev/null; then
+    docker exec keycloak /opt/keycloak/bin/kcadm.sh create "clients/${client_internal_id}/protocol-mappers/models" -r "${realm_name}" \
+      -s name=groups \
+      -s protocol=openid-connect \
+      -s protocolMapper=oidc-usermodel-realm-role-mapper \
+      -s consentRequired=false \
+      -s 'config."introspection.token.claim"=true' \
+      -s 'config.multivalued=true' \
+      -s 'config."userinfo.token.claim"=true' \
+      -s 'config."id.token.claim"=true' \
+      -s 'config."access.token.claim"=true' \
+      -s 'config."claim.name"=groups' \
+      -s 'config."jsonType.label"=String' >/dev/null
+  fi
+}
+
+function ensure_spoke_client_in_realm() {
+  local realm_name="$1"
+
+  if ! docker exec keycloak /opt/keycloak/bin/kcadm.sh get "realms/${realm_name}" >/dev/null 2>&1; then
+    echo ":: Realm ${realm_name} not present; skipping spoke client reconciliation."
+    return 0
+  fi
+
+  local current_client_internal_id
+  local placeholder_client_internal_id
+  current_client_internal_id="$(resolve_client_internal_id "${realm_name}" "${keycloak_master_client_id}")"
+  placeholder_client_internal_id="$(resolve_client_internal_id "${realm_name}" "${placeholder_client_id}")"
+
+  if [[ -z "${current_client_internal_id}" && -n "${placeholder_client_internal_id}" ]]; then
+    current_client_internal_id="${placeholder_client_internal_id}"
+    echo ":: Renaming placeholder client ${placeholder_client_id} to ${keycloak_master_client_id} in realm ${realm_name}."
+  elif [[ -z "${current_client_internal_id}" ]]; then
+    echo ":: Creating spoke client ${keycloak_master_client_id} in realm ${realm_name}."
+    docker exec keycloak /opt/keycloak/bin/kcadm.sh create clients -r "${realm_name}" \
+      -s clientId="${keycloak_master_client_id}" \
+      -s enabled=true \
+      -s publicClient=false \
+      -s bearerOnly=false \
+      -s secret="${keycloak_master_client_secret}" \
+      -s standardFlowEnabled=true \
+      -s directAccessGrantsEnabled=true \
+      -s serviceAccountsEnabled=true \
+      -s authorizationServicesEnabled=true \
+      -s fullScopeAllowed=true \
+      -s 'defaultClientScopes=["web-origins","acr","profile","roles","email"]' \
+      -s 'optionalClientScopes=["address","phone","offline_access","microprofile-jwt"]' \
+      -s "redirectUris=[\"${backend_redirect_uri}\"]" \
+      -s "webOrigins=[\"${frontend_public_url%/}\"]" \
+      -s "attributes.\"post.logout.redirect.uris\"=${frontend_logout_redirect_uri}" >/dev/null
+    current_client_internal_id="$(resolve_client_internal_id "${realm_name}" "${keycloak_master_client_id}")"
+  fi
+
+  if [[ -z "${current_client_internal_id}" ]]; then
+    echo >&2 "ERROR: Failed to resolve realm ${realm_name} client id for ${keycloak_master_client_id}"
+    return 1
+  fi
+
+  docker exec keycloak /opt/keycloak/bin/kcadm.sh update "clients/${current_client_internal_id}" -r "${realm_name}" \
+    -s clientId="${keycloak_master_client_id}" \
+    -s enabled=true \
+    -s publicClient=false \
+    -s bearerOnly=false \
+    -s secret="${keycloak_master_client_secret}" \
+    -s standardFlowEnabled=true \
+    -s directAccessGrantsEnabled=true \
+    -s serviceAccountsEnabled=true \
+    -s authorizationServicesEnabled=true \
+    -s fullScopeAllowed=true \
+    -s "redirectUris=[\"${backend_redirect_uri}\"]" \
+    -s "webOrigins=[\"${frontend_public_url%/}\"]" \
+    -s "attributes.\"post.logout.redirect.uris\"=${frontend_logout_redirect_uri}" >/dev/null
+
+  ensure_groups_mapper "${realm_name}" "${current_client_internal_id}"
+  echo ":: Realm ${realm_name} client ${keycloak_master_client_id} ensured."
 }
 
 # Start Keycloak container
@@ -358,136 +461,6 @@ function import_realm() {
   fi
 }
 
-# Create realm from template (mimicking keycloak_service.py)
-function create_realm_from_template() {
-  local template_file="$1"
-  local realm_id="$2"
-  local display_name="$3"
-  local admin_token="$4"
-  local template_name
-  
-  template_name=$(jq -r '.realm // empty' "$template_file" 2>/dev/null)
-  
-  echo ":: Creating realm '$realm_id' from template '$template_name'..."
-
-  # Step 0: Fill template using jq (Mimicking keycloak_service.py _fill_realm_template)
-  local full_payload
-  full_payload=$(jq --arg realm_id "$realm_id" \
-     --arg display_name "$display_name" \
-     --arg template_name "$template_name" \
-     '
-    .realm = $realm_id |
-    .id = $realm_id |
-    .displayName = $display_name |
-    # Update realm roles containerId and names
-    (if .roles.realm then .roles.realm[] |= (if .containerId == $template_name then .containerId = $realm_id else . end | if .name | startswith("default-roles-") then .name = ("default-roles-" + $realm_id) else . end) else . end) |
-    # Update defaultRole
-    (if .defaultRole then
-      (if .defaultRole.containerId == $template_name then .defaultRole.containerId = $realm_id else . end) |
-      (if .defaultRole.name | startswith("default-roles-") then .defaultRole.name = ("default-roles-" + $realm_id) else . end)
-    else . end) |
-    # Update clients URLs and attributes
-    (if .clients then .clients[] |= (
-      (if .baseUrl then .baseUrl |= sub("/realms/" + $template_name + "/"; "/realms/" + $realm_id + "/") else . end) |
-      (if .rootUrl then .rootUrl |= sub("/realms/" + $template_name + "/"; "/realms/" + $realm_id + "/") else . end) |
-      (if .adminUrl then .adminUrl |= sub("/realms/" + $template_name + "/"; "/realms/" + $realm_id + "/") else . end) |
-      (if .redirectUris then .redirectUris[] |= sub("/realms/" + $template_name + "/"; "/realms/" + $realm_id + "/") else . end) |
-      (if .attributes."post.logout.redirect.uris" then .attributes."post.logout.redirect.uris" |= sub("/realms/" + $template_name + "/"; "/realms/" + $realm_id + "/") else . end)
-    ) else . end) |
-    # Update users realm roles
-    (if .users then .users[] |= (if .realmRoles then .realmRoles[] |= sub("^default-roles-" + $template_name + "$"; "default-roles-" + $realm_id) else . end) else . end)
-  ' "$template_file")
-
-  # Step 1: Create minimal realm
-  local minimal_payload
-  minimal_payload=$(echo "$full_payload" | jq '{realm: .realm, displayName: .displayName, enabled: (.enabled // true), sslRequired: (.sslRequired // "none")}')
-  
-  local create_url="${keycloak_base_url}/admin/realms"
-  local http_code
-  http_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$create_url" \
-    -H "Authorization: Bearer $admin_token" \
-    -H 'Content-Type: application/json' \
-    -d "$minimal_payload")
-    
-  if [[ "$http_code" == "201" || "$http_code" == "409" ]]; then
-    echo ":: Minimal realm '$realm_id' created or already exists ($http_code)"
-  else
-    echo >&2 "ERROR: Failed to create minimal realm '$realm_id' (HTTP $http_code)"
-    return 1
-  fi
-
-  # Step 2: Partial Import (mimicking keycloak_service.py sanitization)
-  local partial_import_payload
-  partial_import_payload=$(echo "$full_payload" | jq '
-    # Sanitization
-    (if .roles.realm then .roles.realm[] |= del(.id) else . end) |
-    (if .roles.client then .roles.client |= map_values(.[] |= del(.id)) else . end) |
-    (if .groups then .groups[] |= (del(.id) | (if .subGroups then .subGroups[] |= del(.id) else . end)) else . end) |
-    (if .users then .users[] |= (del(.id, .createdTimestamp) | (if .credentials then .credentials[] |= del(.id, .createdDate) else . end)) else . end) |
-    (if .clientScopes then .clientScopes[] |= del(.id) else . end) |
-    (if .identityProviders then .identityProviders[] |= del(.internalId) else . end) |
-    (if .clients then .clients[] |= (del(.id) | (if .protocolMappers then .protocolMappers[] |= del(.id) else . end)) else . end) |
-    
-    {
-      ifResourceExists: "SKIP",
-      clients: .clients,
-      clientScopes: .clientScopes,
-      defaultDefaultClientScopes: .defaultDefaultClientScopes,
-      defaultOptionalClientScopes: .defaultOptionalClientScopes,
-      identityProviders: .identityProviders,
-      roles: .roles,
-      groups: .groups,
-      users: .users,
-      realmRoles: .realmRoles,
-      clientRoles: .clientRoles,
-      themes: .themes,
-      emailThemes: .emailThemes,
-      smtpServer: .smtpServer,
-      bruteForceConfig: .bruteForceConfig,
-      tokenPolicies: .tokenPolicies,
-      oauth2DeviceConfig: .oauth2DeviceConfig,
-      otpPolicy: .otpPolicy,
-      webAuthnPolicy: .webAuthnPolicy,
-      passwordPolicy: .passwordPolicy,
-      internationalization: .internationalization,
-      accountTheme: .accountTheme,
-      accountThemeText: .accountThemeText,
-      loginTheme: .loginTheme,
-      loginThemeText: .loginThemeText,
-      adminTheme: .adminTheme,
-      adminThemeText: .adminThemeText,
-      emailTheme: .emailTheme,
-      emailThemeText: .emailThemeText,
-      masterRealmAdminTheme: .masterRealmAdminTheme,
-      masterRealmAdminThemeText: .masterRealmAdminThemeText,
-      masterRealmLoginTheme: .masterRealmLoginTheme,
-      masterRealmLoginThemeText: .masterRealmLoginThemeText,
-      masterRealmEmailTheme: .masterRealmEmailTheme,
-      masterRealmEmailThemeText: .masterRealmEmailThemeText
-    } | with_entries(select(.value != null))
-  ')
-  
-  local import_url="${keycloak_base_url}/admin/realms/${realm_id}/partialImport"
-  http_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$import_url" \
-    -H "Authorization: Bearer $admin_token" \
-    -H 'Content-Type: application/json' \
-    -d "$partial_import_payload")
-    
-  if [[ "$http_code" == "200" || "$http_code" == "201" || "$http_code" == "204" ]]; then
-    echo ":: Partial import for realm '$realm_id' successful ($http_code)"
-  else
-    echo >&2 "ERROR: Partial import for realm '$realm_id' failed (HTTP $http_code)"
-  fi
-
-  # Final cleanup: ensure sslRequired=NONE
-  curl -s -X PUT "${keycloak_base_url}/admin/realms/${realm_id}" \
-    -H "Authorization: Bearer $admin_token" \
-    -H 'Content-Type: application/json' \
-    -d '{"sslRequired": "NONE"}' >/dev/null || true
-    
-  return 0
-}
-
 # Main import logic
 echo ":: Starting realm import process..."
 
@@ -498,28 +471,29 @@ if [[ -z "$admin_token" ]]; then
   exit 1
 fi
 
-# Extract realm names from JSON files (tenant-a is created from template, not from a file)
-identity_realm_name=$(jq -r '.realm // empty' "$identity_realm_file" 2>/dev/null)
-tenant_realm_name="tenant-a"
+# Extract realm name from JSON file
+m8flow_realm_name=$(jq -r '.realm // empty' "$m8flow_tenant_template_file" 2>/dev/null)
 
-if [[ -z "$identity_realm_name" ]]; then
-  echo >&2 "ERROR: Could not extract realm name from identity realm file"
+if [[ -z "$m8flow_realm_name" ]]; then
+  echo >&2 "ERROR: Could not extract realm name from m8flow realm file"
   exit 1
 fi
 
-# Import identity realm first
-echo ":: Importing identity realm..."
-if ! import_realm "$identity_realm_file" "$identity_realm_name" "$admin_token"; then
-  echo >&2 "ERROR: Failed to import identity realm"
+# Import m8flow realm first
+echo ":: Importing m8flow realm..."
+processed_m8flow_realm_file="$(mktemp)"
+prepare_realm_file_for_import "$m8flow_tenant_template_file" "$processed_m8flow_realm_file"
+if ! import_realm "$processed_m8flow_realm_file" "$m8flow_realm_name" "$admin_token"; then
+  rm -f "$processed_m8flow_realm_file"
+  echo >&2 "ERROR: Failed to import m8flow realm"
   exit 1
 fi
+rm -f "$processed_m8flow_realm_file"
 
-# Create tenant-a from spiffworkflow-local template (following API format)
-echo ":: Creating tenant-a from template..."
-if ! create_realm_from_template "$spiffworkflow_local_realm_file" "tenant-a" "Tenant A" "$admin_token"; then
-  echo >&2 "ERROR: Failed to create tenant-a from template"
+if ! ensure_spoke_client_in_realm "$m8flow_realm_name"; then
+  echo >&2 "ERROR: Failed to ensure client ${keycloak_master_client_id} in realm ${m8flow_realm_name}"
   exit 1
 fi
 
 echo ":: Realm import process completed successfully"
-echo ":: Keycloak is running with realms: $identity_realm_name, $tenant_realm_name"
+echo ":: Keycloak is running with realm: $m8flow_realm_name"

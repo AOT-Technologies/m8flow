@@ -93,6 +93,10 @@ PRE_APP_PATCH_SPECS: tuple[PatchSpec, ...] = (
         minimum_phase=BootPhase.PRE_BOOTSTRAP,
     ),
     PatchSpec(
+        target="m8flow_backend.services.upstream_auth_defaults_patch:apply",
+        minimum_phase=BootPhase.PRE_BOOTSTRAP,
+    ),
+    PatchSpec(
         target="m8flow_backend.services.model_override_patch:apply",
         minimum_phase=BootPhase.PRE_BOOTSTRAP,
     ),
@@ -154,6 +158,19 @@ POST_APP_CORE_PATCH_SPECS: tuple[PatchSpec, ...] = (
     ),
     PatchSpec(
         target="m8flow_backend.routes.authentication_controller_patch:apply_refresh_token_tenant_patch",
+        minimum_phase=BootPhase.APP_CREATED,
+    ),
+    PatchSpec(
+        target="m8flow_backend.services.upstream_auth_defaults_patch:apply_runtime",
+        minimum_phase=BootPhase.APP_CREATED,
+        needs_flask_app=True,
+    ),
+    PatchSpec(
+        target="m8flow_backend.services.generated_jwt_audience_patch:apply",
+        minimum_phase=BootPhase.APP_CREATED,
+    ),
+    PatchSpec(
+        target="m8flow_backend.services.authentication_service_patch:apply_jwks_cache_ttl_patch",
         minimum_phase=BootPhase.APP_CREATED,
     ),
 )

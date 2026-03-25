@@ -4,6 +4,40 @@
 set -e
 
 BOOTSTRAP_USER="${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}"
+M8FLOW_REALM_IMPORT_FILE="/opt/keycloak/data/import/m8flow-tenant-template.json"
+M8FLOW_REALM_NAME="${KEYCLOAK_REALM:-m8flow}"
+M8FLOW_SPOKE_CLIENT_ID="${M8FLOW_KEYCLOAK_SPOKE_CLIENT_ID:-m8flow-backend}"
+M8FLOW_SPOKE_CLIENT_SECRET="${M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET:-${M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET:-JXeQExm0JhQPLumgHtIIqf52bDalHz0q}}"
+BACKEND_PUBLIC_URL="${SPIFFWORKFLOW_BACKEND_URL:-${M8FLOW_BACKEND_URL:-http://localhost:7000}}"
+FRONTEND_PUBLIC_URL="${SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND:-${M8FLOW_BACKEND_URL_FOR_FRONTEND:-http://localhost:7001}}"
+BACKEND_REDIRECT_URI="${BACKEND_PUBLIC_URL%/}/*"
+FRONTEND_LOGOUT_REDIRECT_URI="${FRONTEND_PUBLIC_URL%/}/*"
+
+escape_sed_replacement() {
+  printf '%s' "$1" | sed -e 's/[&|]/\\&/g'
+}
+
+prepare_m8flow_realm_import() {
+  if [ ! -f "${M8FLOW_REALM_IMPORT_FILE}" ]; then
+    return
+  fi
+
+  local escaped_client_id
+  local escaped_backend_redirect
+  local escaped_frontend_redirect
+
+  escaped_client_id="$(escape_sed_replacement "${M8FLOW_SPOKE_CLIENT_ID}")"
+  escaped_backend_redirect="$(escape_sed_replacement "${BACKEND_REDIRECT_URI}")"
+  escaped_frontend_redirect="$(escape_sed_replacement "${FRONTEND_LOGOUT_REDIRECT_URI}")"
+
+  sed -i \
+    -e "s|__M8FLOW_SPOKE_CLIENT_ID__|${escaped_client_id}|g" \
+    -e "s|https://replace-me-with-m8flow-backend-host-and-path/\\*|${escaped_backend_redirect}|g" \
+    -e "s|https://replace-me-with-m8flow-frontend-host-and-path/\\*|${escaped_frontend_redirect}|g" \
+    "${M8FLOW_REALM_IMPORT_FILE}"
+
+  echo "[keycloak-entrypoint] Prepared ${M8FLOW_REALM_NAME} realm import for client ${M8FLOW_SPOKE_CLIENT_ID}."
+}
 
 echo "[keycloak-entrypoint] Running bootstrap-admin user..."
 if /opt/keycloak/bin/kc.sh bootstrap-admin user \
@@ -14,6 +48,8 @@ if /opt/keycloak/bin/kc.sh bootstrap-admin user \
 else
   echo "[keycloak-entrypoint] Bootstrap-admin skipped or failed (non-fatal; master may already exist)."
 fi
+
+prepare_m8flow_realm_import
 
 # Start Keycloak in background so we can run kcadm to set sslRequired=NONE after it is ready
 echo "[keycloak-entrypoint] Starting Keycloak in background..."
@@ -73,8 +109,8 @@ else
     echo "[keycloak-entrypoint] add-roles (create-realm) for ${SUPERADMIN_USER} skipped or failed." >&2
   fi
 
-  echo "[keycloak-entrypoint] Setting sslRequired=NONE on realms master, identity..."
-  for realm in master identity; do
+  echo "[keycloak-entrypoint] Setting sslRequired=NONE on realms master, m8flow..."
+  for realm in master m8flow; do
     if /opt/keycloak/bin/kcadm.sh update realms/${realm} -s sslRequired=NONE 2>/dev/null; then
       echo "[keycloak-entrypoint] Realm ${realm}: sslRequired=NONE set successfully."
     else

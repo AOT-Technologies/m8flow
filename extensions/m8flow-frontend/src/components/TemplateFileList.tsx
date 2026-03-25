@@ -55,9 +55,6 @@ export default function TemplateFileList({ template, templateId }: TemplateFileL
 
   return (
     <Box sx={{ mt: 1 }}>
-      <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
-        Files
-      </Typography>
       <TableContainer>
         <Table size="medium" className="process-model-file-table">
           <TableHead>

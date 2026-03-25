@@ -22,11 +22,11 @@ from m8flow_backend.services.keycloak_service import (  # noqa: E402
 def test_fill_realm_template_top_level() -> None:
     """Top-level realm, displayName are set for the new tenant; id is omitted for Keycloak create."""
     template = {
-        "id": "spiffworkflow",
-        "realm": "spiffworkflow",
-        "displayName": "SpiffWorkflow",
+        "id": "m8flow",
+        "realm": "m8flow",
+        "displayName": "M8Flow Realm",
     }
-    result = _fill_realm_template(template, "tenant-b", "Tenant B", "spiffworkflow")
+    result = _fill_realm_template(template, "tenant-b", "Tenant B", "m8flow")
     assert result["realm"] == "tenant-b"
     assert result["displayName"] == "Tenant B"
     assert "id" not in result  # id is popped so Keycloak auto-generates it
@@ -34,24 +34,24 @@ def test_fill_realm_template_top_level() -> None:
 
 def test_fill_realm_template_display_name_defaults_to_realm_id() -> None:
     """When display_name is None, displayName becomes realm_id."""
-    template = {"id": "spiffworkflow", "realm": "spiffworkflow", "displayName": "Old"}
-    result = _fill_realm_template(template, "tenant-c", None, "spiffworkflow")
+    template = {"id": "m8flow", "realm": "m8flow", "displayName": "Old"}
+    result = _fill_realm_template(template, "tenant-c", None, "m8flow")
     assert result["displayName"] == "tenant-c"
 
 
 def test_fill_realm_template_realm_roles_container_id() -> None:
     """Realm roles with containerId equal to template name are updated."""
     template = {
-        "id": "spiffworkflow",
-        "realm": "spiffworkflow",
+        "id": "m8flow",
+        "realm": "m8flow",
         "roles": {
             "realm": [
-                {"id": "r1", "name": "admin", "containerId": "spiffworkflow"},
-                {"id": "r2", "name": "default-roles-spiffworkflow", "containerId": "spiffworkflow"},
+                {"id": "r1", "name": "admin", "containerId": "m8flow"},
+                {"id": "r2", "name": "default-roles-m8flow", "containerId": "m8flow"},
             ],
         },
     }
-    result = _fill_realm_template(template, "tenant-d", None, "spiffworkflow")
+    result = _fill_realm_template(template, "tenant-d", None, "m8flow")
     realm_roles = result["roles"]["realm"]
     assert realm_roles[0]["containerId"] == "tenant-d"
     assert realm_roles[1]["containerId"] == "tenant-d"
@@ -61,14 +61,14 @@ def test_fill_realm_template_realm_roles_container_id() -> None:
 def test_fill_realm_template_default_role() -> None:
     """defaultRole containerId and name are updated."""
     template = {
-        "id": "spiffworkflow",
-        "realm": "spiffworkflow",
+        "id": "m8flow",
+        "realm": "m8flow",
         "defaultRole": {
-            "name": "default-roles-spiffworkflow",
-            "containerId": "spiffworkflow",
+            "name": "default-roles-m8flow",
+            "containerId": "m8flow",
         },
     }
-    result = _fill_realm_template(template, "tenant-e", None, "spiffworkflow")
+    result = _fill_realm_template(template, "tenant-e", None, "m8flow")
     assert result["defaultRole"]["containerId"] == "tenant-e"
     assert result["defaultRole"]["name"] == "default-roles-tenant-e"
 
@@ -76,14 +76,14 @@ def test_fill_realm_template_default_role() -> None:
 def test_fill_realm_template_user_realm_roles() -> None:
     """User realmRoles array has default-roles-{realm} updated."""
     template = {
-        "id": "spiffworkflow",
-        "realm": "spiffworkflow",
+        "id": "m8flow",
+        "realm": "m8flow",
         "users": [
-            {"username": "admin", "realmRoles": ["default-roles-spiffworkflow", "admin"]},
-            {"username": "user1", "realmRoles": ["default-roles-spiffworkflow"]},
+            {"username": "admin", "realmRoles": ["default-roles-m8flow", "admin"]},
+            {"username": "user1", "realmRoles": ["default-roles-m8flow"]},
         ],
     }
-    result = _fill_realm_template(template, "tenant-f", None, "spiffworkflow")
+    result = _fill_realm_template(template, "tenant-f", None, "m8flow")
     assert result["users"][0]["realmRoles"] == ["default-roles-tenant-f", "admin"]
     assert result["users"][1]["realmRoles"] == ["default-roles-tenant-f"]
 
@@ -95,19 +95,19 @@ RBAC_USERNAMES = ("editor", "integrator", "reviewer", "tenant-admin", "viewer")
 def test_fill_realm_template_rbac_roles_and_users() -> None:
     """Template with RBAC realm roles and users: roles are preserved, default role name is rewritten in user realmRoles."""
     template = {
-        "id": "spiffworkflow",
-        "realm": "spiffworkflow",
+        "id": "m8flow",
+        "realm": "m8flow",
         "roles": {
             "realm": [
-                {"id": "def", "name": "default-roles-spiffworkflow", "containerId": "spiffworkflow"},
-                *[{"id": r, "name": r, "containerId": "spiffworkflow"} for r in RBAC_REALM_ROLES],
+                {"id": "def", "name": "default-roles-m8flow", "containerId": "m8flow"},
+                *[{"id": r, "name": r, "containerId": "m8flow"} for r in RBAC_REALM_ROLES],
             ],
         },
         "users": [
-            {"username": u, "realmRoles": ["default-roles-spiffworkflow", u]} for u in RBAC_USERNAMES
+            {"username": u, "realmRoles": ["default-roles-m8flow", u]} for u in RBAC_USERNAMES
         ],
     }
-    result = _fill_realm_template(template, "tenant-x", "Tenant X", "spiffworkflow")
+    result = _fill_realm_template(template, "tenant-x", "Tenant X", "m8flow")
     realm_role_names = [r["name"] for r in result["roles"]["realm"]]
     for role in RBAC_REALM_ROLES:
         assert role in realm_role_names
@@ -123,22 +123,22 @@ def test_fill_realm_template_rbac_roles_and_users() -> None:
 def test_fill_realm_template_client_urls() -> None:
     """Client baseUrl, redirectUris contain /realms/{realm}/ and /admin/{realm}/ updated."""
     template = {
-        "id": "spiffworkflow",
-        "realm": "spiffworkflow",
+        "id": "m8flow",
+        "realm": "m8flow",
         "clients": [
             {
                 "clientId": "account",
-                "baseUrl": "/realms/spiffworkflow/account/",
-                "redirectUris": ["/realms/spiffworkflow/account/*"],
+                "baseUrl": "/realms/m8flow/account/",
+                "redirectUris": ["/realms/m8flow/account/*"],
             },
             {
                 "clientId": "security-admin-console",
-                "baseUrl": "/admin/spiffworkflow/console/",
-                "redirectUris": ["/admin/spiffworkflow/console/*"],
+                "baseUrl": "/admin/m8flow/console/",
+                "redirectUris": ["/admin/m8flow/console/*"],
             },
         ],
     }
-    result = _fill_realm_template(template, "tenant-g", None, "spiffworkflow")
+    result = _fill_realm_template(template, "tenant-g", None, "m8flow")
     assert result["clients"][0]["baseUrl"] == "/realms/tenant-g/account/"
     assert result["clients"][0]["redirectUris"] == ["/realms/tenant-g/account/*"]
     assert result["clients"][1]["baseUrl"] == "/admin/tenant-g/console/"
@@ -148,13 +148,13 @@ def test_fill_realm_template_client_urls() -> None:
 def test_fill_realm_template_does_not_mutate_original() -> None:
     """Template is deep-copied; original is unchanged."""
     template = {
-        "id": "spiffworkflow",
-        "realm": "spiffworkflow",
-        "roles": {"realm": [{"containerId": "spiffworkflow", "name": "admin"}]},
+        "id": "m8flow",
+        "realm": "m8flow",
+        "roles": {"realm": [{"containerId": "m8flow", "name": "admin"}]},
     }
     original_id = template["id"]
     original_role_container = template["roles"]["realm"][0]["containerId"]
-    _fill_realm_template(template, "tenant-h", None, "spiffworkflow")
+    _fill_realm_template(template, "tenant-h", None, "m8flow")
     assert template["id"] == original_id
     assert template["roles"]["realm"][0]["containerId"] == original_role_container
 
@@ -162,46 +162,48 @@ def test_fill_realm_template_does_not_mutate_original() -> None:
 def test_fill_realm_template_client_attributes() -> None:
     """Client attributes containing realm URLs are updated."""
     template = {
-        "id": "spiffworkflow",
-        "realm": "spiffworkflow",
+        "id": "m8flow",
+        "realm": "m8flow",
         "clients": [
             {
                 "clientId": "test",
                 "attributes": {
-                    "post.logout.redirect.uris": "https://example.com/realms/spiffworkflow/account",
+                    "post.logout.redirect.uris": "https://example.com/realms/m8flow/account",
                 },
             },
         ],
     }
-    result = _fill_realm_template(template, "tenant-i", None, "spiffworkflow")
+    result = _fill_realm_template(template, "tenant-i", None, "m8flow")
     assert "/realms/tenant-i/account" in result["clients"][0]["attributes"]["post.logout.redirect.uris"]
 
 
 def test_fill_realm_template_injects_runtime_redirects_for_backend_client(monkeypatch) -> None:
     """Backend tenant client gets backend/frontend URLs from env instead of placeholder-only defaults."""
+    monkeypatch.delenv("SPIFFWORKFLOW_BACKEND_URL", raising=False)
+    monkeypatch.delenv("SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND", raising=False)
     monkeypatch.setenv("M8FLOW_BACKEND_URL", "http://192.168.1.105:8000")
     monkeypatch.setenv("M8FLOW_BACKEND_URL_FOR_FRONTEND", "http://192.168.1.105:8001")
     template = {
-        "id": "spiffworkflow",
-        "realm": "spiffworkflow",
+        "id": "m8flow",
+        "realm": "m8flow",
         "clients": [
             {
-                "clientId": "spiffworkflow-backend",
+                "clientId": "m8flow-backend",
                 "redirectUris": [
                     "http://localhost:7000/*",
-                    "https://replace-me-with-spiff-backend-host-and-path/*",
+                    "https://replace-me-with-m8flow-backend-host-and-path/*",
                 ],
                 "webOrigins": [],
                 "attributes": {
                     "post.logout.redirect.uris": (
-                        "https://replace-me-with-spiff-frontend-host-and-path/*##http://localhost:7001/*"
+                        "https://replace-me-with-m8flow-frontend-host-and-path/*##http://localhost:7001/*"
                     ),
                 },
             }
         ],
     }
 
-    result = _fill_realm_template(template, "tenant-runtime", None, "spiffworkflow")
+    result = _fill_realm_template(template, "tenant-runtime", None, "m8flow")
     client = result["clients"][0]
 
     assert "http://192.168.1.105:8000/*" in client["redirectUris"]
@@ -218,8 +220,8 @@ def test_fill_realm_template_injects_runtime_redirects_for_frontend_client(monke
     """Frontend tenant client gets the configured frontend origin added."""
     monkeypatch.setenv("M8FLOW_BACKEND_URL_FOR_FRONTEND", "http://192.168.1.105:8001")
     template = {
-        "id": "spiffworkflow",
-        "realm": "spiffworkflow",
+        "id": "m8flow",
+        "realm": "m8flow",
         "clients": [
             {
                 "clientId": "spiffworkflow-frontend",
@@ -230,7 +232,7 @@ def test_fill_realm_template_injects_runtime_redirects_for_frontend_client(monke
         ],
     }
 
-    result = _fill_realm_template(template, "tenant-ui", None, "spiffworkflow")
+    result = _fill_realm_template(template, "tenant-ui", None, "m8flow")
     client = result["clients"][0]
 
     assert client["redirectUris"] == ["http://192.168.1.105:8001/*"]

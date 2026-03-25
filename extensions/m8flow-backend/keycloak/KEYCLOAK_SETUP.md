@@ -2,9 +2,7 @@
 
 ## Overview
 
-The `start_keycloak.sh` script automatically starts a Keycloak Docker container and imports two realms:
-- **identity** realm (imported first)
-- **tenant-a** realm (imported second)
+The `start_keycloak.sh` script automatically starts a Keycloak Docker container and imports the **m8flow** realm. It does not pre-create tenant realms.
 
 ## Prerequisites
 
@@ -12,8 +10,7 @@ The `start_keycloak.sh` script automatically starts a Keycloak Docker container 
 - `curl` command available
 - `jq` command available
 - Realm export files present:
-  - `realm_exports/identity-realm-export.json`
-  - `realm_exports/tenant-realm-export.json`
+  - `realm_exports/m8flow-tenant-template.json`
 
 ## Spoke client JWT keystore (keystore.p12)
 
@@ -36,7 +33,7 @@ python extensions/m8flow-backend/bin/generate_keystore_p12.py
 - `-o`, `--output` — Output path (default: `extensions/m8flow-backend/keystore.p12` from cwd)
 - `-p`, `--password` — Keystore password (or set `M8FLOW_KEYCLOAK_SPOKE_KEYSTORE_PASSWORD`; otherwise you are prompted)
 - `--days` — Certificate validity in days (default: 365)
-- `--cn` — Certificate common name (default: `spiffworkflow-backend`)
+- `--cn` — Certificate common name (default: `m8flow-backend`)
 
 After generating, set in your environment (or `.env`):
 
@@ -66,10 +63,9 @@ cd extensions/m8flow-backend/bin
    - Port 7009 (Health check)
    - Admin credentials: `admin` / `admin`
 5. **Waits for readiness**: Polls health endpoint until Keycloak is ready
-6. **Imports realms**: 
-   - Checks if each realm already exists (skips if found)
-   - Imports `identity` realm first
-   - Imports `tenant-a` realm second
+6. **Bootstraps realms**:
+   - Checks if the realm already exists (skips if found)
+   - Imports `m8flow`
 
 ## Keycloak Access
 
@@ -86,23 +82,23 @@ cd extensions/m8flow-backend/bin
 
 ## Realm template and RBAC users
 
-When new tenant realms are created (e.g. via the create-realm API), they are provisioned from the realm template `realm_exports/spiffworkflow-realm.json`. The template includes:
+When new tenant realms are created (e.g. via the create-realm API), they are provisioned from the realm template `realm_exports/m8flow-tenant-template.json`. That same realm file is also the default single-tenant realm when `MULTI_TENANT_ON=false`, so single-tenant mode uses `m8flow` directly. The template includes:
 
 - **Tenant realm roles:** `editor`, `tenant-admin`, `integrator`, `reviewer`, `viewer`
 - **One user per tenant role:** usernames `editor`, `integrator`, `reviewer`, `tenant-admin`, `viewer`, each assigned the matching realm role
 
 These users are created with a **default password** (shared placeholder in the template). For security, admins should change these passwords after tenant creation, or configure Keycloak required actions (e.g. "Update Password") to force a password change on first login.
 
-The global `super-admin` role and user belong in the **master** realm only. A browser-capable **spiffworkflow-backend** client is also ensured there so the global admin can use the normal frontend login flow. These master-realm resources are ensured by:
+The global `super-admin` role and user belong in the **master** realm only. A browser-capable **m8flow-backend** client is also ensured there so the global admin can use the normal frontend login flow. These master-realm resources are ensured by:
 
 - the normal Docker Compose startup path via `keycloak-master-admin-init`
 - `start_keycloak.sh` for the standalone local Keycloak bootstrap flow
 
-Defaults are `KEYCLOAK_SUPER_ADMIN_USER=super-admin` and `KEYCLOAK_SUPER_ADMIN_PASSWORD=super-admin`. The master-realm browser client defaults to `M8FLOW_KEYCLOAK_SPOKE_CLIENT_ID=spiffworkflow-backend` and reuses the spoke client secret unless you override `M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET`.
+Defaults are `KEYCLOAK_SUPER_ADMIN_USER=super-admin` and `KEYCLOAK_SUPER_ADMIN_PASSWORD=super-admin`. The master-realm browser client defaults to `M8FLOW_KEYCLOAK_SPOKE_CLIENT_ID=m8flow-backend` and reuses the spoke client secret unless you override `M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET`.
 
-Use the master auth option with `client_id=spiffworkflow-backend` for browser sign-in. If you also need API-style `admin-cli` tokens to pass backend validation, add `additional_valid_client_ids=admin-cli` to that auth config.
+Use the master auth option with `client_id=m8flow-backend` for browser sign-in. If you also need API-style `admin-cli` tokens to pass backend validation, add `additional_valid_client_ids=admin-cli` to that auth config.
 
-**Permissions and role alignment:** For the backend to grant API and UI permissions, Keycloak realm role names must match the group names defined in `m8flow.yml`: `super-admin`, `tenant-admin`, `editor`, `viewer`, `integrator`, `reviewer`. Tenant realm templates still expose the tenant-scoped roles through the **spiffworkflow-backend** client `groups` mapper. For master-realm admin tokens that do not include a top-level `groups` claim (for example `admin-cli` tokens), the backend falls back to `realm_access.roles` and maps the matching M8Flow role names automatically.
+**Permissions and role alignment:** For the backend to grant API and UI permissions, Keycloak realm role names must match the group names defined in `m8flow.yml`: `super-admin`, `tenant-admin`, `editor`, `viewer`, `integrator`, `reviewer`. Tenant realm templates still expose the tenant-scoped roles through the **m8flow-backend** client `groups` mapper. For master-realm admin tokens that do not include a top-level `groups` claim (for example `admin-cli` tokens), the backend falls back to `realm_access.roles` and maps the matching M8Flow role names automatically.
 
 ## Troubleshooting
 

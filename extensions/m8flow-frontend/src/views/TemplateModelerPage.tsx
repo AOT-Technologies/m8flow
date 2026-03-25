@@ -362,9 +362,6 @@ export default function TemplateModelerPage() {
       <Box sx={{ mb: 1 }}>
         <ProcessBreadcrumb hotCrumbs={hotCrumbs} />
       </Box>
-      <Typography variant="h5" component="h1" sx={{ mb: 1 }}>
-        Template: {template.name}
-      </Typography>
       {allVersions.length > 1 && (
         <Paper
           elevation={0}

@@ -464,16 +464,9 @@ const TemplateService = {
       HttpService.makeCallToBackend({
         path: `${BASE_PATH}/templates/process-models/${modifiedId}/template-info`,
         httpMethod: "GET",
-        successCallback: (data: ProcessModelTemplateInfo) => resolve(data),
+        successCallback: (data: ProcessModelTemplateInfo | null) =>
+          resolve(data),
         failureCallback: (err: unknown) => {
-          // 404 means no template info exists - not an error
-          if (err && typeof err === "object" && "status_code" in err) {
-            const statusCode = (err as { status_code: unknown }).status_code;
-            if (statusCode === 404) {
-              resolve(null);
-              return;
-            }
-          }
           const message =
             err && typeof err === "object" && "message" in err
               ? String((err as { message: unknown }).message)

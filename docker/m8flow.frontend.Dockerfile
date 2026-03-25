@@ -99,8 +99,8 @@ RUN apk add --no-cache bash dos2unix && apk add --upgrade pcre2
 # Remove default nginx configuration
 RUN rm -rf /etc/nginx/conf.d/*
 
-# Copy the nginx configuration file from the fetched upstream
-COPY --from=fetch-upstream /upstream/spiffworkflow-frontend/docker_build/nginx.conf.template /var/tmp
+# Copy the nginx configuration file from the core frontend
+COPY extensions/m8flow-frontend/docker_build/nginx.conf.template /var/tmp
 
 # Default internal port for nginx inside the container.
 # Orchestrators and docker compose both route traffic to containerPort 8080,

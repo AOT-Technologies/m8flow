@@ -6,7 +6,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Realm name used by Keycloak and by the frontend cookie authentication_identifier.
-SPIFFWORKFLOW_LOCAL_REALM = "spiffworkflow-local"
+SPIFFWORKFLOW_LOCAL_REALM = "m8flow"
 MASTER_REALM = "master"
 
 
@@ -20,7 +20,7 @@ def _append_csv_value(existing: str | None, value: str) -> str:
 def ensure_realm_identifier_in_auth_configs(flask_app) -> None:
     """
     Ensure SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS has an entry with identifier matching
-    the realm when any config URI points at .../realms/spiffworkflow-local.
+    the realm when any config URI points at .../realms/m8flow.
     """
     configs = flask_app.config.get("SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS") or []
     if not configs:

@@ -1,0 +1,49 @@
+name: m8flow-nats-stack
+
+services:
+  nats:
+    container_name: m8flow-nats
+    image: nats:2.10-alpine
+    command: ["-js", "--store_dir=/data/nats", "-m", "8222", "--user", "${M8FLOW_NATS_USER:-admin}", "--pass", "${M8FLOW_NATS_PASSWORD:-admin}"]
+    ports:
+      - "${M8FLOW_NATS_PORT:-4222}:4222/tcp"
+      - "8222:8222/tcp"
+    volumes:
+      - nats_data:/data/nats
+    healthcheck:
+      test: "wget -qO- http://localhost:8222/healthz || exit 1"
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    networks:
+      - default
+      - m8flow_default
+
+  nats-ui:
+    image: ghcr.io/nats-nui/nui:latest
+    container_name: m8flow-nats-ui
+    ports:
+      - "8282:31311"
+    environment:
+      - PORT=31311
+    volumes:
+      - nui-db:/db
+    tmpfs:
+      - /protoschemas
+    depends_on:
+      nats:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - default
+
+volumes:
+  nats_data:
+    name: m8flow_nats_data
+  nui-db:
+    driver: local
+
+networks:
+  m8flow_default:
+    external: true

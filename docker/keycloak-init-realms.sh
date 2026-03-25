@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Configure Keycloak realms for HTTP access (sslRequired=NONE).
-# Run after Keycloak is up; realms master and identity must exist
-# (master is built-in; identity is imported via --import-realm).
+# Run after Keycloak is up; realms master and m8flow must exist
+# (master is built-in; m8flow is imported via --import-realm).
 # Env: KEYCLOAK_SERVER_URL (default http://localhost:8080), KEYCLOAK_ADMIN, KEYCLOAK_ADMIN_PASSWORD.
 
 set -e
@@ -27,8 +27,8 @@ if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
   echo "[keycloak-init-realms] WARNING: Keycloak did not become ready within ${TIMEOUT}s; attempting realm update anyway." >&2
 fi
 
-echo "[keycloak-init-realms] Setting sslRequired=NONE on realms master, identity..."
-for realm in master identity; do
+echo "[keycloak-init-realms] Setting sslRequired=NONE on realms master, m8flow..."
+for realm in master m8flow; do
   if /opt/keycloak/bin/kcadm.sh update realms/${realm} -s sslRequired=NONE 2>/dev/null; then
     echo "[keycloak-init-realms] Realm ${realm}: sslRequired=NONE set successfully."
   else

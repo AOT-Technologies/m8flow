@@ -44,8 +44,8 @@ def main() -> int:
     )
     parser.add_argument(
         "--cn",
-        default="spiffworkflow-backend",
-        help="Common name for the certificate subject (default: spiffworkflow-backend)",
+        default="m8flow-backend",
+        help="Common name for the certificate subject (default: m8flow-backend)",
     )
     args = parser.parse_args()
 

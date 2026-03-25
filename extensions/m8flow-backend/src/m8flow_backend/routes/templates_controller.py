@@ -389,7 +389,7 @@ def get_process_model_template_info(modified_process_model_identifier: str):
     """Get the template provenance info for a process model.
 
     Returns the template info if the process model was created from a template,
-    or 404 if no template info exists for this process model.
+    or null if no template info exists for this process model.
     """
     # Convert modified identifier (colons) back to standard format (slashes)
     process_model_identifier = modified_process_model_identifier.replace(":", "/")
@@ -402,10 +402,6 @@ def get_process_model_template_info(modified_process_model_identifier: str):
     )
 
     if provenance is None:
-        raise ApiError(
-            "not_found",
-            f"No template info found for process model '{process_model_identifier}'",
-            status_code=404,
-        )
+        return jsonify(None), 200
 
     return jsonify(provenance.serialized())

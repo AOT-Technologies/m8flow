@@ -4,6 +4,7 @@ These tests require m8flow_backend.services.keycloak_service and
 m8flow_backend.services.auth_config_service (or mocks thereof).
 """
 
+import time
 from types import ModuleType
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -240,3 +241,93 @@ def test_get_refresh_token_uses_default_storage_scope_for_master(monkeypatch) ->
         assert token == "stored-refresh-token"
         assert seen["scoped_tenant"] == DEFAULT_TENANT_ID
         assert g.m8flow_tenant_id == "master"
+
+
+# ---------------------------------------------------------------------------
+# JWKS cache TTL patch tests
+# ---------------------------------------------------------------------------
+
+JWKS_URI = "https://keycloak/realms/test/protocol/openid-connect/certs"
+STALE_JWKS = {"keys": [{"kid": "stale-key"}]}
+FRESH_JWKS = {"keys": [{"kid": "fresh-key"}]}
+
+
+@pytest.fixture
+def jwks_patch(monkeypatch):
+    """Apply the JWKS cache TTL patch with a controllable original, then restore."""
+    from spiffworkflow_backend.services.authentication_service import AuthenticationService
+    import m8flow_backend.services.authentication_service_patch as svc_patch_mod
+
+    saved_original = AuthenticationService.get_jwks_config_from_uri
+    saved_cache = AuthenticationService.JSON_WEB_KEYSET_CACHE.copy()
+    saved_timestamps = svc_patch_mod._JWKS_CACHE_TIMESTAMPS.copy()
+
+    call_results: dict = {"raise": False, "value": FRESH_JWKS}
+
+    @classmethod
+    def fake_original(cls, jwks_uri, force_refresh=False):
+        if call_results["raise"]:
+            raise ConnectionError("JWKS fetch failed")
+        cls.JSON_WEB_KEYSET_CACHE[jwks_uri] = call_results["value"]
+        return call_results["value"]
+
+    AuthenticationService.get_jwks_config_from_uri = fake_original
+    monkeypatch.setattr(svc_patch_mod, "_JWKS_TTL_PATCHED", False)
+    svc_patch_mod.apply_jwks_cache_ttl_patch()
+
+    yield AuthenticationService, svc_patch_mod, call_results
+
+    AuthenticationService.get_jwks_config_from_uri = saved_original
+    AuthenticationService.JSON_WEB_KEYSET_CACHE.clear()
+    AuthenticationService.JSON_WEB_KEYSET_CACHE.update(saved_cache)
+    svc_patch_mod._JWKS_CACHE_TIMESTAMPS.clear()
+    svc_patch_mod._JWKS_CACHE_TIMESTAMPS.update(saved_timestamps)
+    monkeypatch.setattr(svc_patch_mod, "_JWKS_TTL_PATCHED", False)
+
+
+def test_jwks_expired_cache_refresh_failure_returns_stale_cached(jwks_patch) -> None:
+    AuthenticationService, svc_patch_mod, call_results = jwks_patch
+
+    AuthenticationService.JSON_WEB_KEYSET_CACHE[JWKS_URI] = STALE_JWKS
+    svc_patch_mod._JWKS_CACHE_TIMESTAMPS[JWKS_URI] = time.monotonic() - svc_patch_mod.CACHE_TTL_SECONDS - 10
+
+    call_results["raise"] = True
+    result = AuthenticationService.get_jwks_config_from_uri(JWKS_URI)
+    assert result == STALE_JWKS
+
+
+def test_jwks_expired_cache_refresh_failure_no_cached_entry_raises(jwks_patch) -> None:
+    AuthenticationService, svc_patch_mod, call_results = jwks_patch
+
+    AuthenticationService.JSON_WEB_KEYSET_CACHE.pop(JWKS_URI, None)
+    svc_patch_mod._JWKS_CACHE_TIMESTAMPS.pop(JWKS_URI, None)
+
+    call_results["raise"] = True
+    with pytest.raises(ConnectionError, match="JWKS fetch failed"):
+        AuthenticationService.get_jwks_config_from_uri(JWKS_URI)
+
+
+def test_jwks_force_refresh_failure_raises_even_with_cached(jwks_patch) -> None:
+    AuthenticationService, svc_patch_mod, call_results = jwks_patch
+
+    AuthenticationService.JSON_WEB_KEYSET_CACHE[JWKS_URI] = STALE_JWKS
+    svc_patch_mod._JWKS_CACHE_TIMESTAMPS[JWKS_URI] = time.monotonic()
+
+    call_results["raise"] = True
+    with pytest.raises(ConnectionError, match="JWKS fetch failed"):
+        AuthenticationService.get_jwks_config_from_uri(JWKS_URI, force_refresh=True)
+
+
+def test_jwks_expired_cache_successful_refresh_updates_cache_and_timestamp(jwks_patch) -> None:
+    AuthenticationService, svc_patch_mod, call_results = jwks_patch
+
+    AuthenticationService.JSON_WEB_KEYSET_CACHE[JWKS_URI] = STALE_JWKS
+    svc_patch_mod._JWKS_CACHE_TIMESTAMPS[JWKS_URI] = time.monotonic() - svc_patch_mod.CACHE_TTL_SECONDS - 10
+
+    call_results["raise"] = False
+    call_results["value"] = FRESH_JWKS
+    before = time.monotonic()
+    result = AuthenticationService.get_jwks_config_from_uri(JWKS_URI)
+
+    assert result == FRESH_JWKS
+    assert svc_patch_mod._JWKS_CACHE_TIMESTAMPS[JWKS_URI] >= before
