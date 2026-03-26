@@ -94,7 +94,7 @@ permissions:
     actions: [read]
     uri: /user-groups/*
   read-script-assist-items:
-    groups: ["tenant-admin", "editor", "viewer"]
+    groups: ["tenant-admin", "editor", "viewer", "reviewer"]
     actions: [read]
     uri: /script-assist/*
   read-service-tasks:
