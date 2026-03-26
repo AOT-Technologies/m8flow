@@ -456,6 +456,10 @@ export default function ContainerForExtensions() {
         <Route path="process-models/:process_model_id" element={<ProcessModelShowWithSaveAsTemplate />} />
         <Route path="extensions/:page_identifier" element={<Extension />} />
         <Route path="login" element={<TenantAwareLogin />} />
+        {/* Route guard: redirect users without process instance read access to home */}
+        {permissionsLoaded && !ability.can('GET', targetUris.processInstanceListForMePath) && (
+          <Route path="process-instances/*" element={<Navigate to="/" replace />} />
+        )}
         {/* Catch-all route must be last */}
         <Route
           path="*"
