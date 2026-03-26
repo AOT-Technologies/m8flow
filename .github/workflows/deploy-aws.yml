@@ -1,0 +1,239 @@
+name: Deploy to AWS
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - DEV
+          - QA
+      image_tag:
+        description: "Docker image tag to deploy (e.g. 1.2.3-rc)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write  # Required for OIDC role assumption
+
+concurrency:
+  group: deploy-aws-${{ inputs.environment }}
+  cancel-in-progress: false
+
+env:
+  IMAGE_BASE: docker.io/m8flow/m8flow
+
+jobs:
+  validate:
+    name: Validate Inputs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate environment
+        run: |
+          ENV="${{ inputs.environment }}"
+          if [[ "$ENV" != "DEV" && "$ENV" != "QA" ]]; then
+            echo "::error::Invalid environment: '$ENV'. Must be 'DEV' or 'QA'."
+            exit 1
+          fi
+
+      - name: Validate image tag format
+        run: |
+          TAG="${{ inputs.image_tag }}"
+          if [[ -z "$TAG" ]]; then
+            echo "::error::Image tag cannot be empty."
+            exit 1
+          fi
+          if [[ ! "$TAG" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+            echo "::error::Invalid image tag: '$TAG'. Only alphanumeric characters, '.', '_', and '-' are allowed."
+            exit 1
+          fi
+
+      - name: Log deployment parameters
+        run: |
+          echo "### Deployment Parameters" >> $GITHUB_STEP_SUMMARY
+          echo "| Parameter   | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | \`${{ inputs.environment }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Image Tag   | \`${{ inputs.image_tag }}\` |" >> $GITHUB_STEP_SUMMARY
+
+  verify-images:
+    name: Verify Docker Images Exist
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Docker images exist on Docker Hub
+        run: |
+          TAG="${{ inputs.image_tag }}"
+          NAMESPACE="m8flow"
+          REPOS="m8flow-backend m8flow-frontend m8flow-keycloak m8flow-connector-proxy"
+          MISSING=""
+          for REPO in $REPOS; do
+            URL="https://hub.docker.com/v2/repositories/${NAMESPACE}/${REPO}/tags?page_size=1&name=${TAG}"
+            COUNT=$(curl -sS "$URL" | jq -r '.count // 0')
+            if [[ "$COUNT" < "1" ]]; then
+              MISSING="${MISSING} ${NAMESPACE}/${REPO}:${TAG}"
+            fi
+          done
+          if [[ -n "$MISSING" ]]; then
+            echo "::error::Docker image(s) not found for tag '${TAG}':${MISSING}"
+            echo "Run 'Deploy to Docker' with this tag first, or provide a valid existing tag."
+            exit 1
+          fi
+          echo "All images verified for tag '${TAG}'."
+
+  deploy:
+    name: Deploy to ${{ inputs.environment }}
+    needs: [validate, verify-images]
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      ECS_CLUSTER: ${{ secrets.ECS_CLUSTER }}
+      BACKEND_TASK_DEF_FAMILY: ${{ secrets.BACKEND_TASK_DEF_FAMILY }}
+      BACKEND_CONTAINER_NAME: ${{ secrets.BACKEND_CONTAINER_NAME }}
+      BACKEND_SERVICE_NAME: ${{ secrets.BACKEND_SERVICE_NAME }}
+      FRONTEND_TASK_DEF_FAMILY: ${{ secrets.FRONTEND_TASK_DEF_FAMILY }}
+      FRONTEND_CONTAINER_NAME: ${{ secrets.FRONTEND_CONTAINER_NAME }}
+      FRONTEND_SERVICE_NAME: ${{ secrets.FRONTEND_SERVICE_NAME }}
+      KEYCLOAK_TASK_DEF_FAMILY: ${{ secrets.KEYCLOAK_TASK_DEF_FAMILY }}
+      KEYCLOAK_CONTAINER_NAME: ${{ secrets.KEYCLOAK_CONTAINER_NAME }}
+      KEYCLOAK_SERVICE_NAME: ${{ secrets.KEYCLOAK_SERVICE_NAME }}
+      CONNECTOR_PROXY_TASK_DEF_FAMILY: ${{ secrets.CONNECTOR_PROXY_TASK_DEF_FAMILY }}
+      CONNECTOR_PROXY_CONTAINER_NAME: ${{ secrets.CONNECTOR_PROXY_CONTAINER_NAME }}
+      CONNECTOR_PROXY_SERVICE_NAME: ${{ secrets.CONNECTOR_PROXY_SERVICE_NAME }}
+    steps:
+      - name: Validate required environment variables
+        shell: bash
+        run: |
+          required=(
+            AWS_REGION
+            ECS_CLUSTER
+            BACKEND_TASK_DEF_FAMILY
+            BACKEND_CONTAINER_NAME
+            BACKEND_SERVICE_NAME
+            FRONTEND_TASK_DEF_FAMILY
+            FRONTEND_CONTAINER_NAME
+            FRONTEND_SERVICE_NAME
+            KEYCLOAK_TASK_DEF_FAMILY
+            KEYCLOAK_CONTAINER_NAME
+            KEYCLOAK_SERVICE_NAME
+            CONNECTOR_PROXY_TASK_DEF_FAMILY
+            CONNECTOR_PROXY_CONTAINER_NAME
+            CONNECTOR_PROXY_SERVICE_NAME
+          )
+
+          missing=()
+          for key in "${required[@]}"; do
+            if [[ -z "${!key:-}" ]]; then
+              missing+=("$key")
+            fi
+          done
+
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::Missing required environment variable(s): ${missing[*]}"
+            exit 1
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Backend
+      - name: Render backend task definition
+        id: render-backend
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition-family: ${{ env.BACKEND_TASK_DEF_FAMILY }}
+          container-name: ${{ env.BACKEND_CONTAINER_NAME }}
+          image: ${{ env.IMAGE_BASE }}-backend:${{ inputs.image_tag }}
+
+      - name: Deploy backend to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-backend.outputs.task-definition }}
+          service: ${{ env.BACKEND_SERVICE_NAME }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          force-new-deployment: true
+
+      # Frontend
+      - name: Render frontend task definition
+        id: render-frontend
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition-family: ${{ env.FRONTEND_TASK_DEF_FAMILY }}
+          container-name: ${{ env.FRONTEND_CONTAINER_NAME }}
+          image: ${{ env.IMAGE_BASE }}-frontend:${{ inputs.image_tag }}
+
+      - name: Deploy frontend to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-frontend.outputs.task-definition }}
+          service: ${{ env.FRONTEND_SERVICE_NAME }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          force-new-deployment: true
+
+      # Keycloak
+      - name: Render keycloak task definition
+        id: render-keycloak
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition-family: ${{ env.KEYCLOAK_TASK_DEF_FAMILY }}
+          container-name: ${{ env.KEYCLOAK_CONTAINER_NAME }}
+          image: ${{ env.IMAGE_BASE }}-keycloak:${{ inputs.image_tag }}
+
+      - name: Deploy keycloak to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-keycloak.outputs.task-definition }}
+          service: ${{ env.KEYCLOAK_SERVICE_NAME }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          force-new-deployment: true
+
+      # Connector Proxy
+      - name: Render connector-proxy task definition
+        id: render-connector-proxy
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition-family: ${{ env.CONNECTOR_PROXY_TASK_DEF_FAMILY }}
+          container-name: ${{ env.CONNECTOR_PROXY_CONTAINER_NAME }}
+          image: ${{ env.IMAGE_BASE }}-connector-proxy:${{ inputs.image_tag }}
+
+      - name: Deploy connector-proxy to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-connector-proxy.outputs.task-definition }}
+          service: ${{ env.CONNECTOR_PROXY_SERVICE_NAME }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          force-new-deployment: true
+
+  summary:
+    name: Deployment Summary
+    needs: [validate, deploy]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Write deployment summary
+        run: |
+          TAG="${{ inputs.image_tag }}"
+          ENV="${{ inputs.environment }}"
+          DEPLOY_STATUS="${{ needs.deploy.result }}"
+
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field       | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | \`${ENV}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Image Tag   | \`${TAG}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Status      | **${DEPLOY_STATUS}** |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [[ "$DEPLOY_STATUS" == "success" ]]; then
+            echo ":white_check_mark: All components deployed successfully to **${ENV}** with tag \`${TAG}\`." >> $GITHUB_STEP_SUMMARY
+          else
+            echo ":x: One or more components failed to deploy to **${ENV}**. Check individual job logs above for details." >> $GITHUB_STEP_SUMMARY
+          fi

@@ -1,0 +1,37 @@
+name: Notify Google Chat on New Issue
+
+on:
+  pull_request_target:
+    branches: [ main ]
+    types: [ opened ]
+
+jobs:
+  send-alert:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      - name: Send message to Google Chat
+        env:
+          GOOGLE_CHAT_WEBHOOK: ${{ secrets.PR_NOTIFICATION }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_CREATOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          set -e
+          if [ -z "${GOOGLE_CHAT_WEBHOOK}" ]; then
+            echo "::error::PR_NOTIFICATION secret is not set. Add the Google Chat webhook URL as repository secret PR_NOTIFICATION."
+            exit 1
+          fi
+          MESSAGE=$'📌 *New GitHub PR*\n\n*Title:* '"${PR_TITLE}"$'\n*Author:* '"${PR_CREATOR}"$'\n\n🔗 '"${PR_URL}"
+          PAYLOAD=$(jq -n --arg text "$MESSAGE" '{text: $text}') || {
+            echo "::error::Failed to build JSON payload"
+            exit 1
+          }
+          HTTP_CODE=$(curl -sS -w '%{http_code}' -o /tmp/chat-response.txt -X POST -H 'Content-Type: application/json' \
+               -d "$PAYLOAD" "$GOOGLE_CHAT_WEBHOOK")
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -gt 299 ]; then
+            echo "::error::Google Chat webhook returned HTTP ${HTTP_CODE}"
+            cat /tmp/chat-response.txt
+            exit 1
+          fi
+          echo "Notification sent successfully (HTTP ${HTTP_CODE})"
