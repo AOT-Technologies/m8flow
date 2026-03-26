@@ -57,12 +57,13 @@ COPY --from=fetch-upstream /upstream/spiffworkflow-backend /app/spiffworkflow-ba
 COPY --from=fetch-upstream /upstream/spiff-arena-common /app/spiff-arena-common
 COPY extensions /app/extensions
 COPY uvicorn-log.yaml /app/uvicorn-log.yaml
+COPY m8flow-nats-consumer /app/m8flow-nats-consumer
 
 # Create venv and install backend into it (prod). Use editable install so
 # non-code assets like api.yml remain available from the source tree.
 RUN uv venv /opt/venv \
   && uv pip install --python /opt/venv/bin/python -e /app/spiffworkflow-backend \
-  && uv pip install --python /opt/venv/bin/python flower
+  && uv pip install --python /opt/venv/bin/python flower nats-py python-dotenv
 
 # -----------------------------------------------------------------------------
 # Stage: prod - minimal runtime image for Linux / production (non-root)
