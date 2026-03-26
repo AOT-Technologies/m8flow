@@ -99,10 +99,13 @@ services:
       - redis-data:/data
 
   m8flow-nats-consumer:
+    profiles: ["nats"]
     container_name: m8flow-nats-consumer
     build:
       context: ..
       dockerfile: docker/m8flow.backend.Dockerfile
+      args:
+        UPSTREAM_TAG: ${UPSTREAM_TAG}
     user: "0"
     command:
       - "sh"
