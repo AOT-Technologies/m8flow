@@ -43,7 +43,8 @@ _A complete list of the latest features is available in our [release notes](http
 ```
 m8flow/
 ├── bin/                          # Developer helper scripts
-│   ├── fetch-upstream.sh         # Fetch upstream source folders on demand
+│   ├── fetch-upstream.sh         # Fetch upstream source folders on demand (Bash)
+│   ├── fetch-upstream.ps1        # Fetch upstream source folders on demand (PowerShell)
 │   └── diff-from-upstream.sh     # Report local vs upstream divergence
 │
 ├── docker/                       # All Docker and Compose files
@@ -80,14 +81,14 @@ m8flow/
 ├── start_dev.sh                  # Local dev launcher (backend + frontend)
 └── LICENSE                       # Apache License 2.0
 
-# ── Gitignored — fetched via bin/fetch-upstream.sh ──────────────────────────
+# ── Gitignored — fetched via bin/fetch-upstream.sh / bin/fetch-upstream.ps1 ─
 # spiffworkflow-backend/          Upstream LGPL-2.1 workflow engine
 # spiffworkflow-frontend/         Upstream LGPL-2.1 BPMN modeler UI
 # spiff-arena-common/             Upstream LGPL-2.1 shared utilities
 ```
 
 > **Why are those directories missing?**
-> `spiffworkflow-backend`, `spiffworkflow-frontend`, and `spiff-arena-common` come from [AOT-Technologies/m8flow-core](https://github.com/AOT-Technologies/m8flow-core) (LGPL-2.1). They are not stored here to keep m8flow's Apache 2.0 licence boundary clean. Run `./bin/fetch-upstream.sh` once after cloning to populate them. See the [License note](#license-note) for details.
+> `spiffworkflow-backend`, `spiffworkflow-frontend`, and `spiff-arena-common` come from [AOT-Technologies/m8flow-core](https://github.com/AOT-Technologies/m8flow-core) (LGPL-2.1). They are not stored here to keep m8flow's Apache 2.0 licence boundary clean. Run `./bin/fetch-upstream.sh` or `.\bin\fetch-upstream.ps1` once after cloning to populate them. See the [License note](#license-note) for details.
 
 ---
 
@@ -123,6 +124,10 @@ For **local development** (running backend/frontend outside Docker), fetch upstr
 ./bin/fetch-upstream.sh
 ```
 
+```powershell
+.\bin\fetch-upstream.ps1
+```
+
 This clones configured folders from [AOT-Technologies/m8flow-core](https://github.com/AOT-Technologies/m8flow-core) into your working tree. Folder lists are defined in `upstream.sources.json` under `backend`, `frontend`, and `others`. These directories are gitignored and must be re-fetched after every fresh clone.
 
 To pin a specific upstream tag (local dev or Docker):
@@ -135,31 +140,21 @@ To pin a specific upstream tag (local dev or Docker):
 UPSTREAM_TAG=0.0.1 docker compose -f docker/m8flow-docker-compose.yml up -d --build
 ```
 
+```powershell
+# Local dev
+.\bin\fetch-upstream.ps1 0.0.1
+
+# Docker build (set in .env or inline)
+$env:UPSTREAM_TAG = "0.0.1"
+docker compose -f docker/m8flow-docker-compose.yml up -d --build
+```
+
 ### 3. Configure environment
 
 Copy the sample environment file and edit it for your setup:
 
 ```bash
 cp sample.env .env
-```
-
-The key variable to set is your machine's LAN IP address. Replace all `<LOCAL_IP>` placeholders:
-
-**Linux:**
-```bash
-IP="$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')" && \
-  [ -n "$IP" ] && sed -i.bak "s/<LOCAL_IP>/$IP/g" .env && echo "Using IP=$IP"
-```
-
-**macOS:**
-```bash
-IP="$(ipconfig getifaddr en0)" && \
-  sed -i '' "s/<LOCAL_IP>/$IP/g" .env && echo "Using IP=$IP"
-```
-
-**Windows CMD:**
-```bat
-powershell -NoProfile -Command "$ifIndex=(Get-NetRoute '0.0.0.0/0'|sort RouteMetric,InterfaceMetric|select -First 1).IfIndex; $ip=(Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $ifIndex|?{$_.IPAddress -notlike '169.254*' -and $_.IPAddress -notlike '127.*'}|select -First 1 -Expand IPAddress); $c=Get-Content .env -Raw; $n=$c -replace '<LOCAL_IP>',$ip; $n|Set-Content .env -Encoding UTF8; Write-Host Using IP=$ip"
 ```
 
 Full environment variable documentation: [docs/env-reference.md](docs/env-reference.md).
@@ -329,36 +324,38 @@ Set the following:
 
 **Valid redirect URIs**
 ```
-http://<LOCAL_IP>:8000/*
-http://<LOCAL_IP>:8001/*
+http://localhost:7000/*
+http://localhost:7001/*
 ```
 
 **Valid post logout redirect URIs**
 ```
-http://<LOCAL_IP>:8000/*
-http://<LOCAL_IP>:8001/*
+http://localhost:7001/*
 ```
 
-Disable **Client authentication**.
+**Web origins**
+```
+http://localhost:7001/*
+http://localhost:7000/*
+```
+
+<div align="center">
+    <img src="./docs/images/keycloak-realm-settings-4.png" />
+</div>
+
+Enable **Client authentication**.
+
+<div align="center">
+    <img src="./docs/images/keycloak-realm-settings-5.png" />
+</div>
 
 For full Keycloak configuration reference: [extensions/m8flow-backend/keycloak/KEYCLOAK_SETUP.md](extensions/m8flow-backend/keycloak/KEYCLOAK_SETUP.md).
 
 ---
 
-## Access the Application
+## Access the Application with no multitenancy
 
-Open `http://<LOCAL_IP>:8001/` (Docker) or `http://localhost:7001/` (local dev) in your browser. You will be redirected to Keycloak login.
-
-Default test users (password = username):
-
-| Username | Role |
-|----------|------|
-| `super-admin` | Full access |
-| `tenant-admin` | Tenant administration |
-| `editor` | Create and edit process models |
-| `viewer` | Read-only access |
-| `integrator` | Service task / connector access |
-| `reviewer` | Review and approve tasks |
+Open `http://localhost:7001/` in your browser. You will be redirected to Keycloak login.
 
 <div align="center">
     <img src="./docs/images/access-m8flow-1.png" />
@@ -368,11 +365,70 @@ Default test users (password = username):
     <img src="./docs/images/access-m8flow-2.png" />
 </div>
 
+Default test users (password = username):
+
+| Username | Role |
+|----------|------|
+| `admin` | Administrator |
+| `editor` | Create and edit process models |
+| `viewer` | Read-only access |
+| `integrator` | Service task / connector access |
+| `reviewer` | Review and approve tasks |
+
+---
+
+## Access the Application with multitenancy
+
+Open `http://localhost:7001/` in your browser. You will be redirected to Tenant selector. Type the tenant slug, e.g.: "m8flow" (installed by default) and then you will be redirected to the tenant login.
+
+<div align="center">
+    <img src="./docs/images/access-m8flow-tenant-selection.png" />
+</div>
+
+<div align="center">
+    <img src="./docs/images/access-m8flow-1.png" />
+</div>
+
+<div align="center">
+    <img src="./docs/images/access-m8flow-2.png" />
+</div>
+
+
+Every tenant has default test users (password = username):
+
+| Username | Role |
+|----------|------|
+| `admin` | Tenant administrator |
+| `editor` | Create and edit process models |
+| `viewer` | Read-only access |
+| `integrator` | Service task / connector access |
+| `reviewer` | Review and approve tasks |
+
+---
+
+
+### Tenant Management
+
+Open `http://localhost:7001/` in your browser. You will be redirected to Tenant selector. Click on "Global admin sign in"
+
+<div align="center">
+    <img src="./docs/images/access-m8flow-tenant-selection.png" />
+</div>
+<div align="center">
+    <img src="./docs/images/access-m8flow-tenant-management.png" />
+</div>
+
+There's only one user (password = username):
+
+| Username | Role |
+|----------|------|
+| `super-admin` | Tenants management |
+
 ---
 
 ## Running Backend Tests
 
-Requires `./bin/fetch-upstream.sh` to have been run first — tests use `spiffworkflow-backend/pyproject.toml` for pytest config.
+Requires `./bin/fetch-upstream.sh` or `.\bin\fetch-upstream.ps1` to have been run first — tests use `spiffworkflow-backend/pyproject.toml` for pytest config.
 
 Run all tests:
 
@@ -423,19 +479,8 @@ We welcome contributions from the community!
 
 ---
 
-## Credits
-
-m8flow builds upon the outstanding work of the **SpiffWorkflow community** and contributors over the past decade. We extend gratitude to:
-
-- Samuel Abels (@knipknap), Matthew Hampton (@matthewhampton)
-- The University of Virginia & early BPMN/DMN contributors
-- The BPMN.js team, Bruce Silver, and the wider open-source workflow community
-- Countless contributors past and present
-
----
-
 ## License note
 
 m8flow is released under the **Apache License 2.0**. See the [LICENSE](LICENSE) file for the full text.
 
-The upstream [AOT-Technologies/m8flow-core](https://github.com/AOT-Technologies/m8flow-core) code (LGPL-2.1) is **not stored in this repository**. It is fetched on demand via `bin/fetch-upstream.sh` and gitignored so that it never enters the m8flow commit history. This keeps the licence boundaries cleanly separated while still allowing the app to run against the upstream SpiffWorkflow engine.
+The upstream [AOT-Technologies/m8flow-core](https://github.com/AOT-Technologies/m8flow-core) code (LGPL-2.1) is **not stored in this repository**. It is fetched on demand via `bin/fetch-upstream.sh` or `bin/fetch-upstream.ps1` and gitignored so that it never enters the m8flow commit history. This keeps the licence boundaries cleanly separated while still allowing the app to run against the upstream SpiffWorkflow engine.
