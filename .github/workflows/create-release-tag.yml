@@ -1,0 +1,187 @@
+name: Create Release Tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: "Commit SHA to tag (must be on main). Leave empty to use latest commit on main."
+        required: false
+        default: ""
+        type: string
+      tag_name:
+        description: "Tag name (X.Y.Z-rc). Leave empty to auto-generate next RC tag."
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  create-tag:
+    name: Create Annotated Release Tag
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      # -------------------------
+      # Resolve commit to tag
+      # -------------------------
+      - name: Resolve commit to tag
+        id: resolve_commit
+        run: |
+          git fetch origin main
+          if [[ -n "${{ inputs.commit_sha }}" ]]; then
+            echo "sha=${{ inputs.commit_sha }}" >> $GITHUB_OUTPUT
+          else
+            echo "sha=$(git rev-parse origin/main)" >> $GITHUB_OUTPUT
+          fi
+
+      # -------------------------
+      # Resolve tag name
+      # -------------------------
+      - name: Resolve tag name
+        id: resolve_tag
+        run: |
+          git fetch origin main --tags 2>/dev/null || true
+          if [[ -n "${{ inputs.tag_name }}" ]]; then
+            echo "tag=${{ inputs.tag_name }}" >> $GITHUB_OUTPUT
+            echo "user_provided=true" >> $GITHUB_OUTPUT
+          else
+            # Only consider tags matching X.Y.Z-rc that are reachable from main
+            RC_TAGS=$(git tag -l --merged origin/main | grep -E '^[0-9]+\.[0-9]+\.[0-9]+-rc$' || true)
+            if [[ -z "$RC_TAGS" ]]; then
+              echo "No existing RC tag on main; using first RC 0.0.1-rc"
+              echo "tag=0.0.1-rc" >> $GITHUB_OUTPUT
+            else
+              LATEST=$(echo "$RC_TAGS" | sort -V | tail -1)
+              # increment patch for next RC
+              if [[ "$LATEST" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)-rc$ ]]; then
+                MAJOR="${BASH_REMATCH[1]}"
+                MINOR="${BASH_REMATCH[2]}"
+                PATCH="${BASH_REMATCH[3]}"
+                NEXT_PATCH=$((PATCH + 1))
+                echo "tag=${MAJOR}.${MINOR}.${NEXT_PATCH}-rc" >> $GITHUB_OUTPUT
+              else
+                echo "::error::Cannot parse RC tag '$LATEST'"
+                exit 1
+              fi
+            fi
+            echo "user_provided=false" >> $GITHUB_OUTPUT
+          fi
+
+      # -------------------------
+      # Maintainer / Permission Check
+      # -------------------------
+      - name: Verify user has write permissions
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: perm } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: context.actor
+            });
+
+            if (!['admin', 'maintain', 'write'].includes(perm.permission)) {
+              core.setFailed(
+                `User ${context.actor} does not have permission to create release tags`
+              );
+            }
+
+      # -------------------------
+      # Validate SemVer Tag
+      # -------------------------
+      - name: Validate tag format
+        run: |
+          TAG="${{ steps.resolve_tag.outputs.tag }}"
+          if [[ ! "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc$ ]]; then
+            echo "::error::Invalid tag format: $TAG"
+            echo "Expected: X.Y.Z-rc"
+            exit 1
+          fi
+
+      # -------------------------
+      # Validate Commit Exists on main
+      # -------------------------
+      - name: Verify commit exists on main branch
+        run: |
+          COMMIT="${{ steps.resolve_commit.outputs.sha }}"
+
+          if ! git cat-file -e "$COMMIT^{commit}"; then
+            echo "::error::Commit $COMMIT does not exist"
+            exit 1
+          fi
+
+          if ! git branch -r --contains "$COMMIT" | grep -q "origin/main"; then
+            echo "::error::Commit $COMMIT is not reachable from main branch"
+            exit 1
+          fi
+
+      # -------------------------
+      # Ensure Tag Does Not Already Exist
+      # -------------------------
+      - name: Check tag does not already exist
+        run: |
+          TAG="${{ steps.resolve_tag.outputs.tag }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $TAG already exists"
+            exit 1
+          fi
+
+      # -------------------------
+      # Configure Git Identity
+      # -------------------------
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      # -------------------------
+      # Create Annotated Tag
+      # -------------------------
+      - name: Create annotated tag
+        env:
+          TAG: ${{ steps.resolve_tag.outputs.tag }}
+          COMMIT: ${{ steps.resolve_commit.outputs.sha }}
+          MESSAGE: ${{ inputs.tag_message }}
+        run: |
+          if [[ -z "$MESSAGE" ]]; then
+            MESSAGE="Release $TAG"
+          fi
+
+          git tag -a "$TAG" "$COMMIT" -m "$MESSAGE"
+
+      # -------------------------
+      # Push Tag
+      # -------------------------
+      - name: Push tag to origin
+        run: |
+          git push origin "${{ steps.resolve_tag.outputs.tag }}"
+
+      # -------------------------
+      # Summary
+      # -------------------------
+      - name: Tag creation summary
+        run: |
+          USER_PROVIDED=${{ steps.resolve_tag.outputs.user_provided }}
+
+          echo "## Release Tag 🏷️" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** \`${{ steps.resolve_tag.outputs.tag }}\`$([ "$USER_PROVIDED" = "false" ] && echo " (auto-generated next RC)")" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${{ steps.resolve_commit.outputs.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Type:** Release Candidate" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "1. This RC tag will trigger the **Deploy Docker** workflow" >> $GITHUB_STEP_SUMMARY
+          echo "2. After Dev testing, promote to QA using the **Deploy to QA** workflow" >> $GITHUB_STEP_SUMMARY
+          echo "3. Create a final release tag when ready for production" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Created by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Created at:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
