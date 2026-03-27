@@ -125,6 +125,7 @@ export default function SaveAsTemplateModal({
       onClose={onClose}
       maxWidth="sm"
       fullWidth
+      data-testid="save-as-template-dialog"
     >
       <DialogTitle sx={{ fontSize: "1.25rem", fontWeight: 600 }}>
         Save as Template
@@ -132,7 +133,7 @@ export default function SaveAsTemplateModal({
       <DialogContent>
         <Stack spacing={2.5} sx={{ pt: 1 }}>
           {error && (
-            <Alert severity="error" sx={{ mb: 1 }}>{error}</Alert>
+            <Alert severity="error" sx={{ mb: 1 }} data-testid="save-as-template-error-alert">{error}</Alert>
           )}
           <TextField
             label="Name"
@@ -142,6 +143,7 @@ export default function SaveAsTemplateModal({
             value={name}
             onChange={(e) => setName(e.target.value)}
             disabled={loading}
+            data-testid="save-as-template-name-input"
           />
           <TextField
             label="Description"
@@ -152,6 +154,7 @@ export default function SaveAsTemplateModal({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             disabled={loading}
+            data-testid="save-as-template-description-input"
           />
           <TextField
             label="Category"
@@ -160,6 +163,7 @@ export default function SaveAsTemplateModal({
             value={category}
             onChange={(e) => setCategory(e.target.value)}
             disabled={loading}
+            data-testid="save-as-template-category-input"
           />
           <TextField
             label="Tags"
@@ -168,12 +172,14 @@ export default function SaveAsTemplateModal({
             value={tags}
             onChange={(e) => setTags(e.target.value)}
             disabled={loading}
+            data-testid="save-as-template-tags-input"
           />
           <FormControl fullWidth disabled={loading}>
             <InputLabel>Visibility</InputLabel>
             <Select
               value={visibility}
               label="Visibility"
+              data-testid="save-as-template-visibility-select"
               onChange={(e) => setVisibility(e.target.value as TemplateVisibility)}
             >
               {VISIBILITY_OPTIONS.map((opt) => (
@@ -186,10 +192,11 @@ export default function SaveAsTemplateModal({
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
-        <Button onClick={onClose} disabled={loading} variant="outlined">
+        <Button data-testid="save-as-template-cancel-button" onClick={onClose} disabled={loading} variant="outlined">
           Cancel
         </Button>
         <Button
+          data-testid="save-as-template-submit-button"
           onClick={handleSubmit}
           variant="contained"
           color="primary"

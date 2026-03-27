@@ -214,16 +214,16 @@ export default function TemplateFileFormPage() {
       )}
       <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
         {canEdit && (
-          <Button variant="contained" color="primary" onClick={handleSave}>
+          <Button data-testid="template-file-save-button" variant="contained" color="primary" onClick={handleSave}>
             Save
           </Button>
         )}
         {canDelete && (
-          <Button variant="contained" color="error" onClick={handleDelete}>
+          <Button data-testid="template-file-delete-button" variant="contained" color="error" onClick={handleDelete}>
             Delete
           </Button>
         )}
-        <Button variant="outlined" onClick={handleDownload}>
+        <Button data-testid="template-file-download-button" variant="outlined" onClick={handleDownload}>
           Download
         </Button>
       </Stack>

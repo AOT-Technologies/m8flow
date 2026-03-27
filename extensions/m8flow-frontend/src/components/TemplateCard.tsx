@@ -92,6 +92,7 @@ export default function TemplateCard({
       }}
       onClick={(e) => handleViewTemplate(e as unknown as PointerEvent)}
       id={`template-card-${template.id}`}
+      data-testid={`template-card-${template.id}`}
     >
       <CardActionArea>
         <CardContent>

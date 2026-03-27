@@ -75,6 +75,7 @@ export default function Configuration({ extensionUxElements }: OwnProps) {
         <Can I="GET" a={targetUris.secretListPath} ability={ability}>
           <Tab
             label={t('secrets')}
+            data-testid="configuration-tab-secrets"
             onClick={() => navigate('/configuration/secrets')}
           />
         </Can>

@@ -409,6 +409,7 @@ export default function ProcessModelEditDiagram() {
         onClose={handleFileNameCancel}
         aria-labelledby="modal-modal-title"
         aria-describedby="modal-modal-description"
+        data-testid="file-name-editor-dialog"
       >
         <Box sx={{ p: 4 }}>
           <h2 id="modal-modal-title">{t('diagram_file_name_editor_title')}</h2>
@@ -416,6 +417,7 @@ export default function ProcessModelEditDiagram() {
             <Grid size={{ xs: 8 }}>
               <TextField
                 id="process_model_file_name"
+                data-testid="file-name-input"
                 label={t('diagram_file_name_editor_label')}
                 value={newFileName}
                 onChange={(e: any) => setNewFileName(e.target.value)}
@@ -429,8 +431,8 @@ export default function ProcessModelEditDiagram() {
             <Grid size={{ xs: 4 }}>{fileExtension}</Grid>
           </Grid>
           <ButtonGroup>
-            <Button onClick={handleFileNameSave}>{t('save_changes')}</Button>
-            <Button onClick={handleFileNameCancel}>{t('cancel')}</Button>
+            <Button data-testid="file-name-save-button" onClick={handleFileNameSave}>{t('save_changes')}</Button>
+            <Button data-testid="file-name-cancel-button" onClick={handleFileNameCancel}>{t('cancel')}</Button>
           </ButtonGroup>
         </Box>
       </Dialog>
@@ -793,12 +795,12 @@ export default function ProcessModelEditDiagram() {
         scriptUnitTestResultBoolElement = (
           <>
             {scriptUnitTestResult.result === true && (
-              <IconButton color="success">
+              <IconButton data-testid="unit-test-result-pass" color="success">
                 <Check />
               </IconButton>
             )}
             {scriptUnitTestResult.result === false && (
-              <IconButton color="error">
+              <IconButton data-testid="unit-test-result-fail" color="error">
                 <Close />
               </IconButton>
             )}
@@ -835,18 +837,20 @@ export default function ProcessModelEditDiagram() {
             <Grid size={{ xs: 6 }}>
               <ButtonGroup>
                 <IconButton
+                  data-testid="unit-test-previous-button"
                   onClick={setPreviousScriptUnitTest}
                   disabled={previousButtonDisable}
                 >
                   <SkipPrevious />
                 </IconButton>
                 <IconButton
+                  data-testid="unit-test-next-button"
                   onClick={setNextScriptUnitTest}
                   disabled={nextButtonDisable}
                 >
                   <SkipNext />
                 </IconButton>
-                <IconButton onClick={runCurrentUnitTest}>
+                <IconButton data-testid="unit-test-run-button" onClick={runCurrentUnitTest}>
                   <PlayArrow />
                 </IconButton>
                 {scriptUnitTestResultBoolElement}
@@ -946,6 +950,7 @@ export default function ProcessModelEditDiagram() {
           {scriptAssistLoading && <CircularProgress />}
           <Button
             variant="contained"
+            data-testid="script-assist-submit-button"
             onClick={() => handleProcessScriptAssist()}
             disabled={scriptAssistLoading}
           >
@@ -1000,17 +1005,18 @@ export default function ProcessModelEditDiagram() {
         onClose={handleScriptEditorClose}
         aria-labelledby="modal-modal-title"
         aria-describedby="modal-modal-description"
+        data-testid="script-editor-dialog"
       >
         <Box sx={{ p: 4 }}>
           <h2 id="modal-modal-title">
             {t('diagram_script_editor_title', { scriptName })}
           </h2>
           <Tabs value={scriptEditorTabValue} onChange={handleTabChange}>
-            <Tab label={t('diagram_script_editor_tab_script_editor')} />
+            <Tab data-testid="script-editor-tab-editor" label={t('diagram_script_editor_tab_script_editor')} />
             {scriptAssistEnabled && (
-              <Tab label={t('diagram_script_editor_tab_script_assist')} />
+              <Tab data-testid="script-editor-tab-assist" label={t('diagram_script_editor_tab_script_assist')} />
             )}
-            <Tab label={t('diagram_script_editor_tab_unit_tests')} />
+            <Tab data-testid="script-editor-tab-unit-tests" label={t('diagram_script_editor_tab_unit_tests')} />
           </Tabs>
           <Box>
             <TabPanel value={scriptEditorTabValue} index={0}>
@@ -1025,7 +1031,7 @@ export default function ProcessModelEditDiagram() {
               </TabPanel>
             )}
           </Box>
-          <Button onClick={handleScriptEditorClose}>{t('close')}</Button>
+          <Button data-testid="script-editor-close-button" onClick={handleScriptEditorClose}>{t('close')}</Button>
         </Box>
       </Dialog>
     );
@@ -1059,6 +1065,7 @@ export default function ProcessModelEditDiagram() {
         onClose={handleMarkdownEditorClose}
         aria-labelledby="modal-modal-title"
         aria-describedby="modal-modal-description"
+        data-testid="markdown-editor-dialog"
       >
         <Box sx={{ p: 4 }}>
           <h2 id="modal-modal-title">{t('diagram_markdown_editor_title')}</h2>
@@ -1073,7 +1080,7 @@ export default function ProcessModelEditDiagram() {
               }}
             />
           </div>
-          <Button onClick={handleMarkdownEditorClose}>{t('close')}</Button>
+          <Button data-testid="markdown-editor-close-button" onClick={handleMarkdownEditorClose}>{t('close')}</Button>
         </Box>
       </Dialog>
     );
@@ -1107,6 +1114,7 @@ export default function ProcessModelEditDiagram() {
         onClose={handleMessageEditorClose}
         aria-labelledby="modal-modal-title"
         aria-describedby="modal-modal-description"
+        data-testid="message-editor-dialog"
       >
         <Box sx={{ p: 4 }}>
           <h2 id="modal-modal-title">{t('diagram_message_editor_title')}</h2>
@@ -1122,10 +1130,10 @@ export default function ProcessModelEditDiagram() {
               elementId={elementId}
             />
           </div>
-          <Button onClick={handleMessageEditorSave}>
+          <Button data-testid="message-editor-save-button" onClick={handleMessageEditorSave}>
             {t('diagram_message_editor_save')}
           </Button>
-          <Button onClick={handleMessageEditorClose}>
+          <Button data-testid="message-editor-close-button" onClick={handleMessageEditorClose}>
             {t('diagram_message_editor_close')}
           </Button>
         </Box>
@@ -1159,6 +1167,7 @@ export default function ProcessModelEditDiagram() {
         onClose={processSearchOnClose}
         aria-labelledby="modal-modal-title"
         aria-describedby="modal-modal-description"
+        data-testid="process-model-selector-dialog"
       >
         <Box sx={{ p: 4 }}>
           <h2 id="modal-modal-title">
@@ -1307,6 +1316,7 @@ export default function ProcessModelEditDiagram() {
         onClose={handleJsonSchemaEditorClose}
         aria-labelledby="modal-modal-title"
         aria-describedby="modal-modal-description"
+        data-testid="json-schema-editor-dialog"
       >
         <Box sx={{ p: 4 }}>
           <h2 id="modal-modal-title">
@@ -1326,7 +1336,7 @@ export default function ProcessModelEditDiagram() {
             )}
             pythonWorker={pythonWorker}
           />
-          <Button onClick={handleJsonSchemaEditorClose}>{t('close')}</Button>
+          <Button data-testid="json-schema-editor-close-button" onClick={handleJsonSchemaEditorClose}>{t('close')}</Button>
         </Box>
       </Dialog>
     );
@@ -1420,6 +1430,7 @@ export default function ProcessModelEditDiagram() {
       return (
         <Notification
           title={t('file_saved_title')}
+          data-testid="process-model-file-saved"
           onClose={() => setDisplaySaveFileMessage(false)}
           hideCloseButton
           timeout={3000}

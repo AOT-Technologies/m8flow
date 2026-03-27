@@ -137,7 +137,7 @@ export function ProcessModelImportDialog({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth data-testid="process-model-import-dialog">
       <DialogTitle>Import Process Model</DialogTitle>
       <DialogContent>
         <Box sx={{ width: "100%", mb: 2 }}>
@@ -153,12 +153,14 @@ export function ProcessModelImportDialog({
               label="GitHub Repository"
               icon={<GitHubIcon />}
               iconPosition="start"
+              data-testid="import-tab-github"
             />
             <Tab
               value="marketplace"
               label="Model Marketplace"
               icon={<TagIcon />}
               iconPosition="start"
+              data-testid="import-tab-marketplace"
             />
           </Tabs>
         </Box>
@@ -227,14 +229,14 @@ export function ProcessModelImportDialog({
 
           {/* Error message display */}
           {errorMessage && (
-            <Alert severity="error" sx={{ mt: 2 }}>
+            <Alert severity="error" sx={{ mt: 2 }} data-testid="import-error-alert">
               {errorMessage}
             </Alert>
           )}
         </Box>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose} disabled={isImporting}>
+        <Button data-testid="import-cancel-button" onClick={onClose} disabled={isImporting}>
           Cancel
         </Button>
         <Button
