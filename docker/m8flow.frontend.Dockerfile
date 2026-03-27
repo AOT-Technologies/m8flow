@@ -65,7 +65,8 @@ WORKDIR /app/spiffworkflow-frontend
 # Install core frontend dependencies and build the app.
 # Use npm ci when a lockfile is present (for reproducibility),
 # otherwise fall back to npm install.
-RUN if [ -f package-lock.json ]; then \
+RUN --mount=type=cache,target=/root/.npm \
+    if [ -f package-lock.json ]; then \
       npm ci; \
     else \
       npm install; \
@@ -86,7 +87,8 @@ RUN mkdir -p public/src/workers && \
 # --ignore-scripts because authors can do bad things in postinstall scripts.
 # https://cheatsheetseries.owasp.org/cheatsheets/NPM_Security_Cheat_Sheet.html
 # npx can-i-ignore-scripts can check that it's safe to ignore scripts.
-RUN npm ci --ignore-scripts && \
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --ignore-scripts && \
     node scripts/patch-bpmn-labels.cjs && \
     npm run build
 

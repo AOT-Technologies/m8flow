@@ -3,7 +3,10 @@ name: m8flow
 services:
   m8flow-db:
     image: postgres:15
-    env_file: ../.env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-postgres}"]
       interval: 5s
@@ -16,7 +19,6 @@ services:
 
   keycloak-db:
     image: postgres:15
-    env_file: ../.env
     environment:
       POSTGRES_DB: ${KEYCLOAK_DB_NAME:-keycloak}
       POSTGRES_USER: ${KEYCLOAK_DB_USER:-keycloak}
@@ -34,7 +36,6 @@ services:
       context: ..
       dockerfile: docker/m8flow.keycloak.Dockerfile
     image: m8flow-keycloak
-    env_file: ../.env
     command: ["start-dev", "--import-realm", "--spi-theme-static-max-age=-1", "--spi-theme-cache-themes=false", "--spi-theme-cache-templates=false"]
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
@@ -48,6 +49,16 @@ services:
       KC_PROXY_HEADERS: ${KC_PROXY_HEADERS:-xforwarded}
       KC_HOSTNAME: ${KEYCLOAK_HOSTNAME_HOST:-localhost}
       KC_HOSTNAME_URL: ${KEYCLOAK_HOSTNAME:-http://localhost:7002}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-m8flow}
+      KEYCLOAK_SUPER_ADMIN_USER: ${KEYCLOAK_SUPER_ADMIN_USER:-super-admin}
+      KEYCLOAK_SUPER_ADMIN_PASSWORD: ${KEYCLOAK_SUPER_ADMIN_PASSWORD:-super-admin}
+      M8FLOW_KEYCLOAK_SPOKE_CLIENT_ID: ${M8FLOW_KEYCLOAK_SPOKE_CLIENT_ID:-m8flow-backend}
+      M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET: "${M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET:-}"
+      M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET: "${M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET:-}"
+      SPIFFWORKFLOW_BACKEND_URL: "${SPIFFWORKFLOW_BACKEND_URL:-}"
+      M8FLOW_BACKEND_URL: "${M8FLOW_BACKEND_URL:-http://localhost:7000}"
+      SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND: "${SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND:-}"
+      M8FLOW_BACKEND_URL_FOR_FRONTEND: "${M8FLOW_BACKEND_URL_FOR_FRONTEND:-http://localhost:7001}"
     ports:
       - "7009:9000"
     healthcheck:
@@ -68,15 +79,22 @@ services:
     depends_on:
       - keycloak
   keycloak-master-admin-init:
-    build:
-      context: ..
-      dockerfile: docker/m8flow.keycloak.Dockerfile
-    env_file: ../.env
+    image: m8flow-keycloak
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       KEYCLOAK_SUPER_ADMIN_USER: ${KEYCLOAK_SUPER_ADMIN_USER:-super-admin}
       KEYCLOAK_SUPER_ADMIN_PASSWORD: ${KEYCLOAK_SUPER_ADMIN_PASSWORD:-super-admin}
+      KC_HTTP_PORT: ${KC_HTTP_PORT:-8080}
+      KEYCLOAK_INTERNAL_URL: "${KEYCLOAK_INTERNAL_URL:-}"
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-m8flow}
+      M8FLOW_KEYCLOAK_SPOKE_CLIENT_ID: ${M8FLOW_KEYCLOAK_SPOKE_CLIENT_ID:-m8flow-backend}
+      M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET: "${M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET:-}"
+      M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET: "${M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET:-}"
+      SPIFFWORKFLOW_BACKEND_URL: "${SPIFFWORKFLOW_BACKEND_URL:-}"
+      M8FLOW_BACKEND_URL: "${M8FLOW_BACKEND_URL:-http://localhost:7000}"
+      SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND: "${SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND:-}"
+      M8FLOW_BACKEND_URL_FOR_FRONTEND: "${M8FLOW_BACKEND_URL_FOR_FRONTEND:-http://localhost:7001}"
     depends_on:
       keycloak:
         condition: service_healthy
@@ -101,11 +119,7 @@ services:
   m8flow-nats-consumer:
     profiles: ["nats"]
     container_name: m8flow-nats-consumer
-    build:
-      context: ..
-      dockerfile: docker/m8flow.backend.Dockerfile
-      args:
-        UPSTREAM_TAG: ${UPSTREAM_TAG}
+    image: m8flow-backend
     user: "0"
     command:
       - "sh"
@@ -226,11 +240,12 @@ services:
   # -------------------------
 
   m8flow-backend:
+    image: m8flow-backend
     build:
       context: ..
       dockerfile: docker/m8flow.backend.Dockerfile
       args:
-        UPSTREAM_TAG: ${UPSTREAM_TAG}
+        UPSTREAM_TAG: ${UPSTREAM_TAG:-}
     user: "0"
     env_file: ../.env
     environment:
@@ -271,11 +286,7 @@ services:
         condition: service_started   
 
   m8flow-celery-worker:
-    build:
-      context: ..
-      dockerfile: docker/m8flow.backend.Dockerfile
-      args:
-        UPSTREAM_TAG: ${UPSTREAM_TAG}
+    image: m8flow-backend
     user: "0"
     command: ["bash", "./extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh"]
     env_file: ../.env
@@ -304,11 +315,7 @@ services:
         condition: service_started
 
   m8flow-celery-flower:
-    build:
-      context: ..
-      dockerfile: docker/m8flow.backend.Dockerfile
-      args:
-        UPSTREAM_TAG: ${UPSTREAM_TAG}
+    image: m8flow-backend
     user: "0"
     command: ["bash", "./extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh", "flower"]
     env_file: ../.env
@@ -340,7 +347,7 @@ services:
       context: ..
       dockerfile: docker/m8flow.frontend.Dockerfile
       args:
-        UPSTREAM_TAG: ${UPSTREAM_TAG}
+        UPSTREAM_TAG: ${UPSTREAM_TAG:-}
     env_file: ../.env
     environment:
       SPIFFWORKFLOW_FRONTEND_INTERNAL_PORT: "8080"
