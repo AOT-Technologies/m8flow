@@ -1,5 +1,10 @@
 #requires -Version 5.1
 
+param(
+  [Parameter(Position = 0)]
+  [int]$Port
+)
+
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $scriptDir))
 Set-Location $repoRoot
@@ -80,8 +85,15 @@ if ($env:M8FLOW_BACKEND_SW_UPGRADE_DB -eq "true") {
 Pop-Location
 
 $logConfig = Join-Path $repoRoot "uvicorn-log.yaml"
+$backendPort = if ($PSBoundParameters.ContainsKey('Port')) {
+  $Port
+} elseif ($env:M8FLOW_BACKEND_PORT) {
+  [int]$env:M8FLOW_BACKEND_PORT
+} else {
+  8000
+}
 
 python -m uvicorn extensions.app:app `
-  --host 0.0.0.0 --port 8000 `
+  --host 0.0.0.0 --port $backendPort `
   --app-dir $repoRoot `
   --log-config $logConfig

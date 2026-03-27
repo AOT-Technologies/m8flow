@@ -4,6 +4,7 @@ set -e
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "${script_dir}/../../.." && pwd)"
 cd "$repo_root"
+port_arg="${1:-}"
 
 export PYTHONPATH=./spiffworkflow-backend:$PYTHONPATH
 export PYTHONPATH=./spiffworkflow-backend/src:$PYTHONPATH
@@ -55,9 +56,10 @@ if [[ "${M8FLOW_BACKEND_RUN_BOOTSTRAP:-}" != "false" ]]; then
 fi
 
 log_config="$repo_root/uvicorn-log.yaml"
+backend_port="${port_arg:-${M8FLOW_BACKEND_PORT:-8000}}"
 
 # Only pass --env-file when the file exists (ECS/task definition inject env; no .env in container).
-uvicorn_args=(--host 0.0.0.0 --port 8000 --app-dir "$repo_root" --log-config "$log_config")
+uvicorn_args=(--host 0.0.0.0 --port "$backend_port" --app-dir "$repo_root" --log-config "$log_config")
 [[ -f "$env_file" ]] && uvicorn_args+=(--env-file "$env_file")
 
 exec python -m uvicorn extensions.app:app "${uvicorn_args[@]}"
