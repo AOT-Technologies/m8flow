@@ -1,1 +1,0 @@
-export { getParticipantResizeConstraints } from '../ResizeBehavior';

@@ -65,11 +65,49 @@ if (Test-Path $envFile) {
     }
 
     if ($key) {
-      Set-Item -Path "Env:$key" -Value $value
-      $script:LoadedEnvKeys += $key
+      $existingItem = Get-Item -Path "Env:$key" -ErrorAction SilentlyContinue
+      if (-not $existingItem) {
+        Set-Item -Path "Env:$key" -Value $value
+        $script:LoadedEnvKeys += $key
+      }
     }
   }
 }
+
+function Convert-DockerRedisUrlToLocalhost {
+  param([string]$Url)
+
+  if (-not $Url) {
+    return $Url
+  }
+
+  return ($Url -replace '^(redis(?:s)?://(?:[^/@]+@)?)redis(?=[:/]|$)', '$1localhost')
+}
+
+function Use-LocalDevHostServices {
+  if ($env:M8FLOW_LOCAL_DEV_USE_HOST_SERVICES -ne 'true') {
+    return
+  }
+
+  foreach ($key in @(
+    'M8FLOW_BACKEND_CELERY_BROKER_URL',
+    'SPIFFWORKFLOW_BACKEND_CELERY_BROKER_URL',
+    'M8FLOW_BACKEND_CELERY_RESULT_BACKEND',
+    'SPIFFWORKFLOW_BACKEND_CELERY_RESULT_BACKEND'
+  )) {
+    $existingItem = Get-Item -Path "Env:$key" -ErrorAction SilentlyContinue
+    if (-not $existingItem) {
+      continue
+    }
+
+    $normalized = Convert-DockerRedisUrlToLocalhost -Url $existingItem.Value
+    if ($normalized -ne $existingItem.Value) {
+      Set-Item -Path "Env:$key" -Value $normalized
+    }
+  }
+}
+
+Use-LocalDevHostServices
 
 $env:SPIFFWORKFLOW_BACKEND_DATABASE_URI = $env:M8FLOW_BACKEND_DATABASE_URI
 $env:SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR = $env:M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR
@@ -114,7 +152,10 @@ if ($Mode -eq "worker") {
   $autoscaleMax = $env:M8FLOW_BACKEND_CELERY_AUTOSCALE_MAX
   $concurrency = $env:M8FLOW_BACKEND_CELERY_CONCURRENCY
   $pool = $env:M8FLOW_BACKEND_CELERY_POOL
-  if (-not $pool) { $pool = "prefork" }
+  if (-not $pool) {
+    # Celery's prefork pool is not reliable for local native Windows workers.
+    $pool = if ($IsWindows -or $env:OS -eq 'Windows_NT') { "solo" } else { "prefork" }
+  }
 
   # Prefer prefork because it's the pool type that supports resizing reliably.
   $workerArgs += "--pool=$pool"

@@ -244,7 +244,13 @@ This script:
 - Starts the m8flow extensions frontend (npm) on port **7001** in the foreground
 - Runs SpiffWorkflow DB migrations first if `M8FLOW_BACKEND_UPGRADE_DB=true`
 
-Press **Ctrl+C** to stop both services.
+Press **Ctrl+C** to stop the locally started backend and frontend.
+
+This flow expects the Docker dependencies to be running, but not the Docker `m8flow-backend` or `m8flow-frontend` services on the same ports. If those containers are still up, stop them before launching the local dev servers.
+
+For local host processes, the launcher rewrites Celery Redis URLs that use the Docker-only hostname `redis` to `localhost`, so the local backend and worker can reach the Redis container exposed on port `6379`.
+
+If the frontend fails with a missing Rollup native package such as `@rollup/rollup-win32-x64-msvc`, reinstall `extensions/m8flow-frontend` dependencies on that machine with `npm install`.
 
 > **macOS note:** Port 7000 may be claimed by AirPlay Receiver. Disable it in
 > System Settings → General → AirDrop & Handoff → AirPlay Receiver.
@@ -263,7 +269,8 @@ Expected response:
 ### Running backend only
 
 ```bash
-./extensions/m8flow-backend/bin/run_m8flow_backend.sh
+# Arguments are optional
+./extensions/m8flow-backend/bin/run_m8flow_backend.sh 7000 --reload
 ```
 
 Or with uv (syncs deps and optionally runs migrations):
@@ -272,19 +279,16 @@ Or with uv (syncs deps and optionally runs migrations):
 ./extensions/m8flow-backend/bin/setup_and_run_backend.sh
 ```
 
+```powershell
+# Arguments are optional
+.\extensions\m8flow-backend\bin\setup_and_run_backend.ps1 7000 --Reload
+```
+
 ### Running a Celery worker
 
 ```bash
 ./extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh
 ```
-
-### Running Flower (Celery monitoring UI)
-
-```bash
-./extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh flower
-```
-
-Open `http://localhost:5555`.
 
 ---
 

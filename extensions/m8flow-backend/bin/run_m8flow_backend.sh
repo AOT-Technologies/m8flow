@@ -4,7 +4,26 @@ set -e
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "${script_dir}/../../.." && pwd)"
 cd "$repo_root"
-port_arg="${1:-}"
+
+port_arg=""
+reload_mode="false"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --reload)
+      reload_mode="true"
+      shift
+      ;;
+    *)
+      if [[ -z "$port_arg" ]]; then
+        port_arg="$1"
+        shift
+      else
+        echo >&2 "Unexpected argument: $1"
+        exit 1
+      fi
+      ;;
+  esac
+done
 
 export PYTHONPATH=./spiffworkflow-backend:$PYTHONPATH
 export PYTHONPATH=./spiffworkflow-backend/src:$PYTHONPATH
@@ -61,5 +80,15 @@ backend_port="${port_arg:-${M8FLOW_BACKEND_PORT:-8000}}"
 # Only pass --env-file when the file exists (ECS/task definition inject env; no .env in container).
 uvicorn_args=(--host 0.0.0.0 --port "$backend_port" --app-dir "$repo_root" --log-config "$log_config")
 [[ -f "$env_file" ]] && uvicorn_args+=(--env-file "$env_file")
+[[ -n "${UVICORN_LOG_LEVEL:-}" ]] && uvicorn_args+=(--log-level "$UVICORN_LOG_LEVEL")
+if [[ "$reload_mode" == "true" ]]; then
+  uvicorn_args+=(--reload --workers 1)
+  uvicorn_args+=(--reload-exclude "extensions/m8flow-frontend/**")
+  uvicorn_args+=(--reload-exclude "**/node_modules/**")
+  uvicorn_args+=(--reload-exclude "**/.vite/**")
+  uvicorn_args+=(--reload-exclude "**/.vite-temp/**")
+  uvicorn_args+=(--reload-exclude ".venv/**")
+  uvicorn_args+=(--reload-exclude ".git/**")
+fi
 
 exec python -m uvicorn extensions.app:app "${uvicorn_args[@]}"
