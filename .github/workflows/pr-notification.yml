@@ -1,9 +1,9 @@
-name: Notify Google Chat on New Issue
+name: Notify Google Chat on PR Activity
 
 on:
   pull_request_target:
     branches: [ main ]
-    types: [ opened ]
+    types: [ opened, synchronize ]
 
 jobs:
   send-alert:
@@ -16,13 +16,20 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_URL: ${{ github.event.pull_request.html_url }}
           PR_CREATOR: ${{ github.event.pull_request.user.login }}
+          PR_ACTION: ${{ github.event.action }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -e
           if [ -z "${GOOGLE_CHAT_WEBHOOK}" ]; then
             echo "::error::PR_NOTIFICATION secret is not set. Add the Google Chat webhook URL as repository secret PR_NOTIFICATION."
             exit 1
           fi
-          MESSAGE=$'📌 *New GitHub PR*\n\n*Title:* '"${PR_TITLE}"$'\n*Author:* '"${PR_CREATOR}"$'\n\n🔗 '"${PR_URL}"
+          if [ "$PR_ACTION" = "opened" ]; then
+            MESSAGE=$'📌 *New GitHub PR*\n\n*Title:* '"${PR_TITLE}"$'\n*Author:* '"${PR_CREATOR}"$'\n\n🔗 '"${PR_URL}"
+          else
+            SHORT_SHA="${PR_HEAD_SHA:0:7}"
+            MESSAGE=$'🔄 *GitHub PR Updated*\n\n*Title:* '"${PR_TITLE}"$'\n*Author:* '"${PR_CREATOR}"$'\n*Latest commit:* '"${SHORT_SHA}"$'\n\n🔗 '"${PR_URL}"
+          fi
           PAYLOAD=$(jq -n --arg text "$MESSAGE" '{text: $text}') || {
             echo "::error::Failed to build JSON payload"
             exit 1
