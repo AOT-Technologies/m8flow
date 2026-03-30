@@ -177,5 +177,3 @@ The Stripe Connector integrates Stripe's robust payment processing API into your
   - `amount` & `currency` (String): Required for the `CreatePaymentIntent` and `CreateCharge` commands. **Note:** Amounts must be calculated in the smallest currency unit (e.g., `"1000"` is equal to $10.00 USD).
   - `customer_id`, `payment_intent_id`, `charge_id`, `subscription_id`, or `price_id`: Required depending entirely on the chosen operation.
   - `idempotency_key` (String, Optional): Available for all write operations. While a UUID is automatically generated if omitted, providing your own key ensures bullet-proof retry behavior and prevents duplicate transactions.
-
-> **Test Mode & Card Numbers:** When using your Test mode API Key (`sk_test_...`), no real money is moved or charged. You can simulate successful payments using dummy card numbers like `"4242424242424242"`, or trigger specific errors using other [Stripe Test Cards](https://stripe.com/docs/testing).
