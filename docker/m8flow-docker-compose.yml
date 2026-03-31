@@ -249,7 +249,7 @@ services:
 
       M8FLOW_NATS_URL: "nats://${M8FLOW_NATS_USER:-admin}:${M8FLOW_NATS_PASSWORD:-admin}@nats:4222"
     ports:
-      - "${M8FLOW_BACKEND_PORT:-7000}:8000"
+      - "${M8FLOW_BACKEND_PORT:-7000}:${M8FLOW_BACKEND_PORT:-7000}"
     volumes:
       - process_models_cache:/app/process_models
       - templates_cache:/app/templates
