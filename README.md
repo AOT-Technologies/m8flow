@@ -118,32 +118,14 @@ The upstream LGPL-2.1 engine is not stored in this repo.
 
 **Docker builds are self-contained** — the Dockerfiles automatically fetch upstream from GitHub during the build, so no local pre-fetch is needed for `docker compose up --build`.
 
-For **local development** (running backend/frontend outside Docker), fetch upstream manually:
-
-```bash
-./bin/fetch-upstream.sh
-```
-
-```powershell
-.\bin\fetch-upstream.ps1
-```
 
 This clones configured folders from [AOT-Technologies/m8flow-core](https://github.com/AOT-Technologies/m8flow-core) into your working tree. Folder lists are defined in `upstream.sources.json` under `backend`, `frontend`, and `others`. These directories are gitignored and must be re-fetched after every fresh clone.
 
-To pin a specific upstream tag (local dev or Docker):
-
-```bash
-# Local dev
-./bin/fetch-upstream.sh 0.0.1
+To pin a specific upstream tag (Docker):
 
 # Docker build (set in .env or inline)
 UPSTREAM_TAG=0.0.1 docker compose -f docker/m8flow-docker-compose.yml up -d --build
 ```
-
-```powershell
-# Local dev
-.\bin\fetch-upstream.ps1 0.0.1
-
 # Docker build (set in .env or inline)
 $env:UPSTREAM_TAG = "0.0.1"
 docker compose -f docker/m8flow-docker-compose.yml up -d --build
@@ -161,7 +143,7 @@ Full environment variable documentation: [docs/env-reference.md](docs/env-refere
 
 ---
 
-## Running with Docker (recommended)
+## Running with Docker
 
 ### Start the full stack
 
@@ -216,97 +198,13 @@ docker compose -f docker/m8flow-docker-compose.yml down
 # Stop and delete all data volumes
 docker compose -f docker/m8flow-docker-compose.yml down -v
 ```
-
----
-
-## Running Locally (without Docker for backend/frontend)
-
-Use this mode for active development of m8flow extensions.
-
-### 1. Start infrastructure services
-
-Start only the infrastructure (database, Keycloak, MinIO, Redis) as containers:
-
-```bash
-docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build \
-  m8flow-db keycloak-db keycloak keycloak-proxy redis minio minio-mc-init
-```
-
-### 2. Start backend and frontend
-
-```bash
-./start_dev.sh
-```
-
-This script:
-- Sources `.env` from the repo root
-- Starts the m8flow extensions backend (uvicorn) on port **7000** in the background
-- Starts the m8flow extensions frontend (npm) on port **7001** in the foreground
-- Runs SpiffWorkflow DB migrations first if `M8FLOW_BACKEND_UPGRADE_DB=true`
-
-Press **Ctrl+C** to stop both services.
-
-> **macOS note:** Port 7000 may be claimed by AirPlay Receiver. Disable it in
-> System Settings → General → AirDrop & Handoff → AirPlay Receiver.
-
-### 3. Verify the backend
-
-```bash
-curl http://localhost:7000/v1.0/status
-```
-
-Expected response:
-```json
-{ "ok": true, "can_access_frontend": true }
-```
-
-### Running backend only
-
-```bash
-./extensions/m8flow-backend/bin/run_m8flow_backend.sh
-```
-
-Or with uv (syncs deps and optionally runs migrations):
-
-```bash
-./extensions/m8flow-backend/bin/setup_and_run_backend.sh
-```
-
-### Running a Celery worker
-
-```bash
-./extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh
-```
-
-### Running Flower (Celery monitoring UI)
-
-```bash
-./extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh flower
-```
-
-Open `http://localhost:5555`.
-
 ---
 
 ## Keycloak Setup
 
-### Automatic import (recommended)
+### Automatic import 
 
-You can import realms by running `./extensions/m8flow-backend/keycloak/start_keycloak.sh` after starting Docker to import the `m8flow` realm. Tenant realms are created later via the tenant realm API when needed.
-
-```bash
-./extensions/m8flow-backend/keycloak/start_keycloak.sh
-```
-
-This imports the `m8flow` realm. Tenant realms are created later via the tenant realm API when needed.
-
-### Manual import
-
-1. Open the Keycloak Admin Console at `http://localhost:7002/`
-2. Log in with your admin credentials
-3. Click **Keycloak master → Create a realm**
-4. Import `extensions/m8flow-backend/keycloak/realm_exports/m8flow-tenant-template.json`
-5. Click **Create**
+On starting the application with [Running with Docker](#running-with-docker) will import default realm "m8flow". Tenant realms are created later via the tenant realm API when needed.
 
 For tenant-aware setup this realm includes token claims `m8flow_tenant_id` and `m8flow_tenant_name`.
 <div align="center">
@@ -343,11 +241,6 @@ http://localhost:7000/*
     <img src="./docs/images/keycloak-realm-settings-4.png" />
 </div>
 
-Enable **Client authentication**.
-
-<div align="center">
-    <img src="./docs/images/keycloak-realm-settings-5.png" />
-</div>
 
 For full Keycloak configuration reference: [extensions/m8flow-backend/keycloak/KEYCLOAK_SETUP.md](extensions/m8flow-backend/keycloak/KEYCLOAK_SETUP.md).
 
@@ -414,15 +307,31 @@ Open `http://localhost:7001/` in your browser. You will be redirected to Tenant 
 <div align="center">
     <img src="./docs/images/access-m8flow-tenant-selection.png" />
 </div>
-<div align="center">
-    <img src="./docs/images/access-m8flow-tenant-management.png" />
-</div>
 
 There's only one user (password = username):
 
 | Username | Role |
 |----------|------|
 | `super-admin` | Tenants management |
+
+## Tenant creation
+
+Currently, tenant creation can be done using the `http://localhost:7000/v1.0/m8flow/tenant-realms` API. This request requires a `Bearer` token for the `super-admin` user.
+
+Example request payload:
+
+```json
+{
+  "realm_id": "myapp",
+  "display_name": "My application"
+}
+```
+
+On success, the tenant will be listed on the tenant management page and will be ready to use through the multitenant access flow described in [Access the Application with multitenancy](#access-the-application-with-multitenancy).
+
+<div align="center">
+    <img src="./docs/images/access-m8flow-tenant-management.png" />
+</div>
 
 ---
 
@@ -442,6 +351,17 @@ Run a specific test file:
 pytest -c spiffworkflow-backend/pyproject.toml \
   ./extensions/m8flow-backend/tests/unit/m8flow_backend/services/test_tenant_context_middleware.py -q
 ```
+
+---
+
+## Integration Services
+
+m8flow includes supporting services for connector execution and event-driven workflow processing. These components can be run alongside the core platform depending on your deployment needs.
+
+For service-specific setup, configuration, and usage details, refer to:
+
+- [m8flow-connector-proxy/README.md](m8flow-connector-proxy/README.md) for connector proxy support such as SMTP, Slack, HTTP, and related integrations
+- [m8flow-nats-consumer/README.md](m8flow-nats-consumer/README.md) for NATS-based event consumption and event-driven workflow execution
 
 ---
 
