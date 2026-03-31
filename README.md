@@ -354,6 +354,19 @@ pytest -c spiffworkflow-backend/pyproject.toml \
 
 ---
 
+## Sample Templates
+
+m8flow includes sample workflow templates that can help teams get started quickly with common approval, notification, escalation, and integration scenarios.
+
+The sample templates package includes pre-built workflows and guidance for:
+
+- automatically loading templates during startup
+- using integration-focused templates such as Salesforce, Slack, SMTP, and PostgreSQL examples
+
+For the full template catalog and setup instructions, refer to [extensions/m8flow-backend/sample_templates/README.md](extensions/m8flow-backend/sample_templates/README.md).
+
+---
+
 ## Integration Services
 
 m8flow includes supporting services for connector execution and event-driven workflow processing. These components can be run alongside the core platform depending on your deployment needs.

@@ -1,6 +1,6 @@
 # Changelog for m8flow
 
-## 1.0.0 - 2020-03-31
+## 1.0.0 - 2026-03-31
 
 `Added`
 
@@ -9,7 +9,3 @@
     * Workflow Template Library
     * Connectors
     * Event-based Workflow Execution
-
-`Known Issues`
-
-* 
