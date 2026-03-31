@@ -130,7 +130,7 @@ The Slack Connector integrates the Slack Web API into your M8Flow workflows, ena
 **Configuration in Service Task:**
 - **Operator ID:** Select a Slack operator: `PostMessage`, `SendDirectMessage`, or `UploadFile`.
 - **Required Parameters** (varies by command):
-  - `token` (String): Your Slack token. *Always store this securely using M8Flow Secrets (e.g., `"SPIFF_SECRET:SLACL_TOKEN"`).*
+  - `token` (String): Your Slack token. *Always store this securely using M8Flow Secrets (e.g., `"SPIFF_SECRET:SLACK_TOKEN"`).*
   - `channel` or `user_id` (String): The target destination ID (e.g., `"C01234ABCD"`, `"#general"`, or `"U01234ABCD"`).
   - `message` (String): The text content for `PostMessage` or `SendDirectMessage`.
   - `filepath` or `content_base64` (String): Required ONLY for the `UploadFile` operator.
