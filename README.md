@@ -198,6 +198,81 @@ docker compose -f docker/m8flow-docker-compose.yml down
 # Stop and delete all data volumes
 docker compose -f docker/m8flow-docker-compose.yml down -v
 ```
+
+---
+
+## Running Locally (without Docker for backend/frontend)
+
+Use this mode for active development of m8flow extensions.
+
+### 1. Start infrastructure services
+
+Start only the infrastructure (database, Keycloak, MinIO, Redis) as containers:
+
+```bash
+docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build \
+  m8flow-db keycloak-db keycloak keycloak-proxy redis minio minio-mc-init
+```
+
+### 2. Start backend and frontend
+
+```bash
+./start_dev.sh
+```
+
+This script:
+- Sources `.env` from the repo root
+- Starts the m8flow extensions backend (uvicorn) on port **7000** in the background
+- Starts the m8flow extensions frontend (npm) on port **7001** in the foreground
+- Runs SpiffWorkflow DB migrations unless `M8FLOW_BACKEND_SW_UPGRADE_DB=false`
+- Runs m8flow Alembic migrations unless `M8FLOW_BACKEND_UPGRADE_DB=false`
+
+Press **Ctrl+C** to stop the locally started backend and frontend.
+
+This flow expects the Docker dependencies to be running, but not the Docker `m8flow-backend` or `m8flow-frontend` services on the same ports. If those containers are still up, stop them before launching the local dev servers.
+
+For local host processes, the launcher rewrites Celery Redis URLs that use the Docker-only hostname `redis` to `localhost`, so the local backend and worker can reach the Redis container exposed on port `6379`.
+
+If the frontend fails with a missing Rollup native package such as `@rollup/rollup-win32-x64-msvc`, reinstall `extensions/m8flow-frontend` dependencies on that machine with `npm install`.
+
+> **macOS note:** Port 7000 may be claimed by AirPlay Receiver. Disable it in
+> System Settings → General → AirDrop & Handoff → AirPlay Receiver.
+
+### 3. Verify the backend
+
+```bash
+curl http://localhost:7000/v1.0/status
+```
+
+Expected response:
+```json
+{ "ok": true, "can_access_frontend": true }
+```
+
+### Running backend only
+
+```bash
+# Arguments are optional
+./extensions/m8flow-backend/bin/run_m8flow_backend.sh 7000 --reload
+```
+
+Or with uv (syncs deps and optionally runs migrations):
+
+```bash
+./extensions/m8flow-backend/bin/setup_and_run_backend.sh
+```
+
+```powershell
+# Arguments are optional
+.\extensions\m8flow-backend\bin\setup_and_run_backend.ps1 7000 --Reload
+```
+
+### Running a Celery worker
+
+```bash
+./extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh
+```
+
 ---
 
 ## Keycloak Setup
