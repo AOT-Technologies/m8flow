@@ -162,18 +162,43 @@ The Salesforce Connector integrates your M8Flow workflows with the Salesforce CR
 
 ### Stripe Connector
 
-The Stripe Connector integrates Stripe's robust payment processing API into your M8Flow workflows, enabling Service Tasks to natively handle payment intents, legacy charges, subscriptions, and refunds.
+The Stripe Connector allows your workflows to connect to Stripe, a popular system for handling payments. With this connector, your automated workflow can take payments or manage recurring subscriptions without needing to know any complex code.
 
-**Prerequisites (Stripe Setup):**
-1. Sign up for a [Stripe Account](https://stripe.com).
-2. From the Stripe Dashboard, ensure **Test mode** is toggled on (indicated by an orange badge) for safe development and integration.
-3. Navigate to **Developers > API keys** and reveal your **Secret Key** (it will begin with `sk_test_` in test mode or `sk_live_` in production).
+**Supported Actions:**
+We currently support the following actions in the connector:
+1. **CreatePaymentIntent**: The modern way to process a payment. 
+2. **CreateCharge**: The legacy (older) way to process a one-time payment. 
+3. **CreateSubscription**: Set up recurring billing for a customer.
+4. **CancelSubscription**: Stop an ongoing subscription.
 
-**Configuration in Service Task:**
-- **Operator ID:** Select a Stripe operator: `CreatePaymentIntent` (modern API), `CreateCharge` (legacy API), `CreateSubscription`, `CancelSubscription`, or `IssueRefund`.
-- **Global Required Parameter:** 
-  - `api_key` (String): Your Stripe Secret Key. *Always manage this value securely using M8Flow Secrets (e.g., `"SPIFF_SECRET:STRIPE_API_KEY"`).*
-- **Operation Parameters** (Vary by command):
-  - `amount` & `currency` (String): Required for the `CreatePaymentIntent` and `CreateCharge` commands. **Note:** Amounts must be calculated in the smallest currency unit (e.g., `"1000"` is equal to $10.00 USD).
-  - `customer_id`, `payment_intent_id`, `charge_id`, `subscription_id`, or `price_id`: Required depending entirely on the chosen operation.
-  - `idempotency_key` (String, Optional): Available for all write operations. While a UUID is automatically generated if omitted, providing your own key ensures bullet-proof retry behavior and prevents duplicate transactions.
+#### Understanding Payment Tokens
+You will never type real credit card numbers into your M8Flow workflows. Instead, Stripe uses secure text strings called **tokens** to represent a payment method.
+
+> **How to test payments:** For testing purposes, we give `"tok_visa"` as the payment source. You do not need to use a real credit card or generate any complex codes. Just type the exact word `"tok_visa"` into the **source** field of your Service Task, and Stripe will successfully pretend a real Visa card was used!
+
+
+#### 1. Getting Your Stripe Account Ready
+1. Create a free account at [Stripe](https://stripe.com). You do NOT need to add a real bank account to test the connector.
+2. In your Stripe Dashboard, make sure **Test mode** is turned ON (look for the orange "Test mode" toggle in the top-right). Test mode lets you safely try things out without real money.
+3. In the left bottom sidebar, click **Developers**, then go to **API keys**.
+4. Find your **Secret key** (it will start with `sk_test_`). 
+5. Treat this key like a highly sensitive password! NEVER share it or type it directly into your workflow.
+
+#### 2. Configuring the Service Task
+When you select a Stripe operation in your workflow, you will need to fill in some details:
+
+- **api_key (Required for all):** Your Stripe Secret Key. *Always keep this safe by using M8Flow Secrets. Just type `"SPIFF_SECRET:stripe_api_key"` as the value.*
+
+**When creating a Payment Intent or Charge:**
+- **amount:** The amount you want to charge. *Warning:* Stripe counts money in the smallest unit (like pennies). So, if you want to charge $10.00 USD, entering `"10"` will only charge 10 cents! You must enter `"1000"` for $10.00.
+- **currency:** The 3-letter currency code (for example, `"usd"` or `"eur"`).
+- **source:** Used when creating a charge to specify how to pay. Use secure tokens here, like `"tok_visa"` for testing.
+
+**When managing Subscriptions:**
+- **customer_id:** The unique ID for the person buying the subscription (starts with `cus_`).
+- **price_id:** The unique ID for the product plan you created in your Stripe Dashboard.
+- **subscription_id:** The active subscription you want to cancel (starts with `sub_`).
+
+**Preventing Duplicate Charges (idempotency_key):**
+- All actions have an optional `idempotency_key` parameter. This is a unique transaction label (for example, `"order_12345"`). 
+- If your workflow accidentally runs the same task twice, Stripe will check this key. If it sees the same key from earlier that day, it realizes it was already processed and strictly prevents the customer from being charged twice.
