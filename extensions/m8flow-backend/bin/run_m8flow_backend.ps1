@@ -119,10 +119,15 @@ $env:SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR = $env:M8FLOW_BACKEND_BPMN_SPE
 
 Push-Location (Join-Path $repoRoot "spiffworkflow-backend")
 uv sync --all-groups --active
-if ($env:M8FLOW_BACKEND_SW_UPGRADE_DB -eq "true") {
+if ($env:M8FLOW_BACKEND_SW_UPGRADE_DB -ne "false") {
   python -m flask db upgrade
 }
 Pop-Location
+
+if ($env:M8FLOW_BACKEND_UPGRADE_DB -ne "false") {
+  $alembicIni = Join-Path $repoRoot "extensions\m8flow-backend\migrations\alembic.ini"
+  python -m alembic -c $alembicIni upgrade head
+}
 
 $logConfig = Join-Path $repoRoot "uvicorn-log.yaml"
 $backendPort = if ($PSBoundParameters.ContainsKey('Port')) {

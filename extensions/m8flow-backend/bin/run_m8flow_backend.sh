@@ -59,12 +59,13 @@ fi
 export SPIFFWORKFLOW_BACKEND_DATABASE_URI="${M8FLOW_BACKEND_DATABASE_URI}"
 export SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR="${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR}"
 
-if [[ "${M8FLOW_BACKEND_UPGRADE_DB:-true}" != "false" ]]; then
+if [[ "${M8FLOW_BACKEND_SW_UPGRADE_DB:-true}" != "false" ]]; then
   cd "$repo_root/spiffworkflow-backend"
-  if [[ "${M8FLOW_BACKEND_SW_UPGRADE_DB:-true}" != "false" ]]; then
-    python -m flask db upgrade
-  fi
+  python -m flask db upgrade
   cd "$repo_root"
+fi
+
+if [[ "${M8FLOW_BACKEND_UPGRADE_DB:-true}" != "false" ]]; then
   python -m alembic -c "$repo_root/extensions/m8flow-backend/migrations/alembic.ini" upgrade head
 fi
 

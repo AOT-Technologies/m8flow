@@ -242,7 +242,8 @@ This script:
 - Sources `.env` from the repo root
 - Starts the m8flow extensions backend (uvicorn) on port **7000** in the background
 - Starts the m8flow extensions frontend (npm) on port **7001** in the foreground
-- Runs SpiffWorkflow DB migrations first if `M8FLOW_BACKEND_UPGRADE_DB=true`
+- Runs SpiffWorkflow DB migrations unless `M8FLOW_BACKEND_SW_UPGRADE_DB=false`
+- Runs m8flow Alembic migrations unless `M8FLOW_BACKEND_UPGRADE_DB=false`
 
 Press **Ctrl+C** to stop the locally started backend and frontend.
 
