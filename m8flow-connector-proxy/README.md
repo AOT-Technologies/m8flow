@@ -41,13 +41,14 @@ Before configuring any connector, please keep the following rules in mind:
 
 The HTTP Connector enables BPMN Service Tasks to make outbound HTTP requests (GET, POST, PUT, PATCH, DELETE, HEAD) to external REST APIs. It supports two execution modes: **V1** (runs inside the backend) and **V2** (runs via the external Connector Proxy).
 
+![http](../docs/images/http.png)
 
 **Configuration in Service Task:**
 - **Operator ID:** Select an HTTP operator. Operators ending in `V2` (e.g., `http/GetRequestV2`) use the external proxy, while others (e.g., `http/GetRequest`) run internally.
 - **Parameters:** Values can be entered directly, or configured securely in the Secrets UI and accessed using the format `"SPIFF_SECRET:<secret_name>"`.
   - `url` (Required): The API endpoint, enclosed in double quotes (e.g., `"https://jsonplaceholder.typicode.com/posts/1"`).
   - `headers` / `params` / `data`: Must be valid JSON objects. Use `data` for the request body, not `json` (e.g., `{"Accept": "application/json"}`).
-  - `basic_auth_username` / `basic_auth_password`: Enclose in double quotes if entered directly, or reference a secret (e.g., `"SPIFF_SECRET:USER_PASSWORD"`).
+  - `basic_auth_username` / `basic_auth_password`: Enclose in double quotes if entered directly, or reference a secret (e.g., `"SPIFF_SECRET:AUTH_PASSWORD"`, `"SPIFF_SECRET:AUTH_USERNAME"`).
 
 **Handling Responses:**
 Responses from V2 operators are wrapped in a specific format. Use a Script Task to parse the incoming data:
@@ -61,6 +62,8 @@ data = response.get("command_response", {}).get("body", response)
 ### SMTP Connector
 
 The SMTP Connector enables BPMN Service Tasks to send emails. It supports plain text, HTML email bodies, file attachments, and authenticated or unauthenticated SMTP configurations.
+
+![smtp](../docs/images/smtp.png)
 
 > **Security Note:** Credentials should never be hardcoded in BPMN models. All sensitive data (such as `smtp_user` and `smtp_password`) must be configured securely via M8Flow Secrets and referenced in your workflow (e.g., `"SPIFF_SECRET:SMTP_PASSWORD"`).
 
@@ -85,6 +88,8 @@ The SMTP Connector enables BPMN Service Tasks to send emails. It supports plain 
 ### PostgreSQL Connector (`postgres_v2`)
 
 The PostgreSQL Connector allows you to interact directly with a PostgreSQL database from within M8Flow. It provides operations for executing raw SQL queries, creating and dropping tables, and performing standard CRUD operations (Insert, Select, Update, Delete).
+
+![postgres](../docs/images/postgres.png)
 
 **Configuration in Service Task:**
 - **Operator ID:** Select a Postgres operator (e.g., `postgres_v2/SelectValuesV2`, `postgres_v2/DoSQL`, `postgres_v2/InsertValuesV2`).
@@ -111,6 +116,8 @@ data = task_result__FetchUsers["body"]
 ### Slack Connector
 
 The Slack Connector integrates the Slack Web API into your M8Flow workflows, enabling Service Tasks to post messages to channels, send direct messages, and upload files.
+
+![slack](../docs/images/slack.png)
 
 **Prerequisites (Slack App Setup):**
 1. Create a custom Slack App in your workspace via the [Slack API Developer Portal](https://api.slack.com/apps).
@@ -139,6 +146,8 @@ For rich, structured messages with buttons or complex layouts, you can provide a
 
 The Salesforce Connector integrates your M8Flow workflows with the Salesforce CRM REST API (v58.0), enabling seamless CRUD (Create, Read, Update, Delete) operations for the `Lead` and `Contact` objects.
 
+![salesforce-create-lead](../docs/images/salesforce-create-lead.png)
+
 **Prerequisites (Salesforce Setup):**
 1. Log in to your Salesforce account (Developer Edition or Sandbox environments are highly recommended for testing purposes).
 2. Create a **Connected App** in the Salesforce App Manager with OAuth Settings enabled and appropriate API access scopes.
@@ -164,6 +173,8 @@ The Salesforce Connector integrates your M8Flow workflows with the Salesforce CR
 
 The Stripe Connector allows your workflows to connect to Stripe, a popular system for handling payments. With this connector, your automated workflow can take payments or manage recurring subscriptions without needing to know any complex code.
 
+![stripe-create-pament-intent](../docs/images/stripe-create-pament-intent.png)
+
 **Supported Actions:**
 We currently support the following actions in the connector:
 1. **CreatePaymentIntent**: The modern way to process a payment. 
@@ -175,6 +186,8 @@ We currently support the following actions in the connector:
 You will never type real credit card numbers into your M8Flow workflows. Instead, Stripe uses secure text strings called **tokens** to represent a payment method.
 
 > **How to test payments:** For testing purposes, we give `"tok_visa"` as the payment source. You do not need to use a real credit card or generate any complex codes. Just type the exact word `"tok_visa"` into the **source** field of your Service Task, and Stripe will successfully pretend a real Visa card was used!
+>
+> **How to take live payments:** In a live production system, you **cannot** pass actual credit card numbers to M8Flow. Instead, your website must securely collect the card details to generate a real, unique token. This real token is what gets sent into your M8Flow workflow to be used as the payment source.
 
 
 #### 1. Getting Your Stripe Account Ready
