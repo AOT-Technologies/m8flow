@@ -15,7 +15,7 @@ from nats.js.kv import KeyValue
 
 load_dotenv()
 
-bpmn_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "process_models"))
+bpmn_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data/process_models"))
 os.environ["M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR"] = bpmn_dir
 
 logging.basicConfig(

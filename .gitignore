@@ -15,7 +15,7 @@ pyrightconfig.json
 version_info.json
 .coverage*
 UNKNOWN.egg-info/
-/process_models
+/data/process_models
 .ipynb_checkpoints
 .env*
 .cache
@@ -37,9 +37,9 @@ agent_setup_script_has_completed_successfully
 /test/*
 .cursor/*
 *.p12
-templates
+data/templates
 keycloak-extensions/realm-info-mapper/target/*
 *.code-workspace
-email_attachments
-slack_attachments
+data/email_attachments
+data/slack_attachments
 difflog.txt
