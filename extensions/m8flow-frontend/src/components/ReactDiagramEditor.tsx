@@ -138,7 +138,7 @@ export default function ReactDiagramEditor(props: ReactDiagramEditorProps) {
 
   const referencesButton =
     callers && callers.length > 0 ? (
-      <Button variant="contained" onClick={() => setShowingReferences(true)}>
+      <Button variant="contained" data-testid="diagram-references-button" onClick={() => setShowingReferences(true)}>
         {callers.length === 1
           ? t('diagram_references_count', { count: 1 })
           : t('diagram_references_count_plural', { count: callers.length })}

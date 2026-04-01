@@ -95,6 +95,7 @@ export default function ProcessModelTabs({
         <Select
           labelId="add-file-select-label"
           label={t('add_file')}
+          data-testid="add-file-select"
           onChange={(event: any) => {
             const selectedItem = event.target.value;
             if (selectedItem === 'new_bpmn_file') {
@@ -139,7 +140,7 @@ export default function ProcessModelTabs({
         }}
         aria-label="List of tabs"
       >
-        <Tab value={0} label={t("about")} />
+        <Tab value={0} label={t("about")} data-testid="process-model-tab-about" />
         <Tab value={1} label={t("files")} data-testid="process-model-files" />
         {ability.can("POST", targetUris.processInstanceListForMePath) && (
           <Tab

@@ -78,6 +78,7 @@ export default function DiagramEditorToolbar({
       >
         {fileName && !isPrimaryFile && (
           <ConfirmButton
+            data-testid="process-model-file-delete-button"
             description={t('delete_file_description', { file: fileName })}
             onConfirmation={onDelete}
             buttonLabel={t('delete')}
@@ -86,7 +87,7 @@ export default function DiagramEditorToolbar({
       </Can>
       <Can I="PUT" a={targetUris.processModelShowPath} ability={ability}>
         {onSetPrimaryFileAvailable && (
-          <Button onClick={onSetPrimaryFile} variant="contained">
+          <Button data-testid="diagram-set-primary-file-button" onClick={onSetPrimaryFile} variant="contained">
             {t('diagram_set_as_primary_file')}
           </Button>
         )}
@@ -96,14 +97,14 @@ export default function DiagramEditorToolbar({
         a={targetUris.processModelFileShowPath}
         ability={ability}
       >
-        <Button variant="contained" onClick={onDownload}>
+        <Button data-testid="diagram-download-button" variant="contained" onClick={onDownload}>
           {t('diagram_download')}
         </Button>
       </Can>
       <Can I="GET" a={targetUris.processModelFileShowPath} ability={ability}>
         {ability.can("PUT", targetUris.processModelFileShowPath) &&
           canViewXml && (
-            <Button variant="contained" onClick={onViewXml}>
+            <Button data-testid="diagram-view-xml-button" variant="contained" onClick={onViewXml}>
               {t("diagram_view_xml")}
             </Button>
           )}

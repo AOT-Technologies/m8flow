@@ -24,17 +24,17 @@ export default function DiagramEditorControls({
   return (
     <div className="diagram-control-buttons">
       <SpiffTooltip title={t('diagram_zoom_in')} placement="bottom">
-        <IconButton aria-label={t('diagram_zoom_in')} onClick={onZoomIn}>
+        <IconButton data-testid="diagram-zoom-in-button" aria-label={t('diagram_zoom_in')} onClick={onZoomIn}>
           <ZoomIn />
         </IconButton>
       </SpiffTooltip>
       <SpiffTooltip title={t('diagram_zoom_out')} placement="bottom">
-        <IconButton aria-label={t('diagram_zoom_out')} onClick={onZoomOut}>
+        <IconButton data-testid="diagram-zoom-out-button" aria-label={t('diagram_zoom_out')} onClick={onZoomOut}>
           <ZoomOut />
         </IconButton>
       </SpiffTooltip>
       <SpiffTooltip title={t('diagram_zoom_fit')} placement="bottom">
-        <IconButton aria-label={t('diagram_zoom_fit')} onClick={onZoomFit}>
+        <IconButton data-testid="diagram-zoom-fit-button" aria-label={t('diagram_zoom_fit')} onClick={onZoomFit}>
           <CenterFocusStrongOutlined />
         </IconButton>
       </SpiffTooltip>

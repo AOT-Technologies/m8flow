@@ -73,7 +73,7 @@ export default function TenantSelectPage() {
         <Typography variant="h4" component="h1" sx={{ mb: 2 }}>
           Select tenant
         </Typography>
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} data-testid="tenant-select-form">
           <TextField
             fullWidth
             label="Tenant name"
@@ -82,13 +82,14 @@ export default function TenantSelectPage() {
             error={!!error}
             helperText={error}
             autoFocus
+            data-testid="tenant-name-input"
             sx={{ mb: 2 }}
           />
           <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-            <Button type="submit" variant="contained" disabled={submitting}>
+            <Button type="submit" variant="contained" disabled={submitting} data-testid="tenant-select-submit-button">
               {submitting ? 'Saving…' : 'Continue'}
             </Button>
-            <Button variant="text" onClick={handleGlobalAdminSignIn}>
+            <Button variant="text" onClick={handleGlobalAdminSignIn} data-testid="global-admin-sign-in-button">
               Global admin sign in
             </Button>
           </Box>

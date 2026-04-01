@@ -83,6 +83,7 @@ function TemplateDetailsCard({
           <>
             <FormControl size="small" sx={{ minWidth: 140 }}>
               <Select
+                data-testid="template-visibility-select"
                 value={pendingVisibility ?? template.visibility}
                 onChange={(e: SelectChangeEvent) =>
                   onVisibilityChange(e.target.value as TemplateVisibility)
@@ -102,6 +103,7 @@ function TemplateDetailsCard({
                 size="small"
                 variant="contained"
                 color="primary"
+                data-testid="template-save-visibility-button"
                 onClick={onSaveVisibility}
                 disabled={isSaving}
               >
@@ -132,12 +134,13 @@ function TemplateDetailsCard({
             variant="contained"
             color="success"
             startIcon={<AddIcon />}
+            data-testid="template-create-process-model-button"
             onClick={onCreateProcessModel}
           >
             Create Process Model
           </Button>
         )}
-        <Button size="small" variant="contained" onClick={onExport}>
+        <Button size="small" variant="contained" data-testid="template-export-button" onClick={onExport}>
           Export template
         </Button>
         {canPublish && !template.isPublished && (
@@ -145,6 +148,7 @@ function TemplateDetailsCard({
             size="small"
             variant="contained"
             color="primary"
+            data-testid="template-publish-button"
             onClick={onPublish}
           >
             Publish
@@ -378,6 +382,7 @@ export default function TemplateModelerPage() {
             <Select
               labelId="template-version-label"
               label="All versions"
+              data-testid="template-version-select"
               value={template.id}
               onChange={(e) => {
                 const selectedId = Number(e.target.value);

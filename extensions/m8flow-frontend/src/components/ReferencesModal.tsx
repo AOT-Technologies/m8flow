@@ -27,12 +27,14 @@ export default function ReferencesModal({
       modalHeading={t('diagram_process_model_references')}
       onRequestClose={onClose}
       passiveModal
+      data-testid="references-modal"
     >
       <UnorderedList>
         {callers.map((ref: ProcessReference) => (
           <li key={`list-${ref.relative_location}`}>
             <Link
               size="lg"
+              data-testid={`reference-link-${ref.identifier}`}
               href={`/process-models/${modifyProcessIdentifierForPathParam(
                 ref.relative_location,
               )}`}

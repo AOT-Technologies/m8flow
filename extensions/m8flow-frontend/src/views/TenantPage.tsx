@@ -193,6 +193,7 @@ export default function TenantPage() {
                   size="small"
                   value={searchType}
                   label="Search By"
+                  data-testid="tenant-search-type-select"
                   onChange={(e) => setSearchType(e.target.value as SearchType)}
                 >
                   <MenuItem value="name">Name</MenuItem>
@@ -205,6 +206,7 @@ export default function TenantPage() {
                 placeholder={`Search by ${searchType}...`}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                data-testid="tenant-search-input"
                 sx={{ flexGrow: 1, minWidth: 300 }}
                 InputProps={{
                   startAdornment: (
@@ -232,6 +234,7 @@ export default function TenantPage() {
                   size="small"
                   value={statusFilter}
                   label="Filter by Status"
+                  data-testid="tenant-status-filter-select"
                   onChange={(e) => setStatusFilter(e.target.value)}
                 >
                   <MenuItem value="all">All</MenuItem>
@@ -269,7 +272,7 @@ export default function TenantPage() {
               </Typography>
             </Box>
           ) : (
-            <Table>
+            <Table data-testid="tenant-table">
               <TableHead>
                 <TableRow>
                   <TableCell>
@@ -299,6 +302,7 @@ export default function TenantPage() {
                   <TableRow
                     key={tenant.id}
                     hover
+                    data-testid={`tenant-row-${tenant.id}`}
                     sx={{ "&:last-child td, &:last-child th": { border: 0 } }}
                   >
                     <TableCell>
@@ -344,6 +348,7 @@ export default function TenantPage() {
                             <IconButton
                               size="small"
                               color="primary"
+                              data-testid={`tenant-edit-button-${tenant.id}`}
                               onClick={() => handleEdit(tenant)}
                               disabled={tenant.status === "DELETED"}
                             >

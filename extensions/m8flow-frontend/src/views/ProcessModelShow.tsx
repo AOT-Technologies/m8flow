@@ -333,6 +333,7 @@ export default function ProcessModelShow() {
           )}
 
           <Menu
+            data-testid="process-model-actions-menu"
             anchorEl={actionsMenuAnchor}
             open={Boolean(actionsMenuAnchor)}
             onClose={handleActionsMenuClose}

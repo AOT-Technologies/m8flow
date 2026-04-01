@@ -113,12 +113,12 @@ export default function CreateTemplateModal({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth data-testid="create-template-dialog">
       <DialogTitle>Create template</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
           {error && (
-            <Alert severity="error" sx={{ mb: 1 }}>{error}</Alert>
+            <Alert severity="error" sx={{ mb: 1 }} data-testid="create-template-error-alert">{error}</Alert>
           )}
           <TextField
             label="Name"
@@ -128,6 +128,7 @@ export default function CreateTemplateModal({
             onChange={(e) => setName(e.target.value)}
             disabled={loading}
             placeholder="e.g. Approval Workflow"
+            data-testid="create-template-name-input"
           />
           <TextField
             label="Description"
@@ -137,6 +138,7 @@ export default function CreateTemplateModal({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             disabled={loading}
+            data-testid="create-template-description-input"
           />
           <TextField
             label="Category"
@@ -144,6 +146,7 @@ export default function CreateTemplateModal({
             value={category}
             onChange={(e) => setCategory(e.target.value)}
             disabled={loading}
+            data-testid="create-template-category-input"
           />
           <TextField
             label="Tags"
@@ -152,12 +155,14 @@ export default function CreateTemplateModal({
             value={tags}
             onChange={(e) => setTags(e.target.value)}
             disabled={loading}
+            data-testid="create-template-tags-input"
           />
           <FormControl fullWidth disabled={loading}>
             <InputLabel>Visibility</InputLabel>
             <Select
               value={visibility}
               label="Visibility"
+              data-testid="create-template-visibility-select"
               onChange={(e) =>
                 setVisibility(e.target.value as TemplateVisibility)
               }
@@ -169,7 +174,7 @@ export default function CreateTemplateModal({
               ))}
             </Select>
           </FormControl>
-          <Button variant="outlined" component="label" disabled={loading}>
+          <Button variant="outlined" component="label" disabled={loading} data-testid="create-template-choose-files-button">
             {files.length > 0
               ? `${files.length} file(s) selected (include .bpmn)`
               : "Choose files (BPMN required)"}
@@ -184,10 +189,10 @@ export default function CreateTemplateModal({
         </Stack>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose} disabled={loading}>
+        <Button data-testid="create-template-cancel-button" onClick={onClose} disabled={loading}>
           Cancel
         </Button>
-        <Button variant="contained" onClick={handleSubmit} disabled={loading}>
+        <Button data-testid="create-template-submit-button" variant="contained" onClick={handleSubmit} disabled={loading}>
           {loading ? "Creating..." : "Create"}
         </Button>
       </DialogActions>

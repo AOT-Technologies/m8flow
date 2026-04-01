@@ -43,7 +43,7 @@ export default function HeaderTabs({
         onChange={onChange}
         sx={{ flexGrow: 1 }} // Make the Tabs container flexible
       >
-        <Tab label={t("tasks_assigned_to_me")} sx={{ textTransform: "none" }} />
+        <Tab label={t("tasks_assigned_to_me")} sx={{ textTransform: "none" }} data-testid="tab-tasks-assigned-to-me" />
         {/* Hide Workflows created by me if user cannot start process instances for me */}
         {ability.can("POST", targetUris.processInstanceListForMePath) && (
           <Tab

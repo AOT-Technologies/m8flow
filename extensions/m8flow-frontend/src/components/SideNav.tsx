@@ -330,12 +330,13 @@ function SideNav({
                   alignItems: "center",
                 }}
               >
-                <MuiLink component={Link} to="/">
+                <MuiLink component={Link} to="/" data-testid="nav-logo-link">
                   <SpiffLogo />
                 </MuiLink>
               </Typography>
             )}
             <IconButton
+              data-testid="nav-toggle-collapse-button"
               onClick={(event) => {
                 onToggleCollapse(event);
               }}
@@ -352,6 +353,7 @@ function SideNav({
                     component={Link}
                     to={item.route}
                     key={item.text}
+                    data-testid={`nav-item-${item.id}`}
                     onClick={() => {
                       // additionalNavElement is the TreePanel in this case so do not
                       // remove it when you are navigating to the processes page from the processes page
@@ -429,6 +431,7 @@ function SideNav({
               placement={isCollapsed ? "right" : "top"}
             >
               <IconButton
+                data-testid="nav-user-actions-button"
                 aria-label={t("user_actions")}
                 onClick={handlePersonIconClick}
                 className="person-icon"
@@ -441,7 +444,7 @@ function SideNav({
                 title={t("toggle_dark_mode")}
                 placement={isCollapsed ? "right" : "top"}
               >
-                <IconButton onClick={onToggleDarkMode}>
+                <IconButton data-testid="nav-toggle-dark-mode-button" onClick={onToggleDarkMode}>
                   {isDark ? <Brightness7 /> : <Brightness4 />}
                 </IconButton>
               </SpiffTooltip>
@@ -451,6 +454,7 @@ function SideNav({
               placement={isCollapsed ? "right" : "top"}
             >
               <IconButton
+                data-testid="nav-language-button"
                 aria-label={t("language")}
                 onClick={handleLanguageMenuClick}
                 className="language-icon"
@@ -481,6 +485,7 @@ function SideNav({
           <Paper
             elevation={3}
             className="user-profile"
+            data-testid="nav-user-profile-panel"
             sx={{
               position: "fixed",
               bottom: isCollapsed ? 100 : 60, // if it's collapsed, make it a little higher so it doesn't overlap with the tooltip to the right of the icon
@@ -537,6 +542,7 @@ function SideNav({
           <Paper
             elevation={3}
             className="language-menu"
+            data-testid="nav-language-menu"
             sx={{
               position: "fixed",
               bottom: isCollapsed ? 80 : 60, // if it's collapsed, make it a little higher so it doesn't overlap with the tooltip to the right of the icon
@@ -554,6 +560,7 @@ function SideNav({
                 <MuiLink
                   key={language}
                   component="button"
+                  data-testid={`nav-language-option-${language}`}
                   onClick={() => {
                     i18n.changeLanguage(language);
                     setShowLanguageMenu(false);
