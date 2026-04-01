@@ -114,6 +114,7 @@ export default function TemplateFilters({
           placeholder="Search templates..."
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
+          data-testid="template-filters-search-input"
           InputProps={{
             endAdornment: (
               <InputAdornment position="end">
@@ -129,6 +130,7 @@ export default function TemplateFilters({
         <Select
           value={filters.category || ''}
           label="Category"
+          data-testid="template-filters-category-select"
           onChange={(e) => handleCategoryChange(e.target.value)}
         >
           <MenuItem value="">
@@ -147,6 +149,7 @@ export default function TemplateFilters({
         <Select
           value={filters.visibility || ''}
           label="Visibility"
+          data-testid="template-filters-visibility-select"
           onChange={(e) => handleVisibilityChange(e.target.value as TemplateVisibility | '')}
         >
           <MenuItem value="">
@@ -164,6 +167,7 @@ export default function TemplateFilters({
           <Select
             value={filters.tag || ''}
             label="Tag"
+            data-testid="template-filters-tag-select"
             onChange={(e) => handleTagChange(e.target.value)}
           >
             <MenuItem value="">

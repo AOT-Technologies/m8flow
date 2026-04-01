@@ -56,7 +56,7 @@ export default function TemplateFileList({ template, templateId }: TemplateFileL
   return (
     <Box sx={{ mt: 1 }}>
       <TableContainer>
-        <Table size="medium" className="process-model-file-table">
+        <Table size="medium" className="process-model-file-table" data-testid="template-file-list-table">
           <TableHead>
             <TableRow>
               <TableCell>Name</TableCell>
@@ -68,7 +68,7 @@ export default function TemplateFileList({ template, templateId }: TemplateFileL
               const viewPath = getFileViewPath(templateId, f.fileName);
               const isPrimary = f.fileName === primaryFileName;
               return (
-                <TableRow key={f.fileName}>
+                <TableRow key={f.fileName} data-testid={`template-file-row-${f.fileName}`}>
                   <TableCell className="process-model-file-table-filename" title={f.fileName}>
                     <Link to={viewPath} style={{ textDecoration: "none" }}>
                       {f.fileName}
@@ -91,6 +91,7 @@ export default function TemplateFileList({ template, templateId }: TemplateFileL
                       size="small"
                       aria-label="View file"
                       title="View"
+                      data-testid={`template-file-view-button-${f.fileName}`}
                     >
                       <Visibility fontSize="small" />
                     </IconButton>
@@ -98,6 +99,7 @@ export default function TemplateFileList({ template, templateId }: TemplateFileL
                       size="small"
                       aria-label="Download file"
                       title="Download"
+                      data-testid={`template-file-download-button-${f.fileName}`}
                       onClick={() => handleDownload(f.fileName)}
                     >
                       <GetApp fontSize="small" />

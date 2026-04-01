@@ -552,6 +552,7 @@ export default function ProcessModelTreePage({
                     <>
                       <Breadcrumbs sx={{ mb: 3 }}>
                         <Button
+                          data-testid="breadcrumb-root-button"
                           sx={{ display: 'flex', alignItems: 'center' }}
                           onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
                             e.preventDefault();
@@ -614,6 +615,7 @@ export default function ProcessModelTreePage({
                   ) : (
                     <Breadcrumbs sx={{ mb: 3 }}>
                       <Button
+                        data-testid="breadcrumb-root-button"
                         sx={{ display: 'flex', alignItems: 'center' }}
                         onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
                           e.preventDefault();

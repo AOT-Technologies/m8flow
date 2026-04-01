@@ -585,6 +585,7 @@ export default function ContainerForExtensions() {
               )}
               {isMobile && !isSideNavVisible && (
                 <IconButton
+                  data-testid="mobile-menu-button"
                   onClick={() => {
                     setIsSideNavVisible(true);
                     setIsNavCollapsed(false);

@@ -112,6 +112,7 @@ export default function ProcessModelForm({
         <Grid size={{ xs: 3 }}>
           <TextField
             id={`process-model-metadata-extraction-path-key-${index}`}
+            data-testid={`metadata-extraction-key-input-${index}`}
             label={t('extraction_key')}
             value={metadataExtractionPath.key}
             onChange={(event: any) => {
@@ -128,6 +129,7 @@ export default function ProcessModelForm({
         <Grid size={{ xs: 6 }}>
           <TextField
             id={`process-model-metadata-extraction-path-${index}`}
+            data-testid={`metadata-extraction-path-input-${index}`}
             label={t('extraction_path')}
             value={metadataExtractionPath.path}
             onChange={(event: any) => {
@@ -144,6 +146,7 @@ export default function ProcessModelForm({
         <Grid size={{ xs: 1 }}>
           <SpiffTooltip title={t('remove_key')}>
             <IconButton
+              data-testid={`metadata-extraction-remove-button-${index}`}
               aria-label={t('remove_key')}
               onClick={() => {
                 const cep: MetadataExtractionPath[] =
@@ -187,6 +190,7 @@ export default function ProcessModelForm({
         <Grid size={{ xs: 10 }}>
           <TextField
             id={`process-model-notification-address-key-${index}`}
+            data-testid={`notification-address-input-${index}`}
             label="Address"
             value={notificationAddress}
             onChange={(event: any) => {
@@ -203,6 +207,7 @@ export default function ProcessModelForm({
         <Grid size={{ xs: 2 }}>
           <SpiffTooltip title={t('remove_address')}>
             <IconButton
+              data-testid={`notification-address-remove-button-${index}`}
               aria-label={t('remove_address')}
               onClick={() => {
                 const notificationAddresses: string[] =
@@ -261,6 +266,7 @@ export default function ProcessModelForm({
         id="process-model-display-name"
         key="process-model-display-name"
         name="display_name"
+        data-testid="process-model-display-name-input"
         error={displayNameInvalid}
         helperText={displayNameInvalid ? t('display_name_required') : ''}
         label={t('display_name')}
@@ -279,6 +285,7 @@ export default function ProcessModelForm({
           id="process-model-identifier"
           key="process-model-identifier"
           name="id"
+          data-testid="process-model-identifier-input"
           error={identifierInvalid}
           helperText={
             identifierInvalid ? t('identifier_validation_message') : ''
@@ -304,6 +311,7 @@ export default function ProcessModelForm({
         id="process-model-description"
         key="process-model-description"
         name="description"
+        data-testid="process-model-description-input"
         label={t('description')}
         value={processModel.description}
         onChange={(event: any) =>
@@ -398,7 +406,7 @@ export default function ProcessModelForm({
     return (
       <Grid container justifyContent="flex-start" sx={{ mt: 2 }}>
         <Grid>
-          <Button variant="contained" type="submit">
+          <Button data-testid="process-model-submit-button" variant="contained" type="submit">
             {t('submit')}
           </Button>
         </Grid>
@@ -407,7 +415,7 @@ export default function ProcessModelForm({
   };
 
   return (
-    <form onSubmit={handleFormSubmission}>
+    <form data-testid="process-model-form" onSubmit={handleFormSubmission}>
       {formElements()}
       {formButtons()}
     </form>

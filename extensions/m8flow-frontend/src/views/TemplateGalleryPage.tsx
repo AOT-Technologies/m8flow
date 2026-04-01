@@ -121,16 +121,17 @@ export default function TemplateGalleryPage() {
             onChange={(_, value) => value != null && setViewMode(value)}
             size="small"
             aria-label="View mode"
+            data-testid="template-gallery-view-mode-toggle"
           >
-            <ToggleButton value="card" aria-label="Card view">
+            <ToggleButton value="card" aria-label="Card view" data-testid="template-gallery-view-card">
               <ViewModule />
             </ToggleButton>
-            <ToggleButton value="table" aria-label="Table view">
+            <ToggleButton value="table" aria-label="Table view" data-testid="template-gallery-view-table">
               <ViewList />
             </ToggleButton>
           </ToggleButtonGroup>
           {canCreate && (
-            <Button variant="outlined" onClick={() => setImportOpen(true)}>
+            <Button variant="outlined" onClick={() => setImportOpen(true)} data-testid="template-gallery-import-button">
               Import template (zip)
             </Button>
           )}
@@ -198,7 +199,7 @@ export default function TemplateGalleryPage() {
               paginationDataTestidTag="template-gallery-pagination"
               tableToDisplay={
                 <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid', borderColor: 'borders.primary', borderRadius: 2 }}>
-                  <Table size="medium" className="process-model-file-table">
+                    <Table size="medium" className="process-model-file-table" data-testid="template-gallery-table">
                     <TableHead>
                       <TableRow>
                         <TableCell>Name</TableCell>
@@ -216,6 +217,7 @@ export default function TemplateGalleryPage() {
                           hover
                           sx={{ cursor: 'pointer' }}
                           onClick={() => handleViewTemplate(template)}
+                          data-testid={`template-gallery-row-${template.id}`}
                         >
                           <TableCell>
                             <Link
@@ -240,6 +242,7 @@ export default function TemplateGalleryPage() {
                               to={`/templates/${template.id}`}
                               size="small"
                               aria-label="View template"
+                              data-testid={`template-gallery-view-button-${template.id}`}
                               onClick={(e) => e.stopPropagation()}
                             >
                               <Visibility />
