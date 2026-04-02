@@ -258,8 +258,6 @@ npm exec -- vite --host 0.0.0.0 --port 7001
 
 This flow expects the Docker dependencies to be running, but not the Docker `m8flow-backend` or `m8flow-frontend` services on the same ports. If those containers are still up, stop them before launching the local dev servers.
 
-If your `.env` uses Docker-only hostnames such as `redis` for Celery, set `M8FLOW_LOCAL_DEV_USE_HOST_SERVICES=true` before launching the backend or local Celery worker so the launcher rewrites those URLs to `localhost`.
-
 Docker bind-mounts the repo `process_models/` directory into the backend and Celery containers, so a locally started backend and a containerized worker read the same process-model files by default.
 
 If the frontend fails with a missing Rollup native package such as `@rollup/rollup-win32-x64-msvc`, reinstall `extensions/m8flow-frontend` dependencies on that machine with `npm install`.
