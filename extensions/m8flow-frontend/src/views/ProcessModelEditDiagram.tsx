@@ -50,7 +50,7 @@ import {
   makeid,
   modifyProcessIdentifierForPathParam,
   setPageTitle,
-} from '@spiffworkflow-frontend/helpers';
+} from '../helpers';
 import {
   CorrelationProperties,
   PermissionsToCheck,
