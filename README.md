@@ -98,7 +98,7 @@ Ensure the following tools are installed:
 
 - Git
 - Docker and Docker Compose
-- Python 3.11+ and [uv](https://docs.astral.sh/uv/) _(for local backend development only)_
+- Python 3.12.1 and [uv](https://docs.astral.sh/uv/) _(for local backend development only)_
 - Node.js 18+ and npm _(for local frontend development only)_
 
 ---
