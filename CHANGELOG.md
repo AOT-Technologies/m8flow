@@ -9,3 +9,9 @@
     * Workflow Template Library
     * Connectors
     * Event-based Workflow Execution
+
+`Known Issues`
+
+* In this release, only Docker deployment is supported.
+* Local backend and frontend development are not available.
+
