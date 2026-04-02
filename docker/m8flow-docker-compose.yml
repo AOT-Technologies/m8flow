@@ -36,6 +36,7 @@ services:
       context: ..
       dockerfile: docker/m8flow.keycloak.Dockerfile
     image: m8flow-keycloak
+    pull_policy: never
     command: ["start-dev", "--import-realm", "--spi-theme-static-max-age=-1", "--spi-theme-cache-themes=false", "--spi-theme-cache-templates=false"]
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
@@ -80,6 +81,7 @@ services:
       - keycloak
   keycloak-master-admin-init:
     image: m8flow-keycloak
+    pull_policy: never
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
@@ -120,6 +122,7 @@ services:
     profiles: ["nats"]
     container_name: m8flow-nats-consumer
     image: m8flow-backend
+    pull_policy: never
     user: "0"
     command:
       - "sh"
@@ -245,6 +248,7 @@ services:
 
   m8flow-backend:
     image: m8flow-backend
+    pull_policy: never
     build:
       context: ..
       dockerfile: docker/m8flow.backend.Dockerfile
@@ -293,6 +297,7 @@ services:
 
   m8flow-celery-worker:
     image: m8flow-backend
+    pull_policy: never
     user: "0"
     command: ["bash", "./extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh"]
     env_file: ../.env
@@ -324,6 +329,7 @@ services:
 
   m8flow-celery-flower:
     image: m8flow-backend
+    pull_policy: never
     user: "0"
     command: ["bash", "./extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh", "flower"]
     env_file: ../.env
