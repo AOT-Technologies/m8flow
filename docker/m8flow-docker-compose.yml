@@ -143,7 +143,9 @@ services:
       M8FLOW_BACKEND_UPGRADE_DB: "false"
       M8FLOW_BACKEND_SW_UPGRADE_DB: "false"
     volumes:
-      - process_models_cache:/app/process_models
+      - type: bind
+        source: ../process_models
+        target: /app/process_models
       - ../data/m8flow_nats_consumer:/app/data/m8flow_nats_consumer
     restart: unless-stopped
 
@@ -175,7 +177,9 @@ services:
     depends_on:
       - minio-mc-init
     volumes:
-      - process_models_cache:/cache
+      - type: bind
+        source: ../process_models
+        target: /cache
       - ../rclone.conf:/config/rclone/rclone.conf:ro
       - ../extensions/m8flow-backend/bin/process_models_sync.sh:/process_models_sync.sh:ro
     entrypoint: ["/bin/sh", "/process_models_sync.sh"]
@@ -267,9 +271,11 @@ services:
 
       M8FLOW_NATS_URL: "nats://${M8FLOW_NATS_USER:-admin}:${M8FLOW_NATS_PASSWORD:-admin}@nats:4222"
     ports:
-      - "${M8FLOW_BACKEND_PORT:-7000}:8000"
+      - "${M8FLOW_BACKEND_PORT:-7000}:${M8FLOW_BACKEND_PORT:-7000}"
     volumes:
-      - process_models_cache:/app/process_models
+      - type: bind
+        source: ../process_models
+        target: /app/process_models
       - templates_cache:/app/templates
     depends_on:
       m8flow-db:
@@ -301,7 +307,9 @@ services:
       M8FLOW_BACKEND_UPGRADE_DB: "false"
       M8FLOW_BACKEND_SW_UPGRADE_DB: "false"
     volumes:
-      - ${M8FLOW_BACKEND_CELERY_PROCESS_MODELS_MOUNT_SOURCE:-process_models_cache}:/app/process_models
+      - type: bind
+        source: ../process_models
+        target: /app/process_models
     depends_on:
       m8flow-db:
         condition: service_started
@@ -330,6 +338,10 @@ services:
       M8FLOW_BACKEND_SW_UPGRADE_DB: "false"
     ports:
       - "5555:5555"
+    volumes:
+      - type: bind
+        source: ../process_models
+        target: /app/process_models
     depends_on:
       m8flow-db:
         condition: service_started
@@ -390,8 +402,6 @@ volumes:
   keycloak-db-data:
     driver: local
   redis-data:
-    driver: local
-  process_models_cache:
     driver: local
   templates_cache:
     driver: local

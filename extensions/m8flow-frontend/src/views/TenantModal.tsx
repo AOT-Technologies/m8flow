@@ -98,6 +98,7 @@ export default function TenantModal({
       onClose={onClose}
       maxWidth="sm"
       fullWidth
+      data-testid="tenant-modal-dialog"
       onKeyDown={(e) => {
         // Prevent Enter from triggering delete
         if (e.key === "Enter" && isDelete) {
@@ -141,6 +142,7 @@ export default function TenantModal({
               value={editName}
               onChange={(e) => setEditName(e.target.value)}
               disabled={loading}
+              data-testid="tenant-name-input"
             />
             {/* TODO: Phase 2 - Status change functionality will be implemented in Phase 2 */}
             {/* <FormControl fullWidth>
@@ -162,6 +164,7 @@ export default function TenantModal({
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
         <Button
+          data-testid="tenant-modal-cancel-button"
           onClick={onClose}
           disabled={loading}
           variant="outlined"
@@ -170,6 +173,7 @@ export default function TenantModal({
           Cancel
         </Button>
         <Button
+          data-testid="tenant-modal-submit-button"
           onClick={handleSubmit}
           variant="contained"
           color={isDelete ? "error" : "primary"}

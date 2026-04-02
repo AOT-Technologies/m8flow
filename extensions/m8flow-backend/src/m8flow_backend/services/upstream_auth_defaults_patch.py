@@ -17,6 +17,15 @@ def _setdefault_env(key: str, value: str) -> None:
         os.environ[key] = value
 
 
+def _normalize_auth_config_keys(auth_config: dict) -> dict:
+    normalized = {}
+    for key, value in auth_config.items():
+        normalized_key = key.lower() if isinstance(key, str) else key
+        if normalized_key not in normalized:
+            normalized[normalized_key] = value
+    return normalized
+
+
 def _has_structured_auth_configs() -> bool:
     return any(
         key == "SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS" or key.startswith("SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__")
@@ -48,9 +57,13 @@ def apply_runtime(flask_app) -> None:
         flask_app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_CLIENT_ID"] = DEFAULT_CLIENT_ID
 
     auth_configs = flask_app.config.get("SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS") or []
+    normalized_auth_configs = []
     for auth_config in auth_configs:
         if not isinstance(auth_config, dict):
+            normalized_auth_configs.append(auth_config)
             continue
+        auth_config = _normalize_auth_config_keys(auth_config)
+        normalized_auth_configs.append(auth_config)
         if not auth_config.get("label"):
             identifier = str(auth_config.get("identifier") or "").strip()
             auth_config["label"] = (
@@ -64,6 +77,8 @@ def apply_runtime(flask_app) -> None:
             auth_config["uri"] = M8FLOW_REALM_URI
         if auth_config.get("internal_uri") == UPSTREAM_REALM_URI:
             auth_config["internal_uri"] = M8FLOW_REALM_URI
+
+    flask_app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"] = normalized_auth_configs
 
 
 def apply() -> None:

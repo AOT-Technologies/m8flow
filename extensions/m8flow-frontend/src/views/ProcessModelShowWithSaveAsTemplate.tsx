@@ -169,6 +169,7 @@ export default function ProcessModelShowWithSaveAsTemplate() {
             <Link
               to={`/templates/${templateInfo.source_template_id}`}
               style={{ textDecoration: "none" }}
+              data-testid="template-provenance-link"
             >
               <Chip
                 label={templateInfo.source_template_name}

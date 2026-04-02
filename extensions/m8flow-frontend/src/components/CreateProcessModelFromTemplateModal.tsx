@@ -166,6 +166,7 @@ export default function CreateProcessModelFromTemplateModal({
       onClose={onClose}
       maxWidth="sm"
       fullWidth
+      data-testid="create-process-model-from-template-dialog"
     >
       <DialogTitle sx={{ fontSize: "1.25rem", fontWeight: 600 }}>
         Create Process Model from Template
@@ -178,7 +179,7 @@ export default function CreateProcessModelFromTemplateModal({
             </Alert>
           )}
           {error && (
-            <Alert severity="error" sx={{ mb: 1 }}>{error}</Alert>
+            <Alert severity="error" sx={{ mb: 1 }} data-testid="create-from-template-error-alert">{error}</Alert>
           )}
           
           <Box>
@@ -189,6 +190,7 @@ export default function CreateProcessModelFromTemplateModal({
               onChange={(_, newValue) => setSelectedGroup(newValue)}
               loading={groupsLoading}
               disabled={loading}
+              data-testid="create-from-template-group-select"
               renderInput={(params) => (
                 <TextField
                   {...params}
@@ -227,6 +229,7 @@ export default function CreateProcessModelFromTemplateModal({
             onChange={(e) => handleDisplayNameChange(e.target.value)}
             disabled={loading}
             helperText="Human-readable name for the process model"
+            data-testid="create-from-template-display-name-input"
           />
 
           <TextField
@@ -238,6 +241,7 @@ export default function CreateProcessModelFromTemplateModal({
             onChange={(e) => handleProcessModelIdChange(e.target.value)}
             disabled={loading}
             helperText="Unique identifier (lowercase letters, numbers, and hyphens only)"
+            data-testid="create-from-template-id-input"
           />
 
           <TextField
@@ -249,6 +253,7 @@ export default function CreateProcessModelFromTemplateModal({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             disabled={loading}
+            data-testid="create-from-template-description-input"
           />
 
           {selectedGroup && processModelId && (
@@ -259,10 +264,11 @@ export default function CreateProcessModelFromTemplateModal({
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
-        <Button onClick={onClose} disabled={loading} variant="outlined">
+        <Button data-testid="create-from-template-cancel-button" onClick={onClose} disabled={loading} variant="outlined">
           Cancel
         </Button>
         <Button
+          data-testid="create-from-template-submit-button"
           onClick={handleSubmit}
           variant="contained"
           color="primary"
