@@ -16,7 +16,12 @@ const host = process.env.HOST ?? '0.0.0.0';
 const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 8001;
 const backendPort = process.env.BACKEND_PORT ? parseInt(process.env.BACKEND_PORT, 10) : 8000;
 
-const backendUrl = rootEnv.M8FLOW_BACKEND_URL_FRONTEND;
+const backendUrl =
+  process.env.SPIFFWORKFLOW_BACKEND_URL ??
+  process.env.M8FLOW_BACKEND_URL ??
+  rootEnv.SPIFFWORKFLOW_BACKEND_URL ??
+  rootEnv.M8FLOW_BACKEND_URL ??
+  `http://localhost:${backendPort}`;
 
 const multiTenantOn =
   rootEnv.MULTI_TENANT_ON ?? process.env.VITE_MULTI_TENANT_ON ?? 'false';

@@ -35,6 +35,26 @@ All variables are strictly required and must be provided via `.env` or the Docke
   
 ---
 
+## Docker Compose
+
+To run the NATS event stack locally with Docker Compose:
+
+1. Start the NATS server and UI:
+
+```bash
+docker compose -f docker/m8flow-nats-docker-compose.yml up -d
+```
+
+2. Start the main m8flow stack with the NATS profile so the consumer is included:
+
+```bash
+docker compose --profile nats -f docker/m8flow-docker-compose.yml up -d --build
+```
+
+If the main stack is already running, rerun the second command so `m8flow-nats-consumer` is started with the `nats` profile enabled.
+
+---
+
 ## Event Message Schema
 
 Every event must carry these fields — the consumer discards any message that is missing one:

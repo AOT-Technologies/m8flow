@@ -78,7 +78,6 @@ m8flow/
 │
 ├── upstream.sources.json         # Canonical upstream repo/ref/folder config
 ├── sample.env                    # Environment variable template
-├── start_dev.sh                  # Local dev launcher (backend + frontend)
 └── LICENSE                       # Apache License 2.0
 
 # ── Gitignored — fetched via bin/fetch-upstream.sh / bin/fetch-upstream.ps1 ─
@@ -198,6 +197,101 @@ docker compose -f docker/m8flow-docker-compose.yml down
 # Stop and delete all data volumes
 docker compose -f docker/m8flow-docker-compose.yml down -v
 ```
+
+---
+
+## Running Locally (without Docker for backend/frontend)
+
+Use this mode for active development of m8flow extensions.
+
+### 1. Start infrastructure services
+
+Start only the infrastructure (database, Keycloak, MinIO, Redis) as containers:
+
+```bash
+docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build \
+  m8flow-db keycloak-db keycloak keycloak-proxy redis minio minio-mc-init
+```
+
+### 2. Start backend and frontend
+
+Start the backend in one terminal:
+
+```bash
+./extensions/m8flow-backend/bin/run_m8flow_backend.sh 7000 --reload
+```
+
+```powershell
+.\extensions\m8flow-backend\bin\run_m8flow_backend.ps1 7000 --Reload
+```
+
+When `uv` is available locally, the backend launcher syncs backend dependencies automatically before starting and runs the backend through `uv`. Set `M8FLOW_BACKEND_SYNC_DEPS=false` to skip sync, or `M8FLOW_BACKEND_USE_UV=false` to use the current Python environment directly.
+
+Start the frontend in a second terminal:
+
+Install frontend dependencies first if you have not already done so for this checkout:
+
+```bash
+cd extensions/m8flow-frontend
+npm install
+```
+
+```bash
+cd extensions/m8flow-frontend
+export PORT=7001
+export BACKEND_PORT=7000
+export VITE_VERSION_INFO='{"version":"local"}'
+export VITE_BACKEND_BASE_URL=/v1.0
+export VITE_MULTI_TENANT_ON="${MULTI_TENANT_ON:-false}"
+npm exec -- vite --host 0.0.0.0 --port 7001
+```
+
+```powershell
+Set-Location .\extensions\m8flow-frontend
+$env:PORT = '7001'
+$env:BACKEND_PORT = '7000'
+$env:VITE_VERSION_INFO = '{"version":"local"}'
+$env:VITE_BACKEND_BASE_URL = '/v1.0'
+$env:VITE_MULTI_TENANT_ON = if ($env:MULTI_TENANT_ON) { $env:MULTI_TENANT_ON } else { 'false' }
+npm exec -- vite --host 0.0.0.0 --port 7001
+```
+
+This flow expects the Docker dependencies to be running, but not the Docker `m8flow-backend` or `m8flow-frontend` services on the same ports. If those containers are still up, stop them before launching the local dev servers.
+
+Docker bind-mounts the repo `process_models/` directory into the backend and Celery containers, so a locally started backend and a containerized worker read the same process-model files by default.
+
+If the frontend fails with a missing Rollup native package such as `@rollup/rollup-win32-x64-msvc`, reinstall `extensions/m8flow-frontend` dependencies on that machine with `npm install`.
+
+> **macOS note:** Port 7000 may be claimed by AirPlay Receiver. Disable it in
+> System Settings → General → AirDrop & Handoff → AirPlay Receiver.
+
+### 3. Verify the backend
+
+```bash
+curl http://localhost:7000/v1.0/status
+```
+
+Expected response:
+```json
+{ "ok": true, "can_access_frontend": true }
+```
+
+### Running backend only
+
+```bash
+./extensions/m8flow-backend/bin/run_m8flow_backend.sh
+```
+
+```powershell
+.\extensions\m8flow-backend\bin\run_m8flow_backend.ps1
+```
+
+### Running a Celery worker
+
+```bash
+./extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh
+```
+
 ---
 
 ## Keycloak Setup

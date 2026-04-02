@@ -95,3 +95,30 @@ def test_apply_runtime_leaves_custom_config_unchanged() -> None:
     assert app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_CLIENT_ID"] == "custom-client"
     assert app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"][0]["uri"] == "http://custom/realm"
     assert app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"][0]["client_id"] == "custom-client"
+
+
+def test_apply_runtime_normalizes_uppercase_auth_config_keys() -> None:
+    app = Flask(__name__)
+    app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"] = [
+        {
+            "IDENTIFIER": "m8flow",
+            "LABEL": "M8Flow Realm",
+            "URI": "http://localhost:7002/realms/m8flow",
+            "INTERNAL_URI": "http://localhost:7002/realms/m8flow",
+            "CLIENT_ID": "m8flow-backend",
+            "CLIENT_SECRET": "secret",
+            "ADDITIONAL_VALID_CLIENT_IDS": "admin-cli",
+        }
+    ]
+
+    upstream_auth_defaults_patch.apply_runtime(app)
+
+    auth_config = app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"][0]
+    assert auth_config["identifier"] == "m8flow"
+    assert auth_config["label"] == "M8Flow Realm"
+    assert auth_config["uri"] == "http://localhost:7002/realms/m8flow"
+    assert auth_config["internal_uri"] == "http://localhost:7002/realms/m8flow"
+    assert auth_config["client_id"] == "m8flow-backend"
+    assert auth_config["client_secret"] == "secret"
+    assert auth_config["additional_valid_client_ids"] == "admin-cli"
+    assert "IDENTIFIER" not in auth_config
