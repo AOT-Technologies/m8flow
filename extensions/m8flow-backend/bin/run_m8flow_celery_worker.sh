@@ -4,6 +4,43 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "${script_dir}/../../.." && pwd)"
 cd "$repo_root"
 
+is_running_in_container() {
+  [[ -f /.dockerenv ]] && return 0
+  [[ -r /proc/1/cgroup ]] && grep -qaE '(docker|containerd|kubepods)' /proc/1/cgroup
+}
+
+resolve_repo_relative_path() {
+  local path_value="$1"
+
+  if [[ -z "$path_value" ]]; then
+    printf '%s' "$path_value"
+    return
+  fi
+
+  if [[ "$path_value" == /* || "$path_value" =~ ^[A-Za-z]:[\\/].* || "$path_value" == \\\\* ]]; then
+    printf '%s' "$path_value"
+    return
+  fi
+
+  printf '%s/%s' "$repo_root" "${path_value#./}"
+}
+
+normalize_bpmn_spec_dir() {
+  local path_value="$1"
+
+  if [[ -z "$path_value" ]]; then
+    printf '%s' "$path_value"
+    return
+  fi
+
+  if is_running_in_container && [[ "$path_value" =~ ^[A-Za-z]:[\\/] || "$path_value" == \\\\* ]]; then
+    printf '/app/process_models'
+    return
+  fi
+
+  resolve_repo_relative_path "$path_value"
+}
+
 mode="${1:-worker}"
 if [[ "$mode" == "worker" || "$mode" == "flower" ]]; then
   shift
@@ -38,6 +75,11 @@ if [[ -f "$env_file" ]]; then
       export "$key=$value"
     fi
   done < "$env_file"
+fi
+
+resolved_bpmn_spec_dir="$(normalize_bpmn_spec_dir "${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-}")"
+if [[ -n "$resolved_bpmn_spec_dir" ]]; then
+  export M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR="$resolved_bpmn_spec_dir"
 fi
 
 export SPIFFWORKFLOW_BACKEND_DATABASE_URI="${M8FLOW_BACKEND_DATABASE_URI}"

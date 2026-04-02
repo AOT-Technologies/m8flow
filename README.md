@@ -78,7 +78,6 @@ m8flow/
 │
 ├── upstream.sources.json         # Canonical upstream repo/ref/folder config
 ├── sample.env                    # Environment variable template
-├── start_dev.sh                  # Local dev launcher (backend + frontend)
 └── LICENSE                       # Apache License 2.0
 
 # ── Gitignored — fetched via bin/fetch-upstream.sh / bin/fetch-upstream.ps1 ─
@@ -216,22 +215,52 @@ docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build 
 
 ### 2. Start backend and frontend
 
+Start the backend in one terminal:
+
 ```bash
-./start_dev.sh
+./extensions/m8flow-backend/bin/run_m8flow_backend.sh 7000 --reload
 ```
 
-This script:
-- Sources `.env` from the repo root
-- Starts the m8flow extensions backend (uvicorn) on port **7000** in the background
-- Starts the m8flow extensions frontend (npm) on port **7001** in the foreground
-- Runs SpiffWorkflow DB migrations unless `M8FLOW_BACKEND_SW_UPGRADE_DB=false`
-- Runs m8flow Alembic migrations unless `M8FLOW_BACKEND_UPGRADE_DB=false`
+```powershell
+.\extensions\m8flow-backend\bin\run_m8flow_backend.ps1 7000 --Reload
+```
 
-Press **Ctrl+C** to stop the locally started backend and frontend.
+When `uv` is available locally, the backend launcher syncs backend dependencies automatically before starting and runs the backend through `uv`. Set `M8FLOW_BACKEND_SYNC_DEPS=false` to skip sync, or `M8FLOW_BACKEND_USE_UV=false` to use the current Python environment directly.
+
+Start the frontend in a second terminal:
+
+Install frontend dependencies first if you have not already done so for this checkout:
+
+```bash
+cd extensions/m8flow-frontend
+npm install
+```
+
+```bash
+cd extensions/m8flow-frontend
+export PORT=7001
+export BACKEND_PORT=7000
+export VITE_VERSION_INFO='{"version":"local"}'
+export VITE_BACKEND_BASE_URL=/v1.0
+export VITE_MULTI_TENANT_ON="${MULTI_TENANT_ON:-false}"
+npm exec -- vite --host 0.0.0.0 --port 7001
+```
+
+```powershell
+Set-Location .\extensions\m8flow-frontend
+$env:PORT = '7001'
+$env:BACKEND_PORT = '7000'
+$env:VITE_VERSION_INFO = '{"version":"local"}'
+$env:VITE_BACKEND_BASE_URL = '/v1.0'
+$env:VITE_MULTI_TENANT_ON = if ($env:MULTI_TENANT_ON) { $env:MULTI_TENANT_ON } else { 'false' }
+npm exec -- vite --host 0.0.0.0 --port 7001
+```
 
 This flow expects the Docker dependencies to be running, but not the Docker `m8flow-backend` or `m8flow-frontend` services on the same ports. If those containers are still up, stop them before launching the local dev servers.
 
-For local host processes, the launcher rewrites Celery Redis URLs that use the Docker-only hostname `redis` to `localhost`, so the local backend and worker can reach the Redis container exposed on port `6379`.
+If your `.env` uses Docker-only hostnames such as `redis` for Celery, set `M8FLOW_LOCAL_DEV_USE_HOST_SERVICES=true` before launching the backend or local Celery worker so the launcher rewrites those URLs to `localhost`.
+
+Docker bind-mounts the repo `process_models/` directory into the backend and Celery containers, so a locally started backend and a containerized worker read the same process-model files by default.
 
 If the frontend fails with a missing Rollup native package such as `@rollup/rollup-win32-x64-msvc`, reinstall `extensions/m8flow-frontend` dependencies on that machine with `npm install`.
 
@@ -252,19 +281,11 @@ Expected response:
 ### Running backend only
 
 ```bash
-# Arguments are optional
-./extensions/m8flow-backend/bin/run_m8flow_backend.sh 7000 --reload
-```
-
-Or with uv (syncs deps and optionally runs migrations):
-
-```bash
-./extensions/m8flow-backend/bin/setup_and_run_backend.sh
+./extensions/m8flow-backend/bin/run_m8flow_backend.sh
 ```
 
 ```powershell
-# Arguments are optional
-.\extensions\m8flow-backend\bin\setup_and_run_backend.ps1 7000 --Reload
+.\extensions\m8flow-backend\bin\run_m8flow_backend.ps1
 ```
 
 ### Running a Celery worker

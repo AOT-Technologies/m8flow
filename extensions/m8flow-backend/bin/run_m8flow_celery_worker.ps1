@@ -11,6 +11,20 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $scriptDir))
 Set-Location $repoRoot
 
+function Resolve-RepoRelativePath {
+  param([string]$PathValue)
+
+  if (-not $PathValue) {
+    return $PathValue
+  }
+
+  if ([System.IO.Path]::IsPathRooted($PathValue)) {
+    return $PathValue
+  }
+
+  return [System.IO.Path]::GetFullPath((Join-Path $repoRoot $PathValue))
+}
+
 if (-not (Test-Path ".venv")) { python -m venv .venv }
 
 . (Join-Path $repoRoot ".venv\Scripts\Activate.ps1")
@@ -108,6 +122,11 @@ function Use-LocalDevHostServices {
 }
 
 Use-LocalDevHostServices
+
+$resolvedBpmnSpecDir = Resolve-RepoRelativePath -PathValue $env:M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR
+if ($resolvedBpmnSpecDir) {
+  $env:M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR = $resolvedBpmnSpecDir
+}
 
 $env:SPIFFWORKFLOW_BACKEND_DATABASE_URI = $env:M8FLOW_BACKEND_DATABASE_URI
 $env:SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR = $env:M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR
