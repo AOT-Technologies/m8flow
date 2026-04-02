@@ -88,41 +88,6 @@ if (Test-Path $envFile) {
   }
 }
 
-function Convert-DockerRedisUrlToLocalhost {
-  param([string]$Url)
-
-  if (-not $Url) {
-    return $Url
-  }
-
-  return ($Url -replace '^(redis(?:s)?://(?:[^/@]+@)?)redis(?=[:/]|$)', '$1localhost')
-}
-
-function Use-LocalDevHostServices {
-  if ($env:M8FLOW_LOCAL_DEV_USE_HOST_SERVICES -ne 'true') {
-    return
-  }
-
-  foreach ($key in @(
-    'M8FLOW_BACKEND_CELERY_BROKER_URL',
-    'SPIFFWORKFLOW_BACKEND_CELERY_BROKER_URL',
-    'M8FLOW_BACKEND_CELERY_RESULT_BACKEND',
-    'SPIFFWORKFLOW_BACKEND_CELERY_RESULT_BACKEND'
-  )) {
-    $existingItem = Get-Item -Path "Env:$key" -ErrorAction SilentlyContinue
-    if (-not $existingItem) {
-      continue
-    }
-
-    $normalized = Convert-DockerRedisUrlToLocalhost -Url $existingItem.Value
-    if ($normalized -ne $existingItem.Value) {
-      Set-Item -Path "Env:$key" -Value $normalized
-    }
-  }
-}
-
-Use-LocalDevHostServices
-
 $resolvedBpmnSpecDir = Resolve-RepoRelativePath -PathValue $env:M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR
 if ($resolvedBpmnSpecDir) {
   $env:M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR = $resolvedBpmnSpecDir
