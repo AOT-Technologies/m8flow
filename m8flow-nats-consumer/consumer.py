@@ -6,7 +6,6 @@ import signal
 import sys
 from typing import Any
 
-
 from dotenv import load_dotenv
 from nats.aio.client import Client as NATS
 from nats.errors import ConnectionClosedError, TimeoutError, NoServersError
@@ -58,13 +57,24 @@ def instantiate_process(
     from spiffworkflow_backend.services.process_model_service import ProcessModelService
     from spiffworkflow_backend.services.process_instance_service import ProcessInstanceService
     from m8flow_backend.tenancy import set_context_tenant_id, reset_context_tenant_id
+    from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
 
     with flask_app.app_context():
         token = set_context_tenant_id(tenant_id)
         try:
+            user_slug = username.split("@")[-1]
+            tenant = db.session.get(M8flowTenantModel, tenant_id)
+            if not tenant:
+                logger.error("Tenant not found in the database. Event discarded.")
+                return None
+
+            if tenant.slug != user_slug:
+                logger.error("Tenant mismatch between user and event. Event discarded.")
+                return None
+
             user = UserModel.query.filter_by(username=username).first()
             if user is None:
-                logger.error(f"User '{username}' not found in the database. Event discarded.")
+                logger.error(f"User '{username}' not found in the database for tenant '{tenant_id}'. Event discarded.")
                 return None
 
             try:
@@ -108,6 +118,7 @@ async def check_idempotency(kv: KeyValue | None, tenant_id: str, event_id: str) 
 
 async def process_message(msg: Any, kv: KeyValue | None) -> None:
     """Authenticate and process a single NATS event."""
+    from spiffworkflow_backend.exceptions.api_error import ApiError
     try:
         data = json.loads(msg.data.decode("utf-8"))
         logger.debug("Received event: %s", data)
@@ -186,8 +197,22 @@ async def process_message(msg: Any, kv: KeyValue | None) -> None:
             tenant_id, process_identifier, instance_id,
         )
         await msg.ack()
+    except ApiError as e:
+        # Permanent business-logic failure (e.g. missing lane users, invalid BPMN config).
+        # NAKing would cause endless retries since the data won't change — ACK to discard.
+        logger.error(
+            "Process instantiation failed (permanent error, discarding message): "
+            "tenant=%s identifier=%s error=%s",
+            tenant_id, process_identifier, e,
+        )
+        if dedup_key and kv:
+            try:
+                await kv.delete(dedup_key)
+            except Exception:
+                pass
+        await msg.ack()
     except Exception as e:
-        logger.error("Process instantiation failed: %s", e)
+        logger.error("Process instantiation failed (transient error, will retry): %s", e)
         if dedup_key and kv:
             try:
                 await kv.delete(dedup_key)
