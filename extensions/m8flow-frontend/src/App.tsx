@@ -7,7 +7,7 @@ import {
 } from 'react-router-dom';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useState } from 'react';
+import { Suspense, lazy, useState } from 'react';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { AbilityContext } from '@spiffworkflow-frontend/contexts/Can';
@@ -20,12 +20,28 @@ import { CONFIGURATION_ERRORS } from '@spiffworkflow-frontend/config';
 // m8 Extension: Custom grouping context
 import { CustomGroupingProvider } from './contexts/CustomGroupingContext';
 import TenantGateContext from './contexts/TenantGateContext';
-import TenantSelectPage from './views/TenantSelectPage';
 import { useConfig } from './utils/useConfig';
 import { M8FLOW_TENANT_STORAGE_KEY } from './views/TenantSelectPage';
 import UserService from './services/UserService';
 
 const queryClient = new QueryClient();
+
+const TenantSelectPage = lazy(() => import('./views/TenantSelectPage'));
+
+const RouteLoadingFallback = () => (
+  <div
+    style={{
+      display: 'grid',
+      placeItems: 'center',
+      padding: 24,
+      minHeight: 240,
+      width: '100%',
+    }}
+    aria-label="Loading"
+  >
+    Loading…
+  </div>
+);
 
 function getStoredTenant(): boolean {
   if (typeof globalThis === 'undefined') return false;
@@ -76,7 +92,9 @@ export default function App() {
                   <TenantGateContext.Provider
                     value={{ onTenantSelected: () => setHasTenant(true) }}
                   >
-                    <TenantSelectPage />
+                    <Suspense fallback={<RouteLoadingFallback />}>
+                      <TenantSelectPage />
+                    </Suspense>
                   </TenantGateContext.Provider>
                 </AbilityContext.Provider>
               </APIErrorProvider>
