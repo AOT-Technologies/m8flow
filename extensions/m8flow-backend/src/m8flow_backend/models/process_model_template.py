@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from sqlalchemy import ForeignKey, Index
+from sqlalchemy import ForeignKey, Index, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from spiffworkflow_backend.models.db import SpiffworkflowBaseDBModel
@@ -27,13 +27,15 @@ class ProcessModelTemplateModel(M8fTenantScopedMixin, TenantScoped, Spiffworkflo
         Index("ix_pmt_source_template_id", "source_template_id"),
         Index("ix_pmt_source_template_key", "source_template_key"),
         Index("ix_pmt_m8f_tenant_id", "m8f_tenant_id"),
+        UniqueConstraint("m8f_tenant_id", "process_model_identifier", name="uq_process_model_identifier_tenant"),
     )
     __allow_unmapped__ = True
 
     id: int = db.Column(db.Integer, primary_key=True)
     
     # The process model identifier (e.g., "my-group/my-model")
-    process_model_identifier: str = db.Column(db.String(255), nullable=False, unique=True)
+    # Uniqueness is enforced per tenant via UniqueConstraint in __table_args__
+    process_model_identifier: str = db.Column(db.String(255), nullable=False)
     
     # Reference to the source template
     source_template_id: int = db.Column(
