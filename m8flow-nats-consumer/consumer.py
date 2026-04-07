@@ -116,6 +116,19 @@ async def check_idempotency(kv: KeyValue | None, tenant_id: str, event_id: str) 
             
     return dedup_key
 
+def _extract_tenant_from_subject(subject: str) -> str | None:
+    """
+    Extract the tenant_id from a NATS subject.
+    Expected format: m8flow.events.<tenant_id>.trigger
+    Returns None if the subject does not match the expected format.
+    """
+    parts = subject.split(".")
+    # m8flow . events . <tenant_id> . trigger  => 4 parts
+    if len(parts) == 4 and parts[0] == "m8flow" and parts[1] == "events" and parts[3] == "trigger":
+        return parts[2] or None
+    return None
+
+
 async def process_message(msg: Any, kv: KeyValue | None) -> None:
     """Authenticate and process a single NATS event."""
     from spiffworkflow_backend.exceptions.api_error import ApiError
@@ -127,16 +140,32 @@ async def process_message(msg: Any, kv: KeyValue | None) -> None:
         await msg.ack()
         return
 
-    tenant_id          = data.get("tenant_id")
+    # Authoritative tenant_id comes from the NATS subject, not the payload
+    subject_tenant_id = _extract_tenant_from_subject(msg.subject)
+    if not subject_tenant_id:
+        logger.error("Event subject has unexpected format — cannot determine tenant. Discarding. subject=%s", msg.subject)
+        await msg.ack()
+        return
+
+    # If the payload also carries a tenant_id, it must match the subject
+    payload_tenant_id  = data.get("tenant_id")
+    if payload_tenant_id and payload_tenant_id != subject_tenant_id:
+        logger.error(
+            "Tenant mismatch: payload tenant does not match subject tenant. Event discarded."
+        )
+        await msg.ack()
+        return
+
+    tenant_id          = subject_tenant_id
     process_identifier = data.get("process_identifier")
     username           = data.get("username")
     event_id           = data.get("id")
     api_key            = data.get("api_key")
 
-    if not all([tenant_id, process_identifier, username]):
+    if not all([process_identifier, username]):
         logger.error(
-            "Message missing required fields (tenant_id, process_identifier, username). "
-            "Discarding. data=%s", data,
+            "Message missing required fields (process_identifier, username). "
+            "Discarding."
         )
         await msg.ack()
         return
