@@ -9,11 +9,13 @@ import celery
 from sqlalchemy import text
 
 from extensions.app import app as m8flow_app
+from m8flow_backend.background_processing import M8FLOW_CELERY_TASK_EVENT_NOTIFIER as CELERY_TASK_EVENT_NOTIFIER
+from m8flow_backend.background_processing import (
+    M8FLOW_CELERY_TASK_PROCESS_INSTANCE_RUN as CELERY_TASK_PROCESS_INSTANCE_RUN,
+)
 from m8flow_backend.services.celery_tenant_context_patch import TENANT_HEADER_NAME
 from m8flow_backend.tenancy import reset_context_tenant_id
 from m8flow_backend.tenancy import set_context_tenant_id
-from spiffworkflow_backend.background_processing import CELERY_TASK_EVENT_NOTIFIER
-from spiffworkflow_backend.background_processing import CELERY_TASK_PROCESS_INSTANCE_RUN
 from spiffworkflow_backend.models.db import db
 from spiffworkflow_backend.services.logging_service import get_log_formatter
 from spiffworkflow_backend.services.logging_service import setup_logger_for_app
@@ -48,7 +50,7 @@ celery_app = getattr(the_flask_app, "celery_app", None)
 if celery_app is None:
     raise RuntimeError(
         "Celery app was not initialized. "
-        "Set SPIFFWORKFLOW_BACKEND_CELERY_ENABLED=true (or M8FLOW_BACKEND_CELERY_ENABLED=true)."
+        "Set M8FLOW_BACKEND_CELERY_ENABLED=true."
     )
 
 
