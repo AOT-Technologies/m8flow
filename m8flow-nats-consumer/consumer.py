@@ -15,16 +15,15 @@ from nats.js.kv import KeyValue
 
 load_dotenv()
 
-bpmn_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "process_models"))
-os.environ["M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR"] = bpmn_dir
+bpmn_dir = os.path.abspath(os.environ["M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR"])
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=os.getenv("M8FLOW_BACKEND_LOG_LEVEL", "INFO"),
     format="%(asctime)s [%(levelname)s] [%(name)s] %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger("m8flow.nats.consumer")
-logging.getLogger("m8flow.nats.token_service").setLevel(logging.DEBUG)
+logging.getLogger("m8flow.nats.token_service").setLevel(os.getenv("M8FLOW_NATS_TOKEN_SERVICE_LOG_LEVEL", "DEBUG"))
 
 NATS_URL          = os.environ["M8FLOW_NATS_URL"]
 STREAM_NAME       = os.environ["M8FLOW_NATS_STREAM_NAME"]
@@ -35,6 +34,8 @@ FETCH_TIMEOUT     = float(os.environ["M8FLOW_NATS_FETCH_TIMEOUT"])
 
 DEDUP_BUCKET      = os.environ["M8FLOW_NATS_DEDUP_BUCKET"]
 DEDUP_TTL_SECONDS = int(os.environ["M8FLOW_NATS_DEDUP_TTL"])
+RETRY_DELAY       = int(os.getenv("M8FLOW_NATS_RETRY_DELAY", "5"))
+MAX_RECONNECTS    = int(os.getenv("M8FLOW_NATS_MAX_RECONNECTS", "-1"))
 
 running = True
 
@@ -193,7 +194,7 @@ async def process_message(msg: Any, kv: KeyValue | None) -> None:
                 await kv.delete(dedup_key)
             except Exception:
                 pass
-        await msg.nak(delay=5)
+        await msg.nak(delay=RETRY_DELAY)
 
 async def main() -> None:
     global flask_app
@@ -220,7 +221,7 @@ async def main() -> None:
             reconnected_cb=reconnected_cb,
             disconnected_cb=disconnected_cb,
             error_cb=error_cb,
-            max_reconnect_attempts=-1,
+            max_reconnect_attempts=MAX_RECONNECTS,
         )
     except (NoServersError, ConnectionError) as e:
         logger.error(f"Failed to connect to NATS: {e}")

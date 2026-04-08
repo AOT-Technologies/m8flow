@@ -2,7 +2,7 @@
 set -eu
 
 SRC="${SRC:-/host_attachments}"
-DST="${1:-/slack_attachments}"
+DST="${1:-/data/slack_attachments}"
 
 echo "Syncing Slack attachments..."
 echo "  from: $SRC"

@@ -49,7 +49,7 @@ Run with: `docker compose --profile init -f docker/m8flow-docker-compose.yml up 
 
 | Service | Build | Purpose | Ports | Configuration |
 |---------|-------|---------|-------|----------------|
-| **m8flow-backend** | m8flow.backend.Dockerfile | Flask/uvicorn API (SpiffWorkflow + m8flow extensions). Runs migrations on startup. | M8FLOW_BACKEND_PORT (default 7000)→8000 | DB: `m8flow-db`. Keycloak: `keycloak-proxy:7002`. Redis/Celery, MinIO URLs set for Docker. BPMN/templates dirs: volumes `process_models_cache`, `templates_cache` at `/app/process_models`, `/app/templates`. Entrypoint chowns those dirs then runs app as user `app` (UID 1000). Default build target: `dev`; prod override uses target `prod`. |
+| **m8flow-backend** | m8flow.backend.Dockerfile | Flask/uvicorn API (SpiffWorkflow + m8flow extensions). Runs migrations on startup. | M8FLOW_BACKEND_PORT (default 7000)→8000 | DB: `m8flow-db`. Keycloak: `keycloak-proxy:7002`. Redis/Celery, MinIO URLs set for Docker. BPMN/templates dirs: volumes `process_models_cache`, `templates_cache` at `/app/data/process_models`, `/app/data/templates`. Entrypoint chowns those dirs then runs app as user `app` (UID 1000). Default build target: `dev`; prod override uses target `prod`. |
 | **m8flow-frontend** | m8flow.frontend.Dockerfile | Nginx serving the built React app (core + extension). | M8FLOW_FRONTEND_PORT (default 7001)→8080 | Reads `.env` at build time (e.g. `MULTI_TENANT_ON`, `VITE_BACKEND_BASE_URL`). Listens on 8080 (non-root). Runs as user `nginx`. |
 
 ---
@@ -58,8 +58,8 @@ Run with: `docker compose --profile init -f docker/m8flow-docker-compose.yml up 
 
 ### m8flow.backend.Dockerfile
 
-- **builder:** Python 3.12.1 slim-bookworm, build deps, copies `spiffworkflow-backend` + `extensions`, creates `/opt/venv`, installs backend non-editable. Used only for `prod`.
-- **prod:** Slim runtime (libpq5, ca-certificates, gosu). Copies venv + app from builder. Creates user `app` (1000:1000). Entrypoint: chown `/app/process_models` and `/app/templates`, then `gosu app` to run CMD. No build tools.
+- **builder:** Python 3.12 slim, build deps, copies `spiffworkflow-backend` + `extensions`, creates `/opt/venv`, installs backend non-editable. Used only for `prod`.
+- **prod:** Slim runtime (libpq5, ca-certificates, gosu). Copies venv + app from builder. Creates user `app` (1000:1000). Entrypoint: chown `/app/data/process_models` and `/app/data/templates`, then `gosu app` to run CMD. No build tools.
 - **dev (default):** Full repo, build deps, editable install (`uv pip install -e .`). Same entrypoint and `app` user so volume permissions match prod.
 
 ### m8flow.frontend.Dockerfile
