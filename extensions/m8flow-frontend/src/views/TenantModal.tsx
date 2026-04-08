@@ -1,22 +1,16 @@
 import {
+  Alert,
   Button,
   Dialog,
   DialogActions,
   DialogContent,
   DialogContentText,
   DialogTitle,
-  FormControl,
-  InputLabel,
-  MenuItem,
-  Select,
   Stack,
   TextField,
 } from "@mui/material";
 import { useEffect, useState } from "react";
-import TenantService, {
-  Tenant,
-  EditableTenantStatus,
-} from "../services/TenantService";
+import TenantService, { Tenant } from "../services/TenantService";
 import { TenantModalType } from "../enums/TenantModalType";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 
@@ -25,7 +19,44 @@ interface TenantModalProps {
   type: TenantModalType;
   tenant: Tenant | null;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (message: string) => void;
+}
+
+const MAX_SLUG_LENGTH = 15;
+const MAX_DISPLAY_NAME_LENGTH = 50;
+const TENANT_SLUG_PATTERN = /^[A-Za-z0-9_-]+$/;
+
+function validateTenantSlug(value: string): string {
+  if (!value) {
+    return "Tenant slug cannot be empty";
+  }
+  if (value.length > MAX_SLUG_LENGTH) {
+    return `Tenant slug must be ${MAX_SLUG_LENGTH} characters or fewer`;
+  }
+  if (!TENANT_SLUG_PATTERN.test(value)) {
+    return "Tenant slug can only contain letters, numbers, hyphens, and underscores";
+  }
+  return "";
+}
+
+function validateDisplayName(value: string): string {
+  if (!value) {
+    return "Tenant display name cannot be empty";
+  }
+  if (value.length > MAX_DISPLAY_NAME_LENGTH) {
+    return `Tenant display name must be ${MAX_DISPLAY_NAME_LENGTH} characters or fewer`;
+  }
+  return "";
+}
+
+function getErrorMessage(error: any): string {
+  if (typeof error?.detail === "string" && error.detail) {
+    return error.detail;
+  }
+  if (typeof error?.message === "string" && error.message) {
+    return error.message;
+  }
+  return "";
 }
 
 export default function TenantModal({
@@ -37,38 +68,80 @@ export default function TenantModal({
 }: TenantModalProps) {
   const [loading, setLoading] = useState(false);
 
+  // Create State
+  const [createRealmId, setCreateRealmId] = useState("");
+  const [createDisplayName, setCreateDisplayName] = useState("");
+  const [createRealmIdError, setCreateRealmIdError] = useState("");
+  const [createDisplayNameError, setCreateDisplayNameError] = useState("");
+
   // Edit State
   const [editName, setEditName] = useState("");
-  const [editStatus, setEditStatus] = useState<EditableTenantStatus>("ACTIVE");
+  const [editNameError, setEditNameError] = useState("");
+  const [submitError, setSubmitError] = useState("");
 
   useEffect(() => {
-    if (open && tenant) {
-      if (type === TenantModalType.EDIT_TENANT) {
+    if (open) {
+      if (type === TenantModalType.CREATE_TENANT) {
+        setCreateRealmId("");
+        setCreateDisplayName("");
+      } else if (tenant && type === TenantModalType.EDIT_TENANT) {
         setEditName(tenant.name);
-        setEditStatus(tenant.status === "DELETED" ? "INACTIVE" : tenant.status);
       }
     } else if (!open) {
       // Reset state when modal closes to prevent stale data
+      setCreateRealmId("");
+      setCreateDisplayName("");
       setEditName("");
-      setEditStatus("ACTIVE");
     }
+    setCreateRealmIdError("");
+    setCreateDisplayNameError("");
+    setEditNameError("");
+    setSubmitError("");
   }, [open, tenant, type]);
 
   const handleSubmit = async () => {
-    if (!tenant) return;
+    let hasValidationError = false;
+    setCreateRealmIdError("");
+    setCreateDisplayNameError("");
+    setEditNameError("");
+    setSubmitError("");
 
-    // Validate name for edit operation
-    if (type === TenantModalType.EDIT_TENANT) {
-      const trimmedName = editName.trim();
-      if (!trimmedName) {
-        alert("Tenant name cannot be empty");
-        return;
+    if (type === TenantModalType.CREATE_TENANT) {
+      const trimmedRealmId = createRealmId.trim();
+      const trimmedDisplayName = createDisplayName.trim();
+      const realmIdError = validateTenantSlug(trimmedRealmId);
+      const displayNameError = validateDisplayName(trimmedDisplayName);
+      if (realmIdError) {
+        setCreateRealmIdError(realmIdError);
+        hasValidationError = true;
       }
+      if (displayNameError) {
+        setCreateDisplayNameError(displayNameError);
+        hasValidationError = true;
+      }
+    } else if (type === TenantModalType.EDIT_TENANT) {
+      if (!tenant) return;
+      const trimmedName = editName.trim();
+      const editError = validateDisplayName(trimmedName);
+      if (editError) {
+        setEditNameError(editError);
+        hasValidationError = true;
+      }
+    }
+
+    if (hasValidationError) {
+      return;
     }
 
     setLoading(true);
     try {
-      if (type === TenantModalType.EDIT_TENANT) {
+      if (type === TenantModalType.CREATE_TENANT) {
+        await TenantService.createTenant({
+          realm_id: createRealmId.trim(),
+          display_name: createDisplayName.trim(),
+        });
+      } else if (type === TenantModalType.EDIT_TENANT) {
+        if (!tenant) return;
         // TODO: Phase 2 - Only updating name for now. Status change will be added in Phase 2
         await TenantService.updateTenant(tenant.id, {
           name: editName.trim(),
@@ -79,18 +152,38 @@ export default function TenantModal({
       // else if (type === TenantModalType.DELETE_TENANT) {
       //   await TenantService.deleteTenant(tenant.id);
       // }
-      onSuccess();
+      onSuccess(
+        type === TenantModalType.CREATE_TENANT
+          ? "Tenant created successfully."
+          : "Tenant updated successfully.",
+      );
       onClose();
     } catch (err: any) {
-      const action = type === TenantModalType.EDIT_TENANT ? "update" : "delete";
-      alert(err.message || `Failed to ${action} tenant. Please try again.`);
+      const errorMessage = getErrorMessage(err);
+      if (
+        type === TenantModalType.CREATE_TENANT &&
+        errorMessage &&
+        (errorMessage.toLowerCase().includes("already exists") ||
+          errorMessage.toLowerCase().includes("conflict"))
+      ) {
+        setCreateRealmIdError("Tenant slug already exists");
+        return;
+      }
+      const action =
+        type === TenantModalType.CREATE_TENANT
+          ? "create"
+          : type === TenantModalType.EDIT_TENANT
+            ? "update"
+            : "delete";
+      setSubmitError(errorMessage || `Failed to ${action} tenant. Please try again.`);
     } finally {
       setLoading(false);
     }
   };
 
+  const isCreate = type === TenantModalType.CREATE_TENANT;
   const isDelete = type === TenantModalType.DELETE_TENANT;
-  const title = isDelete ? "Delete Tenant" : "Edit Tenant";
+  const title = isDelete ? "Delete Tenant" : isCreate ? "Add Tenant" : "Edit Tenant";
 
   return (
     <Dialog
@@ -136,14 +229,73 @@ export default function TenantModal({
           </Stack>
         ) : (
           <Stack spacing={3} sx={{ mt: 1 }}>
-            <TextField
-              label="Name"
-              fullWidth
-              value={editName}
-              onChange={(e) => setEditName(e.target.value)}
-              disabled={loading}
-              data-testid="tenant-name-input"
-            />
+            {submitError && (
+              <Alert severity="error" data-testid="tenant-modal-error">
+                {submitError}
+              </Alert>
+            )}
+            {isCreate ? (
+              <>
+                <TextField
+                  label="Realm Slug"
+                  fullWidth
+                  value={createRealmId}
+                  onChange={(e) => {
+                    setCreateRealmId(e.target.value);
+                    if (createRealmIdError) {
+                      setCreateRealmIdError("");
+                    }
+                    if (submitError) {
+                      setSubmitError("");
+                    }
+                  }}
+                  disabled={loading}
+                  error={Boolean(createRealmIdError)}
+                  helperText={createRealmIdError}
+                  inputProps={{ maxLength: MAX_SLUG_LENGTH }}
+                  data-testid="tenant-realm-id-input"
+                />
+                <TextField
+                  label="Display Name"
+                  fullWidth
+                  value={createDisplayName}
+                  onChange={(e) => {
+                    setCreateDisplayName(e.target.value);
+                    if (createDisplayNameError) {
+                      setCreateDisplayNameError("");
+                    }
+                    if (submitError) {
+                      setSubmitError("");
+                    }
+                  }}
+                  disabled={loading}
+                  error={Boolean(createDisplayNameError)}
+                  helperText={createDisplayNameError}
+                  inputProps={{ maxLength: MAX_DISPLAY_NAME_LENGTH }}
+                  data-testid="tenant-display-name-input"
+                />
+              </>
+            ) : (
+              <TextField
+                label="Name"
+                fullWidth
+                value={editName}
+                onChange={(e) => {
+                  setEditName(e.target.value);
+                  if (editNameError) {
+                    setEditNameError("");
+                  }
+                  if (submitError) {
+                    setSubmitError("");
+                  }
+                }}
+                disabled={loading}
+                error={Boolean(editNameError)}
+                helperText={editNameError}
+                inputProps={{ maxLength: MAX_DISPLAY_NAME_LENGTH }}
+                data-testid="tenant-name-input"
+              />
+            )}
             {/* TODO: Phase 2 - Status change functionality will be implemented in Phase 2 */}
             {/* <FormControl fullWidth>
               <InputLabel>Status</InputLabel>
@@ -180,7 +332,7 @@ export default function TenantModal({
           autoFocus={!isDelete}
           disabled={loading}
         >
-          {loading ? "Processing..." : isDelete ? "Delete" : "Save"}
+          {loading ? "Processing..." : isDelete ? "Delete" : isCreate ? "Create" : "Save"}
         </Button>
       </DialogActions>
     </Dialog>

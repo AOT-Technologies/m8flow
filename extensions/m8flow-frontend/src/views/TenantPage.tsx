@@ -22,13 +22,16 @@ import {
   Tooltip,
   CircularProgress,
   Alert,
+  Button,
+  Snackbar,
 } from "@mui/material";
 import {
   Search as SearchIcon,
   Edit as EditIcon,
-  Delete as DeleteIcon,
   Clear as ClearIcon,
+  Add as AddIcon,
 } from "@mui/icons-material";
+import { usePermissionFetcher } from "@spiffworkflow-frontend/hooks/PermissionService";
 import { Tenant } from "../services/TenantService";
 import { useTenants } from "../hooks/useTenants";
 import TenantModal from "./TenantModal";
@@ -45,12 +48,17 @@ type SortDirection = "asc" | "desc";
 type SearchType = "name" | "slug";
 
 export default function TenantPage() {
+  const { ability, permissionsLoaded } = usePermissionFetcher({
+    "/m8flow/tenant-realms": ["POST"],
+  });
   const {
     data: tenants = [],
     isLoading: loading,
     error: queryError,
     refetch,
   } = useTenants();
+  const canCreateTenant =
+    permissionsLoaded && ability.can("POST", "/m8flow/tenant-realms");
 
   // Search and filter states
   const [searchQuery, setSearchQuery] = useState("");
@@ -67,11 +75,18 @@ export default function TenantPage() {
     TenantModalType.EDIT_TENANT,
   );
   const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
+  const [successMessage, setSuccessMessage] = useState("");
 
   // Handle edit
   const handleEdit = (tenant: Tenant) => {
     setSelectedTenant(tenant);
     setModalType(TenantModalType.EDIT_TENANT);
+    setIsModalOpen(true);
+  };
+
+  const handleCreate = () => {
+    setSelectedTenant(null);
+    setModalType(TenantModalType.CREATE_TENANT);
     setIsModalOpen(true);
   };
 
@@ -87,7 +102,8 @@ export default function TenantPage() {
     setSelectedTenant(null);
   };
 
-  const handleModalSuccess = () => {
+  const handleModalSuccess = (message: string) => {
+    setSuccessMessage(message);
     refetch();
   };
 
@@ -173,6 +189,16 @@ export default function TenantPage() {
           >
             Tenant Management
           </Typography>
+          {canCreateTenant && (
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={handleCreate}
+              data-testid="tenant-add-button"
+            >
+              Add Tenant
+            </Button>
+          )}
         </Box>
 
         {/* Filters Section */}
@@ -396,6 +422,20 @@ export default function TenantPage() {
         onClose={handleCloseModal}
         onSuccess={handleModalSuccess}
       />
+      <Snackbar
+        open={Boolean(successMessage)}
+        autoHideDuration={4000}
+        onClose={() => setSuccessMessage("")}
+        anchorOrigin={{ vertical: "top", horizontal: "center" }}
+      >
+        <Alert
+          severity="success"
+          onClose={() => setSuccessMessage("")}
+          sx={{ width: "100%" }}
+        >
+          {successMessage}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }
