@@ -53,6 +53,37 @@ def _keycloak_realm_roles_as_groups(user_info: dict[str, Any]) -> list[str]:
     ]
 
 
+def _normalize_keycloak_groups(user_info: dict[str, Any]) -> list[str]:
+    """
+    Normalize Keycloak group claims to role/group identifiers used by permissions config.
+
+    Keycloak groups are frequently emitted as paths (e.g. "/super-admin" or "/a/b/super-admin").
+    Permission assignment expects plain identifiers like "super-admin".
+    """
+    groups = user_info.get("groups")
+    if not isinstance(groups, list):
+        return []
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for group in groups:
+        if not isinstance(group, str):
+            continue
+        value = group.strip()
+        if not value:
+            continue
+        candidates = [value]
+        if "/" in value:
+            leaf = value.rstrip("/").split("/")[-1].strip()
+            if leaf:
+                candidates.append(leaf)
+        for candidate in candidates:
+            if candidate in M8FLOW_ROLE_GROUP_IDENTIFIERS and candidate not in seen:
+                seen.add(candidate)
+                normalized.append(candidate)
+    return normalized
+
+
 def apply() -> None:
     """Patch AuthorizationService: authentication_exclusion_list (M8Flow public endpoints) and create_user_from_sign_in (realm-scoped usernames)."""
     global _PATCHED
@@ -94,11 +125,17 @@ def apply() -> None:
             iss = user_info["iss"]
             sub = user_info.get("sub") or ""
 
-            if "groups" not in user_info:
-                derived_groups = _keycloak_realm_roles_as_groups(user_info)
-                if derived_groups:
-                    user_info = user_info.copy()
-                    user_info["groups"] = derived_groups
+            normalized_groups = _normalize_keycloak_groups(user_info)
+            derived_groups = _keycloak_realm_roles_as_groups(user_info)
+            merged_groups = []
+            seen_groups = set()
+            for group_name in normalized_groups + derived_groups:
+                if group_name not in seen_groups:
+                    seen_groups.add(group_name)
+                    merged_groups.append(group_name)
+            if merged_groups:
+                user_info = user_info.copy()
+                user_info["groups"] = merged_groups
 
             realm = _extract_realm_from_issuer(iss)
             if realm:

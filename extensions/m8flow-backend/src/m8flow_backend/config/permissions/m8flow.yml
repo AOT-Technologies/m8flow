@@ -56,7 +56,7 @@ permissions:
   super-admin:
     groups: ["super-admin"]
     actions: [all]
-    uri: /m8flow/tenants/*
+    uri: /m8flow/tenants*
   manage-tenant-realms:
     groups: ["super-admin"]
     actions: [all]
