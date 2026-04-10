@@ -7,6 +7,7 @@ from flask import Flask
 
 from m8flow_backend.services import authorization_service_patch
 from m8flow_backend.services.authorization_service_patch import _keycloak_realm_roles_as_groups
+from m8flow_backend.services.authorization_service_patch import _normalize_keycloak_groups
 from m8flow_backend.services.authorization_service_patch import _normalize_permissions_yaml_config
 from m8flow_backend.services.authorization_service_patch import _tenant_id_for_user_info
 from m8flow_backend.services.authorization_service_patch import extract_realm_from_issuer
@@ -73,6 +74,12 @@ def test_keycloak_realm_roles_as_groups_returns_empty_without_roles() -> None:
     assert _keycloak_realm_roles_as_groups({}) == []
 
 
+def test_normalize_keycloak_groups_uses_leaf_for_path_values() -> None:
+    user_info = {"groups": ["/super-admin", "/a/b/reviewer", "viewer", "/viewer", "", None]}
+
+    assert _normalize_keycloak_groups(user_info) == ["super-admin", "reviewer", "viewer"]
+
+
 def test_normalize_permissions_yaml_config_qualifies_group_keys_and_references() -> None:
     permission_configs = {
         "groups": {
@@ -122,4 +129,4 @@ def test_parse_permissions_yaml_into_group_info_qualifies_default_group_referenc
         "/onboarding",
         "/active-users/*",
     ]
-    assert super_admin_group["permissions"][0]["uri"] == "/m8flow/tenants/*"
+    assert super_admin_group["permissions"][0]["uri"] == "/m8flow/tenants*"

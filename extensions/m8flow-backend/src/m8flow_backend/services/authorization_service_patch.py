@@ -92,6 +92,38 @@ def _normalize_permissions_yaml_config(permission_configs: dict[str, Any], tenan
     return normalized_permission_configs
 
 
+def _normalize_keycloak_groups(user_info: dict[str, Any]) -> list[str]:
+    """
+    Normalize Keycloak group claims to identifiers used by permissions config.
+
+    Keycloak groups are frequently emitted as paths (e.g. "/super-admin" or "/a/b/super-admin").
+    Permission assignment expects plain identifiers like "super-admin". Preserve
+    non-path groups as-is and use the last path segment for path-style values.
+    """
+    groups = user_info.get("groups")
+    if not isinstance(groups, list):
+        return []
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for group in groups:
+        if not isinstance(group, str):
+            continue
+        value = group.strip()
+        if not value:
+            continue
+        candidates = [value]
+        if "/" in value:
+            leaf = value.rstrip("/").split("/")[-1].strip()
+            if leaf:
+                candidates = [leaf]
+        for candidate in candidates:
+            if candidate and candidate not in seen:
+                seen.add(candidate)
+                normalized.append(candidate)
+    return normalized
+
+
 def apply() -> None:
     """Patch AuthorizationService for m8flow auth behavior and tenant-qualified groups."""
     global _PATCHED
@@ -157,14 +189,19 @@ def apply() -> None:
         user_attributes["service"] = user_info["iss"]
         user_attributes["service_id"] = user_info["sub"]
 
-        iss = user_info.get("iss")
         effective_tenant_id = _tenant_id_for_user_info(user_info)
 
-        if "groups" not in user_info:
-            derived_groups = _keycloak_realm_roles_as_groups(user_info)
-            if derived_groups:
-                user_info = user_info.copy()
-                user_info["groups"] = derived_groups
+        normalized_groups = _normalize_keycloak_groups(user_info)
+        derived_groups = _keycloak_realm_roles_as_groups(user_info)
+        merged_groups: list[str] = []
+        seen_groups: set[str] = set()
+        for group_name in normalized_groups + derived_groups:
+            if group_name not in seen_groups:
+                seen_groups.add(group_name)
+                merged_groups.append(group_name)
+        if merged_groups:
+            user_info = user_info.copy()
+            user_info["groups"] = merged_groups
 
         desired_group_identifiers: list[str] | Any | None = None
         if current_app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_IS_AUTHORITY_FOR_USER_GROUPS"]:
