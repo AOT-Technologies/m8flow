@@ -25,18 +25,6 @@ def _inspector() -> sa.Inspector:
     return sa.inspect(op.get_bind())
 
 
-def _get_unique_constraint_name(table: str, columns: list[str]) -> str | None:
-    """Find the name of a unique constraint by its columns."""
-    insp = _inspector()
-    for uc in insp.get_unique_constraints(table):
-        if set(uc.get("column_names", [])) == set(columns):
-            return uc["name"]
-    for idx in insp.get_indexes(table):
-        if idx.get("unique") and set(idx.get("column_names", [])) == set(columns):
-            return idx["name"]
-    return None
-
-
 def _drop_unique_constraint(table: str, columns: list[str]) -> None:
     """Drop a unique constraint by its columns, handling both constraint and index cases."""
     insp = _inspector()
