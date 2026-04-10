@@ -93,8 +93,8 @@ def test_process_model_template_model_creation() -> None:
         assert retrieved.created_by == "testuser"
 
 
-def test_process_model_template_model_unique_constraint() -> None:
-    """Test ProcessModelTemplateModel enforces unique process_model_identifier."""
+def test_process_model_template_model_unique_constraint_same_tenant() -> None:
+    """Test ProcessModelTemplateModel enforces unique process_model_identifier within a tenant."""
     app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -141,20 +141,99 @@ def test_process_model_template_model_unique_constraint() -> None:
         db.session.add(provenance1)
         db.session.commit()
 
-        # Try to create duplicate - should fail
+        # Try to create duplicate in same tenant - should fail
         provenance2 = ProcessModelTemplateModel(
             process_model_identifier="test-group/test-model",  # Same identifier
             source_template_id=template.id,
             source_template_key="test-template",
             source_template_version="V2",
             source_template_name="Test Template",
-            m8f_tenant_id="tenant-1",
+            m8f_tenant_id="tenant-1",  # Same tenant
             created_by="testuser",
         )
         db.session.add(provenance2)
-        
+
         with pytest.raises(Exception):  # IntegrityError
             db.session.commit()
+
+
+def test_process_model_template_model_allows_same_identifier_different_tenants() -> None:
+    """Test ProcessModelTemplateModel allows same process_model_identifier across different tenants."""
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+
+        # Create two tenants
+        tenant1 = M8flowTenantModel(
+            id="tenant-1",
+            name="Test Tenant 1",
+            slug="test-tenant-1",
+            created_by="test",
+            modified_by="test",
+        )
+        tenant2 = M8flowTenantModel(
+            id="tenant-2",
+            name="Test Tenant 2",
+            slug="test-tenant-2",
+            created_by="test",
+            modified_by="test",
+        )
+        db.session.add(tenant1)
+        db.session.add(tenant2)
+        db.session.commit()
+
+        # Create a template in tenant-1 (will be public)
+        template = TemplateModel(
+            template_key="shared-template",
+            version="V1",
+            name="Shared Template",
+            m8f_tenant_id="tenant-1",
+            visibility=TemplateVisibility.public.value,
+            files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
+            created_by="testuser",
+            modified_by="testuser",
+        )
+        db.session.add(template)
+        db.session.commit()
+
+        # Create provenance record in tenant-1
+        provenance1 = ProcessModelTemplateModel(
+            process_model_identifier="test-group/test-model",
+            source_template_id=template.id,
+            source_template_key="shared-template",
+            source_template_version="V1",
+            source_template_name="Shared Template",
+            m8f_tenant_id="tenant-1",
+            created_by="user1",
+        )
+        db.session.add(provenance1)
+        db.session.commit()
+
+        # Create provenance record in tenant-2 with same identifier - should succeed
+        provenance2 = ProcessModelTemplateModel(
+            process_model_identifier="test-group/test-model",  # Same identifier
+            source_template_id=template.id,
+            source_template_key="shared-template",
+            source_template_version="V1",
+            source_template_name="Shared Template",
+            m8f_tenant_id="tenant-2",  # Different tenant
+            created_by="user2",
+        )
+        db.session.add(provenance2)
+        db.session.commit()  # Should not raise
+
+        # Verify both records exist
+        records = ProcessModelTemplateModel.query.filter_by(
+            process_model_identifier="test-group/test-model"
+        ).all()
+
+        assert len(records) == 2
+        tenant_ids = {r.m8f_tenant_id for r in records}
+        assert tenant_ids == {"tenant-1", "tenant-2"}
 
 
 def test_process_model_template_model_serialized() -> None:

@@ -19,9 +19,12 @@ It is built on the proven foundation of SpiffWorkflow, with a vision shaped by *
 
 ## Why m8flow?
 
-**Future-proof alternative** → replaces Camunda 7 with a modern, Python-based workflow engine
+**Future-proof alternative** →  A modern, Python-based workflow engine that can serve as a strong option alongside platforms like Camunda 7
+
 **Enterprise-grade integrations** → tight alignment with **formsflow.ai**, **caseflow**, and the **SLED360** automation suite
+
 **Open and extensible** → open source by default, extensible for enterprise-grade use cases
+
 **Principles-first branding** → "m8" = 8 principles for flow, consistent with the product family (caseflow, formsflow.ai)
 
 ---

@@ -23,9 +23,8 @@ TENANT_CLAIM = (os.getenv("M8FLOW_TENANT_CLAIM") or "").strip() or "m8flow_tenan
 # prefix + each path so both prefixed and unprefixed deployments work.
 _WSGI_PATH_PREFIX = os.getenv("SPIFFWORKFLOW_BACKEND_WSGI_PATH_PREFIX", "").strip()
 
-# Include both prefixed and unprefixed paths so we match regardless of
-# SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX.
-TENANT_CONTEXT_EXEMPT_PATH_PREFIXES: tuple[str, ...] = (
+# Base (unprefixed) paths that are exempt from tenant context resolution.
+_BASE_TENANT_CONTEXT_EXEMPT_PATH_PREFIXES: tuple[str, ...] = (
     "/.well-known",
     "/favicon.ico",
     "/v1.0/ping",
@@ -49,6 +48,17 @@ TENANT_CONTEXT_EXEMPT_PATH_PREFIXES: tuple[str, ...] = (
     # Global tenant-management endpoints are authenticated, but they do not belong to a tenant realm.
     "/v1.0/m8flow/tenants",
     "/m8flow/tenants",
+)
+
+# When SPIFFWORKFLOW_BACKEND_WSGI_PATH_PREFIX is set (e.g. "/api"), include both
+# prefixed and unprefixed variants so exempt checks work regardless of deployment topology.
+TENANT_CONTEXT_EXEMPT_PATH_PREFIXES: tuple[str, ...] = (
+    _BASE_TENANT_CONTEXT_EXEMPT_PATH_PREFIXES
+    + (
+        tuple(f"{_WSGI_PATH_PREFIX}{p}" for p in _BASE_TENANT_CONTEXT_EXEMPT_PATH_PREFIXES)
+        if _WSGI_PATH_PREFIX
+        else ()
+    )
 )
 
 # Path suffixes for pre-login tenant selection (no tenant context required). Also included in
