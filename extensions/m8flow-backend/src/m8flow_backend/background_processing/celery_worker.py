@@ -20,6 +20,15 @@ from spiffworkflow_backend.models.db import db
 from spiffworkflow_backend.services.logging_service import get_log_formatter
 from spiffworkflow_backend.services.logging_service import setup_logger_for_app
 
+_ACCEPTED_TASK_NAMES: frozenset[str] = frozenset({
+    CELERY_TASK_PROCESS_INSTANCE_RUN,
+    CELERY_TASK_EVENT_NOTIFIER,
+    # Hard-coded legacy upstream names so already-queued jobs still resolve tenant context.
+    # Do NOT import these from upstream — startup rebinding may have already replaced them.
+    "spiffworkflow_backend.background_processing.celery_tasks.process_instance_task.celery_task_process_instance_run",
+    "spiffworkflow_backend.background_processing.celery_tasks.process_instance_task.celery_task_event_notifier_run",
+})
+
 _TASK_TENANT_TOKENS: dict[str, Token] = {}
 
 
@@ -55,7 +64,7 @@ if celery_app is None:
 
 
 def _extract_process_instance_id(task_name: str, args: Any, kwargs: Any) -> int | None:
-    if task_name not in (CELERY_TASK_PROCESS_INSTANCE_RUN, CELERY_TASK_EVENT_NOTIFIER):
+    if task_name not in _ACCEPTED_TASK_NAMES:
         return None
 
     if isinstance(kwargs, dict):
