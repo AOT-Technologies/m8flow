@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import BpmnModeler from 'bpmn-js/lib/Modeler';
 import BpmnViewer from 'bpmn-js/lib/Viewer';
 import {
@@ -68,6 +68,43 @@ export function useDiagramModeler(options: UseDiagramModelerOptions) {
     onSearchProcessModels,
     onServiceTasksRequested,
   } = options;
+
+  const callbacksRef = useRef({
+    setPerformingXmlUpdates,
+    onDataStoresRequested,
+    onDmnFilesRequested,
+    onElementClick,
+    onElementsChanged,
+    onJsonSchemaFilesRequested,
+    onLaunchBpmnEditor,
+    onLaunchDmnEditor,
+    onLaunchJsonSchemaEditor,
+    onLaunchMarkdownEditor,
+    onLaunchMessageEditor,
+    onLaunchScriptEditor,
+    onMessagesRequested,
+    onSearchProcessModels,
+    onServiceTasksRequested,
+  });
+  useEffect(() => {
+    callbacksRef.current = {
+      setPerformingXmlUpdates,
+      onDataStoresRequested,
+      onDmnFilesRequested,
+      onElementClick,
+      onElementsChanged,
+      onJsonSchemaFilesRequested,
+      onLaunchBpmnEditor,
+      onLaunchDmnEditor,
+      onLaunchJsonSchemaEditor,
+      onLaunchMarkdownEditor,
+      onLaunchMessageEditor,
+      onLaunchScriptEditor,
+      onMessagesRequested,
+      onSearchProcessModels,
+      onServiceTasksRequested,
+    };
+  });
 
   const [diagramXMLString, setDiagramXMLString] = useState('');
   const [diagramModelerState, setDiagramModelerState] = useState<any>(null);
@@ -188,10 +225,11 @@ export function useDiagramModeler(options: UseDiagramModelerOptions) {
       scriptType: string,
       eventBus: any,
     ) {
-      if (onLaunchScriptEditor) {
-        setPerformingXmlUpdates(true);
+      const cb = callbacksRef.current;
+      if (cb.onLaunchScriptEditor) {
+        cb.setPerformingXmlUpdates(true);
         const modeling = diagramModeler.get('modeling');
-        onLaunchScriptEditor(element, script, scriptType, eventBus, modeling);
+        cb.onLaunchScriptEditor(element, script, scriptType, eventBus, modeling);
       }
     }
 
@@ -200,28 +238,30 @@ export function useDiagramModeler(options: UseDiagramModelerOptions) {
       value: string,
       eventBus: any,
     ) {
-      if (onLaunchMarkdownEditor) {
-        setPerformingXmlUpdates(true);
-        onLaunchMarkdownEditor(element, value, eventBus);
+      const cb = callbacksRef.current;
+      if (cb.onLaunchMarkdownEditor) {
+        cb.setPerformingXmlUpdates(true);
+        cb.onLaunchMarkdownEditor(element, value, eventBus);
       }
     }
 
     function handleElementClick(event: any) {
-      if (onElementClick) {
+      const cb = callbacksRef.current;
+      if (cb.onElementClick) {
         const canvas = diagramModeler.get('canvas');
         const bpmnProcessIdentifiers = getBpmnProcessIdentifiers(
           canvas.getRootElement(),
         );
-        onElementClick(event.element, bpmnProcessIdentifiers);
+        cb.onElementClick(event.element, bpmnProcessIdentifiers);
       }
     }
 
     function handleServiceTasksRequested(event: any) {
-      if (onServiceTasksRequested) onServiceTasksRequested(event);
+      callbacksRef.current.onServiceTasksRequested?.(event);
     }
 
     function handleDataStoresRequested(event: any) {
-      if (onDataStoresRequested) onDataStoresRequested(event);
+      callbacksRef.current.onDataStoresRequested?.(event);
     }
 
     function createPrePostScriptOverlay(event: any) {
@@ -280,17 +320,17 @@ export function useDiagramModeler(options: UseDiagramModelerOptions) {
     });
 
     diagramModeler.on('spiff.callactivity.edit', (event: any) => {
-      if (onLaunchBpmnEditor) onLaunchBpmnEditor(event.processId);
+      callbacksRef.current.onLaunchBpmnEditor?.(event.processId);
     });
 
     diagramModeler.on('spiff.file.edit', (event: any) => {
       const { error, element, value, eventBus } = event;
       if (error) console.error(error);
-      if (onLaunchJsonSchemaEditor) onLaunchJsonSchemaEditor(element, value, eventBus);
+      callbacksRef.current.onLaunchJsonSchemaEditor?.(element, value, eventBus);
     });
 
     diagramModeler.on('spiff.dmn.edit', (event: any) => {
-      if (onLaunchDmnEditor) onLaunchDmnEditor(event.value);
+      callbacksRef.current.onLaunchDmnEditor?.(event.value);
     });
 
     diagramModeler.on('element.click', (element: any) => {
@@ -298,52 +338,37 @@ export function useDiagramModeler(options: UseDiagramModelerOptions) {
     });
 
     diagramModeler.on('elements.changed', (event: any) => {
-      if (onElementsChanged) onElementsChanged(event);
+      callbacksRef.current.onElementsChanged?.(event);
     });
 
     diagramModeler.on('spiff.service_tasks.requested', handleServiceTasksRequested);
     diagramModeler.on('spiff.data_stores.requested', handleDataStoresRequested);
 
     diagramModeler.on('spiff.json_schema_files.requested', (event: any) => {
-      if (onJsonSchemaFilesRequested) onJsonSchemaFilesRequested(event);
+      callbacksRef.current.onJsonSchemaFilesRequested?.(event);
       handleServiceTasksRequested(event);
     });
 
     diagramModeler.on('spiff.dmn_files.requested', (event: any) => {
-      if (onDmnFilesRequested) onDmnFilesRequested(event);
+      callbacksRef.current.onDmnFilesRequested?.(event);
     });
 
     diagramModeler.on('spiff.messages.requested', (event: any) => {
-      if (onMessagesRequested) onMessagesRequested(event);
+      callbacksRef.current.onMessagesRequested?.(event);
     });
 
     diagramModeler.on('spiff.callactivity.search', (event: any) => {
-      if (onSearchProcessModels) {
-        onSearchProcessModels(event.value, event.eventBus, event.element);
+      const cb = callbacksRef.current;
+      if (cb.onSearchProcessModels) {
+        cb.onSearchProcessModels(event.value, event.eventBus, event.element);
       }
     });
 
     diagramModeler.on('spiff.message.edit', (event: any) => {
-      if (onLaunchMessageEditor) onLaunchMessageEditor(event);
+      callbacksRef.current.onLaunchMessageEditor?.(event);
     });
-  }, [
-    diagramType,
-    setPerformingXmlUpdates,
-    onDataStoresRequested,
-    onDmnFilesRequested,
-    onElementClick,
-    onElementsChanged,
-    onJsonSchemaFilesRequested,
-    onLaunchBpmnEditor,
-    onLaunchDmnEditor,
-    onLaunchJsonSchemaEditor,
-    onLaunchMarkdownEditor,
-    onLaunchMessageEditor,
-    onLaunchScriptEditor,
-    onMessagesRequested,
-    onSearchProcessModels,
-    onServiceTasksRequested,
-  ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [diagramType]);
 
   useEffect(() => {
     if (!diagramXMLString || !diagramModelerState) return;
