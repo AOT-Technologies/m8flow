@@ -40,3 +40,4 @@ keycloak-extensions/realm-info-mapper/target/*
 *.code-workspace
 difflog.txt
 data/*
+process_models/*

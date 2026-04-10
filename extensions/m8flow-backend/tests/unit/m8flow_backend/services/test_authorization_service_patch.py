@@ -1,122 +1,59 @@
-# extensions/m8flow-backend/tests/unit/m8flow_backend/services/test_authorization_service_patch.py
 """Unit tests for authorization_service_patch helper behavior."""
-import sys
+from __future__ import annotations
+
 from pathlib import Path
 
-# Ensure m8flow_backend and spiffworkflow_backend are importable
-extension_root = Path(__file__).resolve().parents[4]
-repo_root = extension_root.parent.parent
-extension_src = extension_root / "src"
-backend_src = repo_root / "spiffworkflow-backend" / "src"
-for path in (extension_src, backend_src):
-    path_str = str(path)
-    if path_str not in sys.path:
-        sys.path.insert(0, path_str)
+from flask import Flask
 
-from m8flow_backend.services.authorization_service_patch import (  # noqa: E402
-    _apply_username_suffix,
-    _extract_realm_from_issuer,
-    _keycloak_realm_roles_as_groups,
-)
+from m8flow_backend.services import authorization_service_patch
+from m8flow_backend.services.authorization_service_patch import _keycloak_realm_roles_as_groups
+from m8flow_backend.services.authorization_service_patch import _normalize_keycloak_groups
+from m8flow_backend.services.authorization_service_patch import _normalize_permissions_yaml_config
+from m8flow_backend.services.authorization_service_patch import _tenant_id_for_user_info
+from m8flow_backend.services.authorization_service_patch import extract_realm_from_issuer
+from m8flow_backend.tenancy import TENANT_CLAIM
 
 
-def test_create_user_from_sign_in_appends_realm():
-    """Test that realm is appended to username from issuer URL."""
+def test_tenant_id_for_user_info_prefers_token_claim(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "m8flow_backend.services.authorization_service_patch.current_tenant_id_or_none",
+        lambda: "context-tenant",
+    )
     user_info = {
-        "preferred_username": "testuser",
-        "iss": "http://localhost:7002/realms/test-realm",
-        "sub": "12345"
+        TENANT_CLAIM: "token-tenant",
+        "iss": "http://localhost:7002/realms/issuer-tenant",
     }
-    
-    realm = _extract_realm_from_issuer(user_info["iss"])
-    assert realm == "test-realm"
-    
-    result_username = _apply_username_suffix(user_info["preferred_username"], realm)
-    assert result_username == "testuser@test-realm"
+
+    assert _tenant_id_for_user_info(user_info) == "token-tenant"
 
 
-def test_create_user_from_sign_in_idempotent():
-    """Test that realm is not appended twice if already present."""
-    user_info = {
-        "preferred_username": "testuser@test-realm",
-        "iss": "http://localhost:7002/realms/test-realm",
-        "sub": "12345"
-    }
-    
-    realm = _extract_realm_from_issuer(user_info["iss"])
-    assert realm == "test-realm"
-    
-    result_username = _apply_username_suffix(user_info["preferred_username"], realm)
-    # Should not append twice
-    assert result_username == "testuser@test-realm"
+def test_tenant_id_for_user_info_falls_back_to_context(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "m8flow_backend.services.authorization_service_patch.current_tenant_id_or_none",
+        lambda: "context-tenant",
+    )
+    user_info = {"iss": "http://localhost:7002/realms/issuer-tenant"}
+
+    assert _tenant_id_for_user_info(user_info) == "context-tenant"
 
 
-def test_create_user_from_sign_in_no_preferred_username():
-    """Test that no change is made if preferred_username is missing."""
-    user_info = {
-        "email": "test@example.com",
-        "iss": "http://localhost:7002/realms/test-realm",
-        "sub": "12345"
-    }
-    
-    # The patch only modifies if preferred_username is present
-    assert "preferred_username" not in user_info
-    
-    # Simulate the patch logic: only modify if preferred_username exists
-    if "preferred_username" in user_info and "iss" in user_info:
-        realm = _extract_realm_from_issuer(user_info["iss"])
-        if realm:
-            user_info["preferred_username"] = _apply_username_suffix(
-                user_info["preferred_username"], realm
-            )
-    
-    # Still no preferred_username
-    assert "preferred_username" not in user_info
+def test_tenant_id_for_user_info_falls_back_to_issuer_realm(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "m8flow_backend.services.authorization_service_patch.current_tenant_id_or_none",
+        lambda: None,
+    )
+    user_info = {"iss": "http://localhost:7002/realms/issuer-tenant"}
+
+    assert _tenant_id_for_user_info(user_info) == "issuer-tenant"
 
 
-def test_realm_extraction_from_issuer():
-    """Test realm extraction logic from issuer URL."""
-    test_cases = [  # NOSONAR - test fixtures, not real connections
-        ("http://localhost:7002/realms/test-realm", "test-realm"),
-        ("http://keycloak:8080/realms/my-tenant", "my-tenant"),
-        ("https://auth.example.com/realms/production/", "production"),
-        ("http://localhost/realms/dev/some/path", "dev"),
-    ]
-    
-    for iss, expected_realm in test_cases:
-        realm = _extract_realm_from_issuer(iss)
-        assert realm == expected_realm, f"Failed for {iss}: got {realm}, expected {expected_realm}"
+def test_extract_realm_from_issuer() -> None:
+    assert extract_realm_from_issuer("http://localhost:7002/realms/test-realm") == "test-realm"  # NOSONAR
+    assert extract_realm_from_issuer("https://auth.example.com/realms/production/") == "production"
+    assert extract_realm_from_issuer("http://localhost/auth") is None  # NOSONAR
 
 
-def test_realm_extraction_no_realms_path():
-    """Test that None is returned when issuer doesn't contain /realms/."""
-    test_cases = [  # NOSONAR - test fixtures, not real connections
-        "http://localhost:7002/auth",
-        "https://example.com/oauth",
-        "",
-    ]
-    
-    for iss in test_cases:
-        realm = _extract_realm_from_issuer(iss)
-        assert realm is None, f"Expected None for {iss}, got {realm}"
-
-
-def test_username_suffix_logic():
-    """Test the username suffix logic."""
-    test_cases = [
-        # (username, realm, expected_result)
-        ("testuser", "test-realm", "testuser@test-realm"),
-        ("testuser@test-realm", "test-realm", "testuser@test-realm"),  # idempotent
-        ("admin", "production", "admin@production"),
-        ("user@other-realm", "test-realm", "user@other-realm@test-realm"),  # different realm
-    ]
-    
-    for username, realm, expected in test_cases:
-        result = _apply_username_suffix(username, realm)
-        assert result == expected, f"Failed for ({username}, {realm}): got {result}, expected {expected}"
-
-
-def test_keycloak_realm_roles_as_groups_filters_to_m8flow_roles():
+def test_keycloak_realm_roles_as_groups_filters_to_m8flow_roles() -> None:
     user_info = {
         "realm_access": {
             "roles": [
@@ -131,7 +68,65 @@ def test_keycloak_realm_roles_as_groups_filters_to_m8flow_roles():
     assert _keycloak_realm_roles_as_groups(user_info) == ["super-admin", "tenant-admin"]
 
 
-def test_keycloak_realm_roles_as_groups_returns_empty_without_roles():
+def test_keycloak_realm_roles_as_groups_returns_empty_without_roles() -> None:
     assert _keycloak_realm_roles_as_groups({"realm_access": {"roles": "super-admin"}}) == []
     assert _keycloak_realm_roles_as_groups({"realm_access": {}}) == []
     assert _keycloak_realm_roles_as_groups({}) == []
+
+
+def test_normalize_keycloak_groups_uses_leaf_for_path_values() -> None:
+    user_info = {"groups": ["/super-admin", "/a/b/reviewer", "viewer", "/viewer", "", None]}
+
+    assert _normalize_keycloak_groups(user_info) == ["super-admin", "reviewer", "viewer"]
+
+
+def test_normalize_permissions_yaml_config_qualifies_group_keys_and_references() -> None:
+    permission_configs = {
+        "groups": {
+            "tenant-admin": {"users": []},
+        },
+        "permissions": {
+            "frontend-access": {
+                "groups": ["everybody", "tenant-admin"],
+                "actions": ["read"],
+                "uri": "/frontend-access",
+            }
+        },
+    }
+
+    normalized = _normalize_permissions_yaml_config(permission_configs, tenant_id="tenant-a")
+
+    assert normalized["groups"] == {"tenant-a:tenant-admin": {"users": []}}
+    assert normalized["permissions"]["frontend-access"]["groups"] == [
+        "tenant-a:everybody",
+        "tenant-a:tenant-admin",
+    ]
+
+
+def test_parse_permissions_yaml_into_group_info_qualifies_default_group_references(monkeypatch) -> None:
+    app = Flask(__name__)  # NOSONAR - unit test
+    permissions_path = (
+        Path(__file__).resolve().parents[4] / "src" / "m8flow_backend" / "config" / "permissions" / "m8flow.yml"
+    )
+    app.config["SPIFFWORKFLOW_BACKEND_PERMISSIONS_FILE_ABSOLUTE_PATH"] = str(permissions_path)
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP"] = "spiff_public"
+
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_id_or_none", lambda: "tenant-a")
+
+    with app.app_context():
+        authorization_service_patch.apply()
+        from spiffworkflow_backend.services.authorization_service import AuthorizationService
+
+        group_permissions = AuthorizationService.parse_permissions_yaml_into_group_info()
+
+    group_permissions_by_name = {group["name"]: group for group in group_permissions}
+    everybody_group = group_permissions_by_name["tenant-a:everybody"]
+    super_admin_group = group_permissions_by_name["tenant-a:super-admin"]
+
+    assert [permission["uri"] for permission in everybody_group["permissions"]] == [
+        "/frontend-access",
+        "/onboarding",
+        "/active-users/*",
+    ]
+    assert super_admin_group["permissions"][0]["uri"] == "/m8flow/tenants*"
