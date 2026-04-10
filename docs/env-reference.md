@@ -19,10 +19,10 @@ For SMTP and Slack connectors:
 
 Examples:
 
-- `M8FLOW_CONNECTOR_SMTP_ATTACHMENTS_DIR=../email_attachments`
-- `M8FLOW_CONNECTOR_SMTP_ATTACHMENTS_USER_ACCESS_DIR=/email_attachments`
-- `M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_DIR=../slack_attachments`
-- `M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_USER_ACCESS_DIR=/slack_attachments`
+- `M8FLOW_CONNECTOR_SMTP_ATTACHMENTS_DIR=../data/email_attachments`
+- `M8FLOW_CONNECTOR_SMTP_ATTACHMENTS_USER_ACCESS_DIR=/data/email_attachments`
+- `M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_DIR=../data/slack_attachments`
+- `M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_USER_ACCESS_DIR=/data/slack_attachments`
 
 ## Advanced Keycloak auth configs
 

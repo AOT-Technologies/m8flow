@@ -22,6 +22,18 @@ export interface UpdateTenantRequest {
     status?: TenantStatus;
 }
 
+export interface CreateTenantRequest {
+    realm_id: string;
+    display_name: string;
+}
+
+export interface CreateTenantResponse {
+    realm: string;
+    displayName: string;
+    keycloak_realm_id: string;
+    id: string;
+}
+
 const TenantService = {
     /**
      * Get all tenants
@@ -31,6 +43,34 @@ const TenantService = {
             HttpService.makeCallToBackend({
                 path: `${BASE_PATH}/tenants`,
                 httpMethod: "GET",
+                successCallback: resolve,
+                failureCallback: reject,
+            });
+        });
+    },
+
+    /**
+     * Create a tenant realm
+     */
+    createTenant: (data: CreateTenantRequest): Promise<CreateTenantResponse> => {
+        const realmId = data.realm_id.trim();
+        const displayName = data.display_name.trim();
+
+        if (!realmId) {
+            return Promise.reject(new Error("Tenant slug cannot be empty"));
+        }
+        if (!displayName) {
+            return Promise.reject(new Error("Tenant display name cannot be empty"));
+        }
+
+        return new Promise((resolve, reject) => {
+            HttpService.makeCallToBackend({
+                path: `${BASE_PATH}/tenant-realms`,
+                httpMethod: "POST",
+                postBody: {
+                    realm_id: realmId,
+                    display_name: displayName,
+                },
                 successCallback: resolve,
                 failureCallback: reject,
             });
