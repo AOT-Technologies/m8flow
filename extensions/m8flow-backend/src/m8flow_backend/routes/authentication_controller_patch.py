@@ -11,6 +11,7 @@ from urllib.parse import unquote
 from urllib.parse import urlsplit
 
 from m8flow_backend.services.tenant_context_middleware import resolve_request_tenant
+from m8flow_backend.services.tenant_identity_helpers import temporary_qualified_group_config
 from m8flow_backend.tenancy import TENANT_CLAIM
 from spiffworkflow_backend.routes import authentication_controller
 
@@ -20,6 +21,7 @@ _PATCHED = False
 _COOKIE_DOMAIN_PATCHED = False
 _DECODE_TOKEN_PATCHED = False
 _MASTER_REALM_PATCHED = False
+_PUBLIC_GROUP_PATCHED = False
 _REFRESH_TOKEN_TENANT_PATCHED = False
 
 # Path suffixes that may be called with Keycloak master realm tokens (bootstrap/global admin).
@@ -35,6 +37,7 @@ _MISSING = object()
 def apply() -> None:
     """Patch the authentication controller with m8flow auth behavior."""
     apply_cookie_domain_patch()
+    apply_public_group_patch()
 
     global _PATCHED
     if _PATCHED:
@@ -50,6 +53,22 @@ def apply() -> None:
 
     authentication_controller.omni_auth = patched_omni_auth  # type: ignore[assignment]
     _PATCHED = True
+
+
+def apply_public_group_patch() -> None:
+    global _PUBLIC_GROUP_PATCHED
+    if _PUBLIC_GROUP_PATCHED:
+        return
+
+    original = authentication_controller._check_if_request_is_public
+
+    @wraps(original)
+    def patched_check_if_request_is_public():
+        with temporary_qualified_group_config("SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP"):
+            return original()
+
+    authentication_controller._check_if_request_is_public = patched_check_if_request_is_public
+    _PUBLIC_GROUP_PATCHED = True
 
 
 def _frontend_cookie_domain(frontend_url: str) -> str | None:

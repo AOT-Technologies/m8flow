@@ -104,6 +104,10 @@ PRE_APP_PATCH_SPECS: tuple[PatchSpec, ...] = (
         target="m8flow_backend.services.openapi_merge_patch:apply",
         minimum_phase=BootPhase.PRE_BOOTSTRAP,
     ),
+    PatchSpec(
+        target="m8flow_backend.routes.users_controller_patch:apply",
+        minimum_phase=BootPhase.PRE_BOOTSTRAP,
+    ),
 )
 
 
@@ -192,6 +196,14 @@ POST_APP_EXTENSION_PATCH_SPECS: tuple[PatchSpec, ...] = (
         target="m8flow_backend.services.user_service_patch:apply",
         minimum_phase=BootPhase.APP_CREATED,
         ignore_errors=True,
+    ),
+    PatchSpec(
+        target="m8flow_backend.services.process_instance_processor_patch:apply",
+        minimum_phase=BootPhase.APP_CREATED,
+    ),
+    PatchSpec(
+        target="m8flow_backend.services.process_instance_report_service_patch:apply",
+        minimum_phase=BootPhase.APP_CREATED,
     ),
 )
 
