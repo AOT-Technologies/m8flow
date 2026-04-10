@@ -12,6 +12,7 @@ from urllib.parse import urlparse, urlunparse
 import requests
 from security import safe_requests  # type: ignore
 
+from m8flow_backend.services.tenant_identity_helpers import tenant_id_from_payload
 from spiffworkflow_backend.config import HTTP_REQUEST_TIMEOUT_SECONDS
 from spiffworkflow_backend.exceptions.api_error import ApiError
 from spiffworkflow_backend.exceptions.error import OpenIdConnectionError
@@ -279,10 +280,7 @@ def _tenant_from_request_token() -> str | None:
     payload = _jwt_payload_without_verification(token)
     if not payload:
         return None
-    tenant_id = payload.get("m8flow_tenant_id")
-    if isinstance(tenant_id, str) and tenant_id.strip():
-        return tenant_id
-    return None
+    return tenant_id_from_payload(payload)
 
 
 def _authentication_identifier_from_request() -> str | None:
@@ -319,8 +317,8 @@ def _resolve_refresh_token_tenant_id(
         return tenant_id
 
     if isinstance(decoded_token, dict):
-        claim_tenant = decoded_token.get("m8flow_tenant_id")
-        if isinstance(claim_tenant, str) and claim_tenant.strip():
+        claim_tenant = tenant_id_from_payload(decoded_token)
+        if claim_tenant:
             return claim_tenant
 
     if has_request_context():
