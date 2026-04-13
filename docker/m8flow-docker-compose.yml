@@ -145,11 +145,12 @@ services:
       SPIFFWORKFLOW_BACKEND_DATABASE_URI: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
       M8FLOW_BACKEND_UPGRADE_DB: "false"
       M8FLOW_BACKEND_SW_UPGRADE_DB: "false"
+      M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: "/data/process_models"
     volumes:
       - type: bind
         source: ../process_models
-        target: /app/process_models
-      - ../data/m8flow_nats_consumer:/app/data/m8flow_nats_consumer
+        target: /data/process_models
+      - ../data/m8flow_nats_consumer:/data/m8flow_nats_consumer
     restart: unless-stopped
 
   minio:
@@ -222,10 +223,10 @@ services:
     entrypoint:
       - /bin/sh
       - /smtp_attachments_sync.sh
-      - ${M8FLOW_CONNECTOR_SMTP_ATTACHMENTS_USER_ACCESS_DIR:-/email_attachments}
+      - ${M8FLOW_CONNECTOR_SMTP_ATTACHMENTS_USER_ACCESS_DIR:-/app/data/email_attachments}
     volumes:
-      - smtp_attachments:${M8FLOW_CONNECTOR_SMTP_ATTACHMENTS_USER_ACCESS_DIR:-/email_attachments}
-      - ${M8FLOW_CONNECTOR_SMTP_ATTACHMENTS_DIR:-../email_attachments}:/host_attachments:ro
+      - smtp_attachments:${M8FLOW_CONNECTOR_SMTP_ATTACHMENTS_USER_ACCESS_DIR:-/app/data/email_attachments}
+      - ${M8FLOW_CONNECTOR_SMTP_ATTACHMENTS_DIR:-../data/email_attachments}:/host_attachments:ro
       - ../extensions/m8flow-backend/bin/smtp_attachments_sync.sh:/smtp_attachments_sync.sh:ro
     restart: "no"
 
@@ -235,10 +236,10 @@ services:
     entrypoint:
       - /bin/sh
       - /slack_attachments_sync.sh
-      - ${M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_USER_ACCESS_DIR:-/slack_attachments}
+      - ${M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_USER_ACCESS_DIR:-/app/data/slack_attachments}
     volumes:
-      - slack_attachments:${M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_USER_ACCESS_DIR:-/slack_attachments}
-      - ${M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_DIR:-../slack_attachments}:/host_attachments:ro
+      - slack_attachments:${M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_USER_ACCESS_DIR:-/app/data/slack_attachments}
+      - ${M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_DIR:-../data/slack_attachments}:/host_attachments:ro
       - ../extensions/m8flow-backend/bin/slack_attachments_sync.sh:/slack_attachments_sync.sh:ro
     restart: "no"
 
@@ -257,7 +258,7 @@ services:
     user: "0"
     env_file: ../.env
     environment:
-      M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: "${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-/app/process_models}"
+      M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: "${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-/app/data/process_models}"
       M8FLOW_BACKEND_DATABASE_URI: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
       M8FLOW_BACKEND_UPGRADE_DB: "${M8FLOW_BACKEND_UPGRADE_DB:-true}"
       M8FLOW_BACKEND_CONNECTOR_PROXY_URL: "http://m8flow-connector-proxy:${CONNECTOR_PROXY_PORT:-8004}"
@@ -279,8 +280,8 @@ services:
     volumes:
       - type: bind
         source: ../process_models
-        target: /app/process_models
-      - templates_cache:/app/templates
+        target: /app/data/process_models
+      - templates_cache:/app/data/templates
     depends_on:
       m8flow-db:
         condition: service_healthy
@@ -293,7 +294,7 @@ services:
       redis:
         condition: service_healthy
       minio:
-        condition: service_started   
+        condition: service_started
 
   m8flow-celery-worker:
     image: m8flow-backend
@@ -302,7 +303,7 @@ services:
     command: ["bash", "./extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh"]
     env_file: ../.env
     environment:
-      M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: "${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-/app/process_models}"
+      M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: "${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-/data/process_models}"
       M8FLOW_BACKEND_DATABASE_URI: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
       M8FLOW_BACKEND_CONNECTOR_PROXY_URL: "http://m8flow-connector-proxy:${CONNECTOR_PROXY_PORT:-8004}"
       M8FLOW_BACKEND_CELERY_BROKER_URL: "${M8FLOW_BACKEND_CELERY_BROKER_URL:-redis://redis:6379/0}"
@@ -314,7 +315,7 @@ services:
     volumes:
       - type: bind
         source: ../process_models
-        target: /app/process_models
+        target: /data/process_models
     depends_on:
       m8flow-db:
         condition: service_started
@@ -334,7 +335,7 @@ services:
     command: ["bash", "./extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh", "flower"]
     env_file: ../.env
     environment:
-      M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: "${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-/app/process_models}"
+      M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: "${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-/data/process_models}"
       M8FLOW_BACKEND_DATABASE_URI: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
       M8FLOW_BACKEND_CELERY_BROKER_URL: "${M8FLOW_BACKEND_CELERY_BROKER_URL:-redis://redis:6379/0}"
       M8FLOW_BACKEND_CELERY_RESULT_BACKEND: "${M8FLOW_BACKEND_CELERY_RESULT_BACKEND:-redis://redis:6379/0}"
@@ -347,7 +348,7 @@ services:
     volumes:
       - type: bind
         source: ../process_models
-        target: /app/process_models
+        target: /data/process_models
     depends_on:
       m8flow-db:
         condition: service_started
@@ -386,11 +387,11 @@ services:
     volumes:
       - type: volume
         source: "smtp_attachments"
-        target: "${M8FLOW_CONNECTOR_SMTP_ATTACHMENTS_USER_ACCESS_DIR:-/email_attachments}"
+        target: "${M8FLOW_CONNECTOR_SMTP_ATTACHMENTS_USER_ACCESS_DIR:-/app/data/email_attachments}"
         read_only: true
       - type: volume
         source: "slack_attachments"
-        target: "${M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_USER_ACCESS_DIR:-/slack_attachments}"
+        target: "${M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_USER_ACCESS_DIR:-/app/data/slack_attachments}"
         read_only: true
     healthcheck:
       test:
