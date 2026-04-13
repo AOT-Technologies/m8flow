@@ -7,7 +7,7 @@ import {
 } from 'react-router-dom';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useState } from 'react';
+import { Suspense, lazy, useState } from 'react';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { AbilityContext } from '@spiffworkflow-frontend/contexts/Can';
@@ -15,17 +15,19 @@ import APIErrorProvider from '@spiffworkflow-frontend/contexts/APIErrorContext';
 import { createSpiffTheme } from '@spiffworkflow-frontend/assets/theme/SpiffTheme';
 // m8 Extension: Import local override of ContainerForExtensions
 import ContainerForExtensions from './ContainerForExtensions';
+import { RouteLoadingFallback } from './components/RouteLoadingFallback';
 import PublicRoutes from '@spiffworkflow-frontend/views/PublicRoutes';
 import { CONFIGURATION_ERRORS } from '@spiffworkflow-frontend/config';
 // m8 Extension: Custom grouping context
 import { CustomGroupingProvider } from './contexts/CustomGroupingContext';
 import TenantGateContext from './contexts/TenantGateContext';
-import TenantSelectPage from './views/TenantSelectPage';
 import { useConfig } from './utils/useConfig';
 import { M8FLOW_TENANT_STORAGE_KEY } from './views/TenantSelectPage';
 import UserService from './services/UserService';
 
 const queryClient = new QueryClient();
+
+const TenantSelectPage = lazy(() => import('./views/TenantSelectPage'));
 
 function getStoredTenant(): boolean {
   if (typeof globalThis === 'undefined') return false;
@@ -76,7 +78,9 @@ export default function App() {
                   <TenantGateContext.Provider
                     value={{ onTenantSelected: () => setHasTenant(true) }}
                   >
-                    <TenantSelectPage />
+                    <Suspense fallback={<RouteLoadingFallback />}>
+                      <TenantSelectPage />
+                    </Suspense>
                   </TenantGateContext.Provider>
                 </AbilityContext.Provider>
               </APIErrorProvider>
@@ -108,7 +112,7 @@ export default function App() {
         <div style={{ padding: '20px', color: 'red' }}>
           <h2>Configuration Errors</h2>
           <ul>
-            {CONFIGURATION_ERRORS.map((error, index) => (
+            {CONFIGURATION_ERRORS.map((error: string, index: number) => (
               <li key={index}>{error}</li>
             ))}
           </ul>

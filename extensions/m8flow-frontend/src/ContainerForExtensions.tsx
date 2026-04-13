@@ -11,7 +11,7 @@ import {
 } from '@mui/material';
 import { Routes, Route, useLocation, Navigate } from 'react-router-dom';
 import MenuIcon from '@mui/icons-material/Menu';
-import { ReactElement, useEffect, useState } from 'react';
+import { ReactElement, Suspense, lazy, useEffect, useState } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 import { ErrorBoundaryFallback } from '@spiffworkflow-frontend/ErrorBoundaryFallack';
 import SideNav from './components/SideNav';
@@ -37,12 +37,23 @@ import ScrollToTop from '@spiffworkflow-frontend/components/ScrollToTop';
 import { createSpiffTheme } from '@spiffworkflow-frontend/assets/theme/SpiffTheme';
 import DynamicCSSInjection from '@spiffworkflow-frontend/components/DynamicCSSInjection';
 
-// M8Flow Extension: Import Reports page and tenant selection
-import ReportsPage from './views/ReportsPage';
+// M8Flow Extension: Import tenant selection
 import TenantSelectPage, {
   M8FLOW_TENANT_STORAGE_KEY,
 } from './views/TenantSelectPage';
 import { useConfig } from './utils/useConfig';
+import { RouteLoadingFallback } from './components/RouteLoadingFallback';
+
+// Route-level code splitting for heavier pages.
+const ReportsPage = lazy(() => import('./views/ReportsPage'));
+const TenantPage = lazy(() => import('./views/TenantPage'));
+const TemplateGalleryPage = lazy(() => import('./views/TemplateGalleryPage'));
+const TemplateModelerPage = lazy(() => import('./views/TemplateModelerPage'));
+const TemplateFileDiagramPage = lazy(() => import('./views/TemplateFileDiagramPage'));
+const TemplateFileFormPage = lazy(() => import('./views/TemplateFileFormPage'));
+const ProcessModelShowWithSaveAsTemplate = lazy(
+  () => import('./views/ProcessModelShowWithSaveAsTemplate'),
+);
 
 // M8Flow Extension: clear tenant from localStorage on logout so next visit shows tenant selection
 const originalDoLogout = UserService.doLogout;
@@ -179,17 +190,6 @@ function RoleBasedRootGate({
     />
   );
 }
-
-// M8Flow Extension: Import Tenant page
-
-import TenantPage from "./views/TenantPage";
-// m8 Extension: Import Template Gallery and Template Modeler pages
-
-import TemplateGalleryPage from './views/TemplateGalleryPage';
-import TemplateModelerPage from './views/TemplateModelerPage';
-import TemplateFileDiagramPage from './views/TemplateFileDiagramPage';
-import TemplateFileFormPage from './views/TemplateFileFormPage';
-import ProcessModelShowWithSaveAsTemplate from './views/ProcessModelShowWithSaveAsTemplate';
 
 const fadeIn = 'fadeIn';
 const fadeOutImmediate = 'fadeOutImmediate';
@@ -405,73 +405,88 @@ export default function ContainerForExtensions() {
 
   const routeComponents = () => {
     return (
-      <Routes>
-        {/* M8Flow Extension: Tenant selection (default when ENABLE_MULTITENANT; gate shows home if tenant in localStorage) */}
-        {ENABLE_MULTITENANT && (
-          <>
-            <Route
-              path="/"
-              element={
-                <MultitenantRootGate
-                  extensionUxElements={extensionUxElements}
-                  setAdditionalNavElement={setAdditionalNavElement}
-                  isMobile={isMobile}
-                  ability={ability}
-                  targetUris={targetUris}
-                  permissionsLoaded={permissionsLoaded}
-                />
-              }
-            />
-            <Route path="tenant" element={<TenantSelectPage />} />
-          </>
-        )}
-        {!ENABLE_MULTITENANT && (
-          <>
-            {/* Redirect roles with no home access (like super-admin/integrator) to their defaults */}
-            <Route
-              path="/"
-              element={
-                <RoleBasedRootGate
-                  extensionUxElements={extensionUxElements}
-                  setAdditionalNavElement={setAdditionalNavElement}
-                  isMobile={isMobile}
-                  ability={ability}
-                  targetUris={targetUris}
-                  permissionsLoaded={permissionsLoaded}
-                />
-              }
-            />
-            <Route path="tenant" element={<Navigate to="/" replace />} />
-          </>
-        )}
-        {/* Reports route */}
-        <Route path="reports" element={<ReportsPage />} />
-        {/* M8Flow Extension: Tenant route */}
-        <Route path="/tenants" element={<TenantPage />} />
-        {/* m8 Extension: Template Gallery and Template Modeler routes (more specific first) */}
-        <Route path="templates/:templateId/files/:fileName" element={<TemplateFileDiagramPage />} />
-        <Route path="templates/:templateId/form/:fileName" element={<TemplateFileFormPage />} />
-        <Route path="templates/:templateId" element={<TemplateModelerPage />} />
-        <Route path="templates" element={<TemplateGalleryPage />} />
-        <Route path="process-models/:process_model_id" element={<ProcessModelShowWithSaveAsTemplate />} />
-        <Route path="extensions/:page_identifier" element={<Extension />} />
-        <Route path="login" element={<TenantAwareLogin />} />
-        {/* Route guard: redirect users without process instance read access to home */}
-        {permissionsLoaded && !ability.can('GET', targetUris.processInstanceListForMePath) && (
-          <Route path="process-instances/*" element={<Navigate to="/" replace />} />
-        )}
-        {/* Catch-all route must be last */}
-        <Route
-          path="*"
-          element={
-            <BaseRoutes
-              extensionUxElements={extensionUxElements}
-              setAdditionalNavElement={setAdditionalNavElement}
-              isMobile={isMobile}
-            />
-          }
-        />
-      </Routes>
+      <Suspense fallback={<RouteLoadingFallback />}>
+        <Routes>
+          {/* M8Flow Extension: Tenant selection (default when ENABLE_MULTITENANT; gate shows home if tenant in localStorage) */}
+          {ENABLE_MULTITENANT && (
+            <>
+              <Route
+                path="/"
+                element={
+                  <MultitenantRootGate
+                    extensionUxElements={extensionUxElements}
+                    setAdditionalNavElement={setAdditionalNavElement}
+                    isMobile={isMobile}
+                    ability={ability}
+                    targetUris={targetUris}
+                    permissionsLoaded={permissionsLoaded}
+                  />
+                }
+              />
+              <Route path="tenant" element={<TenantSelectPage />} />
+            </>
+          )}
+          {!ENABLE_MULTITENANT && (
+            <>
+              {/* Redirect roles with no home access (like super-admin/integrator) to their defaults */}
+              <Route
+                path="/"
+                element={
+                  <RoleBasedRootGate
+                    extensionUxElements={extensionUxElements}
+                    setAdditionalNavElement={setAdditionalNavElement}
+                    isMobile={isMobile}
+                    ability={ability}
+                    targetUris={targetUris}
+                    permissionsLoaded={permissionsLoaded}
+                  />
+                }
+              />
+              <Route path="tenant" element={<Navigate to="/" replace />} />
+            </>
+          )}
+          {/* Reports route */}
+          <Route path="reports" element={<ReportsPage />} />
+          {/* M8Flow Extension: Tenant route */}
+          <Route path="/tenants" element={<TenantPage />} />
+          {/* m8 Extension: Template Gallery and Template Modeler routes (more specific first) */}
+          <Route
+            path="templates/:templateId/files/:fileName"
+            element={<TemplateFileDiagramPage />}
+          />
+          <Route
+            path="templates/:templateId/form/:fileName"
+            element={<TemplateFileFormPage />}
+          />
+          <Route path="templates/:templateId" element={<TemplateModelerPage />} />
+          <Route path="templates" element={<TemplateGalleryPage />} />
+          <Route
+            path="process-models/:process_model_id"
+            element={<ProcessModelShowWithSaveAsTemplate />}
+          />
+          <Route path="extensions/:page_identifier" element={<Extension />} />
+          <Route path="login" element={<TenantAwareLogin />} />
+          {/* Route guard: redirect users without process instance read access to home */}
+          {permissionsLoaded &&
+            !ability.can('GET', targetUris.processInstanceListForMePath) && (
+              <Route
+                path="process-instances/*"
+                element={<Navigate to="/" replace />}
+              />
+            )}
+          {/* Catch-all route must be last */}
+          <Route
+            path="*"
+            element={
+              <BaseRoutes
+                extensionUxElements={extensionUxElements}
+                setAdditionalNavElement={setAdditionalNavElement}
+                isMobile={isMobile}
+              />
+            }
+          />
+        </Routes>
+      </Suspense>
     );
   };
 
