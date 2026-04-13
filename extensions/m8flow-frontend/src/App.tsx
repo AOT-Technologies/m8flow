@@ -15,6 +15,7 @@ import APIErrorProvider from '@spiffworkflow-frontend/contexts/APIErrorContext';
 import { createSpiffTheme } from '@spiffworkflow-frontend/assets/theme/SpiffTheme';
 // m8 Extension: Import local override of ContainerForExtensions
 import ContainerForExtensions from './ContainerForExtensions';
+import { RouteLoadingFallback } from './components/RouteLoadingFallback';
 import PublicRoutes from '@spiffworkflow-frontend/views/PublicRoutes';
 import { CONFIGURATION_ERRORS } from '@spiffworkflow-frontend/config';
 // m8 Extension: Custom grouping context
@@ -27,21 +28,6 @@ import UserService from './services/UserService';
 const queryClient = new QueryClient();
 
 const TenantSelectPage = lazy(() => import('./views/TenantSelectPage'));
-
-const RouteLoadingFallback = () => (
-  <div
-    style={{
-      display: 'grid',
-      placeItems: 'center',
-      padding: 24,
-      minHeight: 240,
-      width: '100%',
-    }}
-    aria-label="Loading"
-  >
-    Loading…
-  </div>
-);
 
 function getStoredTenant(): boolean {
   if (typeof globalThis === 'undefined') return false;
@@ -126,7 +112,7 @@ export default function App() {
         <div style={{ padding: '20px', color: 'red' }}>
           <h2>Configuration Errors</h2>
           <ul>
-            {CONFIGURATION_ERRORS.map((error, index) => (
+            {CONFIGURATION_ERRORS.map((error: string, index: number) => (
               <li key={index}>{error}</li>
             ))}
           </ul>

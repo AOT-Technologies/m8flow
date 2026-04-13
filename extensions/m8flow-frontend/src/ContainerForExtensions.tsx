@@ -42,21 +42,7 @@ import TenantSelectPage, {
   M8FLOW_TENANT_STORAGE_KEY,
 } from './views/TenantSelectPage';
 import { useConfig } from './utils/useConfig';
-
-const RouteLoadingFallback = () => (
-  <div
-    style={{
-      display: 'grid',
-      placeItems: 'center',
-      padding: 24,
-      minHeight: 240,
-      width: '100%',
-    }}
-    aria-label="Loading"
-  >
-    Loading…
-  </div>
-);
+import { RouteLoadingFallback } from './components/RouteLoadingFallback';
 
 // Route-level code splitting for heavier pages.
 const ReportsPage = lazy(() => import('./views/ReportsPage'));
