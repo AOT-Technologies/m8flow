@@ -137,6 +137,11 @@ POST_APP_CORE_PATCH_SPECS: tuple[PatchSpec, ...] = (
         minimum_phase=BootPhase.APP_CREATED,
     ),
     PatchSpec(
+        target="m8flow_backend.services.background_processing_task_name_patch:apply",
+        minimum_phase=BootPhase.APP_CREATED,
+        needs_flask_app=True,
+    ),
+    PatchSpec(
         target="m8flow_backend.services.authentication_service_patch:apply_openid_discovery_patch",
         minimum_phase=BootPhase.APP_CREATED,
     ),
