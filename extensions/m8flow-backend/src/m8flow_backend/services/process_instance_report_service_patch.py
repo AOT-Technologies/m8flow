@@ -6,6 +6,7 @@ _PATCHED = False
 
 
 def apply() -> None:
+    """Patch report queries so initiator filters resolve users within the current tenant."""
     global _PATCHED
     if _PATCHED:
         return
@@ -21,6 +22,7 @@ def apply() -> None:
 
     @classmethod
     def patched_get_basic_query(cls, filters: list[FilterValue]) -> Query:
+        """Build the report base query with tenant-aware process initiator resolution."""
         process_instance_query: Query = ProcessInstanceModel.query
         process_instance_query = process_instance_query.options(selectinload(ProcessInstanceModel.process_initiator))
 

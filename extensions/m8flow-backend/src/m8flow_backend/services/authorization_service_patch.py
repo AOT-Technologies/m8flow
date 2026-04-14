@@ -10,7 +10,6 @@ from m8flow_backend.services.tenant_identity_helpers import normalize_group_iden
 from m8flow_backend.services.tenant_identity_helpers import normalize_group_permissions
 from m8flow_backend.services.tenant_identity_helpers import qualify_group_identifier
 from m8flow_backend.services.tenant_identity_helpers import qualified_config_group_identifier
-from m8flow_backend.services.tenant_identity_helpers import temporary_qualified_group_config
 from m8flow_backend.services.tenant_identity_helpers import tenant_id_from_payload
 
 _PATCHED = False
@@ -48,6 +47,7 @@ def _keycloak_realm_roles_as_groups(user_info: dict[str, Any]) -> list[str]:
 
 
 def _tenant_id_for_user_info(user_info: dict[str, Any]) -> str | None:
+    """Resolve the effective tenant for the current sign-in payload."""
     token_tenant = tenant_id_from_payload(user_info)
     if token_tenant:
         return token_tenant
@@ -60,6 +60,7 @@ def _tenant_id_for_user_info(user_info: dict[str, Any]) -> str | None:
 
 
 def _normalize_permissions_yaml_config(permission_configs: dict[str, Any], tenant_id: str | None) -> dict[str, Any]:
+    """Tenant-qualify group keys and references from tenant-agnostic permissions YAML."""
     normalized_permission_configs = dict(permission_configs)
 
     raw_groups = permission_configs.get("groups")
@@ -132,9 +133,11 @@ def apply() -> None:
 
     from flask import current_app
     from spiffworkflow_backend.models.db import db
+    from spiffworkflow_backend.models.group import SPIFF_GUEST_GROUP
     from spiffworkflow_backend.models.permission_assignment import PermissionAssignmentModel
     from spiffworkflow_backend.models.principal import PrincipalModel
     from spiffworkflow_backend.models.user import UserModel
+    from spiffworkflow_backend.models.user import SPIFF_GUEST_USER
     from spiffworkflow_backend.models.user_group_assignment import UserGroupAssignmentModel
     from spiffworkflow_backend.models.user_group_assignment_waiting import UserGroupAssignmentWaitingModel
     from spiffworkflow_backend.services import authorization_service
@@ -143,11 +146,10 @@ def apply() -> None:
 
     _original_exclusion_list = authorization_service.AuthorizationService.authentication_exclusion_list
     _original_add_permission_from_uri_or_macro = AuthorizationService.add_permission_from_uri_or_macro
-    _original_add_permissions_from_group_permissions = AuthorizationService.add_permissions_from_group_permissions
-    _original_remove_old_permissions = AuthorizationService.remove_old_permissions_from_added_permissions
 
     @classmethod
     def _patched_authentication_exclusion_list(cls) -> list:
+        """Extend the auth exclusion list with m8flow bootstrap and tenant-selection endpoints."""
         raw = _original_exclusion_list.__func__(cls)
         result = list(raw) if raw is not None else []
         for path in M8FLOW_AUTH_EXCLUSION_ADDITIONS:
@@ -244,44 +246,39 @@ def apply() -> None:
                 db.session.add(user_model)
                 db.session.commit()
 
-        with temporary_qualified_group_config(
-            "SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP",
-            "SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP",
-            tenant_id=effective_tenant_id,
-        ):
-            if desired_group_identifiers is not None:
-                if not isinstance(desired_group_identifiers, list):
-                    current_app.logger.error(
-                        "Invalid groups property in token: %s. If groups is specified, it must be a list",
-                        desired_group_identifiers,
+        if desired_group_identifiers is not None:
+            if not isinstance(desired_group_identifiers, list):
+                current_app.logger.error(
+                    "Invalid groups property in token: %s. If groups is specified, it must be a list",
+                    desired_group_identifiers,
+                )
+            else:
+                for desired_group_identifier in desired_group_identifiers:
+                    new_group = UserService.add_user_to_group_by_group_identifier(
+                        user_model, desired_group_identifier, source_is_open_id=True
                     )
-                else:
-                    for desired_group_identifier in desired_group_identifiers:
-                        new_group = UserService.add_user_to_group_by_group_identifier(
-                            user_model, desired_group_identifier, source_is_open_id=True
-                        )
-                        if new_group is not None:
-                            new_group_ids.add(new_group.id)
+                    if new_group is not None:
+                        new_group_ids.add(new_group.id)
 
-                    default_group_identifier = qualified_config_group_identifier(
-                        "SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP",
-                        tenant_id=effective_tenant_id,
-                    )
-                    group_ids_to_remove_from_user = []
-                    for group in user_model.groups:
-                        if group.identifier in desired_group_identifiers:
-                            continue
-                        if default_group_identifier and group.identifier == default_group_identifier:
-                            continue
-                        if effective_tenant_id and not is_group_for_tenant(group.identifier, effective_tenant_id):
-                            continue
-                        group_ids_to_remove_from_user.append(group.id)
-                    for group_id in group_ids_to_remove_from_user:
-                        old_group_ids.add(group_id)
-                        UserService.remove_user_from_group(user_model, group_id)
+                default_group_identifier = qualified_config_group_identifier(
+                    "SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP",
+                    tenant_id=effective_tenant_id,
+                )
+                group_ids_to_remove_from_user = []
+                for group in user_model.groups:
+                    if group.identifier in desired_group_identifiers:
+                        continue
+                    if default_group_identifier and group.identifier == default_group_identifier:
+                        continue
+                    if effective_tenant_id and not is_group_for_tenant(group.identifier, effective_tenant_id):
+                        continue
+                    group_ids_to_remove_from_user.append(group.id)
+                for group_id in group_ids_to_remove_from_user:
+                    old_group_ids.add(group_id)
+                    UserService.remove_user_from_group(user_model, group_id)
 
-            group_ids_before_yaml_import = {group.id for group in user_model.groups}
-            cls.import_permissions_from_yaml_file(user_model)
+        group_ids_before_yaml_import = {group.id for group in user_model.groups}
+        cls.import_permissions_from_yaml_file(user_model)
 
         db.session.expire(user_model, ["groups"])
         group_ids_after_yaml_import = {group.id for group in user_model.groups}
@@ -307,6 +304,7 @@ def apply() -> None:
 
     @classmethod
     def patched_parse_permissions_yaml_into_group_info(cls):
+        """Parse tenant-agnostic YAML into tenant-qualified group permission definitions."""
         tenant_id = current_tenant_id_or_none()
         permission_configs = _normalize_permissions_yaml_config(cls.load_permissions_yaml(), tenant_id=tenant_id)
 
@@ -349,6 +347,7 @@ def apply() -> None:
 
     @classmethod
     def patched_add_permission_from_uri_or_macro(cls, group_identifier: str, permission: str, target: str):
+        """Tenant-qualify group identifiers before delegating permission creation upstream."""
         tenant_id = current_tenant_id_or_none()
         qualified_group_identifier = qualify_group_identifier(group_identifier, tenant_id=tenant_id)
         return _original_add_permission_from_uri_or_macro.__func__(cls, qualified_group_identifier, permission, target)
@@ -362,19 +361,164 @@ def apply() -> None:
         user_model: UserModel | None = None,
         group_permissions_only: bool = False,
     ):
+        """Refresh tenant-scoped groups and permissions without mutating shared app config."""
         tenant_id = current_tenant_id_or_none()
         normalized_group_permissions = normalize_group_permissions(group_permissions, tenant_id=tenant_id)
-        with temporary_qualified_group_config(
+        count = len(normalized_group_permissions)
+        current_app.logger.debug(
+            "ADD PERMISSIONS - START: Processing %s group permissions, group_permissions_only=%s",
+            count,
+            group_permissions_only,
+        )
+
+        unique_user_group_identifiers: set[str] = set()
+        user_to_group_identifiers: list[dict[str, Any]] = []
+        waiting_user_group_assignments: list[UserGroupAssignmentWaitingModel] = []
+        permission_assignments = []
+
+        default_group = None
+        default_group_identifier = qualified_config_group_identifier(
             "SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP",
+            tenant_id=tenant_id,
+        )
+        public_group_identifier = qualified_config_group_identifier(
             "SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP",
             tenant_id=tenant_id,
-        ):
-            return _original_add_permissions_from_group_permissions.__func__(
-                cls,
-                normalized_group_permissions,
-                user_model,
-                group_permissions_only,
+        )
+        if default_group_identifier:
+            current_app.logger.debug("ADD PERMISSIONS - Finding or creating default group: %s", default_group_identifier)
+            default_group = UserService.find_or_create_group(default_group_identifier)
+            unique_user_group_identifiers.add(default_group_identifier)
+
+        for group_index, group in enumerate(normalized_group_permissions, start=1):
+            group_identifier = group["name"]
+            current_app.logger.debug(
+                "ADD PERMISSIONS - Processing group %s/%s: %s",
+                group_index,
+                len(normalized_group_permissions),
+                group_identifier,
             )
+
+            UserService.find_or_create_group(group_identifier)
+            if public_group_identifier and group_identifier == public_group_identifier:
+                unique_user_group_identifiers.add(group_identifier)
+
+            if not group_permissions_only:
+                current_app.logger.debug(
+                    "ADD PERMISSIONS - Processing %s users for group: %s",
+                    len(group["users"]),
+                    group_identifier,
+                )
+                for user_index, username_or_email in enumerate(group["users"], start=1):
+                    if user_model and username_or_email not in [user_model.username, user_model.email]:
+                        continue
+
+                    current_app.logger.debug(
+                        "ADD PERMISSIONS - Processing user %s/%s: %s for group: %s",
+                        user_index,
+                        len(group["users"]),
+                        username_or_email,
+                        group_identifier,
+                    )
+                    (wugam, new_user_to_group_identifiers) = UserService.add_user_to_group_or_add_to_waiting(
+                        username_or_email, group_identifier
+                    )
+                    if wugam is not None:
+                        waiting_user_group_assignments.append(wugam)
+                        current_app.logger.debug(
+                            "ADD PERMISSIONS - Added waiting group assignment for user: %s, group: %s",
+                            username_or_email,
+                            group_identifier,
+                        )
+
+                    user_to_group_identifiers = user_to_group_identifiers + new_user_to_group_identifiers
+                    unique_user_group_identifiers.add(group_identifier)
+
+        for group in normalized_group_permissions:
+            group_identifier = group["name"]
+
+            user_is_member_of_group = False
+            if user_model and any(g.identifier == group_identifier for g in user_model.groups):
+                user_is_member_of_group = True
+                unique_user_group_identifiers.add(group_identifier)
+                current_app.logger.debug(
+                    "ADD PERMISSIONS - User %s is already a member of group %s",
+                    user_model.username,
+                    group_identifier,
+                )
+
+            if user_model and not user_is_member_of_group and group_identifier not in unique_user_group_identifiers:
+                current_app.logger.debug(
+                    "ADD PERMISSIONS - Skipping permissions for group %s - not in unique group identifiers",
+                    group_identifier,
+                )
+                continue
+
+            current_app.logger.debug(
+                "ADD PERMISSIONS - Processing %s permissions for group: %s",
+                len(group["permissions"]),
+                group_identifier,
+            )
+            for permission_index, permission in enumerate(group["permissions"], start=1):
+                current_app.logger.debug(
+                    "ADD PERMISSIONS - Processing permission %s/%s for group: %s, uri: %s, actions: %s",
+                    permission_index,
+                    len(group["permissions"]),
+                    group_identifier,
+                    permission["uri"],
+                    permission["actions"],
+                )
+
+                for crud_op in permission["actions"]:
+                    current_app.logger.debug(
+                        "ADD PERMISSIONS - Adding permission: %s on %s for group: %s",
+                        crud_op,
+                        permission["uri"],
+                        group_identifier,
+                    )
+                    new_permissions = cls.add_permission_from_uri_or_macro(
+                        group_identifier=group_identifier,
+                        target=permission["uri"],
+                        permission=crud_op,
+                    )
+                    current_app.logger.debug(
+                        "ADD PERMISSIONS - Added %s permission assignments",
+                        len(new_permissions),
+                    )
+                    permission_assignments.extend(new_permissions)
+                    unique_user_group_identifiers.add(group_identifier)
+
+        if not group_permissions_only and default_group is not None:
+            if user_model:
+                current_app.logger.debug(
+                    "ADD PERMISSIONS - Adding user %s to default group: %s",
+                    user_model.username,
+                    default_group_identifier,
+                )
+                UserService.add_user_to_group(user_model, default_group)
+            else:
+                users = UserModel.query.filter(UserModel.username.not_in([SPIFF_GUEST_USER])).all()  # type: ignore
+                current_app.logger.debug(
+                    "ADD PERMISSIONS - Adding %s users to default group: %s",
+                    len(users),
+                    default_group_identifier,
+                )
+                for user in users:
+                    UserService.add_user_to_group(user, default_group)
+
+        result: dict[str, Any] = {
+            "group_identifiers": unique_user_group_identifiers,
+            "permission_assignments": permission_assignments,
+            "user_to_group_identifiers": user_to_group_identifiers,
+            "waiting_user_group_assignments": waiting_user_group_assignments,
+        }
+
+        current_app.logger.debug(
+            "ADD PERMISSIONS - COMPLETED: Added %s permission assignments, %s unique group identifiers",
+            len(permission_assignments),
+            len(unique_user_group_identifiers),
+        )
+        return result
 
     AuthorizationService.add_permissions_from_group_permissions = patched_add_permissions_from_group_permissions
 
@@ -387,6 +531,7 @@ def apply() -> None:
         initial_waiting_group_assignments: list[UserGroupAssignmentWaitingModel],
         group_permissions_only: bool = False,
     ) -> None:
+        """Remove stale tenant-local permissions and group assignments after a permission refresh."""
         tenant_id = current_tenant_id_or_none()
         if tenant_id:
             filtered_permission_assignments: list[PermissionAssignmentModel] = []
@@ -409,19 +554,43 @@ def apply() -> None:
                 if is_group_for_tenant(assignment.group.identifier, tenant_id)
             ]
 
-        with temporary_qualified_group_config(
+        added_permission_assignments = added_permissions["permission_assignments"]
+        added_user_to_group_identifiers = added_permissions["user_to_group_identifiers"]
+        added_waiting_group_assignments = added_permissions["waiting_user_group_assignments"]
+        default_group_identifier = qualified_config_group_identifier(
             "SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP",
-            "SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP",
             tenant_id=tenant_id,
-        ):
-            return _original_remove_old_permissions.__func__(
-                cls,
-                added_permissions,
-                initial_permission_assignments,
-                initial_user_to_group_assignments,
-                initial_waiting_group_assignments,
-                group_permissions_only,
-            )
+        )
+
+        for initial_permission_assignment in initial_permission_assignments:
+            if initial_permission_assignment not in added_permission_assignments:
+                db.session.delete(initial_permission_assignment)
+
+        if not group_permissions_only:
+            for initial_assignment in initial_user_to_group_assignments:
+                keep_default_group_assignment = (
+                    default_group_identifier is not None and default_group_identifier == initial_assignment.group.identifier
+                )
+                keep_guest_assignment = (
+                    initial_assignment.group.identifier == SPIFF_GUEST_GROUP
+                    or initial_assignment.user.username == SPIFF_GUEST_USER
+                )
+                if keep_default_group_assignment or keep_guest_assignment:
+                    continue
+
+                current_user_dict: dict[str, Any] = {
+                    "username": initial_assignment.user.username,
+                    "group_identifier": initial_assignment.group.identifier,
+                }
+                if current_user_dict not in added_user_to_group_identifiers:
+                    db.session.delete(initial_assignment)
+
+        for waiting_assignment in initial_waiting_group_assignments:
+            if waiting_assignment not in added_waiting_group_assignments:
+                db.session.delete(waiting_assignment)
+
+        db.session.commit()
+        return None
 
     AuthorizationService.remove_old_permissions_from_added_permissions = patched_remove_old_permissions_from_added_permissions
     _PATCHED = True

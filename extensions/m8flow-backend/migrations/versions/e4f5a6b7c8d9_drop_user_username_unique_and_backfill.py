@@ -5,16 +5,18 @@ import sqlalchemy as sa
 
 
 revision = "e4f5a6b7c8d9"
-down_revision = "d2b8f0d1a4c5"
+down_revision = "g7b8c9d0e1f2"
 branch_labels = None
 depends_on = None
 
 
 def _inspector() -> sa.Inspector:
+    """Return a schema inspector bound to the current migration connection."""
     return sa.inspect(op.get_bind())
 
 
 def _drop_unique_by_columns(table: str, columns: list[str]) -> None:
+    """Drop any unique constraint or index that exactly matches the given columns."""
     insp = _inspector()
     for constraint in insp.get_unique_constraints(table):
         if constraint.get("column_names") == columns and constraint.get("name"):
@@ -25,17 +27,20 @@ def _drop_unique_by_columns(table: str, columns: list[str]) -> None:
 
 
 def _unique_exists(table: str, name: str) -> bool:
+    """Return ``True`` when the named unique constraint exists on the table."""
     insp = _inspector()
     return any(constraint.get("name") == name for constraint in insp.get_unique_constraints(table))
 
 
 def _extract_realm_from_service(service: str | None) -> str | None:
+    """Extract the Keycloak realm suffix used by legacy ``username@realm`` rows."""
     if isinstance(service, str) and "/realms/" in service:
         return service.split("/realms/")[-1].split("/")[0]
     return None
 
 
 def _strip_realm_suffix(username: str | None, service: str | None) -> str | None:
+    """Convert a legacy ``username@realm`` value back to the bare username when possible."""
     if not isinstance(username, str):
         return username
     realm = _extract_realm_from_service(service)
@@ -47,7 +52,21 @@ def _strip_realm_suffix(username: str | None, service: str | None) -> str | None
     return username
 
 
+def _append_realm_suffix(username: str | None, service: str | None) -> str | None:
+    """Rebuild the legacy ``username@realm`` form from the stored service realm."""
+    if not isinstance(username, str):
+        return username
+    realm = _extract_realm_from_service(service)
+    if not realm:
+        return username
+    suffix = f"@{realm}"
+    if username.endswith(suffix):
+        return username
+    return f"{username}{suffix}"
+
+
 def _load_users() -> list[dict[str, object]]:
+    """Load the user ids, usernames, and services needed for the backfill step."""
     conn = op.get_bind()
     user_table = sa.table(
         "user",
@@ -60,6 +79,7 @@ def _load_users() -> list[dict[str, object]]:
 
 
 def _update_username(user_id: int, username: str) -> None:
+    """Persist a normalized username for the given user id."""
     conn = op.get_bind()
     user_table = sa.table(
         "user",
@@ -75,6 +95,7 @@ def _update_username(user_id: int, username: str) -> None:
 
 
 def upgrade() -> None:
+    """Drop username uniqueness and backfill legacy tenant-suffixed usernames to bare usernames."""
     _drop_unique_by_columns("user", ["username"])
 
     for row in _load_users():
@@ -89,39 +110,16 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    users = _load_users()
-    username_counts: dict[str, int] = {}
-    for row in users:
-        username = row["username"]
-        if isinstance(username, str):
-            username_counts[username] = username_counts.get(username, 0) + 1
-
-    used_usernames = {
-        row["username"]
-        for row in users
-        if isinstance(row.get("username"), str)
-    }
-
-    for row in users:
+    """Restore legacy ``username@realm`` values and recreate the username unique constraint."""
+    for row in _load_users():
         user_id = row["id"]
         username = row["username"]
         service = row["service"]
         if not isinstance(user_id, int) or not isinstance(username, str):
             continue
-        if username_counts.get(username, 0) < 2:
-            continue
-
-        realm = _extract_realm_from_service(service if isinstance(service, str) else None) or "unknown"
-        base_candidate = username if username.endswith(f"@{realm}") else f"{username}@{realm}"
-        candidate = base_candidate
-        counter = 2
-        while candidate in used_usernames:
-            candidate = f"{base_candidate}_{counter}"
-            counter += 1
-
-        used_usernames.add(candidate)
-        used_usernames.discard(username)
-        _update_username(user_id, candidate)
+        restored_username = _append_realm_suffix(username, service if isinstance(service, str) else None)
+        if restored_username is not None and restored_username != username:
+            _update_username(user_id, restored_username)
 
     if not _unique_exists("user", "uq_user_username"):
         op.create_unique_constraint("uq_user_username", "user", ["username"])
