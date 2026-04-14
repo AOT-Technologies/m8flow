@@ -148,7 +148,7 @@ services:
       M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: "/data/process_models"
     volumes:
       - type: bind
-        source: ../process_models
+        source: ../data/process_models
         target: /data/process_models
       - ../data/m8flow_nats_consumer:/data/m8flow_nats_consumer
     restart: unless-stopped
@@ -182,7 +182,7 @@ services:
       - minio-mc-init
     volumes:
       - type: bind
-        source: ../process_models
+        source: ../data/process_models
         target: /cache
       - ../rclone.conf:/config/rclone/rclone.conf:ro
       - ../extensions/m8flow-backend/bin/process_models_sync.sh:/process_models_sync.sh:ro
@@ -279,7 +279,7 @@ services:
       - "${M8FLOW_BACKEND_PORT:-7000}:${M8FLOW_BACKEND_PORT:-7000}"
     volumes:
       - type: bind
-        source: ../process_models
+        source: ../data/process_models
         target: /app/data/process_models
       - templates_cache:/app/data/templates
     depends_on:
@@ -314,7 +314,7 @@ services:
       M8FLOW_BACKEND_SW_UPGRADE_DB: "false"
     volumes:
       - type: bind
-        source: ../process_models
+        source: ../data/process_models
         target: /data/process_models
     depends_on:
       m8flow-db:
@@ -347,7 +347,7 @@ services:
       - "5555:5555"
     volumes:
       - type: bind
-        source: ../process_models
+        source: ../data/process_models
         target: /data/process_models
     depends_on:
       m8flow-db:
