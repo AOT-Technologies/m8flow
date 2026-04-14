@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 from flask import Flask
 
@@ -130,3 +131,38 @@ def test_parse_permissions_yaml_into_group_info_qualifies_default_group_referenc
         "/active-users/*",
     ]
     assert super_admin_group["permissions"][0]["uri"] == "/m8flow/tenants*"
+
+
+def test_add_permissions_from_group_permissions_keeps_config_unqualified(monkeypatch) -> None:
+    app = Flask(__name__)  # NOSONAR - unit test
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP"] = "spiff_public"
+
+    captured_group_identifiers: list[str] = []
+
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_id_or_none", lambda: "tenant-a")
+
+    with app.app_context():
+        authorization_service_patch.apply()
+        from spiffworkflow_backend.services.authorization_service import AuthorizationService
+        from spiffworkflow_backend.services.user_service import UserService
+
+        monkeypatch.setattr(
+            UserService,
+            "find_or_create_group",
+            classmethod(
+                lambda cls, group_identifier, source_is_open_id=False: (
+                    captured_group_identifiers.append(group_identifier) or SimpleNamespace(identifier=group_identifier)
+                )
+            ),
+        )
+
+        AuthorizationService.add_permissions_from_group_permissions(
+            [{"name": "reviewer", "users": [], "permissions": []}],
+            group_permissions_only=True,
+        )
+
+        assert app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] == "everybody"
+        assert app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP"] == "spiff_public"
+        assert "tenant-a:everybody" in captured_group_identifiers
+        assert "tenant-a:reviewer" in captured_group_identifiers

@@ -15,6 +15,7 @@ from m8flow_backend.routes.authentication_controller_patch import (
     _frontend_cookie_domain,
     _handle_tenant_login_request,
     _is_allowed_frontend_redirect_url,
+    apply_public_group_patch,
     apply_cookie_domain_patch,
     apply_master_realm_auth_patch,
     apply_refresh_token_tenant_patch,
@@ -222,6 +223,56 @@ def test_refresh_token_tenant_patch_auto_provisions_missing_user(monkeypatch) ->
         authentication_controller.login_return = original_login_return
         authentication_controller._get_user_model_from_token = original_get_user_model_from_token
         monkeypatch.setattr(auth_patch_module, "_REFRESH_TOKEN_TENANT_PATCHED", False)
+
+
+def test_public_group_patch_uses_qualified_group_without_mutating_config(monkeypatch) -> None:
+    app = Flask(__name__)
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP"] = "spiff_public"
+    app.config["THREAD_LOCAL_DATA"] = SimpleNamespace()
+    original = authentication_controller._check_if_request_is_public
+
+    public_group = SimpleNamespace(principal=object())
+    created_user = SimpleNamespace(encode_auth_token=lambda payload: "public-token")
+    captured_identifiers: list[str] = []
+
+    class _FakeQuery:
+        def filter_by(self, **kwargs):
+            captured_identifiers.append(kwargs["identifier"])
+            return SimpleNamespace(first=lambda: public_group)
+
+    monkeypatch.setattr(auth_patch_module, "_PUBLIC_GROUP_PATCHED", False)
+    monkeypatch.setattr(
+        "m8flow_backend.routes.authentication_controller_patch.qualified_config_group_identifier",
+        lambda config_key: "tenant-a:spiff_public",
+    )
+    monkeypatch.setattr(
+        "spiffworkflow_backend.services.authorization_service.AuthorizationService.get_permission_from_http_method",
+        lambda method: "read",
+    )
+    monkeypatch.setattr(
+        "spiffworkflow_backend.services.authorization_service.AuthorizationService.has_permission",
+        lambda principals, permission, target_uri: True,
+    )
+    monkeypatch.setattr(
+        "spiffworkflow_backend.services.user_service.UserService.create_public_user",
+        lambda: created_user,
+    )
+
+    apply_public_group_patch()
+    try:
+        with app.app_context():
+            import spiffworkflow_backend.models.group as group_module
+
+            monkeypatch.setattr(group_module, "GroupModel", SimpleNamespace(query=_FakeQuery()))
+
+            with app.test_request_context(path="/v1.0/frontend-access", method="GET"):
+                authentication_controller._check_if_request_is_public()
+
+                assert captured_identifiers == ["tenant-a:spiff_public"]
+                assert app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP"] == "spiff_public"
+    finally:
+        authentication_controller._check_if_request_is_public = original
+        monkeypatch.setattr(auth_patch_module, "_PUBLIC_GROUP_PATCHED", False)
 
 
 # ---------------------------------------------------------------------------

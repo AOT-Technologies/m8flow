@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from collections.abc import Mapping
-from contextlib import contextmanager
 from typing import Any
 
 from m8flow_backend.tenancy import TENANT_CLAIM
@@ -10,6 +9,7 @@ from m8flow_backend.tenancy import get_tenant_id
 
 
 def current_tenant_id_or_none() -> str | None:
+    """Return the active tenant id, or ``None`` when no tenant context is set."""
     try:
         return get_tenant_id(warn_on_default=False)
     except RuntimeError:
@@ -17,6 +17,7 @@ def current_tenant_id_or_none() -> str | None:
 
 
 def current_tenant_identifiers(tenant_id: str | None = None) -> set[str]:
+    """Return the current tenant id plus any equivalent identifiers such as the slug."""
     effective_tenant_id = (tenant_id or current_tenant_id_or_none() or "").strip()
     if not effective_tenant_id:
         return set()
@@ -47,6 +48,7 @@ def current_tenant_identifiers(tenant_id: str | None = None) -> set[str]:
 
 
 def tenant_id_from_payload(payload: Mapping[str, Any] | None) -> str | None:
+    """Extract the configured tenant claim from a decoded token payload."""
     if payload is None:
         return None
 
@@ -81,6 +83,7 @@ def user_belongs_to_current_tenant(
     tenant_id: str | None = None,
     tenant_identifiers: set[str] | None = None,
 ) -> bool:
+    """Return ``True`` when the user can be matched to the active tenant context."""
     effective_identifiers = tenant_identifiers or current_tenant_identifiers(tenant_id)
     if not effective_identifiers:
         return True
@@ -99,6 +102,7 @@ def user_belongs_to_current_tenant(
 
 
 def filter_users_for_current_tenant(users: Iterable[Any], tenant_id: str | None = None) -> list[Any]:
+    """Keep only users that belong to the current tenant context."""
     user_list = list(users)
     effective_identifiers = current_tenant_identifiers(tenant_id)
     if not effective_identifiers:
@@ -111,6 +115,7 @@ def filter_users_for_current_tenant(users: Iterable[Any], tenant_id: str | None 
 
 
 def find_users_for_current_tenant_by_identifier(username_or_email: str, tenant_id: str | None = None) -> list[Any]:
+    """Find users by username or email and narrow the result set to the active tenant."""
     from sqlalchemy import or_
 
     from spiffworkflow_backend.models.user import UserModel
@@ -122,6 +127,7 @@ def find_users_for_current_tenant_by_identifier(username_or_email: str, tenant_i
 
 
 def find_users_for_current_tenant_by_username(username: str, tenant_id: str | None = None) -> list[Any]:
+    """Find users by exact username within the current tenant."""
     from spiffworkflow_backend.models.user import UserModel
 
     matches = UserModel.query.filter(UserModel.username == username).all()
@@ -132,6 +138,7 @@ def find_users_for_current_tenant_by_username_prefix(
     username_prefix: str,
     tenant_id: str | None = None,
 ) -> list[Any]:
+    """Find users by username prefix within the current tenant."""
     from spiffworkflow_backend.models.user import UserModel
 
     matches = UserModel.query.filter(UserModel.username.like(f"{username_prefix}%")).all()  # type: ignore[arg-type]
@@ -139,6 +146,7 @@ def find_users_for_current_tenant_by_username_prefix(
 
 
 def resolve_user_for_current_tenant(username_or_email: str, tenant_id: str | None = None) -> Any | None:
+    """Resolve a single tenant-local user from a username or email identifier."""
     matches = find_users_for_current_tenant_by_identifier(username_or_email, tenant_id=tenant_id)
     if not matches:
         return None
@@ -183,10 +191,12 @@ def is_group_for_tenant(group_identifier: str, tenant_id: str | None = None) -> 
 
 
 def normalize_group_identifiers(group_identifiers: list[str], tenant_id: str | None = None) -> list[str]:
+    """Return tenant-qualified versions of the provided group identifiers."""
     return [qualify_group_identifier(group_identifier, tenant_id=tenant_id) for group_identifier in group_identifiers]
 
 
 def normalize_group_permissions(group_permissions: list[dict[str, Any]], tenant_id: str | None = None) -> list[dict[str, Any]]:
+    """Return tenant-qualified group-permission payloads without mutating the input."""
     normalized_group_permissions: list[dict[str, Any]] = []
     for group in group_permissions:
         normalized_group_permissions.append(
@@ -200,6 +210,7 @@ def normalize_group_permissions(group_permissions: list[dict[str, Any]], tenant_
 
 
 def qualified_config_group_identifier(config_key: str, tenant_id: str | None = None) -> str | None:
+    """Read a config-backed group identifier and return its tenant-qualified form."""
     from flask import current_app
 
     value = current_app.config.get(config_key)
@@ -209,20 +220,3 @@ def qualified_config_group_identifier(config_key: str, tenant_id: str | None = N
     if not value:
         return value
     return qualify_group_identifier(value, tenant_id=tenant_id)
-
-
-@contextmanager
-def temporary_qualified_group_config(*config_keys: str, tenant_id: str | None = None):
-    from flask import current_app
-
-    previous_values: dict[str, Any] = {}
-    for config_key in config_keys:
-        previous_values[config_key] = current_app.config.get(config_key)
-        qualified_value = qualified_config_group_identifier(config_key, tenant_id=tenant_id)
-        if qualified_value is not None:
-            current_app.config[config_key] = qualified_value
-    try:
-        yield
-    finally:
-        for config_key, previous_value in previous_values.items():
-            current_app.config[config_key] = previous_value

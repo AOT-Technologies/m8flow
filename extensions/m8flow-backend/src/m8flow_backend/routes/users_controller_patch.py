@@ -17,6 +17,7 @@ _PATCHED = False
 
 
 def apply() -> None:
+    """Patch user endpoints so username lookups and group listings stay tenant-aware."""
     global _PATCHED
     if _PATCHED:
         return
@@ -24,6 +25,7 @@ def apply() -> None:
     from spiffworkflow_backend.routes import users_controller
 
     def patched_user_exists_by_username(body: dict[str, Any]) -> flask.wrappers.Response:
+        """Report whether the username exists within the current tenant scope."""
         if "username" not in body:
             raise ApiError(
                 error_code="username_not_given",
@@ -35,6 +37,7 @@ def apply() -> None:
         return make_response(jsonify({"user_found": len(found_users) > 0}), 200)
 
     def patched_user_search(username_prefix: str) -> flask.wrappers.Response:
+        """Return username-prefix matches scoped to the current tenant."""
         found_users = find_users_for_current_tenant_by_username_prefix(username_prefix)
         response_json = {
             "users": found_users,
@@ -43,6 +46,7 @@ def apply() -> None:
         return make_response(jsonify(response_json), 200)
 
     def patched_user_group_list_for_current_user() -> flask.wrappers.Response:
+        """List current-user groups while hiding the tenant-qualified default user group."""
         groups = g.user.groups
         default_group_identifier = qualified_config_group_identifier("SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP")
         group_identifiers = [

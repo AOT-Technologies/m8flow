@@ -10,6 +10,7 @@ _PATCHED = False
 
 
 def apply() -> None:
+    """Patch lane-owner resolution so task potential owners stay tenant-aware."""
     global _PATCHED
     if _PATCHED:
         return
@@ -21,6 +22,7 @@ def apply() -> None:
     from spiffworkflow_backend.services.user_service import UserService
 
     def patched_get_potential_owners_from_task(self: ProcessInstanceProcessor, task: SpiffTask) -> PotentialOwnerIdList:
+        """Resolve guest, initiator, lane-assignment, and lane-owner users within the current tenant."""
         task_spec = task.task_spec
         task_lane = "process_initiator"
 

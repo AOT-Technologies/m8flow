@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 def apply() -> None:
+    """Patch user/group helpers so group membership and assignments stay tenant-qualified."""
     global _PATCHED
     if _PATCHED:
         return
@@ -29,6 +30,7 @@ def apply() -> None:
 
     @classmethod
     def patched_find_or_create_group(cls, group_identifier: str, source_is_open_id: bool = False):
+        """Canonicalize group identifiers to the tenant-qualified form before persistence."""
         qualified_group_identifier = qualify_group_identifier(group_identifier)
         return original_find_or_create_group(
             cls,
@@ -64,6 +66,7 @@ def apply() -> None:
 
     @classmethod
     def patched_apply_waiting_group_assignments(cls, user: UserModel) -> None:
+        """Apply only waiting assignments that belong to the current tenant's groups."""
         tenant_identifiers = current_tenant_identifiers()
 
         waiting = (
@@ -108,6 +111,7 @@ def apply() -> None:
         new_group_ids: set[int],
         old_group_ids: set[int],
     ) -> None:
+        """Add and remove lane-assignment task ownership rows without crossing tenant boundaries."""
         from m8flow_backend.models.human_task import HumanTaskModel
         from m8flow_backend.models.human_task_user import HumanTaskUserAddedBy, HumanTaskUserModel
 
