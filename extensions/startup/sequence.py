@@ -67,6 +67,11 @@ def _configure_created_app(cnx_app: Any, db: Any, upgrade_m8flow_db: Callable[[]
     # App-dependent patches (allowed to import models now).
     bootstrap_after_app(flask_app)
 
+    # Rebrand upstream Celery task names for Flower UI / worker dispatch.
+    from m8flow_backend.background_processing import rebrand_celery_tasks
+
+    rebrand_celery_tasks(flask_app)
+
     # Canonical db (single db instance everywhere).
     from m8flow_backend.canonical_db import set_canonical_db
 
