@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from m8flow_backend.services.tenant_identity_helpers import display_group_identifier
 from m8flow_backend.services.tenant_identity_helpers import find_users_for_current_tenant_by_username
 
 _PATCHED = False
@@ -19,6 +20,8 @@ def apply() -> None:
     from spiffworkflow_backend.models.process_instance_report import FilterValue
     from spiffworkflow_backend.services.process_instance_report_service import ProcessInstanceReportService
     from spiffworkflow_backend.services.process_model_service import ProcessModelService
+
+    original_add_human_task_fields = ProcessInstanceReportService.add_human_task_fields.__func__
 
     @classmethod
     def patched_get_basic_query(cls, filters: list[FilterValue]) -> Query:
@@ -69,5 +72,22 @@ def apply() -> None:
 
         return process_instance_query
 
+    @classmethod
+    def patched_add_human_task_fields(cls, process_instance_dicts: list[dict], restrict_human_tasks_to_user=None) -> list[dict]:
+        """Keep report task ownership displays tenant-friendly without changing stored identifiers."""
+        results = original_add_human_task_fields(
+            cls,
+            process_instance_dicts,
+            restrict_human_tasks_to_user=restrict_human_tasks_to_user,
+        )
+        for process_instance_dict in results:
+            assigned_user_group_identifier = process_instance_dict.get("assigned_user_group_identifier")
+            if isinstance(assigned_user_group_identifier, str):
+                process_instance_dict["assigned_user_group_identifier"] = display_group_identifier(
+                    assigned_user_group_identifier
+                )
+        return results
+
     ProcessInstanceReportService.get_basic_query = patched_get_basic_query
+    ProcessInstanceReportService.add_human_task_fields = patched_add_human_task_fields
     _PATCHED = True

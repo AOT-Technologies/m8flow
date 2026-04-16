@@ -182,6 +182,55 @@ def qualify_group_identifier(group_identifier: str, tenant_id: str | None = None
     return f"{effective_tenant_id}:{identifier}"
 
 
+def _tenant_slug_for_identifier(tenant_identifier: str) -> str | None:
+    """Resolve a tenant id or slug to the canonical tenant slug."""
+    effective_tenant_identifier = tenant_identifier.strip()
+    if not effective_tenant_identifier:
+        return None
+
+    try:
+        from sqlalchemy import or_
+
+        from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
+        from spiffworkflow_backend.models.db import db
+
+        tenant = (
+            db.session.query(M8flowTenantModel)
+            .filter(
+                or_(
+                    M8flowTenantModel.id == effective_tenant_identifier,
+                    M8flowTenantModel.slug == effective_tenant_identifier,
+                )
+            )
+            .one_or_none()
+        )
+    except Exception:
+        tenant = None
+
+    if tenant is None or not isinstance(tenant.slug, str):
+        return None
+
+    slug = tenant.slug.strip()
+    return slug or None
+
+
+def display_group_identifier(group_identifier: str) -> str:
+    """Return a tenant-qualified group identifier as ``tenant_slug:lane`` for display."""
+    identifier = group_identifier.strip()
+    if not identifier:
+        return identifier
+    if ":" not in identifier:
+        return identifier
+
+    tenant_identifier, _, remainder = identifier.partition(":")
+    if not tenant_identifier or not remainder:
+        return identifier
+
+    tenant_slug = _tenant_slug_for_identifier(tenant_identifier) or tenant_identifier
+
+    return f"{tenant_slug}:{remainder}"
+
+
 def is_group_for_tenant(group_identifier: str, tenant_id: str | None = None) -> bool:
     """True when the group identifier is scoped to the given tenant."""
     effective_tenant_id = (tenant_id or current_tenant_id_or_none() or "").strip()

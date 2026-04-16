@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from m8flow_backend.services.tenant_identity_helpers import display_group_identifier
 from m8flow_backend.services.tenant_identity_helpers import filter_users_for_current_tenant
 from m8flow_backend.services.tenant_identity_helpers import qualify_group_identifier
 from m8flow_backend.services.tenant_identity_helpers import resolve_user_for_current_tenant
@@ -15,6 +16,25 @@ def test_qualify_group_identifier_qualifies_bare_and_preserves_qualified(monkeyp
 
     assert qualify_group_identifier("reviewer") == "tenant-a:reviewer"
     assert qualify_group_identifier("tenant-b:admin") == "tenant-b:admin"
+
+
+def test_display_group_identifier_rewrites_tenant_prefix_to_slug(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "m8flow_backend.services.tenant_identity_helpers._tenant_slug_for_identifier",
+        lambda tenant_identifier: "tenant-slug" if tenant_identifier == "tenant-id" else None,
+    )
+
+    assert display_group_identifier("tenant-id:reviewer") == "tenant-slug:reviewer"
+
+
+def test_display_group_identifier_preserves_value_when_slug_lookup_fails(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "m8flow_backend.services.tenant_identity_helpers._tenant_slug_for_identifier",
+        lambda tenant_identifier: None,
+    )
+
+    assert display_group_identifier("tenant-id:reviewer") == "tenant-id:reviewer"
+    assert display_group_identifier("reviewer") == "reviewer"
 
 
 def test_filter_users_for_current_tenant_accepts_service_realm_and_legacy_suffix(monkeypatch) -> None:
