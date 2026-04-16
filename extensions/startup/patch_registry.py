@@ -205,6 +205,10 @@ POST_APP_EXTENSION_PATCH_SPECS: tuple[PatchSpec, ...] = (
         target="m8flow_backend.services.process_instance_report_service_patch:apply",
         minimum_phase=BootPhase.APP_CREATED,
     ),
+    PatchSpec(
+        target="m8flow_backend.routes.tasks_controller_patch:apply",
+        minimum_phase=BootPhase.APP_CREATED,
+    ),
 )
 
 
