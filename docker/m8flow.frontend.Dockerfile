@@ -2,15 +2,10 @@
 # Clones frontend-required folders from upstream (LGPL-2.1) so the build is
 # self-contained. No local copy of upstream code is required.
 # Override UPSTREAM_TAG to pin a different tag: --build-arg UPSTREAM_TAG=0.0.2
-FROM alpine:3.22 AS fetch-upstream
-
+FROM alpine:3.20 AS fetch-upstream
 ARG UPSTREAM_TAG=
-
-RUN apk update && apk upgrade && \
-    apk add --no-cache git jq
-
+RUN apk add --no-cache git jq
 COPY upstream.sources.json /tmp/upstream.sources.json
-
 RUN set -eu; \
     UPSTREAM_URL="$(jq -r '.upstream_url' /tmp/upstream.sources.json)"; \
     DEFAULT_UPSTREAM_TAG="$(jq -r '.upstream_ref' /tmp/upstream.sources.json)"; \
@@ -45,8 +40,7 @@ RUN apt-get update \
   vim-tiny \
   libkrb5support0 \
   libexpat1 \
-  && apt-get upgrade -y \
-  && apt-get clean \
+  && apt-get clean -y \
   && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_OPTIONS=--max_old_space_size=4096
@@ -99,15 +93,10 @@ RUN --mount=type=cache,target=/root/.npm \
     npm run build
 
 # ── Final: nginx serving image ────────────────────────────────────────────────
-# Alpine-based image eliminates all Debian-specific CVEs (libde265, libheif,
-# libexpat1, libnghttp2, libsystemd, ncurses) that have no upstream fix yet.
 FROM nginx:1.29.2-alpine
 
-# Install only required utilities
-RUN apk update && \
-    apk upgrade && \
-    apk add --no-cache bash dos2unix && \
-    rm -rf /var/cache/apk/*
+# pcre2 pinned upgrade: remove once base image ships secure version (10.46+)
+RUN apk add --no-cache bash dos2unix && apk add --upgrade pcre2
 
 # Remove default nginx configuration
 RUN rm -rf /etc/nginx/conf.d/*
