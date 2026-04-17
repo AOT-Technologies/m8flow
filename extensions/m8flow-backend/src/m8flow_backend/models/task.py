@@ -16,6 +16,7 @@ from spiffworkflow_backend.models.db import db
 from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScoped
 from spiffworkflow_backend.models.json_data import JsonDataModel
 from m8flow_backend.models.task_definition import TaskDefinitionModel
+from m8flow_backend.services.tenant_identity_helpers import display_group_identifier
 
 if TYPE_CHECKING:
     from m8flow_backend.models.human_task_user import HumanTaskModel  # noqa: F401
@@ -174,6 +175,9 @@ class Task:
         multi_instance_type = None
         if self.multi_instance_type:
             MultiInstanceType(self.multi_instance_type)
+        assigned_user_group_identifier = self.assigned_user_group_identifier
+        if isinstance(assigned_user_group_identifier, str):
+            assigned_user_group_identifier = display_group_identifier(assigned_user_group_identifier)
 
         return {
             "id": self.id,
@@ -202,7 +206,7 @@ class Task:
             "parent": self.parent,
             "event_definition": self.event_definition,
             "error_message": self.error_message,
-            "assigned_user_group_identifier": self.assigned_user_group_identifier,
+            "assigned_user_group_identifier": assigned_user_group_identifier,
             "potential_owner_usernames": self.potential_owner_usernames,
             "process_model_uses_queued_execution": self.process_model_uses_queued_execution,
         }

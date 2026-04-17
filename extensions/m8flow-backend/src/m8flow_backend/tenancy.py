@@ -223,7 +223,7 @@ def ensure_tenant_exists(tenant_id: str | None) -> None:
     """Validate that the tenant row exists; raise if missing to enforce pre-provisioning."""
     if not tenant_id:
         raise RuntimeError(
-            "Missing tenant id. Ensure the token contains m8flow_tenant_id (or set tenant in request context)."
+            f"Missing tenant id. Ensure the token contains {TENANT_CLAIM} (or set tenant in request context)."
         )
 
     from m8flow_backend.models.m8flow_tenant import M8flowTenantModel

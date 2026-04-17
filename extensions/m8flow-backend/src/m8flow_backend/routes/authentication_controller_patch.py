@@ -11,6 +11,7 @@ from urllib.parse import unquote
 from urllib.parse import urlsplit
 
 from m8flow_backend.services.tenant_context_middleware import resolve_request_tenant
+from m8flow_backend.services.tenant_identity_helpers import qualified_config_group_identifier
 from m8flow_backend.tenancy import TENANT_CLAIM
 from spiffworkflow_backend.routes import authentication_controller
 
@@ -20,6 +21,7 @@ _PATCHED = False
 _COOKIE_DOMAIN_PATCHED = False
 _DECODE_TOKEN_PATCHED = False
 _MASTER_REALM_PATCHED = False
+_PUBLIC_GROUP_PATCHED = False
 _REFRESH_TOKEN_TENANT_PATCHED = False
 
 # Path suffixes that may be called with Keycloak master realm tokens (bootstrap/global admin).
@@ -35,6 +37,7 @@ _MISSING = object()
 def apply() -> None:
     """Patch the authentication controller with m8flow auth behavior."""
     apply_cookie_domain_patch()
+    apply_public_group_patch()
 
     global _PATCHED
     if _PATCHED:
@@ -43,6 +46,7 @@ def apply() -> None:
     original = authentication_controller.omni_auth
 
     def patched_omni_auth(*args, **kwargs):
+        """Run the original auth entrypoint, then resolve the tenant from the populated request state."""
         rv = original(*args, **kwargs)
         # Resolve tenant as soon as auth has populated g.token/cookies (uses canonical db).
         resolve_request_tenant()
@@ -50,6 +54,51 @@ def apply() -> None:
 
     authentication_controller.omni_auth = patched_omni_auth  # type: ignore[assignment]
     _PATCHED = True
+
+
+def apply_public_group_patch() -> None:
+    """Patch public-request detection to use tenant-qualified public group identifiers."""
+    global _PUBLIC_GROUP_PATCHED
+    if _PUBLIC_GROUP_PATCHED:
+        return
+
+    @wraps(authentication_controller._check_if_request_is_public)
+    def patched_check_if_request_is_public():
+        """Authorize public requests against the tenant-qualified public group."""
+        from flask import current_app
+        from flask import g
+        from flask import request
+        from spiffworkflow_backend.models.group import GroupModel
+        from spiffworkflow_backend.services.authorization_service import AuthorizationService
+        from spiffworkflow_backend.services.user_service import UserService
+
+        permission_string = AuthorizationService.get_permission_from_http_method(request.method)
+        if not permission_string:
+            return None
+
+        public_group_identifier = qualified_config_group_identifier("SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP")
+        if not public_group_identifier:
+            return None
+
+        public_group = GroupModel.query.filter_by(identifier=public_group_identifier).first()
+        if public_group is None:
+            return None
+
+        has_permission = AuthorizationService.has_permission(
+            principals=[public_group.principal],
+            permission=permission_string,
+            target_uri=request.path,
+        )
+        if not has_permission:
+            return None
+
+        g.user = UserService.create_public_user()
+        g.token = g.user.encode_auth_token({"public": True})
+        tld = current_app.config["THREAD_LOCAL_DATA"]
+        tld.user = g.user
+
+    authentication_controller._check_if_request_is_public = patched_check_if_request_is_public
+    _PUBLIC_GROUP_PATCHED = True
 
 
 def _frontend_cookie_domain(frontend_url: str) -> str | None:
@@ -88,6 +137,7 @@ def _frontend_cookie_domain(frontend_url: str) -> str | None:
 
 @contextmanager
 def _temporary_frontend_url(frontend_url: str):
+    """Temporarily override the configured frontend URL while cookies are written."""
     from flask import current_app
 
     previous = current_app.config.get("SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND")
@@ -99,6 +149,7 @@ def _temporary_frontend_url(frontend_url: str):
 
 
 def apply_cookie_domain_patch() -> None:
+    """Patch cookie writing so local and named-host frontend URLs get valid cookie domains."""
     global _COOKIE_DOMAIN_PATCHED
     if _COOKIE_DOMAIN_PATCHED:
         return
@@ -107,6 +158,7 @@ def apply_cookie_domain_patch() -> None:
 
     @wraps(original)
     def patched_set_new_access_token_in_cookie(response):
+        """Set auth cookies using a host-only or normalized frontend domain as needed."""
         from flask import current_app
 
         frontend_url = str(current_app.config.get("SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND", ""))
@@ -130,6 +182,7 @@ def apply_cookie_domain_patch() -> None:
 
 
 def _decode_state_authentication_identifier(state: str | None) -> str | None:
+    """Extract ``authentication_identifier`` from the encoded login state payload."""
     if not state:
         return None
     try:
@@ -147,6 +200,7 @@ def _tenant_for_refresh_tokens(
     decoded_token: dict | None = None,
     state: str | None = None,
 ) -> str | None:
+    """Derive tenant context for refresh-token flows before normal tenant hooks run."""
     from flask import g, has_request_context, request
 
     if isinstance(decoded_token, dict):
@@ -182,6 +236,7 @@ def _tenant_for_refresh_tokens(
 
 @contextmanager
 def _temporary_request_tenant(tenant_id: str | None):
+    """Temporarily bind ``g.m8flow_tenant_id`` for pre-resolution auth flows."""
     from flask import g, has_request_context
 
     if not has_request_context() or not tenant_id:
@@ -215,6 +270,7 @@ def apply_refresh_token_tenant_patch() -> None:
 
     @wraps(original_login_return)
     def patched_login_return(*args, **kwargs):
+        """Retry expired auth flows and ensure tenant context exists while login_return executes."""
         from flask import current_app, redirect
         from spiffworkflow_backend.services.authentication_service import AuthenticationService
 
@@ -266,6 +322,7 @@ def apply_refresh_token_tenant_patch() -> None:
 
     @wraps(original_get_user_model_from_token)
     def patched_get_user_model_from_token(decoded_token: dict):
+        """Resolve or auto-provision the user while refresh-token tenant context is temporarily bound."""
         tenant_id = _tenant_for_refresh_tokens(decoded_token=decoded_token)
         with _temporary_request_tenant(tenant_id):
             try:
@@ -294,10 +351,12 @@ def apply_refresh_token_tenant_patch() -> None:
 
 
 def _patched_get_decoded_token(token: str):
+    """Delegate token decoding while preserving a hook point for targeted debugging."""
     return authentication_controller._original_get_decoded_token(token)
 
 
 def apply_decode_token_debug_patch() -> None:
+    """Install a thin wrapper around token decoding for debug instrumentation."""
     global _DECODE_TOKEN_PATCHED
     if _DECODE_TOKEN_PATCHED:
         return
@@ -393,6 +452,7 @@ def apply_master_realm_auth_patch() -> None:
     original = authentication_controller._get_authentication_identifier_from_request
 
     def _patched_get_authentication_identifier_from_request() -> str:
+        """Resolve the auth config identifier from state, bearer token, or the upstream logic."""
         path = (request.path or "").strip()
         state_id = _authentication_identifier_from_state()
         if state_id:
@@ -425,7 +485,7 @@ def apply_master_realm_auth_patch() -> None:
 
 
 def _handle_tenant_login_request(flask_app):
-    """If request is GET .../login with tenant param, handle redirect and return response or None."""
+    """Handle tenant-selected login redirects and return a response when intercepted."""
     from flask import jsonify, redirect, request
     from m8flow_backend.services.auth_config_service import ensure_tenant_auth_config
     from m8flow_backend.services.keycloak_service import realm_exists
@@ -528,6 +588,7 @@ def apply_login_tenant_patch(flask_app) -> None:
     ensure_master_auth_config(flask_app)
 
     def before_login_tenant():
+        """Short-circuit standard login handling when a tenant login redirect is requested."""
         resp = _handle_tenant_login_request(flask_app)
         if resp is not None:
             return resp

@@ -47,6 +47,7 @@ _OVERRIDES = {
     "spiffworkflow_backend.models.task_draft_data": "m8flow_backend.models.task_draft_data",
     "spiffworkflow_backend.models.task_instructions_for_end_user": "m8flow_backend.models.task_instructions_for_end_user",
     "spiffworkflow_backend.models.typeahead": "m8flow_backend.models.typeahead",
+    "spiffworkflow_backend.models.user": "m8flow_backend.models.user",
 }
 
 _PATCHED = False
