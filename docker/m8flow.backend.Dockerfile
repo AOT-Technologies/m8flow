@@ -39,8 +39,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
 
 # Install python3.12, venv, uv, and build deps
-RUN apt-get update \
-  && apt-get upgrade -y \
+RUN sed -i 's|http://archive.ubuntu.com/ubuntu/|http://mirrors.edge.kernel.org/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources \
+  && sed -i 's|http://security.ubuntu.com/ubuntu/|http://mirrors.edge.kernel.org/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources \
+  && apt-get update \
   && apt-get install -y -q --no-install-recommends \
     tzdata \
     ca-certificates \
@@ -85,8 +86,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
 
 # Minimal runtime deps + gosu (ubuntu includes python3.12 out of the box)
-RUN apt-get update \
-  && apt-get upgrade -y \
+RUN sed -i 's|http://archive.ubuntu.com/ubuntu/|http://mirrors.edge.kernel.org/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources \
+  && sed -i 's|http://security.ubuntu.com/ubuntu/|http://mirrors.edge.kernel.org/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources \
+  && apt-get update \
   && apt-get install -y -q --no-install-recommends \
     tzdata \
     ca-certificates \
@@ -138,8 +140,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /app
 
-RUN apt-get update \
-  && apt-get upgrade -y \
+RUN sed -i 's|http://archive.ubuntu.com/ubuntu/|http://mirrors.edge.kernel.org/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources \
+  && sed -i 's|http://security.ubuntu.com/ubuntu/|http://mirrors.edge.kernel.org/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources \
+  && apt-get update \
   && apt-get install -y -q --no-install-recommends \
     tzdata \
     ca-certificates \
