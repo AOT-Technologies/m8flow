@@ -313,8 +313,8 @@ requests = "^2.28.1"
 [package.source]
 type = "git"
 url = "https://github.com/AOT-Technologies/m8flow-connectors.git"
-reference = "main"
-resolved_reference = "5cb46902a562b889a206e1e4841c6e15fbbd0838"
+reference = "1.0.0"
+resolved_reference = "1a49a12b37acbc20b8e81b89091087633d1de0b5"
 subdirectory = "connectors/m8flow-connector-salesforce"
 
 [[package]]
@@ -334,8 +334,8 @@ spiffworkflow-connector-command = {git = "https://github.com/sartography/spiffwo
 [package.source]
 type = "git"
 url = "https://github.com/AOT-Technologies/m8flow-connectors.git"
-reference = "main"
-resolved_reference = "5cb46902a562b889a206e1e4841c6e15fbbd0838"
+reference = "1.0.0"
+resolved_reference = "1a49a12b37acbc20b8e81b89091087633d1de0b5"
 subdirectory = "connectors/m8flow-connector-slack"
 
 [[package]]
@@ -355,8 +355,8 @@ spiffworkflow-connector-command = {git = "https://github.com/sartography/spiffwo
 [package.source]
 type = "git"
 url = "https://github.com/AOT-Technologies/m8flow-connectors.git"
-reference = "main"
-resolved_reference = "4d809aef06747051fb5605605d0250b5d90dc29d"
+reference = "1.0.0"
+resolved_reference = "1a49a12b37acbc20b8e81b89091087633d1de0b5"
 subdirectory = "connectors/m8flow-connector-smtp"
 
 [[package]]
@@ -375,8 +375,8 @@ requests = "^2.28.1"
 [package.source]
 type = "git"
 url = "https://github.com/AOT-Technologies/m8flow-connectors.git"
-reference = "main"
-resolved_reference = "5cb46902a562b889a206e1e4841c6e15fbbd0838"
+reference = "1.0.0"
+resolved_reference = "1a49a12b37acbc20b8e81b89091087633d1de0b5"
 subdirectory = "connectors/m8flow-connector-stripe"
 
 [[package]]
@@ -680,4 +680,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12.1,<3.13"
-content-hash = "3a6aa4242cff0795398d7acd5d4e545bba69aeb98e6afe796458ca8223318242"
+content-hash = "e27bac7a8d36345daf39283ea40d8665a3f0a5c72166f98b33c7477ccc50499b"
