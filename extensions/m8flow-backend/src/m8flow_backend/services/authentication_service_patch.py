@@ -31,8 +31,10 @@ _TOKEN_ERROR_PATCHED = False
 _OPENID_PATCHED = False
 _REFRESH_TOKEN_TENANT_PATCHED = False
 _JWKS_TTL_PATCHED = False
+_REDIRECT_URI_SCHEME_PATCHED = False
 _ORIGINAL_STORE_REFRESH_TOKEN = None
 _ORIGINAL_GET_REFRESH_TOKEN = None
+_ORIGINAL_GET_REDIRECT_URI_FOR_LOGIN_TO_SERVER = None
 _MISSING = object()
 MASTER_REALM_IDENTIFIER = "master"
 
@@ -161,6 +163,55 @@ def apply_auth_token_error_patch() -> None:
     _ORIGINAL_GET_AUTH_TOKEN_OBJECT = AuthenticationService.get_auth_token_object
     AuthenticationService.get_auth_token_object = _patched_get_auth_token_object
     _TOKEN_ERROR_PATCHED = True
+
+
+def _call_original_get_redirect_uri_for_login_to_server(self) -> str:
+    if _ORIGINAL_GET_REDIRECT_URI_FOR_LOGIN_TO_SERVER is None:
+        raise RuntimeError(
+            "Original AuthenticationService.get_redirect_uri_for_login_to_server was not captured."
+        )
+    return _ORIGINAL_GET_REDIRECT_URI_FOR_LOGIN_TO_SERVER(self)
+
+
+def _patched_get_redirect_uri_for_login_to_server(self) -> str:
+    from flask import current_app, request, url_for
+
+    host_url = request.host_url.strip("/")
+    login_return_path = url_for(
+        f"{current_app.config['SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX'].replace('.', '_')}"
+        ".spiffworkflow_backend_routes_authentication_controller_login_return"
+    )
+
+    forwarded_proto = (request.headers.get("X-Forwarded-Proto") or "").strip().lower()
+    if forwarded_proto == "https" and host_url.startswith("http://"):
+        host_url = host_url.replace("http://", "https://", 1)
+
+    redirect_url_to_use = f"{host_url}{login_return_path}"
+    current_app.logger.debug(f"Redirect URL requested of open ID provider is '{redirect_url_to_use}' ")
+    return redirect_url_to_use
+
+
+def apply_redirect_uri_scheme_patch() -> None:
+    """Ensure redirect_uri scheme is correct when behind TLS-terminating proxies."""
+    global _REDIRECT_URI_SCHEME_PATCHED, _ORIGINAL_GET_REDIRECT_URI_FOR_LOGIN_TO_SERVER
+    if _REDIRECT_URI_SCHEME_PATCHED:
+        return
+
+    if _ORIGINAL_GET_REDIRECT_URI_FOR_LOGIN_TO_SERVER is None:
+        _ORIGINAL_GET_REDIRECT_URI_FOR_LOGIN_TO_SERVER = (
+            AuthenticationService.get_redirect_uri_for_login_to_server
+        )
+
+    AuthenticationService.get_redirect_uri_for_login_to_server = _patched_get_redirect_uri_for_login_to_server
+    _REDIRECT_URI_SCHEME_PATCHED = True
+
+
+def reset_redirect_uri_scheme_patch() -> None:
+    """Test helper: restore original AuthenticationService.get_redirect_uri_for_login_to_server."""
+    global _REDIRECT_URI_SCHEME_PATCHED
+    if _ORIGINAL_GET_REDIRECT_URI_FOR_LOGIN_TO_SERVER is not None:
+        AuthenticationService.get_redirect_uri_for_login_to_server = _ORIGINAL_GET_REDIRECT_URI_FOR_LOGIN_TO_SERVER
+    _REDIRECT_URI_SCHEME_PATCHED = False
 
 
 def _patched_open_id_endpoint_for_name(

@@ -25,6 +25,7 @@ from extensions.startup.auth_patches import apply_extension_patches_after_app
 
 from m8flow_backend.services.asgi_tenant_context_middleware import AsgiTenantContextMiddleware
 from extensions.startup.guard import set_phase, BootPhase
+from spiffworkflow_backend.middleware.asgi_proxy_fix import ASGIProxyFix
 
 
 def _prepare_pre_app_boot() -> tuple[Any, Callable[[], None]]:
@@ -114,9 +115,28 @@ def _wrap_asgi_if_needed(cnx_app: Any) -> Any:
     # Wrap ASGI app so logs can see ContextVar tenant.
     # Keep upstream Starlette CORSMiddleware as the only CORS handler.
     env = os.environ.get("SPIFFWORKFLOW_BACKEND_ENV", "local_development")
-    if env not in ("unit_testing", "testing"):
-        return AsgiTenantContextMiddleware(cnx_app)
-    return cnx_app
+    if env in ("unit_testing", "testing"):
+        return cnx_app
+
+    app = cnx_app
+
+    proxy_count_raw = os.environ.get("SPIFFWORKFLOW_BACKEND_PROXY_COUNT_FOR_PROXY_FIX", "0") or "0"
+    try:
+        proxy_count = int(proxy_count_raw)
+    except (TypeError, ValueError):
+        proxy_count = 0
+
+    if proxy_count > 0:
+        app = ASGIProxyFix(
+            app,
+            x_for=proxy_count,
+            x_proto=proxy_count,
+            x_host=proxy_count,
+            x_port=proxy_count,
+            x_prefix=proxy_count,
+        )
+
+    return AsgiTenantContextMiddleware(app)
 
 
 def create_application() -> Any:
