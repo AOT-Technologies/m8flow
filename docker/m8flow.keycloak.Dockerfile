@@ -13,9 +13,11 @@ COPY keycloak-extensions/realm-info-mapper /build/realm-info-mapper
 RUN mvn -f /build/realm-info-mapper/pom.xml clean package -q -DskipTests
 
 # Keycloak with provider JAR (no host mount).
-FROM quay.io/keycloak/keycloak:26.0.8
+FROM quay.io/keycloak/keycloak:26.6.1
 COPY --from=builder /build/realm-info-mapper/target/realm-info-mapper.jar /opt/keycloak/providers/realm-info-mapper.jar
 USER root
+# Keycloak 26 uses UBI Micro which ships without any package manager.
+# OS-level security patches should be obtained by pulling the latest Keycloak image.
 RUN mkdir -p /opt/keycloak/data/import
 COPY extensions/m8flow-backend/keycloak/realm_exports/m8flow-tenant-template.json /opt/keycloak/data/import/m8flow-tenant-template.json
 RUN chown -R keycloak:keycloak /opt/keycloak/data/import
