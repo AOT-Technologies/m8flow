@@ -118,8 +118,8 @@ COPY extensions/m8flow-frontend/docker_build/nginx.conf.template /var/tmp
 # Default internal port for nginx inside the container.
 # Orchestrators and docker compose both route traffic to containerPort 8080,
 # so make the image listen on 8080 by default. Can be overridden
-# by setting SPIFFWORKFLOW_FRONTEND_INTERNAL_PORT explicitly.
-ENV SPIFFWORKFLOW_FRONTEND_INTERNAL_PORT=8080
+# by setting M8FLOW_FRONTEND_INTERNAL_PORT explicitly.
+ENV M8FLOW_FRONTEND_INTERNAL_PORT=8080
 
 # Copy the built static files from the extension frontend into the nginx directory
 COPY --from=setup /app/extensions/m8flow-frontend/dist /usr/share/nginx/html
@@ -128,14 +128,12 @@ COPY --from=setup /app/extensions/m8flow-frontend/dist /usr/share/nginx/html
 # (keeps behavior flexible without changing upstream code).
 COPY --from=setup /app/spiffworkflow-frontend/dist /usr/share/nginx/html/spiff
 
-# Reuse core frontend helper scripts (including boot_server_in_docker)
-COPY --from=fetch-upstream /upstream/spiffworkflow-frontend/bin /app/bin
-
-# m8flow wrapper: maps BACKEND_BASE_URL / MULTI_TENANT_ON into SPIFFWORKFLOW_FRONTEND_RUNTIME_CONFIG_* then runs boot_server_in_docker
+# m8flow entrypoint: handles runtime config injection (M8FLOW_FRONTEND_RUNTIME_CONFIG_*)
+# and nginx template rendering without depending on upstream boot_server_in_docker.
 COPY docker/scripts/m8flow_frontend_entrypoint.sh /app/bin/
 
 # Fix line endings (CRLF to LF) for shell scripts using dos2unix
-RUN dos2unix /app/bin/boot_server_in_docker /app/bin/m8flow_frontend_entrypoint.sh && \
-    chmod +x /app/bin/boot_server_in_docker /app/bin/m8flow_frontend_entrypoint.sh
+RUN dos2unix /app/bin/m8flow_frontend_entrypoint.sh && \
+    chmod +x /app/bin/m8flow_frontend_entrypoint.sh
 
 CMD ["/app/bin/m8flow_frontend_entrypoint.sh"]
