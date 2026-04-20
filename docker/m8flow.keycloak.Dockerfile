@@ -17,7 +17,7 @@ FROM quay.io/keycloak/keycloak:26.0.8
 COPY --from=builder /build/realm-info-mapper/target/realm-info-mapper.jar /opt/keycloak/providers/realm-info-mapper.jar
 USER root
 RUN mkdir -p /opt/keycloak/data/import
-COPY extensions/m8flow-backend/keycloak/realm_exports/m8flow-tenant-template.json /opt/keycloak/data/import/m8flow-tenant-template.json
+COPY m8flow-backend/keycloak/realm_exports/m8flow-tenant-template.json /opt/keycloak/data/import/m8flow-tenant-template.json
 RUN chown -R keycloak:keycloak /opt/keycloak/data/import
 COPY docker/keycloak-init-realms.sh /opt/keycloak/bin/keycloak-init-realms.sh
 COPY docker/keycloak-entrypoint.sh /opt/keycloak/bin/keycloak-entrypoint.sh

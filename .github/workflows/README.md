@@ -13,8 +13,8 @@ These workflows handle CI, Docker builds, AWS deployments, release tagging, and 
 **Triggers:** Push or PR to `main`, manual dispatch.
 
 **Jobs (path-filtered):**
-- **extensions-backend** — Ruff lint, MyPy type check, Pytest for `extensions/m8flow-backend/`
-- **extensions-frontend** — Lint, typecheck, and tests for `extensions/m8flow-frontend/`
+- **extensions-backend** — Pytest for `m8flow-backend/` (with `m8flow_runtime/` on `PYTHONPATH`)
+- **extensions-frontend** — Typecheck and tests for `m8flow-frontend/`
 - **codeql** — CodeQL security scan (Python + JS) on PRs
 - **trivy** — Filesystem vulnerability scan (CRITICAL/HIGH) on PRs
 - **migration-check** — Calls `check-migrations.yml` when migration files change on PRs
@@ -31,7 +31,7 @@ These workflows handle CI, Docker builds, AWS deployments, release tagging, and 
 **What it checks:**
 1. PR description contains a `Migration Plan` section with `Backward Compatibility`, `Rollback`, and `Expand/Contract` entries
 2. No destructive operations (`DROP TABLE`, `DROP COLUMN`, etc.) without explicit `Destructive Migration Approved` in the PR body
-3. All Alembic revision files in `extensions/m8flow-backend/migrations/versions/` are valid Python
+3. All Alembic revision files in `m8flow-backend/migrations/versions/` are valid Python
 
 ---
 

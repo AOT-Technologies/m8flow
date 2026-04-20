@@ -56,7 +56,7 @@ FROM base AS setup
 
 WORKDIR /app
 
-# Copy repo files from build context (extensions, docker scripts, etc.)
+# Copy repo files from build context (m8flow-frontend, docker scripts, etc.)
 COPY . /app
 
 # Overlay upstream frontend from the fetch stage.
@@ -82,7 +82,7 @@ RUN --mount=type=cache,target=/root/.npm \
 ########################
 # Build the m8flow extension frontend
 ########################
-WORKDIR /app/extensions/m8flow-frontend
+WORKDIR /app/m8flow-frontend
 
 # Ensure the python worker from the core frontend is available at the
 # path expected by the build tooling, without modifying upstream code.
@@ -113,7 +113,7 @@ RUN apk update && \
 RUN rm -rf /etc/nginx/conf.d/*
 
 # Copy the nginx configuration file from the core frontend
-COPY extensions/m8flow-frontend/docker_build/nginx.conf.template /var/tmp
+COPY m8flow-frontend/docker_build/nginx.conf.template /var/tmp
 
 # Default internal port for nginx inside the container.
 # Orchestrators and docker compose both route traffic to containerPort 8080,
@@ -122,7 +122,7 @@ COPY extensions/m8flow-frontend/docker_build/nginx.conf.template /var/tmp
 ENV SPIFFWORKFLOW_FRONTEND_INTERNAL_PORT=8080
 
 # Copy the built static files from the extension frontend into the nginx directory
-COPY --from=setup /app/extensions/m8flow-frontend/dist /usr/share/nginx/html
+COPY --from=setup /app/m8flow-frontend/dist /usr/share/nginx/html
 
 # Optionally expose the core frontend dist under a sub-path if needed
 # (keeps behavior flexible without changing upstream code).

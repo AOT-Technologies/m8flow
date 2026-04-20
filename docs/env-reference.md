@@ -26,4 +26,4 @@ Examples:
 
 ## Advanced Keycloak auth configs
 
-For `SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS` patterns (master realm, `admin-cli`, role mapping), see [extensions/m8flow-backend/keycloak/KEYCLOAK_SETUP.md](../extensions/m8flow-backend/keycloak/KEYCLOAK_SETUP.md).
+For `SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS` patterns (master realm, `admin-cli`, role mapping), see [m8flow-backend/keycloak/KEYCLOAK_SETUP.md](../m8flow-backend/keycloak/KEYCLOAK_SETUP.md).

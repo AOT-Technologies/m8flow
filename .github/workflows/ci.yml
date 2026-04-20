@@ -34,14 +34,18 @@ jobs:
             frontend:
               - 'spiffworkflow-frontend/**'
             extensions_backend:
-              - 'extensions/m8flow-backend/**'
+              - 'm8flow-backend/**'
+              - 'm8flow_runtime/**'
               - 'spiffworkflow-backend/**'
             extensions_frontend:
-              - 'extensions/frontend/**'
+              - 'm8flow-frontend/**'
             migrations:
               - 'spiffworkflow-backend/migrations/versions/*.py'
             docker_m8flow:
               - 'docker/**'
+              - 'm8flow-backend/**'
+              - 'm8flow_runtime/**'
+              - 'm8flow-frontend/**'
               - 'm8flow-connector-proxy/**'
 
   # -------------------------
@@ -115,8 +119,8 @@ jobs:
         run: uv sync --group dev
       - name: Run Extension Tests
         run: |
-          export PYTHONPATH=$PYTHONPATH:$(pwd):$(pwd)/src:$(pwd)/../extensions/m8flow-backend/src
-          uv run pytest ../extensions/m8flow-backend/tests
+          export PYTHONPATH=$PYTHONPATH:$(pwd)/..:$(pwd):$(pwd)/src:$(pwd)/../m8flow-backend/src
+          uv run pytest ../m8flow-backend/tests
 
   # -------------------------
   # Extensions Frontend CI
@@ -127,14 +131,14 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: extensions/frontend
+        working-directory: m8flow-frontend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
-          cache-dependency-path: extensions/frontend/package-lock.json
+          cache-dependency-path: m8flow-frontend/package-lock.json
       - name: Install dependencies
         run: npm ci
       - name: Typecheck
