@@ -101,7 +101,7 @@ services:
       keycloak:
         condition: service_healthy
     volumes:
-      - ../extensions/m8flow-backend/bin/ensure_keycloak_master_super_admin.sh:/ensure_keycloak_master_super_admin.sh:ro
+      - ../m8flow-backend/bin/ensure_keycloak_master_super_admin.sh:/ensure_keycloak_master_super_admin.sh:ro
     entrypoint: ["/bin/sh", "/ensure_keycloak_master_super_admin.sh"]
     restart: "no"
 
@@ -129,7 +129,7 @@ services:
       - "-c"
       - |
         if [ "$$M8FLOW_NATS_ENABLED" = "true" ]; then
-          PYTHONPATH=/app:/app/extensions/m8flow-backend/src:/app/spiffworkflow-backend/src \
+          PYTHONPATH=/app:/app/m8flow-backend/src:/app/spiffworkflow-backend/src \
           exec python m8flow-nats-consumer/consumer.py
         else
           echo "M8FLOW_NATS_ENABLED is not true. Consumer idling."
@@ -185,7 +185,7 @@ services:
         source: ../data/process_models
         target: /cache
       - ../rclone.conf:/config/rclone/rclone.conf:ro
-      - ../extensions/m8flow-backend/bin/process_models_sync.sh:/process_models_sync.sh:ro
+      - ../m8flow-backend/bin/process_models_sync.sh:/process_models_sync.sh:ro
     entrypoint: ["/bin/sh", "/process_models_sync.sh"]
     restart: "no"
 
@@ -197,7 +197,7 @@ services:
     volumes:
       - templates_cache:/cache
       - ../rclone.conf:/config/rclone/rclone.conf:ro
-      - ../extensions/m8flow-backend/bin/templates_sync.sh:/templates_sync.sh:ro
+      - ../m8flow-backend/bin/templates_sync.sh:/templates_sync.sh:ro
     entrypoint: ["/bin/sh", "/templates_sync.sh"]
     restart: "no"
 
@@ -227,7 +227,7 @@ services:
     volumes:
       - smtp_attachments:${M8FLOW_CONNECTOR_SMTP_ATTACHMENTS_USER_ACCESS_DIR:-/app/data/email_attachments}
       - ${M8FLOW_CONNECTOR_SMTP_ATTACHMENTS_DIR:-../data/email_attachments}:/host_attachments:ro
-      - ../extensions/m8flow-backend/bin/smtp_attachments_sync.sh:/smtp_attachments_sync.sh:ro
+      - ../m8flow-backend/bin/smtp_attachments_sync.sh:/smtp_attachments_sync.sh:ro
     restart: "no"
 
   slack-attachments-sync:
@@ -240,7 +240,7 @@ services:
     volumes:
       - slack_attachments:${M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_USER_ACCESS_DIR:-/app/data/slack_attachments}
       - ${M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_DIR:-../data/slack_attachments}:/host_attachments:ro
-      - ../extensions/m8flow-backend/bin/slack_attachments_sync.sh:/slack_attachments_sync.sh:ro
+      - ../m8flow-backend/bin/slack_attachments_sync.sh:/slack_attachments_sync.sh:ro
     restart: "no"
 
   # -------------------------
@@ -300,7 +300,7 @@ services:
     image: m8flow-backend
     pull_policy: never
     user: "0"
-    command: ["bash", "./extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh"]
+    command: ["bash", "./m8flow-backend/bin/run_m8flow_celery_worker.sh"]
     env_file: ../.env
     environment:
       M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: "${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-/data/process_models}"
@@ -332,7 +332,7 @@ services:
     image: m8flow-backend
     pull_policy: never
     user: "0"
-    command: ["bash", "./extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh", "flower"]
+    command: ["bash", "./m8flow-backend/bin/run_m8flow_celery_worker.sh", "flower"]
     env_file: ../.env
     environment:
       M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: "${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-/data/process_models}"

@@ -62,16 +62,20 @@ m8flow/
 ├── docs/                         # Documentation and images
 │   └── env-reference.md          # Canonical environment variable reference
 │
-├── extensions/                   # m8flow-specific extensions (Apache 2.0)
-│   ├── app.py                    # Extensions Flask/ASGI entry point
-│   ├── m8flow-backend/           # Tenant APIs, auth middleware, DB migrations
-│   │   ├── bin/                  # Backend run/migration scripts
-│   │   ├── keycloak/             # Realm exports and Keycloak setup scripts
-│   │   ├── migrations/           # Alembic migrations for m8flow tables
-│   │   ├── src/m8flow_backend/   # Extension source code
-│   │   └── tests/
-│   └── m8flow-frontend/          # Multi-tenant UI extensions
-│       └── src/
+├── m8flow_runtime/               # ASGI entry (`app.py`), bootstrap, startup wiring (Apache 2.0)
+│   ├── app.py                    # Uvicorn entry: `m8flow_runtime.app:app`
+│   ├── bootstrap.py              # Pre/post app patch registration
+│   └── startup/                  # Env mapping, migrations hook, tenant middleware wiring
+│
+├── m8flow-backend/               # Tenant APIs, auth, DB migrations (Apache 2.0)
+│   ├── bin/                      # Backend run/migration/Celery scripts
+│   ├── keycloak/                 # Realm exports and Keycloak setup scripts
+│   ├── migrations/               # Alembic migrations for m8flow tables
+│   ├── src/m8flow_backend/       # Backend package source
+│   └── tests/
+│
+├── m8flow-frontend/              # Multi-tenant UI layered on spiffworkflow-frontend (Apache 2.0)
+│   └── src/
 │
 ├── keycloak-extensions/          # Keycloak realm-info-mapper provider (JAR)
 │
@@ -88,6 +92,8 @@ m8flow/
 # spiffworkflow-frontend/         Upstream LGPL-2.1 BPMN modeler UI
 # spiff-arena-common/             Upstream LGPL-2.1 shared utilities
 ```
+
+Upstream workflow engine code is gitignored above; m8flow-specific Apache-2.0 code lives in **`m8flow_runtime/`** (ASGI bootstrap and startup wiring), **`m8flow-backend/`** (APIs, models, migrations, scripts), and **`m8flow-frontend/`** (Vite app that overrides `spiffworkflow-frontend`). Prefer extending behaviour here instead of editing fetched upstream directories.
 
 > **Why are those directories missing?**
 > `spiffworkflow-backend`, `spiffworkflow-frontend`, and `spiff-arena-common` come from [AOT-Technologies/m8flow-core](https://github.com/AOT-Technologies/m8flow-core) (LGPL-2.1). They are not stored here to keep m8flow's Apache 2.0 licence boundary clean. Run `./bin/fetch-upstream.sh` or `.\bin\fetch-upstream.ps1` once after cloning to populate them. See the [License note](#license-note) for details.
@@ -125,9 +131,12 @@ This clones configured folders from [AOT-Technologies/m8flow-core](https://githu
 
 To pin a specific upstream tag (Docker):
 
+```bash
 # Docker build (set in .env or inline)
 UPSTREAM_TAG=0.0.1 docker compose -f docker/m8flow-docker-compose.yml up -d --build
 ```
+
+```powershell
 # Docker build (set in .env or inline)
 $env:UPSTREAM_TAG = "0.0.1"
 docker compose -f docker/m8flow-docker-compose.yml up -d --build
@@ -163,7 +172,7 @@ docker compose -f docker/m8flow-docker-compose.yml up -d --build
 
 ### Docker Compose services
 
-The Keycloak image is built with the **m8flow realm-info-mapper** provider, so tokens include `m8flow_tenant_id` and `m8flow_tenant_name`. No separate build of the keycloak-extensions JAR is required. Realm import can be done manually in the Keycloak Admin Console (see Keycloak Setup below) or by running `./extensions/m8flow-backend/keycloak/start_keycloak.sh` once after Keycloak is up; the script imports the `m8flow` realm only (expects Keycloak on ports 7002 and 7009, e.g. when using Docker Compose).
+The Keycloak image is built with the **m8flow realm-info-mapper** provider, so tokens include `m8flow_tenant_id` and `m8flow_tenant_name`. No separate build of the keycloak-extensions JAR is required. Realm import can be done manually in the Keycloak Admin Console (see Keycloak Setup below) or by running `./m8flow-backend/keycloak/start_keycloak.sh` once after Keycloak is up; the script imports the `m8flow` realm only (expects Keycloak on ports 7002 and 7009, e.g. when using Docker Compose).
 
 | Service | Description | Port |
 |---------|-------------|------|
@@ -221,11 +230,11 @@ docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build 
 Start the backend in one terminal:
 
 ```bash
-./extensions/m8flow-backend/bin/run_m8flow_backend.sh 7000 --reload
+./m8flow-backend/bin/run_m8flow_backend.sh 7000 --reload
 ```
 
 ```powershell
-.\extensions\m8flow-backend\bin\run_m8flow_backend.ps1 7000 --Reload
+.\m8flow-backend\bin\run_m8flow_backend.ps1 7000 --Reload
 ```
 
 When `uv` is available locally, the backend launcher syncs backend dependencies automatically before starting and runs the backend through `uv`. Set `M8FLOW_BACKEND_SYNC_DEPS=false` to skip sync, or `M8FLOW_BACKEND_USE_UV=false` to use the current Python environment directly.
@@ -235,12 +244,12 @@ Start the frontend in a second terminal:
 Install frontend dependencies first if you have not already done so for this checkout:
 
 ```bash
-cd extensions/m8flow-frontend
+cd m8flow-frontend
 npm install
 ```
 
 ```bash
-cd extensions/m8flow-frontend
+cd m8flow-frontend
 export PORT=7001
 export BACKEND_PORT=7000
 export VITE_VERSION_INFO='{"version":"local"}'
@@ -250,7 +259,7 @@ npm exec -- vite --host 0.0.0.0 --port 7001
 ```
 
 ```powershell
-Set-Location .\extensions\m8flow-frontend
+Set-Location .\m8flow-frontend
 $env:PORT = '7001'
 $env:BACKEND_PORT = '7000'
 $env:VITE_VERSION_INFO = '{"version":"local"}'
@@ -263,7 +272,7 @@ This flow expects the Docker dependencies to be running, but not the Docker `m8f
 
 Docker bind-mounts the repo `process_models/` directory into the backend and Celery containers, so a locally started backend and a containerized worker read the same process-model files by default.
 
-If the frontend fails with a missing Rollup native package such as `@rollup/rollup-win32-x64-msvc`, reinstall `extensions/m8flow-frontend` dependencies on that machine with `npm install`.
+If the frontend fails with a missing Rollup native package such as `@rollup/rollup-win32-x64-msvc`, reinstall `m8flow-frontend` dependencies on that machine with `npm install`.
 
 > **macOS note:** Port 7000 may be claimed by AirPlay Receiver. Disable it in
 > System Settings → General → AirDrop & Handoff → AirPlay Receiver.
@@ -282,17 +291,17 @@ Expected response:
 ### Running backend only
 
 ```bash
-./extensions/m8flow-backend/bin/run_m8flow_backend.sh
+./m8flow-backend/bin/run_m8flow_backend.sh
 ```
 
 ```powershell
-.\extensions\m8flow-backend\bin\run_m8flow_backend.ps1
+.\m8flow-backend\bin\run_m8flow_backend.ps1
 ```
 
 ### Running a Celery worker
 
 ```bash
-./extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh
+./m8flow-backend/bin/run_m8flow_celery_worker.sh
 ```
 
 ---
@@ -339,7 +348,7 @@ http://localhost:7000/*
 </div>
 
 
-For full Keycloak configuration reference: [extensions/m8flow-backend/keycloak/KEYCLOAK_SETUP.md](extensions/m8flow-backend/keycloak/KEYCLOAK_SETUP.md).
+For full Keycloak configuration reference: [m8flow-backend/keycloak/KEYCLOAK_SETUP.md](m8flow-backend/keycloak/KEYCLOAK_SETUP.md).
 
 ---
 
@@ -436,17 +445,19 @@ On success, the tenant will be listed on the tenant management page and will be 
 
 Requires `./bin/fetch-upstream.sh` or `.\bin\fetch-upstream.ps1` to have been run first — tests use `spiffworkflow-backend/pyproject.toml` for pytest config.
 
-Run all tests:
+Run from the repository root so `m8flow_runtime` and `m8flow_backend` resolve on `PYTHONPATH`:
 
 ```bash
-pytest -c spiffworkflow-backend/pyproject.toml ./extensions/m8flow-backend/tests/ -q
+export PYTHONPATH="$(pwd):$(pwd)/m8flow-backend/src:${PYTHONPATH:-}"
+pytest -c spiffworkflow-backend/pyproject.toml ./m8flow-backend/tests/ -q
 ```
 
 Run a specific test file:
 
 ```bash
+export PYTHONPATH="$(pwd):$(pwd)/m8flow-backend/src:${PYTHONPATH:-}"
 pytest -c spiffworkflow-backend/pyproject.toml \
-  ./extensions/m8flow-backend/tests/unit/m8flow_backend/services/test_tenant_context_middleware.py -q
+  ./m8flow-backend/tests/unit/m8flow_backend/services/test_tenant_context_middleware.py -q
 ```
 
 ---
@@ -460,7 +471,7 @@ The sample templates package includes pre-built workflows and guidance for:
 - automatically loading templates during startup
 - using integration-focused templates such as Salesforce, Slack, SMTP, and PostgreSQL examples
 
-For the full template catalog and setup instructions, refer to [extensions/m8flow-backend/sample_templates/README.md](extensions/m8flow-backend/sample_templates/README.md).
+For the full template catalog and setup instructions, refer to [m8flow-backend/sample_templates/README.md](m8flow-backend/sample_templates/README.md).
 
 ---
 
