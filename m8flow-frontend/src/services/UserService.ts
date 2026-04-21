@@ -231,20 +231,16 @@ const setTenantId = (tenantId: string | null): void => {
   }
 };
 
-const getTenantGivenName = (): string | null => {
+const getTenantName = (): string | null => {
   const idToken = getIdToken();
   if (idToken) {
     try {
       const idObject = jwtDecode(idToken) as Record<string, unknown>;
-      if (typeof idObject.given_name === 'string' && idObject.given_name) {
-        return idObject.given_name;
-      }
-
-      // Fallback to tenant name if given name is not available
       if(typeof idObject.m8flow_tenant_name === 'string' && idObject.m8flow_tenant_name) {
         return idObject.m8flow_tenant_name;
       }
-    } catch {
+    } catch (err) {
+      console.error(err);
       return null;
     }
   }
@@ -266,7 +262,7 @@ const UserService = {
   isPublicUser,
   redirectToLogin,
   setTenantId,
-  getTenantGivenName,
+  getTenantName,
 };
 
 export default UserService;

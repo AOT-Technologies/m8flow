@@ -136,7 +136,7 @@ function SideNav({
   }
   const userEmail = UserService.getUserEmail();
   const username = UserService.getPreferredUsername();
-  const tenantId = UserService.getTenantGivenName();
+  const tenantId = UserService.getTenantName();
   let externalDocumentationUrl = "https://spiff-arena.readthedocs.io";
   if (DOCUMENTATION_URL) {
     externalDocumentationUrl = DOCUMENTATION_URL;
