@@ -40,6 +40,57 @@ def test_redirect_uri_upgrades_scheme_when_xfp_https(reset_redirect_patch):
     assert redirect_uri == "https://qa.m8flow.ai/api/v1.0/login_return"
 
 
+def test_redirect_uri_upgrades_scheme_when_xfp_https_list(reset_redirect_patch):
+    from flask import Flask
+    from unittest.mock import patch
+
+    app = Flask(__name__)
+    app.config["SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"] = "/v1.0"
+
+    with patch("flask.url_for", return_value="/api/v1.0/login_return"):
+        redirect_uri = _call_redirect_uri(
+            app,
+            base_url="http://qa.m8flow.ai/",
+            forwarded_proto="https, http",
+        )
+
+    assert redirect_uri == "https://qa.m8flow.ai/api/v1.0/login_return"
+
+
+def test_redirect_uri_unchanged_when_xfp_list_leftmost_http(reset_redirect_patch):
+    from flask import Flask
+    from unittest.mock import patch
+
+    app = Flask(__name__)
+    app.config["SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"] = "/v1.0"
+
+    with patch("flask.url_for", return_value="/api/v1.0/login_return"):
+        redirect_uri = _call_redirect_uri(
+            app,
+            base_url="http://qa.m8flow.ai/",
+            forwarded_proto="http, https",
+        )
+
+    assert redirect_uri == "http://qa.m8flow.ai/api/v1.0/login_return"
+
+
+def test_redirect_uri_unchanged_when_xfp_empty(reset_redirect_patch):
+    from flask import Flask
+    from unittest.mock import patch
+
+    app = Flask(__name__)
+    app.config["SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"] = "/v1.0"
+
+    with patch("flask.url_for", return_value="/api/v1.0/login_return"):
+        redirect_uri = _call_redirect_uri(
+            app,
+            base_url="http://qa.m8flow.ai/",
+            forwarded_proto="",
+        )
+
+    assert redirect_uri == "http://qa.m8flow.ai/api/v1.0/login_return"
+
+
 def test_redirect_uri_unchanged_when_no_forwarded_proto(reset_redirect_patch):
     from flask import Flask
     from unittest.mock import patch

@@ -182,7 +182,9 @@ def _patched_get_redirect_uri_for_login_to_server(self) -> str:
         ".spiffworkflow_backend_routes_authentication_controller_login_return"
     )
 
-    forwarded_proto = (request.headers.get("X-Forwarded-Proto") or "").strip().lower()
+    # X-Forwarded-Proto can be a comma-separated list; leftmost is client-facing proto.
+    raw_forwarded_proto = request.headers.get("X-Forwarded-Proto") or ""
+    forwarded_proto = raw_forwarded_proto.split(",", 1)[0].strip().lower()
     if forwarded_proto == "https" and host_url.startswith("http://"):
         host_url = host_url.replace("http://", "https://", 1)
 
