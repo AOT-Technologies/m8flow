@@ -1,7 +1,7 @@
 # extensions/startup/flask_hooks.py
 from flask import Flask, g
 from m8flow_backend.tenancy import begin_request_context, end_request_context, clear_tenant_context
-from m8flow_runtime.startup.guard import require_at_least, BootPhase
+from m8flow_backend.startup.guard import require_at_least, BootPhase
 
 def register_request_active_hooks(app: Flask) -> None:
     if getattr(app, "_m8flow_request_active_hooks_registered", False):

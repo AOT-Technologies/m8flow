@@ -1,6 +1,6 @@
 # extensions/startup/import_contracts.py
 import importlib
-from m8flow_runtime.startup.guard import require_at_least, BootPhase, record_import
+from m8flow_backend.startup.guard import require_at_least, BootPhase, record_import
 
 def import_spiff_db():
     require_at_least(BootPhase.POST_BOOTSTRAP, what="import spiffworkflow_backend.models.db")

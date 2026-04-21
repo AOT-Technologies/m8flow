@@ -32,7 +32,7 @@ def _make_app() -> Flask:
 
 
     # satisfy railguard for unit tests
-    from m8flow_runtime.startup.guard import set_phase, BootPhase
+    from m8flow_backend.startup.guard import set_phase, BootPhase
     set_phase(BootPhase.APP_CREATED)
     
     # Ensure ContextVar is reset between requests (including test_client requests).

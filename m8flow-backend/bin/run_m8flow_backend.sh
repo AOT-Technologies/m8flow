@@ -232,4 +232,4 @@ if [[ "$reload_mode" == "true" ]]; then
   uvicorn_args+=(--reload-exclude ".git/**")
 fi
 
-exec_python_module uvicorn m8flow_runtime.app:app "${uvicorn_args[@]}"
+exec_python_module uvicorn m8flow_backend.app:app "${uvicorn_args[@]}"

@@ -1,5 +1,5 @@
-# m8flow_runtime/bootstrap.py
-from m8flow_runtime.startup.patch_registry import (
+# m8flow_backend/bootstrap.py
+from m8flow_backend.startup.patch_registry import (
     PRE_APP_PATCH_SPECS,
     POST_APP_CORE_PATCH_SPECS,
     apply_patch_specs,

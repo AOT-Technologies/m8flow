@@ -50,7 +50,7 @@ def resolve_request_tenant() -> None:
       - g.m8flow_tenant_id
       - a ContextVar (for SQLAlchemy scoping, logging, etc.)
 
-    Uses the canonical db (set by m8flow_runtime/app.py). Tests that call this function
+    Uses the canonical db (set by m8flow_backend/app.py). Tests that call this function
     must call set_canonical_db(db) in their app setup.
 
     Priority:

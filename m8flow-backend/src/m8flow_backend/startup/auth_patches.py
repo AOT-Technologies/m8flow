@@ -1,7 +1,7 @@
 # extensions/startup/auth_patches.py
 import logging
 
-from m8flow_runtime.startup.patch_registry import POST_APP_EXTENSION_PATCH_SPECS, apply_patch_specs
+from m8flow_backend.startup.patch_registry import POST_APP_EXTENSION_PATCH_SPECS, apply_patch_specs
 
 logger = logging.getLogger(__name__)
 

@@ -46,7 +46,7 @@ def require_at_least(required: BootPhase, *, what: str) -> None:
         )
         raise RuntimeError(msg)
 
-def snapshot_loaded(prefixes: tuple[str, ...] = ("spiffworkflow_backend", "m8flow_backend", "m8flow_runtime")) -> list[str]:
+def snapshot_loaded(prefixes: tuple[str, ...] = ("spiffworkflow_backend", "m8flow_backend")) -> list[str]:
     mods = []
     for name in sys.modules.keys():
         if name.startswith(prefixes):

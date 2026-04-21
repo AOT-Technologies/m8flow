@@ -2,20 +2,20 @@
 """
 Canonical SQLAlchemy instance for the Flask app.
 
-Set by m8flow_runtime/app.py after create_app(). Used by tenant resolution and other
+Set by m8flow_backend/app.py after create_app(). Used by tenant resolution and other
 m8flow_backend services so they share the same db reference without depending on
 import-time side effects elsewhere.
 """
 from __future__ import annotations
 
 from typing import Any
-from m8flow_runtime.startup.guard import require_at_least, BootPhase
+from m8flow_backend.startup.guard import require_at_least, BootPhase
 
 _canonical_db: Any = None
 
 
 def set_canonical_db(db: Any) -> None:
-    """Set the canonical SQLAlchemy instance (bound to the Flask app). Called by m8flow_runtime/app.py after create_app()."""
+    """Set the canonical SQLAlchemy instance (bound to the Flask app). Called by m8flow_backend/app.py after create_app()."""
     global _canonical_db
     _canonical_db = db
 

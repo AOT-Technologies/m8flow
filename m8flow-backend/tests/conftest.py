@@ -48,7 +48,7 @@ def pytest_configure(config):
     os.environ["SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR"] = str(bpmn_dir)
     os.environ["FLASK_SESSION_SECRET_KEY"] = "unit-test-secret-key"
 
-    from m8flow_runtime.bootstrap import bootstrap
+    from m8flow_backend.bootstrap import bootstrap
     bootstrap()
 
 
@@ -57,5 +57,5 @@ def m8flow_app():
     # Do not clear global SQLAlchemy mapper/metadata state here.
     # The startup contract tests only need a booted app, and global mapper resets
     # leak into later model tests in the same pytest process.
-    app_mod = importlib.import_module("m8flow_runtime.app")
+    app_mod = importlib.import_module("m8flow_backend.app")
     return app_mod.app

@@ -13,7 +13,7 @@ These workflows handle CI, Docker builds, AWS deployments, release tagging, and 
 **Triggers:** Push or PR to `main`, manual dispatch.
 
 **Jobs (path-filtered):**
-- **extensions-backend** — Pytest for `m8flow-backend/` (with `m8flow_runtime/` on `PYTHONPATH`)
+- **extensions-backend** — Pytest for `m8flow-backend/` (with `m8flow-backend/src` on `PYTHONPATH` for the `m8flow_backend` package)
 - **extensions-frontend** — Typecheck and tests for `m8flow-frontend/`
 - **codeql** — CodeQL security scan (Python + JS) on PRs
 - **trivy** — Filesystem vulnerability scan (CRITICAL/HIGH) on PRs

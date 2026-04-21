@@ -55,7 +55,6 @@ RUN pip install --upgrade pip && pip install uv
 # Copy upstream backend from fetch stage and repo files from build context.
 COPY --from=fetch-upstream /upstream/spiffworkflow-backend /app/spiffworkflow-backend
 COPY --from=fetch-upstream /upstream/spiff-arena-common /app/spiff-arena-common
-COPY m8flow_runtime /app/m8flow_runtime
 COPY m8flow-backend /app/m8flow-backend
 COPY uvicorn-log.yaml /app/uvicorn-log.yaml
 

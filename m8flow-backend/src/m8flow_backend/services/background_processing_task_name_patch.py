@@ -1,7 +1,7 @@
 """Post-app patch that registers m8flow Celery wrapper tasks and rebinds upstream constants.
 
 Must run after the Flask app and its Celery app exist.  Registered in
-``m8flow_runtime.startup.patch_registry`` with ``needs_flask_app=True``.
+``m8flow_backend.startup.patch_registry`` with ``needs_flask_app=True``.
 """
 
 from __future__ import annotations

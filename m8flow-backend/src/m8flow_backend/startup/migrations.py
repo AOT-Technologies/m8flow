@@ -5,14 +5,14 @@ import sys
 from pathlib import Path
 from typing import Callable
 
-from m8flow_runtime.startup.logging_setup import harden_logging
+from m8flow_backend.startup.logging_setup import harden_logging
 
 logger = logging.getLogger(__name__)
 
 
 def _migrations_dir() -> Path:
-    # m8flow_runtime/startup/migrations.py -> repo root -> m8flow-backend/migrations
-    return Path(__file__).resolve().parents[2] / "m8flow-backend" / "migrations"
+    # .../m8flow-backend/src/m8flow_backend/startup/migrations.py -> .../m8flow-backend/migrations
+    return Path(__file__).resolve().parents[3] / "migrations"
 
 
 def _ensure_migrations_importable() -> None:
@@ -41,6 +41,6 @@ def load_migration_runner() -> Callable[[], None]:
 
 def run_migrations_if_enabled(flask_app, upgrade_fn: Callable[[], None]) -> None:
     harden_logging()
-    from m8flow_runtime.startup.flask_hooks import assert_db_engine_bound
+    from m8flow_backend.startup.flask_hooks import assert_db_engine_bound
     assert_db_engine_bound(flask_app)
     upgrade_fn()

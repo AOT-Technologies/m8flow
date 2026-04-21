@@ -8,7 +8,7 @@ from typing import Any
 import celery
 from sqlalchemy import text
 
-from m8flow_runtime.app import app as m8flow_app
+from m8flow_backend.app import app as m8flow_app
 from m8flow_backend.background_processing import M8FLOW_CELERY_TASK_EVENT_NOTIFIER as CELERY_TASK_EVENT_NOTIFIER
 from m8flow_backend.background_processing import (
     M8FLOW_CELERY_TASK_PROCESS_INSTANCE_RUN as CELERY_TASK_PROCESS_INSTANCE_RUN,

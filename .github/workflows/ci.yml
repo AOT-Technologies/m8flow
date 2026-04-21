@@ -35,7 +35,6 @@ jobs:
               - 'spiffworkflow-frontend/**'
             extensions_backend:
               - 'm8flow-backend/**'
-              - 'm8flow_runtime/**'
               - 'spiffworkflow-backend/**'
             extensions_frontend:
               - 'm8flow-frontend/**'
@@ -44,7 +43,6 @@ jobs:
             docker_m8flow:
               - 'docker/**'
               - 'm8flow-backend/**'
-              - 'm8flow_runtime/**'
               - 'm8flow-frontend/**'
               - 'm8flow-connector-proxy/**'
 

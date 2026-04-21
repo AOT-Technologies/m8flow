@@ -5,7 +5,7 @@ from importlib import import_module
 import logging
 from typing import Any
 
-from m8flow_runtime.startup.guard import BootPhase, require_at_least
+from m8flow_backend.startup.guard import BootPhase, require_at_least
 
 
 @dataclass(frozen=True)

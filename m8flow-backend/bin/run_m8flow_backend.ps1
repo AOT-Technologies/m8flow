@@ -237,7 +237,7 @@ $backendPort = if ($PSBoundParameters.ContainsKey('Port')) {
 
 $uvicornArgs = @(
   '-m'; 'uvicorn'
-  'm8flow_runtime.app:app'
+  'm8flow_backend.app:app'
   '--host'; '0.0.0.0'
   '--port'; $backendPort.ToString()
   '--app-dir'; $repoRoot

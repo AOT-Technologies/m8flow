@@ -6,7 +6,7 @@ def test_startup_contract_app_created(m8flow_app):
     app = m8flow_app
     assert app is not None
 
-    from m8flow_runtime.startup.guard import phase, BootPhase
+    from m8flow_backend.startup.guard import phase, BootPhase
     assert phase() == BootPhase.APP_CREATED
 
     from m8flow_backend.canonical_db import get_canonical_db
@@ -18,18 +18,18 @@ def test_startup_contract_app_created(m8flow_app):
     with flask_app.app_context():
         _ = db.engine
 
-    from m8flow_runtime.startup.model_identity import assert_model_identity
+    from m8flow_backend.startup.model_identity import assert_model_identity
     assert_model_identity()
 
 
 def test_no_db_import_before_bootstrap():
-    from m8flow_runtime.startup.guard import import_events
+    from m8flow_backend.startup.guard import import_events
 
     events = import_events()
     db_events = [e for e in events if e[1] == "spiffworkflow_backend.models.db"]
     assert db_events, (
         "Expected spiff db import to be recorded. "
-        "Make sure the orchestrator uses m8flow_runtime.startup.import_contracts.import_spiff_db()."
+        "Make sure the orchestrator uses m8flow_backend.startup.import_contracts.import_spiff_db()."
     )
 
     first_phase, _ = db_events[0]
@@ -41,7 +41,7 @@ def _count_named(funcs, name: str) -> int:
 
 
 def test_create_application_pipeline_order(monkeypatch):
-    from m8flow_runtime.startup import sequence
+    from m8flow_backend.startup import sequence
 
     calls: list[str] = []
     fake_db = object()
@@ -76,7 +76,7 @@ def test_create_application_pipeline_order(monkeypatch):
 
 
 def test_wrap_asgi_if_needed_skips_for_testing_env(monkeypatch):
-    from m8flow_runtime.startup import sequence
+    from m8flow_backend.startup import sequence
 
     app = object()
     monkeypatch.setenv("SPIFFWORKFLOW_BACKEND_ENV", "unit_testing")
@@ -90,7 +90,7 @@ def test_wrap_asgi_if_needed_skips_for_testing_env(monkeypatch):
 
 
 def test_wrap_asgi_if_needed_wraps_for_non_testing_env(monkeypatch):
-    from m8flow_runtime.startup import sequence
+    from m8flow_backend.startup import sequence
 
     app = object()
     monkeypatch.setenv("SPIFFWORKFLOW_BACKEND_ENV", "local_development")
@@ -107,7 +107,7 @@ def test_wrap_asgi_if_needed_wraps_for_non_testing_env(monkeypatch):
 
 
 def test_request_hooks_are_idempotent():
-    from m8flow_runtime.startup.flask_hooks import (
+    from m8flow_backend.startup.flask_hooks import (
         register_request_active_hooks,
         register_request_tenant_context_hooks,
     )
@@ -129,8 +129,8 @@ def test_request_hooks_are_idempotent():
 
 
 def test_import_spiff_db_requires_post_bootstrap():
-    from m8flow_runtime.startup.guard import BootPhase, phase, set_phase
-    from m8flow_runtime.startup.import_contracts import import_spiff_db
+    from m8flow_backend.startup.guard import BootPhase, phase, set_phase
+    from m8flow_backend.startup.import_contracts import import_spiff_db
 
     previous_phase = phase()
     try:
@@ -142,8 +142,8 @@ def test_import_spiff_db_requires_post_bootstrap():
 
 
 def test_core_post_app_patches_require_app_created():
-    from m8flow_runtime.bootstrap import bootstrap_after_app
-    from m8flow_runtime.startup.guard import BootPhase, phase, set_phase
+    from m8flow_backend.bootstrap import bootstrap_after_app
+    from m8flow_backend.startup.guard import BootPhase, phase, set_phase
 
     previous_phase = phase()
     try:
@@ -155,8 +155,8 @@ def test_core_post_app_patches_require_app_created():
 
 
 def test_extension_post_app_patches_require_app_created():
-    from m8flow_runtime.startup.auth_patches import apply_extension_patches_after_app
-    from m8flow_runtime.startup.guard import BootPhase, phase, set_phase
+    from m8flow_backend.startup.auth_patches import apply_extension_patches_after_app
+    from m8flow_backend.startup.guard import BootPhase, phase, set_phase
 
     previous_phase = phase()
     try:
@@ -168,7 +168,7 @@ def test_extension_post_app_patches_require_app_created():
 
 
 def test_patch_registry_covers_all_patch_modules():
-    from m8flow_runtime.startup.patch_registry import registered_patch_modules
+    from m8flow_backend.startup.patch_registry import registered_patch_modules
 
     src_root = Path(__file__).resolve().parents[3] / "src" / "m8flow_backend"
     discovered_patch_modules = {
@@ -178,14 +178,14 @@ def test_patch_registry_covers_all_patch_modules():
 
     missing = discovered_patch_modules - registered_patch_modules()
     assert not missing, (
-        "Patch modules must be registered in m8flow_runtime.startup.patch_registry "
+        "Patch modules must be registered in m8flow_backend.startup.patch_registry "
         f"(missing={sorted(missing)})."
     )
 
 
 def test_patch_registry_app_patch_is_idempotent_per_app(monkeypatch):
-    from m8flow_runtime.startup import patch_registry
-    from m8flow_runtime.startup.guard import BootPhase, phase, set_phase
+    from m8flow_backend.startup import patch_registry
+    from m8flow_backend.startup.guard import BootPhase, phase, set_phase
 
     calls: list[object] = []
 
@@ -220,8 +220,8 @@ def test_patch_registry_app_patch_is_idempotent_per_app(monkeypatch):
 
 
 def test_patch_registry_optional_import_skips_missing_target_module():
-    from m8flow_runtime.startup import patch_registry
-    from m8flow_runtime.startup.guard import BootPhase, phase, set_phase
+    from m8flow_backend.startup import patch_registry
+    from m8flow_backend.startup.guard import BootPhase, phase, set_phase
 
     spec = patch_registry.PatchSpec(
         target="m8flow_backend.services.this_module_does_not_exist:apply",
@@ -238,8 +238,8 @@ def test_patch_registry_optional_import_skips_missing_target_module():
 
 
 def test_patch_registry_optional_import_does_not_hide_transitive_missing_dep(monkeypatch):
-    from m8flow_runtime.startup import patch_registry
-    from m8flow_runtime.startup.guard import BootPhase, phase, set_phase
+    from m8flow_backend.startup import patch_registry
+    from m8flow_backend.startup.guard import BootPhase, phase, set_phase
 
     monkeypatch.setattr(patch_registry, "_APPLIED_PATCH_TARGETS", set())
 

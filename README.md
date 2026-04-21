@@ -62,16 +62,11 @@ m8flow/
 ├── docs/                         # Documentation and images
 │   └── env-reference.md          # Canonical environment variable reference
 │
-├── m8flow_runtime/               # ASGI entry (`app.py`), bootstrap, startup wiring (Apache 2.0)
-│   ├── app.py                    # Uvicorn entry: `m8flow_runtime.app:app`
-│   ├── bootstrap.py              # Pre/post app patch registration
-│   └── startup/                  # Env mapping, migrations hook, tenant middleware wiring
-│
 ├── m8flow-backend/               # Tenant APIs, auth, DB migrations (Apache 2.0)
 │   ├── bin/                      # Backend run/migration/Celery scripts
 │   ├── keycloak/                 # Realm exports and Keycloak setup scripts
 │   ├── migrations/               # Alembic migrations for m8flow tables
-│   ├── src/m8flow_backend/       # Backend package source
+│   ├── src/m8flow_backend/       # Backend package: APIs/models plus ASGI (`app.py`), bootstrap, `startup/`
 │   └── tests/
 │
 ├── m8flow-frontend/              # Multi-tenant UI layered on spiffworkflow-frontend (Apache 2.0)
@@ -93,7 +88,7 @@ m8flow/
 # spiff-arena-common/             Upstream LGPL-2.1 shared utilities
 ```
 
-Upstream workflow engine code is gitignored above; m8flow-specific Apache-2.0 code lives in **`m8flow_runtime/`** (ASGI bootstrap and startup wiring), **`m8flow-backend/`** (APIs, models, migrations, scripts), and **`m8flow-frontend/`** (Vite app that overrides `spiffworkflow-frontend`). Prefer extending behaviour here instead of editing fetched upstream directories.
+Upstream workflow engine code is gitignored above; m8flow-specific Apache-2.0 code lives in **`m8flow-backend/`** (package `m8flow_backend`: APIs, models, migrations, ASGI entry and startup wiring, scripts) and **`m8flow-frontend/`** (Vite app that overrides `spiffworkflow-frontend`). Prefer extending behaviour here instead of editing fetched upstream directories.
 
 > **Why are those directories missing?**
 > `spiffworkflow-backend`, `spiffworkflow-frontend`, and `spiff-arena-common` come from [AOT-Technologies/m8flow-core](https://github.com/AOT-Technologies/m8flow-core) (LGPL-2.1). They are not stored here to keep m8flow's Apache 2.0 licence boundary clean. Run `./bin/fetch-upstream.sh` or `.\bin\fetch-upstream.ps1` once after cloning to populate them. See the [License note](#license-note) for details.
@@ -445,7 +440,7 @@ On success, the tenant will be listed on the tenant management page and will be 
 
 Requires `./bin/fetch-upstream.sh` or `.\bin\fetch-upstream.ps1` to have been run first — tests use `spiffworkflow-backend/pyproject.toml` for pytest config.
 
-Run from the repository root so `m8flow_runtime` and `m8flow_backend` resolve on `PYTHONPATH`:
+Run from the repository root with `m8flow-backend/src` (and upstream paths per `ci.yml`) on `PYTHONPATH` so the `m8flow_backend` package resolves:
 
 ```bash
 export PYTHONPATH="$(pwd):$(pwd)/m8flow-backend/src:${PYTHONPATH:-}"

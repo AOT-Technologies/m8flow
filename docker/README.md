@@ -58,7 +58,7 @@ Run with: `docker compose --profile init -f docker/m8flow-docker-compose.yml up 
 
 ### m8flow.backend.Dockerfile
 
-- **builder:** Python 3.12 slim, build deps, copies `spiffworkflow-backend` + `m8flow_runtime` + `m8flow-backend`, creates `/opt/venv`, installs backend non-editable. Used only for `prod`.
+- **builder:** Python 3.12 slim, build deps, copies `spiffworkflow-backend` + `m8flow-backend`, creates `/opt/venv`, installs backend non-editable. Used only for `prod`.
 - **prod:** Slim runtime (libpq5, ca-certificates, gosu). Copies venv + app from builder. Creates user `app` (1000:1000). Entrypoint: chown `/app/data/process_models` and `/app/data/templates`, then `gosu app` to run CMD. No build tools.
 - **dev (default):** Full repo, build deps, editable install (`uv pip install -e .`). Same entrypoint and `app` user so volume permissions match prod.
 

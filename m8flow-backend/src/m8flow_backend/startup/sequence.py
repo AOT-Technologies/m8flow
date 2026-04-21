@@ -3,28 +3,28 @@ import os
 from collections.abc import Callable
 from typing import Any
 
-from m8flow_runtime.startup.env_var_mapper import apply_m8flow_env_mapping
-from m8flow_runtime.bootstrap import bootstrap, bootstrap_after_app, ensure_m8flow_audit_timestamps
+from m8flow_backend.startup.env_var_mapper import apply_m8flow_env_mapping
+from m8flow_backend.bootstrap import bootstrap, bootstrap_after_app, ensure_m8flow_audit_timestamps
 
-from m8flow_runtime.startup.logging_setup import harden_logging
-from m8flow_runtime.startup.migrations import load_migration_runner, run_migrations_if_enabled
-from m8flow_runtime.startup.model_identity import assert_model_identity
-from m8flow_runtime.startup.config import (
+from m8flow_backend.startup.logging_setup import harden_logging
+from m8flow_backend.startup.migrations import load_migration_runner, run_migrations_if_enabled
+from m8flow_backend.startup.model_identity import assert_model_identity
+from m8flow_backend.startup.config import (
     configure_sql_echo,
     configure_templates_dir,
     configure_permissions_yml,
 )
-from m8flow_runtime.startup.routes import register_template_file_fallback_routes
-from m8flow_runtime.startup.flask_hooks import (
+from m8flow_backend.startup.routes import register_template_file_fallback_routes
+from m8flow_backend.startup.flask_hooks import (
     register_request_active_hooks,
     register_request_tenant_context_hooks,
     assert_db_engine_bound,
 )
-from m8flow_runtime.startup.tenant_resolution import register_tenant_resolution_after_auth
-from m8flow_runtime.startup.auth_patches import apply_extension_patches_after_app
+from m8flow_backend.startup.tenant_resolution import register_tenant_resolution_after_auth
+from m8flow_backend.startup.auth_patches import apply_extension_patches_after_app
 
 from m8flow_backend.services.asgi_tenant_context_middleware import AsgiTenantContextMiddleware
-from m8flow_runtime.startup.guard import set_phase, BootPhase
+from m8flow_backend.startup.guard import set_phase, BootPhase
 
 
 def _prepare_pre_app_boot() -> tuple[Any, Callable[[], None]]:
@@ -40,7 +40,7 @@ def _prepare_pre_app_boot() -> tuple[Any, Callable[[], None]]:
     bootstrap()
     set_phase(BootPhase.POST_BOOTSTRAP)
 
-    from m8flow_runtime.startup.import_contracts import import_spiff_db
+    from m8flow_backend.startup.import_contracts import import_spiff_db
 
     db = import_spiff_db()
     upgrade_m8flow_db = load_migration_runner()
