@@ -1,6 +1,7 @@
 {
   "id": "m8flow",
   "realm": "m8flow",
+  "loginTheme": "m8flow",
   "notBefore": 0,
   "defaultSignatureAlgorithm": "RS256",
   "revokeRefreshToken": false,

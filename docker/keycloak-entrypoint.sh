@@ -109,10 +109,10 @@ else
     echo "[keycloak-entrypoint] add-roles (create-realm) for ${SUPERADMIN_USER} skipped or failed." >&2
   fi
 
-  echo "[keycloak-entrypoint] Setting sslRequired=NONE on realms master, m8flow..."
+  echo "[keycloak-entrypoint] Setting sslRequired=NONE and loginTheme=m8flow on realms master, m8flow..."
   for realm in master m8flow; do
-    if /opt/keycloak/bin/kcadm.sh update realms/${realm} -s sslRequired=NONE 2>/dev/null; then
-      echo "[keycloak-entrypoint] Realm ${realm}: sslRequired=NONE set successfully."
+    if /opt/keycloak/bin/kcadm.sh update realms/${realm} -s sslRequired=NONE -s loginTheme=m8flow 2>/dev/null; then
+      echo "[keycloak-entrypoint] Realm ${realm}: sslRequired=NONE and loginTheme=m8flow set successfully."
     else
       echo "[keycloak-entrypoint] Realm ${realm}: update skipped or failed (realm may not exist yet)." >&2
     fi

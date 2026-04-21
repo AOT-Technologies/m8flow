@@ -758,12 +758,18 @@ def _sanitize_idps_for_partial_import(idps: list[dict[str, Any]]) -> list[dict[s
 
 
 def _minimal_realm_creation_payload(full_payload: dict[str, Any]) -> dict[str, Any]:
-    return {
+    payload: dict[str, Any] = {
         "realm": full_payload.get("realm"),
         "displayName": full_payload.get("displayName"),
         "enabled": full_payload.get("enabled", True),
         "sslRequired": full_payload.get("sslRequired", "none"),
     }
+
+    login_theme = full_payload.get("loginTheme")
+    if login_theme:
+        payload["loginTheme"] = login_theme
+
+    return payload
 
 
 def _certificate_pem_or_none(client_id_to_find: str) -> str | None:
@@ -904,6 +910,17 @@ def create_realm_from_template(realm_id: str, display_name: str | None = None) -
             (r2.text[:500] if r2.text else None),
         )
     r2.raise_for_status()
+
+    # Ensure realm-level settings that partialImport doesn't cover are applied.
+    login_theme = full_payload.get("loginTheme")
+    if login_theme:
+        r_theme = requests.put(
+            f"{base_url}/admin/realms/{realm_id}",
+            json={"loginTheme": login_theme},
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            timeout=30,
+        )
+        r_theme.raise_for_status()
 
     # Step 3: Fetch realm to obtain Keycloak's internal UUID (used as M8flowTenantModel.id)
     r3 = requests.get(
