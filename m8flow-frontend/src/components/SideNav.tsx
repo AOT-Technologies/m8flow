@@ -136,6 +136,7 @@ function SideNav({
   }
   const userEmail = UserService.getUserEmail();
   const username = UserService.getPreferredUsername();
+  const tenantId = UserService.getTenantGivenName();
   let externalDocumentationUrl = "https://spiff-arena.readthedocs.io";
   if (DOCUMENTATION_URL) {
     externalDocumentationUrl = DOCUMENTATION_URL;
@@ -314,26 +315,36 @@ function SideNav({
           <Box
             sx={{
               p: 2,
-              height: 64,
+              height: 'fit-content',
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
             }}
           >
             {!isCollapsed && (
-              <Typography
-                variant="h6"
-                color={mainBlue}
-                sx={{
-                  fontWeight: "bold",
-                  display: "flex",
-                  alignItems: "center",
-                }}
-              >
+              <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
                 <MuiLink component={Link} to="/" data-testid="nav-logo-link">
                   <SpiffLogo />
                 </MuiLink>
-              </Typography>
+                {tenantId && (
+                  <Typography
+                    variant="caption"
+                    data-testid="nav-header-tenant-id"
+                    sx={{
+                      color: "text.secondary",
+                      fontSize: ".9rem",
+                      fontWeight: 600,
+                      letterSpacing: "0.05em",
+                      textTransform: "capitalize",
+                      lineHeight: 1,
+                      mt: 0.5,
+                      px: '0.5rem'
+                    }}
+                  >
+                    {tenantId}
+                  </Typography>
+                )}
+              </Box>
             )}
             <IconButton
               data-testid="nav-toggle-collapse-button"
@@ -497,9 +508,23 @@ function SideNav({
               bgcolor: "background.paper",
             }}
           >
-            <Typography variant="subtitle1">{username}</Typography>
+            <Typography variant="subtitle1" sx={{ fontWeight: 600 }} data-testid="nav-username">{username}</Typography>
             {username !== userEmail && (
-              <Typography variant="body2">{userEmail}</Typography>
+              <Typography variant="body2" color="text.secondary" data-testid="nav-user-email">{userEmail}</Typography>
+            )}
+            {tenantId && (
+              <Typography
+                variant="body2"
+                data-testid="nav-tenant-id"
+                sx={{
+                  color: "text.secondary",
+                  textTransform: "capitalize",
+                  fontWeight: 600,
+                  mt: 0.5,
+                }}
+              >
+                {tenantId}
+              </Typography>
             )}
             {/* <hr />
             {aboutLinkElement}
