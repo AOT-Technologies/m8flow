@@ -76,7 +76,7 @@ lane_owners = {
 
 **3. Configure all required secrets before starting the process**
 
-Templates that integrate with external services (SMTP email, Salesforce, Slack, PostgreSQL) use `SPIFF_SECRET` variables. If a required secret is missing, the service task will fail at runtime.
+Templates that integrate with external services (SMTP email, Salesforce, Slack, PostgreSQL) use `M8FLOW_SECRET` variables. If a required secret is missing, the service task will fail at runtime.
 
 - Go to **Configuration → Secrets** in the M8Flow UI.
 - Add every secret listed in the template's guide below before you start the process.

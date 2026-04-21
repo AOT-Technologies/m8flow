@@ -45,10 +45,10 @@ The HTTP Connector enables BPMN Service Tasks to make outbound HTTP requests (GE
 
 **Configuration in Service Task:**
 - **Operator ID:** Select an HTTP operator. Operators ending in `V2` (e.g., `http/GetRequestV2`) use the external proxy, while others (e.g., `http/GetRequest`) run internally.
-- **Parameters:** Values can be entered directly, or configured securely in the Secrets UI and accessed using the format `"SPIFF_SECRET:<secret_name>"`.
+- **Parameters:** Values can be entered directly, or configured securely in the Secrets UI and accessed using the format `"M8FLOW_SECRET:<secret_name>"`.
   - `url` (Required): The API endpoint, enclosed in double quotes (e.g., `"https://jsonplaceholder.typicode.com/posts/1"`).
   - `headers` / `params` / `data`: Must be valid JSON objects. Use `data` for the request body, not `json` (e.g., `{"Accept": "application/json"}`).
-  - `basic_auth_username` / `basic_auth_password`: Enclose in double quotes if entered directly, or reference a secret (e.g., `"SPIFF_SECRET:AUTH_PASSWORD"`, `"SPIFF_SECRET:AUTH_USERNAME"`).
+  - `basic_auth_username` / `basic_auth_password`: Enclose in double quotes if entered directly, or reference a secret (e.g., `"M8FLOW_SECRET:AUTH_PASSWORD"`, `"M8FLOW_SECRET:AUTH_USERNAME"`).
 
 **Handling Responses:**
 Responses from V2 operators are wrapped in a specific format. Use a Script Task to parse the incoming data:
@@ -65,7 +65,7 @@ The SMTP Connector enables BPMN Service Tasks to send emails. It supports plain 
 
 ![smtp](../docs/images/smtp.png)
 
-> **Security Note:** Credentials should never be hardcoded in BPMN models. All sensitive data (such as `smtp_user` and `smtp_password`) must be configured securely via M8Flow Secrets and referenced in your workflow (e.g., `"SPIFF_SECRET:SMTP_PASSWORD"`).
+> **Security Note:** Credentials should never be hardcoded in BPMN models. All sensitive data (such as `smtp_user` and `smtp_password`) must be configured securely via M8Flow Secrets and referenced in your workflow (e.g., `"M8FLOW_SECRET:SMTP_PASSWORD"`).
 
 **Configuration in Service Task:**
 - **Operator ID:** Select the SMTP email operator (e.g., `SendHTMLEmail`).
@@ -75,7 +75,7 @@ The SMTP Connector enables BPMN Service Tasks to send emails. It supports plain 
   - `email_subject` / `email_body` (String): The subject and plain-text body of the email.
   - `email_to` / `email_from` (String): Delivery recipient and sender addresses. Multiple recipients can be separated by commas or semicolons.
 - **Optional Parameters:** 
-  - `smtp_user` / `smtp_password`: Required for authentication. Use a secret (e.g., `"SPIFF_SECRET:SMTP_PASSWORD"`) to securely inject the password.
+  - `smtp_user` / `smtp_password`: Required for authentication. Use a secret (e.g., `"M8FLOW_SECRET:SMTP_PASSWORD"`) to securely inject the password.
   - `smtp_starttls` (Boolean): Set to `True` to enforce STARTTLS. Enclose boolean values as standard types, not strings.
   - `email_body_html` (String): The HTML version of the email body.
   - `email_cc` / `email_bcc` / `email_reply_to` (String): Additional routing addresses.
@@ -94,7 +94,7 @@ The PostgreSQL Connector allows you to interact directly with a PostgreSQL datab
 **Configuration in Service Task:**
 - **Operator ID:** Select a Postgres operator (e.g., `postgres_v2/SelectValuesV2`, `postgres_v2/DoSQL`, `postgres_v2/InsertValuesV2`).
 - **Required Parameters:** 
-  - `database_connection_str` (String): The psycopg2 formatted connection string (e.g., `"dbname=mydatabase user=myuser password=mypassword host=192.168.1.9 port=5432"`). *Be sure to safely manage your connection string using M8Flow secrets (e.g., `"SPIFF_SECRET:POSTGRES_CONNECTION_STRING"`) to avoid hardcoding credentials.*
+  - `database_connection_str` (String): The psycopg2 formatted connection string (e.g., `"dbname=mydatabase user=myuser password=mypassword host=192.168.1.9 port=5432"`). *Be sure to safely manage your connection string using M8Flow secrets (e.g., `"M8FLOW_SECRET:POSTGRES_CONNECTION_STRING"`) to avoid hardcoding credentials.*
   - `table_name` (String): The target table for your operation. *(Not required if using the `DoSQL` operator)*.
   - `schema` (JSON Object): A dynamic JSON payload that defines the specific command's instructions.
     - **Insert**: `{"columns": ["name", "email"], "values": [["John", "test@example.com"]]}`
@@ -130,7 +130,7 @@ The Slack Connector integrates the Slack Web API into your M8Flow workflows, ena
 **Configuration in Service Task:**
 - **Operator ID:** Select a Slack operator: `PostMessage`, `SendDirectMessage`, or `UploadFile`.
 - **Required Parameters** (varies by command):
-  - `token` (String): Your Slack token. *Always store this securely using M8Flow Secrets (e.g., `"SPIFF_SECRET:SLACK_TOKEN"`).*
+  - `token` (String): Your Slack token. *Always store this securely using M8Flow Secrets (e.g., `"M8FLOW_SECRET:SLACK_TOKEN"`).*
   - `channel` or `user_id` (String): The target destination ID (e.g., `"C01234ABCD"`, `"#general"`, or `"U01234ABCD"`).
   - `message` (String): The text content for `PostMessage` or `SendDirectMessage`.
   - `filepath` or `content_base64` (String): Required ONLY for the `UploadFile` operator.
@@ -157,7 +157,7 @@ The Salesforce Connector integrates your M8Flow workflows with the Salesforce CR
 **Configuration in Service Task:**
 - **Operator ID:** Select a Salesforce operation: `CreateLead`, `ReadLead`, `UpdateLead`, `DeleteLead`, `CreateContact`, `ReadContact`, `UpdateContact`, or `DeleteContact`.
 - **Authentication Parameters** (Required for all commands):
-  - `access_token` (String): Your OAuth 2.0 Access Token. *Always store this securely using M8Flow Secrets (e.g., `"SPIFF_SECRET:SF_ACCESS_TOKEN"`).*
+  - `access_token` (String): Your OAuth 2.0 Access Token. *Always store this securely using M8Flow Secrets (e.g., `"M8FLOW_SECRET:SF_ACCESS_TOKEN"`).*
   - `instance_url` (String): Your Salesforce instance URL. *Store securely via secrets.*
   - **Auto-Refresh (Optional):** If you provide the `refresh_token`, `client_id`, and `client_secret` parameters alongside the required ones, the connector will attempt to automatically fetch new tokens if it receives a 401 Unauthorized response.
 - **Operation Parameters** (Varies by command):
@@ -200,7 +200,7 @@ You will never type real credit card numbers into your M8Flow workflows. Instead
 #### 2. Configuring the Service Task
 When you select a Stripe operation in your workflow, you will need to fill in some details:
 
-- **api_key (Required for all):** Your Stripe Secret Key. *Always keep this safe by using M8Flow Secrets. Just type `"SPIFF_SECRET:stripe_api_key"` as the value.*
+- **api_key (Required for all):** Your Stripe Secret Key. *Always keep this safe by using M8Flow Secrets. Just type `"M8FLOW_SECRET:stripe_api_key"` as the value.*
 
 **When creating a Payment Intent or Charge:**
 - **amount:** The amount you want to charge. *Warning:* Stripe counts money in the smallest unit (like pennies). So, if you want to charge $10.00 USD, entering `"10"` will only charge 10 cents! You must enter `"1000"` for $10.00.
