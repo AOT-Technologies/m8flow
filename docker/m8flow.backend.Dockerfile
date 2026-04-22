@@ -72,7 +72,7 @@ RUN curl -fsSL https://astral.sh/uv/install.sh | UV_INSTALL_DIR=/usr/local/bin U
 # Copy upstream backend from fetch stage and repo files from build context.
 COPY --from=fetch-upstream /upstream/spiffworkflow-backend /app/spiffworkflow-backend
 COPY --from=fetch-upstream /upstream/spiff-arena-common /app/spiff-arena-common
-COPY extensions /app/extensions
+COPY m8flow-backend /app/m8flow-backend
 COPY uvicorn-log.yaml /app/uvicorn-log.yaml
 
 # Create venv and install backend into it (prod). Use editable install so
@@ -124,9 +124,9 @@ ENV PATH="/opt/venv/bin:$PATH"
 ENV VIRTUAL_ENV=/opt/venv
 
 # Fix CRLF issues for Windows users and ensure scripts are executable
-RUN sed -i 's/\r$//' /app/extensions/m8flow-backend/bin/run_m8flow_backend.sh \
-  && sed -i 's/\r$//' /app/extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh \
-  && chmod +x /app/extensions/m8flow-backend/bin/run_m8flow_backend.sh /app/extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh
+RUN sed -i 's/\r$//' /app/m8flow-backend/bin/run_m8flow_backend.sh \
+  && sed -i 's/\r$//' /app/m8flow-backend/bin/run_m8flow_celery_worker.sh \
+  && chmod +x /app/m8flow-backend/bin/run_m8flow_backend.sh /app/m8flow-backend/bin/run_m8flow_celery_worker.sh
 
 # Entrypoint script: safe for root and non-root
 COPY docker/scripts/m8flow_backend_entrypoint.sh /opt/m8flow-backend-entrypoint.sh
@@ -138,7 +138,7 @@ USER app
 
 # Entrypoint: if root, chown volume dirs then drop to app; else exec directly
 ENTRYPOINT ["/opt/m8flow-backend-entrypoint.sh"]
-CMD ["/app/extensions/m8flow-backend/bin/run_m8flow_backend.sh"]
+CMD ["/app/m8flow-backend/bin/run_m8flow_backend.sh"]
 
 # -----------------------------------------------------------------------------
 # Stage: dev (default) - full repo, editable install for local development (non-root)
@@ -197,9 +197,9 @@ RUN cd /app/spiffworkflow-backend && uv pip install --system --break-system-pack
   && rm -rf /var/lib/apt/lists/*
 
 # Fix CRLF issues for Windows users and ensure scripts are executable
-RUN sed -i 's/\r$//' /app/extensions/m8flow-backend/bin/run_m8flow_backend.sh \
-  && sed -i 's/\r$//' /app/extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh \
-  && chmod +x /app/extensions/m8flow-backend/bin/run_m8flow_backend.sh /app/extensions/m8flow-backend/bin/run_m8flow_celery_worker.sh
+RUN sed -i 's/\r$//' /app/m8flow-backend/bin/run_m8flow_backend.sh \
+  && sed -i 's/\r$//' /app/m8flow-backend/bin/run_m8flow_celery_worker.sh \
+  && chmod +x /app/m8flow-backend/bin/run_m8flow_backend.sh /app/m8flow-backend/bin/run_m8flow_celery_worker.sh
 
 # Entrypoint script: safe for root and non-root
 COPY docker/scripts/m8flow_backend_entrypoint.sh /opt/m8flow-backend-entrypoint.sh
@@ -215,4 +215,4 @@ USER app
 
 # Entrypoint: if root, chown volume dirs then drop to app; else exec directly
 ENTRYPOINT ["/opt/m8flow-backend-entrypoint.sh"]
-CMD ["/app/extensions/m8flow-backend/bin/run_m8flow_backend.sh"]
+CMD ["/app/m8flow-backend/bin/run_m8flow_backend.sh"]
