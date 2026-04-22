@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Box,
   Typography,
@@ -59,6 +60,7 @@ export default function TenantPage() {
   } = useTenants();
   const canCreateTenant =
     permissionsLoaded && ability.can("POST", "/m8flow/tenant-realms");
+  const { t } = useTranslation();
 
   // Search and filter states
   const [searchQuery, setSearchQuery] = useState("");
@@ -187,7 +189,7 @@ export default function TenantPage() {
             component="h1"
             style={{ fontWeight: "bold", fontSize: "24px" }}
           >
-            Tenant Management
+            {t('tenant_management')}
           </Typography>
           {canCreateTenant && (
             <Button
@@ -196,7 +198,7 @@ export default function TenantPage() {
               onClick={handleCreate}
               data-testid="tenant-add-button"
             >
-              Add Tenant
+              {t('add_tenant')}
             </Button>
           )}
         </Box>
@@ -214,22 +216,22 @@ export default function TenantPage() {
             >
               {/* Search Bar */}
               <FormControl sx={{ minWidth: 150 }}>
-                <InputLabel size="small">Search By</InputLabel>
+                <InputLabel size="small">{t('search_by')}</InputLabel>
                 <Select
                   size="small"
                   value={searchType}
-                  label="Search By"
+                  label={t('search_by')}
                   data-testid="tenant-search-type-select"
                   onChange={(e) => setSearchType(e.target.value as SearchType)}
                 >
-                  <MenuItem value="name">Name</MenuItem>
-                  <MenuItem value="slug">Slug</MenuItem>
+                  <MenuItem value="name">{t('name')}</MenuItem>
+                  <MenuItem value="slug">{t('slug')}</MenuItem>
                 </Select>
               </FormControl>
 
               <TextField
                 size="small"
-                placeholder={`Search by ${searchType}...`}
+                placeholder={t('search_by_placeholder', { type: searchType === 'name' ? t('name').toLowerCase() : t('slug').toLowerCase() })}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 data-testid="tenant-search-input"
@@ -255,17 +257,17 @@ export default function TenantPage() {
 
               {/* Status Filter */}
               <FormControl sx={{ minWidth: 200 }}>
-                <InputLabel size="small">Filter by Status</InputLabel>
+                <InputLabel size="small">{t('filter_by_status')}</InputLabel>
                 <Select
                   size="small"
                   value={statusFilter}
-                  label="Filter by Status"
+                  label={t('filter_by_status')}
                   data-testid="tenant-status-filter-select"
                   onChange={(e) => setStatusFilter(e.target.value)}
                 >
-                  <MenuItem value="all">All</MenuItem>
-                  <MenuItem value="ACTIVE">Active</MenuItem>
-                  <MenuItem value="INACTIVE">Inactive</MenuItem>
+                  <MenuItem value="all">{t('all')}</MenuItem>
+                  <MenuItem value="ACTIVE">{t('active')}</MenuItem>
+                  <MenuItem value="INACTIVE">{t('inactive')}</MenuItem>
                   {/* <MenuItem value="DELETED">Deleted</MenuItem> */} {/*TODO: Phase 2 - Delete functionality will be implemented in Phase 2*/}
                 </Select>
               </FormControl>
@@ -273,8 +275,7 @@ export default function TenantPage() {
 
             {/* Filter Summary */}
             <Typography variant="caption" color="text.secondary">
-              Showing {filteredAndSortedTenants.length} of {tenants.length}{" "}
-              tenant(s)
+              {t('showing_tenants_count', { filtered: filteredAndSortedTenants.length, total: tenants.length })}
             </Typography>
           </Stack>
         </Paper>
@@ -293,8 +294,8 @@ export default function TenantPage() {
             <Box sx={{ p: 4, textAlign: "center" }}>
               <Typography color="text.secondary">
                 {searchQuery || statusFilter !== "all"
-                  ? "No tenants found matching your filters"
-                  : "No tenants available"}
+                  ? t('no_tenants_matching_filters')
+                  : t('no_tenants_available')}
               </Typography>
             </Box>
           ) : (
@@ -307,7 +308,7 @@ export default function TenantPage() {
                       direction={sortField === "name" ? sortDirection : "asc"}
                       onClick={() => handleSort("name")}
                     >
-                      Name
+                      {t('name')}
                     </TableSortLabel>
                   </TableCell>
                   <TableCell>
@@ -316,11 +317,11 @@ export default function TenantPage() {
                       direction={sortField === "slug" ? sortDirection : "asc"}
                       onClick={() => handleSort("slug")}
                     >
-                      Slug
+                      {t('slug')}
                     </TableSortLabel>
                   </TableCell>
-                  <TableCell>Status</TableCell>
-                  <TableCell align="center">Actions</TableCell>
+                  <TableCell>{t('status')}</TableCell>
+                  <TableCell align="center">{t('actions')}</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -360,7 +361,7 @@ export default function TenantPage() {
                         justifyContent="center"
                       >
                         <Tooltip
-                          title="Edit Tenant"
+                          title={t('edit_tenant')}
                           disableHoverListener={tenant.status === "DELETED"}
                         >
                           <span

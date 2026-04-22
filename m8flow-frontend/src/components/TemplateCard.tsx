@@ -11,6 +11,7 @@ import {
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { PointerEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 import { TimeAgo } from '@spiffworkflow-frontend/helpers/timeago';
 import DateAndTimeService from '@spiffworkflow-frontend/services/DateAndTimeService';
 import { Template, TemplateVisibility } from '../types/template';
@@ -33,15 +34,15 @@ const getVisibilityColor = (visibility: TemplateVisibility): 'default' | 'primar
   }
 };
 
-const getVisibilityLabel = (visibility: TemplateVisibility): string => {
+const getVisibilityLabel = (visibility: TemplateVisibility, t: any): string => {
   switch (visibility) {
     case 'PUBLIC':
-      return 'Public';
+      return t("public");
     case 'TENANT':
-      return 'Tenant';
+      return t("tenant");
     case 'PRIVATE':
     default:
-      return 'Private';
+      return t("private");
   }
 };
 
@@ -51,6 +52,7 @@ export default function TemplateCard({
   onViewTemplate,
 }: TemplateCardProps) {
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   const stopEventBubble = (e: PointerEvent) => {
     e.stopPropagation();
@@ -106,7 +108,7 @@ export default function TemplateCard({
                 {template.name}
               </Typography>
               <Chip
-                label={getVisibilityLabel(template.visibility)}
+                label={getVisibilityLabel(template.visibility, t)}
                 color={getVisibilityColor(template.visibility)}
                 size="small"
                 sx={{ ml: 1 }}
@@ -120,7 +122,7 @@ export default function TemplateCard({
             </Typography>
             {template.category && (
               <Chip
-                label={`Category: ${template.category}`}
+                label={`${t("category")}: ${template.category}`}
                 size="small"
                 variant="outlined"
                 sx={{ alignSelf: 'flex-start', fontSize: '0.7rem' }}
@@ -148,7 +150,7 @@ export default function TemplateCard({
               </Box>
             )}
             <Typography variant="caption" sx={{ color: 'text.secondary', mt: 'auto' }}>
-              Version: {template.version}
+              {t("version")}: {template.version}
             </Typography>
             <Typography
               variant="caption"
