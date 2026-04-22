@@ -326,24 +326,6 @@ function SideNav({
                 <MuiLink component={Link} to="/" data-testid="nav-logo-link">
                   <SpiffLogo />
                 </MuiLink>
-                {tenantId && (
-                  <Typography
-                    variant="caption"
-                    data-testid="nav-header-tenant-id"
-                    sx={{
-                      color: "text.secondary",
-                      fontSize: ".9rem",
-                      fontWeight: 600,
-                      letterSpacing: "0.05em",
-                      textTransform: "capitalize",
-                      lineHeight: 1,
-                      mt: 0.5,
-                      px: '0.5rem'
-                    }}
-                  >
-                    {tenantId}
-                  </Typography>
-                )}
               </Box>
             )}
             <IconButton
