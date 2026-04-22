@@ -254,7 +254,7 @@ async def main() -> None:
     global flask_app
     
     logger.info("Initializing M8Flow core application context...")
-    from extensions.app import app as asgi_app
+    from m8flow_backend.app import app as asgi_app
     flask_app = asgi_app.app.app
 
     logger.info("Starting M8Flow NATS Consumer...")
