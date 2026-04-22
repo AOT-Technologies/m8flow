@@ -231,6 +231,22 @@ const setTenantId = (tenantId: string | null): void => {
   }
 };
 
+const getTenantName = (): string | null => {
+  const idToken = getIdToken();
+  if (idToken) {
+    try {
+      const idObject = jwtDecode(idToken) as Record<string, unknown>;
+      if(typeof idObject.m8flow_tenant_name === 'string' && idObject.m8flow_tenant_name) {
+        return idObject.m8flow_tenant_name;
+      }
+    } catch (err) {
+      console.error(err);
+      return null;
+    }
+  }
+  return null;
+};
+
 const UserService = {
   authenticationDisabled,
   doLogin,
@@ -246,6 +262,7 @@ const UserService = {
   isPublicUser,
   redirectToLogin,
   setTenantId,
+  getTenantName,
 };
 
 export default UserService;

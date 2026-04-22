@@ -38,11 +38,12 @@ export default function SpiffLogo() {
       direction="row"
       sx={{
         alignItems: 'center',
-        gap: 2,
+        gap: 1,
         width: '100%',
+        padding: '0.25rem 0.75rem'
       }}
     >
-      <img src={m8fLogo} alt="M8Flow Logo" style={{ height: "180px" }} />
+      <img src={m8fLogo} alt="M8Flow Logo" style={{ height: "28px", display: "block" }} />
 
       {/* Example: Using config in extension component */}
       {/* <Typography
