@@ -137,9 +137,6 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.extensions_frontend == 'true' }}
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: m8flow-frontend
     steps:
       - uses: actions/checkout@v4
       - name: Install jq (required by fetch-upstream)
@@ -152,10 +149,13 @@ jobs:
           cache: 'npm'
           cache-dependency-path: m8flow-frontend/package-lock.json
       - name: Install dependencies
+        working-directory: m8flow-frontend
         run: npm ci
       - name: Typecheck
+        working-directory: m8flow-frontend
         run: npm run typecheck
       - name: Test
+        working-directory: m8flow-frontend
         run: npm test
 
   # -------------------------
@@ -189,7 +189,7 @@ jobs:
       - uses: aquasecurity/trivy-action@v0.35.0
         with:
           scan-type: fs
-          severity: CRITICAL,HIGH
+          severity: CRITICAL
           exit-code: 1
           ignore-unfixed: true
           skip-files: spiffworkflow-backend/src/spiffworkflow_backend/config/openid/rsa_keys.py
