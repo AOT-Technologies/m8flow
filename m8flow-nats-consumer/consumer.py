@@ -54,28 +54,24 @@ def instantiate_process(
     Raises on transient errors (e.g. DB failure) so the caller can requeue.
     """
     from spiffworkflow_backend.models.db import db
-    from spiffworkflow_backend.models.user import UserModel
     from spiffworkflow_backend.services.process_model_service import ProcessModelService
     from spiffworkflow_backend.services.process_instance_service import ProcessInstanceService
     from m8flow_backend.tenancy import set_context_tenant_id, reset_context_tenant_id
-    from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
+    from m8flow_backend.services.tenant_identity_helpers import resolve_user_for_current_tenant
 
     with flask_app.app_context():
         token = set_context_tenant_id(tenant_id)
         try:
-            user_slug = username.split("@")[-1]
-            tenant = db.session.get(M8flowTenantModel, tenant_id)
-            if not tenant:
-                logger.error("Tenant not found in the database. Event discarded.")
-                return None
-
-            if tenant.slug != user_slug:
-                logger.error("Tenant mismatch between user and event. Event discarded.")
-                return None
-
-            user = UserModel.query.filter_by(username=username).first()
+            # The new user model stores the bare preferred_username (no @tenant_slug suffix).
+            # Tenant membership is determined via the service (Keycloak realm) field, not the
+            # username.  resolve_user_for_current_tenant() performs both the username/email lookup
+            # and the tenant-membership filter in one step.
+            user = resolve_user_for_current_tenant(username, tenant_id=tenant_id)
             if user is None:
-                logger.error(f"User '{username}' not found in the database for tenant '{tenant_id}'. Event discarded.")
+                logger.error(
+                    f"User '{username}' not found in the database for tenant '{tenant_id}'. "
+                    "Ensure the username matches the preferred_username stored in Keycloak. Event discarded."
+                )
                 return None
 
             try:
