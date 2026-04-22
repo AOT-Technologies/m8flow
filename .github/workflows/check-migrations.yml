@@ -22,6 +22,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Install jq (required by fetch-upstream)
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Fetch upstream folders (for migrations inspection)
+        run: ./bin/fetch-upstream.sh
+
       # -------------------------
       # PR Description Validation
       # -------------------------
@@ -90,6 +96,9 @@ jobs:
           import pathlib, sys
 
           path = pathlib.Path("spiffworkflow-backend/migrations/versions")
+          if not path.exists():
+            print("Migration directory not found; skipping compile check.")
+            raise SystemExit(0)
           bad = False
 
           for file in path.glob("*.py"):

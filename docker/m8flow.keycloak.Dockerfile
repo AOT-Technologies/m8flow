@@ -20,8 +20,8 @@ USER root
 # OS-level security patches should be obtained by pulling the latest Keycloak image.
 RUN mkdir -p /opt/keycloak/data/import
 RUN mkdir -p /opt/keycloak/themes
-COPY extensions/m8flow-backend/keycloak/realm_exports/m8flow-tenant-template.json /opt/keycloak/data/import/m8flow-tenant-template.json
-COPY extensions/m8flow-backend/keycloak/themes/m8flow /opt/keycloak/themes/m8flow
+COPY m8flow-backend/keycloak/realm_exports/m8flow-tenant-template.json /opt/keycloak/data/import/m8flow-tenant-template.json
+COPY m8flow-backend/keycloak/themes/m8flow /opt/keycloak/themes/m8flow
 RUN chown -R keycloak:keycloak /opt/keycloak/data/import
 COPY docker/keycloak-init-realms.sh /opt/keycloak/bin/keycloak-init-realms.sh
 COPY docker/keycloak-entrypoint.sh /opt/keycloak/bin/keycloak-entrypoint.sh
