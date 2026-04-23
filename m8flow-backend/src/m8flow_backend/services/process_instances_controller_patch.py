@@ -8,12 +8,13 @@ _PATCHED = False
 
 
 def apply() -> None:
-    """Patch process instance show to prefer stored BPMN snapshots.
+    """Patch process instance show to force stored BPMN version snapshots.
 
     The frontend renders the diagram from `bpmn_xml_file_contents` embedded on the
     process instance payload. Upstream loads that XML from the current process
-    model files (or git history if configured). In m8flow we want old instances
-    to display the BPMN as executed, so we use a per-instance snapshot when available.
+    model files (or git history if configured). In m8flow we force old instances
+    to display the BPMN as executed by looking up the version snapshot referenced
+    by bpmn_version_id on the process instance.
     """
 
     global _PATCHED
@@ -57,22 +58,25 @@ def apply() -> None:
         row = db.session.execute(
             sa.text(
                 """
-                SELECT bpmn_xml_file_contents
-                FROM process_instance_bpmn_snapshot
-                WHERE m8f_tenant_id = :m8f_tenant_id
-                  AND process_instance_id = :process_instance_id
+                SELECT v.bpmn_xml_file_contents
+                FROM process_model_bpmn_version v
+                JOIN process_instance pi ON pi.bpmn_version_id = v.id
+                WHERE pi.id = :process_instance_id
+                  AND v.m8f_tenant_id = :m8f_tenant_id
                 LIMIT 1
                 """
             ),
             {"m8f_tenant_id": tenant_id, "process_instance_id": process_instance_id},
         ).first()
+
         if row is None:
+            # Legacy instance without a version reference — fall through to upstream.
             return response
 
+        # Force the snapshot XML — do not fall back to the current model files.
         payload["bpmn_xml_file_contents"] = row[0]
         payload["bpmn_xml_file_contents_retrieval_error"] = None
         return make_response(jsonify(payload), response.status_code)
 
     process_instances_controller._get_process_instance = patched_get_process_instance
     _PATCHED = True
-

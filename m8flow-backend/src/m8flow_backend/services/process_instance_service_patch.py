@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import hashlib
 import time
 
 _PATCHED = False
 
 
 def apply() -> None:
-    """Persist BPMN XML snapshot at process instance creation time.
+    """Persist BPMN XML version at process instance creation time.
 
-    This ensures old process instances can show the diagram that was executed,
-    even when the underlying process model files change later.
+    Computes a SHA-256 hash of the primary BPMN file contents and upserts a
+    row into process_model_bpmn_version.  The process instance then gets a FK
+    reference (bpmn_version_id) so it always points to the exact BPMN that was
+    active when the instance was created — without duplicating XML across
+    instances that share the same model version.
     """
 
     global _PATCHED
@@ -41,30 +45,56 @@ def apply() -> None:
                 xml_text = raw_bytes.decode("utf-8")
                 if xml_text:
                     # Upstream only adds the ProcessInstanceModel to the session; it doesn't flush/commit.
-                    # We need an id + tenant id before we can store a snapshot row.
+                    # We need an id + tenant id before we can store the version reference.
                     db.session.flush()
                     tenant_id = getattr(process_instance_model, "m8f_tenant_id", None)
                     if tenant_id:
+                        bpmn_hash = hashlib.sha256(xml_text.encode("utf-8")).hexdigest()
+                        model_id = getattr(process_model, "id", "")
+
+                        # Upsert: insert if the (tenant, model, hash) combo doesn't exist yet.
                         db.session.execute(
                             sa.text(
                                 """
-                                INSERT INTO process_instance_bpmn_snapshot
-                                  (m8f_tenant_id, process_instance_id, bpmn_xml_file_contents, created_at_in_seconds)
+                                INSERT INTO process_model_bpmn_version
+                                  (m8f_tenant_id, process_model_identifier, bpmn_xml_hash, bpmn_xml_file_contents, created_at_in_seconds)
                                 VALUES
-                                  (:m8f_tenant_id, :process_instance_id, :bpmn_xml_file_contents, :created_at_in_seconds)
-                                ON CONFLICT(process_instance_id) DO NOTHING
+                                  (:m8f_tenant_id, :process_model_identifier, :bpmn_xml_hash, :bpmn_xml_file_contents, :created_at_in_seconds)
+                                ON CONFLICT(m8f_tenant_id, process_model_identifier, bpmn_xml_hash) DO NOTHING
                                 """
                             ),
                             {
                                 "m8f_tenant_id": tenant_id,
-                                "process_instance_id": process_instance_model.id,
+                                "process_model_identifier": model_id,
+                                "bpmn_xml_hash": bpmn_hash,
                                 "bpmn_xml_file_contents": xml_text,
                                 "created_at_in_seconds": round(time.time()),
                             },
                         )
+
+                        # Retrieve the version id (may have been inserted just now or previously).
+                        version_row = db.session.execute(
+                            sa.text(
+                                """
+                                SELECT id FROM process_model_bpmn_version
+                                WHERE m8f_tenant_id = :m8f_tenant_id
+                                  AND process_model_identifier = :process_model_identifier
+                                  AND bpmn_xml_hash = :bpmn_xml_hash
+                                LIMIT 1
+                                """
+                            ),
+                            {
+                                "m8f_tenant_id": tenant_id,
+                                "process_model_identifier": model_id,
+                                "bpmn_xml_hash": bpmn_hash,
+                            },
+                        ).first()
+
+                        if version_row is not None:
+                            process_instance_model.bpmn_version_id = version_row[0]
             except Exception:
                 current_app.logger.warning(
-                    "Failed to snapshot BPMN XML for process instance %s (process_model=%s)",
+                    "Failed to record BPMN version for process instance %s (process_model=%s)",
                     getattr(process_instance_model, "id", None),
                     getattr(process_model, "id", None),
                     exc_info=True,
