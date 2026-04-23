@@ -16,8 +16,8 @@ m8flow-connector-smtp = { git = "https://github.com/AOT-Technologies/m8flow-conn
 m8flow-connector-slack = { git = "https://github.com/AOT-Technologies/m8flow-connectors.git", subdirectory = "connectors/m8flow-connector-slack", tag = "1.0.0" }
 m8flow-connector-salesforce = { git = "https://github.com/AOT-Technologies/m8flow-connectors.git", subdirectory = "connectors/m8flow-connector-salesforce", tag = "1.0.0" }
 m8flow-connector-stripe = { git = "https://github.com/AOT-Technologies/m8flow-connectors.git", subdirectory = "connectors/m8flow-connector-stripe", tag = "1.0.0" }
-connector-postgres-v2 = {git = "https://github.com/sartography/connector-postgres.git"}
-connector-http = {git = "https://github.com/sartography/connector-http.git"}
+connector-postgres-v2 = { git = "https://github.com/sartography/connector-postgres.git", rev = "af95cbc52c326bc925e185009ea5888f3a5869be" }
+connector-http = { git = "https://github.com/sartography/connector-http.git", tag = "v0.0.1" }
 psycopg2-binary = "^2.9.9"
 
 [build-system]

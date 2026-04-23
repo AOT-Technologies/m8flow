@@ -170,7 +170,7 @@ xmltodict = "^0.13.0"
 [package.source]
 type = "git"
 url = "https://github.com/sartography/connector-http.git"
-reference = "HEAD"
+reference = "v0.0.1"
 resolved_reference = "c540e66785ac5819725de5d2e044e33d11d6dde7"
 
 [[package]]
@@ -190,7 +190,7 @@ spiffworkflow-connector-command = {git = "https://github.com/sartography/spiffwo
 [package.source]
 type = "git"
 url = "https://github.com/sartography/connector-postgres.git"
-reference = "HEAD"
+reference = "af95cbc52c326bc925e185009ea5888f3a5869be"
 resolved_reference = "af95cbc52c326bc925e185009ea5888f3a5869be"
 
 [[package]]
@@ -680,4 +680,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12.1,<3.13"
-content-hash = "e27bac7a8d36345daf39283ea40d8665a3f0a5c72166f98b33c7477ccc50499b"
+content-hash = "4cb59fea4b3859aa6b3bd69e97035d183c508dc784996359f45883905debd541"
