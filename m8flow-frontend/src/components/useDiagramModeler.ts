@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import BpmnModeler from 'bpmn-js/lib/Modeler';
 import BpmnViewer from 'bpmn-js/lib/Viewer';
 import {
@@ -69,8 +69,46 @@ export function useDiagramModeler(options: UseDiagramModelerOptions) {
     onServiceTasksRequested,
   } = options;
 
+  const callbacksRef = useRef({
+    setPerformingXmlUpdates,
+    onDataStoresRequested,
+    onDmnFilesRequested,
+    onElementClick,
+    onElementsChanged,
+    onJsonSchemaFilesRequested,
+    onLaunchBpmnEditor,
+    onLaunchDmnEditor,
+    onLaunchJsonSchemaEditor,
+    onLaunchMarkdownEditor,
+    onLaunchMessageEditor,
+    onLaunchScriptEditor,
+    onMessagesRequested,
+    onSearchProcessModels,
+    onServiceTasksRequested,
+  });
+  useEffect(() => {
+    callbacksRef.current = {
+      setPerformingXmlUpdates,
+      onDataStoresRequested,
+      onDmnFilesRequested,
+      onElementClick,
+      onElementsChanged,
+      onJsonSchemaFilesRequested,
+      onLaunchBpmnEditor,
+      onLaunchDmnEditor,
+      onLaunchJsonSchemaEditor,
+      onLaunchMarkdownEditor,
+      onLaunchMessageEditor,
+      onLaunchScriptEditor,
+      onMessagesRequested,
+      onSearchProcessModels,
+      onServiceTasksRequested,
+    };
+  });
+
   const [diagramXMLString, setDiagramXMLString] = useState('');
   const [diagramModelerState, setDiagramModelerState] = useState<any>(null);
+  const keepServiceGroupOpenUntilRef = useRef(0);
 
   const zoom = useCallback(
     (amount: number) => {
@@ -136,12 +174,120 @@ export function useDiagramModeler(options: UseDiagramModelerOptions) {
       diagramContainerElement.appendChild(frag);
     }
 
+    const propertiesPanelParent = document.getElementById(panelId);
+
+    // ── Service Properties Panel Stability ────────────────────────────────────
+    // Root cause: bpmn-js-properties-panel rebuilds the entire panel (all groups
+    // reset to CLOSED) on every `elements.changed` event. This collapses
+    // 'M8flow Service Properties' whenever the user interacts with a Service Task.
+    // Also fires on `spiff.service_tasks.requested` during first render.
+    //
+    // Fix: snapshot open group IDs before each rebuild, restore after via
+    // MutationObserver. Guard against click→mutation loops with isRestoring flag.
+
+    // bpmn-js-properties-panel puts 'open' on the HEADER, not the group container
+    const isGroupOpen = (group: HTMLElement): boolean => {
+      if (group.classList.contains('open')) return true;
+      const header = group.querySelector(':scope > .bio-properties-panel-group-header');
+      return !!header?.classList.contains('open');
+    };
+
+    const getOpenGroupIds = (): string[] => {
+      if (!propertiesPanelParent) return [];
+      return Array.from(
+        propertiesPanelParent.querySelectorAll<HTMLElement>(
+          '.bio-properties-panel-group[data-group-id]',
+        ),
+      )
+        .filter(isGroupOpen)
+        .map((g) => g.getAttribute('data-group-id') || '')
+        .filter(Boolean);
+    };
+
+    const openGroupSnapshotRef = { current: [] as string[] };
+    let isRestoring = false;
+    let restoreTimerId: ReturnType<typeof setTimeout> | null = null;
+
+    const openGroupById = (groupId: string): void => {
+      if (!propertiesPanelParent) return;
+      const group = propertiesPanelParent.querySelector<HTMLElement>(
+        `.bio-properties-panel-group[data-group-id="${groupId}"]`,
+      );
+      if (!group || isGroupOpen(group)) return;
+      const btn = group.querySelector<HTMLElement>(
+        '.bio-properties-panel-group-header-button, .bio-properties-panel-group-header',
+      );
+      btn?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    };
+
+    const restoreGroups = () => {
+      if (isRestoring) return;
+      if (Date.now() > keepServiceGroupOpenUntilRef.current) return;
+      const snapshot = openGroupSnapshotRef.current;
+      if (!snapshot.length) return;
+      isRestoring = true;
+      try {
+        snapshot.forEach((id) => openGroupById(id));
+      } finally {
+        window.requestAnimationFrame(() => { isRestoring = false; });
+      }
+    };
+
+    const propertiesPanelObserver = new MutationObserver(() => {
+      if (isRestoring) return;
+      if (Date.now() > keepServiceGroupOpenUntilRef.current) return;
+      if (restoreTimerId !== null) clearTimeout(restoreTimerId);
+      restoreTimerId = setTimeout(() => { restoreTimerId = null; restoreGroups(); }, 30);
+    });
+
+    if (propertiesPanelParent) {
+      propertiesPanelObserver.observe(propertiesPanelParent, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: ['class'], // catch group collapse via CSS class toggle on header
+      });
+    }
+
+    // Capture snapshot on any click inside the panel.
+    // Uses capture phase so we read state BEFORE the click target's handler fires.
+    const onPanelClick = (e: Event) => {
+      if (isRestoring) return;
+      const target = e.target as HTMLElement | null;
+      if (!target || !propertiesPanelParent) return;
+
+      // If user clicked the service properties group header → intentional close.
+      // Clear the guard so the MutationObserver does not re-open it.
+      const serviceGroup = propertiesPanelParent.querySelector<HTMLElement>(
+        '.bio-properties-panel-group[data-group-id="group-service_task_properties"]',
+      );
+      const serviceHeader = serviceGroup?.querySelector<HTMLElement>(
+        ':scope > .bio-properties-panel-group-header',
+      );
+      if (serviceHeader && (serviceHeader === target || serviceHeader.contains(target))) {
+        openGroupSnapshotRef.current = [];
+        keepServiceGroupOpenUntilRef.current = 0;
+        return;
+      }
+
+      // Any other click: if service group is open, pin it open (children can still toggle freely).
+      // We only restore group-service_task_properties, never child groups.
+      if (serviceGroup && isGroupOpen(serviceGroup)) {
+        openGroupSnapshotRef.current = ['group-service_task_properties'];
+        keepServiceGroupOpenUntilRef.current = Date.now() + 3000;
+      }
+    };
+    if (propertiesPanelParent) {
+      propertiesPanelParent.addEventListener('click', onPanelClick, true);
+    }
+    // ── End panel stability ──────────────────────────────────────────────────
+
     let diagramModeler: any = null;
     if (diagramType === 'bpmn') {
       diagramModeler = new BpmnModeler({
         container: '#canvas',
         keyboard: { bindTo: document },
-        propertiesPanel: { parent: '#js-properties-panel' },
+        propertiesPanel: { parent: `#${panelId}` },
         additionalModules: [
           spiffworkflow,
           BpmnPropertiesPanelModule,
@@ -157,7 +303,7 @@ export function useDiagramModeler(options: UseDiagramModelerOptions) {
         container: '#canvas',
         keyboard: { bindTo: document },
         drd: {
-          propertiesPanel: { parent: '#js-properties-panel' },
+          propertiesPanel: { parent: `#${panelId}` },
           additionalModules: [
             DmnPropertiesPanelModule,
             DmnPropertiesProviderModule,
@@ -188,10 +334,11 @@ export function useDiagramModeler(options: UseDiagramModelerOptions) {
       scriptType: string,
       eventBus: any,
     ) {
-      if (onLaunchScriptEditor) {
-        setPerformingXmlUpdates(true);
+      const cb = callbacksRef.current;
+      if (cb.onLaunchScriptEditor) {
+        cb.setPerformingXmlUpdates(true);
         const modeling = diagramModeler.get('modeling');
-        onLaunchScriptEditor(element, script, scriptType, eventBus, modeling);
+        cb.onLaunchScriptEditor(element, script, scriptType, eventBus, modeling);
       }
     }
 
@@ -200,28 +347,39 @@ export function useDiagramModeler(options: UseDiagramModelerOptions) {
       value: string,
       eventBus: any,
     ) {
-      if (onLaunchMarkdownEditor) {
-        setPerformingXmlUpdates(true);
-        onLaunchMarkdownEditor(element, value, eventBus);
+      const cb = callbacksRef.current;
+      if (cb.onLaunchMarkdownEditor) {
+        cb.setPerformingXmlUpdates(true);
+        cb.onLaunchMarkdownEditor(element, value, eventBus);
       }
     }
 
     function handleElementClick(event: any) {
-      if (onElementClick) {
+      const cb = callbacksRef.current;
+      if (cb.onElementClick) {
         const canvas = diagramModeler.get('canvas');
         const bpmnProcessIdentifiers = getBpmnProcessIdentifiers(
           canvas.getRootElement(),
         );
-        onElementClick(event.element, bpmnProcessIdentifiers);
+        cb.onElementClick(event.element, bpmnProcessIdentifiers);
       }
     }
 
     function handleServiceTasksRequested(event: any) {
-      if (onServiceTasksRequested) onServiceTasksRequested(event);
+      // spiff.service_tasks.requested fires synchronously during the first render
+      // of ServiceTaskOperatorSelect (when serviceTaskOperators === []). The parent
+      // makes an async API call; when it returns and the panel rebuilds, this
+      // guard ensures open groups are restored by the MutationObserver.
+      const currentlyOpen = getOpenGroupIds();
+      if (currentlyOpen.includes('group-service_task_properties')) {
+        openGroupSnapshotRef.current = ['group-service_task_properties'];
+        keepServiceGroupOpenUntilRef.current = Date.now() + 5000;
+      }
+      callbacksRef.current.onServiceTasksRequested?.(event);
     }
 
     function handleDataStoresRequested(event: any) {
-      if (onDataStoresRequested) onDataStoresRequested(event);
+      callbacksRef.current.onDataStoresRequested?.(event);
     }
 
     function createPrePostScriptOverlay(event: any) {
@@ -280,17 +438,17 @@ export function useDiagramModeler(options: UseDiagramModelerOptions) {
     });
 
     diagramModeler.on('spiff.callactivity.edit', (event: any) => {
-      if (onLaunchBpmnEditor) onLaunchBpmnEditor(event.processId);
+      callbacksRef.current.onLaunchBpmnEditor?.(event.processId);
     });
 
     diagramModeler.on('spiff.file.edit', (event: any) => {
       const { error, element, value, eventBus } = event;
       if (error) console.error(error);
-      if (onLaunchJsonSchemaEditor) onLaunchJsonSchemaEditor(element, value, eventBus);
+      callbacksRef.current.onLaunchJsonSchemaEditor?.(element, value, eventBus);
     });
 
     diagramModeler.on('spiff.dmn.edit', (event: any) => {
-      if (onLaunchDmnEditor) onLaunchDmnEditor(event.value);
+      callbacksRef.current.onLaunchDmnEditor?.(event.value);
     });
 
     diagramModeler.on('element.click', (element: any) => {
@@ -298,55 +456,66 @@ export function useDiagramModeler(options: UseDiagramModelerOptions) {
     });
 
     diagramModeler.on('elements.changed', (event: any) => {
-      if (onElementsChanged) onElementsChanged(event);
+      // Snapshot open groups BEFORE the panel rebuilds
+      const currentlyOpen = getOpenGroupIds();
+      if (currentlyOpen.includes('group-service_task_properties')) {
+        openGroupSnapshotRef.current = ['group-service_task_properties'];
+        keepServiceGroupOpenUntilRef.current = Date.now() + 3000;
+      }
+      callbacksRef.current.onElementsChanged?.(event);
     });
+
 
     diagramModeler.on('spiff.service_tasks.requested', handleServiceTasksRequested);
     diagramModeler.on('spiff.data_stores.requested', handleDataStoresRequested);
 
     diagramModeler.on('spiff.json_schema_files.requested', (event: any) => {
-      if (onJsonSchemaFilesRequested) onJsonSchemaFilesRequested(event);
+      callbacksRef.current.onJsonSchemaFilesRequested?.(event);
       handleServiceTasksRequested(event);
     });
 
     diagramModeler.on('spiff.dmn_files.requested', (event: any) => {
-      if (onDmnFilesRequested) onDmnFilesRequested(event);
+      callbacksRef.current.onDmnFilesRequested?.(event);
     });
 
     diagramModeler.on('spiff.messages.requested', (event: any) => {
-      if (onMessagesRequested) onMessagesRequested(event);
+      callbacksRef.current.onMessagesRequested?.(event);
     });
 
     diagramModeler.on('spiff.callactivity.search', (event: any) => {
-      if (onSearchProcessModels) {
-        onSearchProcessModels(event.value, event.eventBus, event.element);
+      const cb = callbacksRef.current;
+      if (cb.onSearchProcessModels) {
+        cb.onSearchProcessModels(event.value, event.eventBus, event.element);
       }
     });
 
     diagramModeler.on('spiff.message.edit', (event: any) => {
-      if (onLaunchMessageEditor) onLaunchMessageEditor(event);
+      callbacksRef.current.onLaunchMessageEditor?.(event);
     });
-  }, [
-    diagramType,
-    setPerformingXmlUpdates,
-    onDataStoresRequested,
-    onDmnFilesRequested,
-    onElementClick,
-    onElementsChanged,
-    onJsonSchemaFilesRequested,
-    onLaunchBpmnEditor,
-    onLaunchDmnEditor,
-    onLaunchJsonSchemaEditor,
-    onLaunchMarkdownEditor,
-    onLaunchMessageEditor,
-    onLaunchScriptEditor,
-    onMessagesRequested,
-    onSearchProcessModels,
-    onServiceTasksRequested,
-  ]);
+
+    return () => {
+      if (propertiesPanelParent) {
+        propertiesPanelParent.removeEventListener('click', onPanelClick, true);
+      }
+      if (restoreTimerId !== null) {
+        clearTimeout(restoreTimerId);
+        restoreTimerId = null;
+      }
+      propertiesPanelObserver.disconnect();
+      if (diagramModeler) {
+        diagramModeler.destroy();
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [diagramType]);
+
+  const lastImportedXMLRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!diagramXMLString || !diagramModelerState) return;
+    if (lastImportedXMLRef.current === diagramXMLString) return;
+    lastImportedXMLRef.current = diagramXMLString;
+
     diagramModelerState.importXML(diagramXMLString);
     zoom(0);
     if (diagramType !== 'dmn') {
