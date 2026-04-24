@@ -176,16 +176,7 @@ export function useDiagramModeler(options: UseDiagramModelerOptions) {
 
     const propertiesPanelParent = document.getElementById(panelId);
 
-    // ── Service Properties Panel Stability ────────────────────────────────────
-    // Root cause: bpmn-js-properties-panel rebuilds the entire panel (all groups
-    // reset to CLOSED) on every `elements.changed` event. This collapses
-    // 'M8flow Service Properties' whenever the user interacts with a Service Task.
-    // Also fires on `spiff.service_tasks.requested` during first render.
-    //
-    // Fix: snapshot open group IDs before each rebuild, restore after via
-    // MutationObserver. Guard against click→mutation loops with isRestoring flag.
-
-    // bpmn-js-properties-panel puts 'open' on the HEADER, not the group container
+    // Keep 'M8flow Service Properties' open across panel rebuilds triggered by elements.changed.
     const isGroupOpen = (group: HTMLElement): boolean => {
       if (group.classList.contains('open')) return true;
       const header = group.querySelector(':scope > .bio-properties-panel-group-header');
@@ -245,33 +236,29 @@ export function useDiagramModeler(options: UseDiagramModelerOptions) {
         subtree: true,
         childList: true,
         attributes: true,
-        attributeFilter: ['class'], // catch group collapse via CSS class toggle on header
+        attributeFilter: ['class'],
       });
     }
 
-    // Capture snapshot on any click inside the panel.
-    // Uses capture phase so we read state BEFORE the click target's handler fires.
     const onPanelClick = (e: Event) => {
       if (isRestoring) return;
       const target = e.target as HTMLElement | null;
       if (!target || !propertiesPanelParent) return;
 
-      // If user clicked the service properties group header → intentional close.
-      // Clear the guard so the MutationObserver does not re-open it.
       const serviceGroup = propertiesPanelParent.querySelector<HTMLElement>(
         '.bio-properties-panel-group[data-group-id="group-service_task_properties"]',
       );
       const serviceHeader = serviceGroup?.querySelector<HTMLElement>(
         ':scope > .bio-properties-panel-group-header',
       );
+
       if (serviceHeader && (serviceHeader === target || serviceHeader.contains(target))) {
+        // User clicked the header — allow manual close
         openGroupSnapshotRef.current = [];
         keepServiceGroupOpenUntilRef.current = 0;
         return;
       }
 
-      // Any other click: if service group is open, pin it open (children can still toggle freely).
-      // We only restore group-service_task_properties, never child groups.
       if (serviceGroup && isGroupOpen(serviceGroup)) {
         openGroupSnapshotRef.current = ['group-service_task_properties'];
         keepServiceGroupOpenUntilRef.current = Date.now() + 3000;
@@ -280,7 +267,6 @@ export function useDiagramModeler(options: UseDiagramModelerOptions) {
     if (propertiesPanelParent) {
       propertiesPanelParent.addEventListener('click', onPanelClick, true);
     }
-    // ── End panel stability ──────────────────────────────────────────────────
 
     let diagramModeler: any = null;
     if (diagramType === 'bpmn') {
