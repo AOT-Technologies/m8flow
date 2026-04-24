@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
   Box,
   Button,
@@ -27,9 +28,9 @@ import './TemplateModelerPage.css';
 import { usePermissionFetcher } from '@spiffworkflow-frontend/hooks/PermissionService';
 
 const VISIBILITY_OPTIONS: { value: TemplateVisibility; label: string }[] = [
-  { value: 'PRIVATE', label: 'Private (only you)' },
-  { value: 'TENANT', label: 'Tenant-wide (all users in your tenant)' },
-  { value: 'PUBLIC', label: 'Public (all authenticated users)' },
+  { value: 'PRIVATE', label: 'private_only_you' },
+  { value: 'TENANT', label: 'tenant_wide' },
+  { value: 'PUBLIC', label: 'public_authenticated_users' },
 ];
 
 function TemplateDetailsCard({
@@ -57,6 +58,7 @@ function TemplateDetailsCard({
 
   const canCreate = ability.can("POST", "/m8flow/templates");
   const canPublish = ability.can("PUT", "/m8flow/templates");
+  const { t } = useTranslation();
 
   if (!permissionsLoaded) return null;
 
@@ -75,9 +77,9 @@ function TemplateDetailsCard({
         <Typography variant="body2" sx={{ fontWeight: 600 }}>
           {template.name}
         </Typography>
-        <Chip size="small" label={`Version: ${template.version}`} variant="outlined" />
+        <Chip size="small" label={`${t('version')}: ${template.version}`} variant="outlined" />
         {template.category && (
-          <Chip size="small" label={`Category: ${template.category}`} variant="outlined" />
+          <Chip size="small" label={`${t('category')}: ${template.category}`} variant="outlined" />
         )}
         {canPublish && !template.isPublished ? (
           <>
@@ -93,7 +95,7 @@ function TemplateDetailsCard({
               >
                 {VISIBILITY_OPTIONS.map((opt) => (
                   <MenuItem key={opt.value} value={opt.value}>
-                    {opt.label}
+                    {t(opt.label)}
                   </MenuItem>
                 ))}
               </Select>
@@ -107,26 +109,26 @@ function TemplateDetailsCard({
                 onClick={onSaveVisibility}
                 disabled={isSaving}
               >
-                {isSaving ? 'Saving...' : 'Save'}
+                {isSaving ? t('saving') : t('save')}
               </Button>
             )}
           </>
         ) : (
-          <Chip size="small" label={`Visibility: ${template.visibility}`} variant="outlined" />
+          <Chip size="small" label={`${t('visibility')}: ${template.visibility}`} variant="outlined" />
         )}
         {template.status && (
-          <Chip size="small" label={`Status: ${template.status}`} variant="outlined" />
+          <Chip size="small" label={`${t('status')}: ${template.status}`} variant="outlined" />
         )}
         {template.createdBy && (
           <Typography variant="caption" color="text.secondary">
-            Created by: {template.createdBy}
+            {t('created_by')}: {template.createdBy}
           </Typography>
         )}
         <Typography variant="caption" color="text.secondary">
-          Created: {DateAndTimeService.convertSecondsToFormattedDateTime(template.createdAtInSeconds) ?? '—'}
+          {t('created')}: {DateAndTimeService.convertSecondsToFormattedDateTime(template.createdAtInSeconds) ?? '—'}
         </Typography>
         <Typography variant="caption" color="text.secondary">
-          Updated: {DateAndTimeService.convertSecondsToFormattedDateTime(template.updatedAtInSeconds) ?? '—'}
+          {t('updated')}: {DateAndTimeService.convertSecondsToFormattedDateTime(template.updatedAtInSeconds) ?? '—'}
         </Typography>
         {canCreate && (
           <Button
@@ -137,11 +139,11 @@ function TemplateDetailsCard({
             data-testid="template-create-process-model-button"
             onClick={onCreateProcessModel}
           >
-            Create Process Model
+            {t('create_process_model')}
           </Button>
         )}
         <Button size="small" variant="contained" data-testid="template-export-button" onClick={onExport}>
-          Export template
+          {t('export_template')}
         </Button>
         {canPublish && !template.isPublished && (
           <Button
@@ -151,7 +153,7 @@ function TemplateDetailsCard({
             data-testid="template-publish-button"
             onClick={onPublish}
           >
-            Publish
+            {t('publish')}
           </Button>
         )}
       </Box>
@@ -172,6 +174,7 @@ function TemplateDetailsCard({
 }
 
 export default function TemplateModelerPage() {
+  const { t } = useTranslation();
   const { templateId } = useParams<{ templateId: string }>();
   const navigate = useNavigate();
   const [template, setTemplate] = useState<Template | null>(null);
@@ -345,8 +348,8 @@ export default function TemplateModelerPage() {
         <Alert severity="error" onClose={() => setError(null)}>
           {error}
         </Alert>
-        <Button onClick={() => navigate('/templates')} sx={{ mt: 2 }}>
-          Back to Templates
+        <Button component={Link} to="/templates" startIcon={<ArrowBackIcon />} variant="text" sx={{ mb: 2 }}>
+          {t("back_to_templates")}
         </Button>
       </Box>
     );
@@ -356,15 +359,15 @@ export default function TemplateModelerPage() {
     return null;
   }
 
-  const hotCrumbs: [string, string?][] = [
-    ['Templates', '/templates'],
-    [template.name],
+  const breadcrumbs = [
+    [t("templates"), '/templates'],
+    [template.name, `/templates/${templateId}`],
   ];
 
   return (
     <Box sx={{ px: 2, pl: 3, pb: 3 }}>
       <Box sx={{ mb: 1 }}>
-        <ProcessBreadcrumb hotCrumbs={hotCrumbs} />
+        <ProcessBreadcrumb hotCrumbs={breadcrumbs} />
       </Box>
       {allVersions.length > 1 && (
         <Paper
@@ -378,10 +381,10 @@ export default function TemplateModelerPage() {
           }}
         >
           <FormControl size="small" sx={{ minWidth: 280 }} disabled={versionsLoading}>
-            <InputLabel id="template-version-label">All versions</InputLabel>
+            <InputLabel id="template-version-label">{t("all_versions")}</InputLabel>
             <Select
               labelId="template-version-label"
-              label="All versions"
+              label={t("all_versions")}
               data-testid="template-version-select"
               value={template.id}
               onChange={(e) => {
@@ -395,10 +398,10 @@ export default function TemplateModelerPage() {
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <span>{selected.version}</span>
                     {selected.isPublished && (
-                      <Chip label="Published" size="small" color="success" sx={{ height: 20 }} />
+                      <Chip label={t("published")} size="small" color="success" sx={{ height: 20 }} />
                     )}
                     {!selected.isPublished && (
-                      <Chip label="Draft" size="small" variant="outlined" sx={{ height: 20 }} />
+                      <Chip label={t("draft")} size="small" variant="outlined" sx={{ height: 20 }} />
                     )}
                   </Box>
                 );
@@ -409,14 +412,14 @@ export default function TemplateModelerPage() {
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
                     <span>{v.version}</span>
                     {v.isPublished && (
-                      <Chip label="Published" size="small" color="success" sx={{ height: 20 }} />
+                      <Chip label={t("published")} size="small" color="success" sx={{ height: 20 }} />
                     )}
                     {!v.isPublished && (
-                      <Chip label="Draft" size="small" variant="outlined" sx={{ height: 20 }} />
+                      <Chip label={t("draft")} size="small" variant="outlined" sx={{ height: 20 }} />
                     )}
                     {v.id === template.id && (
                       <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
-                        (current)
+                        {t("current")}
                       </Typography>
                     )}
                   </Box>
