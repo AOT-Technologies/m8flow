@@ -369,7 +369,7 @@ services:
         UPSTREAM_TAG: ${UPSTREAM_TAG:-}
     env_file: ../.env
     environment:
-      SPIFFWORKFLOW_FRONTEND_INTERNAL_PORT: "8080"
+      M8FLOW_FRONTEND_INTERNAL_PORT: "8080"
       BACKEND_BASE_URL: "${M8FLOW_FRONTEND_BACKEND_BASE_URL:-http://localhost:7000}"
     ports:
       - "${M8FLOW_FRONTEND_PORT:-7001}:8080"
