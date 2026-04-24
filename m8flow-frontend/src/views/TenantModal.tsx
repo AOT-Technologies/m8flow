@@ -10,6 +10,7 @@ import {
   TextField,
 } from "@mui/material";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import TenantService, { Tenant } from "../services/TenantService";
 import { TenantModalType } from "../enums/TenantModalType";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
@@ -28,23 +29,23 @@ const TENANT_SLUG_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 function validateTenantSlug(value: string): string {
   if (!value) {
-    return "Tenant slug cannot be empty";
+    return "tenant_slug_cannot_be_empty";
   }
   if (value.length > MAX_SLUG_LENGTH) {
-    return `Tenant slug must be ${MAX_SLUG_LENGTH} characters or fewer`;
+    return "tenant_slug_max_length";
   }
   if (!TENANT_SLUG_PATTERN.test(value)) {
-    return "Tenant slug can only contain letters, numbers, hyphens, and underscores";
+    return "tenant_slug_invalid_pattern";
   }
   return "";
 }
 
 function validateDisplayName(value: string): string {
   if (!value) {
-    return "Tenant display name cannot be empty";
+    return "tenant_display_name_cannot_be_empty";
   }
   if (value.length > MAX_DISPLAY_NAME_LENGTH) {
-    return `Tenant display name must be ${MAX_DISPLAY_NAME_LENGTH} characters or fewer`;
+    return "tenant_display_name_max_length";
   }
   return "";
 }
@@ -66,6 +67,7 @@ export default function TenantModal({
   onClose,
   onSuccess,
 }: TenantModalProps) {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
 
   // Create State
@@ -112,11 +114,11 @@ export default function TenantModal({
       const realmIdError = validateTenantSlug(trimmedRealmId);
       const displayNameError = validateDisplayName(trimmedDisplayName);
       if (realmIdError) {
-        setCreateRealmIdError(realmIdError);
+        setCreateRealmIdError(t(realmIdError, { count: MAX_SLUG_LENGTH }));
         hasValidationError = true;
       }
       if (displayNameError) {
-        setCreateDisplayNameError(displayNameError);
+        setCreateDisplayNameError(t(displayNameError, { count: MAX_DISPLAY_NAME_LENGTH }));
         hasValidationError = true;
       }
     } else if (type === TenantModalType.EDIT_TENANT) {
@@ -124,7 +126,7 @@ export default function TenantModal({
       const trimmedName = editName.trim();
       const editError = validateDisplayName(trimmedName);
       if (editError) {
-        setEditNameError(editError);
+        setEditNameError(t(editError, { count: MAX_DISPLAY_NAME_LENGTH }));
         hasValidationError = true;
       }
     }
@@ -154,8 +156,8 @@ export default function TenantModal({
       // }
       onSuccess(
         type === TenantModalType.CREATE_TENANT
-          ? "Tenant created successfully."
-          : "Tenant updated successfully.",
+          ? t("tenant_created_successfully")
+          : t("tenant_updated_successfully"),
       );
       onClose();
     } catch (err: any) {
@@ -166,7 +168,7 @@ export default function TenantModal({
         (errorMessage.toLowerCase().includes("already exists") ||
           errorMessage.toLowerCase().includes("conflict"))
       ) {
-        setCreateRealmIdError("Tenant slug already exists");
+        setCreateRealmIdError(t("tenant_slug_already_exists"));
         return;
       }
       const action =
@@ -175,7 +177,7 @@ export default function TenantModal({
           : type === TenantModalType.EDIT_TENANT
             ? "update"
             : "delete";
-      setSubmitError(errorMessage || `Failed to ${action} tenant. Please try again.`);
+      setSubmitError(errorMessage || t(`failed_to_${action}_tenant`));
     } finally {
       setLoading(false);
     }
@@ -183,7 +185,7 @@ export default function TenantModal({
 
   const isCreate = type === TenantModalType.CREATE_TENANT;
   const isDelete = type === TenantModalType.DELETE_TENANT;
-  const title = isDelete ? "Delete Tenant" : isCreate ? "Add Tenant" : "Edit Tenant";
+  const title = isDelete ? t("delete_tenant") : isCreate ? t("add_tenant") : t("edit_tenant");
 
   return (
     <Dialog
@@ -217,14 +219,14 @@ export default function TenantModal({
         {isDelete ? (
           <Stack spacing={2.5} sx={{ pt: 1 }}>
             <DialogContentText>
-              Are you sure you want to delete the tenant{" "}
+              {t("are_you_sure_you_want_to_delete_tenant")}{" "}
               <strong>"{tenant?.name}"</strong>?
             </DialogContentText>
 
             <DialogContentText
               sx={{ color: "error.main", fontWeight: 500, fontSize: "0.9rem" }}
             >
-              This action cannot be undone.
+              {t("action_cannot_be_undone")}
             </DialogContentText>
           </Stack>
         ) : (
@@ -237,7 +239,7 @@ export default function TenantModal({
             {isCreate ? (
               <>
                 <TextField
-                  label="Realm Slug"
+                  label={t("realm_slug")}
                   fullWidth
                   value={createRealmId}
                   onChange={(e) => {
@@ -256,7 +258,7 @@ export default function TenantModal({
                   data-testid="tenant-realm-id-input"
                 />
                 <TextField
-                  label="Display Name"
+                  label={t("display_name")}
                   fullWidth
                   value={createDisplayName}
                   onChange={(e) => {
@@ -277,7 +279,7 @@ export default function TenantModal({
               </>
             ) : (
               <TextField
-                label="Name"
+                label={t("name")}
                 fullWidth
                 value={editName}
                 onChange={(e) => {
@@ -322,7 +324,7 @@ export default function TenantModal({
           variant="outlined"
           autoFocus={isDelete}
         >
-          Cancel
+          {t("cancel")}
         </Button>
         <Button
           data-testid="tenant-modal-submit-button"
@@ -332,7 +334,7 @@ export default function TenantModal({
           autoFocus={!isDelete}
           disabled={loading}
         >
-          {loading ? "Processing..." : isDelete ? "Delete" : isCreate ? "Create" : "Save"}
+          {loading ? t("processing") : isDelete ? t("delete") : isCreate ? t("create") : t("save")}
         </Button>
       </DialogActions>
     </Dialog>

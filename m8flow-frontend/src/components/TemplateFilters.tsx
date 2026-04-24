@@ -12,6 +12,7 @@ import {
 } from '@mui/material';
 import { useState, useEffect, useRef } from 'react';
 import { useDebouncedCallback } from 'use-debounce';
+import { useTranslation } from 'react-i18next';
 import SearchOutlinedIcon from '@mui/icons-material/SearchOutlined';
 import { TemplateFilters as TemplateFiltersType, TemplateVisibility } from '../types/template';
 
@@ -28,6 +29,7 @@ export default function TemplateFilters({
   availableCategories = [],
   availableTags = [],
 }: TemplateFiltersProps) {
+  const { t } = useTranslation();
   const [searchText, setSearchText] = useState(filters.search || '');
   const isInitialMount = useRef(true);
   const filtersRef = useRef(filters);
@@ -111,7 +113,7 @@ export default function TemplateFilters({
           size="small"
           fullWidth
           variant="outlined"
-          placeholder="Search templates..."
+          placeholder={t("search_templates")}
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
           data-testid="template-filters-search-input"
@@ -126,15 +128,15 @@ export default function TemplateFilters({
       </Box>
 
       <FormControl size="small" sx={{ minWidth: 150 }}>
-        <InputLabel>Category</InputLabel>
+        <InputLabel>{t("category")}</InputLabel>
         <Select
           value={filters.category || ''}
-          label="Category"
+          label={t("category")}
           data-testid="template-filters-category-select"
           onChange={(e) => handleCategoryChange(e.target.value)}
         >
           <MenuItem value="">
-            <em>All Categories</em>
+            <em>{t("all_categories")}</em>
           </MenuItem>
           {availableCategories.map((category) => (
             <MenuItem key={category} value={category}>
@@ -145,33 +147,33 @@ export default function TemplateFilters({
       </FormControl>
 
       <FormControl size="small" sx={{ minWidth: 150 }}>
-        <InputLabel>Visibility</InputLabel>
+        <InputLabel>{t("visibility")}</InputLabel>
         <Select
           value={filters.visibility || ''}
-          label="Visibility"
+          label={t("visibility")}
           data-testid="template-filters-visibility-select"
           onChange={(e) => handleVisibilityChange(e.target.value as TemplateVisibility | '')}
         >
           <MenuItem value="">
-            <em>All</em>
+            <em>{t("all")}</em>
           </MenuItem>
-          <MenuItem value="PUBLIC">Public</MenuItem>
-          <MenuItem value="TENANT">Tenant</MenuItem>
-          <MenuItem value="PRIVATE">Private</MenuItem>
+          <MenuItem value="PUBLIC">{t("public")}</MenuItem>
+          <MenuItem value="TENANT">{t("tenant")}</MenuItem>
+          <MenuItem value="PRIVATE">{t("private")}</MenuItem>
         </Select>
       </FormControl>
 
       {availableTags.length > 0 && (
         <FormControl size="small" sx={{ minWidth: 150 }}>
-          <InputLabel>Tag</InputLabel>
+          <InputLabel>{t("tag")}</InputLabel>
           <Select
             value={filters.tag || ''}
-            label="Tag"
+            label={t("tag")}
             data-testid="template-filters-tag-select"
             onChange={(e) => handleTagChange(e.target.value)}
           >
             <MenuItem value="">
-              <em>All Tags</em>
+              <em>{t("all_tags")}</em>
             </MenuItem>
             {availableTags.map((tag) => (
               <MenuItem key={tag} value={tag}>
