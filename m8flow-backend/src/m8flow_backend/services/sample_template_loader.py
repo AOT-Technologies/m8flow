@@ -12,6 +12,7 @@ import os
 import re
 import zipfile
 
+from sqlalchemy import inspect
 from sqlalchemy.exc import IntegrityError
 
 from spiffworkflow_backend.models.db import db
@@ -104,23 +105,32 @@ def load_sample_templates(flask_app) -> None:  # noqa: ANN001
         return
 
     sample_dir = os.path.normpath(os.path.abspath(_SAMPLE_TEMPLATES_DIR))
-    if not os.path.isdir(sample_dir):
-        logger.warning("Sample templates directory not found: %s", sample_dir)
-        return
-
-    zip_files = sorted(f for f in os.listdir(sample_dir) if f.lower().endswith(".zip"))
-    if not zip_files:
-        logger.info("No sample template ZIP files found in %s", sample_dir)
-        return
-
-    logger.info("Loading sample templates from %s (%d ZIP files) ...", sample_dir, len(zip_files))
-
-    storage = FilesystemTemplateStorageService()
-    tenant_id = DEFAULT_TENANT_ID
     loaded = 0
     skipped = 0
 
     with flask_app.app_context():
+        if not inspect(db.engine).has_table(TemplateModel.__tablename__):
+            logger.warning(
+                "Skipping sample template loading because table %s does not exist yet; "
+                "run M8FLOW_BACKEND_UPGRADE_DB=1 or apply migrations first.",
+                TemplateModel.__tablename__,
+            )
+            return
+
+        if not os.path.isdir(sample_dir):
+            logger.warning("Sample templates directory not found: %s", sample_dir)
+            return
+
+        zip_files = sorted(f for f in os.listdir(sample_dir) if f.lower().endswith(".zip"))
+        if not zip_files:
+            logger.info("No sample template ZIP files found in %s", sample_dir)
+            return
+
+        logger.info("Loading sample templates from %s (%d ZIP files) ...", sample_dir, len(zip_files))
+
+        storage = FilesystemTemplateStorageService()
+        tenant_id = DEFAULT_TENANT_ID
+
         for zip_filename in zip_files:
             try:
                 template_key = _derive_template_key(zip_filename)
