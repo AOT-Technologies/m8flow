@@ -3,7 +3,6 @@ from __future__ import annotations
 import ast
 import base64
 from contextlib import contextmanager
-from functools import wraps
 import json
 import logging
 import time
@@ -164,13 +163,6 @@ def apply_auth_token_error_patch() -> None:
     AuthenticationService.get_auth_token_object = _patched_get_auth_token_object
     _TOKEN_ERROR_PATCHED = True
 
-
-def _call_original_get_redirect_uri_for_login_to_server(self) -> str:
-    if _ORIGINAL_GET_REDIRECT_URI_FOR_LOGIN_TO_SERVER is None:
-        raise RuntimeError(
-            "Original AuthenticationService.get_redirect_uri_for_login_to_server was not captured."
-        )
-    return _ORIGINAL_GET_REDIRECT_URI_FOR_LOGIN_TO_SERVER(self)
 
 
 def _patched_get_redirect_uri_for_login_to_server(self) -> str:
