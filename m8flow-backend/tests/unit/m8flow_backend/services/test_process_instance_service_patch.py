@@ -343,7 +343,6 @@ def test_apply_promotes_submitted_form_data_into_workflow_data_objects(monkeypat
             "decision": "Rejected",
         },
         "existing": "value",
-        "decision": "Rejected",
     }
     assert workflow.data_objects == {
         "lane_owners": {"Manager": ["editor"]},

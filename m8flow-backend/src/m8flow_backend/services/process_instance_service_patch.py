@@ -49,7 +49,6 @@ def apply() -> None:
             merged_data_objects.update(existing_data_objects)
         merged_data_objects.update(submitted_form_data)
         workflow_data["data_objects"] = merged_data_objects
-        workflow_data.update(submitted_form_data)
 
         workflow_data_objects = getattr(workflow, "data_objects", None)
         if isinstance(workflow_data_objects, dict):

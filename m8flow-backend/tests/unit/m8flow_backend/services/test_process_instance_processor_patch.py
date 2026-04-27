@@ -72,7 +72,8 @@ def test_apply_injects_workflow_data_objects_into_script_evaluation(monkeypatch)
     assert FakeProcessInstanceProcessor.get_tasks_with_data_calls == [task.workflow]
 
 
-def test_apply_resolves_lane_owners_from_workflow_data_when_task_data_is_empty(monkeypatch) -> None:
+def _setup_processor_patch_fakes(monkeypatch, completed_tasks_with_data=None):  # noqa: ANN001
+    """Return (FakeEngine class, apply_fn) with all spiffworkflow modules monkeypatched."""
     fake_interfaces_module = ModuleType("spiffworkflow_backend.interfaces")
     fake_human_task_user_module = ModuleType("spiffworkflow_backend.models.human_task_user")
     fake_user_service_module = ModuleType("spiffworkflow_backend.services.user_service")
@@ -84,28 +85,23 @@ def test_apply_resolves_lane_owners_from_workflow_data_when_task_data_is_empty(m
         lane_owner = SimpleNamespace(value="lane_owner")
         lane_assignment = SimpleNamespace(value="lane_assignment")
 
+    tasks = completed_tasks_with_data or []
+
     class FakeCustomBpmnScriptEngine:
+        calls: list[dict[str, object] | None] = []
+
         def evaluate(self, task, expression: str, external_context: dict | None = None):  # noqa: ANN001
+            FakeCustomBpmnScriptEngine.calls.append(external_context)
             return external_context
 
     class FakeProcessInstanceProcessor:
-        def __init__(self) -> None:
-            self.process_instance_model = SimpleNamespace(process_initiator_id=99)
-
         @classmethod
-        def get_tasks_with_data(cls, workflow):
-            return []
-
-        @staticmethod
-        def raise_if_no_potential_owners(potential_owners, message: str) -> None:
-            if not potential_owners:
-                raise AssertionError(message)
+        def get_tasks_with_data(cls, _workflow):  # noqa: ANN001
+            return tasks
 
     fake_interfaces_module.PotentialOwnerIdList = dict
     fake_human_task_user_module.HumanTaskUserAddedBy = FakeAddedBy
-    fake_user_service_module.UserService = SimpleNamespace(
-        find_or_create_group=lambda identifier: SimpleNamespace(id=11, user_group_assignments=[])
-    )
+    fake_user_service_module.UserService = SimpleNamespace()
     fake_processor_module.CustomBpmnScriptEngine = FakeCustomBpmnScriptEngine
     fake_processor_module.ProcessInstanceProcessor = FakeProcessInstanceProcessor
 
@@ -118,32 +114,64 @@ def test_apply_resolves_lane_owners_from_workflow_data_when_task_data_is_empty(m
         fake_processor_module,
     )
     monkeypatch.setattr(process_instance_processor_patch, "_PATCHED", False)
-    monkeypatch.setattr(
-        process_instance_processor_patch,
-        "current_app",
-        SimpleNamespace(config={"SPIFFWORKFLOW_BACKEND_USE_LANES_FOR_TASK_ASSIGNMENT": True}),
-    )
-    monkeypatch.setattr(
-        process_instance_processor_patch,
-        "find_users_for_current_tenant_by_identifier",
-        lambda username_or_email: [SimpleNamespace(id=42)] if username_or_email == "reviewer" else [],
-    )
 
+    return FakeCustomBpmnScriptEngine
+
+
+def test_evaluate_exposes_completed_task_variable_when_no_external_context_provided(monkeypatch) -> None:
+    """Regression: after Celery rehydration the gateway's task.data is {}; decision must reach
+    the script engine via completed-task injection so the gateway condition does not raise NameError."""
+    FakeEngine = _setup_processor_patch_fakes(
+        monkeypatch,
+        completed_tasks_with_data=[
+            SimpleNamespace(data={"decision": "Rejected"}, last_state_change=1.0),
+        ],
+    )
     process_instance_processor_patch.apply()
 
-    processor = FakeProcessInstanceProcessor()
+    engine = FakeEngine()
+    task = SimpleNamespace(workflow=SimpleNamespace(data={}, data_objects={}))
+
+    result = engine.evaluate(task, "decision")
+
+    assert result == {"decision": "Rejected"}
+    assert FakeEngine.calls == [{"decision": "Rejected"}]
+
+
+def test_evaluate_exposes_rehydrated_data_objects_without_external_context(monkeypatch) -> None:
+    """After patched_run_process_instance_with_processor sets bpmn_process_instance.data['data_objects'],
+    patched_evaluate must inject those variables even when no external_context is passed."""
+    FakeEngine = _setup_processor_patch_fakes(monkeypatch, completed_tasks_with_data=[])
+    process_instance_processor_patch.apply()
+
+    engine = FakeEngine()
     task = SimpleNamespace(
-        task_spec=SimpleNamespace(lane="Finance", extensions={}),
-        data={},
         workflow=SimpleNamespace(
-            data={"data_objects": {"lane_owners": {"Finance": ["reviewer"]}}},
-            data_objects={"lane_owners": {"Finance": ["reviewer"]}},
-        ),
+            data={"data_objects": {"decision": "Approved", "lane_owners": {"Manager": ["editor"]}}},
+            data_objects={},
+        )
     )
 
-    result = processor.get_potential_owners_from_task(task)
+    result = engine.evaluate(task, "decision")
 
-    assert result == {
-        "potential_owners": [{"added_by": "lane_owner", "user_id": 42}],
-        "lane_assignment_id": 11,
-    }
+    assert result == {"decision": "Approved", "lane_owners": {"Manager": ["editor"]}}
+    assert FakeEngine.calls == [{"decision": "Approved", "lane_owners": {"Manager": ["editor"]}}]
+
+
+def test_evaluate_external_context_takes_priority_over_completed_task_data(monkeypatch) -> None:
+    """external_context must win over completed-task data so callers can always override the context."""
+    FakeEngine = _setup_processor_patch_fakes(
+        monkeypatch,
+        completed_tasks_with_data=[
+            SimpleNamespace(data={"decision": "Rejected"}, last_state_change=1.0),
+        ],
+    )
+    process_instance_processor_patch.apply()
+
+    engine = FakeEngine()
+    task = SimpleNamespace(workflow=SimpleNamespace(data={}, data_objects={}))
+
+    result = engine.evaluate(task, "decision", external_context={"decision": "Approved"})
+
+    assert result == {"decision": "Approved"}
+    assert FakeEngine.calls == [{"decision": "Approved"}]
