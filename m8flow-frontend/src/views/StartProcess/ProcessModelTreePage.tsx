@@ -15,6 +15,7 @@ import {
 } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { jwtDecode } from 'jwt-decode';
 import { Can } from '@casl/react';
 import { Subject } from 'rxjs';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -45,6 +46,7 @@ import { useUriListForPermissions } from '../../hooks/UriListForPermissions';
 import { usePermissionFetcher } from '../../hooks/PermissionService';
 import ConfirmIconButton from '../../components/ConfirmIconButton';
 import HttpService from '../../services/HttpService';
+import UserService from '../../services/UserService';
 
 const SPIFF_ID = 'spifftop';
 type Crumb = { id: string; displayName: string };
@@ -53,6 +55,19 @@ type OwnProps = {
   setNavElementCallback?: Function;
   navigateToPage?: boolean;
 };
+
+function isAdminUser(): boolean {
+  const accessToken = UserService.getAccessToken();
+  if (!accessToken) return false;
+  try {
+    const decoded: any = jwtDecode(accessToken);
+    const roles: string[] = decoded?.realm_access?.roles || [];
+    const groups: string[] = decoded?.groups || [];
+    return roles.includes('tenant-admin') || groups.includes('tenant-admin');
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Converts a ProcessGroup to a ProcessGroupLite.
@@ -80,7 +95,7 @@ export default function ProcessModelTreePage({
   const { t } = useTranslation();
   const params = useParams();
   const navigate = useNavigate();
-  const { processGroups } = useProcessGroups({ processInfo: {} });
+  const { processGroups, refetch } = useProcessGroups({ processInfo: {} });
   const [groups, setGroups] = useState<
     ProcessGroup[] | ProcessGroupLite[] | null
   >(null);
@@ -450,6 +465,8 @@ export default function ProcessModelTreePage({
       HttpService.makeCallToBackend({
         path: `/process-groups/${modifiedGroupId}`,
         successCallback: () => {
+          // Re-fetch from backend so soft-deleted items disappear immediately
+          refetch();
           handleCrumbClick({
             id: parendGroupId.replaceAll(':', '/'),
             displayName: 'NOT_USED',
@@ -594,22 +611,24 @@ export default function ProcessModelTreePage({
                             <Edit />
                           </IconButton>
                         </Can>
-                        <Can
-                          I="DELETE"
-                          a={targetUris.processGroupShowPath}
-                          ability={ability}
-                        >
-                          <ConfirmIconButton
-                            data-testid="delete-process-group-button"
-                            renderIcon={<Delete />}
-                            iconDescription={t('delete_process_group')}
-                            description={t('delete_process_group_with_name', {
-                              name: currentProcessGroup.display_name,
-                            })}
-                            onConfirmation={deleteProcessGroup}
-                            confirmButtonLabel={t('delete')}
-                          />
-                        </Can>
+                        {isAdminUser() && (
+                          <Can
+                            I="DELETE"
+                            a={targetUris.processGroupShowPath}
+                            ability={ability}
+                          >
+                            <ConfirmIconButton
+                              data-testid="delete-process-group-button"
+                              renderIcon={<Delete />}
+                              iconDescription={t('delete_process_group')}
+                              description={t('delete_process_group_with_name', {
+                                name: currentProcessGroup.display_name,
+                              })}
+                              onConfirmation={deleteProcessGroup}
+                              confirmButtonLabel={t('delete')}
+                            />
+                          </Can>
+                        )}
                       </Box>
                     </>
                   ) : (
