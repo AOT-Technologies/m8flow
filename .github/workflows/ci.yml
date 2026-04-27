@@ -215,6 +215,21 @@ jobs:
     if: ${{ (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true' || needs.changes.outputs.extensions_backend == 'true' || needs.changes.outputs.docker_m8flow == 'true') && github.event_name == 'pull_request' }}
     steps:
       - uses: actions/checkout@v4
+      - name: Guard against floating connector refs
+        run: |
+          if grep -E 'branch\s*=\s*"(main|master|develop)"' m8flow-connector-proxy/pyproject.toml; then
+            echo "::error::Connector dependencies must pin a tag or rev, not a branch."
+            exit 1
+          fi
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12.1"
+      - name: Validate connector-proxy lock file
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install poetry==2.2.1
+          cd m8flow-connector-proxy
+          poetry check --lock
       - uses: docker/setup-buildx-action@v3
       - name: Backend image build (no push)
         run: |
