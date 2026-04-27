@@ -35,7 +35,9 @@ def apply() -> None:
     if _PATCHED:
         return
 
-    from spiffworkflow_backend.routes import tasks_controller
+    import importlib
+
+    tasks_controller = importlib.import_module("spiffworkflow_backend.routes.tasks_controller")
 
     original_get_tasks = tasks_controller._get_tasks
     original_task_list_my_tasks = tasks_controller.task_list_my_tasks

@@ -101,6 +101,10 @@ def test_apply_forces_completed_task_data_when_rehydrating_process_instance(monk
 
     class FakeProcessInstanceService:
         @staticmethod
+        def create_process_instance(*_args, **_kwargs):
+            return (SimpleNamespace(id=0, m8f_tenant_id=None), None)
+
+        @staticmethod
         def schedule_next_process_model_cycle(*args, **kwargs):
             return None
 
@@ -244,7 +248,11 @@ def test_apply_promotes_submitted_form_data_into_workflow_data_objects(monkeypat
         original_update_form_task_data_calls: list[dict[str, object]] = []
 
         @staticmethod
-        def schedule_next_process_model_cycle(*args, **kwargs):
+        def create_process_instance(*_args, **_kwargs):
+            return (SimpleNamespace(id=0, m8f_tenant_id=None), None)
+
+        @staticmethod
+        def schedule_next_process_model_cycle(*_args, **_kwargs):
             return None
 
         @staticmethod

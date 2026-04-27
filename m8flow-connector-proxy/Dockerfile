@@ -26,9 +26,9 @@ RUN apt-get update \
   && apt-get install -y -q gcc git libssl-dev pkg-config libsqlite3-0=3.40.1-2+deb12u2 \
   && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml poetry.lock /app/
-RUN poetry lock && poetry install --no-interaction --no-root || \
-    (rm -rf /app/venv/src/m8flow-connectors && poetry lock && poetry install --no-interaction --no-root)
+COPY pyproject.toml poetry.lock README.md /app/
+RUN poetry check --lock \
+  && poetry install --no-interaction --no-root --sync
 
 COPY . /app
 RUN chmod +x bin/*
