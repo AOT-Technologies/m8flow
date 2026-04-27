@@ -24,15 +24,6 @@ def _unique_exists(table: str, name: str) -> bool:
     return any(constraint.get("name") == name for constraint in insp.get_unique_constraints(table))
 
 
-def _realm_key_from_service(service: str | None) -> str:
-    if isinstance(service, str) and "/realms/" in service:
-        return service.split("/realms/")[-1].split("/")[0]
-    if not service:
-        return "unknown"
-    normalized = service.rstrip("/")
-    return normalized.replace("://", "_").replace("/", "_")[-32:] or "unknown"
-
-
 def _user_recency_key(row: dict[str, object]) -> tuple[int, int, int]:
     return (
         int(row.get("updated_at_in_seconds", 0) or 0),
@@ -93,21 +84,28 @@ def _update_username(user_id: int, username: str) -> None:
     conn.execute(stmt, {"target_id": user_id, "new_username": username})
 
 
-def _rename_duplicate_usernames_within_realm() -> None:
+def _rename_duplicate_usernames_for_exact_service() -> None:
+    """Rename users that share (username, service) — the key enforced by the constraint.
+
+    Rows where service IS NULL are intentionally skipped: PostgreSQL treats each NULL as
+    distinct in a UNIQUE constraint, so (username, NULL) rows can never violate
+    UNIQUE(username, service) regardless of how many exist.
+    """
     rows = _load_users()
-    rows_by_realm_and_username: dict[tuple[str, str], list[dict[str, object]]] = defaultdict(list)
-    used_usernames_by_realm: dict[str, set[str]] = defaultdict(set)
+    rows_by_key: dict[tuple[str, str], list[dict[str, object]]] = defaultdict(list)
+    used_usernames_by_service: dict[str, set[str]] = defaultdict(set)
 
     for row in rows:
         username = row.get("username")
         service = row.get("service")
         if not isinstance(username, str):
             continue
-        realm_key = _realm_key_from_service(service if isinstance(service, str) else None)
-        used_usernames_by_realm[realm_key].add(username)
-        rows_by_realm_and_username[(realm_key, username)].append(row)
+        if not isinstance(service, str):
+            continue
+        used_usernames_by_service[service].add(username)
+        rows_by_key[(username, service)].append(row)
 
-    for (realm_key, _username), duplicate_rows in rows_by_realm_and_username.items():
+    for (_username, service), duplicate_rows in rows_by_key.items():
         if len(duplicate_rows) < 2:
             continue
 
@@ -116,7 +114,7 @@ def _rename_duplicate_usernames_within_realm() -> None:
         if not isinstance(survivor_username, str):
             continue
 
-        used_usernames = used_usernames_by_realm[realm_key]
+        used_usernames = used_usernames_by_service[service]
         for loser in losers:
             loser_id = loser.get("id")
             if not isinstance(loser_id, int):
@@ -126,7 +124,7 @@ def _rename_duplicate_usernames_within_realm() -> None:
 
 
 def upgrade() -> None:
-    _rename_duplicate_usernames_within_realm()
+    _rename_duplicate_usernames_for_exact_service()
 
     if not _unique_exists(TABLE_NAME, CONSTRAINT_NAME):
         op.create_unique_constraint(CONSTRAINT_NAME, TABLE_NAME, ["username", "service"])

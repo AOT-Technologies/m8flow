@@ -161,13 +161,6 @@ def test_find_existing_user_for_sign_in_resolves_exact_subject_only() -> None:
     assert match is None
 
 
-def test_user_realm_migration_extracts_keycloak_realm() -> None:
-    migration = _load_user_realm_migration_module()
-
-    assert migration._realm_key_from_service("http://localhost:7002/realms/m8flow") == "m8flow"  # NOSONAR
-    assert migration._realm_key_from_service("https://auth.example.com/realms/tenant-a/") == "tenant-a"
-
-
 def test_user_realm_migration_picks_most_recent_duplicate() -> None:
     migration = _load_user_realm_migration_module()
 

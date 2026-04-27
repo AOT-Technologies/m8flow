@@ -9,6 +9,15 @@ from m8flow_backend.services.tenant_identity_helpers import find_users_for_curre
 _PATCHED = False
 
 
+def _task_sort_ts(task: object) -> float:
+    val = getattr(task, "last_state_change", None)
+    if isinstance(val, (int, float)):
+        return float(val)
+    if hasattr(val, "timestamp"):
+        return val.timestamp()
+    return 0.0
+
+
 def apply() -> None:
     """Patch lane-owner resolution so task potential owners stay tenant-aware."""
     global _PATCHED
@@ -94,7 +103,7 @@ def apply() -> None:
             completed_tasks_with_data = ProcessInstanceProcessor.get_tasks_with_data(task_workflow)
             for completed_task in sorted(
                 completed_tasks_with_data,
-                key=lambda workflow_task: getattr(workflow_task, "last_state_change", 0) or 0,
+                key=_task_sort_ts,
             ):
                 completed_task_data = getattr(completed_task, "data", None)
                 if isinstance(completed_task_data, dict) and completed_task_data:

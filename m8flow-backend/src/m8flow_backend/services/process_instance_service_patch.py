@@ -8,6 +8,15 @@ from flask import current_app
 _PATCHED = False
 
 
+def _task_sort_ts(task: object) -> float:
+    val = getattr(task, "last_state_change", None)
+    if isinstance(val, (int, float)):
+        return float(val)
+    if hasattr(val, "timestamp"):
+        return val.timestamp()
+    return 0.0
+
+
 def apply() -> None:
     """Patch ProcessInstanceService: record BPMN XML version at creation time and fix completed-task data rehydration."""
     global _PATCHED
@@ -159,7 +168,7 @@ def apply() -> None:
             existing_data_objects = processor.bpmn_process_instance.data.get("data_objects")
             if isinstance(existing_data_objects, dict) and existing_data_objects:
                 merged_data_objects.update(existing_data_objects)
-            for completed_task in sorted(completed_tasks_with_data, key=lambda task: task.last_state_change or 0):
+            for completed_task in sorted(completed_tasks_with_data, key=_task_sort_ts):
                 if isinstance(completed_task.data, dict) and completed_task.data:
                     merged_data_objects.update(completed_task.data)
             if merged_data_objects:
