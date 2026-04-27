@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { jwtDecode } from 'jwt-decode';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
@@ -21,6 +22,7 @@ import { Can } from '@casl/react';
 // Example icon
 import ProcessBreadcrumb from '../components/ProcessBreadcrumb';
 import HttpService from '../services/HttpService';
+import UserService from '../services/UserService';
 import useAPIError from '../hooks/UseApiError';
 
 import {
@@ -40,6 +42,18 @@ import ProcessModelCopyModal from '../components/ProcessModelCopyModal';
 import SpiffTooltip from '../components/SpiffTooltip';
 import { useConfirmationDialog } from '../hooks/useConfirmationDialog';
 
+function isAdminUser(): boolean {
+  const accessToken = UserService.getAccessToken();
+  if (!accessToken) return false;
+  try {
+    const decoded: any = jwtDecode(accessToken);
+    const roles: string[] = decoded?.realm_access?.roles || [];
+    const groups: string[] = decoded?.groups || [];
+    return roles.includes('tenant-admin') || groups.includes('tenant-admin');
+  } catch {
+    return false;
+  }
+}
 
 export default function ProcessModelShow() {
   const params = useParams();
@@ -392,24 +406,26 @@ export default function ProcessModelShow() {
                 </MenuItem>
               </Can>
             ) : null}
-            <Can
-              I="DELETE"
-              a={targetUris.processModelShowPath}
-              ability={ability}
-            >
-              <MenuItem
-                data-testid="delete-process-model-menu-item"
-                onClick={() => {
-                  handleActionsMenuClose();
-                  openDeleteConfirmation();
-                }}
+            {isAdminUser() && (
+              <Can
+                I="DELETE"
+                a={targetUris.processModelShowPath}
+                ability={ability}
               >
-                <ListItemIcon>
-                  <Delete fontSize="small" />
-                </ListItemIcon>
-                <ListItemText>{t('delete_process_model')}</ListItemText>
-              </MenuItem>
-            </Can>
+                <MenuItem
+                  data-testid="delete-process-model-menu-item"
+                  onClick={() => {
+                    handleActionsMenuClose();
+                    openDeleteConfirmation();
+                  }}
+                >
+                  <ListItemIcon>
+                    <Delete fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>{t('delete_process_model')}</ListItemText>
+                </MenuItem>
+              </Can>
+            )}
           </Menu>
 
           {/* Keep frequently used actions outside menu */}

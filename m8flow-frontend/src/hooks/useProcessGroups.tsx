@@ -55,7 +55,7 @@ export default function useProcessGroups({
     return true;
   };
 
-  useQuery({
+  const { refetch } = useQuery({
     queryKey: [path, processInfo],
     queryFn: () => getProcessGroups(),
   });
@@ -63,5 +63,6 @@ export default function useProcessGroups({
   return {
     processGroups,
     loading,
+    refetch,
   };
 }
