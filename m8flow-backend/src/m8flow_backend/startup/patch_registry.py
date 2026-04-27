@@ -203,6 +203,10 @@ POST_APP_EXTENSION_PATCH_SPECS: tuple[PatchSpec, ...] = (
         ignore_errors=True,
     ),
     PatchSpec(
+        target="m8flow_backend.services.process_instance_service_patch:apply",
+        minimum_phase=BootPhase.APP_CREATED,
+    ),
+    PatchSpec(
         target="m8flow_backend.services.process_instance_processor_patch:apply",
         minimum_phase=BootPhase.APP_CREATED,
     ),

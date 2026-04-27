@@ -18,8 +18,41 @@ def apply() -> None:
     from SpiffWorkflow.task import Task as SpiffTask  # type: ignore
     from spiffworkflow_backend.interfaces import PotentialOwnerIdList
     from spiffworkflow_backend.models.human_task_user import HumanTaskUserAddedBy
+    from spiffworkflow_backend.services.process_instance_processor import CustomBpmnScriptEngine
     from spiffworkflow_backend.services.process_instance_processor import ProcessInstanceProcessor
     from spiffworkflow_backend.services.user_service import UserService
+
+    def lane_owners_for_task(task, task_lane: str):  # noqa: ANN001
+        """Resolve lane-owner mappings from task-local data first, then workflow-level state."""
+        possible_sources = []
+
+        task_data = getattr(task, "data", None)
+        if isinstance(task_data, dict) and task_data:
+            possible_sources.append(task_data)
+
+        task_workflow = getattr(task, "workflow", None)
+        workflow_data = getattr(task_workflow, "data", None)
+        if isinstance(workflow_data, dict) and workflow_data:
+            possible_sources.append(workflow_data)
+            workflow_data_objects_from_data = workflow_data.get("data_objects")
+            if isinstance(workflow_data_objects_from_data, dict) and workflow_data_objects_from_data:
+                possible_sources.append(workflow_data_objects_from_data)
+
+        workflow_data_objects = getattr(task_workflow, "data_objects", None)
+        if isinstance(workflow_data_objects, dict) and workflow_data_objects:
+            possible_sources.append(workflow_data_objects)
+
+        for source in possible_sources:
+            lane_owners = source.get("lane_owners")
+            if not isinstance(lane_owners, dict):
+                continue
+            lane_owner_values = lane_owners.get(task_lane)
+            if isinstance(lane_owner_values, list) and lane_owner_values:
+                return lane_owner_values
+            if isinstance(lane_owner_values, str) and lane_owner_values:
+                return [lane_owner_values]
+
+        return None
 
     def patched_get_potential_owners_from_task(self: ProcessInstanceProcessor, task: SpiffTask) -> PotentialOwnerIdList:
         """Resolve guest, initiator, lane-assignment, and lane-owner users within the current tenant."""
@@ -46,8 +79,9 @@ def apply() -> None:
         else:
             group_model = UserService.find_or_create_group(task_lane)
             lane_assignment_id = group_model.id
-            if "lane_owners" in task.data and task_lane in task.data["lane_owners"]:
-                for username_or_email in task.data["lane_owners"][task_lane]:
+            task_lane_owners = lane_owners_for_task(task, task_lane)
+            if task_lane_owners:
+                for username_or_email in task_lane_owners:
                     for lane_owner_user in find_users_for_current_tenant_by_identifier(username_or_email):
                         potential_owners.append(
                             {"added_by": HumanTaskUserAddedBy.lane_owner.value, "user_id": lane_owner_user.id}
@@ -57,7 +91,7 @@ def apply() -> None:
                     (
                         "No users found in task data lane owner list for lane:"
                         f" {task_lane}. The user list used:"
-                        f" {task.data['lane_owners'][task_lane]}"
+                        f" {task_lane_owners}"
                     ),
                 )
             else:
@@ -71,5 +105,39 @@ def apply() -> None:
             "lane_assignment_id": lane_assignment_id,
         }
 
+    original_evaluate = CustomBpmnScriptEngine.evaluate
+
+    def patched_evaluate(self, task, expression: str, external_context: dict | None = None):  # noqa: ANN001
+        """Expose workflow-level and completed-task data to script and DMN evaluation."""
+        merged_external_context = {}
+        task_workflow = getattr(task, "workflow", None)
+
+        workflow_data = getattr(task_workflow, "data", None)
+        if isinstance(workflow_data, dict) and workflow_data:
+            workflow_data_objects_from_data = workflow_data.get("data_objects")
+            if isinstance(workflow_data_objects_from_data, dict) and workflow_data_objects_from_data:
+                merged_external_context.update(workflow_data_objects_from_data)
+            merged_external_context.update({k: v for k, v in workflow_data.items() if k != "data_objects"})
+
+        workflow_data_objects = getattr(task_workflow, "data_objects", None)
+        if isinstance(workflow_data_objects, dict) and workflow_data_objects:
+            merged_external_context.update(workflow_data_objects)
+
+        if task_workflow is not None and hasattr(ProcessInstanceProcessor, "get_tasks_with_data"):
+            completed_tasks_with_data = ProcessInstanceProcessor.get_tasks_with_data(task_workflow)
+            for completed_task in sorted(
+                completed_tasks_with_data,
+                key=lambda workflow_task: getattr(workflow_task, "last_state_change", 0) or 0,
+            ):
+                completed_task_data = getattr(completed_task, "data", None)
+                if isinstance(completed_task_data, dict) and completed_task_data:
+                    merged_external_context.update(completed_task_data)
+
+        if isinstance(external_context, dict) and external_context:
+            merged_external_context.update(external_context)
+
+        return original_evaluate(self, task, expression, external_context=merged_external_context)
+
+    CustomBpmnScriptEngine.evaluate = patched_evaluate
     ProcessInstanceProcessor.get_potential_owners_from_task = patched_get_potential_owners_from_task
     _PATCHED = True
