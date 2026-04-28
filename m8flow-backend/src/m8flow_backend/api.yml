@@ -1090,7 +1090,13 @@ paths:
               $ref: "#/components/schemas/M8flowTriggerRequest"
       responses:
         "200":
-          description: Event accepted successfully
+          description: Event accepted and process instance created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/M8flowTriggerResponse"
+        "202":
+          description: Event published to NATS but no reply received from the consumer within the timeout window. The process instance may still be created asynchronously.
           content:
             application/json:
               schema:
@@ -1113,6 +1119,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Event was published and the consumer processed it, but process instance creation failed due to a validation or process model error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/M8flowTriggerResponse"
         "500":
           description: Internal server error
           content:
@@ -1406,6 +1418,13 @@ components:
           description: >
             Arbitrary caller-supplied payload. Can be any JSON value
             (object, array, string, number, or boolean).
+          oneOf:
+            - type: object
+              additionalProperties: true
+            - type: array
+            - type: string
+            - type: number
+            - type: boolean
 
     M8flowTriggerResponse:
       type: object
@@ -1416,14 +1435,31 @@ components:
         message:
           type: string
           example: "Event received."
-        tenant_id:
-          type: string
-          description: Resolved tenant identifier for the request
-        process_identifier:
-          type: string
-          description: The process identifier from the request header
-        username:
-          type: string
-          description: The username from the request header
         data:
-          description: Echo of the data field from the request body
+          type: object
+          description: Detailed response data including tenant context, event echo, and process instance details
+          properties:
+            tenant_id:
+              type: string
+              description: Resolved tenant identifier for the request
+            tenant_slug:
+              type: string
+              description: Tenant slug from the request header
+            process_identifier:
+              type: string
+              description: The process identifier from the request header
+            username:
+              type: string
+              description: The username from the request header
+            event:
+              type: object
+              additionalProperties: true
+              description: Echo of the published event data (excluding internal fields)
+            error:
+              type: string
+              description: Error message if process instance creation failed (present on 422 responses)
+            process_instance:
+              description: Process instance details if created successfully, null otherwise
+              type: object
+              additionalProperties: true
+              nullable: true

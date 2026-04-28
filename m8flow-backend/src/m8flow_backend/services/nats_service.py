@@ -6,6 +6,7 @@ import uuid
 from nats.aio.client import Client as NATS
 from nats.js.errors import NotFoundError
 from m8flow_backend.config import nats_url
+from spiffworkflow_backend.exceptions.api_error import ApiError
 
 logger = logging.getLogger("m8flow.nats.service")
 
