@@ -210,7 +210,7 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
             tenant_id,
             process_identifier,
             username,
-            data.get("payload", {}),
+            data.get("payload") or {},
         )
 
         logger.info(

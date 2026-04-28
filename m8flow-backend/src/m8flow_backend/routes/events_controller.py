@@ -95,13 +95,6 @@ def m8flow_trigger() -> tuple:
     body = request.get_json(silent=True) or {}
     data = body.get("data")
 
-    if data is None:
-        raise ApiError(
-            error_code="missing_data_field",
-            message="Request body must be JSON with a top-level 'data' field.",
-            status_code=400,
-        )
-
     # We use the provided_stream_name from the header for the NATS publish as requested.
     try:
         event_data = NatsService.publish_event(

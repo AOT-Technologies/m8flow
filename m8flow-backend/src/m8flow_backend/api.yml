@@ -1083,7 +1083,7 @@ paths:
           description: The NATS stream name to publish the event to.
 
       requestBody:
-        required: true
+        required: false
         content:
           application/json:
             schema:
@@ -1411,8 +1411,7 @@ components:
 
     M8flowTriggerRequest:
       type: object
-      required:
-        - data
+
       properties:
         data:
           description: >
