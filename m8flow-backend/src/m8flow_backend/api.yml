@@ -1034,6 +1034,92 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /events/m8flow-trigger:
+    post:
+      summary: Receive an external trigger event
+      description: >
+        Public webhook endpoint that accepts an external trigger payload, publishes
+        a NATS event, and synchronously waits for the process instance to be created.
+        Returns the created process instance details. The caller must supply a valid
+        tenant API key (generated via POST /api/nats-tokens) in the X-M8FLOW-NATS-API-Key header.
+        No Keycloak JWT is required.
+      operationId: m8flow_backend.routes.events_controller.m8flow_trigger
+      tags:
+        - Events
+      security: []
+      parameters:
+        - name: X-M8FLOW-NATS-API-Key
+          in: header
+          required: true
+          schema:
+            type: string
+          description: >
+            A valid tenant API key obtained from POST /api/nats-tokens.
+            The key is validated via HMAC-SHA256 against the stored hash.
+
+        - name: X-M8FLOW-Process-Identifier
+          in: header
+          required: true
+          schema:
+            type: string
+          description: The identifier of the process to trigger.
+        - name: X-M8FLOW-Username
+          in: header
+          required: true
+          schema:
+            type: string
+          description: The username on whose behalf the process is triggered.
+        - name: X-M8FLOW-Tenant-Slug
+          in: header
+          required: true
+          schema:
+            type: string
+          description: The human-readable slug of the tenant.
+        - name: X-M8FLOW-Stream-Name
+          in: header
+          required: true
+          schema:
+            type: string
+          description: The NATS stream name to publish the event to.
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/M8flowTriggerRequest"
+      responses:
+        "200":
+          description: Event accepted successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/M8flowTriggerResponse"
+        "400":
+          description: Bad request – missing or malformed body / missing tenant context
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized – X-M8FLOW-API-Key header is absent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden – X-M8FLOW-API-Key is invalid or revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthResponse:
@@ -1310,3 +1396,34 @@ components:
           type: integer
         modifiedBy:
           type: string
+
+    M8flowTriggerRequest:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          description: >
+            Arbitrary caller-supplied payload. Can be any JSON value
+            (object, array, string, number, or boolean).
+
+    M8flowTriggerResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "Event received."
+        tenant_id:
+          type: string
+          description: Resolved tenant identifier for the request
+        process_identifier:
+          type: string
+          description: The process identifier from the request header
+        username:
+          type: string
+          description: The username from the request header
+        data:
+          description: Echo of the data field from the request body

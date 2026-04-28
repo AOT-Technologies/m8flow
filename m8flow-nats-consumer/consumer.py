@@ -88,8 +88,16 @@ def instantiate_process(
                 data_to_inject=data_to_inject,
                 user=user,
             )
+            instance = processor.process_instance_model
             db.session.commit()
-            return processor.process_instance_model.id
+            return {
+                "id": instance.id,
+                "status": instance.status,
+                "process_model_identifier": instance.process_model_identifier,
+                "created_at_in_seconds": instance.created_at_in_seconds,
+                "updated_at_in_seconds": instance.updated_at_in_seconds,
+            }
+
         except Exception:
             db.session.rollback()
             raise
@@ -126,12 +134,12 @@ def _extract_tenant_from_subject(subject: str) -> str | None:
     return None
 
 
-async def process_message(msg: Any, kv: KeyValue | None) -> None:
+async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
     """Authenticate and process a single NATS event."""
     from spiffworkflow_backend.exceptions.api_error import ApiError
     try:
         data = json.loads(msg.data.decode("utf-8"))
-        logger.debug("Received event: %s", data)
+
     except Exception as e:
         logger.error("Failed to parse message data: %s", e)
         await msg.ack()
@@ -144,16 +152,28 @@ async def process_message(msg: Any, kv: KeyValue | None) -> None:
         await msg.ack()
         return
 
-    # If the payload also carries a tenant_id, it must match the subject
-    payload_tenant_id  = data.get("tenant_id")
-    if payload_tenant_id and payload_tenant_id != subject_tenant_id:
+    # The NATS subject carries the slug for routing (e.g. m8flow.events.zoro.trigger).
+    # The payload carries the tenant UUID for auth and process instantiation.
+    # Use the UUID from the payload as the authoritative tenant_id.
+    payload_tenant_id = data.get("tenant_id")
+    payload_tenant_slug = data.get("tenant_slug")
+
+    if not payload_tenant_id:
+        logger.error("Event payload missing 'tenant_id' (UUID). Discarding. subject=%s", msg.subject)
+        await msg.ack()
+        return
+
+    # Optional: validate that the slug in the subject matches what the publisher sent
+    if payload_tenant_slug and payload_tenant_slug != subject_tenant_id:
         logger.error(
-            "Tenant mismatch: payload tenant does not match subject tenant. Event discarded."
+            "Tenant slug mismatch: subject slug '%s' != payload slug '%s'. Event discarded.",
+            subject_tenant_id, payload_tenant_slug,
         )
         await msg.ack()
         return
 
-    tenant_id          = subject_tenant_id
+    tenant_id = payload_tenant_id  # UUID
+
     process_identifier = data.get("process_identifier")
     username           = data.get("username")
     event_id           = data.get("id")
@@ -220,9 +240,19 @@ async def process_message(msg: Any, kv: KeyValue | None) -> None:
 
         logger.info(
             "Process instance created | tenant=%s identifier=%s instance_id=%s",
-            tenant_id, process_identifier, instance_id,
+            tenant_id, process_identifier, instance_id.get("id"),
         )
         await msg.ack()
+
+        # Reply to the publisher with process instance details
+        reply_to = data.get("reply_to")
+        if reply_to and instance_id:
+            try:
+                await nc.publish(reply_to, json.dumps(instance_id).encode("utf-8"))
+
+            except Exception as e:
+                logger.warning("Failed to send reply to %s: %s", reply_to, e)
+
     except ApiError as e:
         # Permanent business-logic failure (e.g. missing lane users, invalid BPMN config).
         # NAKing would cause endless retries since the data won't change — ACK to discard.
@@ -313,7 +343,7 @@ async def main() -> None:
         try:
             msgs = await sub.fetch(batch=FETCH_BATCH, timeout=FETCH_TIMEOUT)
             for msg in msgs:
-                await process_message(msg, kv)
+                await process_message(msg, kv, nc)
         except TimeoutError:
             pass
         except ConnectionClosedError:
