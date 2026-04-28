@@ -19,6 +19,15 @@ def _inspector() -> sa.Inspector:
     return sa.inspect(op.get_bind())
 
 
+def _get_username_max_length() -> int:
+    for col in _inspector().get_columns(TABLE_NAME):
+        if col["name"] == "username":
+            col_type = col.get("type")
+            if hasattr(col_type, "length") and col_type.length:
+                return int(col_type.length)
+    return 255
+
+
 def _unique_exists(table: str, name: str) -> bool:
     insp = _inspector()
     return any(constraint.get("name") == name for constraint in insp.get_unique_constraints(table))
@@ -37,14 +46,16 @@ def _pick_survivor_and_losers(rows: list[dict[str, object]]) -> tuple[dict[str, 
     return ordered_rows[0], ordered_rows[1:]
 
 
-def _next_available_username(base_username: str, used_usernames: set[str]) -> str:
+def _next_available_username(base_username: str, used_usernames: set[str], max_length: int) -> str:
     suffix = 2
-    candidate = f"{base_username}{suffix}"
-    while candidate in used_usernames:
+    while True:
+        suffix_str = str(suffix)
+        truncated_base = base_username[: max_length - len(suffix_str)]
+        candidate = f"{truncated_base}{suffix_str}"
+        if candidate not in used_usernames:
+            used_usernames.add(candidate)
+            return candidate
         suffix += 1
-        candidate = f"{base_username}{suffix}"
-    used_usernames.add(candidate)
-    return candidate
 
 
 def _load_users() -> list[dict[str, object]]:
@@ -91,6 +102,7 @@ def _rename_duplicate_usernames_for_exact_service() -> None:
     distinct in a UNIQUE constraint, so (username, NULL) rows can never violate
     UNIQUE(username, service) regardless of how many exist.
     """
+    max_length = _get_username_max_length()
     rows = _load_users()
     rows_by_key: dict[tuple[str, str], list[dict[str, object]]] = defaultdict(list)
     used_usernames_by_service: dict[str, set[str]] = defaultdict(set)
@@ -119,7 +131,7 @@ def _rename_duplicate_usernames_for_exact_service() -> None:
             loser_id = loser.get("id")
             if not isinstance(loser_id, int):
                 continue
-            renamed_username = _next_available_username(survivor_username, used_usernames)
+            renamed_username = _next_available_username(survivor_username, used_usernames, max_length)
             _update_username(loser_id, renamed_username)
 
 
