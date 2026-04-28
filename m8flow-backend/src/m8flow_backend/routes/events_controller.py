@@ -131,10 +131,46 @@ def m8flow_trigger() -> tuple:
     # Process instance is returned separately
     process_instance_details = event_data.pop("process_instance", None)
 
+    # Check if the consumer replied with an error
+    if isinstance(process_instance_details, dict) and process_instance_details.get("error"):
+        return success_response(
+            {
+                "ok": False,
+                "message": "Event published but process instance creation failed.",
+                "data": {
+                    "tenant_id": tenant_id,
+                    "tenant_slug": tenant_slug,
+                    "process_identifier": process_identifier,
+                    "username": username,
+                    "event": event_data,
+                    "error": process_instance_details.get("message", "Unknown error"),
+                    "process_instance": None,
+                },
+            },
+            422,
+        )
+
+    if process_instance_details is None:
+        return success_response(
+            {
+                "ok": False,
+                "message": "Event published but no response from consumer (timeout).",
+                "data": {
+                    "tenant_id": tenant_id,
+                    "tenant_slug": tenant_slug,
+                    "process_identifier": process_identifier,
+                    "username": username,
+                    "event": event_data,
+                    "process_instance": None,
+                },
+            },
+            202,
+        )
+
     return success_response(
         {
             "ok": True,
-            "message": "Event received and published.",
+            "message": "Event received and process instance created.",
             "data": {
                 "tenant_id": tenant_id,
                 "tenant_slug": tenant_slug,

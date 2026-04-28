@@ -253,8 +253,9 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
             except Exception as e:
                 logger.warning("Failed to send reply to %s: %s", reply_to, e)
 
-    except ApiError as e:
-        # Permanent business-logic failure (e.g. missing lane users, invalid BPMN config).
+    except (ApiError, ValueError, TypeError) as e:
+        # Permanent business-logic failure (e.g. missing lane users, invalid BPMN config,
+        # workflow script validation errors like missing required fields).
         # NAKing would cause endless retries since the data won't change — ACK to discard.
         logger.error(
             "Process instantiation failed (permanent error, discarding message): "
@@ -266,6 +267,16 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
                 await kv.delete(dedup_key)
             except Exception:
                 pass
+
+        # Reply with error details so the API can return a meaningful response
+        reply_to = data.get("reply_to")
+        if reply_to:
+            try:
+                error_reply = {"error": True, "message": str(e)}
+                await nc.publish(reply_to, json.dumps(error_reply).encode("utf-8"))
+            except Exception:
+                pass
+
         await msg.ack()
     except Exception as e:
         logger.error("Process instantiation failed (transient error, will retry): %s", e)
