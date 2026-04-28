@@ -192,7 +192,7 @@ def test_user_realm_migration_picks_next_available_username_suffix() -> None:
 
     used_usernames = {"editor", "editor2", "editor4"}
 
-    renamed_username = migration._next_available_username("editor", used_usernames)
+    renamed_username = migration._next_available_username("editor", used_usernames, 255)
 
     assert renamed_username == "editor3"
     assert "editor3" in used_usernames
