@@ -65,6 +65,7 @@ def apply(flask_app: object | None = None) -> None:
 
     original_get_tasks = tasks_controller._get_tasks
     original_task_list_my_tasks = tasks_controller.task_list_my_tasks
+    original_task_data_show = getattr(tasks_controller, "task_data_show", None)
 
     def patched_get_tasks(*args, **kwargs) -> flask.wrappers.Response:
         return _rewrite_assigned_group_identifiers(original_get_tasks(*args, **kwargs))
@@ -94,10 +95,15 @@ def apply(flask_app: object | None = None) -> None:
         ):
             app.view_functions[endpoint] = patched_task_data_show
 
-    # Connexion endpoint names vary between environments, so also patch the
-    # GET rule by path to keep the task-data modal consistent.
+    # Connexion endpoint names vary between environments; fall back to scanning all GET
+    # rules and replacing any whose handler is (or wraps) the original task_data_show.
+    # Matching by function identity avoids accidentally patching unrelated routes whose
+    # path happens to contain the substring "task-data".
     for rule in app.url_map.iter_rules():
-        if "task-data" in rule.rule and "GET" in rule.methods:
+        if "GET" not in rule.methods:
+            continue
+        vf = app.view_functions.get(rule.endpoint)
+        if original_task_data_show is not None and getattr(vf, "__wrapped__", vf) is original_task_data_show:
             app.view_functions[rule.endpoint] = patched_task_data_show
 
     _PATCHED = True
