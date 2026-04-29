@@ -321,7 +321,7 @@ services:
       M8FLOW_BACKEND_UPGRADE_DB: "false"
       M8FLOW_BACKEND_SW_UPGRADE_DB: "false"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-lgtm:4317"
-      OTEL_SERVICE_NAME: "m8flow-backend"
+      OTEL_SERVICE_NAME: "m8flow-celery-worker"
       OTEL_TRACES_EXPORTER: "otlp"
       OTEL_METRICS_EXPORTER: "otlp"
       OTEL_LOGS_EXPORTER: "otlp"
@@ -417,8 +417,20 @@ services:
       - "${GRAFANA_HTTP_PORT:-3000}:3000"
       - "4317:4317"
       - "4318:4318"
+    volumes:
+      - ./grafana/dashboards:/otel-lgtm/grafana/conf/provisioning/dashboards/m8flow:ro
+      - ./grafana/provisioning/dashboards/m8flow-provider.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/m8flow-provider.yaml:ro
     stdin_open: true
     tty: true
+
+  promtail:
+    image: grafana/promtail:3.3.2
+    volumes:
+      - ./promtail-config.yaml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: ["-config.file=/etc/promtail/config.yml"]
+    depends_on:
+      - otel-lgtm
 
   m8flow-connector-proxy:
     container_name: m8flow-connector-proxy

@@ -1,0 +1,225 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "links": [],
+  "panels": [
+    {
+      "gridPos": { "h": 3, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "options": {
+        "code": { "language": "plaintext", "showLineNumbers": false, "showMiniMap": false },
+        "content": "**M8Flow unified logs**\n\n- **OTLP** (Python apps): filter by `service_name` — `m8flow-backend`, `m8flow-celery-worker`, `m8flow-connector-proxy`.\n- **Promtail** (JVM/nginx/flower): filter by `compose_service` — `keycloak`, `keycloak-proxy`, `m8flow-celery-flower`.\n- Connector proxy lines include `m8flow_connector=&lt;token&gt;` for Loki search.\n- If panels are empty, open **Explore → Loki** and inspect available labels.",
+        "mode": "markdown"
+      },
+      "title": "How to read this dashboard",
+      "type": "text"
+    },
+    {
+      "datasource": { "type": "loki" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 3 },
+      "id": 1,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki" },
+          "editorMode": "code",
+          "expr": "{service_name=~\"m8flow-backend|m8flow-celery-worker|m8flow-connector-proxy\"}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "All OTLP services (backend, celery worker, connector-proxy)",
+      "type": "logs"
+    },
+    {
+      "datasource": { "type": "loki" },
+      "gridPos": { "h": 9, "w": 8, "x": 0, "y": 13 },
+      "id": 2,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki" },
+          "editorMode": "code",
+          "expr": "{service_name=\"m8flow-backend\"}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "m8flow-backend",
+      "type": "logs"
+    },
+    {
+      "datasource": { "type": "loki" },
+      "gridPos": { "h": 9, "w": 8, "x": 8, "y": 13 },
+      "id": 3,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki" },
+          "editorMode": "code",
+          "expr": "{service_name=\"m8flow-celery-worker\"}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "m8flow-celery-worker",
+      "type": "logs"
+    },
+    {
+      "datasource": { "type": "loki" },
+      "gridPos": { "h": 9, "w": 8, "x": 16, "y": 13 },
+      "id": 4,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki" },
+          "editorMode": "code",
+          "expr": "{service_name=\"m8flow-connector-proxy\"}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "m8flow-connector-proxy",
+      "type": "logs"
+    },
+    {
+      "datasource": { "type": "loki" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 22 },
+      "id": 5,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki" },
+          "editorMode": "code",
+          "expr": "{service_name=\"m8flow-connector-proxy\"} |= \"m8flow_connector=smtp\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Connector proxy — SMTP lines (example)",
+      "type": "logs"
+    },
+    {
+      "datasource": { "type": "loki" },
+      "gridPos": { "h": 9, "w": 8, "x": 0, "y": 30 },
+      "id": 6,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki" },
+          "editorMode": "code",
+          "expr": "{compose_service=\"keycloak\"}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "keycloak (Docker/Promtail)",
+      "type": "logs"
+    },
+    {
+      "datasource": { "type": "loki" },
+      "gridPos": { "h": 9, "w": 8, "x": 8, "y": 30 },
+      "id": 7,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki" },
+          "editorMode": "code",
+          "expr": "{compose_service=\"keycloak-proxy\"}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "keycloak-proxy (Docker/Promtail)",
+      "type": "logs"
+    },
+    {
+      "datasource": { "type": "loki" },
+      "gridPos": { "h": 9, "w": 8, "x": 16, "y": 30 },
+      "id": 8,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki" },
+          "editorMode": "code",
+          "expr": "{compose_service=\"m8flow-celery-flower\"}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "m8flow-celery-flower (Docker/Promtail)",
+      "type": "logs"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["m8flow", "logs"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "M8Flow Unified Logs",
+  "uid": "m8flow-unified-logs",
+  "version": 1,
+  "weekStart": ""
+}

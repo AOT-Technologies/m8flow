@@ -1,5 +1,7 @@
 # Grafana (otel-lgtm) and Keycloak OIDC
 
+For **Loki logs, Promtail, and the “M8Flow Unified Logs” dashboard**, see [grafana-logs.md](grafana-logs.md).
+
 The Docker Compose service `otel-lgtm` ([`docker/m8flow-docker-compose.yml`](../docker/m8flow-docker-compose.yml)) runs Grafana (bundled in `grafana/otel-lgtm`) on host port **`GRAFANA_HTTP_PORT`** (default **3000**).
 
 Authentication is driven entirely by **`GRAFANA_*`** (and **`KEYCLOAK_HOSTNAME`**) in [`.env`](../sample.env) / [`sample.env`](../sample.env). Compose maps those values to Grafana `GF_*` variables on the `otel-lgtm` service only (see `otel-lgtm.environment`).

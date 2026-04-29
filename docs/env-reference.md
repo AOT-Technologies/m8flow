@@ -41,3 +41,9 @@ Observability UI uses **`GRAFANA_*`** variables in `.env`; [docker/m8flow-docker
 - **`GRAFANA_COOKIE_SECURE`**: set `true` when `GRAFANA_SERVER_ROOT_URL` uses `https://`.
 
 Full procedure: [grafana-keycloak.md](grafana-keycloak.md).
+
+## Logs (Loki / Promtail / unified dashboard)
+
+- **OTLP application logs**: Python services send logs when `OTEL_EXPORTER_OTLP_ENDPOINT` points at `otel-lgtm` (see [docker/m8flow-docker-compose.yml](../docker/m8flow-docker-compose.yml)); labels typically derive from `OTEL_SERVICE_NAME`.
+- **Docker logs**: The `promtail` service ships selected container stdout to Loki (see [docker/promtail-config.yaml](../docker/promtail-config.yaml)) so Keycloak and other non-OTLP processes appear without duplicating OTLP apps.
+- **Dashboard**: [docs/grafana-logs.md](grafana-logs.md) describes the **M8Flow Unified Logs** dashboard and LogQL examples.

@@ -1,0 +1,10 @@
+apiVersion: 1
+
+providers:
+  - name: M8Flow
+    folder: M8Flow
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /otel-lgtm/grafana/conf/provisioning/dashboards/m8flow
