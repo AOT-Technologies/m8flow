@@ -34,11 +34,13 @@ Observability UI uses **`GRAFANA_*`** variables in `.env`; [docker/m8flow-docker
 
 - **`GRAFANA_HTTP_PORT`**: host port for Grafana (default `3000`).
 - **`GRAFANA_SERVER_ROOT_URL`**: public base URL of Grafana (OAuth redirects).
-- **`GRAFANA_AUTH_ANONYMOUS_ENABLED`**: `true` for local convenience; **`false`** in production.
-- **`GRAFANA_OIDC_ENABLED`**: `true` to use Keycloak (master realm) generic OAuth.
+- **`GRAFANA_OIDC_ENABLED`**: keep **`true`** by default to match cloud/production auth posture.
 - **`GRAFANA_OIDC_CLIENT_ID` / `GRAFANA_OIDC_CLIENT_SECRET`**: Keycloak confidential client credentials.
 - **`GRAFANA_ALLOWED_ROLE`**: master-realm role name required for Grafana Admin (paired with JMESPath in Compose).
 - **`GRAFANA_COOKIE_SECURE`**: set `true` when `GRAFANA_SERVER_ROOT_URL` uses `https://`.
+- **Cloud deployment note**: use the same `GRAFANA_*` and `KEYCLOAK_*` keys in ECS/Fargate task env/secrets to keep behavior consistent with local compose.
+
+OTLP ingest ports on `otel-lgtm` are localhost-bound by default in compose (`127.0.0.1:4317`, `127.0.0.1:4318`). Avoid exposing these publicly unless intentionally required and protected.
 
 Full procedure: [grafana-keycloak.md](grafana-keycloak.md).
 

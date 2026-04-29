@@ -23,9 +23,14 @@ def _m8flow_set_connector_log_context() -> None:
     g.m8flow_connector = infer_connector_from_path(request.path or "")
 
 
-from otel_setup import setup_otel
-
-setup_otel(app)
+try:
+    from otel_setup import setup_otel
+except ImportError:
+    logging.getLogger(__name__).warning(
+        "otel_setup module not available; skipping OTEL setup"
+    )
+else:
+    setup_otel(app)
 
 # Enrich all log lines with a stable search token for Loki (OTLP + stdout).
 _log_filter = M8flowConnectorLogFilter()

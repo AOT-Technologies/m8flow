@@ -395,7 +395,6 @@ services:
     environment:
       GF_SERVER_ROOT_URL: ${GRAFANA_SERVER_ROOT_URL:-http://localhost:3000}
       GF_SECURITY_COOKIE_SECURE: ${GRAFANA_COOKIE_SECURE:-false}
-      GF_AUTH_ANONYMOUS_ENABLED: ${GRAFANA_AUTH_ANONYMOUS_ENABLED:-true}
       GF_AUTH_ANONYMOUS_ORG_NAME: "${GRAFANA_AUTH_ANONYMOUS_ORG_NAME:-Main Org}"
       GF_AUTH_ANONYMOUS_ORG_ROLE: ${GRAFANA_AUTH_ANONYMOUS_ORG_ROLE:-Admin}
       GF_AUTH_DISABLE_LOGIN_FORM: ${GRAFANA_AUTH_DISABLE_LOGIN_FORM:-false}
@@ -415,8 +414,8 @@ services:
       GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "contains(realm_access.roles[*], '${GRAFANA_ALLOWED_ROLE:-grafana-admin}') && 'Admin' || ''"
     ports:
       - "${GRAFANA_HTTP_PORT:-3000}:3000"
-      - "4317:4317"
-      - "4318:4318"
+      - "127.0.0.1:4317:4317"
+      - "127.0.0.1:4318:4318"
     volumes:
       - ./grafana/dashboards:/otel-lgtm/grafana/conf/provisioning/dashboards/m8flow:ro
       - ./grafana/provisioning/dashboards/m8flow-provider.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/m8flow-provider.yaml:ro

@@ -10,14 +10,14 @@ There is **no separate Compose file** for Grafana modes: you edit `.env`, then r
 
 ---
 
-## Switching between local development and production
+## Secure defaults and deployment profiles
 
 ### What actually changes
 
 | Goal | What you do |
 |------|--------------|
-| Use **local anonymous** Grafana | Set the variables in the **Local dev** column below, restart `otel-lgtm`. |
-| Use **production** Grafana (OIDC, no anonymous UI) | Set the variables in the **Production** column below, restart `otel-lgtm`. |
+| Use default **secure profile** (recommended local + cloud) | Keep the values in the **Secure default** column below, restart `otel-lgtm`. |
+| Use **temporary insecure local override** | Explicitly switch the values in the **Insecure local override** column below, restart `otel-lgtm`. |
 | **Test production-like OIDC on your laptop** | Use **Production** settings but keep **`GRAFANA_SERVER_ROOT_URL`** and **`KEYCLOAK_HOSTNAME`** on **`http://localhost:…`** (see [Production-style auth on localhost](#production-style-auth-on-localhost)). |
 
 `GRAFANA_ENV_MODE` is **documentation only** (e.g. `local` vs `production`). Grafana does not read it; it helps your team remember which profile you intended.
@@ -32,17 +32,16 @@ docker compose -f docker/m8flow-docker-compose.yml up -d otel-lgtm
 
 Switch modes by changing these keys in `.env` (all are documented in [`sample.env`](../sample.env)):
 
-| Variable | Local development | Production |
-|----------|-------------------|------------|
-| `GRAFANA_ENV_MODE` | `local` (label) | `production` (label) |
-| `GRAFANA_AUTH_ANONYMOUS_ENABLED` | `true` | `false` |
-| `GRAFANA_OIDC_ENABLED` | `false` | `true` |
-| `GRAFANA_SERVER_ROOT_URL` | Often `http://localhost:3000` | Public Grafana URL, e.g. `https://grafana.example.com` |
-| `KEYCLOAK_HOSTNAME` | URL your **browser** uses for Keycloak (e.g. `http://localhost:7002`) | Public Keycloak URL, e.g. `https://auth.example.com` |
-| `GRAFANA_OIDC_CLIENT_ID` | N/A when OIDC off | Must match Keycloak **master** realm client (e.g. `grafana`) |
-| `GRAFANA_OIDC_CLIENT_SECRET` | Empty when OIDC off | Confidential client secret from Keycloak |
-| `GRAFANA_COOKIE_SECURE` | `false` for `http://` | `true` when `GRAFANA_SERVER_ROOT_URL` uses `https://` |
-| `GRAFANA_AUTH_DISABLE_LOGIN_FORM` | Usually `false` | Optional `true` once OIDC works (Keycloak-only login) |
+| Variable | Secure default | Insecure local override |
+|----------|----------------|-------------------------|
+| `GRAFANA_ENV_MODE` | `production` (label) | `local` (label) |
+| `GRAFANA_OIDC_ENABLED` | `true` | `false` |
+| `GRAFANA_SERVER_ROOT_URL` | `http://localhost:3000` for local; public `https://...` in cloud | Usually `http://localhost:3000` |
+| `KEYCLOAK_HOSTNAME` | Browser-reachable Keycloak URL (`http://localhost:7002` local, `https://auth.example.com` cloud) | Same as secure default |
+| `GRAFANA_OIDC_CLIENT_ID` | Must match Keycloak **master** realm client (e.g. `grafana`) | Optional when OIDC off |
+| `GRAFANA_OIDC_CLIENT_SECRET` | Required for confidential client (store as secret in cloud) | Empty when OIDC off |
+| `GRAFANA_COOKIE_SECURE` | `true` for `https://`, `false` only for localhost `http://` | `false` |
+| `GRAFANA_AUTH_DISABLE_LOGIN_FORM` | Optional `true` once OIDC works | Usually `false` |
 
 Shared in both modes (adjust only if you rename roles):
 
@@ -51,12 +50,11 @@ Shared in both modes (adjust only if you rename roles):
 
 ---
 
-## Local development (anonymous, no Keycloak for Grafana)
+## Insecure local override (anonymous, no Keycloak for Grafana)
 
-Typical `.env` choices:
+Use only when intentionally bypassing auth in a trusted environment.
 
 - `GRAFANA_ENV_MODE=local`
-- `GRAFANA_AUTH_ANONYMOUS_ENABLED=true`
 - `GRAFANA_OIDC_ENABLED=false`
 - `GRAFANA_OIDC_CLIENT_SECRET=` (empty)
 - `GRAFANA_SERVER_ROOT_URL=http://localhost:3000` (or your chosen host/port)
@@ -71,7 +69,6 @@ You do **not** need a Grafana client in Keycloak for this mode.
 Typical `.env` choices:
 
 - `GRAFANA_ENV_MODE=production`
-- `GRAFANA_AUTH_ANONYMOUS_ENABLED=false`
 - `GRAFANA_OIDC_ENABLED=true`
 - `GRAFANA_SERVER_ROOT_URL` and **`KEYCLOAK_HOSTNAME`** set to the **public** URLs users type in the browser (usually `https://…`).
 - `GRAFANA_OIDC_CLIENT_ID` / `GRAFANA_OIDC_CLIENT_SECRET` from a **confidential** client in Keycloak **master** realm.
@@ -85,7 +82,7 @@ Then complete Keycloak steps below (client, redirect URIs, realm role, role mapp
 
 You can run **the same switches as production** while still using **`http://localhost:3000`** and **`http://localhost:7002`**:
 
-- Set **`GRAFANA_AUTH_ANONYMOUS_ENABLED=false`**, **`GRAFANA_OIDC_ENABLED=true`**, **`GRAFANA_COOKIE_SECURE=false`** (required for HTTP).
+- Set **`GRAFANA_OIDC_ENABLED=true`** and **`GRAFANA_COOKIE_SECURE=false`** (required for HTTP).
 - Register **`GRAFANA_SERVER_ROOT_URL=http://localhost:3000`** and matching redirect URI **`http://localhost:3000/login/generic_oauth`** on the Keycloak client.
 - Keep **`KEYCLOAK_HOSTNAME=http://localhost:7002`** so the browser’s authorize URL matches your local Keycloak.
 
@@ -140,6 +137,17 @@ Document your chosen mapper in team runbooks so upgrades stay consistent.
 - **Grafana container → Keycloak token/userinfo**: uses **`http://keycloak-proxy:7002`** inside the Docker network.
 
 If Keycloak’s public hostname differs from Docker DNS (normal in production), keep **`KEYCLOAK_HOSTNAME`** as the **public** URL and leave internal URLs as in Compose.
+
+For cloud deployments (for example ECS/Fargate), use the same `GRAFANA_*` and `KEYCLOAK_*` contract in task environment variables/secrets so local and cloud configuration stay aligned.
+
+## OTLP port exposure policy
+
+By default, compose binds OTLP ingest ports to localhost only:
+
+- `127.0.0.1:4317:4317`
+- `127.0.0.1:4318:4318`
+
+This prevents remote telemetry injection from non-local hosts. If you need external ingest for debugging, make that an explicit temporary override and restrict it with network controls.
 
 ---
 
