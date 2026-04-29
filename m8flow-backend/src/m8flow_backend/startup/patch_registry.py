@@ -207,6 +207,10 @@ POST_APP_EXTENSION_PATCH_SPECS: tuple[PatchSpec, ...] = (
         minimum_phase=BootPhase.APP_CREATED,
     ),
     PatchSpec(
+        target="m8flow_backend.services.jinja_service_patch:apply",
+        minimum_phase=BootPhase.APP_CREATED,
+    ),
+    PatchSpec(
         target="m8flow_backend.services.process_instance_report_service_patch:apply",
         minimum_phase=BootPhase.APP_CREATED,
     ),
@@ -221,6 +225,7 @@ POST_APP_EXTENSION_PATCH_SPECS: tuple[PatchSpec, ...] = (
     PatchSpec(
         target="m8flow_backend.routes.tasks_controller_patch:apply",
         minimum_phase=BootPhase.APP_CREATED,
+        needs_flask_app=True,
     ),
     PatchSpec(
         target="m8flow_backend.services.secret_service_patch:apply",

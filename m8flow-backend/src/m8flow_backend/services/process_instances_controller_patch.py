@@ -21,7 +21,11 @@ def apply() -> None:
     if _PATCHED:
         return
 
-    from spiffworkflow_backend.routes import process_instances_controller
+    import importlib
+
+    process_instances_controller = importlib.import_module(
+        "spiffworkflow_backend.routes.process_instances_controller"
+    )
     from spiffworkflow_backend.models.db import db
     import sqlalchemy as sa
 

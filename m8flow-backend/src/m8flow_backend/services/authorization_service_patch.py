@@ -10,6 +10,7 @@ from m8flow_backend.services.tenant_identity_helpers import normalize_group_iden
 from m8flow_backend.services.tenant_identity_helpers import normalize_group_permissions
 from m8flow_backend.services.tenant_identity_helpers import qualify_group_identifier
 from m8flow_backend.services.tenant_identity_helpers import qualified_config_group_identifier
+from m8flow_backend.services.tenant_identity_helpers import realm_from_service
 from m8flow_backend.services.tenant_identity_helpers import tenant_id_from_payload
 
 _PATCHED = False
@@ -125,6 +126,69 @@ def _normalize_keycloak_groups(user_info: dict[str, Any]) -> list[str]:
     return normalized
 
 
+def _user_recency_key(user: Any) -> tuple[int, int, int]:
+    """Sort users by most recently updated, then created, then id."""
+    return (
+        int(getattr(user, "updated_at_in_seconds", 0) or 0),
+        int(getattr(user, "created_at_in_seconds", 0) or 0),
+        int(getattr(user, "id", 0) or 0),
+    )
+
+
+def _find_existing_user_in_same_realm(
+    username: str | None,
+    service: str | None,
+    users: list[Any] | None = None,
+) -> Any | None:
+    """Find the most recent user with the same username in the same Keycloak realm."""
+    if not isinstance(username, str) or not username.strip():
+        return None
+    if not isinstance(service, str) or not service.strip():
+        return None
+
+    candidate_users = users
+    if candidate_users is None:
+        from spiffworkflow_backend.models.user import UserModel
+
+        candidate_users = UserModel.query.filter(UserModel.username == username).all()
+
+    target_realm = realm_from_service(service)
+    same_realm_users = [
+        user for user in candidate_users if realm_from_service(getattr(user, "service", None)) == target_realm
+    ]
+    if not same_realm_users:
+        return None
+
+    same_realm_users.sort(key=_user_recency_key, reverse=True)
+    if len(same_realm_users) > 1:
+        logger.warning(
+            "auth_realm_user_match: found %s local users for username=%s realm=%s; reusing id=%s",
+            len(same_realm_users),
+            username,
+            target_realm,
+            getattr(same_realm_users[0], "id", None),
+        )
+    return same_realm_users[0]
+
+
+def _find_existing_user_for_sign_in(
+    username: str | None,
+    service: str | None,
+    service_id: str | None,
+    users: list[Any] | None = None,
+) -> Any | None:
+    """Resolve a local user by exact issuer+subject."""
+    if users is not None:
+        for user in users:
+            if getattr(user, "service", None) == service and getattr(user, "service_id", None) == service_id:
+                return user
+        return None
+
+    from spiffworkflow_backend.models.user import UserModel
+
+    return UserModel.query.filter(UserModel.service == service).filter(UserModel.service_id == service_id).first()
+
+
 def apply() -> None:
     """Patch AuthorizationService for m8flow auth behavior and tenant-qualified groups."""
     global _PATCHED
@@ -132,6 +196,7 @@ def apply() -> None:
         return
 
     from flask import current_app
+    from spiffworkflow_backend.exceptions.api_error import ApiError
     from spiffworkflow_backend.models.db import db
     from spiffworkflow_backend.models.group import SPIFF_GUEST_GROUP
     from spiffworkflow_backend.models.permission_assignment import PermissionAssignmentModel
@@ -225,13 +290,26 @@ def apply() -> None:
                 field_number = field_index + 1
                 user_attributes[f"tenant_specific_field_{field_number}"] = user_info[tenant_specific_field]
 
-        user_model = (
-            UserModel.query.filter(UserModel.service == user_attributes["service"])
-            .filter(UserModel.service_id == user_attributes["service_id"])
-            .first()
+        user_model = _find_existing_user_for_sign_in(
+            user_attributes.get("username"),
+            user_attributes.get("service"),
+            user_attributes.get("service_id"),
         )
         new_user = False
         if user_model is None:
+            conflicting_user = _find_existing_user_in_same_realm(
+                user_attributes.get("username"),
+                user_attributes.get("service"),
+            )
+            if conflicting_user is not None:
+                raise ApiError(
+                    error_code="realm_username_already_exists",
+                    message=(
+                        f"Cannot create user '{user_attributes.get('username')}' because it already exists in realm "
+                        f"'{realm_from_service(user_attributes.get('service'))}'."
+                    ),
+                    status_code=409,
+                )
             current_app.logger.debug("create_user in login_return")
             user_model = UserService().create_user(**user_attributes)
             new_user = True
