@@ -11,5 +11,8 @@ if app.config.get("ENV", "development") != "production":
 
 app.register_blueprint(proxy_blueprint)
 
+from otel_setup import setup_otel
+setup_otel(app)
+
 if __name__ == "__main__":
     app.run(host="localhost", port=7004)

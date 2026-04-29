@@ -80,7 +80,12 @@ COPY uvicorn-log.yaml /app/uvicorn-log.yaml
 # Pin flask>=3.1.3 to fix CVE-2026-27205 (info disclosure via improper session cache)
 RUN uv venv /opt/venv \
   && uv pip install --python /opt/venv/bin/python -e /app/spiffworkflow-backend \
-  && uv pip install --python /opt/venv/bin/python flower "flask>=3.1.3"
+  && uv pip install --python /opt/venv/bin/python flower "flask>=3.1.3" \
+    opentelemetry-sdk \
+    opentelemetry-exporter-otlp-proto-grpc \
+    opentelemetry-instrumentation-flask \
+    opentelemetry-instrumentation-sqlalchemy \
+    opentelemetry-instrumentation-logging
 
 # -----------------------------------------------------------------------------
 # Stage: prod - minimal runtime image for Linux / production (non-root)
@@ -190,6 +195,11 @@ COPY --from=fetch-upstream /upstream/spiff-arena-common /app/spiff-arena-common
 #     CVE-2025-66418, CVE-2025-66471, CVE-2026-21441) - not needed since we use uv
 RUN cd /app/spiffworkflow-backend && uv pip install --system --break-system-packages -e . --group dev \
   && uv pip install --system --break-system-packages flower nats-py httpx python-dotenv "flask>=3.1.3" \
+    opentelemetry-sdk \
+    opentelemetry-exporter-otlp-proto-grpc \
+    opentelemetry-instrumentation-flask \
+    opentelemetry-instrumentation-sqlalchemy \
+    opentelemetry-instrumentation-logging \
   && uv cache clean \
   && apt-get purge -y build-essential python3-dev default-libmysqlclient-dev patch python3-pip-whl \
   && apt-get autoremove -y \

@@ -60,6 +60,9 @@ services:
       M8FLOW_BACKEND_URL: "${M8FLOW_BACKEND_URL:-http://localhost:7000}"
       SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND: "${SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND:-}"
       M8FLOW_BACKEND_URL_FOR_FRONTEND: "${M8FLOW_BACKEND_URL_FOR_FRONTEND:-http://localhost:7001}"
+      KC_TRACING_ENABLED: "true"
+      KC_TRACING_ENDPOINT: "http://otel-lgtm:4317"
+      KC_METRICS_ENABLED: "true"
     ports:
       - "7009:9000"
     healthcheck:
@@ -275,6 +278,11 @@ services:
       M8FLOW_BACKEND_CELERY_RESULT_BACKEND: "${M8FLOW_BACKEND_CELERY_RESULT_BACKEND:-redis://redis:6379/0}"
 
       M8FLOW_NATS_URL: "nats://${M8FLOW_NATS_USER:-admin}:${M8FLOW_NATS_PASSWORD:-admin}@nats:4222"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-lgtm:4317"
+      OTEL_SERVICE_NAME: "m8flow-backend"
+      OTEL_TRACES_EXPORTER: "otlp"
+      OTEL_METRICS_EXPORTER: "otlp"
+      OTEL_LOGS_EXPORTER: "otlp"
     ports:
       - "${M8FLOW_BACKEND_PORT:-7000}:${M8FLOW_BACKEND_PORT:-7000}"
     volumes:
@@ -312,6 +320,11 @@ services:
       M8FLOW_BACKEND_RUN_BACKGROUND_SCHEDULER_IN_CREATE_APP: "false"
       M8FLOW_BACKEND_UPGRADE_DB: "false"
       M8FLOW_BACKEND_SW_UPGRADE_DB: "false"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-lgtm:4317"
+      OTEL_SERVICE_NAME: "m8flow-backend"
+      OTEL_TRACES_EXPORTER: "otlp"
+      OTEL_METRICS_EXPORTER: "otlp"
+      OTEL_LOGS_EXPORTER: "otlp"
     volumes:
       - type: bind
         source: ../data/process_models
@@ -376,12 +389,27 @@ services:
     depends_on:
       - m8flow-backend
 
+  otel-lgtm:
+    image: grafana/otel-lgtm
+    ports:
+      - "3000:3000"
+      - "4317:4317"
+      - "4318:4318"
+    stdin_open: true
+    tty: true
+
   m8flow-connector-proxy:
     container_name: m8flow-connector-proxy
     image: m8flow/m8flow-connector-proxy
     build:
       context: ../m8flow-connector-proxy
     env_file: ../.env
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-lgtm:4317"
+      OTEL_SERVICE_NAME: "m8flow-connector-proxy"
+      OTEL_TRACES_EXPORTER: "otlp"
+      OTEL_METRICS_EXPORTER: "otlp"
+      OTEL_LOGS_EXPORTER: "otlp"
     ports:
       - "${CONNECTOR_PROXY_PORT:-8004}:${CONNECTOR_PROXY_PORT:-8004}/tcp"
     volumes:
