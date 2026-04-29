@@ -40,7 +40,8 @@ _conn_fmt = logging.Formatter(
     "%(asctime)s %(levelname)s [%(name)s] m8flow_connector=%(m8flow_connector)s %(message)s"
 )
 for _h in _root.handlers:
-    _h.setFormatter(_conn_fmt)
+    if isinstance(_h, logging.StreamHandler) and not isinstance(_h, logging.FileHandler):
+        _h.setFormatter(_conn_fmt)
 logging.getLogger("werkzeug").addFilter(_log_filter)
 
 if __name__ == "__main__":

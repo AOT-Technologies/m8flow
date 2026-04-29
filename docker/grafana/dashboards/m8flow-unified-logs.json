@@ -105,7 +105,7 @@
         {
           "datasource": { "type": "loki" },
           "editorMode": "code",
-          "expr": "sum(count_over_time({compose_service=~\"keycloak|keycloak-proxy|m8flow-celery-flower\"} |~ \"$log_level\" [$__range]))",
+          "expr": "sum(count_over_time({compose_service=~\"keycloak|keycloak-proxy|m8flow-celery-flower\"} |~ \"(?i)$log_level\" [$__range]))",
           "instant": true,
           "queryType": "instant",
           "refId": "A"
@@ -410,7 +410,7 @@
         {
           "datasource": { "type": "loki" },
           "editorMode": "code",
-          "expr": "{compose_service=\"keycloak\"} |~ \"$log_level\" |= \"$search\"",
+          "expr": "{compose_service=\"keycloak\"} |~ \"(?i)$log_level\" |= \"$search\"",
           "queryType": "range",
           "refId": "A"
         }
@@ -436,7 +436,7 @@
         {
           "datasource": { "type": "loki" },
           "editorMode": "code",
-          "expr": "{compose_service=\"keycloak-proxy\"} |~ \"$log_level\" |= \"$search\"",
+          "expr": "{compose_service=\"keycloak-proxy\"} |~ \"(?i)$log_level\" |= \"$search\"",
           "queryType": "range",
           "refId": "A"
         }
@@ -462,7 +462,7 @@
         {
           "datasource": { "type": "loki" },
           "editorMode": "code",
-          "expr": "{compose_service=\"m8flow-celery-flower\"} |~ \"$log_level\" |= \"$search\"",
+          "expr": "{compose_service=\"m8flow-celery-flower\"} |~ \"(?i)$log_level\" |= \"$search\"",
           "queryType": "range",
           "refId": "A"
         }
@@ -520,9 +520,10 @@
           { "selected": false, "text": "http",         "value": "http"       },
           { "selected": false, "text": "postgres",     "value": "postgres"   },
           { "selected": false, "text": "health",       "value": "health"     },
-          { "selected": false, "text": "none",         "value": "none"       }
+          { "selected": false, "text": "none",         "value": "none"       },
+          { "selected": false, "text": "other",        "value": "other"      }
         ],
-        "query": ".*,smtp,slack,salesforce,stripe,http,postgres,health,none",
+        "query": ".*,smtp,slack,salesforce,stripe,http,postgres,health,none,other",
         "skipUrlSync": false,
         "type": "custom"
       }
