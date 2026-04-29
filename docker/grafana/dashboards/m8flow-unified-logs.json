@@ -30,7 +30,7 @@
         {
           "datasource": { "type": "loki" },
           "editorMode": "code",
-          "expr": "sum(count_over_time({service_name=~\"m8flow-backend|m8flow-celery-worker|m8flow-connector-proxy\"} |~ \"$log_level\" [$__range]))",
+          "expr": "sum(count_over_time({service_name=~\"m8flow-backend|m8flow-celery-worker|m8flow-connector-proxy\"} |~ \"(?i)$log_level\" [$__range]))",
           "instant": true,
           "queryType": "instant",
           "refId": "A"
@@ -71,7 +71,7 @@
         {
           "datasource": { "type": "loki" },
           "editorMode": "code",
-          "expr": "sum(count_over_time({service_name=~\"m8flow-backend|m8flow-celery-worker|m8flow-connector-proxy\"} |= \"ERROR\" [$__range]))",
+          "expr": "sum(count_over_time({service_name=~\"m8flow-backend|m8flow-celery-worker|m8flow-connector-proxy\"} |~ \"(?i)error\" [$__range]))",
           "instant": true,
           "queryType": "instant",
           "refId": "A"
@@ -168,7 +168,7 @@
         {
           "datasource": { "type": "loki" },
           "editorMode": "code",
-          "expr": "sum by (service_name) (rate({service_name=~\"m8flow-backend|m8flow-celery-worker|m8flow-connector-proxy\"} |~ \"$log_level\" [2m]))",
+          "expr": "sum by (service_name) (rate({service_name=~\"m8flow-backend|m8flow-celery-worker|m8flow-connector-proxy\"} |~ \"(?i)$log_level\" [2m]))",
           "legendFormat": "{{service_name}}",
           "queryType": "range",
           "refId": "A"
@@ -197,7 +197,7 @@
         {
           "datasource": { "type": "loki" },
           "editorMode": "code",
-          "expr": "sum by (service_name) (rate({service_name=~\"m8flow-backend|m8flow-celery-worker|m8flow-connector-proxy\"} |= \"ERROR\" [2m]))",
+          "expr": "sum by (service_name) (rate({service_name=~\"m8flow-backend|m8flow-celery-worker|m8flow-connector-proxy\"} |~ \"(?i)error\" [2m]))",
           "legendFormat": "{{service_name}}",
           "queryType": "range",
           "refId": "A"
@@ -232,7 +232,7 @@
         {
           "datasource": { "type": "loki" },
           "editorMode": "code",
-          "expr": "{service_name=~\"m8flow-backend|m8flow-celery-worker|m8flow-connector-proxy\"} |~ \"$log_level\" |= \"$search\"",
+          "expr": "{service_name=~\"m8flow-backend|m8flow-celery-worker|m8flow-connector-proxy\"} |~ \"(?i)$log_level\" |= \"$search\"",
           "queryType": "range",
           "refId": "A"
         }
@@ -258,7 +258,7 @@
         {
           "datasource": { "type": "loki" },
           "editorMode": "code",
-          "expr": "{service_name=\"m8flow-backend\"} |~ \"$log_level\" |= \"$search\"",
+          "expr": "{service_name=\"m8flow-backend\"} |~ \"(?i)$log_level\" |= \"$search\"",
           "queryType": "range",
           "refId": "A"
         }
@@ -284,7 +284,7 @@
         {
           "datasource": { "type": "loki" },
           "editorMode": "code",
-          "expr": "{service_name=\"m8flow-celery-worker\"} |~ \"$log_level\" |= \"$search\"",
+          "expr": "{service_name=\"m8flow-celery-worker\"} |~ \"(?i)$log_level\" |= \"$search\"",
           "queryType": "range",
           "refId": "A"
         }
@@ -310,7 +310,7 @@
         {
           "datasource": { "type": "loki" },
           "editorMode": "code",
-          "expr": "{service_name=\"m8flow-connector-proxy\"} |~ \"$log_level\" |= \"$search\"",
+          "expr": "{service_name=\"m8flow-connector-proxy\"} |~ \"(?i)$log_level\" |= \"$search\"",
           "queryType": "range",
           "refId": "A"
         }
@@ -376,7 +376,7 @@
         {
           "datasource": { "type": "loki" },
           "editorMode": "code",
-          "expr": "{service_name=\"m8flow-connector-proxy\"} |~ \"$log_level\" |= \"$search\" | logfmt | m8flow_connector=~\"$connector\"",
+          "expr": "{service_name=\"m8flow-connector-proxy\"} |~ \"(?i)$log_level\" |= \"$search\" | logfmt | m8flow_connector=~\"$connector\"",
           "queryType": "range",
           "refId": "A"
         }
