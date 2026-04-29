@@ -35,7 +35,10 @@ def infer_connector_from_path(path: str) -> str:
     parts = [p for p in path.split("/") if p]
     for i, p in enumerate(parts):
         if p in {"v1", "v1.0", "api", "v2"} and i + 1 < len(parts):
-            return parts[i + 1]
+            candidate = parts[i + 1].lower()
+            if candidate in _KNOWN_CONNECTOR_TOKENS:
+                return candidate
+            return "other"
     return "other"
 
 

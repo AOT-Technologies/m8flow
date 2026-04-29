@@ -477,20 +477,19 @@
   "templating": {
     "list": [
       {
-        "current": { "selected": true, "text": "All", "value": ".*" },
+        "current": { "selected": true, "text": "All", "value": "$__all" },
         "hide": 0,
-        "includeAll": false,
+        "includeAll": true,
         "label": "Log Level",
         "multi": false,
         "name": "log_level",
         "options": [
-          { "selected": true,  "text": "All",   "value": ".*"    },
           { "selected": false, "text": "ERROR",  "value": "ERROR" },
           { "selected": false, "text": "WARN",   "value": "WARN"  },
           { "selected": false, "text": "INFO",   "value": "INFO"  },
           { "selected": false, "text": "DEBUG",  "value": "DEBUG" }
         ],
-        "query": ".*,ERROR,WARN,INFO,DEBUG",
+        "query": "ERROR,WARN,INFO,DEBUG",
         "skipUrlSync": false,
         "type": "custom"
       },
@@ -505,14 +504,13 @@
         "type": "textbox"
       },
       {
-        "current": { "selected": true, "text": "All", "value": ".*" },
+        "current": { "selected": true, "text": "All", "value": "$__all" },
         "hide": 0,
-        "includeAll": false,
+        "includeAll": true,
         "label": "Connector",
         "multi": false,
         "name": "connector",
         "options": [
-          { "selected": true,  "text": "All",         "value": ".*"         },
           { "selected": false, "text": "smtp",         "value": "smtp"       },
           { "selected": false, "text": "slack",        "value": "slack"      },
           { "selected": false, "text": "salesforce",   "value": "salesforce" },
@@ -523,7 +521,7 @@
           { "selected": false, "text": "none",         "value": "none"       },
           { "selected": false, "text": "other",        "value": "other"      }
         ],
-        "query": ".*,smtp,slack,salesforce,stripe,http,postgres,health,none,other",
+        "query": "smtp,slack,salesforce,stripe,http,postgres,health,none,other",
         "skipUrlSync": false,
         "type": "custom"
       }
