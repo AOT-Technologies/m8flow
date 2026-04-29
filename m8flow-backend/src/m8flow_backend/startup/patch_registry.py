@@ -154,6 +154,10 @@ POST_APP_CORE_PATCH_SPECS: tuple[PatchSpec, ...] = (
         minimum_phase=BootPhase.APP_CREATED,
     ),
     PatchSpec(
+        target="m8flow_backend.services.authentication_service_patch:apply_redirect_uri_scheme_patch",
+        minimum_phase=BootPhase.APP_CREATED,
+    ),
+    PatchSpec(
         target="m8flow_backend.routes.authentication_controller_patch:apply_decode_token_debug_patch",
         minimum_phase=BootPhase.APP_CREATED,
     ),
