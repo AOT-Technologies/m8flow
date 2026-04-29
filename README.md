@@ -182,6 +182,9 @@ The Keycloak image is built with the **m8flow realm-info-mapper** provider, so t
 | `m8flow-celery-worker` | Celery background task worker | — |
 | `m8flow-celery-flower` | Celery monitoring UI | 5555 |
 | `m8flow-nats-consumer` | NATS event consumer | — |
+| `otel-lgtm` | Grafana + OTLP (LGTM bundle) | `GRAFANA_HTTP_PORT` (default 3000), 4317, 4318 |
+
+**Grafana auth (local vs production)** is controlled via **`GRAFANA_*`** in `.env` (see [sample.env](sample.env)). Setup and Keycloak client/role steps: [docs/grafana-keycloak.md](docs/grafana-keycloak.md).
 
 **Init-only services** (run once via `--profile init`):
 

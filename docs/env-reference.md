@@ -27,3 +27,17 @@ Examples:
 ## Advanced Keycloak auth configs
 
 For `SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS` patterns (master realm, `admin-cli`, role mapping), see [m8flow-backend/keycloak/KEYCLOAK_SETUP.md](../m8flow-backend/keycloak/KEYCLOAK_SETUP.md).
+
+## Grafana (otel-lgtm)
+
+Observability UI uses **`GRAFANA_*`** variables in `.env`; [docker/m8flow-docker-compose.yml](../docker/m8flow-docker-compose.yml) maps them to Grafana `GF_*` for the `otel-lgtm` service only (the full `.env` is **not** mounted into Grafana).
+
+- **`GRAFANA_HTTP_PORT`**: host port for Grafana (default `3000`).
+- **`GRAFANA_SERVER_ROOT_URL`**: public base URL of Grafana (OAuth redirects).
+- **`GRAFANA_AUTH_ANONYMOUS_ENABLED`**: `true` for local convenience; **`false`** in production.
+- **`GRAFANA_OIDC_ENABLED`**: `true` to use Keycloak (master realm) generic OAuth.
+- **`GRAFANA_OIDC_CLIENT_ID` / `GRAFANA_OIDC_CLIENT_SECRET`**: Keycloak confidential client credentials.
+- **`GRAFANA_ALLOWED_ROLE`**: master-realm role name required for Grafana Admin (paired with JMESPath in Compose).
+- **`GRAFANA_COOKIE_SECURE`**: set `true` when `GRAFANA_SERVER_ROOT_URL` uses `https://`.
+
+Full procedure: [grafana-keycloak.md](grafana-keycloak.md).
