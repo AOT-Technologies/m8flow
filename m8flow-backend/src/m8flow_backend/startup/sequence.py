@@ -25,7 +25,6 @@ from m8flow_backend.startup.auth_patches import apply_extension_patches_after_ap
 
 from m8flow_backend.services.asgi_tenant_context_middleware import AsgiTenantContextMiddleware
 from m8flow_backend.startup.guard import set_phase, BootPhase
-from spiffworkflow_backend.middleware.asgi_proxy_fix import ASGIProxyFix
 
 
 def _prepare_pre_app_boot() -> tuple[Any, Callable[[], None]]:
@@ -127,6 +126,9 @@ def _wrap_asgi_if_needed(cnx_app: Any) -> Any:
         proxy_count = 0
 
     if proxy_count > 0:
+        # Import lazily to ensure model override bootstrap has run first.
+        from spiffworkflow_backend.middleware.asgi_proxy_fix import ASGIProxyFix
+
         app = ASGIProxyFix(
             app,
             x_for=proxy_count,
