@@ -31,7 +31,7 @@ This directory contains the Docker setup for running M8Flow: Compose files, Dock
 | **keycloak-db** | postgres:15 | Keycloak’s database. | (internal) | `KEYCLOAK_DB_NAME/USER/PASSWORD` (default keycloak/keycloak). Data: volume `keycloak-db-data`. |
 | **keycloak** | Built (m8flow.keycloak.Dockerfile) | IdP: auth, realms, realm-info-mapper for `m8flow_tenant_*` claims. | 7009→9000 (management) | `KEYCLOAK_ADMIN*`, `KC_DB_*`, `KC_HTTP_PORT` (8080), `KC_HOSTNAME` (user-facing URL). Dev: `start-dev --import-realm`; prod override uses `start --import-realm`. Realms imported from image. Runs as user `keycloak`. |
 | **keycloak-proxy** | nginx:alpine | Reverse proxy so browser and backend use one URL for Keycloak. | 7002→7002 | Uses `nginx-keycloak-proxy.conf`: listen 7002, `proxy_pass` to keycloak:8080. |
-| **keycloak-init** | m8flow-keycloak (same image) | One-off: wait for Keycloak, then set `sslRequired=NONE` on master and m8flow. | — | Depends on keycloak. `restart: "no"`. |
+| **keycloak-init** | m8flow-keycloak (same image) | One-off: wait for Keycloak, then set `sslRequired=NONE`, enforce shared-realm org policy, and ensure the default shared-realm organization exists. | — | Depends on keycloak. `restart: "no"`. |
 | **redis** | redis:6-alpine | Celery broker/result backend (optional). | 6379→6379 | Persistence: `redis-data`. |
 | **minio** | minio/minio (pinned) | S3-compatible object store for process models and templates. | 9000, 9001 (console) | `MINIO_ROOT_USER/PASSWORD` from `.env`. Data: volume `minio_data`. |
 
@@ -72,7 +72,7 @@ Run with: `docker compose --profile init -f docker/m8flow-docker-compose.yml up 
 ### m8flow.keycloak.Dockerfile
 
 - **builder:** Eclipse Temurin 17 JDK, Maven 3.9.9. Builds `keycloak-extensions/realm-info-mapper` JAR.
-- **Final:** quay.io/keycloak/keycloak:26.0.7. Copies JAR to `/opt/keycloak/providers/`, realm JSONs to `/opt/keycloak/data/import/`. Runs as `keycloak`. Health and feature flags set for dev/prod use.
+- **Final:** quay.io/keycloak/keycloak:26.6.1. Copies JAR to `/opt/keycloak/providers/`, realm JSONs to `/opt/keycloak/data/import/`. Runs as `keycloak`. Health and feature flags set for dev/prod use.
 
 ---
 

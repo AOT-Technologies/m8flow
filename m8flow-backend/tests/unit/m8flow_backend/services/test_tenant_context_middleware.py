@@ -198,6 +198,54 @@ def test_invalid_tenant_raises() -> None:
             assert exc.value.error_code == "invalid_tenant"
 
 
+def test_org_uuid_claim_maps_to_legacy_local_tenant_row() -> None:
+    from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
+    from spiffworkflow_backend.models.user import UserModel
+
+    app = _make_app()
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+
+        now = int(datetime.now(timezone.utc).timestamp())
+        db.session.add(
+            M8flowTenantModel(
+                id="m8flow",
+                name="M8Flow Realm",
+                slug="m8flow",
+                created_by="test",
+                modified_by="test",
+                created_at_in_seconds=now,
+                updated_at_in_seconds=now,
+            )
+        )
+
+        user = UserModel(
+            username="tester",
+            email="tester@example.com",
+            service="http://localhost:7002/realms/m8flow",
+            service_id="tester",
+        )
+        db.session.add(user)
+        db.session.flush()
+
+        token = user.encode_auth_token(
+            {
+                "organization": {
+                    "m8flow": {
+                        "id": "370465d2-9b78-4c8b-9d82-c9a4818b747f",
+                    }
+                },
+                "m8flow_authentication_identifier": "m8flow",
+            }
+        )
+        db.session.commit()
+
+        with app.test_request_context("/test", headers={"Authorization": f"Bearer {token}"}):
+            resolve_request_tenant()
+            assert g.m8flow_tenant_id == "m8flow"
+
+
 def test_tenant_validation_raises_503_when_db_not_bound() -> None:
     """When db session raises 'not registered with this SQLAlchemy instance', raise 503 instead of failing open."""
     from unittest.mock import MagicMock
@@ -341,8 +389,12 @@ def test_permissions_check_path_is_tenant_context_exempt() -> None:
         assert _is_tenant_context_exempt_request() is True
 
 
-def test_login_return_resolves_tenant_from_state_when_auth_is_excluded() -> None:
+def test_login_return_resolves_tenant_from_shared_realm_and_cookie() -> None:
+    """Shared-realm login_return resolves tenant from m8flow_selected_tenant cookie."""
     import base64
+    import os
+
+    os.environ["M8FLOW_KEYCLOAK_SHARED_REALM"] = "m8flow"
 
     app = _make_app()
     with app.app_context():
@@ -351,13 +403,44 @@ def test_login_return_resolves_tenant_from_state_when_auth_is_excluded() -> None
 
         state_payload = {
             "final_url": "http://localhost:7000/",
-            "authentication_identifier": "it",
+            "authentication_identifier": "m8flow",
+        }
+        state = base64.b64encode(bytes(str(state_payload), "utf-8")).decode("utf-8")
+
+        with app.test_request_context(
+            f"/v1.0/login_return?state={state}",
+            environ_base={"HTTP_COOKIE": "m8flow_selected_tenant=tenant-it-id"},
+        ):
+            resolve_request_tenant()
+            assert g.m8flow_tenant_id == "tenant-it-id"
+
+    os.environ.pop("M8FLOW_KEYCLOAK_SHARED_REALM", None)
+
+
+def test_login_return_fails_without_selected_tenant_cookie() -> None:
+    """Login return from shared realm without a selected-tenant cookie fails closed."""
+    import base64
+    import os
+
+    os.environ["M8FLOW_KEYCLOAK_SHARED_REALM"] = "m8flow"
+
+    app = _make_app()
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+
+        state_payload = {
+            "final_url": "http://localhost:7000/",
+            "authentication_identifier": "m8flow",
         }
         state = base64.b64encode(bytes(str(state_payload), "utf-8")).decode("utf-8")
 
         with app.test_request_context(f"/v1.0/login_return?state={state}"):
-            resolve_request_tenant()
-            assert g.m8flow_tenant_id == "tenant-it-id"
+            with pytest.raises(ApiError) as exc:
+                resolve_request_tenant()
+            assert exc.value.error_code == "tenant_required"
+
+    os.environ.pop("M8FLOW_KEYCLOAK_SHARED_REALM", None)
 
 
 def test_login_return_skips_tenant_validation_for_master_auth_identifier() -> None:

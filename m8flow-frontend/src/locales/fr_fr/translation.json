@@ -79,7 +79,7 @@
   "delete_tenant": "Supprimer le locataire",
   "are_you_sure_you_want_to_delete_tenant": "Êtes-vous sûr de vouloir supprimer le locataire",
   "action_cannot_be_undone": "Cette action ne peut pas être annulée.",
-  "realm_slug": "Limace du royaume",
+  "realm_slug": "Alias du locataire",
   "display_name": "Nom d'affichage",
   "cancel": "Annuler",
   "delete": "Supprimer",

@@ -3,7 +3,7 @@ import importlib
 
 def _reload_sequence_module():
     # Keep tests isolated from other tests that import sequence.
-    import extensions.startup.sequence as sequence
+    import m8flow_backend.startup.sequence as sequence
 
     return importlib.reload(sequence)
 

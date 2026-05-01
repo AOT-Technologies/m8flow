@@ -3,11 +3,14 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from m8flow_backend.services.tenant_identity_helpers import authentication_identifier_from_payload
+from m8flow_backend.services.tenant_identity_helpers import current_tenant_identifiers
 from m8flow_backend.services.tenant_identity_helpers import current_tenant_id_or_none
 from m8flow_backend.services.tenant_identity_helpers import extract_realm_from_issuer
 from m8flow_backend.services.tenant_identity_helpers import is_group_for_tenant
 from m8flow_backend.services.tenant_identity_helpers import normalize_group_identifiers
 from m8flow_backend.services.tenant_identity_helpers import normalize_group_permissions
+from m8flow_backend.services.tenant_identity_helpers import organization_memberships_from_payload
 from m8flow_backend.services.tenant_identity_helpers import qualify_group_identifier
 from m8flow_backend.services.tenant_identity_helpers import qualified_config_group_identifier
 from m8flow_backend.services.tenant_identity_helpers import realm_from_service
@@ -25,6 +28,60 @@ M8FLOW_AUTH_EXCLUSION_ADDITIONS = [
 M8FLOW_ROLE_GROUP_IDENTIFIERS = frozenset(
     {"super-admin", "tenant-admin", "editor", "viewer", "integrator", "reviewer"}
 )
+M8FLOW_TENANT_ROLE_ALIASES = {
+    "admin": "tenant-admin",
+    "tenant-admin": "tenant-admin",
+    "editor": "editor",
+    "viewer": "viewer",
+    "integrator": "integrator",
+    "reviewer": "reviewer",
+}
+
+
+def _username_from_user_info(user_info: dict[str, Any]) -> str:
+    """
+    Derive the local username for an OpenID sign-in payload.
+
+    Do not fall back to email. In the shared-realm model, duplicate emails are
+    allowed and local user recreation must stay anchored to issuer+subject.
+    """
+    preferred_username = user_info.get("preferred_username")
+    if isinstance(preferred_username, str):
+        normalized_preferred_username = preferred_username.strip()
+        if normalized_preferred_username:
+            return normalized_preferred_username
+
+    subject = user_info.get("sub")
+    if isinstance(subject, str):
+        normalized_subject = subject.strip()
+        if normalized_subject:
+            return normalized_subject
+
+    issuer = user_info.get("iss")
+    return f"{user_info['sub']}@{issuer}" if issuer is not None else str(user_info["sub"])
+
+
+def _display_name_from_user_info(user_info: dict[str, Any]) -> str | None:
+    """Return the best available non-identity display value from the sign-in payload."""
+    for key in ("preferred_username", "nickname", "name"):
+        value = user_info.get(key)
+        if isinstance(value, str):
+            normalized_value = value.strip()
+            if normalized_value:
+                return normalized_value
+    return None
+
+
+def _master_realm_identifier() -> str:
+    from m8flow_backend.config import master_realm_name
+
+    return master_realm_name()
+
+
+def _shared_realm_identifier() -> str:
+    from m8flow_backend.config import shared_realm_name
+
+    return shared_realm_name()
 
 
 def _keycloak_realm_roles_as_groups(user_info: dict[str, Any]) -> list[str]:
@@ -40,11 +97,24 @@ def _keycloak_realm_roles_as_groups(user_info: dict[str, Any]) -> list[str]:
     roles = realm_access.get("roles")
     if not isinstance(roles, list):
         return []
-    return [
-        role
-        for role in roles
-        if isinstance(role, str) and role in M8FLOW_ROLE_GROUP_IDENTIFIERS
-    ]
+
+    normalized_roles: list[str] = []
+    seen: set[str] = set()
+    for role in roles:
+        if not isinstance(role, str):
+            continue
+        value = role.strip()
+        if not value or value in seen:
+            continue
+        if value in M8FLOW_ROLE_GROUP_IDENTIFIERS:
+            seen.add(value)
+            normalized_roles.append(value)
+            continue
+        role_name, separator, tenant_suffix = value.rpartition("@")
+        if separator and tenant_suffix and role_name in M8FLOW_TENANT_ROLE_ALIASES:
+            seen.add(value)
+            normalized_roles.append(value)
+    return normalized_roles
 
 
 def _tenant_id_for_user_info(user_info: dict[str, Any]) -> str | None:
@@ -57,7 +127,31 @@ def _tenant_id_for_user_info(user_info: dict[str, Any]) -> str | None:
     if context_tenant:
         return context_tenant
 
+    authentication_identifier = authentication_identifier_from_payload(user_info)
+    if authentication_identifier in {_shared_realm_identifier(), _master_realm_identifier()}:
+        return None
+
     return extract_realm_from_issuer(user_info.get("iss"))
+
+
+def _should_defer_tenant_group_sync(user_info: dict[str, Any], tenant_id: str | None) -> bool:
+    """
+    Allow shared-realm users to authenticate before an active tenant is finalized.
+
+    The first shared-realm login now requests ``organization:*`` so the app can
+    discover all memberships after credentials are entered. When multiple
+    organizations are present and no tenant has been selected yet, tenant-scoped
+    group normalization must wait until the user completes the tenant-specific
+    follow-up login.
+    """
+    if tenant_id:
+        return False
+
+    authentication_identifier = authentication_identifier_from_payload(user_info)
+    if authentication_identifier != _shared_realm_identifier():
+        return False
+
+    return len(organization_memberships_from_payload(user_info)) > 1
 
 
 def _normalize_permissions_yaml_config(permission_configs: dict[str, Any], tenant_id: str | None) -> dict[str, Any]:
@@ -124,6 +218,80 @@ def _normalize_keycloak_groups(user_info: dict[str, Any]) -> list[str]:
                 seen.add(candidate)
                 normalized.append(candidate)
     return normalized
+
+
+def _tenant_group_identifier_for_external_role(
+    group_identifier: str,
+    tenant_id: str | None,
+    tenant_identifiers: set[str],
+) -> str | None:
+    """Map external ``role@tenant`` values to the internal tenant-qualified group identifier."""
+    normalized_group_identifier = group_identifier.strip()
+    if not normalized_group_identifier:
+        return None
+
+    role_name, separator, tenant_suffix = normalized_group_identifier.rpartition("@")
+    if not separator or not role_name or not tenant_suffix:
+        return None
+
+    internal_role_name = M8FLOW_TENANT_ROLE_ALIASES.get(role_name.strip())
+    if internal_role_name is None:
+        return None
+
+    normalized_tenant_suffix = tenant_suffix.strip().casefold()
+    if not normalized_tenant_suffix:
+        return None
+
+    if normalized_tenant_suffix not in {identifier.casefold() for identifier in tenant_identifiers}:
+        return None
+
+    if not tenant_id:
+        return None
+
+    return qualify_group_identifier(internal_role_name, tenant_id=tenant_id)
+
+
+def _normalize_openid_group_identifiers(
+    group_identifiers: list[str],
+    tenant_id: str | None,
+) -> list[str]:
+    """Normalize token groups to internal tenant-qualified identifiers for the active tenant only."""
+    tenant_identifiers = current_tenant_identifiers(tenant_id)
+    normalized_group_identifiers: list[str] = []
+    seen: set[str] = set()
+
+    for group_identifier in group_identifiers:
+        normalized = group_identifier.strip()
+        if not normalized:
+            continue
+
+        normalized_for_tenant = _tenant_group_identifier_for_external_role(
+            normalized,
+            tenant_id=tenant_id,
+            tenant_identifiers=tenant_identifiers,
+        )
+        if normalized_for_tenant is not None:
+            if normalized_for_tenant not in seen:
+                seen.add(normalized_for_tenant)
+                normalized_group_identifiers.append(normalized_for_tenant)
+            continue
+
+        role_name, separator, tenant_suffix = normalized.rpartition("@")
+        if (
+            tenant_id
+            and separator
+            and tenant_suffix
+            and role_name.strip() in M8FLOW_TENANT_ROLE_ALIASES
+        ):
+            # Explicit tenant-scoped roles for a different tenant must not leak into the active context.
+            continue
+
+        qualified = qualify_group_identifier(normalized, tenant_id=tenant_id)
+        if qualified not in seen:
+            seen.add(qualified)
+            normalized_group_identifiers.append(qualified)
+
+    return normalized_group_identifiers
 
 
 def _user_recency_key(user: Any) -> tuple[int, int, int]:
@@ -230,6 +398,7 @@ def apply() -> None:
         """
         Keep upstream login behavior, but:
         - keep bare usernames for the relaxed username-uniqueness model
+        - use preferred_username/sub instead of email for local user recreation
         - normalize token groups to tenant-qualified identifiers
         - only remove OpenID-managed groups for the current tenant
         - import tenant-agnostic YAML config into tenant-qualified groups
@@ -238,19 +407,10 @@ def apply() -> None:
         old_group_ids: set[int] = set()
         user_attributes: dict[str, Any] = {}
 
-        if "preferred_username" in user_info:
-            user_attributes["username"] = user_info["preferred_username"]
-        elif "email" in user_info:
-            user_attributes["username"] = user_info["email"]
-        else:
-            user_attributes["username"] = f"{user_info['sub']}@{user_info['iss']}"
-
-        if "preferred_username" in user_info:
-            user_attributes["display_name"] = user_info["preferred_username"]
-        elif "nickname" in user_info:
-            user_attributes["display_name"] = user_info["nickname"]
-        elif "name" in user_info:
-            user_attributes["display_name"] = user_info["name"]
+        user_attributes["username"] = _username_from_user_info(user_info)
+        display_name = _display_name_from_user_info(user_info)
+        if display_name is not None:
+            user_attributes["display_name"] = display_name
 
         user_attributes["email"] = user_info.get("email")
         user_attributes["service"] = user_info["iss"]
@@ -276,7 +436,7 @@ def apply() -> None:
             raw_groups = user_info.get("groups")
             if raw_groups is not None:
                 if isinstance(raw_groups, list):
-                    desired_group_identifiers = normalize_group_identifiers(
+                    desired_group_identifiers = _normalize_openid_group_identifiers(
                         [group_identifier for group_identifier in raw_groups if isinstance(group_identifier, str)],
                         tenant_id=effective_tenant_id,
                     )
@@ -323,6 +483,9 @@ def apply() -> None:
             if user_db_model_changed:
                 db.session.add(user_model)
                 db.session.commit()
+
+        if _should_defer_tenant_group_sync(user_info, effective_tenant_id):
+            return user_model
 
         if desired_group_identifiers is not None:
             if not isinstance(desired_group_identifiers, list):
@@ -487,25 +650,25 @@ def apply() -> None:
                     len(group["users"]),
                     group_identifier,
                 )
-                for user_index, username_or_email in enumerate(group["users"], start=1):
-                    if user_model and username_or_email not in [user_model.username, user_model.email]:
+                for user_index, username_identifier in enumerate(group["users"], start=1):
+                    if user_model and username_identifier != user_model.username:
                         continue
 
                     current_app.logger.debug(
                         "ADD PERMISSIONS - Processing user %s/%s: %s for group: %s",
                         user_index,
                         len(group["users"]),
-                        username_or_email,
+                        username_identifier,
                         group_identifier,
                     )
                     (wugam, new_user_to_group_identifiers) = UserService.add_user_to_group_or_add_to_waiting(
-                        username_or_email, group_identifier
+                        username_identifier, group_identifier
                     )
                     if wugam is not None:
                         waiting_user_group_assignments.append(wugam)
                         current_app.logger.debug(
                             "ADD PERMISSIONS - Added waiting group assignment for user: %s, group: %s",
-                            username_or_email,
+                            username_identifier,
                             group_identifier,
                         )
 

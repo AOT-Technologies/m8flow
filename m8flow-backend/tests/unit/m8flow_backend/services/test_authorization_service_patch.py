@@ -11,9 +11,13 @@ from m8flow_backend.services import authorization_service_patch
 from m8flow_backend.services.authorization_service_patch import _find_existing_user_for_sign_in
 from m8flow_backend.services.authorization_service_patch import _find_existing_user_in_same_realm
 from m8flow_backend.services.authorization_service_patch import _keycloak_realm_roles_as_groups
+from m8flow_backend.services.authorization_service_patch import _display_name_from_user_info
 from m8flow_backend.services.authorization_service_patch import _normalize_keycloak_groups
+from m8flow_backend.services.authorization_service_patch import _normalize_openid_group_identifiers
 from m8flow_backend.services.authorization_service_patch import _normalize_permissions_yaml_config
+from m8flow_backend.services.authorization_service_patch import _should_defer_tenant_group_sync
 from m8flow_backend.services.authorization_service_patch import _tenant_id_for_user_info
+from m8flow_backend.services.authorization_service_patch import _username_from_user_info
 from m8flow_backend.services.authorization_service_patch import extract_realm_from_issuer
 from m8flow_backend.tenancy import TENANT_CLAIM
 
@@ -48,6 +52,29 @@ def test_tenant_id_for_user_info_prefers_token_claim(monkeypatch) -> None:
     assert _tenant_id_for_user_info(user_info) == "token-tenant"
 
 
+def test_tenant_id_for_user_info_uses_local_canonical_tenant_from_org_claim(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "m8flow_backend.services.authorization_service_patch.current_tenant_id_or_none",
+        lambda: None,
+    )
+    user_info = {
+        "organization": {
+            "m8flow": {
+                "id": "370465d2-9b78-4c8b-9d82-c9a4818b747f",
+            }
+        },
+        "m8flow_authentication_identifier": "m8flow",
+        "iss": "http://localhost:7002/realms/m8flow",
+    }
+
+    monkeypatch.setattr(
+        "m8flow_backend.services.authorization_service_patch.tenant_id_from_payload",
+        lambda payload: "m8flow",
+    )
+
+    assert _tenant_id_for_user_info(user_info) == "m8flow"
+
+
 def test_tenant_id_for_user_info_falls_back_to_context(monkeypatch) -> None:
     monkeypatch.setattr(
         "m8flow_backend.services.authorization_service_patch.current_tenant_id_or_none",
@@ -68,6 +95,48 @@ def test_tenant_id_for_user_info_falls_back_to_issuer_realm(monkeypatch) -> None
     assert _tenant_id_for_user_info(user_info) == "issuer-tenant"
 
 
+def test_tenant_id_for_user_info_does_not_treat_shared_realm_as_tenant(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "m8flow_backend.services.authorization_service_patch.current_tenant_id_or_none",
+        lambda: None,
+    )
+    monkeypatch.setenv("M8FLOW_KEYCLOAK_SHARED_REALM", "shared-users")
+    user_info = {
+        "m8flow_authentication_identifier": "shared-users",
+        "iss": "http://localhost:7002/realms/shared-users",
+    }
+
+    assert _tenant_id_for_user_info(user_info) is None
+
+
+def test_tenant_id_for_user_info_does_not_treat_master_realm_as_tenant(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "m8flow_backend.services.authorization_service_patch.current_tenant_id_or_none",
+        lambda: None,
+    )
+    monkeypatch.setenv("M8FLOW_KEYCLOAK_MASTER_REALM", "ops-admin")
+    user_info = {
+        "m8flow_authentication_identifier": "ops-admin",
+        "iss": "http://localhost:7002/realms/ops-admin",
+    }
+
+    assert _tenant_id_for_user_info(user_info) is None
+
+
+def test_should_defer_tenant_group_sync_for_multi_org_shared_realm_login(monkeypatch) -> None:
+    monkeypatch.setenv("M8FLOW_KEYCLOAK_SHARED_REALM", "shared-users")
+    user_info = {
+        "m8flow_authentication_identifier": "shared-users",
+        "organization": {
+            "tenant-a": {"id": "tenant-a-id"},
+            "tenant-b": {"id": "tenant-b-id"},
+        },
+    }
+
+    assert _should_defer_tenant_group_sync(user_info, tenant_id=None) is True
+    assert _should_defer_tenant_group_sync(user_info, tenant_id="tenant-a-id") is False
+
+
 def test_extract_realm_from_issuer() -> None:
     assert extract_realm_from_issuer("http://localhost:7002/realms/test-realm") == "test-realm"  # NOSONAR
     assert extract_realm_from_issuer("https://auth.example.com/realms/production/") == "production"
@@ -82,11 +151,18 @@ def test_keycloak_realm_roles_as_groups_filters_to_m8flow_roles() -> None:
                 "default-roles-master",
                 "super-admin",
                 "tenant-admin",
+                "admin@tenant-a",
+                "editor@tenant-b",
             ]
         }
     }
 
-    assert _keycloak_realm_roles_as_groups(user_info) == ["super-admin", "tenant-admin"]
+    assert _keycloak_realm_roles_as_groups(user_info) == [
+        "super-admin",
+        "tenant-admin",
+        "admin@tenant-a",
+        "editor@tenant-b",
+    ]
 
 
 def test_keycloak_realm_roles_as_groups_returns_empty_without_roles() -> None:
@@ -96,9 +172,41 @@ def test_keycloak_realm_roles_as_groups_returns_empty_without_roles() -> None:
 
 
 def test_normalize_keycloak_groups_uses_leaf_for_path_values() -> None:
-    user_info = {"groups": ["/super-admin", "/a/b/reviewer", "viewer", "/viewer", "", None]}
+    user_info = {"groups": ["/super-admin", "/a/b/reviewer", "viewer", "/viewer", "/admin@tenant-a", "", None]}
 
-    assert _normalize_keycloak_groups(user_info) == ["super-admin", "reviewer", "viewer"]
+    assert _normalize_keycloak_groups(user_info) == ["super-admin", "reviewer", "viewer", "admin@tenant-a"]
+
+
+def test_normalize_openid_group_identifiers_maps_active_tenant_role_aliases(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "m8flow_backend.services.authorization_service_patch.current_tenant_identifiers",
+        lambda tenant_id=None: {"tenant-a-id", "tenant-a"},
+    )
+
+    normalized = _normalize_openid_group_identifiers(
+        ["admin@tenant-a", "editor@tenant-a-id", "viewer"],
+        tenant_id="tenant-a-id",
+    )
+
+    assert normalized == [
+        "tenant-a-id:tenant-admin",
+        "tenant-a-id:editor",
+        "tenant-a-id:viewer",
+    ]
+
+
+def test_normalize_openid_group_identifiers_ignores_other_tenant_roles(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "m8flow_backend.services.authorization_service_patch.current_tenant_identifiers",
+        lambda tenant_id=None: {"tenant-a-id", "tenant-a"},
+    )
+
+    normalized = _normalize_openid_group_identifiers(
+        ["admin@tenant-b", "reviewer@tenant-c", "editor"],
+        tenant_id="tenant-a-id",
+    )
+
+    assert normalized == ["tenant-a-id:editor"]
 
 
 def test_find_existing_user_in_same_realm_prefers_most_recent_match() -> None:
@@ -159,6 +267,35 @@ def test_find_existing_user_for_sign_in_resolves_exact_subject_only() -> None:
     )
 
     assert match is None
+
+
+def test_username_from_user_info_prefers_preferred_username() -> None:
+    user_info = {
+        "preferred_username": "editor",
+        "sub": "subject-123",
+        "email": "editor@example.com",
+    }
+
+    assert _username_from_user_info(user_info) == "editor"
+
+
+def test_username_from_user_info_falls_back_to_subject_not_email() -> None:
+    user_info = {
+        "sub": "subject-123",
+        "email": "duplicate@example.com",
+    }
+
+    assert _username_from_user_info(user_info) == "subject-123"
+
+
+def test_display_name_from_user_info_uses_best_non_identity_claim() -> None:
+    user_info = {
+        "nickname": "Editor",
+        "name": "Editor Example",
+        "email": "editor@example.com",
+    }
+
+    assert _display_name_from_user_info(user_info) == "Editor"
 
 
 def test_user_realm_migration_picks_most_recent_duplicate() -> None:

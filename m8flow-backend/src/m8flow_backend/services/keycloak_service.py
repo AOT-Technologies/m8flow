@@ -23,6 +23,7 @@ from m8flow_backend.config import (
     realm_template_path,
     redirect_uri_backend_host_and_path,
     redirect_uri_frontend_host,
+    shared_realm_name,
     spoke_client_id,
     spoke_keystore_password,
     spoke_keystore_p12_path,
@@ -454,6 +455,222 @@ def tenant_login_authorization_url(realm: str) -> str:
         raise ValueError("realm is required")
     realm = str(realm).strip()
     return f"{keycloak_url()}/realms/{realm}/protocol/openid-connect/auth"
+
+
+def _shared_realm_organizations_url(*segments: str) -> str:
+    """Return the Organizations Admin API URL inside the configured shared realm."""
+    base_url = keycloak_url()
+    realm = shared_realm_name()
+    base = f"{base_url}/admin/realms/{realm}/organizations"
+    normalized_segments = [segment.strip("/") for segment in segments if segment and segment.strip("/")]
+    if not normalized_segments:
+        return base
+    return f"{base}/{'/'.join(normalized_segments)}"
+
+
+def get_organization_by_id(
+    organization_id: str,
+    admin_token: str | None = None,
+) -> dict[str, Any] | None:
+    """Return the organization representation by id from the shared realm, or None when missing."""
+    if not organization_id or not str(organization_id).strip():
+        raise ValueError("organization_id is required")
+
+    organization_id = str(organization_id).strip()
+    token = admin_token or get_master_admin_token()
+
+    r = requests.get(
+        _shared_realm_organizations_url(organization_id),
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    if r.status_code == 404:
+        return None
+    r.raise_for_status()
+    organization = r.json()
+    return organization if isinstance(organization, dict) else None
+
+
+def get_organization_by_alias(
+    alias: str,
+    admin_token: str | None = None,
+) -> dict[str, Any] | None:
+    """Return the organization representation by exact alias from the shared realm, or None when missing."""
+    if not alias or not str(alias).strip():
+        raise ValueError("alias is required")
+
+    alias = str(alias).strip()
+    token = admin_token or get_master_admin_token()
+
+    r = requests.get(
+        _shared_realm_organizations_url(),
+        params={
+            "search": alias,
+            "exact": "true",
+            "briefRepresentation": "false",
+            "max": 100,
+        },
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    r.raise_for_status()
+
+    organizations = r.json()
+    if not isinstance(organizations, list):
+        return None
+
+    for organization in organizations:
+        if isinstance(organization, dict) and organization.get("alias") == alias:
+            return organization
+    return None
+
+
+def get_organization_member_by_username(
+    organization_id: str,
+    username: str,
+    admin_token: str | None = None,
+) -> dict[str, Any] | None:
+    """Return the exact-match member representation for one organization username."""
+    if not organization_id or not str(organization_id).strip():
+        raise ValueError("organization_id is required")
+    if not username or not str(username).strip():
+        raise ValueError("username is required")
+
+    organization_id = str(organization_id).strip()
+    normalized_username = str(username).strip()
+    token = admin_token or get_master_admin_token()
+
+    r = requests.get(
+        _shared_realm_organizations_url(organization_id, "members"),
+        params={
+            "search": normalized_username,
+            "exact": "true",
+            "max": 100,
+        },
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    r.raise_for_status()
+
+    members = r.json()
+    if not isinstance(members, list):
+        return None
+
+    exact_matches = [
+        member
+        for member in members
+        if isinstance(member, dict) and member.get("username") == normalized_username
+    ]
+    if len(exact_matches) != 1:
+        return None
+    return exact_matches[0]
+
+
+def create_organization(
+    alias: str,
+    name: str | None = None,
+    *,
+    enabled: bool = True,
+    admin_token: str | None = None,
+) -> dict[str, Any]:
+    """Create an organization in the shared realm and return its representation."""
+    if not alias or not str(alias).strip():
+        raise ValueError("alias is required")
+
+    alias = str(alias).strip()
+    organization_name = str(name).strip() if name and str(name).strip() else alias
+    token = admin_token or get_master_admin_token()
+
+    r = requests.post(
+        _shared_realm_organizations_url(),
+        json={"alias": alias, "name": organization_name, "enabled": enabled},
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    r.raise_for_status()
+
+    location_headers = getattr(r, "headers", None) or {}
+    location = location_headers.get("Location")
+    organization: dict[str, Any] | None = None
+    if location and isinstance(location, str):
+        organization_id = location.strip().rstrip("/").split("/")[-1]
+        organization = get_organization_by_id(organization_id, admin_token=token)
+    if organization is None:
+        organization = get_organization_by_alias(alias, admin_token=token)
+    if organization is None:
+        raise ValueError(
+            f"Keycloak created organization '{alias}' but it could not be fetched afterward."
+        )
+    return organization
+
+
+def update_organization(
+    organization_id: str,
+    *,
+    alias: str,
+    name: str,
+    enabled: bool = True,
+    admin_token: str | None = None,
+) -> None:
+    """Update an organization in the shared realm."""
+    if not organization_id or not str(organization_id).strip():
+        raise ValueError("organization_id is required")
+    if not alias or not str(alias).strip():
+        raise ValueError("alias is required")
+    if not name or not str(name).strip():
+        raise ValueError("name is required")
+
+    organization_id = str(organization_id).strip()
+    alias = str(alias).strip()
+    name = str(name).strip()
+    token = admin_token or get_master_admin_token()
+
+    r = requests.put(
+        _shared_realm_organizations_url(organization_id),
+        json={
+            "id": organization_id,
+            "alias": alias,
+            "name": name,
+            "enabled": enabled,
+        },
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    r.raise_for_status()
+    logger.info(
+        "Updated Keycloak organization %s in shared realm %s: alias=%s name=%s",
+        organization_id,
+        shared_realm_name(),
+        alias,
+        name,
+    )
+
+
+def delete_organization(
+    organization_id: str,
+    admin_token: str | None = None,
+) -> None:
+    """Delete an organization in the shared realm using the provided admin token or the master admin token."""
+    if not organization_id or not str(organization_id).strip():
+        raise ValueError("organization_id is required")
+
+    organization_id = str(organization_id).strip()
+    token = admin_token or get_master_admin_token()
+
+    r = requests.delete(
+        _shared_realm_organizations_url(organization_id),
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=30,
+    )
+    if r.status_code == 404:
+        logger.info("Keycloak organization %s already deleted or not found.", organization_id)
+        return
+    r.raise_for_status()
+    logger.info(
+        "Deleted Keycloak organization %s from shared realm %s",
+        organization_id,
+        shared_realm_name(),
+    )
 
 
 def ensure_backend_redirect_uri_in_keycloak_client(realm_id: str) -> None:

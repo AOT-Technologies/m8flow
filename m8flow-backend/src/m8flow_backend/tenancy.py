@@ -18,6 +18,10 @@ DEFAULT_TENANT_ID = os.getenv("M8FLOW_DEFAULT_TENANT_ID", "default")
 # JWT claim name used to resolve tenant id. From M8FLOW_TENANT_CLAIM.
 TENANT_CLAIM = (os.getenv("M8FLOW_TENANT_CLAIM") or "").strip() or "m8flow_tenant_id"
 
+# Cookie used during shared-realm login flows to preserve the selected tenant
+# across auth redirects and expired-session retries.
+SELECTED_TENANT_COOKIE_NAME = "m8flow_selected_tenant"
+
 # Single source of truth: base path prefixes when no WSGI path prefix is set.
 # When SPIFFWORKFLOW_BACKEND_WSGI_PATH_PREFIX is set (e.g. "/api"), we also add
 # prefix + each path so both prefixed and unprefixed deployments work.

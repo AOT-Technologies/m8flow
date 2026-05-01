@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 
 from flask import current_app
 
@@ -16,6 +17,45 @@ def _task_sort_ts(task: object) -> float:
     if hasattr(val, "timestamp"):
         return val.timestamp()
     return 0.0
+
+
+def _lane_owners_mapping(task: object) -> Mapping[str, object] | None:
+    """
+    Resolve lane-owner data from task-local state first, then workflow-level state.
+
+    Downstream user tasks created after additional engine steps or Celery
+    rehydration may no longer have ``lane_owners`` on ``task.data`` even though
+    the initial script task stored it in workflow-level data objects.
+    """
+    task_data = getattr(task, "data", None)
+    if isinstance(task_data, Mapping):
+        lane_owners = task_data.get("lane_owners")
+        if isinstance(lane_owners, Mapping):
+            return lane_owners
+
+    task_workflow = getattr(task, "workflow", None)
+    if task_workflow is None:
+        return None
+
+    workflow_data = getattr(task_workflow, "data", None)
+    if isinstance(workflow_data, Mapping):
+        workflow_data_objects = workflow_data.get("data_objects")
+        if isinstance(workflow_data_objects, Mapping):
+            lane_owners = workflow_data_objects.get("lane_owners")
+            if isinstance(lane_owners, Mapping):
+                return lane_owners
+
+        lane_owners = workflow_data.get("lane_owners")
+        if isinstance(lane_owners, Mapping):
+            return lane_owners
+
+    workflow_data_objects = getattr(task_workflow, "data_objects", None)
+    if isinstance(workflow_data_objects, Mapping):
+        lane_owners = workflow_data_objects.get("lane_owners")
+        if isinstance(lane_owners, Mapping):
+            return lane_owners
+
+    return None
 
 
 def apply() -> None:
@@ -56,9 +96,13 @@ def apply() -> None:
         else:
             group_model = UserService.find_or_create_group(task_lane)
             lane_assignment_id = group_model.id
-            if "lane_owners" in task.data and task_lane in task.data["lane_owners"]:
-                for username_or_email in task.data["lane_owners"][task_lane]:
-                    for lane_owner_user in find_users_for_current_tenant_by_identifier(username_or_email):
+            lane_owners = _lane_owners_mapping(task)
+            if isinstance(lane_owners, Mapping) and task_lane in lane_owners:
+                lane_owner_identifiers = lane_owners[task_lane]
+                if not isinstance(lane_owner_identifiers, list):
+                    lane_owner_identifiers = []
+                for username_identifier in lane_owner_identifiers:
+                    for lane_owner_user in find_users_for_current_tenant_by_identifier(username_identifier):
                         potential_owners.append(
                             {"added_by": HumanTaskUserAddedBy.lane_owner.value, "user_id": lane_owner_user.id}
                         )
@@ -67,7 +111,7 @@ def apply() -> None:
                     (
                         "No users found in task data lane owner list for lane:"
                         f" {task_lane}. The user list used:"
-                        f" {task.data['lane_owners'][task_lane]}"
+                        f" {lane_owner_identifiers}"
                     ),
                 )
             else:

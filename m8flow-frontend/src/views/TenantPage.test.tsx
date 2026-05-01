@@ -22,6 +22,68 @@ vi.mock("../services/TenantService", () => ({
   },
 }));
 
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, unknown>) => {
+      const messages: Record<string, string> = {
+        organization_management: "Organization Management",
+        organization_management_description:
+          "Manage the Keycloak organizations that back tenant access in the shared realm.",
+        add_organization: "Add Organization",
+        edit_organization: "Edit Organization",
+        delete_organization: "Delete Organization",
+        search_by: "Search By",
+        name: "Name",
+        organization_alias: "Organization Alias",
+        filter_by_status: "Filter by Status",
+        all: "All",
+        active: "Active",
+        inactive: "Inactive",
+        status: "Status",
+        actions: "Actions",
+        cancel: "Cancel",
+        create: "Create",
+        save: "Save",
+        processing: "Processing...",
+        organization_name: "Organization Name",
+        organization_created_successfully:
+          "Organization created successfully.",
+        organization_updated_successfully:
+          "Organization updated successfully.",
+        organization_alias_already_exists:
+          "Organization alias already exists",
+        organization_alias_cannot_be_empty:
+          "Organization alias cannot be empty",
+        organization_alias_invalid_pattern:
+          "Organization alias can only contain letters, numbers, hyphens, and underscores",
+        organization_name_cannot_be_empty:
+          "Organization name cannot be empty",
+        failed_to_create_organization:
+          "Failed to create organization. Please try again.",
+        failed_to_update_organization:
+          "Failed to update organization. Please try again.",
+        failed_to_delete_organization:
+          "Failed to delete organization. Please try again.",
+      };
+
+      if (key === "organization_alias_max_length") {
+        return `Organization alias must be ${options?.count ?? ""} characters or fewer`;
+      }
+      if (key === "organization_name_max_length") {
+        return `Organization name must be ${options?.count ?? ""} characters or fewer`;
+      }
+      if (key === "showing_organizations_count") {
+        return `Showing ${options?.filtered ?? 0} of ${options?.total ?? 0} organization(s)`;
+      }
+      if (key === "search_by_placeholder") {
+        return `Search by ${options?.type ?? "name"}...`;
+      }
+
+      return messages[key] ?? key;
+    },
+  }),
+}));
+
 describe("TenantPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -40,9 +102,9 @@ describe("TenantPage", () => {
       permissionsLoaded: true,
     });
     mockCreateTenant.mockResolvedValue({
-      realm: "it",
-      displayName: "Information Technology",
-      keycloak_realm_id: "tenant-uuid",
+      alias: "it-team_1",
+      name: "Information Technology",
+      organization_id: "tenant-uuid",
       id: "tenant-uuid",
     });
 
@@ -50,10 +112,10 @@ describe("TenantPage", () => {
 
     fireEvent.click(screen.getByTestId("tenant-add-button"));
 
-    fireEvent.change(screen.getByLabelText("Realm Slug"), {
+    fireEvent.change(screen.getByLabelText("Organization Alias"), {
       target: { value: "it-team_1" },
     });
-    fireEvent.change(screen.getByLabelText("Display Name"), {
+    fireEvent.change(screen.getByLabelText("Organization Name"), {
       target: { value: "Information Technology" },
     });
 
@@ -61,8 +123,8 @@ describe("TenantPage", () => {
 
     await waitFor(() => {
       expect(mockCreateTenant).toHaveBeenCalledWith({
-        realm_id: "it-team_1",
-        display_name: "Information Technology",
+        slug: "it-team_1",
+        name: "Information Technology",
       });
     });
 
@@ -70,7 +132,9 @@ describe("TenantPage", () => {
       expect(refetch).toHaveBeenCalled();
     });
 
-    expect(await screen.findByText("Tenant created successfully.")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Organization created successfully."),
+    ).toBeInTheDocument();
   });
 
   it("shows inline validation errors instead of submitting an empty tenant form", async () => {
@@ -90,8 +154,12 @@ describe("TenantPage", () => {
     fireEvent.click(screen.getByTestId("tenant-add-button"));
     fireEvent.click(screen.getByTestId("tenant-modal-submit-button"));
 
-    expect(await screen.findByText("Tenant slug cannot be empty")).toBeInTheDocument();
-    expect(await screen.findByText("Tenant display name cannot be empty")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Organization alias cannot be empty"),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText("Organization name cannot be empty"),
+    ).toBeInTheDocument();
     expect(mockCreateTenant).not.toHaveBeenCalled();
   });
 
@@ -111,10 +179,10 @@ describe("TenantPage", () => {
 
     fireEvent.click(screen.getByTestId("tenant-add-button"));
 
-    fireEvent.change(screen.getByLabelText("Realm Slug"), {
+    fireEvent.change(screen.getByLabelText("Organization Alias"), {
       target: { value: "it team" },
     });
-    fireEvent.change(screen.getByLabelText("Display Name"), {
+    fireEvent.change(screen.getByLabelText("Organization Name"), {
       target: { value: "A".repeat(51) },
     });
 
@@ -122,11 +190,11 @@ describe("TenantPage", () => {
 
     expect(
       await screen.findByText(
-        "Tenant slug can only contain letters, numbers, hyphens, and underscores",
+        "Organization alias can only contain letters, numbers, hyphens, and underscores",
       ),
     ).toBeInTheDocument();
     expect(
-      await screen.findByText("Tenant display name must be 50 characters or fewer"),
+      await screen.findByText("Organization name must be 50 characters or fewer"),
     ).toBeInTheDocument();
     expect(mockCreateTenant).not.toHaveBeenCalled();
   });
@@ -143,21 +211,23 @@ describe("TenantPage", () => {
       permissionsLoaded: true,
     });
     mockCreateTenant.mockRejectedValue({
-      detail: "Realm already exists or conflict",
+      detail: "Organization already exists or conflict",
     });
 
     render(<TenantPage />);
 
     fireEvent.click(screen.getByTestId("tenant-add-button"));
-    fireEvent.change(screen.getByLabelText("Realm Slug"), {
+    fireEvent.change(screen.getByLabelText("Organization Alias"), {
       target: { value: "it-team_1" },
     });
-    fireEvent.change(screen.getByLabelText("Display Name"), {
+    fireEvent.change(screen.getByLabelText("Organization Name"), {
       target: { value: "Information Technology" },
     });
 
     fireEvent.click(screen.getByTestId("tenant-modal-submit-button"));
 
-    expect(await screen.findByText("Tenant slug already exists")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Organization alias already exists"),
+    ).toBeInTheDocument();
   });
 });

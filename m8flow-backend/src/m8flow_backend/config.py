@@ -6,6 +6,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 DEFAULT_KEYCLOAK_CLIENT_SECRET = "JXeQExm0JhQPLumgHtIIqf52bDalHz0q"
+DEFAULT_SHARED_REALM_NAME = "m8flow"
+DEFAULT_MASTER_REALM_NAME = "master"
 
 
 def _get(key: str, default: str | None = None) -> str | None:
@@ -37,6 +39,24 @@ def keycloak_admin_user() -> str:
 def keycloak_admin_password() -> str:
     """Master realm admin password (from env only)."""
     return _get("KEYCLOAK_ADMIN_PASSWORD") or _get("M8FLOW_KEYCLOAK_ADMIN_PASSWORD") or ""
+
+
+def shared_realm_name() -> str:
+    """Shared tenant-user realm name."""
+    return _get("M8FLOW_KEYCLOAK_SHARED_REALM") or DEFAULT_SHARED_REALM_NAME
+
+
+def shared_realm_label() -> str:
+    """Display label for the shared realm auth option."""
+    realm_name = shared_realm_name()
+    if realm_name == DEFAULT_SHARED_REALM_NAME:
+        return "M8Flow Realm"
+    return realm_name
+
+
+def master_realm_name() -> str:
+    """Platform/bootstrap admin realm name."""
+    return _get("M8FLOW_KEYCLOAK_MASTER_REALM") or DEFAULT_MASTER_REALM_NAME
 
 
 def realm_template_path() -> str:
@@ -90,7 +110,7 @@ def master_client_secret() -> str:
 
 def template_realm_name() -> str:
     """Realm name in the template (for substitution)."""
-    return "m8flow"
+    return DEFAULT_SHARED_REALM_NAME
 
 def app_public_base_url() -> str | None:
     """Base URL of the app (frontend at /, backend at /api). Used for tenant realm redirect URI substitution.

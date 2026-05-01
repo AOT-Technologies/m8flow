@@ -1,99 +1,194 @@
 /**
- * Tenant selection page. When ENABLE_MULTITENANT is true this can be the default page.
- * On submit calls tenant-login-url API; only if it succeeds is the tenant saved to localStorage
- * and the browser sent into the tenant-aware login flow. Global admins can bypass
- * tenant selection and sign in through the master realm.
+ * Multitenant landing page and post-auth tenant finalizer.
+ *
+ * Tenant users first authenticate against the shared realm. After credentials are
+ * accepted, M8Flow either finalizes the single available organization
+ * automatically or asks the user which organization to enter.
  */
-import { Box, Container, Typography, TextField, Button } from '@mui/material';
-import { FormEvent, useState } from 'react';
+import { useEffect, useRef } from 'react';
+import {
+  Alert,
+  Box,
+  Button,
+  Container,
+  Stack,
+  Typography,
+} from '@mui/material';
+import UserService, { type OrganizationMembership } from '../services/UserService';
 import { useConfig } from '../utils/useConfig';
 
 export const M8FLOW_TENANT_STORAGE_KEY = 'm8flow_tenant';
 
-const getRedirectUrl = () =>
-  encodeURIComponent(`${globalThis.location.origin}/`);
 const GLOBAL_ADMIN_LANDING_PATH = '/tenants';
+
+const getRootRedirectUrl = () => encodeURIComponent(`${globalThis.location.origin}/`);
 const getGlobalAdminLandingUrl = () =>
   `${globalThis.location.origin}${GLOBAL_ADMIN_LANDING_PATH}`;
+const getCurrentAbsoluteUrl = () =>
+  `${globalThis.location.origin}${globalThis.location.pathname}${globalThis.location.search || ''}`;
+
+const clearSelectedTenantState = () => {
+  localStorage.removeItem(M8FLOW_TENANT_STORAGE_KEY);
+  localStorage.removeItem('m8f_tenant_id');
+  document.cookie = 'm8flow_selected_tenant=; Max-Age=0; Path=/';
+};
+
+const rememberSelectedTenant = (organization: OrganizationMembership) => {
+  const tenantId = organization.id || organization.alias;
+  localStorage.setItem(M8FLOW_TENANT_STORAGE_KEY, organization.alias);
+  localStorage.setItem('m8f_tenant_id', tenantId);
+  document.cookie = `m8flow_selected_tenant=${encodeURIComponent(tenantId)}; Path=/`;
+};
 
 export default function TenantSelectPage() {
-  const { ENABLE_MULTITENANT, BACKEND_BASE_URL } = useConfig();
-  const [tenantName, setTenantName] = useState('');
-  const [error, setError] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const {
+    ENABLE_MULTITENANT,
+    BACKEND_BASE_URL,
+    MASTER_REALM_IDENTIFIER,
+    SHARED_REALM_IDENTIFIER,
+  } = useConfig();
+  const loggedIn = UserService.isLoggedIn();
+  const organizations = UserService.getOrganizationMemberships();
+  const autoFinalizeStarted = useRef(false);
 
-  if (!ENABLE_MULTITENANT) {
-    globalThis.location.replace('/');
-    return null;
-  }
-
-  const handleGlobalAdminSignIn = () => {
-    const redirectUrl = encodeURIComponent(getGlobalAdminLandingUrl());
+  const finalizeTenantLogin = (organization: OrganizationMembership) => {
+    rememberSelectedTenant(organization);
+    const redirectUrl = encodeURIComponent(getCurrentAbsoluteUrl());
     globalThis.location.assign(
-      `${BACKEND_BASE_URL}/login?redirect_url=${redirectUrl}&authentication_identifier=master`
+      `${BACKEND_BASE_URL}/login?redirect_url=${redirectUrl}&authentication_identifier=${encodeURIComponent(SHARED_REALM_IDENTIFIER)}&tenant=${encodeURIComponent(organization.alias)}&tenant_finalization=1`,
     );
   };
 
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault();
-    const trimmed = tenantName.trim();
-    if (!trimmed) {
-      setError('Tenant name is required');
+  useEffect(() => {
+    if (!ENABLE_MULTITENANT) {
+      globalThis.location.replace('/');
       return;
     }
-    setError('');
-    setSubmitting(true);
-    const url = `${BACKEND_BASE_URL}/m8flow/tenant-login-url?tenant=${encodeURIComponent(trimmed)}`;
-    fetch(url, { method: 'GET', credentials: 'include' })
-      .then((res) => {
-        if (res.status === 404) {
-          setError('Tenant not found. Please check the name or contact your administrator.');
-          setSubmitting(false);
-          return;
-        }
-        if (!res.ok) {
-          setError('Unable to verify tenant. Please try again.');
-          setSubmitting(false);
-          return;
-        }
-        localStorage.setItem(M8FLOW_TENANT_STORAGE_KEY, trimmed);
-        const redirectUrl = getRedirectUrl();
-        const loginUrl = `${BACKEND_BASE_URL}/login?redirect_url=${redirectUrl}&tenant=${encodeURIComponent(trimmed)}&authentication_identifier=${encodeURIComponent(trimmed)}`;
-        globalThis.location.assign(loginUrl);
-      })
-      .catch(() => {
-        setError('Unable to verify tenant. Please try again.');
-        setSubmitting(false);
-      });
+
+    if (!loggedIn || organizations.length !== 1 || autoFinalizeStarted.current) {
+      return;
+    }
+
+    autoFinalizeStarted.current = true;
+    finalizeTenantLogin(organizations[0]);
+  }, [ENABLE_MULTITENANT, loggedIn, organizations]);
+
+  if (!ENABLE_MULTITENANT) {
+    return null;
+  }
+
+  const handleSharedRealmSignIn = () => {
+    clearSelectedTenantState();
+    const redirectUrl = getRootRedirectUrl();
+    globalThis.location.assign(
+      `${BACKEND_BASE_URL}/login?redirect_url=${redirectUrl}&authentication_identifier=${encodeURIComponent(SHARED_REALM_IDENTIFIER)}`,
+    );
   };
+
+  const handleGlobalAdminSignIn = () => {
+    clearSelectedTenantState();
+    const redirectUrl = encodeURIComponent(getGlobalAdminLandingUrl());
+    globalThis.location.assign(
+      `${BACKEND_BASE_URL}/login?redirect_url=${redirectUrl}&authentication_identifier=${encodeURIComponent(MASTER_REALM_IDENTIFIER)}`,
+    );
+  };
+
+  if (!loggedIn) {
+    return (
+      <Container maxWidth="sm">
+        <Box sx={{ padding: 3 }}>
+          <Typography variant="h4" component="h1" sx={{ mb: 2 }}>
+            Sign in to m8flow
+          </Typography>
+          <Typography color="text.secondary" sx={{ mb: 3 }}>
+            Sign in with your shared realm account first. If your account belongs
+            to more than one organization, you will choose the tenant after your
+            credentials are accepted.
+          </Typography>
+          <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
+            <Button
+              type="button"
+              variant="contained"
+              onClick={handleSharedRealmSignIn}
+              data-testid="shared-realm-sign-in-button"
+            >
+              Sign in
+            </Button>
+            <Button
+              variant="text"
+              onClick={handleGlobalAdminSignIn}
+              data-testid="global-admin-sign-in-button"
+            >
+              Platform admin sign in
+            </Button>
+          </Stack>
+        </Box>
+      </Container>
+    );
+  }
+
+  if (organizations.length === 0) {
+    return (
+      <Container maxWidth="sm">
+        <Box sx={{ padding: 3 }}>
+          <Typography variant="h4" component="h1" sx={{ mb: 2 }}>
+            No organizations available
+          </Typography>
+          <Alert severity="warning" sx={{ mb: 3 }}>
+            Your account authenticated successfully, but it is not a member of any
+            organization in the shared realm.
+          </Alert>
+          <Button
+            variant="text"
+            onClick={handleGlobalAdminSignIn}
+            data-testid="global-admin-sign-in-button"
+          >
+            Platform admin sign in
+          </Button>
+        </Box>
+      </Container>
+    );
+  }
+
+  if (organizations.length === 1) {
+    return (
+      <Container maxWidth="sm">
+        <Box sx={{ padding: 3 }}>
+          <Typography variant="h5" component="h1" sx={{ mb: 2 }}>
+            Finalizing tenant access
+          </Typography>
+          <Typography color="text.secondary">
+            Continuing into {organizations[0].name || organizations[0].alias}...
+          </Typography>
+        </Box>
+      </Container>
+    );
+  }
 
   return (
     <Container maxWidth="sm">
       <Box sx={{ padding: 3 }}>
         <Typography variant="h4" component="h1" sx={{ mb: 2 }}>
-          Select tenant
+          Select organization
         </Typography>
-        <form onSubmit={handleSubmit} data-testid="tenant-select-form">
-          <TextField
-            fullWidth
-            label="Tenant name"
-            value={tenantName}
-            onChange={(e) => setTenantName(e.target.value)}
-            error={!!error}
-            helperText={error}
-            autoFocus
-            data-testid="tenant-name-input"
-            sx={{ mb: 2 }}
-          />
-          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-            <Button type="submit" variant="contained" disabled={submitting} data-testid="tenant-select-submit-button">
-              {submitting ? 'Saving…' : 'Continue'}
+        <Typography color="text.secondary" sx={{ mb: 3 }}>
+          Your account has access to more than one organization. Choose the tenant
+          you want to enter for this session.
+        </Typography>
+        <Stack spacing={2}>
+          {organizations.map((organization) => (
+            <Button
+              key={organization.alias}
+              variant="outlined"
+              onClick={() => finalizeTenantLogin(organization)}
+              data-testid={`organization-option-${organization.alias}`}
+              sx={{ justifyContent: 'space-between', textTransform: 'none' }}
+            >
+              <span>{organization.name || organization.alias}</span>
+              <span>{organization.alias}</span>
             </Button>
-            <Button variant="text" onClick={handleGlobalAdminSignIn} data-testid="global-admin-sign-in-button">
-              Global admin sign in
-            </Button>
-          </Box>
-        </form>
+          ))}
+        </Stack>
       </Box>
     </Container>
   );

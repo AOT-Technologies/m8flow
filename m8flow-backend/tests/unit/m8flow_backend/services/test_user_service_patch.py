@@ -77,7 +77,7 @@ def test_add_user_to_group_or_add_to_waiting_returns_users_from_tenant_scoped_re
     monkeypatch.setattr(
         user_service_patch,
         "find_users_for_current_tenant_by_identifier",
-        lambda username_or_email: [alice, bob] if username_or_email == "alice@example.com" else [],
+        lambda username: [alice, bob] if username == "alice" else [],
     )
     monkeypatch.setattr(user_service.UserService, "find_or_create_group", fake_find_or_create_group)
     monkeypatch.setattr(user_service.UserService, "add_user_to_group", fake_add_user_to_group)
@@ -85,7 +85,7 @@ def test_add_user_to_group_or_add_to_waiting_returns_users_from_tenant_scoped_re
     try:
         user_service_patch.apply()
         result = user_service.UserService.add_user_to_group_or_add_to_waiting(
-            "alice@example.com",
+            "alice",
             "reviewer",
         )
     finally:
@@ -125,13 +125,20 @@ def test_apply_waiting_group_assignments_only_applies_current_tenant_groups(monk
         group=SimpleNamespace(identifier="tenant-a:admin"),
         pattern_from_wildcard_username=lambda: r"^ali.*",
     )
+    email_only_wildcard_assignment = SimpleNamespace(
+        group=SimpleNamespace(identifier="tenant-a:viewer"),
+        pattern_from_wildcard_username=lambda: r".*@example\.com$",
+    )
     query_results = [
         [exact_assignment, other_tenant_assignment],
-        [wildcard_assignment],
+        [wildcard_assignment, email_only_wildcard_assignment],
     ]
 
+    captured_usernames: list[list[str | None]] = []
+
     class FakeField:
-        def in_(self, _values):
+        def in_(self, values):
+            captured_usernames.append(list(values))
             return self
 
         def regexp_match(self, _pattern):
@@ -196,3 +203,4 @@ def test_apply_waiting_group_assignments_only_applies_current_tenant_groups(monk
     ]
     assert deleted == [exact_assignment]
     assert committed == [True]
+    assert captured_usernames == [["alice"]]

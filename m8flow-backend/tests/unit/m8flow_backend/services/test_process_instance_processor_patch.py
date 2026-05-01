@@ -78,6 +78,7 @@ def _setup_processor_patch_fakes(monkeypatch, completed_tasks_with_data=None):  
     fake_human_task_user_module = ModuleType("spiffworkflow_backend.models.human_task_user")
     fake_user_service_module = ModuleType("spiffworkflow_backend.services.user_service")
     fake_processor_module = ModuleType("spiffworkflow_backend.services.process_instance_processor")
+    fake_task_module = ModuleType("SpiffWorkflow.task")
 
     class FakeAddedBy:
         guest = SimpleNamespace(value="guest")
@@ -99,15 +100,40 @@ def _setup_processor_patch_fakes(monkeypatch, completed_tasks_with_data=None):  
         def get_tasks_with_data(cls, _workflow):  # noqa: ANN001
             return tasks
 
+        def __init__(self):
+            self.process_instance_model = SimpleNamespace(process_initiator_id=777)
+
+        @staticmethod
+        def raise_if_no_potential_owners(potential_owners, _message):  # noqa: ANN001
+            if not potential_owners:
+                raise AssertionError("expected potential owners")
+
+    class FakeGroupModel:
+        def __init__(self, identifier: str):
+            self.id = 33
+            self.identifier = identifier
+            self.user_group_assignments = []
+
+    class FakeUserServiceClass:
+        @staticmethod
+        def find_or_create_guest_user():
+            return SimpleNamespace(id=999)
+
+        @staticmethod
+        def find_or_create_group(identifier: str):
+            return FakeGroupModel(identifier)
+
     fake_interfaces_module.PotentialOwnerIdList = dict
     fake_human_task_user_module.HumanTaskUserAddedBy = FakeAddedBy
-    fake_user_service_module.UserService = SimpleNamespace()
+    fake_user_service_module.UserService = FakeUserServiceClass
     fake_processor_module.CustomBpmnScriptEngine = FakeCustomBpmnScriptEngine
     fake_processor_module.ProcessInstanceProcessor = FakeProcessInstanceProcessor
+    fake_task_module.Task = object
 
     monkeypatch.setitem(sys.modules, "spiffworkflow_backend.interfaces", fake_interfaces_module)
     monkeypatch.setitem(sys.modules, "spiffworkflow_backend.models.human_task_user", fake_human_task_user_module)
     monkeypatch.setitem(sys.modules, "spiffworkflow_backend.services.user_service", fake_user_service_module)
+    monkeypatch.setitem(sys.modules, "SpiffWorkflow.task", fake_task_module)
     monkeypatch.setitem(
         sys.modules,
         "spiffworkflow_backend.services.process_instance_processor",
@@ -115,13 +141,13 @@ def _setup_processor_patch_fakes(monkeypatch, completed_tasks_with_data=None):  
     )
     monkeypatch.setattr(process_instance_processor_patch, "_PATCHED", False)
 
-    return FakeCustomBpmnScriptEngine
+    return FakeCustomBpmnScriptEngine, FakeProcessInstanceProcessor
 
 
 def test_evaluate_exposes_completed_task_variable_when_no_external_context_provided(monkeypatch) -> None:
     """Regression: after Celery rehydration the gateway's task.data is {}; decision must reach
     the script engine via completed-task injection so the gateway condition does not raise NameError."""
-    FakeEngine = _setup_processor_patch_fakes(
+    FakeEngine, _FakeProcessor = _setup_processor_patch_fakes(
         monkeypatch,
         completed_tasks_with_data=[
             SimpleNamespace(data={"decision": "Rejected"}, last_state_change=1.0),
@@ -141,7 +167,7 @@ def test_evaluate_exposes_completed_task_variable_when_no_external_context_provi
 def test_evaluate_exposes_rehydrated_data_objects_without_external_context(monkeypatch) -> None:
     """After patched_run_process_instance_with_processor sets bpmn_process_instance.data['data_objects'],
     patched_evaluate must inject those variables even when no external_context is passed."""
-    FakeEngine = _setup_processor_patch_fakes(monkeypatch, completed_tasks_with_data=[])
+    FakeEngine, _FakeProcessor = _setup_processor_patch_fakes(monkeypatch, completed_tasks_with_data=[])
     process_instance_processor_patch.apply()
 
     engine = FakeEngine()
@@ -160,7 +186,7 @@ def test_evaluate_exposes_rehydrated_data_objects_without_external_context(monke
 
 def test_evaluate_external_context_takes_priority_over_completed_task_data(monkeypatch) -> None:
     """external_context must win over completed-task data so callers can always override the context."""
-    FakeEngine = _setup_processor_patch_fakes(
+    FakeEngine, _FakeProcessor = _setup_processor_patch_fakes(
         monkeypatch,
         completed_tasks_with_data=[
             SimpleNamespace(data={"decision": "Rejected"}, last_state_change=1.0),
@@ -175,3 +201,34 @@ def test_evaluate_external_context_takes_priority_over_completed_task_data(monke
 
     assert result == {"decision": "Approved"}
     assert FakeEngine.calls == [{"decision": "Approved"}]
+
+
+def test_get_potential_owners_uses_workflow_level_lane_owners_when_task_data_is_empty(monkeypatch) -> None:
+    FakeEngine, FakeProcessor = _setup_processor_patch_fakes(monkeypatch, completed_tasks_with_data=[])
+    monkeypatch.setattr(
+        process_instance_processor_patch,
+        "find_users_for_current_tenant_by_identifier",
+        lambda username: [SimpleNamespace(id=41, username=username)] if username == "reviewer" else [],
+    )
+    process_instance_processor_patch.apply()
+
+    from flask import Flask
+
+    flask_app = Flask(__name__)  # NOSONAR - unit test
+    with flask_app.app_context():
+        processor = FakeProcessor()
+        task = SimpleNamespace(
+            data={},
+            task_spec=SimpleNamespace(lane="Finance", extensions={}),
+            workflow=SimpleNamespace(
+                data={"data_objects": {"lane_owners": {"Finance": ["reviewer"]}}},
+                data_objects={},
+            ),
+        )
+
+        result = processor.get_potential_owners_from_task(task)
+
+    assert result == {
+        "potential_owners": [{"added_by": "lane_owner", "user_id": 41}],
+        "lane_assignment_id": 33,
+    }

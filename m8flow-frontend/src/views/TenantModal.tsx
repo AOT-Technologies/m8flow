@@ -29,23 +29,23 @@ const TENANT_SLUG_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 function validateTenantSlug(value: string): string {
   if (!value) {
-    return "tenant_slug_cannot_be_empty";
+    return "organization_alias_cannot_be_empty";
   }
   if (value.length > MAX_SLUG_LENGTH) {
-    return "tenant_slug_max_length";
+    return "organization_alias_max_length";
   }
   if (!TENANT_SLUG_PATTERN.test(value)) {
-    return "tenant_slug_invalid_pattern";
+    return "organization_alias_invalid_pattern";
   }
   return "";
 }
 
 function validateDisplayName(value: string): string {
   if (!value) {
-    return "tenant_display_name_cannot_be_empty";
+    return "organization_name_cannot_be_empty";
   }
   if (value.length > MAX_DISPLAY_NAME_LENGTH) {
-    return "tenant_display_name_max_length";
+    return "organization_name_max_length";
   }
   return "";
 }
@@ -69,12 +69,20 @@ export default function TenantModal({
 }: TenantModalProps) {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
+  const translate = (
+    key: string,
+    fallback: string,
+    options?: Record<string, unknown>,
+  ) => {
+    const translated = t(key, options);
+    return translated === key ? fallback : translated;
+  };
 
   // Create State
-  const [createRealmId, setCreateRealmId] = useState("");
-  const [createDisplayName, setCreateDisplayName] = useState("");
-  const [createRealmIdError, setCreateRealmIdError] = useState("");
-  const [createDisplayNameError, setCreateDisplayNameError] = useState("");
+  const [createTenantAlias, setCreateTenantAlias] = useState("");
+  const [createTenantName, setCreateTenantName] = useState("");
+  const [createTenantAliasError, setCreateTenantAliasError] = useState("");
+  const [createTenantNameError, setCreateTenantNameError] = useState("");
 
   // Edit State
   const [editName, setEditName] = useState("");
@@ -84,41 +92,41 @@ export default function TenantModal({
   useEffect(() => {
     if (open) {
       if (type === TenantModalType.CREATE_TENANT) {
-        setCreateRealmId("");
-        setCreateDisplayName("");
+        setCreateTenantAlias("");
+        setCreateTenantName("");
       } else if (tenant && type === TenantModalType.EDIT_TENANT) {
         setEditName(tenant.name);
       }
     } else if (!open) {
       // Reset state when modal closes to prevent stale data
-      setCreateRealmId("");
-      setCreateDisplayName("");
+      setCreateTenantAlias("");
+      setCreateTenantName("");
       setEditName("");
     }
-    setCreateRealmIdError("");
-    setCreateDisplayNameError("");
+    setCreateTenantAliasError("");
+    setCreateTenantNameError("");
     setEditNameError("");
     setSubmitError("");
   }, [open, tenant, type]);
 
   const handleSubmit = async () => {
     let hasValidationError = false;
-    setCreateRealmIdError("");
-    setCreateDisplayNameError("");
+    setCreateTenantAliasError("");
+    setCreateTenantNameError("");
     setEditNameError("");
     setSubmitError("");
 
     if (type === TenantModalType.CREATE_TENANT) {
-      const trimmedRealmId = createRealmId.trim();
-      const trimmedDisplayName = createDisplayName.trim();
-      const realmIdError = validateTenantSlug(trimmedRealmId);
-      const displayNameError = validateDisplayName(trimmedDisplayName);
-      if (realmIdError) {
-        setCreateRealmIdError(t(realmIdError, { count: MAX_SLUG_LENGTH }));
+      const trimmedTenantAlias = createTenantAlias.trim();
+      const trimmedTenantName = createTenantName.trim();
+      const tenantAliasError = validateTenantSlug(trimmedTenantAlias);
+      const tenantNameError = validateDisplayName(trimmedTenantName);
+      if (tenantAliasError) {
+        setCreateTenantAliasError(t(tenantAliasError, { count: MAX_SLUG_LENGTH }));
         hasValidationError = true;
       }
-      if (displayNameError) {
-        setCreateDisplayNameError(t(displayNameError, { count: MAX_DISPLAY_NAME_LENGTH }));
+      if (tenantNameError) {
+        setCreateTenantNameError(t(tenantNameError, { count: MAX_DISPLAY_NAME_LENGTH }));
         hasValidationError = true;
       }
     } else if (type === TenantModalType.EDIT_TENANT) {
@@ -139,8 +147,8 @@ export default function TenantModal({
     try {
       if (type === TenantModalType.CREATE_TENANT) {
         await TenantService.createTenant({
-          realm_id: createRealmId.trim(),
-          display_name: createDisplayName.trim(),
+          slug: createTenantAlias.trim(),
+          name: createTenantName.trim(),
         });
       } else if (type === TenantModalType.EDIT_TENANT) {
         if (!tenant) return;
@@ -156,8 +164,14 @@ export default function TenantModal({
       // }
       onSuccess(
         type === TenantModalType.CREATE_TENANT
-          ? t("tenant_created_successfully")
-          : t("tenant_updated_successfully"),
+          ? translate(
+              "organization_created_successfully",
+              "Organization created successfully.",
+            )
+          : translate(
+              "organization_updated_successfully",
+              "Organization updated successfully.",
+            ),
       );
       onClose();
     } catch (err: any) {
@@ -168,7 +182,12 @@ export default function TenantModal({
         (errorMessage.toLowerCase().includes("already exists") ||
           errorMessage.toLowerCase().includes("conflict"))
       ) {
-        setCreateRealmIdError(t("tenant_slug_already_exists"));
+        setCreateTenantAliasError(
+          translate(
+            "organization_alias_already_exists",
+            "Organization alias already exists",
+          ),
+        );
         return;
       }
       const action =
@@ -177,7 +196,13 @@ export default function TenantModal({
           : type === TenantModalType.EDIT_TENANT
             ? "update"
             : "delete";
-      setSubmitError(errorMessage || t(`failed_to_${action}_tenant`));
+      setSubmitError(
+        errorMessage ||
+          translate(
+            `failed_to_${action}_organization`,
+            `Failed to ${action} organization. Please try again.`,
+          ),
+      );
     } finally {
       setLoading(false);
     }
@@ -185,7 +210,11 @@ export default function TenantModal({
 
   const isCreate = type === TenantModalType.CREATE_TENANT;
   const isDelete = type === TenantModalType.DELETE_TENANT;
-  const title = isDelete ? t("delete_tenant") : isCreate ? t("add_tenant") : t("edit_tenant");
+  const title = isDelete
+    ? translate("delete_organization", "Delete Organization")
+    : isCreate
+      ? translate("add_organization", "Add Organization")
+      : translate("edit_organization", "Edit Organization");
 
   return (
     <Dialog
@@ -219,7 +248,10 @@ export default function TenantModal({
         {isDelete ? (
           <Stack spacing={2.5} sx={{ pt: 1 }}>
             <DialogContentText>
-              {t("are_you_sure_you_want_to_delete_tenant")}{" "}
+              {translate(
+                "are_you_sure_you_want_to_delete_organization",
+                "Are you sure you want to delete the organization",
+              )}{" "}
               <strong>"{tenant?.name}"</strong>?
             </DialogContentText>
 
@@ -239,47 +271,47 @@ export default function TenantModal({
             {isCreate ? (
               <>
                 <TextField
-                  label={t("realm_slug")}
+                  label={translate("organization_alias", "Organization Alias")}
                   fullWidth
-                  value={createRealmId}
+                  value={createTenantAlias}
                   onChange={(e) => {
-                    setCreateRealmId(e.target.value);
-                    if (createRealmIdError) {
-                      setCreateRealmIdError("");
+                    setCreateTenantAlias(e.target.value);
+                    if (createTenantAliasError) {
+                      setCreateTenantAliasError("");
                     }
                     if (submitError) {
                       setSubmitError("");
                     }
                   }}
                   disabled={loading}
-                  error={Boolean(createRealmIdError)}
-                  helperText={createRealmIdError}
+                  error={Boolean(createTenantAliasError)}
+                  helperText={createTenantAliasError}
                   inputProps={{ maxLength: MAX_SLUG_LENGTH }}
                   data-testid="tenant-realm-id-input"
                 />
                 <TextField
-                  label={t("display_name")}
+                  label={translate("organization_name", "Organization Name")}
                   fullWidth
-                  value={createDisplayName}
+                  value={createTenantName}
                   onChange={(e) => {
-                    setCreateDisplayName(e.target.value);
-                    if (createDisplayNameError) {
-                      setCreateDisplayNameError("");
+                    setCreateTenantName(e.target.value);
+                    if (createTenantNameError) {
+                      setCreateTenantNameError("");
                     }
                     if (submitError) {
                       setSubmitError("");
                     }
                   }}
                   disabled={loading}
-                  error={Boolean(createDisplayNameError)}
-                  helperText={createDisplayNameError}
+                  error={Boolean(createTenantNameError)}
+                  helperText={createTenantNameError}
                   inputProps={{ maxLength: MAX_DISPLAY_NAME_LENGTH }}
                   data-testid="tenant-display-name-input"
                 />
               </>
             ) : (
               <TextField
-                label={t("name")}
+                label={translate("organization_name", "Organization Name")}
                 fullWidth
                 value={editName}
                 onChange={(e) => {

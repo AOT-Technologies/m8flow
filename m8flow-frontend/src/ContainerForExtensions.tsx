@@ -61,11 +61,13 @@ const originalDoLogout = UserService.doLogout;
 UserService.doLogout = () => {
   if (typeof window !== 'undefined') {
     localStorage.removeItem(M8FLOW_TENANT_STORAGE_KEY);
+    localStorage.removeItem('m8f_tenant_id');
+    document.cookie = 'm8flow_selected_tenant=; Max-Age=0; Path=/';
   }
   originalDoLogout();
 };
 
-/** When ENABLE_MULTITENANT: at "/" show TenantSelectPage unless the user can manage tenants globally or already selected a tenant. */
+/** When ENABLE_MULTITENANT: at "/" show the sign-in landing until the user authenticates. */
 function MultitenantRootGate({
   extensionUxElements,
   setAdditionalNavElement,
@@ -84,6 +86,19 @@ function MultitenantRootGate({
   if (!permissionsLoaded) return null;
 
   if (ability.can("GET", targetUris.m8flowTenantListPath)) {
+    return (
+      <RoleBasedRootGate
+        extensionUxElements={extensionUxElements}
+        setAdditionalNavElement={setAdditionalNavElement}
+        isMobile={isMobile}
+        ability={ability}
+        targetUris={targetUris}
+        permissionsLoaded={permissionsLoaded}
+      />
+    );
+  }
+
+  if (UserService.isLoggedIn()) {
     return (
       <RoleBasedRootGate
         extensionUxElements={extensionUxElements}

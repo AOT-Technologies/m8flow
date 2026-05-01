@@ -17,7 +17,7 @@ When attached to a client, it adds two claims to the token:
 
 The mapper reads the realm from the current Keycloak session, so the values are always for the realm in which the user authenticated. Applications can use these claims for multi-realm or tenant-aware logic without extra lookups.
 
-**Compatibility**: Keycloak 26.0.7, Java 17.
+**Compatibility**: Keycloak 26.6.1, Java 17.
 
 ## How to build
 

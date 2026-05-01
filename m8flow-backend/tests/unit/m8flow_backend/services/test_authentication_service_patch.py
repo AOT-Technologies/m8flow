@@ -8,6 +8,7 @@ import time
 from types import ModuleType
 from types import SimpleNamespace
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -26,6 +27,16 @@ def reset_patched_flag():
     reset_auth_config_on_demand_patch()
     yield
     reset_auth_config_on_demand_patch()
+
+
+@pytest.fixture
+def reset_login_scope_patch_flag():
+    """Allow the login scope patch to be applied in tests."""
+    from m8flow_backend.services.authentication_service_patch import reset_login_scope_patch
+
+    reset_login_scope_patch()
+    yield
+    reset_login_scope_patch()
 
 
 def test_on_demand_adds_config_when_realm_exists(reset_patched_flag):
@@ -124,6 +135,138 @@ def test_on_demand_adds_master_config(reset_patched_flag):
             assert result["uri"] == "http://keycloak/realms/master"
 
 
+def test_on_demand_adds_config_for_configured_master_realm(reset_patched_flag, monkeypatch):
+    """When the configured admin realm is missing, ensure_master_auth_config runs and retry returns config."""
+    from flask import Flask
+
+    app = Flask(__name__)
+    app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"] = [
+        {"identifier": "default", "uri": "http://keycloak/realms/default", "label": "default"}
+    ]
+    master_config = {
+        "identifier": "ops-admin",
+        "uri": "http://keycloak/realms/ops-admin",
+        "label": "Master",
+    }
+    monkeypatch.setenv("M8FLOW_KEYCLOAK_MASTER_REALM", "ops-admin")
+
+    def ensure_adds_master_config(flask_app):
+        configs = flask_app.config.get("SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS") or []
+        if not any(c.get("identifier") == "ops-admin" for c in configs):
+            configs.append(master_config.copy())
+
+    with patch(
+        "m8flow_backend.services.auth_config_service.ensure_master_auth_config",
+        side_effect=ensure_adds_master_config,
+    ):
+        from m8flow_backend.services.authentication_service_patch import apply_auth_config_on_demand_patch
+        from spiffworkflow_backend.services.authentication_service import AuthenticationService
+
+        with app.app_context():
+            apply_auth_config_on_demand_patch()
+            result = AuthenticationService.authentication_option_for_identifier("ops-admin")
+            assert result["identifier"] == "ops-admin"
+            assert result["uri"] == "http://keycloak/realms/ops-admin"
+
+
+def test_login_scope_patch_adds_selected_organization_scope_for_shared_realm(
+    reset_login_scope_patch_flag,
+    monkeypatch,
+) -> None:
+    from flask import Flask
+
+    from spiffworkflow_backend.services.authentication_service import AuthenticationService
+
+    from m8flow_backend.services.authentication_service_patch import apply_login_scope_patch
+
+    app = Flask(__name__)
+    monkeypatch.setenv("M8FLOW_KEYCLOAK_SHARED_REALM", "shared-users")
+
+    def fake_get_login_redirect_url(self, authentication_identifier, final_url=None):
+        assert authentication_identifier == "shared-users"
+        return "https://keycloak/auth?scope=openid profile email&client_id=app"
+
+    monkeypatch.setattr(AuthenticationService, "get_login_redirect_url", fake_get_login_redirect_url)
+    monkeypatch.setattr(
+        "m8flow_backend.services.authentication_service_patch.organization_scope_for_tenant",
+        lambda tenant_identifier: f"organization:{tenant_identifier}",
+    )
+
+    with app.test_request_context("/v1.0/login?tenant=tenant-a"):
+        apply_login_scope_patch()
+        login_url = AuthenticationService().get_login_redirect_url("shared-users", final_url="/tasks")
+
+    scopes = parse_qs(urlsplit(login_url).query)["scope"][0].split(" ")
+    assert scopes == ["openid", "profile", "email", "organization:tenant-a"]
+
+
+def test_login_scope_patch_uses_bare_organization_scope_without_selected_tenant(
+    reset_login_scope_patch_flag,
+    monkeypatch,
+) -> None:
+    from flask import Flask
+
+    from spiffworkflow_backend.services.authentication_service import AuthenticationService
+
+    from m8flow_backend.services.authentication_service_patch import apply_login_scope_patch
+
+    app = Flask(__name__)
+    monkeypatch.setenv("M8FLOW_KEYCLOAK_SHARED_REALM", "shared-users")
+
+    def fake_get_login_redirect_url(self, authentication_identifier, final_url=None):
+        assert authentication_identifier == "shared-users"
+        return "https://keycloak/auth?scope=openid profile email&client_id=app"
+
+    monkeypatch.setattr(AuthenticationService, "get_login_redirect_url", fake_get_login_redirect_url)
+    monkeypatch.setattr(
+        "m8flow_backend.services.authentication_service_patch.organization_scope_for_tenant",
+        lambda tenant_identifier: "organization:*"
+        if tenant_identifier is None
+        else f"organization:{tenant_identifier}",
+    )
+
+    with app.test_request_context("/v1.0/login"):
+        apply_login_scope_patch()
+        login_url = AuthenticationService().get_login_redirect_url("shared-users", final_url="/tasks")
+
+    scopes = parse_qs(urlsplit(login_url).query)["scope"][0].split(" ")
+    assert scopes == ["openid", "profile", "email", "organization:*"]
+
+
+def test_login_scope_patch_prefers_explicit_requested_tenant_over_existing_selected_tenant(
+    reset_login_scope_patch_flag,
+    monkeypatch,
+) -> None:
+    from flask import Flask
+
+    from spiffworkflow_backend.services.authentication_service import AuthenticationService
+
+    from m8flow_backend.services.authentication_service_patch import apply_login_scope_patch
+
+    app = Flask(__name__)
+    monkeypatch.setenv("M8FLOW_KEYCLOAK_SHARED_REALM", "shared-users")
+
+    def fake_get_login_redirect_url(self, authentication_identifier, final_url=None):
+        assert authentication_identifier == "shared-users"
+        return "https://keycloak/auth?scope=openid profile email&client_id=app"
+
+    monkeypatch.setattr(AuthenticationService, "get_login_redirect_url", fake_get_login_redirect_url)
+    monkeypatch.setattr(
+        "m8flow_backend.services.authentication_service_patch.organization_scope_for_tenant",
+        lambda tenant_identifier: f"organization:{tenant_identifier}",
+    )
+
+    with app.test_request_context(
+        "/v1.0/login?tenant=tenant-b",
+        environ_overrides={"HTTP_COOKIE": "m8flow_selected_tenant=tenant-a-id"},
+    ):
+        apply_login_scope_patch()
+        login_url = AuthenticationService().get_login_redirect_url("shared-users", final_url="/tasks")
+
+    scopes = parse_qs(urlsplit(login_url).query)["scope"][0].split(" ")
+    assert scopes == ["openid", "profile", "email", "organization:tenant-b"]
+
+
 def test_refresh_token_storage_tenant_maps_master_to_default() -> None:
     from m8flow_backend.services.authentication_service_patch import (
         _refresh_token_storage_tenant_id,
@@ -132,6 +275,16 @@ def test_refresh_token_storage_tenant_maps_master_to_default() -> None:
 
     assert _refresh_token_storage_tenant_id("master") == DEFAULT_TENANT_ID
     assert _refresh_token_storage_tenant_id("tenant-a") == "tenant-a"
+
+
+def test_refresh_token_storage_tenant_maps_configured_master_to_default(monkeypatch) -> None:
+    from m8flow_backend.services.authentication_service_patch import (
+        _refresh_token_storage_tenant_id,
+    )
+    from m8flow_backend.tenancy import DEFAULT_TENANT_ID
+
+    monkeypatch.setenv("M8FLOW_KEYCLOAK_MASTER_REALM", "ops-admin")
+    assert _refresh_token_storage_tenant_id("ops-admin") == DEFAULT_TENANT_ID
 
 
 def test_store_refresh_token_uses_default_storage_scope_for_master(monkeypatch) -> None:
@@ -198,6 +351,71 @@ def test_store_refresh_token_uses_default_storage_scope_for_master(monkeypatch) 
         assert g.m8flow_tenant_id == "master"
 
 
+def test_store_refresh_token_uses_default_storage_scope_for_configured_master(monkeypatch) -> None:
+    import sys
+
+    from flask import Flask, g
+
+    from m8flow_backend.services.authentication_service_patch import _patched_store_refresh_token
+    from m8flow_backend.tenancy import DEFAULT_TENANT_ID
+
+    app = Flask(__name__)
+    seen: dict[str, object] = {}
+    monkeypatch.setenv("M8FLOW_KEYCLOAK_MASTER_REALM", "ops-admin")
+
+    class DummyColumn:
+        def __init__(self, name: str):
+            self.name = name
+
+        def __eq__(self, other: object):
+            return (self.name, other)
+
+    class DummyQuery:
+        def filter(self, *args):
+            seen.setdefault("filters", []).extend(args)
+            seen["scoped_tenant"] = getattr(g, "m8flow_tenant_id", None)
+            return self
+
+        def first(self):
+            return None
+
+    class DummyRefreshTokenModel:
+        user_id = DummyColumn("user_id")
+        m8f_tenant_id = DummyColumn("m8f_tenant_id")
+        query = DummyQuery()
+
+        def __init__(self, user_id: int, token: str, m8f_tenant_id: str):
+            self.user_id = user_id
+            self.token = token
+            self.m8f_tenant_id = m8f_tenant_id
+
+    class DummySession:
+        def add(self, obj):
+            seen["added"] = obj
+
+        def commit(self):
+            seen["committed"] = True
+
+        def rollback(self):
+            seen["rolled_back"] = True
+
+    refresh_token_module = ModuleType("spiffworkflow_backend.models.refresh_token")
+    refresh_token_module.RefreshTokenModel = DummyRefreshTokenModel
+    db_module = ModuleType("spiffworkflow_backend.models.db")
+    db_module.db = SimpleNamespace(session=DummySession())
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.models.refresh_token", refresh_token_module)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.models.db", db_module)
+
+    with app.test_request_context("/"):
+        g.m8flow_tenant_id = "ops-admin"
+        _patched_store_refresh_token(user_id=7, refresh_token="refresh-token", tenant_id="ops-admin")
+
+        added = seen["added"]
+        assert getattr(added, "m8f_tenant_id") == DEFAULT_TENANT_ID
+        assert seen["scoped_tenant"] == DEFAULT_TENANT_ID
+        assert g.m8flow_tenant_id == "ops-admin"
+
+
 def test_get_refresh_token_uses_default_storage_scope_for_master(monkeypatch) -> None:
     import sys
 
@@ -241,6 +459,26 @@ def test_get_refresh_token_uses_default_storage_scope_for_master(monkeypatch) ->
         assert token == "stored-refresh-token"
         assert seen["scoped_tenant"] == DEFAULT_TENANT_ID
         assert g.m8flow_tenant_id == "master"
+
+
+def test_resolve_refresh_token_tenant_prefers_selected_tenant_for_shared_realm(monkeypatch) -> None:
+    import base64
+
+    from flask import Flask
+
+    from m8flow_backend.services.authentication_service_patch import _resolve_refresh_token_tenant_id
+
+    monkeypatch.setenv("M8FLOW_KEYCLOAK_SHARED_REALM", "shared-users")
+    app = Flask(__name__)
+    state = base64.b64encode(
+        bytes(str({"authentication_identifier": "shared-users"}), "utf-8")
+    ).decode("utf-8")
+
+    with app.test_request_context(
+        f"/v1.0/login_return?state={state}",
+        environ_overrides={"HTTP_COOKIE": "m8flow_selected_tenant=tenant-a-id"},
+    ):
+        assert _resolve_refresh_token_tenant_id() == "tenant-a-id"
 
 
 # ---------------------------------------------------------------------------

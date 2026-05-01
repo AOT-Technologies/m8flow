@@ -11,8 +11,10 @@ from urllib.parse import unquote
 from urllib.parse import urlsplit
 
 from m8flow_backend.services.tenant_context_middleware import resolve_request_tenant
+from m8flow_backend.services.tenant_identity_helpers import authentication_identifier_from_payload
+from m8flow_backend.services.tenant_identity_helpers import organization_memberships_from_payload
 from m8flow_backend.services.tenant_identity_helpers import qualified_config_group_identifier
-from m8flow_backend.tenancy import TENANT_CLAIM
+from m8flow_backend.services.tenant_identity_helpers import tenant_id_from_payload
 from spiffworkflow_backend.routes import authentication_controller
 
 logger = logging.getLogger(__name__)
@@ -24,7 +26,7 @@ _MASTER_REALM_PATCHED = False
 _PUBLIC_GROUP_PATCHED = False
 _REFRESH_TOKEN_TENANT_PATCHED = False
 
-# Path suffixes that may be called with Keycloak master realm tokens (bootstrap/global admin).
+# Path suffixes that may be called with configured admin-realm tokens (bootstrap/global admin).
 M8FLOW_MASTER_REALM_PATH_SUBSTRINGS = (
     "/m8flow/tenant-realms",
     "/m8flow/create-tenant",
@@ -32,6 +34,18 @@ M8FLOW_MASTER_REALM_PATH_SUBSTRINGS = (
 )
 LOGIN_RETURN_PATH_SUBSTRING = "/login_return"
 _MISSING = object()
+
+
+def _master_realm_identifier() -> str:
+    from m8flow_backend.config import master_realm_name
+
+    return master_realm_name()
+
+
+def _shared_realm_identifier() -> str:
+    from m8flow_backend.config import shared_realm_name
+
+    return shared_realm_name()
 
 
 def apply() -> None:
@@ -196,6 +210,21 @@ def _decode_state_authentication_identifier(state: str | None) -> str | None:
     return None
 
 
+def _selected_tenant_from_request(authentication_identifier: str | None = None) -> str | None:
+    """Read the shared-realm tenant bridge only when the active auth realm is the shared realm."""
+    from flask import has_request_context, request
+    from m8flow_backend.tenancy import SELECTED_TENANT_COOKIE_NAME
+
+    if authentication_identifier != _shared_realm_identifier():
+        return None
+    if not has_request_context():
+        return None
+    selected_tenant = request.cookies.get(SELECTED_TENANT_COOKIE_NAME)
+    if isinstance(selected_tenant, str) and selected_tenant.strip():
+        return selected_tenant.strip()
+    return None
+
+
 def _tenant_for_refresh_tokens(
     decoded_token: dict | None = None,
     state: str | None = None,
@@ -204,13 +233,14 @@ def _tenant_for_refresh_tokens(
     from flask import g, has_request_context, request
 
     if isinstance(decoded_token, dict):
-        tenant_from_claim = decoded_token.get(TENANT_CLAIM)
-        if isinstance(tenant_from_claim, str) and tenant_from_claim.strip():
+        tenant_from_claim = tenant_id_from_payload(decoded_token)
+        if tenant_from_claim:
             return tenant_from_claim
 
     state_identifier = _decode_state_authentication_identifier(state)
-    if state_identifier:
-        return state_identifier
+    selected_tenant = _selected_tenant_from_request(state_identifier)
+    if selected_tenant:
+        return selected_tenant
 
     if not has_request_context():
         return None
@@ -220,16 +250,14 @@ def _tenant_for_refresh_tokens(
         return existing_tenant
 
     request_state_identifier = _decode_state_authentication_identifier(request.args.get("state"))
-    if request_state_identifier:
-        return request_state_identifier
+    request_selected_tenant = _selected_tenant_from_request(request_state_identifier)
+    if request_selected_tenant:
+        return request_selected_tenant
 
     cookie_identifier = request.cookies.get("authentication_identifier")
-    if cookie_identifier:
-        return cookie_identifier
-
-    header_identifier = request.headers.get("SpiffWorkflow-Authentication-Identifier")
-    if header_identifier:
-        return header_identifier
+    cookie_selected_tenant = _selected_tenant_from_request(cookie_identifier)
+    if cookie_selected_tenant:
+        return cookie_selected_tenant
 
     return None
 
@@ -385,11 +413,12 @@ def _authentication_identifier_from_state() -> str | None:
 
 
 def _has_master_auth_config() -> bool:
-    """True if SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS has identifier='master'."""
+    """True if SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS has an entry for the configured admin realm."""
     from flask import current_app
 
     configs = current_app.config.get("SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS") or []
-    return any(isinstance(c, dict) and c.get("identifier") == "master" for c in configs)
+    master_identifier = _master_realm_identifier()
+    return any(isinstance(c, dict) and c.get("identifier") == master_identifier for c in configs)
 
 
 def _auth_config_identifiers() -> list[str]:
@@ -402,11 +431,11 @@ def _auth_config_identifiers() -> list[str]:
 
 def _authentication_identifier_from_bearer_token() -> str | None:
     """
-    Decode Bearer payload without signature verification and derive identifier from:
-    - m8flow_tenant_name / realm_name
-    - fallback: last segment of iss (.../realms/<realm>)
+    Decode Bearer payload without signature verification and derive the auth
+    identifier from explicit realm/auth claims before falling back to ``iss``.
     """
     from flask import request
+    from m8flow_backend.services.tenant_identity_helpers import extract_realm_from_issuer
 
     auth_header = (request.headers.get("Authorization") or "").strip()
     if not auth_header.startswith("Bearer ") or len(auth_header) <= 7:
@@ -425,19 +454,16 @@ def _authentication_identifier_from_bearer_token() -> str | None:
     if not isinstance(payload, dict):
         return None
 
-    realm_name = payload.get("m8flow_tenant_name") or payload.get("realm_name")
-    if isinstance(realm_name, str) and realm_name.strip():
-        identifiers = _auth_config_identifiers()
-        if realm_name in identifiers:
-            return realm_name
+    identifiers = _auth_config_identifiers()
+
+    authentication_identifier = authentication_identifier_from_payload(payload)
+    if authentication_identifier in identifiers:
+        return authentication_identifier
 
     iss = payload.get("iss")
-    if isinstance(iss, str) and iss.strip():
-        realm_from_iss = iss.rstrip("/").split("/")[-1]
-        if realm_from_iss:
-            identifiers = _auth_config_identifiers()
-            if realm_from_iss in identifiers:
-                return realm_from_iss
+    realm_from_iss = extract_realm_from_issuer(iss if isinstance(iss, str) else None)
+    if realm_from_iss and realm_from_iss in identifiers:
+        return realm_from_iss
 
     return None
 
@@ -464,9 +490,10 @@ def apply_master_realm_auth_patch() -> None:
         header_id = request.headers.get("SpiffWorkflow-Authentication-Identifier")
         path_match = any(s in path for s in M8FLOW_MASTER_REALM_PATH_SUBSTRINGS)
         has_master_config = _has_master_auth_config()
+        master_identifier = _master_realm_identifier()
 
         if has_bearer and not cookie_id and not header_id and path_match and has_master_config:
-            return "master"
+            return master_identifier
 
         if has_bearer and not cookie_id and not header_id:
             derived = _authentication_identifier_from_bearer_token()
@@ -480,15 +507,16 @@ def apply_master_realm_auth_patch() -> None:
     )
     _MASTER_REALM_PATCHED = True
     logger.info(
-        "master_realm_auth_patch: global tenant-management endpoints may use 'master' when Bearer is present, no identifier is supplied, and a master auth config exists."
+        "master_realm_auth_patch: global tenant-management endpoints may use %r when Bearer is present, no identifier is supplied, and the configured admin auth config exists.",
+        _master_realm_identifier(),
     )
 
 
 def _handle_tenant_login_request(flask_app):
     """Handle tenant-selected login redirects and return a response when intercepted."""
     from flask import jsonify, redirect, request
-    from m8flow_backend.services.auth_config_service import ensure_tenant_auth_config
-    from m8flow_backend.services.keycloak_service import realm_exists
+    from m8flow_backend.services.tenant_service import TenantService
+    from m8flow_backend.tenancy import SELECTED_TENANT_COOKIE_NAME
     from spiffworkflow_backend.services.authentication_service import AuthenticationService
 
     api_prefix = flask_app.config.get("SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX", "/v1.0")
@@ -509,14 +537,25 @@ def _handle_tenant_login_request(flask_app):
     if not _is_allowed_frontend_redirect_url(redirect_url, frontend_url):
         return jsonify({"detail": "Invalid redirect_url"}), 400
 
-    if not realm_exists(tenant):
-        return jsonify({"detail": "Tenant realm not found"}), 404
+    tenant_exists = TenantService.check_tenant_exists(tenant)
+    if not tenant_exists.get("exists"):
+        return jsonify({"detail": "Tenant not found"}), 404
 
-    ensure_tenant_auth_config(flask_app, tenant)
-    login_redirect_url = AuthenticationService().get_login_redirect_url(
-        authentication_identifier=tenant, final_url=redirect_url
+    finalized_response = _finalize_tenant_from_existing_shared_realm_session(
+        selected_tenant_alias=tenant,
+        selected_tenant_id=tenant_exists["tenant_id"],
+        redirect_url=redirect_url,
     )
-    return redirect(login_redirect_url)
+    if finalized_response is not None:
+        return finalized_response
+
+    login_redirect_url = AuthenticationService().get_login_redirect_url(
+        authentication_identifier=_shared_realm_identifier(),
+        final_url=redirect_url,
+    )
+    response = redirect(login_redirect_url)
+    response.set_cookie(SELECTED_TENANT_COOKIE_NAME, tenant_exists["tenant_id"], path="/")
+    return response
 
 
 def _origin_tuple(url: str) -> tuple[str, str, int | None] | None:
@@ -572,6 +611,65 @@ def _is_allowed_frontend_redirect_url(redirect_url: str, frontend_url: str) -> b
         return False
 
     return redirect_origin == frontend_origin
+
+
+def _finalize_tenant_from_existing_shared_realm_session(
+    selected_tenant_alias: str,
+    selected_tenant_id: str,
+    redirect_url: str,
+):
+    """
+    Finalize tenant selection locally when the browser already has an app session.
+
+    This avoids a second OIDC round-trip after the user has already authenticated
+    against the shared realm. It also lets us synchronize tenant-scoped local
+    groups from the selected organization without asking for the password again.
+    """
+    from flask import jsonify, redirect, request
+    from spiffworkflow_backend.services.authentication_service import AuthenticationService
+    from spiffworkflow_backend.services.authorization_service import AuthorizationService
+
+    explicit_finalization = str(request.args.get("tenant_finalization", "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    if not explicit_finalization:
+        return None
+
+    authentication_identifier = request.args.get("authentication_identifier") or request.cookies.get(
+        "authentication_identifier"
+    )
+    if authentication_identifier != _shared_realm_identifier():
+        return None
+
+    session_token = request.cookies.get("access_token") or request.cookies.get("id_token")
+    if not session_token:
+        return None
+
+    try:
+        decoded_token = AuthenticationService.parse_jwt_token(authentication_identifier, session_token)
+    except Exception:
+        logger.warning(
+            "tenant_finalization: unable to parse existing shared-realm session; falling back to standard login"
+        )
+        return None
+
+    organization_aliases = {
+        organization_alias
+        for organization_alias, _organization_details in organization_memberships_from_payload(decoded_token)
+    }
+    if organization_aliases and selected_tenant_alias not in organization_aliases:
+        return jsonify({"detail": "Selected tenant is not available for this session"}), 403
+
+    with _temporary_request_tenant(selected_tenant_id):
+        AuthorizationService.create_user_from_sign_in(decoded_token)
+
+    from m8flow_backend.tenancy import SELECTED_TENANT_COOKIE_NAME
+
+    response = redirect(redirect_url)
+    response.set_cookie(SELECTED_TENANT_COOKIE_NAME, selected_tenant_id, path="/")
+    return response
 
 
 def apply_login_tenant_patch(flask_app) -> None:

@@ -41,16 +41,17 @@ def apply() -> None:
     user_service.UserService.find_or_create_group = patched_find_or_create_group
     logger.info("find_or_create_group_patch: tenant-qualifying group identifiers")
 
-    # Patch 1: handle duplicate emails by narrowing matches to the current tenant.
+    # Patch 1: treat waiting/group-assignment identifiers as usernames only.
     @classmethod
-    def patched_add_user_to_group_or_add_to_waiting(cls, username_or_email: str, group_identifier: str):
+    def patched_add_user_to_group_or_add_to_waiting(cls, username: str, group_identifier: str):
         """
-        Handle multiple users with the same email in multi-tenant mode.
+        Resolve group assignments by username inside the current tenant.
 
-        Only users in the current tenant context are added.
+        Email is intentionally not used as a local user key in the shared-realm
+        architecture because duplicate emails are allowed across recreated users.
         """
         group = cls.find_or_create_group(group_identifier)
-        users = find_users_for_current_tenant_by_identifier(username_or_email)
+        users = find_users_for_current_tenant_by_identifier(username)
 
         if users:
             user_to_group_identifiers = []
@@ -59,21 +60,19 @@ def apply() -> None:
                 cls.add_user_to_group(user, group)
             return (None, user_to_group_identifiers)
 
-        return cls.add_waiting_group_assignment(username_or_email, group)
+        return cls.add_waiting_group_assignment(username, group)
 
     user_service.UserService.add_user_to_group_or_add_to_waiting = patched_add_user_to_group_or_add_to_waiting
-    logger.info("UserService.add_user_to_group_or_add_to_waiting patched for multi-tenant email duplicates")
+    logger.info("UserService.add_user_to_group_or_add_to_waiting patched for username-only tenant matching")
 
     @classmethod
     def patched_apply_waiting_group_assignments(cls, user: UserModel) -> None:
-        """Apply only waiting assignments that belong to the current tenant's groups."""
+        """Apply only username-based waiting assignments that belong to the current tenant's groups."""
         tenant_identifiers = current_tenant_identifiers()
 
         waiting = (
             user_service.UserGroupAssignmentWaitingModel()
-            .query.filter(
-                user_service.UserGroupAssignmentWaitingModel.username.in_([user.username, user.email])  # type: ignore[arg-type]
-            )
+            .query.filter(user_service.UserGroupAssignmentWaitingModel.username.in_([user.username]))  # type: ignore[arg-type]
             .all()
         )
         for assignment in waiting:
@@ -95,9 +94,7 @@ def apply() -> None:
             ):
                 continue
             pattern = wildcard.pattern_from_wildcard_username()
-            if pattern is not None and (
-                re.match(pattern, user.username) or (user.email and re.match(pattern, user.email))
-            ):
+            if pattern is not None and re.match(pattern, user.username):
                 cls.add_user_to_group(user, wildcard.group)
         db.session.commit()
 

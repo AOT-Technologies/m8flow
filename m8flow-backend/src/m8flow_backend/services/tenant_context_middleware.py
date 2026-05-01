@@ -5,12 +5,13 @@ import ast
 import base64
 import logging
 import os
-from typing import Any, Optional
+from typing import Optional
 from urllib.parse import unquote
 
 from flask import g, has_request_context, request
 from sqlalchemy import or_
 
+from m8flow_backend.services.tenant_identity_helpers import tenant_id_from_payload
 from spiffworkflow_backend.exceptions.api_error import ApiError
 from spiffworkflow_backend.services.authentication_service import AuthenticationService
 from spiffworkflow_backend.services.authorization_service import AuthorizationService
@@ -24,8 +25,8 @@ from m8flow_backend.canonical_db import get_canonical_db
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
 from m8flow_backend.tenancy import (
     DEFAULT_TENANT_ID,
+    SELECTED_TENANT_COOKIE_NAME,
     TENANT_CONTEXT_EXEMPT_PATH_PREFIXES,
-    TENANT_CLAIM,
     allow_missing_tenant_context,
     get_context_tenant_id,
     path_matches_any_prefix,
@@ -36,12 +37,24 @@ from m8flow_backend.tenancy import (
 LOGGER = logging.getLogger(__name__)
 
 
+def _master_realm_identifier() -> str:
+    from m8flow_backend.config import master_realm_name
+
+    return master_realm_name()
+
+
+def _shared_realm_identifier() -> str:
+    from m8flow_backend.config import shared_realm_name
+
+    return shared_realm_name()
+
+
 def _is_master_login_return_request(tenant_id: str | None) -> bool:
     try:
         path = (getattr(request, "path", "") or "").strip()
     except Exception:
         return False
-    return tenant_id == "master" and "/login_return" in path
+    return tenant_id == _master_realm_identifier() and "/login_return" in path
 
 
 def resolve_request_tenant() -> None:
@@ -98,6 +111,11 @@ def resolve_request_tenant() -> None:
         return
 
     tenant_id = _resolve_tenant_id()
+
+    auth_identifier = _authentication_identifier(include_default=False)
+    if not tenant_id and _is_master_login_return_request(auth_identifier):
+        LOGGER.debug("Skipping tenant validation for master realm login_return callback.")
+        return
 
     if not tenant_id:
         if allow_missing_tenant_context():
@@ -194,16 +212,10 @@ def _resolve_tenant_id() -> Optional[str]:
     if tenant_from_ctx:
         return tenant_from_ctx
 
-    # Fallback: derive tenant from authentication identifier.
-    # For auth-disabled paths (e.g., login_return), only trust explicit identifiers
-    # from state/cookies/headers and do not default implicitly.
-    derived = _authentication_identifier(include_default=allow_decode)
-    if derived:
-        LOGGER.debug(
-            "Derived tenant from authentication_identifier fallback: %s",
-            str(derived)[:80],
-        )
-        return derived
+    selected_tenant = _selected_tenant_from_request()
+    if selected_tenant:
+        return selected_tenant
+
     return None
 
 
@@ -232,7 +244,7 @@ def _tenant_from_jwt_claim_cached(*, allow_decode: bool) -> Optional[str]:
     cached_decoded = getattr(g, "_m8flow_decoded_token", None)
     cached_raw = getattr(g, "_m8flow_decoded_token_raw", None)
     if cached_decoded is not None and cached_raw == token:
-        return _get_str_claims(cached_decoded, (TENANT_CLAIM,))
+        return tenant_id_from_payload(cached_decoded)
 
     if not allow_decode:
         return None
@@ -248,17 +260,7 @@ def _tenant_from_jwt_claim_cached(*, allow_decode: bool) -> Optional[str]:
 
     g._m8flow_decoded_token = decoded
     g._m8flow_decoded_token_raw = token
-    return _get_str_claims(decoded, (TENANT_CLAIM,))
-
-
-def _get_str_claims(decoded: Any, claims: tuple[str, ...]) -> Optional[str]:
-    if not isinstance(decoded, dict):
-        return None
-    for claim in claims:
-        value = decoded.get(claim)
-        if isinstance(value, str) and value.strip():
-            return value
-    return None
+    return tenant_id_from_payload(decoded)
 
 
 def _token_from_request() -> Optional[str]:
@@ -290,6 +292,16 @@ def _decode_state_authentication_identifier(state: str | None) -> Optional[str]:
     identifier = state_dict.get("authentication_identifier")
     if isinstance(identifier, str) and identifier.strip():
         return identifier
+    return None
+
+
+def _selected_tenant_from_request() -> Optional[str]:
+    auth_identifier = _authentication_identifier(include_default=False)
+    if auth_identifier != _shared_realm_identifier():
+        return None
+    selected_tenant = request.cookies.get(SELECTED_TENANT_COOKIE_NAME)
+    if isinstance(selected_tenant, str) and selected_tenant.strip():
+        return selected_tenant.strip()
     return None
 
 

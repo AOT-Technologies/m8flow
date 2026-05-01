@@ -49,17 +49,38 @@ function isTenantSelectionExemptPath(pathname: string): boolean {
   );
 }
 
+function shouldShowTenantSelectionGate(
+  pathname: string,
+  masterRealmIdentifier: string,
+): boolean {
+  if (isTenantSelectionExemptPath(pathname)) {
+    return false;
+  }
+
+  if (getStoredTenant()) {
+    return false;
+  }
+
+  if (!UserService.isLoggedIn()) {
+    return true;
+  }
+
+  return UserService.getAuthenticationIdentifier() !== masterRealmIdentifier;
+}
+
 export default function App() {
   const ability = defineAbility(() => {});
-  const { ENABLE_MULTITENANT } = useConfig();
+  const { ENABLE_MULTITENANT, MASTER_REALM_IDENTIFIER } = useConfig();
   const [hasTenant, setHasTenant] = useState(getStoredTenant);
   const currentPathname = getCurrentPathname();
-  const bypassTenantSelectionGate =
-    UserService.isLoggedIn() || isTenantSelectionExemptPath(currentPathname);
+  const showTenantSelectionGate = shouldShowTenantSelectionGate(
+    currentPathname,
+    MASTER_REALM_IDENTIFIER,
+  );
 
   // When multitenant is on and no tenant is stored, show only the tenant page.
   // This avoids mounting ContainerForExtensions (and its permission check), which would 401 and redirect to login.
-  if (ENABLE_MULTITENANT && !hasTenant && !bypassTenantSelectionGate) {
+  if (ENABLE_MULTITENANT && !hasTenant && showTenantSelectionGate) {
     const minimalTheme = createTheme(
       createSpiffTheme(
         (typeof globalThis !== 'undefined' &&

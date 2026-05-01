@@ -27,12 +27,13 @@
   "oauth2DeviceCodeLifespan": 600,
   "oauth2DevicePollingInterval": 5,
   "enabled": true,
+  "organizationsEnabled": true,
   "sslRequired": "none",
   "registrationAllowed": false,
   "registrationEmailAsUsername": false,
   "rememberMe": false,
   "verifyEmail": false,
-  "loginWithEmailAllowed": true,
+  "loginWithEmailAllowed": false,
   "duplicateEmailsAllowed": false,
   "resetPasswordAllowed": false,
   "editUsernameAllowed": false,
@@ -1213,6 +1214,7 @@
         "email"
       ],
       "optionalClientScopes": [
+        "organization",
         "address",
         "phone",
         "offline_access",

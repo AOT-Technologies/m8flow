@@ -7,13 +7,14 @@ keycloak_admin_user="${KEYCLOAK_ADMIN:-admin}"
 keycloak_admin_password="${KEYCLOAK_ADMIN_PASSWORD:-admin}"
 keycloak_super_admin_user="${KEYCLOAK_SUPER_ADMIN_USER:-super-admin}"
 keycloak_super_admin_password="${KEYCLOAK_SUPER_ADMIN_PASSWORD:-super-admin}"
+keycloak_master_realm_name="${M8FLOW_KEYCLOAK_MASTER_REALM:-master}"
 keycloak_client_id="${M8FLOW_KEYCLOAK_SPOKE_CLIENT_ID:-m8flow-backend}"
 keycloak_client_secret="${M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET:-${M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET:-JXeQExm0JhQPLumgHtIIqf52bDalHz0q}}"
 backend_public_url="${M8FLOW_BACKEND_URL:-http://localhost:8000}"
 frontend_public_url="${M8FLOW_BACKEND_URL_FOR_FRONTEND:-http://localhost:8001}"
 backend_redirect_uri="${backend_public_url%/}/*"
 frontend_logout_redirect_uri="${frontend_public_url%/}/*"
-m8flow_realm_name="${KEYCLOAK_REALM:-m8flow}"
+m8flow_realm_name="${M8FLOW_KEYCLOAK_SHARED_REALM:-${KEYCLOAK_REALM:-m8flow}}"
 placeholder_client_id="__M8FLOW_SPOKE_CLIENT_ID__"
 
 echo ":: Waiting for Keycloak master realm at ${keycloak_url}..."
@@ -34,6 +35,24 @@ done
 echo ":: Connected to Keycloak admin API."
 
 /opt/keycloak/bin/kcadm.sh update realms/master -s sslRequired=NONE >/dev/null 2>&1 || true
+
+ensure_admin_realm_exists() {
+  realm_name="$1"
+  if [ "${realm_name}" = "master" ]; then
+    return 0
+  fi
+
+  if /opt/keycloak/bin/kcadm.sh get "realms/${realm_name}" >/dev/null 2>&1; then
+    /opt/keycloak/bin/kcadm.sh update "realms/${realm_name}" -s sslRequired=NONE >/dev/null 2>&1 || true
+    return 0
+  fi
+
+  echo ":: Creating admin realm ${realm_name}..."
+  /opt/keycloak/bin/kcadm.sh create realms \
+    -s realm="${realm_name}" \
+    -s enabled=true \
+    -s sslRequired=NONE >/dev/null
+}
 
 resolve_client_internal_id() {
   realm_name="$1"
@@ -124,18 +143,19 @@ ensure_spoke_client_in_realm() {
   echo ":: Realm ${realm_name} client ${keycloak_client_id} ensured."
 }
 
-echo ":: Ensuring master realm super-admin role/user..."
-/opt/keycloak/bin/kcadm.sh get roles/super-admin -r master >/dev/null 2>&1 \
-  || /opt/keycloak/bin/kcadm.sh create roles -r master -s name=super-admin >/dev/null
+echo ":: Ensuring admin realm ${keycloak_master_realm_name} super-admin role/user..."
+ensure_admin_realm_exists "${keycloak_master_realm_name}"
+/opt/keycloak/bin/kcadm.sh get roles/super-admin -r "${keycloak_master_realm_name}" >/dev/null 2>&1 \
+  || /opt/keycloak/bin/kcadm.sh create roles -r "${keycloak_master_realm_name}" -s name=super-admin >/dev/null
 
 client_id=$(
-  /opt/keycloak/bin/kcadm.sh get clients -r master -q clientId="${keycloak_client_id}" --fields id,clientId \
+  /opt/keycloak/bin/kcadm.sh get clients -r "${keycloak_master_realm_name}" -q clientId="${keycloak_client_id}" --fields id,clientId \
     | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
     | head -n 1
 )
 
 if [ -z "${client_id}" ]; then
-  /opt/keycloak/bin/kcadm.sh create clients -r master \
+  /opt/keycloak/bin/kcadm.sh create clients -r "${keycloak_master_realm_name}" \
     -s clientId="${keycloak_client_id}" \
     -s enabled=true \
     -s publicClient=false \
@@ -153,18 +173,18 @@ if [ -z "${client_id}" ]; then
     >/dev/null
 
   client_id=$(
-    /opt/keycloak/bin/kcadm.sh get clients -r master -q clientId="${keycloak_client_id}" --fields id,clientId \
+    /opt/keycloak/bin/kcadm.sh get clients -r "${keycloak_master_realm_name}" -q clientId="${keycloak_client_id}" --fields id,clientId \
       | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
       | head -n 1
   )
 fi
 
 if [ -z "${client_id}" ]; then
-  echo >&2 "ERROR: Failed to resolve master realm client id for ${keycloak_client_id}"
+  echo >&2 "ERROR: Failed to resolve admin realm ${keycloak_master_realm_name} client id for ${keycloak_client_id}"
   exit 1
 fi
 
-/opt/keycloak/bin/kcadm.sh update "clients/${client_id}" -r master \
+/opt/keycloak/bin/kcadm.sh update "clients/${client_id}" -r "${keycloak_master_realm_name}" \
   -s secret="${keycloak_client_secret}" \
   -s standardFlowEnabled=true \
   -s directAccessGrantsEnabled=true \
@@ -175,8 +195,8 @@ fi
   -s "attributes.\"post.logout.redirect.uris\"=${frontend_logout_redirect_uri}" \
   >/dev/null
 
-if ! /opt/keycloak/bin/kcadm.sh get "clients/${client_id}/protocol-mappers/models" -r master 2>/dev/null | grep -q '"name" : "groups"\|"name":"groups"'; then
-  /opt/keycloak/bin/kcadm.sh create "clients/${client_id}/protocol-mappers/models" -r master \
+if ! /opt/keycloak/bin/kcadm.sh get "clients/${client_id}/protocol-mappers/models" -r "${keycloak_master_realm_name}" 2>/dev/null | grep -q '"name" : "groups"\|"name":"groups"'; then
+  /opt/keycloak/bin/kcadm.sh create "clients/${client_id}/protocol-mappers/models" -r "${keycloak_master_realm_name}" \
     -s name=groups \
     -s protocol=openid-connect \
     -s protocolMapper=oidc-usermodel-realm-role-mapper \
@@ -191,22 +211,22 @@ if ! /opt/keycloak/bin/kcadm.sh get "clients/${client_id}/protocol-mappers/model
     >/dev/null
 fi
 
-/opt/keycloak/bin/kcadm.sh create users -r master \
+/opt/keycloak/bin/kcadm.sh create users -r "${keycloak_master_realm_name}" \
   -s username="${keycloak_super_admin_user}" \
   -s enabled=true \
   -s firstName=Super \
   -s lastName=Admin >/dev/null 2>&1 || true
 
 /opt/keycloak/bin/kcadm.sh set-password \
-  -r master \
+  -r "${keycloak_master_realm_name}" \
   --username "${keycloak_super_admin_user}" \
   --new-password "${keycloak_super_admin_password}" >/dev/null
 
 /opt/keycloak/bin/kcadm.sh add-roles \
-  -r master \
+  -r "${keycloak_master_realm_name}" \
   --uusername "${keycloak_super_admin_user}" \
   --rolename super-admin >/dev/null 2>&1 || true
 
 ensure_spoke_client_in_realm "${m8flow_realm_name}"
 
-echo ":: Master realm client, role, and super-admin ensured."
+echo ":: Admin realm ${keycloak_master_realm_name} client, role, and super-admin ensured."
