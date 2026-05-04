@@ -134,3 +134,8 @@ def redirect_uri_frontend_host() -> str | None:
 def nats_token_salt() -> str:
     """Get the NATS token salt from environment variables."""
     return _get("M8FLOW_NATS_TOKEN_SALT") or "m8flow_default_salt"
+
+
+def nats_url() -> str:
+    """Get the NATS URL from environment variables."""
+    return _get("M8FLOW_NATS_URL")

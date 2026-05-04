@@ -68,17 +68,16 @@ def instantiate_process(
             # and the tenant-membership filter in one step.
             user = resolve_user_for_current_tenant(username, tenant_id=tenant_id)
             if user is None:
-                logger.error(
-                    f"User '{username}' not found in the database for tenant '{tenant_id}'. "
-                    "Ensure the username matches the preferred_username stored in Keycloak. Event discarded."
-                )
-                return None
+                err = f"User '{username}' not found in the database for tenant '{tenant_id}'."
+                logger.error(err)
+                raise ValueError(err)
 
             try:
                 process_model = ProcessModelService.get_process_model(process_identifier)
             except Exception as e:
-                logger.error(f"Process model '{process_identifier}' not found: {e}")
-                return None
+                err = f"Process model '{process_identifier}' not found: {e}"
+                logger.error(err)
+                raise ValueError(err)
 
             data_to_inject = {**payload, "_nats_initiator_username": username}
 
@@ -88,8 +87,16 @@ def instantiate_process(
                 data_to_inject=data_to_inject,
                 user=user,
             )
+            instance = processor.process_instance_model
             db.session.commit()
-            return processor.process_instance_model.id
+            return {
+                "id": instance.id,
+                "status": instance.status,
+                "process_model_identifier": instance.process_model_identifier,
+                "created_at_in_seconds": instance.created_at_in_seconds,
+                "updated_at_in_seconds": instance.updated_at_in_seconds,
+            }
+
         except Exception:
             db.session.rollback()
             raise
@@ -126,125 +133,123 @@ def _extract_tenant_from_subject(subject: str) -> str | None:
     return None
 
 
-async def process_message(msg: Any, kv: KeyValue | None) -> None:
+async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
     """Authenticate and process a single NATS event."""
     from spiffworkflow_backend.exceptions.api_error import ApiError
-    try:
-        data = json.loads(msg.data.decode("utf-8"))
-        logger.debug("Received event: %s", data)
-    except Exception as e:
-        logger.error("Failed to parse message data: %s", e)
-        await msg.ack()
-        return
-
-    # Authoritative tenant_id comes from the NATS subject, not the payload
-    subject_tenant_id = _extract_tenant_from_subject(msg.subject)
-    if not subject_tenant_id:
-        logger.error("Event subject has unexpected format — cannot determine tenant. Discarding. subject=%s", msg.subject)
-        await msg.ack()
-        return
-
-    # If the payload also carries a tenant_id, it must match the subject
-    payload_tenant_id  = data.get("tenant_id")
-    if payload_tenant_id and payload_tenant_id != subject_tenant_id:
-        logger.error(
-            "Tenant mismatch: payload tenant does not match subject tenant. Event discarded."
-        )
-        await msg.ack()
-        return
-
-    tenant_id          = subject_tenant_id
-    process_identifier = data.get("process_identifier")
-    username           = data.get("username")
-    event_id           = data.get("id")
-    api_key            = data.get("api_key")
-
-    if not all([process_identifier, username]):
-        logger.error(
-            "Message missing required fields (process_identifier, username). "
-            "Discarding."
-        )
-        await msg.ack()
-        return
-
-    if not api_key:
-        logger.error("Rejecting event: 'api_key' is missing. tenant=%s", tenant_id)
-        await msg.ack()
-        return
-
-    def _verify():
-        from m8flow_backend.services.nats_token_service import NatsTokenService
-        from m8flow_backend.tenancy import set_context_tenant_id, reset_context_tenant_id
-        with flask_app.app_context():
-            token = set_context_tenant_id(tenant_id)
-            try:
-                return NatsTokenService.verify_token(tenant_id, api_key)
-            finally:
-                reset_context_tenant_id(token)
-
-    is_valid = await asyncio.to_thread(_verify)
-
-    if not is_valid:
-        logger.error("Rejecting event: Invalid api_key for tenant %s", tenant_id)
-        await msg.ack()
-        return
-
+    
+    data = {}
+    reply_to = None
     dedup_key = None
-    if event_id and tenant_id:
-        dedup_key = await check_idempotency(kv, tenant_id, event_id)
-        if dedup_key is None:
+    tenant_id = None
+    process_identifier = None
+
+    try:
+        try:
+            data = json.loads(msg.data.decode("utf-8"))
+            reply_to = data.get("reply_to")
+        except Exception as e:
+            logger.error("Failed to parse message data: %s", e)
             await msg.ack()
             return
-    else:
-        if not event_id:
-            logger.warning("Event has no 'id' field — idempotency cannot be guaranteed.")
 
-    try:
+        # Authoritative tenant_id comes from the NATS subject, not the payload
+        subject_tenant_id = _extract_tenant_from_subject(msg.subject)
+        if not subject_tenant_id:
+            raise ValueError(f"Event subject has unexpected format — cannot determine tenant: {msg.subject}")
+
+        # The NATS subject carries the slug for routing (e.g. m8flow.events.zoro.trigger).
+        # The payload carries the tenant UUID for auth and process instantiation.
+        payload_tenant_id = data.get("tenant_id")
+        payload_tenant_slug = data.get("tenant_slug")
+
+        if not payload_tenant_id:
+            raise ValueError("Event payload missing 'tenant_id' (UUID).")
+
+        # Optional: validate that the slug in the subject matches what the publisher sent
+        if payload_tenant_slug and payload_tenant_slug != subject_tenant_id:
+            raise ValueError(f"Tenant slug mismatch: subject slug '{subject_tenant_id}' != payload slug '{payload_tenant_slug}'")
+
+        tenant_id = payload_tenant_id  # UUID
+        process_identifier = data.get("process_identifier")
+        username           = data.get("username")
+        event_id           = data.get("id")
+        api_key            = data.get("api_key")
+
+        if not all([process_identifier, username]):
+            raise ValueError("Message missing required fields (process_identifier, username).")
+
+        if not api_key:
+            raise ValueError(f"Rejecting event: 'api_key' is missing for tenant {tenant_id}")
+
+        def _verify():
+            from m8flow_backend.services.nats_token_service import NatsTokenService
+            from m8flow_backend.tenancy import set_context_tenant_id, reset_context_tenant_id
+            with flask_app.app_context():
+                token = set_context_tenant_id(tenant_id)
+                try:
+                    return NatsTokenService.verify_token(tenant_id, api_key)
+                finally:
+                    reset_context_tenant_id(token)
+
+        is_valid = await asyncio.to_thread(_verify)
+        if not is_valid:
+            raise ValueError(f"Rejecting event: Invalid api_key for tenant {tenant_id}")
+
+        if event_id and tenant_id:
+            dedup_key = await check_idempotency(kv, tenant_id, event_id)
+            if dedup_key is None:
+                # Duplicate event, already logged in check_idempotency
+                await msg.ack()
+                return
+        else:
+            if not event_id:
+                logger.warning("Event has no 'id' field — idempotency cannot be guaranteed.")
+
         instance_id = await asyncio.to_thread(
             instantiate_process,
             tenant_id,
             process_identifier,
             username,
-            data.get("payload", {}),
+            data.get("payload") or {},
         )
-
-        if instance_id is None:
-            logger.warning("Event processing aborted: pre-condition not met (see errors above).")
-            if dedup_key and kv:
-                try:
-                    await kv.delete(dedup_key)
-                except Exception:
-                    pass
-            await msg.ack()
-            return
 
         logger.info(
             "Process instance created | tenant=%s identifier=%s instance_id=%s",
-            tenant_id, process_identifier, instance_id,
+            tenant_id, process_identifier, instance_id.get("id"),
         )
         await msg.ack()
-    except ApiError as e:
-        # Permanent business-logic failure (e.g. missing lane users, invalid BPMN config).
-        # NAKing would cause endless retries since the data won't change — ACK to discard.
-        logger.error(
-            "Process instantiation failed (permanent error, discarding message): "
-            "tenant=%s identifier=%s error=%s",
-            tenant_id, process_identifier, e,
-        )
-        if dedup_key and kv:
+
+        # Reply to the publisher with process instance details
+        if reply_to:
             try:
-                await kv.delete(dedup_key)
-            except Exception:
-                pass
-        await msg.ack()
+                await nc.publish(reply_to, json.dumps(instance_id).encode("utf-8"))
+            except Exception as e:
+                logger.warning("Failed to send reply to %s: %s", reply_to, e)
+
     except Exception as e:
-        logger.error("Process instantiation failed (transient error, will retry): %s", e)
+        # Most failures are PERMANENT (validation, missing models, auth).
+        # We ACK to discard the message and stop the infinite retry loop.
+        error_msg = str(e)
+        logger.error(
+            "Event processing failed (ACKing message): tenant=%s identifier=%s error=%s type=%s",
+            tenant_id, process_identifier, error_msg, type(e).__name__,
+        )
+        
         if dedup_key and kv:
             try:
                 await kv.delete(dedup_key)
             except Exception:
                 pass
-        await msg.nak(delay=RETRY_DELAY)
+
+        # Reply with error details so the API can return a meaningful response
+        if reply_to:
+            try:
+                error_reply = {"error": True, "message": error_msg}
+                await nc.publish(reply_to, json.dumps(error_reply).encode("utf-8"))
+            except Exception as publish_err:
+                logger.warning("Failed to send error reply to %s: %s", reply_to, publish_err)
+
+        await msg.ack()
 
 async def main() -> None:
     global flask_app
@@ -313,7 +318,7 @@ async def main() -> None:
         try:
             msgs = await sub.fetch(batch=FETCH_BATCH, timeout=FETCH_TIMEOUT)
             for msg in msgs:
-                await process_message(msg, kv)
+                await process_message(msg, kv, nc)
         except TimeoutError:
             pass
         except ConnectionClosedError:

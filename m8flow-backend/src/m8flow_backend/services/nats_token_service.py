@@ -1,6 +1,5 @@
 from __future__ import annotations
 import secrets
-import string
 from m8flow_backend.models.nats_token import NatsTokenModel
 from spiffworkflow_backend.models.db import db
 from spiffworkflow_backend.exceptions.api_error import ApiError
@@ -8,6 +7,7 @@ from m8flow_backend.config import nats_token_salt
 
 import hashlib
 import hmac
+import logging
 
 class NatsTokenService:
     @staticmethod
@@ -76,16 +76,4 @@ class NatsTokenService:
         salt = nats_token_salt()
         expected_hash = NatsTokenService._hash_token(raw_token, salt)
 
-        logger.debug(
-            "verify_token: stored=%s expected=%s match=%s",
-            nats_token.token[:12] + "...",
-            expected_hash[:12] + "...",
-            nats_token.token == expected_hash,
-        )
-
         return hmac.compare_digest(nats_token.token, expected_hash)
-
-    @staticmethod
-    def get_token_for_tenant(tenant_id: str) -> NatsTokenModel | None:
-        """Retrieve the hashed NATS token record for a specific tenant."""
-        return NatsTokenModel.query.filter_by(m8f_tenant_id=tenant_id).first()

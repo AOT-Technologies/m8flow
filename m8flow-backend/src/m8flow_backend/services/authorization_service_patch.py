@@ -21,7 +21,9 @@ logger = logging.getLogger(__name__)
 M8FLOW_AUTH_EXCLUSION_ADDITIONS = [
     "m8flow_backend.routes.keycloak_controller.get_tenant_login_url",
     "m8flow_backend.tenancy.health_check",
+    "m8flow_backend.routes.events_controller.m8flow_trigger",
 ]
+
 M8FLOW_ROLE_GROUP_IDENTIFIERS = frozenset(
     {"super-admin", "tenant-admin", "editor", "viewer", "integrator", "reviewer"}
 )

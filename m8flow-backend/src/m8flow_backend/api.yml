@@ -1034,6 +1034,104 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /events/m8flow-trigger:
+    post:
+      summary: Receive an external trigger event
+      description: >
+        Public webhook endpoint that accepts an external trigger payload, publishes
+        a NATS event, and synchronously waits for the process instance to be created.
+        Returns the created process instance details. The caller must supply a valid
+        tenant API key (generated via POST /api/nats-tokens) in the X-M8FLOW-NATS-API-Key header.
+        No Keycloak JWT is required.
+      operationId: m8flow_backend.routes.events_controller.m8flow_trigger
+      tags:
+        - Events
+      security: []
+      parameters:
+        - name: X-M8FLOW-NATS-API-Key
+          in: header
+          required: true
+          schema:
+            type: string
+          description: >
+            A valid tenant API key obtained from POST /api/nats-tokens.
+            The key is validated via HMAC-SHA256 against the stored hash.
+
+        - name: X-M8FLOW-Process-Identifier
+          in: header
+          required: true
+          schema:
+            type: string
+          description: The identifier of the process to trigger.
+        - name: X-M8FLOW-Username
+          in: header
+          required: true
+          schema:
+            type: string
+          description: The username on whose behalf the process is triggered.
+        - name: X-M8FLOW-Tenant-Slug
+          in: header
+          required: true
+          schema:
+            type: string
+          description: The human-readable slug of the tenant.
+        - name: X-M8FLOW-Stream-Name
+          in: header
+          required: true
+          schema:
+            type: string
+          description: The NATS stream name to publish the event to.
+
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/M8flowTriggerRequest"
+      responses:
+        "200":
+          description: Event accepted and process instance created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/M8flowTriggerResponse"
+        "202":
+          description: Event published to NATS but no reply received from the consumer within the timeout window. The process instance may still be created asynchronously.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/M8flowTriggerResponse"
+        "400":
+          description: Bad request – missing or malformed body / missing tenant context
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized – X-M8FLOW-NATS-API-Key header is absent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden – X-M8FLOW-NATS-API-Key is invalid or revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Event was published and the consumer processed it, but process instance creation failed due to a validation or process model error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/M8flowTriggerResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthResponse:
@@ -1310,3 +1408,57 @@ components:
           type: integer
         modifiedBy:
           type: string
+
+    M8flowTriggerRequest:
+      type: object
+
+      properties:
+        data:
+          description: >
+            Arbitrary caller-supplied payload. Can be any JSON value
+            (object, array, string, number, or boolean).
+          oneOf:
+            - type: object
+              additionalProperties: true
+            - type: array
+            - type: string
+            - type: number
+            - type: boolean
+
+    M8flowTriggerResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "Event received."
+        data:
+          type: object
+          description: Detailed response data including tenant context, event echo, and process instance details
+          properties:
+            tenant_id:
+              type: string
+              description: Resolved tenant identifier for the request
+            tenant_slug:
+              type: string
+              description: Tenant slug from the request header
+            process_identifier:
+              type: string
+              description: The process identifier from the request header
+            username:
+              type: string
+              description: The username from the request header
+            event:
+              type: object
+              additionalProperties: true
+              description: Echo of the published event data (excluding internal fields)
+            error:
+              type: string
+              description: Error message if process instance creation failed (present on 422 responses)
+            process_instance:
+              description: Process instance details if created successfully, null otherwise
+              type: object
+              additionalProperties: true
+              nullable: true
