@@ -125,6 +125,15 @@
         "clientRole": false,
         "containerId": "m8flow",
         "attributes": {}
+      },
+      {
+        "id": "f5c0e6a1-7b2d-4e8f-9c3a-1d4e5f6a7b8c",
+        "name": "submitter",
+        "description": "",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "m8flow",
+        "attributes": {}
       }
     ],
     "client": {
@@ -675,6 +684,29 @@
         {
           "type": "password",
           "value": "viewer",
+          "temporary": true
+        }
+      ]
+    },
+    {
+      "username": "submitter",
+      "firstName": "Submitter",
+      "lastName": "M8Flow",
+      "email": "",
+      "emailVerified": true,
+      "enabled": true,
+      "totp": false,
+      "disableableCredentialTypes": [],
+      "requiredActions": [
+        "UPDATE_PASSWORD"
+      ],
+      "realmRoles": ["default-roles-m8flow", "submitter"],
+      "notBefore": 0,
+      "groups": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "submitter",
           "temporary": true
         }
       ]

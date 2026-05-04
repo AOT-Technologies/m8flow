@@ -82,11 +82,12 @@ def test_keycloak_realm_roles_as_groups_filters_to_m8flow_roles() -> None:
                 "default-roles-master",
                 "super-admin",
                 "tenant-admin",
+                "submitter",
             ]
         }
     }
 
-    assert _keycloak_realm_roles_as_groups(user_info) == ["super-admin", "tenant-admin"]
+    assert _keycloak_realm_roles_as_groups(user_info) == ["super-admin", "tenant-admin", "submitter"]
 
 
 def test_keycloak_realm_roles_as_groups_returns_empty_without_roles() -> None:
