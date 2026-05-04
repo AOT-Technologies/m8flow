@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any
 
 from m8flow_backend.services.tenant_identity_helpers import authentication_identifier_from_payload
@@ -10,6 +13,7 @@ from m8flow_backend.services.tenant_identity_helpers import extract_realm_from_i
 from m8flow_backend.services.tenant_identity_helpers import is_group_for_tenant
 from m8flow_backend.services.tenant_identity_helpers import normalize_group_identifiers
 from m8flow_backend.services.tenant_identity_helpers import normalize_group_permissions
+from m8flow_backend.services.tenant_identity_helpers import organization_group_identifiers_from_payload
 from m8flow_backend.services.tenant_identity_helpers import organization_memberships_from_payload
 from m8flow_backend.services.tenant_identity_helpers import qualify_group_identifier
 from m8flow_backend.services.tenant_identity_helpers import qualified_config_group_identifier
@@ -18,6 +22,11 @@ from m8flow_backend.services.tenant_identity_helpers import tenant_id_from_paylo
 
 _PATCHED = False
 logger = logging.getLogger(__name__)
+
+_PERMISSION_SCOPE_TENANT_ID: ContextVar[str | None] = ContextVar(
+    "m8flow_permission_scope_tenant_id",
+    default=None,
+)
 
 # Endpoints that must be callable without authentication (pre-login tenant selection, tenant login URL,
 # and bootstrap: create realm / create tenant -- no tenant in token yet; Keycloak admin is server-side).
@@ -28,6 +37,7 @@ M8FLOW_AUTH_EXCLUSION_ADDITIONS = [
 M8FLOW_ROLE_GROUP_IDENTIFIERS = frozenset(
     {"super-admin", "tenant-admin", "editor", "viewer", "integrator", "reviewer"}
 )
+M8FLOW_GLOBAL_PERMISSION_GROUP_IDENTIFIERS = frozenset({"super-admin"})
 M8FLOW_TENANT_ROLE_ALIASES = {
     "admin": "tenant-admin",
     "tenant-admin": "tenant-admin",
@@ -36,6 +46,90 @@ M8FLOW_TENANT_ROLE_ALIASES = {
     "integrator": "integrator",
     "reviewer": "reviewer",
 }
+
+
+def _active_permission_scope_tenant_id(fallback: str | None = None) -> str | None:
+    """
+    Resolve the tenant id to use for permission import/check logic.
+
+    The authorization patch cannot always rely on request-local tenant context,
+    especially during login. In that case, the login token already provides an
+    effective tenant id, so the patch stores it in a context variable while
+    syncing groups and importing permissions.
+    """
+    return _PERMISSION_SCOPE_TENANT_ID.get() or fallback or current_tenant_id_or_none()
+
+
+@contextmanager
+def _permission_scope_tenant(tenant_id: str | None):
+    """Temporarily force permission logic to use the tenant resolved from the token."""
+    token = _PERMISSION_SCOPE_TENANT_ID.set(tenant_id)
+    try:
+        yield
+    finally:
+        _PERMISSION_SCOPE_TENANT_ID.reset(token)
+
+
+def _normalize_external_group_identifier(group_identifier: str) -> str | None:
+    """
+    Normalize external role/group names from Keycloak.
+
+    Keycloak can emit group paths such as "/tenant-admin" or "/foo/tenant-admin".
+    Internally, permission YAML and group identifiers expect the leaf name, such
+    as "tenant-admin". Role aliases are also normalized here.
+    """
+    value = group_identifier.strip()
+    if not value:
+        return None
+
+    if "/" in value:
+        value = value.rstrip("/").split("/")[-1].strip()
+
+    if not value:
+        return None
+
+    return M8FLOW_TENANT_ROLE_ALIASES.get(value, value)
+
+
+def _group_identifier_applies_to_active_permission_scope(
+    group_identifier: str,
+    tenant_id: str | None = None,
+) -> bool:
+    """
+    Return whether a group should contribute principals/permissions now.
+
+    Only explicit global groups stay effective without tenant context. All
+    tenant-scoped RBAC groups must be qualified for the active tenant.
+    """
+    normalized_group_identifier = group_identifier.strip()
+    if not normalized_group_identifier:
+        return False
+
+    if normalized_group_identifier in M8FLOW_GLOBAL_PERMISSION_GROUP_IDENTIFIERS:
+        return True
+
+    tenant_identifiers = current_tenant_identifiers(tenant_id)
+    if not tenant_identifiers:
+        return False
+
+    tenant_prefix, separator, _ = normalized_group_identifier.partition(":")
+    return bool(separator and tenant_prefix in tenant_identifiers)
+
+
+def _group_applies_to_active_permission_scope(group: Any, tenant_id: str | None = None) -> bool:
+    """Return whether the group's principal should count for the active tenant context."""
+    group_identifier = getattr(group, "identifier", None)
+    if not isinstance(group_identifier, str):
+        return False
+    return _group_identifier_applies_to_active_permission_scope(group_identifier, tenant_id=tenant_id)
+
+
+def _permission_scoped_groups_for_user(user: Any, tenant_id: str | None = None) -> list[Any]:
+    """Return only the groups whose permissions should apply in the active tenant context."""
+    groups = getattr(user, "groups", None)
+    if not isinstance(groups, Iterable) or isinstance(groups, str | bytes):
+        return []
+    return [group for group in groups if _group_applies_to_active_permission_scope(group, tenant_id=tenant_id)]
 
 
 def _username_from_user_info(user_info: dict[str, Any]) -> str:
@@ -103,17 +197,24 @@ def _keycloak_realm_roles_as_groups(user_info: dict[str, Any]) -> list[str]:
     for role in roles:
         if not isinstance(role, str):
             continue
+
         value = role.strip()
         if not value or value in seen:
             continue
-        if value in M8FLOW_ROLE_GROUP_IDENTIFIERS:
+
+        normalized_value = _normalize_external_group_identifier(value)
+        if normalized_value in M8FLOW_ROLE_GROUP_IDENTIFIERS:
             seen.add(value)
-            normalized_roles.append(value)
+            normalized_roles.append(normalized_value)
             continue
+
         role_name, separator, tenant_suffix = value.rpartition("@")
-        if separator and tenant_suffix and role_name in M8FLOW_TENANT_ROLE_ALIASES:
-            seen.add(value)
-            normalized_roles.append(value)
+        if separator and tenant_suffix:
+            normalized_role_name = _normalize_external_group_identifier(role_name)
+            if normalized_role_name in M8FLOW_TENANT_ROLE_ALIASES:
+                seen.add(value)
+                normalized_roles.append(value)
+
     return normalized_roles
 
 
@@ -164,7 +265,13 @@ def _normalize_permissions_yaml_config(permission_configs: dict[str, Any], tenan
         for group_identifier, group_config in raw_groups.items():
             if not isinstance(group_identifier, str):
                 continue
-            normalized_groups[qualify_group_identifier(group_identifier, tenant_id=tenant_id)] = group_config
+
+            normalized_group_identifier = _normalize_external_group_identifier(group_identifier)
+            if not normalized_group_identifier:
+                continue
+
+            normalized_groups[qualify_group_identifier(normalized_group_identifier, tenant_id=tenant_id)] = group_config
+
         normalized_permission_configs["groups"] = normalized_groups
 
     raw_permissions = permission_configs.get("permissions")
@@ -178,11 +285,22 @@ def _normalize_permissions_yaml_config(permission_configs: dict[str, Any], tenan
             normalized_permission_config = dict(permission_config)
             groups = permission_config.get("groups")
             if isinstance(groups, list):
+                normalized_group_identifiers = []
+                for group_identifier in groups:
+                    if not isinstance(group_identifier, str):
+                        continue
+
+                    normalized_group_identifier = _normalize_external_group_identifier(group_identifier)
+                    if normalized_group_identifier:
+                        normalized_group_identifiers.append(normalized_group_identifier)
+
                 normalized_permission_config["groups"] = normalize_group_identifiers(
-                    [group_identifier for group_identifier in groups if isinstance(group_identifier, str)],
+                    normalized_group_identifiers,
                     tenant_id=tenant_id,
                 )
+
             normalized_permissions[permission_identifier] = normalized_permission_config
+
         normalized_permission_configs["permissions"] = normalized_permissions
 
     return normalized_permission_configs
@@ -192,9 +310,9 @@ def _normalize_keycloak_groups(user_info: dict[str, Any]) -> list[str]:
     """
     Normalize Keycloak group claims to identifiers used by permissions config.
 
-    Keycloak groups are frequently emitted as paths (e.g. "/super-admin" or "/a/b/super-admin").
-    Permission assignment expects plain identifiers like "super-admin". Preserve
-    non-path groups as-is and use the last path segment for path-style values.
+    Keycloak groups are frequently emitted as paths, e.g. "/super-admin" or
+    "/a/b/super-admin". Permission assignment expects plain identifiers like
+    "super-admin".
     """
     groups = user_info.get("groups")
     if not isinstance(groups, list):
@@ -205,18 +323,12 @@ def _normalize_keycloak_groups(user_info: dict[str, Any]) -> list[str]:
     for group in groups:
         if not isinstance(group, str):
             continue
-        value = group.strip()
-        if not value:
-            continue
-        candidates = [value]
-        if "/" in value:
-            leaf = value.rstrip("/").split("/")[-1].strip()
-            if leaf:
-                candidates = [leaf]
-        for candidate in candidates:
-            if candidate and candidate not in seen:
-                seen.add(candidate)
-                normalized.append(candidate)
+
+        candidate = _normalize_external_group_identifier(group)
+        if candidate and candidate not in seen:
+            seen.add(candidate)
+            normalized.append(candidate)
+
     return normalized
 
 
@@ -234,7 +346,11 @@ def _tenant_group_identifier_for_external_role(
     if not separator or not role_name or not tenant_suffix:
         return None
 
-    internal_role_name = M8FLOW_TENANT_ROLE_ALIASES.get(role_name.strip())
+    normalized_role_name = _normalize_external_group_identifier(role_name)
+    if normalized_role_name is None:
+        return None
+
+    internal_role_name = M8FLOW_TENANT_ROLE_ALIASES.get(normalized_role_name)
     if internal_role_name is None:
         return None
 
@@ -281,17 +397,79 @@ def _normalize_openid_group_identifiers(
             tenant_id
             and separator
             and tenant_suffix
-            and role_name.strip() in M8FLOW_TENANT_ROLE_ALIASES
+            and _normalize_external_group_identifier(role_name.strip()) in M8FLOW_TENANT_ROLE_ALIASES
         ):
             # Explicit tenant-scoped roles for a different tenant must not leak into the active context.
             continue
 
-        qualified = qualify_group_identifier(normalized, tenant_id=tenant_id)
+        normalized_external = _normalize_external_group_identifier(normalized)
+        if not normalized_external:
+            continue
+
+        qualified = qualify_group_identifier(normalized_external, tenant_id=tenant_id)
         if qualified not in seen:
             seen.add(qualified)
             normalized_group_identifiers.append(qualified)
 
     return normalized_group_identifiers
+
+
+def _openid_group_identifiers_from_user_info(
+    user_info: dict[str, Any],
+    tenant_id: str | None,
+) -> list[str]:
+    """
+    Return the effective OpenID-managed groups for this sign-in payload.
+
+    In the shared realm, tenant-scoped role authority now comes from the active
+    organization's group memberships inside the ``organization`` claim. Legacy
+    top-level ``groups`` / ``realm_access.roles`` remain as a fallback for older
+    tokens and non-shared realms.
+    """
+    normalized_groups = _normalize_keycloak_groups(user_info)
+    derived_groups = _keycloak_realm_roles_as_groups(user_info)
+    raw_group_identifiers: list[str] = []
+    seen_groups: set[str] = set()
+
+    for group_name in normalized_groups + derived_groups:
+        normalized_group_name = _normalize_external_group_identifier(group_name)
+        if normalized_group_name and normalized_group_name not in seen_groups:
+            seen_groups.add(normalized_group_name)
+            raw_group_identifiers.append(normalized_group_name)
+
+    if authentication_identifier_from_payload(user_info) == _shared_realm_identifier():
+        organization_group_identifiers = organization_group_identifiers_from_payload(
+            user_info,
+            tenant_id=tenant_id,
+        )
+
+        normalized_organization_group_identifiers: list[str] = []
+        seen_organization_groups: set[str] = set()
+
+        for group_identifier in organization_group_identifiers:
+            if not isinstance(group_identifier, str):
+                continue
+
+            normalized_group_identifier = _normalize_external_group_identifier(group_identifier)
+            if normalized_group_identifier and normalized_group_identifier not in seen_organization_groups:
+                seen_organization_groups.add(normalized_group_identifier)
+                normalized_organization_group_identifiers.append(normalized_group_identifier)
+
+        if normalized_organization_group_identifiers:
+            raw_group_identifiers = [
+                group_identifier
+                for group_identifier in raw_group_identifiers
+                if group_identifier in M8FLOW_GLOBAL_PERMISSION_GROUP_IDENTIFIERS
+            ]
+
+            seen_groups = set(raw_group_identifiers)
+
+            for group_identifier in normalized_organization_group_identifiers:
+                if group_identifier not in seen_groups:
+                    seen_groups.add(group_identifier)
+                    raw_group_identifiers.append(group_identifier)
+
+    return _normalize_openid_group_identifiers(raw_group_identifiers, tenant_id=tenant_id)
 
 
 def _user_recency_key(user: Any) -> tuple[int, int, int]:
@@ -360,6 +538,7 @@ def _find_existing_user_for_sign_in(
 def apply() -> None:
     """Patch AuthorizationService for m8flow auth behavior and tenant-qualified groups."""
     global _PATCHED
+
     if _PATCHED:
         return
 
@@ -368,9 +547,10 @@ def apply() -> None:
     from spiffworkflow_backend.models.db import db
     from spiffworkflow_backend.models.group import SPIFF_GUEST_GROUP
     from spiffworkflow_backend.models.permission_assignment import PermissionAssignmentModel
+    from spiffworkflow_backend.models.principal import MissingPrincipalError
     from spiffworkflow_backend.models.principal import PrincipalModel
-    from spiffworkflow_backend.models.user import UserModel
     from spiffworkflow_backend.models.user import SPIFF_GUEST_USER
+    from spiffworkflow_backend.models.user import UserModel
     from spiffworkflow_backend.models.user_group_assignment import UserGroupAssignmentModel
     from spiffworkflow_backend.models.user_group_assignment_waiting import UserGroupAssignmentWaitingModel
     from spiffworkflow_backend.services import authorization_service
@@ -392,6 +572,52 @@ def apply() -> None:
 
     authorization_service.AuthorizationService.authentication_exclusion_list = _patched_authentication_exclusion_list
     logger.info("auth_exclusion_patch: added %s to authentication_exclusion_list", M8FLOW_AUTH_EXCLUSION_ADDITIONS)
+
+    @classmethod
+    def patched_get_permission_targets_for_user(cls, user: UserModel, check_groups: bool = True) -> set[tuple[str, str, str]]:
+        """Limit group-derived permission targets to the active tenant plus explicit global groups."""
+        unique_permission_assignments = set()
+        for permission_assignment in user.principal.permission_assignments:
+            unique_permission_assignments.add(
+                (
+                    permission_assignment.permission_target_id,
+                    permission_assignment.permission,
+                    permission_assignment.grant_type,
+                )
+            )
+
+        if check_groups:
+            tenant_id = _active_permission_scope_tenant_id()
+            for group in _permission_scoped_groups_for_user(user, tenant_id=tenant_id):
+                for permission_assignment in group.principal.permission_assignments:
+                    unique_permission_assignments.add(
+                        (
+                            permission_assignment.permission_target_id,
+                            permission_assignment.permission,
+                            permission_assignment.grant_type,
+                        )
+                    )
+        return unique_permission_assignments
+
+    UserService.get_permission_targets_for_user = patched_get_permission_targets_for_user
+
+    @classmethod
+    def patched_all_principals_for_user(cls, user: UserModel) -> list[PrincipalModel]:
+        if user.principal is None:
+            raise MissingPrincipalError(f"Missing principal for user with id: {user.id}")
+
+        tenant_id = _active_permission_scope_tenant_id()
+        scoped_groups = _permission_scoped_groups_for_user(user, tenant_id=tenant_id)
+
+        principals = [user.principal]
+        for group in scoped_groups:
+            if group.principal is None:
+                raise MissingPrincipalError(f"Missing principal for group with id: {group.id}")
+            principals.append(group.principal)
+
+        return principals
+
+    UserService.all_principals_for_user = patched_all_principals_for_user
 
     @classmethod
     def patched_create_user_from_sign_in(cls, user_info: dict[str, Any]):
@@ -417,31 +643,6 @@ def apply() -> None:
         user_attributes["service_id"] = user_info["sub"]
 
         effective_tenant_id = _tenant_id_for_user_info(user_info)
-
-        normalized_groups = _normalize_keycloak_groups(user_info)
-        derived_groups = _keycloak_realm_roles_as_groups(user_info)
-        merged_groups: list[str] = []
-        seen_groups: set[str] = set()
-        for group_name in normalized_groups + derived_groups:
-            if group_name not in seen_groups:
-                seen_groups.add(group_name)
-                merged_groups.append(group_name)
-        if merged_groups:
-            user_info = user_info.copy()
-            user_info["groups"] = merged_groups
-
-        desired_group_identifiers: list[str] | Any | None = None
-        if current_app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_IS_AUTHORITY_FOR_USER_GROUPS"]:
-            desired_group_identifiers = []
-            raw_groups = user_info.get("groups")
-            if raw_groups is not None:
-                if isinstance(raw_groups, list):
-                    desired_group_identifiers = _normalize_openid_group_identifiers(
-                        [group_identifier for group_identifier in raw_groups if isinstance(group_identifier, str)],
-                        tenant_id=effective_tenant_id,
-                    )
-                else:
-                    desired_group_identifiers = raw_groups
 
         for field_index, tenant_specific_field in enumerate(
             current_app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_TENANT_SPECIFIC_FIELDS"]
@@ -484,69 +685,83 @@ def apply() -> None:
                 db.session.add(user_model)
                 db.session.commit()
 
-        if _should_defer_tenant_group_sync(user_info, effective_tenant_id):
-            return user_model
-
-        if desired_group_identifiers is not None:
-            if not isinstance(desired_group_identifiers, list):
-                current_app.logger.error(
-                    "Invalid groups property in token: %s. If groups is specified, it must be a list",
-                    desired_group_identifiers,
-                )
-            else:
-                for desired_group_identifier in desired_group_identifiers:
-                    new_group = UserService.add_user_to_group_by_group_identifier(
-                        user_model, desired_group_identifier, source_is_open_id=True
-                    )
-                    if new_group is not None:
-                        new_group_ids.add(new_group.id)
-
-                default_group_identifier = qualified_config_group_identifier(
-                    "SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP",
+        with _permission_scope_tenant(effective_tenant_id):
+            desired_group_identifiers: list[str] | Any | None = None
+            if current_app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_IS_AUTHORITY_FOR_USER_GROUPS"]:
+                desired_group_identifiers = _openid_group_identifiers_from_user_info(
+                    user_info,
                     tenant_id=effective_tenant_id,
                 )
-                group_ids_to_remove_from_user = []
-                for group in user_model.groups:
-                    if group.identifier in desired_group_identifiers:
-                        continue
-                    if default_group_identifier and group.identifier == default_group_identifier:
-                        continue
-                    if effective_tenant_id and not is_group_for_tenant(group.identifier, effective_tenant_id):
-                        continue
-                    group_ids_to_remove_from_user.append(group.id)
-                for group_id in group_ids_to_remove_from_user:
-                    old_group_ids.add(group_id)
-                    UserService.remove_user_from_group(user_model, group_id)
 
-        group_ids_before_yaml_import = {group.id for group in user_model.groups}
-        cls.import_permissions_from_yaml_file(user_model)
+            logger.warning("auth_effective_tenant_id=%s", effective_tenant_id)
+            logger.warning("auth_context_tenant_id=%s", current_tenant_id_or_none())
+            logger.warning("auth_desired_group_identifiers=%s", desired_group_identifiers)
 
-        db.session.expire(user_model, ["groups"])
-        group_ids_after_yaml_import = {group.id for group in user_model.groups}
-        yaml_added_group_ids = group_ids_after_yaml_import - group_ids_before_yaml_import
-        yaml_removed_group_ids = group_ids_before_yaml_import - group_ids_after_yaml_import
+            if _should_defer_tenant_group_sync(user_info, effective_tenant_id):
+                return user_model
 
-        new_group_ids.update(yaml_added_group_ids)
-        old_group_ids.update(yaml_removed_group_ids)
+            if desired_group_identifiers is not None:
+                if not isinstance(desired_group_identifiers, list):
+                    current_app.logger.error(
+                        "Invalid groups property in token: %s. If groups is specified, it must be a list",
+                        desired_group_identifiers,
+                    )
+                else:
+                    for desired_group_identifier in desired_group_identifiers:
+                        new_group = UserService.add_user_to_group_by_group_identifier(
+                            user_model, desired_group_identifier, source_is_open_id=True
+                        )
+                        if new_group is not None:
+                            new_group_ids.add(new_group.id)
 
-        if new_user:
-            new_group_ids.update({group.id for group in user_model.groups})
+                    default_group_identifier = qualified_config_group_identifier(
+                        "SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP",
+                        tenant_id=effective_tenant_id,
+                    )
+                    group_ids_to_remove_from_user = []
+                    for group in user_model.groups:
+                        if group.identifier in desired_group_identifiers:
+                            continue
+                        if default_group_identifier and group.identifier == default_group_identifier:
+                            continue
+                        if effective_tenant_id and not is_group_for_tenant(group.identifier, effective_tenant_id):
+                            continue
+                        group_ids_to_remove_from_user.append(group.id)
 
-        if len(new_group_ids) > 0 or len(old_group_ids) > 0:
-            UserService.update_human_task_assignments_for_user(
-                user_model,
-                new_group_ids=new_group_ids,
-                old_group_ids=old_group_ids,
-            )
+                    for group_id in group_ids_to_remove_from_user:
+                        old_group_ids.add(group_id)
+                        UserService.remove_user_from_group(user_model, group_id)
+
+            group_ids_before_yaml_import = {group.id for group in user_model.groups}
+            cls.import_permissions_from_yaml_file(user_model)
+
+            db.session.expire(user_model, ["groups"])
+            group_ids_after_yaml_import = {group.id for group in user_model.groups}
+            yaml_added_group_ids = group_ids_after_yaml_import - group_ids_before_yaml_import
+            yaml_removed_group_ids = group_ids_before_yaml_import - group_ids_after_yaml_import
+
+            new_group_ids.update(yaml_added_group_ids)
+            old_group_ids.update(yaml_removed_group_ids)
+
+            if new_user:
+                new_group_ids.update({group.id for group in user_model.groups})
+
+            if len(new_group_ids) > 0 or len(old_group_ids) > 0:
+                UserService.update_human_task_assignments_for_user(
+                    user_model,
+                    new_group_ids=new_group_ids,
+                    old_group_ids=old_group_ids,
+                )
 
         return user_model
 
     AuthorizationService.create_user_from_sign_in = patched_create_user_from_sign_in
 
+
     @classmethod
     def patched_parse_permissions_yaml_into_group_info(cls):
         """Parse tenant-agnostic YAML into tenant-qualified group permission definitions."""
-        tenant_id = current_tenant_id_or_none()
+        tenant_id = _active_permission_scope_tenant_id()
         permission_configs = _normalize_permissions_yaml_config(cls.load_permissions_yaml(), tenant_id=tenant_id)
 
         group_permissions_by_group: dict[str, Any] = {}
@@ -589,8 +804,9 @@ def apply() -> None:
     @classmethod
     def patched_add_permission_from_uri_or_macro(cls, group_identifier: str, permission: str, target: str):
         """Tenant-qualify group identifiers before delegating permission creation upstream."""
-        tenant_id = current_tenant_id_or_none()
-        qualified_group_identifier = qualify_group_identifier(group_identifier, tenant_id=tenant_id)
+        tenant_id = _active_permission_scope_tenant_id()
+        normalized_group_identifier = _normalize_external_group_identifier(group_identifier) or group_identifier
+        qualified_group_identifier = qualify_group_identifier(normalized_group_identifier, tenant_id=tenant_id)
         return _original_add_permission_from_uri_or_macro.__func__(cls, qualified_group_identifier, permission, target)
 
     AuthorizationService.add_permission_from_uri_or_macro = patched_add_permission_from_uri_or_macro
@@ -603,7 +819,7 @@ def apply() -> None:
         group_permissions_only: bool = False,
     ):
         """Refresh tenant-scoped groups and permissions without mutating shared app config."""
-        tenant_id = current_tenant_id_or_none()
+        tenant_id = _active_permission_scope_tenant_id()
         normalized_group_permissions = normalize_group_permissions(group_permissions, tenant_id=tenant_id)
         count = len(normalized_group_permissions)
         current_app.logger.debug(
@@ -773,7 +989,7 @@ def apply() -> None:
         group_permissions_only: bool = False,
     ) -> None:
         """Remove stale tenant-local permissions and group assignments after a permission refresh."""
-        tenant_id = current_tenant_id_or_none()
+        tenant_id = _active_permission_scope_tenant_id()
         if tenant_id:
             filtered_permission_assignments: list[PermissionAssignmentModel] = []
             for assignment in initial_permission_assignments:

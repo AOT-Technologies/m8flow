@@ -37,8 +37,6 @@ _BASE_TENANT_CONTEXT_EXEMPT_PATH_PREFIXES: tuple[str, ...] = (
     "/v1.0/openapi.json",
     "/v1.0/openapi.yaml",
     "/openapi.yaml",
-    "/v1.0/permissions-check",
-    "/permissions-check",
     "/v1.0/ui",
     "/v1.0/static",
     "/v1.0/logout",

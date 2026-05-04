@@ -360,6 +360,127 @@ paths:
         "500":
           description: Internal server error
 
+  /tenants/{tenant_id}/members:
+    get:
+      summary: List tenant organization members
+      description: Lists Keycloak organization members for the selected tenant and returns only tenant-local roles for that organization.
+      operationId: m8flow_backend.routes.tenant_role_controller.list_tenant_members
+      tags:
+        - Tenant
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique tenant identifier
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional username prefix filter for organization members
+      responses:
+        "200":
+          description: Tenant members retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantMemberListResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Forbidden - insufficient permissions
+        "404":
+          description: Tenant or organization not found
+        "500":
+          description: Internal server error
+
+  /tenants/{tenant_id}/members/{username}/roles/{role_name}:
+    put:
+      summary: Assign tenant role to organization member
+      description: Assigns one tenant-scoped role to one Keycloak organization member and mirrors the assignment locally for immediate RBAC effects.
+      operationId: m8flow_backend.routes.tenant_role_controller.assign_member_role
+      tags:
+        - Tenant
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: username
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: role_name
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [tenant-admin, editor, integrator, reviewer, viewer]
+      responses:
+        "200":
+          description: Role assigned successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantMemberRoleMutationResponse"
+        "400":
+          description: Invalid tenant role or member data
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Forbidden - insufficient permissions
+        "404":
+          description: Tenant member not found
+        "409":
+          description: Local role sync conflict
+        "500":
+          description: Internal server error
+
+    delete:
+      summary: Remove tenant role from organization member
+      description: Removes one tenant-scoped role from one Keycloak organization member and mirrors the removal locally for immediate RBAC effects.
+      operationId: m8flow_backend.routes.tenant_role_controller.remove_member_role
+      tags:
+        - Tenant
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: username
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: role_name
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [tenant-admin, editor, integrator, reviewer, viewer]
+      responses:
+        "200":
+          description: Role removed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantMemberRoleMutationResponse"
+        "400":
+          description: Invalid tenant role or member data
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Forbidden - insufficient permissions
+        "404":
+          description: Tenant member not found
+        "500":
+          description: Internal server error
+
 
   /templates:
     get:
@@ -1109,6 +1230,49 @@ components:
       type: array
       items:
         $ref: "#/components/schemas/Tenant"
+
+    TenantMember:
+      type: object
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        email:
+          type: string
+          nullable: true
+        display_name:
+          type: string
+          nullable: true
+        roles:
+          type: array
+          items:
+            type: string
+            enum: [tenant-admin, editor, integrator, reviewer, viewer]
+
+    TenantMemberListResponse:
+      type: object
+      properties:
+        tenant_id:
+          type: string
+        search:
+          type: string
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/TenantMember"
+
+    TenantMemberRoleMutationResponse:
+      type: object
+      properties:
+        tenant_id:
+          type: string
+        username:
+          type: string
+        role_name:
+          type: string
+        member:
+          $ref: "#/components/schemas/TenantMember"
 
     TenantExistsResponse:
       type: object

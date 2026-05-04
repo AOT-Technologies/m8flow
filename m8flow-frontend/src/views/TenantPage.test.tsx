@@ -5,6 +5,9 @@ import TenantPage from "./TenantPage";
 const mockUseTenants = vi.fn();
 const mockUsePermissionFetcher = vi.fn();
 const mockCreateTenant = vi.fn();
+const mockGetTenantMembers = vi.fn();
+const mockAssignTenantMemberRole = vi.fn();
+const mockRemoveTenantMemberRole = vi.fn();
 
 vi.mock("../hooks/useTenants", () => ({
   useTenants: () => mockUseTenants(),
@@ -17,6 +20,11 @@ vi.mock("@spiffworkflow-frontend/hooks/PermissionService", () => ({
 vi.mock("../services/TenantService", () => ({
   default: {
     createTenant: (...args: unknown[]) => mockCreateTenant(...args),
+    getTenantMembers: (...args: unknown[]) => mockGetTenantMembers(...args),
+    assignTenantMemberRole: (...args: unknown[]) =>
+      mockAssignTenantMemberRole(...args),
+    removeTenantMemberRole: (...args: unknown[]) =>
+      mockRemoveTenantMemberRole(...args),
     updateTenant: vi.fn(),
     deleteTenant: vi.fn(),
   },
@@ -31,6 +39,9 @@ vi.mock("react-i18next", () => ({
           "Manage the Keycloak organizations that back tenant access in the shared realm.",
         add_organization: "Add Organization",
         edit_organization: "Edit Organization",
+        manage_organization_roles: "Manage Organization Roles",
+        organization_role_management_description:
+          "Assign tenant-scoped roles to members of this Keycloak organization. Only organization members are listed here.",
         delete_organization: "Delete Organization",
         search_by: "Search By",
         name: "Name",
@@ -58,6 +69,20 @@ vi.mock("react-i18next", () => ({
           "Organization alias can only contain letters, numbers, hyphens, and underscores",
         organization_name_cannot_be_empty:
           "Organization name cannot be empty",
+        failed_to_load_organization_members:
+          "Failed to load organization members.",
+        failed_to_update_organization_role:
+          "Failed to update organization role.",
+        search_organization_members: "Search organization members...",
+        refresh_members: "Refresh members",
+        no_organization_members_found: "No organization members found.",
+        username: "Username",
+        email: "Email",
+        tenant_role_tenant_admin: "Tenant Admin",
+        tenant_role_editor: "Editor",
+        tenant_role_integrator: "Integrator",
+        tenant_role_reviewer: "Reviewer",
+        tenant_role_viewer: "Viewer",
         failed_to_create_organization:
           "Failed to create organization. Please try again.",
         failed_to_update_organization:
@@ -87,6 +112,21 @@ vi.mock("react-i18next", () => ({
 describe("TenantPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetTenantMembers.mockResolvedValue([]);
+    mockAssignTenantMemberRole.mockResolvedValue({
+      id: "member-1",
+      username: "editor",
+      email: "editor@example.com",
+      display_name: "Editor User",
+      roles: ["editor"],
+    });
+    mockRemoveTenantMemberRole.mockResolvedValue({
+      id: "member-1",
+      username: "editor",
+      email: "editor@example.com",
+      display_name: "Editor User",
+      roles: [],
+    });
   });
 
   it("creates a tenant from the add tenant modal", async () => {
@@ -229,5 +269,61 @@ describe("TenantPage", () => {
     expect(
       await screen.findByText("Organization alias already exists"),
     ).toBeInTheDocument();
+  });
+
+  it("opens organization role management and assigns a tenant role", async () => {
+    mockUseTenants.mockReturnValue({
+      data: [
+        {
+          id: "tenant-uuid",
+          name: "Information Technology",
+          slug: "it",
+          status: "ACTIVE",
+          createdBy: "system",
+          modifiedBy: "system",
+          createdAtInSeconds: 1,
+          updatedAtInSeconds: 1,
+        },
+      ],
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    mockUsePermissionFetcher.mockReturnValue({
+      ability: { can: () => true },
+      permissionsLoaded: true,
+    });
+    mockGetTenantMembers.mockResolvedValue([
+      {
+        id: "member-1",
+        username: "editor",
+        email: "editor@example.com",
+        display_name: "Editor User",
+        roles: [],
+      },
+    ]);
+
+    render(<TenantPage />);
+
+    fireEvent.click(screen.getByTestId("tenant-roles-button-tenant-uuid"));
+
+    expect(
+      await screen.findByText(
+        "Assign tenant-scoped roles to members of this Keycloak organization. Only organization members are listed here.",
+      ),
+    ).toBeInTheDocument();
+    expect(mockGetTenantMembers).toHaveBeenCalledWith("tenant-uuid");
+
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: "editor-editor" }),
+    );
+
+    await waitFor(() => {
+      expect(mockAssignTenantMemberRole).toHaveBeenCalledWith(
+        "tenant-uuid",
+        "editor",
+        "editor",
+      );
+    });
   });
 });

@@ -17,6 +17,21 @@ export interface Tenant {
     updatedAtInSeconds: number;
 }
 
+export type TenantMemberRole =
+    | "tenant-admin"
+    | "editor"
+    | "integrator"
+    | "reviewer"
+    | "viewer";
+
+export interface TenantMember {
+    id: string;
+    username: string;
+    email: string | null;
+    display_name: string | null;
+    roles: TenantMemberRole[];
+}
+
 export interface UpdateTenantRequest {
     name?: string;
     status?: TenantStatus;
@@ -35,6 +50,12 @@ export interface CreateTenantResponse {
     realm?: string;
     displayName?: string;
     keycloak_realm_id?: string;
+}
+
+interface TenantMembersResponse {
+    tenant_id: string;
+    search: string;
+    members: TenantMember[];
 }
 
 const TenantService = {
@@ -109,6 +130,72 @@ const TenantService = {
                 path: `${BASE_PATH}/tenants/${id}`,
                 httpMethod: "DELETE",
                 successCallback: resolve,
+                failureCallback: reject,
+            });
+        });
+    },
+
+    /**
+     * List tenant organization members and their tenant-local roles
+     */
+    getTenantMembers: (tenantId: string, search = ""): Promise<TenantMember[]> => {
+        const searchParams = new URLSearchParams();
+        if (search.trim()) {
+            searchParams.set("search", search.trim());
+        }
+        const queryString = searchParams.toString();
+        const path = `${BASE_PATH}/tenants/${encodeURIComponent(tenantId)}/members${
+            queryString ? `?${queryString}` : ""
+        }`;
+
+        return new Promise((resolve, reject) => {
+            HttpService.makeCallToBackend({
+                path,
+                httpMethod: "GET",
+                successCallback: (response: TenantMembersResponse) =>
+                    resolve(response.members ?? []),
+                failureCallback: reject,
+            });
+        });
+    },
+
+    /**
+     * Assign one tenant-scoped role to one organization member
+     */
+    assignTenantMemberRole: (
+        tenantId: string,
+        username: string,
+        roleName: TenantMemberRole,
+    ): Promise<TenantMember> => {
+        return new Promise((resolve, reject) => {
+            HttpService.makeCallToBackend({
+                path: `${BASE_PATH}/tenants/${encodeURIComponent(tenantId)}/members/${encodeURIComponent(
+                    username,
+                )}/roles/${encodeURIComponent(roleName)}`,
+                httpMethod: "PUT",
+                successCallback: (response: { member: TenantMember }) =>
+                    resolve(response.member),
+                failureCallback: reject,
+            });
+        });
+    },
+
+    /**
+     * Remove one tenant-scoped role from one organization member
+     */
+    removeTenantMemberRole: (
+        tenantId: string,
+        username: string,
+        roleName: TenantMemberRole,
+    ): Promise<TenantMember> => {
+        return new Promise((resolve, reject) => {
+            HttpService.makeCallToBackend({
+                path: `${BASE_PATH}/tenants/${encodeURIComponent(tenantId)}/members/${encodeURIComponent(
+                    username,
+                )}/roles/${encodeURIComponent(roleName)}`,
+                httpMethod: "DELETE",
+                successCallback: (response: { member: TenantMember }) =>
+                    resolve(response.member),
                 failureCallback: reject,
             });
         });

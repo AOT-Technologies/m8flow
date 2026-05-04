@@ -30,10 +30,12 @@ import SearchIcon from "@mui/icons-material/Search";
 import EditIcon from "@mui/icons-material/Edit";
 import ClearIcon from "@mui/icons-material/Clear";
 import AddIcon from "@mui/icons-material/Add";
+import ManageAccountsIcon from "@mui/icons-material/ManageAccounts";
 import { usePermissionFetcher } from "@spiffworkflow-frontend/hooks/PermissionService";
 import { Tenant } from "../services/TenantService";
 import { useTenants } from "../hooks/useTenants";
 import TenantModal from "./TenantModal";
+import TenantRoleDialog from "./TenantRoleDialog";
 import { TenantModalType } from "../enums/TenantModalType";
 
 const STATUS_COLORS = {
@@ -91,6 +93,7 @@ export default function TenantPage() {
     TenantModalType.EDIT_TENANT,
   );
   const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
+  const [roleDialogTenant, setRoleDialogTenant] = useState<Tenant | null>(null);
   const [successMessage, setSuccessMessage] = useState("");
 
   // Handle edit
@@ -104,6 +107,10 @@ export default function TenantPage() {
     setSelectedTenant(null);
     setModalType(TenantModalType.CREATE_TENANT);
     setIsModalOpen(true);
+  };
+
+  const handleManageRoles = (tenant: Tenant) => {
+    setRoleDialogTenant(tenant);
   };
 
   // Handle delete
@@ -400,6 +407,21 @@ export default function TenantPage() {
                         justifyContent="center"
                       >
                         <Tooltip
+                          title={translate(
+                            "manage_organization_roles",
+                            "Manage Organization Roles",
+                          )}
+                        >
+                          <IconButton
+                            size="small"
+                            color="primary"
+                            data-testid={`tenant-roles-button-${tenant.id}`}
+                            onClick={() => handleManageRoles(tenant)}
+                          >
+                            <ManageAccountsIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip
                           title={translate("edit_organization", "Edit Organization")}
                           disableHoverListener={tenant.status === "DELETED"}
                         >
@@ -461,6 +483,11 @@ export default function TenantPage() {
         tenant={selectedTenant}
         onClose={handleCloseModal}
         onSuccess={handleModalSuccess}
+      />
+      <TenantRoleDialog
+        open={Boolean(roleDialogTenant)}
+        tenant={roleDialogTenant}
+        onClose={() => setRoleDialogTenant(null)}
       />
       <Snackbar
         open={Boolean(successMessage)}

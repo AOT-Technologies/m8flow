@@ -9,8 +9,10 @@ from flask import make_response
 
 from spiffworkflow_backend.exceptions.api_error import ApiError
 
+from m8flow_backend.services.tenant_identity_helpers import current_tenant_id_or_none
 from m8flow_backend.services.tenant_identity_helpers import find_users_for_current_tenant_by_username
 from m8flow_backend.services.tenant_identity_helpers import find_users_for_current_tenant_by_username_prefix
+from m8flow_backend.services.tenant_identity_helpers import is_group_for_tenant
 from m8flow_backend.services.tenant_identity_helpers import qualified_config_group_identifier
 
 _PATCHED = False
@@ -46,13 +48,15 @@ def apply() -> None:
         return make_response(jsonify(response_json), 200)
 
     def patched_user_group_list_for_current_user() -> flask.wrappers.Response:
-        """List current-user groups while hiding the tenant-qualified default user group."""
+        """List current-user groups for the active tenant while hiding the default user group."""
         groups = g.user.groups
+        tenant_id = current_tenant_id_or_none()
         default_group_identifier = qualified_config_group_identifier("SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP")
         group_identifiers = [
             group.identifier
             for group in groups
-            if default_group_identifier is None or group.identifier != default_group_identifier
+            if (default_group_identifier is None or group.identifier != default_group_identifier)
+            and (tenant_id is None or is_group_for_tenant(group.identifier, tenant_id))
         ]
         return make_response(jsonify(sorted(group_identifiers)), 200)
 

@@ -50,6 +50,34 @@ permissions:
     groups: ["everybody"]
     actions: [create]
     uri: /active-users/*
+  read-extensions:
+    groups: ["everybody"]
+    actions: [read]
+    uri: /extensions
+  read-current-user-groups:
+    groups: ["everybody"]
+    actions: [read]
+    uri: /user-groups/for-current-user
+  read-user-existence:
+    groups: ["everybody"]
+    actions: [create]
+    uri: /users/exists/by-username
+  read-version-info:
+    groups: ["everybody"]
+    actions: [read]
+    uri: /debug/version-info
+  read-onboarding-locations:
+    groups: ["everybody"]
+    actions: [read]
+    uri: /upsearch-locations
+  read-connector-typeahead:
+    groups: ["everybody"]
+    actions: [read]
+    uri: /connector-proxy/typeahead/*
+  read-script-assist-enabled:
+    groups: ["everybody"]
+    actions: [read]
+    uri: /script-assist/enabled
 
 
   # Super Admins have access to tenants management only.
@@ -69,6 +97,10 @@ permissions:
     groups: ["tenant-admin", "editor"]
     actions: [all]
     uri: PG:ALL
+  read-process-group-list:
+    groups: ["tenant-admin", "editor", "viewer", "reviewer"]
+    actions: [read]
+    uri: /process-groups
   read-all-process-models:
     groups: ["viewer", "reviewer"]
     actions: [read]
@@ -77,6 +109,14 @@ permissions:
     groups: ["tenant-admin", "editor"]
     actions: [all]
     uri: PM:ALL
+  read-process-model-list:
+    groups: ["tenant-admin", "editor", "viewer", "reviewer"]
+    actions: [read]
+    uri: /process-models
+  read-process-list:
+    groups: ["tenant-admin", "editor", "viewer", "reviewer"]
+    actions: [read]
+    uri: /processes
   read-processes:
     groups: ["tenant-admin", "editor", "viewer", "reviewer"]
     actions: [read]
@@ -85,14 +125,34 @@ permissions:
     groups: ["tenant-admin", "editor"]
     actions: [start]
     uri: PM:ALL
+  read-process-instance-list:
+    groups: ["tenant-admin", "editor", "viewer", "reviewer"]
+    actions: [read]
+    uri: /process-instances
+  create-process-instance-list-for-me:
+    groups: ["tenant-admin", "editor", "reviewer"]
+    actions: [create]
+    uri: /process-instances/for-me
+  read-process-instance-report-metadata:
+    groups: ["tenant-admin", "editor", "viewer", "reviewer"]
+    actions: [read]
+    uri: /process-instances/report-metadata
   read-process-instances:
     groups: ["tenant-admin", "editor", "viewer"]
     actions: [read]
     uri: /process-instances/*
+  read-user-search:
+    groups: ["tenant-admin", "editor", "viewer", "reviewer", "integrator"]
+    actions: [read]
+    uri: /users/search
   read-user-groups-items:
     groups: ["tenant-admin", "editor", "viewer"]
     actions: [read]
     uri: /user-groups/*
+  read-service-task-list:
+    groups: ["tenant-admin", "editor", "viewer"]
+    actions: [read]
+    uri: /service-tasks
   read-script-assist-items:
     groups: ["tenant-admin", "editor", "viewer", "reviewer"]
     actions: [read]
@@ -105,6 +165,10 @@ permissions:
     groups: ["tenant-admin", "editor"]
     actions: [all]
     uri: /data-stores/*
+  read-data-store-list:
+    groups: ["tenant-admin", "editor"]
+    actions: [read]
+    uri: /data-stores
   manage-data-stores-types:
     groups: ["tenant-admin", "editor"]
     actions: [all]
@@ -113,6 +177,10 @@ permissions:
     groups: ["tenant-admin", "editor"]
     actions: [all]
     uri: /messages/*
+  read-message-list:
+    groups: ["tenant-admin", "editor"]
+    actions: [read]
+    uri: /messages
   manage-secrets:
     groups: ["tenant-admin", "integrator"]
     actions: [all]

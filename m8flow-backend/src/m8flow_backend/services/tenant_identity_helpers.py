@@ -80,14 +80,87 @@ def single_organization_from_payload(
     return organizations[0]
 
 
+def active_organization_from_payload(
+    payload: Mapping[str, Any] | None,
+    tenant_id: str | None = None,
+) -> tuple[str, Mapping[str, Any]] | None:
+    """Return the active organization entry, or ``None`` when it cannot be resolved safely."""
+    organizations = organization_memberships_from_payload(payload)
+    if not organizations:
+        return None
+
+    if len(organizations) == 1:
+        return organizations[0]
+
+    tenant_identifiers = current_tenant_identifiers(tenant_id)
+    if not tenant_identifiers:
+        return None
+
+    matching_organizations: list[tuple[str, Mapping[str, Any]]] = []
+    for organization_alias, organization_details in organizations:
+        organization_identifiers = {organization_alias}
+        organization_id = organization_details.get("id")
+        if isinstance(organization_id, str):
+            normalized_organization_id = organization_id.strip()
+            if normalized_organization_id:
+                organization_identifiers.add(normalized_organization_id)
+        else:
+            normalized_organization_id = None
+
+        canonical_tenant_id = _canonical_tenant_id_from_identifiers(
+            normalized_organization_id,
+            organization_alias,
+        )
+        if canonical_tenant_id:
+            organization_identifiers.add(canonical_tenant_id)
+
+        if organization_identifiers.intersection(tenant_identifiers):
+            matching_organizations.append((organization_alias, organization_details))
+
+    if len(matching_organizations) != 1:
+        return None
+    return matching_organizations[0]
+
+
+def organization_group_identifiers_from_payload(
+    payload: Mapping[str, Any] | None,
+    tenant_id: str | None = None,
+) -> list[str]:
+    """Return normalized organization-local group identifiers for the active organization."""
+    organization = active_organization_from_payload(payload, tenant_id=tenant_id)
+    if organization is None:
+        return []
+
+    _organization_alias, organization_details = organization
+    organization_groups = organization_details.get("groups")
+    if not isinstance(organization_groups, list):
+        return []
+
+    normalized_group_identifiers: list[str] = []
+    seen: set[str] = set()
+    for organization_group in organization_groups:
+        if not isinstance(organization_group, str):
+            continue
+        value = organization_group.strip()
+        if not value:
+            continue
+        normalized_value = value.rstrip("/")
+        if "/" in normalized_value:
+            normalized_value = normalized_value.split("/")[-1].strip()
+        if normalized_value and normalized_value not in seen:
+            seen.add(normalized_value)
+            normalized_group_identifiers.append(normalized_value)
+
+    return normalized_group_identifiers
+
+
 def _canonical_tenant_id_from_identifiers(*identifiers: str | None) -> str | None:
     """
     Resolve token-provided tenant identifiers to the local canonical tenant id.
 
-    Keycloak organization tokens may carry the organization UUID while older local
-    M8Flow rows still use the organization alias as ``m8flow_tenant.id``. When a
-    matching tenant row exists, always return that local row id so downstream
-    tenant scoping, group qualification, and FK-backed records stay consistent.
+    When a matching tenant row exists, always return that row's primary key so
+    downstream tenant scoping, group qualification, and FK-backed records stay
+    consistent.
     """
     normalized_identifiers: list[str] = []
     seen: set[str] = set()
@@ -169,7 +242,7 @@ def current_tenant_identifiers(tenant_id: str | None = None) -> set[str]:
 
 def tenant_id_from_payload(payload: Mapping[str, Any] | None) -> str | None:
     """Extract the configured tenant claim as the local canonical tenant id when possible."""
-    organization = single_organization_from_payload(payload)
+    organization = active_organization_from_payload(payload)
     if organization is not None:
         organization_alias, organization_details = organization
         organization_id = organization_details.get("id")
@@ -206,7 +279,7 @@ def tenant_alias_from_payload(payload: Mapping[str, Any] | None) -> str | None:
     if tenant_alias:
         return tenant_alias
 
-    organization = single_organization_from_payload(payload)
+    organization = active_organization_from_payload(payload)
     if organization is None:
         return None
     organization_alias, _ = organization
@@ -321,6 +394,110 @@ def _display_name_from_keycloak_member(member: Mapping[str, Any]) -> str | None:
     return None
 
 
+def _upsert_local_shared_realm_member(member: Mapping[str, Any]) -> Any | None:
+    """Create or refresh one local user row from a shared-realm Keycloak member representation."""
+    member_id = member.get("id")
+    if not isinstance(member_id, str) or not member_id.strip():
+        return None
+    member_id = member_id.strip()
+
+    member_username = member.get("username")
+    if isinstance(member_username, str):
+        member_username = member_username.strip()
+    else:
+        member_username = ""
+    if not member_username:
+        return None
+
+    shared_realm_service = _shared_realm_service_issuer()
+    if not shared_realm_service:
+        return None
+
+    from spiffworkflow_backend.models.db import db
+    from spiffworkflow_backend.models.user import UserModel
+    from spiffworkflow_backend.services.user_service import UserService
+
+    exact_user = (
+        UserModel.query.filter(UserModel.service == shared_realm_service)
+        .filter(UserModel.service_id == member_id)
+        .first()
+    )
+    if exact_user is not None:
+        updated = False
+
+        if exact_user.username != member_username:
+            exact_user.username = member_username
+            updated = True
+
+        member_email = member.get("email")
+        if isinstance(member_email, str):
+            member_email = member_email.strip()
+        else:
+            member_email = ""
+        if exact_user.email != member_email:
+            exact_user.email = member_email
+            updated = True
+
+        display_name = _display_name_from_keycloak_member(member)
+        if exact_user.display_name != display_name:
+            exact_user.display_name = display_name
+            updated = True
+
+        if updated:
+            db.session.add(exact_user)
+            db.session.commit()
+        return exact_user
+
+    same_username_matches = UserModel.query.filter(UserModel.username == member_username).all()
+    for user in same_username_matches:
+        if realm_from_service(getattr(user, "service", None)) == realm_from_service(shared_realm_service):
+            logger.warning(
+                "shared_realm_user_provision_conflict: username=%s existing_user_id=%s",
+                member_username,
+                getattr(user, "id", None),
+            )
+            return None
+
+    member_email = member.get("email")
+    if not isinstance(member_email, str):
+        member_email = ""
+
+    return UserService.create_user(
+        member_username,
+        shared_realm_service,
+        member_id,
+        email=member_email,
+        display_name=_display_name_from_keycloak_member(member) or "",
+    )
+
+
+def upsert_local_shared_realm_member(member: Mapping[str, Any]) -> Any | None:
+    """Public wrapper for provisioning or refreshing one shared-realm user locally."""
+    return _upsert_local_shared_realm_member(member)
+
+
+def _organization_id_for_tenant(tenant_id: str | None = None) -> str | None:
+    """Resolve the active tenant to the Keycloak organization id in the shared realm."""
+    effective_tenant_id = (tenant_id or current_tenant_id_or_none() or "").strip()
+    if not effective_tenant_id:
+        return None
+
+    tenant_slug = _tenant_slug_for_identifier(effective_tenant_id)
+    if not tenant_slug:
+        return None
+
+    from m8flow_backend.services.keycloak_service import get_organization_by_alias
+
+    organization = get_organization_by_alias(tenant_slug)
+    if not isinstance(organization, Mapping):
+        return None
+
+    organization_id = organization.get("id")
+    if not isinstance(organization_id, str) or not organization_id.strip():
+        return None
+    return organization_id.strip()
+
+
 def _provision_shared_realm_user_for_tenant(username: str, tenant_id: str | None = None) -> Any | None:
     """
     Materialize a shared-realm organization member as a local user when needed.
@@ -337,97 +514,17 @@ def _provision_shared_realm_user_for_tenant(username: str, tenant_id: str | None
     if not effective_tenant_id:
         return None
 
-    tenant_slug = _tenant_slug_for_identifier(effective_tenant_id)
-    if not tenant_slug:
-        return None
-
-    shared_realm_service = _shared_realm_service_issuer()
-    if not shared_realm_service:
-        return None
-
     try:
-        from spiffworkflow_backend.models.db import db
-        from spiffworkflow_backend.models.user import UserModel
-        from spiffworkflow_backend.services.user_service import UserService
-
-        from m8flow_backend.services.keycloak_service import get_organization_by_alias
         from m8flow_backend.services.keycloak_service import get_organization_member_by_username
 
-        organization = get_organization_by_alias(tenant_slug)
-        if not isinstance(organization, Mapping):
+        organization_id = _organization_id_for_tenant(effective_tenant_id)
+        if not organization_id:
             return None
 
-        organization_id = organization.get("id")
-        if not isinstance(organization_id, str) or not organization_id.strip():
-            return None
-
-        member = get_organization_member_by_username(organization_id.strip(), normalized_username)
+        member = get_organization_member_by_username(organization_id, normalized_username)
         if not isinstance(member, Mapping):
             return None
-
-        member_id = member.get("id")
-        if not isinstance(member_id, str) or not member_id.strip():
-            return None
-        member_id = member_id.strip()
-
-        exact_user = (
-            UserModel.query.filter(UserModel.service == shared_realm_service)
-            .filter(UserModel.service_id == member_id)
-            .first()
-        )
-        if exact_user is not None:
-            updated = False
-
-            member_username = member.get("username")
-            if isinstance(member_username, str):
-                member_username = member_username.strip()
-            else:
-                member_username = ""
-            if member_username and exact_user.username != member_username:
-                exact_user.username = member_username
-                updated = True
-
-            member_email = member.get("email")
-            if isinstance(member_email, str):
-                member_email = member_email.strip()
-            else:
-                member_email = ""
-            if exact_user.email != member_email:
-                exact_user.email = member_email
-                updated = True
-
-            display_name = _display_name_from_keycloak_member(member)
-            if exact_user.display_name != display_name:
-                exact_user.display_name = display_name
-                updated = True
-
-            if updated:
-                db.session.add(exact_user)
-                db.session.commit()
-            return exact_user
-
-        same_username_matches = UserModel.query.filter(UserModel.username == normalized_username).all()
-        for user in same_username_matches:
-            if realm_from_service(getattr(user, "service", None)) == realm_from_service(shared_realm_service):
-                logger.warning(
-                    "shared_realm_user_provision_conflict: username=%s tenant=%s existing_user_id=%s",
-                    normalized_username,
-                    effective_tenant_id,
-                    getattr(user, "id", None),
-                )
-                return None
-
-        member_email = member.get("email")
-        if not isinstance(member_email, str):
-            member_email = ""
-
-        return UserService.create_user(
-            normalized_username,
-            shared_realm_service,
-            member_id,
-            email=member_email,
-            display_name=_display_name_from_keycloak_member(member) or "",
-        )
+        return _upsert_local_shared_realm_member(member)
     except Exception:
         logger.exception(
             "shared_realm_user_provision_failed: username=%s tenant=%s",
@@ -473,10 +570,7 @@ def find_users_for_current_tenant_by_identifier(username: str, tenant_id: str | 
 
 def find_users_for_current_tenant_by_username(username: str, tenant_id: str | None = None) -> list[Any]:
     """Find users by exact username within the current tenant."""
-    from spiffworkflow_backend.models.user import UserModel
-
-    matches = UserModel.query.filter(UserModel.username == username).all()
-    return filter_users_for_current_tenant(matches, tenant_id=tenant_id)
+    return find_users_for_current_tenant_by_identifier(username, tenant_id=tenant_id)
 
 
 def find_users_for_current_tenant_by_username_prefix(
@@ -487,7 +581,45 @@ def find_users_for_current_tenant_by_username_prefix(
     from spiffworkflow_backend.models.user import UserModel
 
     matches = UserModel.query.filter(UserModel.username.like(f"{username_prefix}%")).all()  # type: ignore[arg-type]
-    return filter_users_for_current_tenant(matches, tenant_id=tenant_id)
+    tenant_matches = filter_users_for_current_tenant(matches, tenant_id=tenant_id)
+    normalized_prefix = username_prefix.strip()
+    if not normalized_prefix:
+        return tenant_matches
+
+    try:
+        from m8flow_backend.services.keycloak_service import search_organization_members
+
+        organization_id = _organization_id_for_tenant(tenant_id)
+        if organization_id:
+            seen_user_ids = {getattr(user, "id", None) for user in tenant_matches}
+            seen_usernames = {getattr(user, "username", None) for user in tenant_matches}
+
+            for member in search_organization_members(organization_id, normalized_prefix, exact=False):
+                member_username = member.get("username")
+                if not isinstance(member_username, str) or not member_username.startswith(normalized_prefix):
+                    continue
+
+                local_user = _upsert_local_shared_realm_member(member)
+                if local_user is None:
+                    continue
+
+                local_user_id = getattr(local_user, "id", None)
+                local_username = getattr(local_user, "username", None)
+                if local_user_id in seen_user_ids or local_username in seen_usernames:
+                    continue
+
+                tenant_matches.append(local_user)
+                seen_user_ids.add(local_user_id)
+                seen_usernames.add(local_username)
+    except Exception:
+        logger.exception(
+            "shared_realm_user_prefix_search_failed: prefix=%s tenant=%s",
+            normalized_prefix,
+            tenant_id or current_tenant_id_or_none(),
+        )
+
+    tenant_matches.sort(key=lambda user: str(getattr(user, "username", "")))
+    return tenant_matches
 
 
 def resolve_user_for_current_tenant(username: str, tenant_id: str | None = None) -> Any | None:
@@ -550,6 +682,13 @@ def _tenant_slug_for_identifier(tenant_identifier: str) -> str | None:
 
     slug = tenant.slug.strip()
     return slug or None
+
+
+def tenant_slug_for_identifier(tenant_identifier: str) -> str | None:
+    """Public wrapper for resolving a tenant id or alias to the canonical tenant slug."""
+    if not isinstance(tenant_identifier, str):
+        return None
+    return _tenant_slug_for_identifier(tenant_identifier)
 
 
 def organization_scope_for_tenant(tenant_identifier: str | None = None) -> str:

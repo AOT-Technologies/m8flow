@@ -54,6 +54,16 @@ def shared_realm_label() -> str:
     return realm_name
 
 
+def default_organization_alias() -> str:
+    """Alias for the default shared-realm organization."""
+    return _get("M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_ALIAS") or shared_realm_name()
+
+
+def default_organization_name() -> str:
+    """Display name for the default shared-realm organization."""
+    return _get("M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_NAME") or default_organization_alias()
+
+
 def master_realm_name() -> str:
     """Platform/bootstrap admin realm name."""
     return _get("M8FLOW_KEYCLOAK_MASTER_REALM") or DEFAULT_MASTER_REALM_NAME

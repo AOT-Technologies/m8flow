@@ -10,6 +10,7 @@ import uuid
 import warnings
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 from urllib.parse import urlsplit
 
 import requests
@@ -46,6 +47,13 @@ POST_LOGOUT_REDIRECT_URIS_ATTR = "post.logout.redirect.uris"
 # Names reserved for global (non-tenant) administration; never cloned into tenant realms.
 GLOBAL_ONLY_REALM_ROLE_NAMES = frozenset({"super-admin"})
 GLOBAL_ONLY_USERNAMES = frozenset({"super-admin"})
+DEFAULT_ORGANIZATION_ROLE_GROUP_NAMES = (
+    "tenant-admin",
+    "editor",
+    "integrator",
+    "reviewer",
+    "viewer",
+)
 
 
 def _substitute_spoke_client_id(obj: Any, client_id: str) -> Any:
@@ -468,6 +476,18 @@ def _shared_realm_organizations_url(*segments: str) -> str:
     return f"{base}/{'/'.join(normalized_segments)}"
 
 
+def _shared_realm_organization_groups_url(
+    organization_id: str,
+    *segments: str,
+) -> str:
+    """Return the organization-groups Admin API URL inside the configured shared realm."""
+    base = _shared_realm_organizations_url(str(organization_id).strip(), "groups")
+    normalized_segments = [segment.strip("/") for segment in segments if segment and segment.strip("/")]
+    if not normalized_segments:
+        return base
+    return f"{base}/{'/'.join(normalized_segments)}"
+
+
 def get_organization_by_id(
     organization_id: str,
     admin_token: str | None = None,
@@ -566,6 +586,305 @@ def get_organization_member_by_username(
     return exact_matches[0]
 
 
+def search_organization_members(
+    organization_id: str,
+    search: str,
+    *,
+    exact: bool = False,
+    admin_token: str | None = None,
+    max_results: int = 100,
+) -> list[dict[str, Any]]:
+    """Search organization members in the shared realm and return normalized member representations."""
+    if not organization_id or not str(organization_id).strip():
+        raise ValueError("organization_id is required")
+
+    organization_id = str(organization_id).strip()
+    normalized_search = str(search).strip() if isinstance(search, str) else ""
+    token = admin_token or get_master_admin_token()
+    params: dict[str, Any] = {"max": max_results}
+    if normalized_search:
+        params["search"] = normalized_search
+        params["exact"] = "true" if exact else "false"
+
+    r = requests.get(
+        _shared_realm_organizations_url(organization_id, "members"),
+        params=params,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    r.raise_for_status()
+
+    members = r.json()
+    if not isinstance(members, list):
+        return []
+
+    return [member for member in members if isinstance(member, dict)]
+
+
+def get_organization_member_groups(
+    organization_id: str,
+    member_id: str,
+    admin_token: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return the organization-group memberships for one member."""
+    if not organization_id or not str(organization_id).strip():
+        raise ValueError("organization_id is required")
+    if not member_id or not str(member_id).strip():
+        raise ValueError("member_id is required")
+
+    organization_id = str(organization_id).strip()
+    member_id = str(member_id).strip()
+    token = admin_token or get_master_admin_token()
+
+    r = requests.get(
+        _shared_realm_organizations_url(organization_id, "members", quote(member_id, safe=""), "groups"),
+        params={
+            "briefRepresentation": "true",
+            "max": 100,
+        },
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    r.raise_for_status()
+
+    groups = r.json()
+    if not isinstance(groups, list):
+        return []
+
+    return [group for group in groups if isinstance(group, dict)]
+
+
+def get_organization_group_by_name(
+    organization_id: str,
+    group_name: str,
+    admin_token: str | None = None,
+) -> dict[str, Any] | None:
+    """Return the exact top-level organization group representation by name."""
+    if not organization_id or not str(organization_id).strip():
+        raise ValueError("organization_id is required")
+    if not group_name or not str(group_name).strip():
+        raise ValueError("group_name is required")
+
+    organization_id = str(organization_id).strip()
+    normalized_group_name = str(group_name).strip()
+    token = admin_token or get_master_admin_token()
+
+    r = requests.get(
+        _shared_realm_organization_groups_url(organization_id),
+        params={
+            "search": normalized_group_name,
+            "exact": "true",
+            "briefRepresentation": "true",
+            "populateHierarchy": "false",
+            "subGroupsCount": "false",
+            "max": 100,
+        },
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    r.raise_for_status()
+
+    groups = r.json()
+    if not isinstance(groups, list):
+        return None
+
+    for group in groups:
+        if not isinstance(group, dict):
+            continue
+        if group.get("name") != normalized_group_name:
+            continue
+        group_path = group.get("path")
+        if group_path in {None, normalized_group_name, f"/{normalized_group_name}"}:
+            return group
+    return None
+
+
+def create_organization_group(
+    organization_id: str,
+    group_name: str,
+    admin_token: str | None = None,
+) -> dict[str, Any]:
+    """Create a top-level organization group and return its representation."""
+    if not organization_id or not str(organization_id).strip():
+        raise ValueError("organization_id is required")
+    if not group_name or not str(group_name).strip():
+        raise ValueError("group_name is required")
+
+    organization_id = str(organization_id).strip()
+    normalized_group_name = str(group_name).strip()
+    token = admin_token or get_master_admin_token()
+
+    r = requests.post(
+        _shared_realm_organization_groups_url(organization_id),
+        json={"name": normalized_group_name},
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    r.raise_for_status()
+
+    location_headers = getattr(r, "headers", None) or {}
+    location = location_headers.get("Location")
+    organization_group: dict[str, Any] | None = None
+    if location and isinstance(location, str):
+        group_id = location.strip().rstrip("/").split("/")[-1]
+        group_resource_path = quote(group_id, safe="")
+        group_response = requests.get(
+            _shared_realm_organization_groups_url(organization_id, group_resource_path),
+            params={"subGroupsCount": "false"},
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            timeout=30,
+        )
+        if group_response.status_code != 404:
+            group_response.raise_for_status()
+            fetched_group = group_response.json()
+            if isinstance(fetched_group, dict):
+                organization_group = fetched_group
+    if organization_group is None:
+        organization_group = get_organization_group_by_name(
+            organization_id,
+            normalized_group_name,
+            admin_token=token,
+        )
+    if organization_group is None:
+        raise ValueError(
+            f"Keycloak created organization group '{normalized_group_name}' in organization "
+            f"'{organization_id}' but it could not be fetched afterward."
+        )
+    return organization_group
+
+
+def ensure_organization_role_groups(
+    organization_id: str,
+    *,
+    group_names: tuple[str, ...] = DEFAULT_ORGANIZATION_ROLE_GROUP_NAMES,
+    admin_token: str | None = None,
+) -> list[dict[str, Any]]:
+    """Ensure the baseline tenant-role organization groups exist."""
+    if not organization_id or not str(organization_id).strip():
+        raise ValueError("organization_id is required")
+
+    organization_id = str(organization_id).strip()
+    token = admin_token or get_master_admin_token()
+    ensured_groups: list[dict[str, Any]] = []
+    for group_name in group_names:
+        if not group_name or not str(group_name).strip():
+            continue
+        normalized_group_name = str(group_name).strip()
+        organization_group = get_organization_group_by_name(
+            organization_id,
+            normalized_group_name,
+            admin_token=token,
+        )
+        if organization_group is None:
+            logger.info(
+                "Creating organization group '%s' in organization %s within shared realm %s",
+                normalized_group_name,
+                organization_id,
+                shared_realm_name(),
+            )
+            organization_group = create_organization_group(
+                organization_id,
+                normalized_group_name,
+                admin_token=token,
+            )
+        ensured_groups.append(organization_group)
+    return ensured_groups
+
+
+def add_organization_group_member(
+    organization_id: str,
+    group_name: str,
+    member_id: str,
+    admin_token: str | None = None,
+) -> None:
+    """Ensure one organization member belongs to one top-level organization group."""
+    if not organization_id or not str(organization_id).strip():
+        raise ValueError("organization_id is required")
+    if not group_name or not str(group_name).strip():
+        raise ValueError("group_name is required")
+    if not member_id or not str(member_id).strip():
+        raise ValueError("member_id is required")
+
+    organization_id = str(organization_id).strip()
+    normalized_group_name = str(group_name).strip()
+    member_id = str(member_id).strip()
+    token = admin_token or get_master_admin_token()
+
+    organization_group = get_organization_group_by_name(
+        organization_id,
+        normalized_group_name,
+        admin_token=token,
+    )
+    if organization_group is None:
+        organization_group = create_organization_group(
+            organization_id,
+            normalized_group_name,
+            admin_token=token,
+        )
+
+    group_id = organization_group.get("id")
+    if not isinstance(group_id, str) or not group_id.strip():
+        raise ValueError(
+            f"Organization group '{normalized_group_name}' in organization '{organization_id}' has no id."
+        )
+
+    requests.put(
+        _shared_realm_organization_groups_url(
+            organization_id,
+            quote(group_id.strip(), safe=""),
+            "members",
+            quote(member_id, safe=""),
+        ),
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    ).raise_for_status()
+
+
+def remove_organization_group_member(
+    organization_id: str,
+    group_name: str,
+    member_id: str,
+    admin_token: str | None = None,
+) -> None:
+    """Remove one organization member from one top-level organization group when present."""
+    if not organization_id or not str(organization_id).strip():
+        raise ValueError("organization_id is required")
+    if not group_name or not str(group_name).strip():
+        raise ValueError("group_name is required")
+    if not member_id or not str(member_id).strip():
+        raise ValueError("member_id is required")
+
+    organization_id = str(organization_id).strip()
+    normalized_group_name = str(group_name).strip()
+    member_id = str(member_id).strip()
+    token = admin_token or get_master_admin_token()
+
+    organization_group = get_organization_group_by_name(
+        organization_id,
+        normalized_group_name,
+        admin_token=token,
+    )
+    if organization_group is None:
+        return
+
+    group_id = organization_group.get("id")
+    if not isinstance(group_id, str) or not group_id.strip():
+        return
+
+    response = requests.delete(
+        _shared_realm_organization_groups_url(
+            organization_id,
+            quote(group_id.strip(), safe=""),
+            "members",
+            quote(member_id, safe=""),
+        ),
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    if response.status_code != 404:
+        response.raise_for_status()
+
+
 def create_organization(
     alias: str,
     name: str | None = None,
@@ -601,6 +920,7 @@ def create_organization(
         raise ValueError(
             f"Keycloak created organization '{alias}' but it could not be fetched afterward."
         )
+    ensure_organization_role_groups(organization["id"], admin_token=token)
     return organization
 
 

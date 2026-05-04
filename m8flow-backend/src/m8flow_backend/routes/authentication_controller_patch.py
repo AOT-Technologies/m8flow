@@ -14,6 +14,8 @@ from m8flow_backend.services.tenant_context_middleware import resolve_request_te
 from m8flow_backend.services.tenant_identity_helpers import authentication_identifier_from_payload
 from m8flow_backend.services.tenant_identity_helpers import organization_memberships_from_payload
 from m8flow_backend.services.tenant_identity_helpers import qualified_config_group_identifier
+from m8flow_backend.services.tenant_identity_helpers import TENANT_ALIAS_CLAIM
+from m8flow_backend.services.tenant_identity_helpers import TENANT_NAME_CLAIM
 from m8flow_backend.services.tenant_identity_helpers import tenant_id_from_payload
 from spiffworkflow_backend.routes import authentication_controller
 
@@ -57,14 +59,13 @@ def apply() -> None:
     if _PATCHED:
         return
 
-    original = authentication_controller.omni_auth
+    from spiffworkflow_backend.services.authorization_service import AuthorizationService
 
     def patched_omni_auth(*args, **kwargs):
-        """Run the original auth entrypoint, then resolve the tenant from the populated request state."""
-        rv = original(*args, **kwargs)
-        # Resolve tenant as soon as auth has populated g.token/cookies (uses canonical db).
+        """Resolve tenant before permission checks run so RBAC uses the authenticated tenant."""
+        decoded_token = authentication_controller.verify_token(*args, **kwargs)
         resolve_request_tenant()
-        return rv
+        AuthorizationService.check_for_permission(decoded_token)
 
     authentication_controller.omni_auth = patched_omni_auth  # type: ignore[assignment]
     _PATCHED = True
@@ -662,14 +663,142 @@ def _finalize_tenant_from_existing_shared_realm_session(
     if organization_aliases and selected_tenant_alias not in organization_aliases:
         return jsonify({"detail": "Selected tenant is not available for this session"}), 403
 
+    synchronized_token = _synchronize_selected_organization_claims(
+        decoded_token,
+        selected_tenant_alias=selected_tenant_alias,
+        selected_tenant_id=selected_tenant_id,
+    )
+
     with _temporary_request_tenant(selected_tenant_id):
-        AuthorizationService.create_user_from_sign_in(decoded_token)
+        AuthorizationService.create_user_from_sign_in(synchronized_token)
 
     from m8flow_backend.tenancy import SELECTED_TENANT_COOKIE_NAME
 
     response = redirect(redirect_url)
     response.set_cookie(SELECTED_TENANT_COOKIE_NAME, selected_tenant_id, path="/")
     return response
+
+
+def _synchronize_selected_organization_claims(
+    decoded_token: dict,
+    *,
+    selected_tenant_alias: str,
+    selected_tenant_id: str,
+) -> dict:
+    """
+    Enrich a shared-realm login token with the selected organization's local groups.
+
+    The initial shared-realm sign-in uses ``organization:*`` so Keycloak can
+    prompt for organization choice after credentials. Those first-hop tokens may
+    list organization aliases but omit org-local role groups. Before local group
+    synchronization runs, fetch the selected organization membership/groups from
+    Keycloak and rewrite the payload to one active organization.
+    """
+    if not isinstance(decoded_token, dict):
+        return decoded_token
+
+    synchronized_token = dict(decoded_token)
+
+    try:
+        from m8flow_backend.services.keycloak_service import get_organization_by_alias
+        from m8flow_backend.services.keycloak_service import get_organization_member_by_username
+        from m8flow_backend.services.keycloak_service import get_organization_member_groups
+    except Exception:
+        logger.warning("tenant_finalization: unable to import Keycloak organization helpers", exc_info=True)
+        synchronized_token["organization"] = {
+            selected_tenant_alias: {"id": selected_tenant_id, "groups": []}
+        }
+        synchronized_token["m8flow_tenant_id"] = selected_tenant_id
+        synchronized_token[TENANT_ALIAS_CLAIM] = selected_tenant_alias
+        return synchronized_token
+
+    organization = get_organization_by_alias(selected_tenant_alias)
+    if not isinstance(organization, dict):
+        synchronized_token["organization"] = {
+            selected_tenant_alias: {"id": selected_tenant_id, "groups": []}
+        }
+        synchronized_token["m8flow_tenant_id"] = selected_tenant_id
+        synchronized_token[TENANT_ALIAS_CLAIM] = selected_tenant_alias
+        return synchronized_token
+
+    organization_id = organization.get("id")
+    if not isinstance(organization_id, str) or not organization_id.strip():
+        organization_id = selected_tenant_id
+    else:
+        organization_id = organization_id.strip()
+
+    member_id = decoded_token.get("sub")
+    if isinstance(member_id, str):
+        member_id = member_id.strip()
+    else:
+        member_id = ""
+
+    organization_groups: list[dict] = []
+    if member_id:
+        try:
+            organization_groups = get_organization_member_groups(organization_id, member_id)
+        except Exception:
+            logger.warning(
+                "tenant_finalization: unable to fetch organization groups by subject",
+                extra={"organization_id": organization_id, "member_id": member_id},
+                exc_info=True,
+            )
+
+    if not organization_groups:
+        username = decoded_token.get("preferred_username")
+        if isinstance(username, str) and username.strip():
+            try:
+                member = get_organization_member_by_username(organization_id, username.strip())
+            except Exception:
+                member = None
+                logger.warning(
+                    "tenant_finalization: unable to resolve organization member by username",
+                    extra={"organization_id": organization_id, "username": username.strip()},
+                    exc_info=True,
+                )
+            if isinstance(member, dict):
+                member_id = member.get("id")
+                if isinstance(member_id, str) and member_id.strip():
+                    try:
+                        organization_groups = get_organization_member_groups(organization_id, member_id.strip())
+                    except Exception:
+                        logger.warning(
+                            "tenant_finalization: unable to fetch organization groups by member lookup",
+                            extra={"organization_id": organization_id, "member_id": member_id.strip()},
+                            exc_info=True,
+                        )
+
+    normalized_group_paths: list[str] = []
+    seen_group_paths: set[str] = set()
+    for organization_group in organization_groups:
+        if not isinstance(organization_group, dict):
+            continue
+        group_path = organization_group.get("path")
+        if not isinstance(group_path, str) or not group_path.strip():
+            group_name = organization_group.get("name")
+            if isinstance(group_name, str) and group_name.strip():
+                group_path = f"/{group_name.strip()}"
+            else:
+                continue
+        normalized_group_path = group_path.strip()
+        if normalized_group_path and normalized_group_path not in seen_group_paths:
+            seen_group_paths.add(normalized_group_path)
+            normalized_group_paths.append(normalized_group_path)
+
+    synchronized_token["organization"] = {
+        selected_tenant_alias: {
+            "id": organization_id,
+            "groups": normalized_group_paths,
+        }
+    }
+    synchronized_token["m8flow_tenant_id"] = selected_tenant_id
+    synchronized_token[TENANT_ALIAS_CLAIM] = selected_tenant_alias
+
+    organization_name = organization.get("name")
+    if isinstance(organization_name, str) and organization_name.strip():
+        synchronized_token[TENANT_NAME_CLAIM] = organization_name.strip()
+
+    return synchronized_token
 
 
 def apply_login_tenant_patch(flask_app) -> None:

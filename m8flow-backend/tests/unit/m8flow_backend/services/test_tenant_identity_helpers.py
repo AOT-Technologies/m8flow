@@ -6,7 +6,9 @@ from types import SimpleNamespace
 
 from m8flow_backend.services.tenant_identity_helpers import display_group_identifier
 from m8flow_backend.services.tenant_identity_helpers import filter_users_for_current_tenant
+from m8flow_backend.services.tenant_identity_helpers import active_organization_from_payload
 from m8flow_backend.services.tenant_identity_helpers import organization_memberships_from_payload
+from m8flow_backend.services.tenant_identity_helpers import organization_group_identifiers_from_payload
 from m8flow_backend.services.tenant_identity_helpers import find_users_for_current_tenant_by_identifier
 from m8flow_backend.services.tenant_identity_helpers import qualify_group_identifier
 from m8flow_backend.services.tenant_identity_helpers import resolve_user_for_current_tenant
@@ -14,6 +16,7 @@ from m8flow_backend.services.tenant_identity_helpers import authentication_ident
 from m8flow_backend.services.tenant_identity_helpers import single_organization_from_payload
 from m8flow_backend.services.tenant_identity_helpers import tenant_alias_from_payload
 from m8flow_backend.services.tenant_identity_helpers import tenant_id_from_payload
+from m8flow_backend.services.tenant_identity_helpers import tenant_slug_for_identifier
 from m8flow_backend.services.tenant_identity_helpers import user_belongs_to_current_tenant
 
 
@@ -34,6 +37,16 @@ def test_display_group_identifier_rewrites_tenant_prefix_to_slug(monkeypatch) ->
     )
 
     assert display_group_identifier("tenant-id:reviewer") == "tenant-slug:reviewer"
+
+
+def test_tenant_slug_for_identifier_wraps_private_slug_lookup(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "m8flow_backend.services.tenant_identity_helpers._tenant_slug_for_identifier",
+        lambda tenant_identifier: "tenant-slug" if tenant_identifier == "tenant-id" else None,
+    )
+
+    assert tenant_slug_for_identifier("tenant-id") == "tenant-slug"
+    assert tenant_slug_for_identifier("missing") is None
 
 
 def test_display_group_identifier_preserves_value_when_slug_lookup_fails(monkeypatch) -> None:
@@ -101,6 +114,54 @@ def test_find_users_for_current_tenant_by_identifier_falls_back_to_shared_realm_
     assert find_users_for_current_tenant_by_identifier("editor") == [provisioned_user]
 
 
+def test_find_users_for_current_tenant_by_username_prefix_includes_shared_realm_org_members(monkeypatch) -> None:
+    from m8flow_backend.services.tenant_identity_helpers import find_users_for_current_tenant_by_username_prefix
+
+    local_user = SimpleNamespace(id=1, username="editor")
+    provisioned_user = SimpleNamespace(id=2, username="editorial")
+
+    class FakeQuery:
+        def filter(self, *_args, **_kwargs):
+            return self
+
+        def all(self):
+            return [local_user]
+
+    class FakeUsernameField:
+        def like(self, _pattern):
+            return self
+
+    class FakeUserModel:
+        query = FakeQuery()
+        username = FakeUsernameField()
+
+    fake_user_module = ModuleType("spiffworkflow_backend.models.user")
+    fake_user_module.UserModel = FakeUserModel
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.models.user", fake_user_module)
+    monkeypatch.setattr(
+        "m8flow_backend.services.tenant_identity_helpers.filter_users_for_current_tenant",
+        lambda users, tenant_id=None: list(users),
+    )
+    monkeypatch.setattr(
+        "m8flow_backend.services.tenant_identity_helpers._organization_id_for_tenant",
+        lambda tenant_id=None: "org-uuid-123",
+    )
+    fake_keycloak_service = ModuleType("m8flow_backend.services.keycloak_service")
+    fake_keycloak_service.search_organization_members = lambda organization_id, search, exact=False: [
+        {"id": "user-2", "username": "editorial"},
+        {"id": "user-3", "username": "reviewer"},
+    ]
+    monkeypatch.setitem(sys.modules, "m8flow_backend.services.keycloak_service", fake_keycloak_service)
+    monkeypatch.setattr(
+        "m8flow_backend.services.tenant_identity_helpers._upsert_local_shared_realm_member",
+        lambda member: provisioned_user if member.get("username") == "editorial" else None,
+    )
+
+    users = find_users_for_current_tenant_by_username_prefix("edit")
+
+    assert [user.username for user in users] == ["editor", "editorial"]
+
+
 def test_resolve_user_for_current_tenant_prefers_unique_exact_username_match(monkeypatch) -> None:
     alice = SimpleNamespace(username="alice", email="alice@example.com")
     duplicate = SimpleNamespace(username="alice", email="other@example.com")
@@ -143,6 +204,46 @@ def test_tenant_claim_helpers_support_list_form_organization_claim() -> None:
     assert single_organization_from_payload(payload) == ("tenant-a", {})
     assert tenant_id_from_payload(payload) == "tenant-a"
     assert tenant_alias_from_payload(payload) == "tenant-a"
+
+
+def test_active_organization_from_payload_selects_current_tenant_from_multi_org_payload(monkeypatch) -> None:
+    payload = {
+        "organization": {
+            "tenant-a": {"id": "tenant-a-id", "groups": ["/editor"]},
+            "tenant-b": {"id": "tenant-b-id", "groups": ["/reviewer"]},
+        }
+    }
+
+    monkeypatch.setattr(
+        "m8flow_backend.services.tenant_identity_helpers.current_tenant_identifiers",
+        lambda tenant_id=None: {"tenant-b-id", "tenant-b"},
+    )
+
+    assert active_organization_from_payload(payload, tenant_id="tenant-b-id") == (
+        "tenant-b",
+        {"id": "tenant-b-id", "groups": ["/reviewer"]},
+    )
+
+
+def test_organization_group_identifiers_from_payload_normalizes_active_org_groups(monkeypatch) -> None:
+    payload = {
+        "organization": {
+            "tenant-a": {
+                "id": "tenant-a-id",
+                "groups": ["/editor", "/review/reviewer", "/editor/", "", None],
+            }
+        }
+    }
+
+    monkeypatch.setattr(
+        "m8flow_backend.services.tenant_identity_helpers.current_tenant_identifiers",
+        lambda tenant_id=None: {"tenant-a-id", "tenant-a"},
+    )
+
+    assert organization_group_identifiers_from_payload(payload, tenant_id="tenant-a-id") == [
+        "editor",
+        "reviewer",
+    ]
 
 
 def test_tenant_claim_helpers_map_org_uuid_to_local_tenant_id(monkeypatch) -> None:

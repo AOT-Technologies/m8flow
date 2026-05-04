@@ -13,6 +13,8 @@ SHARED_REALM="${M8FLOW_KEYCLOAK_SHARED_REALM:-${KEYCLOAK_REALM:-m8flow}}"
 DEFAULT_ORGANIZATION_ALIAS="${M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_ALIAS:-${SHARED_REALM}}"
 DEFAULT_ORGANIZATION_NAME="${M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_NAME:-${DEFAULT_ORGANIZATION_ALIAS}}"
 DEFAULT_ORGANIZATION_SEED_USERS="admin editor integrator reviewer viewer"
+ORGANIZATION_ROLE_GROUPS="tenant-admin editor integrator reviewer viewer"
+DEFAULT_ORGANIZATION_SEED_ROLE_ASSIGNMENTS="${M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_SEED_ROLE_ASSIGNMENTS:-admin:tenant-admin editor:editor integrator:integrator reviewer:reviewer viewer:viewer}"
 SPOKE_CLIENT_ID="${M8FLOW_KEYCLOAK_SPOKE_CLIENT_ID:-m8flow-backend}"
 TIMEOUT=120
 ELAPSED=0
@@ -36,8 +38,21 @@ resolve_client_scope_internal_id() {
     | head -n 1
 }
 
+resolve_client_scope_protocol_mapper_internal_id() {
+  local realm_name="$1"
+  local scope_id="$2"
+  local protocol_mapper_name="$3"
+
+  /opt/keycloak/bin/kcadm.sh get "client-scopes/${scope_id}/protocol-mappers/models" -r "${realm_name}" 2>/dev/null \
+    | grep -B8 "\"protocolMapper\" : \"${protocol_mapper_name}\"" \
+    | sed -n 's/.*"id" : "\([^"]*\)".*/\1/p' \
+    | tail -n 1
+}
+
 ensure_shared_realm_organization_scope() {
   local scope_id
+  local organization_membership_mapper_id
+  local organization_group_membership_mapper_id
 
   scope_id="$(resolve_client_scope_internal_id "${SHARED_REALM}" "organization")"
   if [ -z "${scope_id}" ]; then
@@ -59,7 +74,13 @@ ensure_shared_realm_organization_scope() {
     return 1
   fi
 
-  if ! /opt/keycloak/bin/kcadm.sh get "client-scopes/${scope_id}/protocol-mappers/models" -r "${SHARED_REALM}" 2>/dev/null | grep -q 'oidc-organization-membership-mapper'; then
+  organization_membership_mapper_id="$(
+    resolve_client_scope_protocol_mapper_internal_id \
+      "${SHARED_REALM}" \
+      "${scope_id}" \
+      "oidc-organization-membership-mapper"
+  )"
+  if [ -z "${organization_membership_mapper_id}" ]; then
     if /opt/keycloak/bin/kcadm.sh create "client-scopes/${scope_id}/protocol-mappers/models" -r "${SHARED_REALM}" \
       -s name=organization \
       -s protocol=openid-connect \
@@ -70,13 +91,93 @@ ensure_shared_realm_organization_scope() {
       -s 'config."access.token.claim"=true' \
       -s 'config."userinfo.token.claim"=true' \
       -s 'config."introspection.token.claim"=true' \
+      -s 'config."addOrganizationId"=true' \
       -s 'config.multivalued=true' \
       -s 'config."jsonType.label"=String' >/dev/null 2>&1; then
       echo "[keycloak-init-realms] Realm ${SHARED_REALM}: organization membership mapper ensured."
+      organization_membership_mapper_id="$(
+        resolve_client_scope_protocol_mapper_internal_id \
+          "${SHARED_REALM}" \
+          "${scope_id}" \
+          "oidc-organization-membership-mapper"
+      )"
     else
       echo "[keycloak-init-realms] Realm ${SHARED_REALM}: failed to create organization membership mapper." >&2
       return 1
     fi
+  fi
+
+  if [ -z "${organization_membership_mapper_id}" ]; then
+    echo "[keycloak-init-realms] Realm ${SHARED_REALM}: could not resolve organization membership mapper id." >&2
+    return 1
+  fi
+
+  if ! /opt/keycloak/bin/kcadm.sh update \
+    "client-scopes/${scope_id}/protocol-mappers/models/${organization_membership_mapper_id}" \
+    -r "${SHARED_REALM}" \
+    -s name=organization \
+    -s protocol=openid-connect \
+    -s protocolMapper=oidc-organization-membership-mapper \
+    -s consentRequired=false \
+    -s 'config."claim.name"=organization' \
+    -s 'config."id.token.claim"=true' \
+    -s 'config."access.token.claim"=true' \
+    -s 'config."userinfo.token.claim"=true' \
+    -s 'config."introspection.token.claim"=true' \
+    -s 'config."addOrganizationId"=true' \
+    -s 'config.multivalued=true' \
+    -s 'config."jsonType.label"=String' >/dev/null 2>&1; then
+    echo "[keycloak-init-realms] Realm ${SHARED_REALM}: failed to update organization membership mapper." >&2
+    return 1
+  fi
+
+  organization_group_membership_mapper_id="$(
+    resolve_client_scope_protocol_mapper_internal_id \
+      "${SHARED_REALM}" \
+      "${scope_id}" \
+      "oidc-organization-group-membership-mapper"
+  )"
+  if [ -z "${organization_group_membership_mapper_id}" ]; then
+    if /opt/keycloak/bin/kcadm.sh create "client-scopes/${scope_id}/protocol-mappers/models" -r "${SHARED_REALM}" \
+      -s name=organization-groups \
+      -s protocol=openid-connect \
+      -s protocolMapper=oidc-organization-group-membership-mapper \
+      -s consentRequired=false \
+      -s 'config."id.token.claim"=true' \
+      -s 'config."access.token.claim"=true' \
+      -s 'config."userinfo.token.claim"=true' \
+      -s 'config."introspection.token.claim"=true' >/dev/null 2>&1; then
+      echo "[keycloak-init-realms] Realm ${SHARED_REALM}: organization group membership mapper ensured."
+      organization_group_membership_mapper_id="$(
+        resolve_client_scope_protocol_mapper_internal_id \
+          "${SHARED_REALM}" \
+          "${scope_id}" \
+          "oidc-organization-group-membership-mapper"
+      )"
+    else
+      echo "[keycloak-init-realms] Realm ${SHARED_REALM}: failed to create organization group membership mapper." >&2
+      return 1
+    fi
+  fi
+
+  if [ -z "${organization_group_membership_mapper_id}" ]; then
+    echo "[keycloak-init-realms] Realm ${SHARED_REALM}: could not resolve organization group membership mapper id." >&2
+    return 1
+  fi
+
+  if ! /opt/keycloak/bin/kcadm.sh update \
+    "client-scopes/${scope_id}/protocol-mappers/models/${organization_group_membership_mapper_id}" \
+    -r "${SHARED_REALM}" \
+    -s name=organization-groups \
+    -s protocol=openid-connect \
+    -s protocolMapper=oidc-organization-group-membership-mapper \
+    -s consentRequired=false \
+    -s 'config."id.token.claim"=true' \
+    -s 'config."access.token.claim"=true' \
+    -s 'config."userinfo.token.claim"=true' \
+    -s 'config."introspection.token.claim"=true' >/dev/null 2>&1; then
+    echo "[keycloak-init-realms] Realm ${SHARED_REALM}: failed to update organization group membership mapper." >&2
+    return 1
   fi
 }
 
@@ -172,6 +273,125 @@ add_user_to_organization() {
   return 1
 }
 
+list_organization_ids() {
+  local realm_name="$1"
+
+  /opt/keycloak/bin/kcadm.sh get organizations -r "${realm_name}" 2>/dev/null \
+    | sed -n 's/.*"id" : "\([^"]*\)".*/\1/p'
+}
+
+organization_group_exists() {
+  local realm_name="$1"
+  local organization_id="$2"
+  local group_name="$3"
+
+  [ -n "${organization_id}" ] || return 1
+  [ -n "${group_name}" ] || return 1
+
+  /opt/keycloak/bin/kcadm.sh get "organizations/${organization_id}/groups" -r "${realm_name}" \
+    -q search="${group_name}" \
+    -q exact=true \
+    -q briefRepresentation=true \
+    -q populateHierarchy=false \
+    -q subGroupsCount=false \
+    -q max=100 2>/dev/null \
+    | grep -q "\"name\" : \"${group_name}\""
+}
+
+resolve_organization_group_id_by_name() {
+  local realm_name="$1"
+  local organization_id="$2"
+  local group_name="$3"
+
+  [ -n "${organization_id}" ] || return 1
+  [ -n "${group_name}" ] || return 1
+
+  /opt/keycloak/bin/kcadm.sh get "organizations/${organization_id}/groups" -r "${realm_name}" \
+    -q search="${group_name}" \
+    -q exact=true \
+    -q briefRepresentation=true \
+    -q populateHierarchy=false \
+    -q subGroupsCount=false \
+    -q max=100 2>/dev/null \
+    | grep -B4 "\"name\" : \"${group_name}\"" \
+    | sed -n 's/.*"id" : "\([^"]*\)".*/\1/p' \
+    | head -n 1
+}
+
+create_organization_group() {
+  local realm_name="$1"
+  local organization_id="$2"
+  local group_name="$3"
+
+  /opt/keycloak/bin/kcadm.sh create "organizations/${organization_id}/groups" -r "${realm_name}" \
+    -s name="${group_name}" >/dev/null 2>&1
+}
+
+ensure_organization_role_groups() {
+  local realm_name="$1"
+  local organization_id="$2"
+  local group_name
+
+  [ -n "${organization_id}" ] || return 1
+
+  for group_name in ${ORGANIZATION_ROLE_GROUPS}; do
+    if organization_group_exists "${realm_name}" "${organization_id}" "${group_name}"; then
+      echo "[keycloak-init-realms] Realm ${realm_name}: organization ${organization_id} already has group ${group_name}."
+      continue
+    fi
+
+    if create_organization_group "${realm_name}" "${organization_id}" "${group_name}"; then
+      echo "[keycloak-init-realms] Realm ${realm_name}: created group ${group_name} for organization ${organization_id}."
+    else
+      echo "[keycloak-init-realms] Realm ${realm_name}: failed to create group ${group_name} for organization ${organization_id}." >&2
+      return 1
+    fi
+  done
+}
+
+ensure_all_organization_role_groups() {
+  local realm_name="$1"
+  local organization_id
+
+  while IFS= read -r organization_id; do
+    [ -n "${organization_id}" ] || continue
+    ensure_organization_role_groups "${realm_name}" "${organization_id}" || return 1
+  done <<EOF
+$(list_organization_ids "${realm_name}")
+EOF
+}
+
+organization_member_has_group() {
+  local realm_name="$1"
+  local organization_id="$2"
+  local member_id="$3"
+  local group_name="$4"
+
+  [ -n "${organization_id}" ] || return 1
+  [ -n "${member_id}" ] || return 1
+  [ -n "${group_name}" ] || return 1
+
+  /opt/keycloak/bin/kcadm.sh get "organizations/${organization_id}/members/${member_id}/groups" -r "${realm_name}" \
+    -q briefRepresentation=true \
+    -q max=100 2>/dev/null \
+    | grep -q "\"name\" : \"${group_name}\""
+}
+
+add_user_to_organization_group() {
+  local realm_name="$1"
+  local organization_id="$2"
+  local group_id="$3"
+  local member_id="$4"
+
+  [ -n "${organization_id}" ] || return 1
+  [ -n "${group_id}" ] || return 1
+  [ -n "${member_id}" ] || return 1
+
+  /opt/keycloak/bin/kcadm.sh update "organizations/${organization_id}/groups/${group_id}/members/${member_id}" \
+    -r "${realm_name}" \
+    -n >/dev/null 2>&1
+}
+
 ensure_default_organization() {
   if [ -z "${DEFAULT_ORGANIZATION_ALIAS}" ]; then
     return 0
@@ -220,6 +440,58 @@ ensure_default_organization_seed_members() {
       echo "[keycloak-init-realms] Realm ${SHARED_REALM}: added user ${username} to organization ${DEFAULT_ORGANIZATION_ALIAS}."
     else
       echo "[keycloak-init-realms] Realm ${SHARED_REALM}: failed to add user ${username} to organization ${DEFAULT_ORGANIZATION_ALIAS}." >&2
+      return 1
+    fi
+  done
+}
+
+ensure_default_organization_seed_roles() {
+  local organization_id
+  local assignment
+  local username
+  local group_name
+  local user_id
+  local group_id
+
+  organization_id="$(resolve_organization_id_by_alias "${SHARED_REALM}" "${DEFAULT_ORGANIZATION_ALIAS}")"
+  if [ -z "${organization_id}" ]; then
+    echo "[keycloak-init-realms] Realm ${SHARED_REALM}: could not resolve default organization id for ${DEFAULT_ORGANIZATION_ALIAS} while applying seed roles." >&2
+    return 1
+  fi
+
+  for assignment in ${DEFAULT_ORGANIZATION_SEED_ROLE_ASSIGNMENTS}; do
+    username="${assignment%%:*}"
+    group_name="${assignment#*:}"
+    if [ -z "${username}" ] || [ -z "${group_name}" ]; then
+      continue
+    fi
+
+    user_id="$(resolve_user_id_by_username "${SHARED_REALM}" "${username}")"
+    if [ -z "${user_id}" ]; then
+      echo "[keycloak-init-realms] Realm ${SHARED_REALM}: seed user ${username} not found; skipping default organization role ${group_name}."
+      continue
+    fi
+
+    if ! organization_has_member "${SHARED_REALM}" "${organization_id}" "${username}"; then
+      echo "[keycloak-init-realms] Realm ${SHARED_REALM}: user ${username} is not a member of ${DEFAULT_ORGANIZATION_ALIAS}; skipping default organization role ${group_name}." >&2
+      continue
+    fi
+
+    group_id="$(resolve_organization_group_id_by_name "${SHARED_REALM}" "${organization_id}" "${group_name}")"
+    if [ -z "${group_id}" ]; then
+      echo "[keycloak-init-realms] Realm ${SHARED_REALM}: could not resolve organization group ${group_name} in ${DEFAULT_ORGANIZATION_ALIAS}." >&2
+      return 1
+    fi
+
+    if organization_member_has_group "${SHARED_REALM}" "${organization_id}" "${user_id}" "${group_name}"; then
+      echo "[keycloak-init-realms] Realm ${SHARED_REALM}: user ${username} already has organization role ${group_name} in ${DEFAULT_ORGANIZATION_ALIAS}."
+      continue
+    fi
+
+    if add_user_to_organization_group "${SHARED_REALM}" "${organization_id}" "${group_id}" "${user_id}"; then
+      echo "[keycloak-init-realms] Realm ${SHARED_REALM}: assigned organization role ${group_name} to user ${username} in ${DEFAULT_ORGANIZATION_ALIAS}."
+    else
+      echo "[keycloak-init-realms] Realm ${SHARED_REALM}: failed to assign organization role ${group_name} to user ${username} in ${DEFAULT_ORGANIZATION_ALIAS}." >&2
       return 1
     fi
   done
@@ -312,6 +584,8 @@ else
 fi
 ensure_shared_realm_spoke_client_scope
 ensure_default_organization
+ensure_all_organization_role_groups "${SHARED_REALM}"
 ensure_default_organization_seed_members
+ensure_default_organization_seed_roles
 disable_shared_realm_identity_first_login
 echo "[keycloak-init-realms] Realm configuration complete."

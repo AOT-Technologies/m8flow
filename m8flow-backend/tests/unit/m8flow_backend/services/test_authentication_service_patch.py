@@ -267,6 +267,59 @@ def test_login_scope_patch_prefers_explicit_requested_tenant_over_existing_selec
     assert scopes == ["openid", "profile", "email", "organization:tenant-b"]
 
 
+def test_patched_omni_auth_resolves_tenant_before_permission_check(monkeypatch) -> None:
+    from flask import Flask, g
+
+    from spiffworkflow_backend.routes import authentication_controller
+    from spiffworkflow_backend.services.authorization_service import AuthorizationService
+
+    import m8flow_backend.routes.authentication_controller_patch as patch_module
+
+    monkeypatch.setattr(patch_module, "_PATCHED", False)
+
+    seen: list[tuple[str, object | None]] = []
+
+    def fake_verify_token(*_args, **_kwargs):
+        g.user = SimpleNamespace(id=99, username="admin")
+        g.token = "token"
+        return {"m8flow_tenant_id": "org-id"}
+
+    def fake_resolve_request_tenant():
+        g.m8flow_tenant_id = "org-id"
+        seen.append(("resolve", getattr(g, "m8flow_tenant_id", None)))
+
+    def fake_original_omni_auth(*_args, **_kwargs):
+        decoded_token = authentication_controller.verify_token()
+        AuthorizationService.check_for_permission(decoded_token)
+
+    def fake_check_for_permission(cls, decoded_token):
+        from m8flow_backend.services.tenant_identity_helpers import current_tenant_id_or_none
+
+        seen.append(("check", current_tenant_id_or_none()))
+        seen.append(("decoded", decoded_token))
+
+    monkeypatch.setattr(authentication_controller, "verify_token", fake_verify_token)
+    monkeypatch.setattr(authentication_controller, "omni_auth", fake_original_omni_auth)
+    monkeypatch.setattr(patch_module, "resolve_request_tenant", fake_resolve_request_tenant)
+    monkeypatch.setattr(
+        AuthorizationService,
+        "check_for_permission",
+        classmethod(fake_check_for_permission),
+    )
+
+    patch_module.apply()
+
+    app = Flask(__name__)
+    with app.test_request_context("/v1.0/permissions-check", headers={"Authorization": "Bearer token"}):
+        authentication_controller.omni_auth()
+
+    assert seen == [
+        ("resolve", "org-id"),
+        ("check", "org-id"),
+        ("decoded", {"m8flow_tenant_id": "org-id"}),
+    ]
+
+
 def test_refresh_token_storage_tenant_maps_master_to_default() -> None:
     from m8flow_backend.services.authentication_service_patch import (
         _refresh_token_storage_tenant_id,

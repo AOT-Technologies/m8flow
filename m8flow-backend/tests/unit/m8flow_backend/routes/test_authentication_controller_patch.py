@@ -594,6 +594,14 @@ def test_tenant_finalization_redirects_directly_with_existing_shared_realm_sessi
             fake_parse_jwt_token,
         ),
         patch(
+            "m8flow_backend.services.keycloak_service.get_organization_by_alias",
+            return_value={"id": "org-tenant-a", "alias": "tenant-a", "name": "Tenant A"},
+        ),
+        patch(
+            "m8flow_backend.services.keycloak_service.get_organization_member_groups",
+            return_value=[{"name": "tenant-admin", "path": "/tenant-admin"}],
+        ),
+        patch(
             "spiffworkflow_backend.services.authorization_service.AuthorizationService.create_user_from_sign_in",
             fake_create_user_from_sign_in,
         ),
@@ -609,7 +617,15 @@ def test_tenant_finalization_redirects_directly_with_existing_shared_realm_sessi
         "iss": "http://localhost:7002/realms/shared-users",
         "sub": "user-1",
         "preferred_username": "admin",
-        "organization": ["tenant-a"],
+        "organization": {
+            "tenant-a": {
+                "id": "org-tenant-a",
+                "groups": ["/tenant-admin"],
+            }
+        },
+        "m8flow_tenant_id": "tenant-a-id",
+        "m8flow_tenant_alias": "tenant-a",
+        "m8flow_tenant_name": "Tenant A",
     }
     cookie_headers = result.headers.getlist("Set-Cookie")
     assert any(

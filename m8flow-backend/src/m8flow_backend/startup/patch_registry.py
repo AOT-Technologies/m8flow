@@ -211,6 +211,11 @@ POST_APP_EXTENSION_PATCH_SPECS: tuple[PatchSpec, ...] = (
         ignore_errors=True,
     ),
     PatchSpec(
+        target="m8flow_backend.routes.user_blueprint_patch:apply",
+        minimum_phase=BootPhase.APP_CREATED,
+        needs_flask_app=True,
+    ),
+    PatchSpec(
         target="m8flow_backend.services.process_instance_processor_patch:apply",
         minimum_phase=BootPhase.APP_CREATED,
     ),

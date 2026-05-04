@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 from flask import Flask, g
 
 from spiffworkflow_backend.exceptions.api_error import ApiError
 from spiffworkflow_backend.models.db import db
+from m8flow_backend.services.tenant_identity_helpers import current_tenant_id_or_none
+from m8flow_backend.services.tenant_identity_helpers import current_tenant_identifiers
 from m8flow_backend.services.tenant_context_middleware import (
     _is_tenant_context_exempt_request,
     resolve_request_tenant,
@@ -40,6 +43,7 @@ def _make_app() -> Flask:
 
     # A simple endpoint so test_request_context has a route.
     app.add_url_rule("/test", "test_endpoint", lambda: "ok")
+    app.add_url_rule("/v1.0/permissions-check", "permissions_check_endpoint", lambda: "ok")
     return app
 
 
@@ -383,10 +387,190 @@ def test_global_tenant_management_path_is_tenant_context_exempt() -> None:
         assert _is_tenant_context_exempt_request() is True
 
 
-def test_permissions_check_path_is_tenant_context_exempt() -> None:
+def test_permissions_check_path_is_not_tenant_context_exempt() -> None:
     app = _make_app()
     with app.test_request_context("/v1.0/permissions-check"):
-        assert _is_tenant_context_exempt_request() is True
+        assert _is_tenant_context_exempt_request() is False
+
+
+def test_resolves_tenant_from_jwt_claim_on_permissions_check_path(monkeypatch) -> None:
+    from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
+    from spiffworkflow_backend.models.user import UserModel
+
+    app = _make_app()
+    org_tenant_id = "bb768eda-e8cb-4452-9a49-acd2115db07c"
+
+    monkeypatch.setenv("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", "true")
+    monkeypatch.setattr(
+        "m8flow_backend.services.tenant_context_middleware._tenant_from_context_var",
+        lambda: None,
+    )
+
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+        now = int(datetime.now(timezone.utc).timestamp())
+        db.session.add(
+            M8flowTenantModel(
+                id=org_tenant_id,
+                name="Org Tenant",
+                slug="org-tenant",
+                created_by="test",
+                modified_by="test",
+                created_at_in_seconds=now,
+                updated_at_in_seconds=now,
+            )
+        )
+
+        user = UserModel(
+            username="tester",
+            email="tester@example.com",
+            service="local",
+            service_id="tester",
+        )
+        db.session.add(user)
+        db.session.flush()
+
+        token = user.encode_auth_token({"m8flow_tenant_id": org_tenant_id})
+        db.session.commit()
+
+        with app.test_request_context(
+            "/v1.0/permissions-check",
+            headers={"Authorization": f"Bearer {token}"},
+        ):
+            resolve_request_tenant()
+
+            assert current_tenant_id_or_none() == org_tenant_id
+            assert g.m8flow_tenant_id == org_tenant_id
+            assert org_tenant_id in current_tenant_identifiers(org_tenant_id)
+
+
+def test_resolves_tenant_from_jwt_claim_on_status_path(monkeypatch) -> None:
+    from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
+    from m8flow_backend.tenancy import DEFAULT_TENANT_ID
+    from spiffworkflow_backend.models.user import UserModel
+
+    app = _make_app()
+    org_tenant_id = "bb768eda-e8cb-4452-9a49-acd2115db07c"
+
+    monkeypatch.setenv("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", "true")
+    monkeypatch.setattr(
+        "m8flow_backend.services.tenant_context_middleware._tenant_from_context_var",
+        lambda: DEFAULT_TENANT_ID,
+    )
+
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+        now = int(datetime.now(timezone.utc).timestamp())
+        db.session.add(
+            M8flowTenantModel(
+                id=org_tenant_id,
+                name="Org Tenant",
+                slug="org-tenant",
+                created_by="test",
+                modified_by="test",
+                created_at_in_seconds=now,
+                updated_at_in_seconds=now,
+            )
+        )
+
+        user = UserModel(
+            username="tester",
+            email="tester@example.com",
+            service="local",
+            service_id="tester",
+        )
+        db.session.add(user)
+        db.session.flush()
+
+        token = user.encode_auth_token({"m8flow_tenant_id": org_tenant_id})
+        db.session.commit()
+
+        with app.test_request_context("/v1.0/status", headers={"Authorization": f"Bearer {token}"}):
+            g.m8flow_tenant_id = DEFAULT_TENANT_ID
+            resolve_request_tenant()
+
+            assert current_tenant_id_or_none() == org_tenant_id
+            assert g.m8flow_tenant_id == org_tenant_id
+            assert org_tenant_id in current_tenant_identifiers(org_tenant_id)
+
+
+def test_resolves_tenant_from_request_header_when_user_belongs(monkeypatch) -> None:
+    app = _make_app()
+
+    monkeypatch.setattr(
+        "m8flow_backend.services.tenant_context_middleware._tenant_from_jwt_claim_cached",
+        lambda *, allow_decode: None,
+    )
+    monkeypatch.setattr(
+        "m8flow_backend.services.tenant_context_middleware._tenant_from_context_var",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        "m8flow_backend.services.tenant_context_middleware.AuthorizationService",
+        SimpleNamespace(should_disable_auth_for_request=lambda: False),
+    )
+
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+
+        user = SimpleNamespace(
+            id=7,
+            username="admin",
+            service="http://localhost:7002/realms/shared-users",
+            groups=[SimpleNamespace(identifier="tenant-a:tenant-admin")],
+        )
+
+        with app.test_request_context(
+            "/test",
+            headers={"x-m8flow-tenant-id": "tenant-a"},
+        ):
+            g.user = user
+            resolve_request_tenant()
+
+            assert g.m8flow_tenant_id == "tenant-a"
+            assert current_tenant_id_or_none() == "tenant-a"
+            assert "tenant-a" in current_tenant_identifiers(g.m8flow_tenant_id)
+
+
+def test_rejects_tenant_header_when_user_not_member(monkeypatch) -> None:
+    app = _make_app()
+
+    monkeypatch.setattr(
+        "m8flow_backend.services.tenant_context_middleware._tenant_from_jwt_claim_cached",
+        lambda *, allow_decode: None,
+    )
+    monkeypatch.setattr(
+        "m8flow_backend.services.tenant_context_middleware._tenant_from_context_var",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        "m8flow_backend.services.tenant_context_middleware.AuthorizationService",
+        SimpleNamespace(should_disable_auth_for_request=lambda: False),
+    )
+
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+
+        user = SimpleNamespace(
+            id=7,
+            username="admin",
+            service="http://localhost:7002/realms/shared-users",
+            groups=[SimpleNamespace(identifier="tenant-b:tenant-admin")],
+        )
+
+        with app.test_request_context(
+            "/test",
+            headers={"x-m8flow-tenant-id": "tenant-a"},
+        ):
+            g.user = user
+            with pytest.raises(ApiError) as exc:
+                resolve_request_tenant()
+
+            assert exc.value.error_code == "tenant_override_forbidden"
 
 
 def test_login_return_resolves_tenant_from_shared_realm_and_cookie() -> None:
