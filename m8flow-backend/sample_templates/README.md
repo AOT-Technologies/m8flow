@@ -57,7 +57,6 @@ If you prefer not to enable automatic loading, you can import templates one-by-o
 Each template assigns tasks to specific users via a `lane_owners` script. All users listed in that script must be created in your tenant before starting the process.
 
 - Go to **Administration → Users** and create any missing users.
-- User assignments use the format **`username@tenant_slug`** — replace `your_tenant_slug` with your actual tenant slug (e.g. if your tenant slug is `default`, a user would be `emma@default`).
 - After creating each user, assign them an appropriate **role** such as `reviewer` or `editor` so they have the correct permissions to claim and complete tasks.
 
 **2. Update user assignments in the BPMN script task**
@@ -66,11 +65,11 @@ Each template contains a script task that sets the `lane_owners` dictionary. You
 
 - Open the template in the **Process Editor**.
 - Find the script task named "Determine …" or "Resolve …" at the start of the process.
-- Update the `lane_owners` values using the **`username@tenant_slug`** format:
+- Update the `lane_owners` values using the **`username`** format:
 
 ```python
 lane_owners = {
-    "Lane Name": ["username@your_tenant_slug"],
+    "Lane Name": ["username"],
 }
 ```
 
@@ -102,8 +101,8 @@ This is a single approval workflow for Work From Home requests. It uses a timer 
 **Prerequisites:**
 - Open the template in the Process Editor and find the **"Resolve WFH Approver"** script task.
 - Update the user assignments to match users in your tenant:
-  - `emma@your_tenant_slug` — the employee submitting the WFH request
-  - `manager@your_tenant_slug` — the manager who reviews and approves/rejects
+  - `emma` — the employee submitting the WFH request
+  - `manager` — the manager who reviews and approves/rejects
 - Make sure both users are created in your tenant under **Administration → Users**.
 - No secrets required for this template.
 
@@ -118,8 +117,8 @@ This is a two-step leave approval workflow. The employee submits a leave request
 **Prerequisites:**
 - Open the template in the Process Editor and find the **"Determine Leave Approvers"** script task.
 - Update the user assignments to match users in your tenant:
-  - `manager@your_tenant_slug` — the manager who does the first review
-  - `john@your_tenant_slug` and `emma@your_tenant_slug` — HR members who do the final review
+  - `manager` — the manager who does the first review
+  - `james` and `emma` — HR members who do the final review
 - Make sure all three users are created in your tenant under **Administration → Users**.
 - Add the following secrets under **Configuration → Secrets** before starting the process:
   - `SMTP_USER` — your SMTP username / sender email
@@ -138,8 +137,8 @@ This workflow handles a content review loop. The Publisher submits content, and 
 **Prerequisites:**
 - Open the template in the Process Editor and find the **"Determine Reviewer"** script task.
 - Update the user assignments to match users in your tenant:
-  - `noah@your_tenant_slug` — the publisher who submits and revises content
-  - `emma@your_tenant_slug` — the reviewer who approves or requests changes
+  - `james` — the publisher who submits and revises content
+  - `emma` — the reviewer who approves or requests changes
 - Make sure both users are created in your tenant under **Administration → Users**.
 - No secrets required for this template.
 
@@ -154,8 +153,8 @@ This is an expense claim workflow with DMN-based automatic eligibility checking.
 **Prerequisites:**
 - Open the template in the Process Editor and find the **"Determine Expense Approvers"** script task.
 - Update the user assignments to match users in your tenant:
-  - `manager@your_tenant_slug` — the manager who does the initial review
-  - `james@your_tenant_slug` — the finance member who handles escalated claims
+  - `manager` — the manager who does the initial review
+  - `james` — the finance member who handles escalated claims
 - Make sure both users are created in your tenant under **Administration → Users**.
 - No secrets required for this template.
 
@@ -170,8 +169,8 @@ This workflow handles IT support complaints. The submitter registers a complaint
 **Prerequisites:**
 - Open the template in the Process Editor and find the **"Determine Support Team"** script task.
 - Update the user assignments to match users in your tenant:
-  - `emma@your_tenant_slug` — handles Hardware complaints
-  - `john@your_tenant_slug` — handles Software complaints
+  - `emma` — handles Hardware complaints
+  - `james` — handles Software complaints
 - Make sure both users are created in your tenant under **Administration → Users**.
 - No secrets required for this template.
 
