@@ -12,11 +12,37 @@ $ErrorActionPreference = 'Stop'
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Split-Path -Parent (Split-Path -Parent $scriptDir)
 Set-Location $repoRoot
+$script:LauncherStartedAt = Get-Date
 
 function Test-CommandAvailable {
   param([string]$Name)
 
   return $null -ne (Get-Command $Name -ErrorAction SilentlyContinue)
+}
+
+function Format-Duration {
+  param([TimeSpan]$Duration)
+
+  return '{0:00}m{1:00}s' -f [int]$Duration.TotalMinutes, $Duration.Seconds
+}
+
+function Write-LauncherStatus {
+  param([string]$Message)
+
+  $elapsed = (Get-Date) - $script:LauncherStartedAt
+  Write-Host ("m8flow-backend: [{0}] {1}" -f (Format-Duration $elapsed), $Message)
+}
+
+function Invoke-TimedStep {
+  param(
+    [string]$Label,
+    [scriptblock]$Action
+  )
+
+  $startedAt = Get-Date
+  Write-LauncherStatus "$Label..."
+  & $Action
+  Write-LauncherStatus ("{0} complete in {1}" -f $Label, (Format-Duration ((Get-Date) - $startedAt)))
 }
 
 function Test-IsRunningInContainer {
@@ -111,6 +137,58 @@ function Invoke-BackendPythonInBackendDir {
   }
 }
 
+function Test-HasM8FlowBackendRuntimeDependencies {
+  try {
+    Invoke-UvPython @('-c', 'import nats') *> $null
+    return $true
+  } catch {
+    return $false
+  }
+}
+
+function Sync-LocalBackendEnvironment {
+  Push-Location (Join-Path $repoRoot 'spiffworkflow-backend')
+  try {
+    $uvSyncArgs = @('sync', '--all-groups', '--inexact')
+    if ($env:VIRTUAL_ENV) {
+      $uvSyncArgs += '--active'
+    }
+    & uv @uvSyncArgs
+
+    if (-not (Test-HasM8FlowBackendRuntimeDependencies)) {
+      $uvPipArgs = @('pip', 'install', 'nats-py>=2.6.0')
+      if ($env:VIRTUAL_ENV) {
+        $uvPipArgs += '--active'
+      }
+      & uv @uvPipArgs
+    }
+  } finally {
+    Pop-Location
+  }
+}
+
+function Invoke-SpiffDbUpgrade {
+  Invoke-BackendPythonInBackendDir @('-m', 'flask', 'db', 'upgrade')
+}
+
+function Invoke-M8FlowDbUpgrade {
+  $alembicIni = Join-Path $repoRoot 'm8flow-backend\migrations\alembic.ini'
+  Invoke-BackendPython @('-m', 'alembic', '-c', $alembicIni, 'upgrade', 'head')
+}
+
+function Invoke-BackendBootstrap {
+  Push-Location (Join-Path $repoRoot 'spiffworkflow-backend')
+  try {
+    if ($script:UseUvRunner) {
+      Invoke-UvPython @('bin/bootstrap.py')
+    } else {
+      & python 'bin/bootstrap.py'
+    }
+  } finally {
+    Pop-Location
+  }
+}
+
 # --- .env loading (reload-friendly) ------------------------------------------
 if (-not $script:LoadedEnvKeys) { $script:LoadedEnvKeys = @() }
 
@@ -192,38 +270,19 @@ if (-not $env:UVICORN_LOG_LEVEL -and -not $runningInContainer) {
 }
 
 if ($script:UseUvRunner -and $env:M8FLOW_BACKEND_SYNC_DEPS -ne 'false') {
-  Push-Location (Join-Path $repoRoot 'spiffworkflow-backend')
-  try {
-    $uvSyncArgs = @('sync', '--all-groups')
-    if ($env:VIRTUAL_ENV) {
-      $uvSyncArgs += '--active'
-    }
-    & uv @uvSyncArgs
-  } finally {
-    Pop-Location
-  }
+  Invoke-TimedStep 'Syncing local Python environment' { Sync-LocalBackendEnvironment }
 }
 
 if ($env:M8FLOW_BACKEND_SW_UPGRADE_DB -ne 'false') {
-  Invoke-BackendPythonInBackendDir @('-m', 'flask', 'db', 'upgrade')
+  Invoke-TimedStep 'Running upstream backend migrations' { Invoke-SpiffDbUpgrade }
 }
 
 if ($env:M8FLOW_BACKEND_UPGRADE_DB -ne 'false') {
-  $alembicIni = Join-Path $repoRoot 'm8flow-backend\migrations\alembic.ini'
-  Invoke-BackendPython @('-m', 'alembic', '-c', $alembicIni, 'upgrade', 'head')
+  Invoke-TimedStep 'Running M8Flow migrations' { Invoke-M8FlowDbUpgrade }
 }
 
 if ($env:M8FLOW_BACKEND_RUN_BOOTSTRAP -ne 'false') {
-  Push-Location (Join-Path $repoRoot 'spiffworkflow-backend')
-  try {
-    if ($script:UseUvRunner) {
-      Invoke-UvPython @('bin/bootstrap.py')
-    } else {
-      & python 'bin/bootstrap.py'
-    }
-  } finally {
-    Pop-Location
-  }
+  Invoke-TimedStep 'Running backend bootstrap' { Invoke-BackendBootstrap }
 }
 
 $logConfig = Join-Path $repoRoot 'uvicorn-log.yaml'
@@ -234,6 +293,11 @@ $backendPort = if ($PSBoundParameters.ContainsKey('Port')) {
   [int]$env:M8FLOW_BACKEND_PORT
 } else {
   $defaultBackendPort
+}
+
+Write-LauncherStatus ("Preparing backend startup (port={0}, reload={1}, uv_runner={2})" -f $backendPort, [bool]$Reload, $script:UseUvRunner)
+if ($Reload) {
+  Write-LauncherStatus "Reload mode starts a reloader first, then a worker. A short quiet pause after 'Uvicorn running' is normal on first startup."
 }
 
 $uvicornArgs = @(
@@ -248,7 +312,9 @@ if ($env:UVICORN_LOG_LEVEL) {
   $uvicornArgs += @('--log-level', $env:UVICORN_LOG_LEVEL)
 }
 if ($Reload) {
-  $uvicornArgs += @('--reload', '--workers', '1')
+  $uvicornArgs += @('--reload')
+  $uvicornArgs += @('--reload-dir', (Join-Path $repoRoot 'm8flow-backend\src'))
+  $uvicornArgs += @('--reload-dir', (Join-Path $repoRoot 'm8flow-backend\migrations'))
   $uvicornArgs += @('--reload-exclude', 'm8flow-frontend/**')
   $uvicornArgs += @('--reload-exclude', '**/node_modules/**')
   $uvicornArgs += @('--reload-exclude', '**/.vite/**')
@@ -257,4 +323,5 @@ if ($Reload) {
   $uvicornArgs += @('--reload-exclude', '.git/**')
 }
 
+Write-LauncherStatus "Starting Uvicorn. The backend is ready once '/v1.0/status' returns 200."
 Invoke-BackendPython $uvicornArgs
