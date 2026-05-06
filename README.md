@@ -103,67 +103,115 @@ Ensure the following tools are installed:
 - Git
 - Docker and Docker Compose
 - Python 3.12.1 and [uv](https://docs.astral.sh/uv/) _(for local backend development only)_
-- Node.js 18+ and npm _(for local frontend development only)_
+- Node.js 20.19+ or 22.12+ and npm _(for local frontend development only)_
 
 ---
 
-## Clone and Set Up
+## Quick Start Guide
 
-### 1. Clone the repository
+Getting started with m8flow is simple! Follow the steps below to set up your local environment and launch the platform.
+
+### 1. Clone the Repository
+
+First, clone the repository from GitHub and navigate into the project directory:
 
 ```bash
 git clone https://github.com/AOT-Technologies/m8flow.git
 cd m8flow
 ```
 
-### 2. Fetch the upstream SpiffWorkflow code
+### 2. Set Up Your Environment
 
-The upstream LGPL-2.1 engine is not stored in this repo.
-
-**Docker builds are self-contained** — the Dockerfiles automatically fetch upstream from GitHub during the build, so no local pre-fetch is needed for `docker compose up --build`.
-
-
-This clones configured folders from [AOT-Technologies/m8flow-core](https://github.com/AOT-Technologies/m8flow-core) into your working tree. Folder lists are defined in `upstream.sources.json` under `backend`, `frontend`, and `others`. These directories are gitignored and must be re-fetched after every fresh clone.
-
-To pin a specific upstream tag (Docker):
-
-# Docker build (set in .env or inline)
-UPSTREAM_TAG=0.0.1 docker compose -f docker/m8flow-docker-compose.yml up -d --build
-```
-# Docker build (set in .env or inline)
-$env:UPSTREAM_TAG = "0.0.1"
-docker compose -f docker/m8flow-docker-compose.yml up -d --build
-```
-
-### 3. Configure environment
-
-Copy the sample environment file and edit it for your setup:
+Copy the provided environment template and customize it for your setup:
 
 ```bash
 cp sample.env .env
 ```
 
-Full environment variable documentation: [docs/env-reference.md](docs/env-reference.md).
+You can find comprehensive environment variable explanations in the [docs/env-reference.md](docs/env-reference.md) file.
 
 ---
 
-## Running with Docker
+### 3. Start m8flow with Docker
 
-### Start the full stack
-
-Start all infrastructure services (database, Keycloak, MinIO, Redis, NATS) and init containers (run once on first setup):
+To bring up all required services (PostgreSQL, Keycloak, MinIO, Redis, NATS, and initialization steps), run:
 
 ```bash
 docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build
 ```
 
-On subsequent starts, skip the init profile:
+> **Note:** Run the above command only the first time to perform initialization. For future starts, skip the init profile:
 
 ```bash
 docker compose -f docker/m8flow-docker-compose.yml up -d --build
 ```
 
-### Docker Compose services
+Once started, open [http://localhost:7001/](http://localhost:7001/) in your browser to access m8flow.
+
+---
+
+## Signing In — Application Usage
+
+1. **Tenant Selection:**  
+   When you visit the application, you'll be prompted to select or enter your tenant slug (e.g., `m8flow` which is installed by default).
+
+   <div align="center">
+       <img src="./docs/images/access-m8flow-tenant-selection.png" />
+   </div>
+
+2. **Log In:**  
+   After choosing your tenant, you'll be redirected to the login page.
+
+   <div align="center">
+       <img src="./docs/images/access-m8flow-1.png" />
+   </div>
+
+   <div align="center">
+       <img src="./docs/images/access-m8flow-2.png" />
+   </div>
+
+3. **Try the Default Test Users:**  
+   Each tenant comes with a set of default users for you to explore the platform. The password for each is the same as the username.
+
+   | Username     | Role                                  |
+   |--------------|---------------------------------------|
+   | `admin`      | Tenant administrator                  |
+   | `editor`     | Create and edit process models        |
+   | `viewer`     | Read-only access                      |
+   | `integrator` | Service task / connector access       |
+   | `reviewer`   | Review and approve tasks              |
+
+You’re all set! Continue with [Tenant creation](#tenant-creation) to add your own tenants or explore the rich features of m8flow.
+
+---
+
+## Tenant creation
+
+1. **Open the Application:**  
+   Go to [http://localhost:7001/](http://localhost:7001/) in your web browser.
+
+2. **Sign in as Global Admin:**  
+   Click on **"Global admin sign in"**.  
+   <div align="center">
+      <img src="./docs/images/access-m8flow-tenant-selection.png" alt="Tenant Selection Screen"/>
+   </div>
+
+   Log in using the following credentials:
+   ```
+   Username: super-admin
+   Password: super-admin
+   ```
+
+3. **Add a Tenant:**  
+   After signing in, click the **"Add tenant"** button to create a new tenant.
+
+    <div align="center">
+        <img src="./docs/images/tenant-creation.png" alt="Tenant Creation Screen"/>
+    </div>
+
+---
+
+## Docker Compose services
 
 The Keycloak image is built with the **m8flow realm-info-mapper** provider, so tokens include `m8flow_tenant_id` and `m8flow_tenant_name`. No separate build of the keycloak-extensions JAR is required. Realm import can be done manually in the Keycloak Admin Console (see Keycloak Setup below) or by running `./m8flow-backend/keycloak/start_keycloak.sh` once after Keycloak is up; the script imports the `m8flow` realm only (expects Keycloak on ports 7002 and 7009, e.g. when using Docker Compose).
 
@@ -243,11 +291,6 @@ npm install
 
 ```bash
 cd m8flow-frontend
-export PORT=7001
-export BACKEND_PORT=7000
-export VITE_VERSION_INFO='{"version":"local"}'
-export VITE_BACKEND_BASE_URL=/v1.0
-export VITE_MULTI_TENANT_ON="${MULTI_TENANT_ON:-false}"
 npm exec -- vite --host 0.0.0.0 --port 7001
 ```
 
@@ -299,53 +342,7 @@ Expected response:
 
 ---
 
-## Keycloak Setup
-
-### Automatic import 
-
-On starting the application with [Running with Docker](#running-with-docker) will import default realm "m8flow". Tenant realms are created later via the tenant realm API when needed.
-
-For tenant-aware setup this realm includes token claims `m8flow_tenant_id` and `m8flow_tenant_name`.
-<div align="center">
-    <img src="./docs/images/keycloak-realm-settings-2.png" />
-</div>
-
-### Configure the client redirect URIs
-
-With the realm "m8flow" selected, click on "Clients" and then on the client ID **m8flow-backend**.
-<div align="center">
-    <img src="./docs/images/keycloak-realm-settings-3.png" />
-</div>
-
-Set the following:
-
-**Valid redirect URIs**
-```
-http://localhost:7000/*
-http://localhost:7001/*
-```
-
-**Valid post logout redirect URIs**
-```
-http://localhost:7001/*
-```
-
-**Web origins**
-```
-http://localhost:7001/*
-http://localhost:7000/*
-```
-
-<div align="center">
-    <img src="./docs/images/keycloak-realm-settings-4.png" />
-</div>
-
-
-For full Keycloak configuration reference: [m8flow-backend/keycloak/KEYCLOAK_SETUP.md](m8flow-backend/keycloak/KEYCLOAK_SETUP.md).
-
----
-
-## Access the Application with no multitenancy
+## Access the Application with Multitenant mode OFF
 
 Open `http://localhost:7001/` in your browser. You will be redirected to Keycloak login.
 
@@ -366,90 +363,6 @@ Default test users (password = username):
 | `viewer` | Read-only access |
 | `integrator` | Service task / connector access |
 | `reviewer` | Review and approve tasks |
-
----
-
-## Access the Application with multitenancy
-
-Open `http://localhost:7001/` in your browser. You will be redirected to Tenant selector. Type the tenant slug, e.g.: "m8flow" (installed by default) and then you will be redirected to the tenant login.
-
-<div align="center">
-    <img src="./docs/images/access-m8flow-tenant-selection.png" />
-</div>
-
-<div align="center">
-    <img src="./docs/images/access-m8flow-1.png" />
-</div>
-
-<div align="center">
-    <img src="./docs/images/access-m8flow-2.png" />
-</div>
-
-
-Every tenant has default test users (password = username):
-
-| Username | Role |
-|----------|------|
-| `admin` | Tenant administrator |
-| `editor` | Create and edit process models |
-| `viewer` | Read-only access |
-| `integrator` | Service task / connector access |
-| `reviewer` | Review and approve tasks |
-
----
-
-
-### Tenant Management
-
-Open `http://localhost:7001/` in your browser. You will be redirected to Tenant selector. Click on "Global admin sign in"
-
-<div align="center">
-    <img src="./docs/images/access-m8flow-tenant-selection.png" />
-</div>
-
-There's only one user (password = username):
-
-| Username | Role |
-|----------|------|
-| `super-admin` | Tenants management |
-
-## Tenant creation
-
-Currently, tenant creation can be done using the `http://localhost:7000/v1.0/m8flow/tenant-realms` API. This request requires a `Bearer` token for the `super-admin` user.
-
-Example request payload:
-
-```json
-{
-  "realm_id": "myapp",
-  "display_name": "My application"
-}
-```
-
-On success, the tenant will be listed on the tenant management page and will be ready to use through the multitenant access flow described in [Access the Application with multitenancy](#access-the-application-with-multitenancy).
-
-<div align="center">
-    <img src="./docs/images/access-m8flow-tenant-management.png" />
-</div>
-
----
-
-## Running Backend Tests
-
-Requires `./bin/fetch-upstream.sh` or `.\bin\fetch-upstream.ps1` to have been run first — tests use `spiffworkflow-backend/pyproject.toml` for pytest config.
-
-Run all tests:
-
-```bash
-pytest -c spiffworkflow-backend/pyproject.toml ./m8flow-backend/tests/ -q
-```
-
-Run a specific test file:
-
-```bash
-pytest -c spiffworkflow-backend/pyproject.toml \
-  ./m8flow-backend/tests/unit/m8flow_backend/services/test_tenant_context_middleware.py -q
-```
 
 ---
 
