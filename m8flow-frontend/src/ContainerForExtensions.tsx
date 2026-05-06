@@ -52,6 +52,7 @@ const TemplateGalleryPage = lazy(() => import('./views/TemplateGalleryPage'));
 const TemplateModelerPage = lazy(() => import('./views/TemplateModelerPage'));
 const TemplateFileDiagramPage = lazy(() => import('./views/TemplateFileDiagramPage'));
 const TemplateFileFormPage = lazy(() => import('./views/TemplateFileFormPage'));
+const ConnectorsList = lazy(() => import('./views/ConnectorsList'));
 const ProcessModelShowWithSaveAsTemplate = lazy(
   () => import('./views/ProcessModelShowWithSaveAsTemplate'),
 );
@@ -170,6 +171,11 @@ function RoleBasedRootGate({
         uri: targetUris.secretListPath,
       },
       {
+        route: "/connectors",
+        method: "GET",
+        uri: targetUris.serviceTaskListPath,
+      },
+      {
         route: "/templates",
         method: "GET",
         uri: targetUris.m8flowTemplateListPath,
@@ -216,6 +222,7 @@ export default function ContainerForExtensions() {
     [targetUris.dataStoreListPath]: ["GET"],
     [targetUris.messageInstanceListPath]: ["GET"],
     [targetUris.secretListPath]: ["GET"],
+    [targetUris.serviceTaskListPath]: ["GET"],
     "/tasks/*": ["GET", "PUT"],
     [targetUris.m8flowTenantListPath]: ["GET"],
     [targetUris.m8flowTemplateListPath]: ["GET"],
@@ -462,6 +469,7 @@ export default function ContainerForExtensions() {
           />
           <Route path="templates/:templateId" element={<TemplateModelerPage />} />
           <Route path="templates" element={<TemplateGalleryPage />} />
+          <Route path="connectors" element={<ConnectorsList />} />
           <Route
             path="process-models/:process_model_id"
             element={<ProcessModelShowWithSaveAsTemplate />}
