@@ -63,7 +63,10 @@ def apply() -> None:
 
     def patched_omni_auth(*args, **kwargs):
         """Resolve tenant before permission checks run so RBAC uses the authenticated tenant."""
+        from flask import g
+
         decoded_token = authentication_controller.verify_token(*args, **kwargs)
+        g._m8flow_decoded_token = decoded_token
         resolve_request_tenant()
         AuthorizationService.check_for_permission(decoded_token)
 
@@ -180,6 +183,11 @@ def apply_cookie_domain_patch() -> None:
         cookie_domain = _frontend_cookie_domain(frontend_url)
         patched_frontend_url = "localhost" if cookie_domain is None else f"https://{cookie_domain}"
 
+        # Read TLD before original() clears it via _clear_auth_tokens_from_thread_local_data.
+        tld = current_app.config.get("THREAD_LOCAL_DATA")
+        new_auth_id = getattr(tld, "new_authentication_identifier", None) if tld else None
+        was_logged_out = bool(getattr(tld, "user_has_logged_out", False)) if tld else False
+
         cookies_before = len(response.headers.getlist("Set-Cookie"))
 
         with _temporary_frontend_url(patched_frontend_url):
@@ -189,6 +197,25 @@ def apply_cookie_domain_patch() -> None:
         if cookies_after != cookies_before:
             result.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
             result.headers["Pragma"] = "no-cache"
+
+        # Persist which realm the user authenticated with across session-expiry cookie clears.
+        # Standard auth cookies are cleared on token expiry, but m8flow_auth_realm survives so
+        # the login redirect can return the user to the correct realm.
+        if isinstance(new_auth_id, str) and new_auth_id.strip():
+            result.set_cookie("m8flow_auth_realm", new_auth_id, max_age=86400 * 30, path="/", domain=cookie_domain)
+        elif was_logged_out:
+            # Only clear the realm hint on an explicit /logout request. Token expiry also sets
+            # user_has_logged_out=True (SpiffWorkflow calls set_user_has_logged_out() on refresh
+            # failure), but we must keep the hint alive so that the next /login redirect goes back
+            # to the same realm rather than falling through to the shared realm default.
+            from flask import has_request_context
+            from flask import request as flask_request
+
+            is_explicit_logout = has_request_context() and "/logout" in (
+                getattr(flask_request, "path", "") or ""
+            )
+            if is_explicit_logout:
+                result.set_cookie("m8flow_auth_realm", "", max_age=0, path="/", domain=cookie_domain)
 
         return result
 
@@ -501,7 +528,22 @@ def apply_master_realm_auth_patch() -> None:
             if derived:
                 return derived
 
-        return original()
+        from m8flow_backend.tenancy import DEFAULT_TENANT_ID
+
+        realm_hint = request.cookies.get("m8flow_auth_realm")
+        if isinstance(realm_hint, str):
+            realm_hint = realm_hint.strip() or None
+
+        identifier = original()
+        if isinstance(identifier, str):
+            normalized_identifier = identifier.strip()
+            if normalized_identifier and normalized_identifier != DEFAULT_TENANT_ID:
+                return normalized_identifier
+
+        if realm_hint:
+            return realm_hint
+
+        return identifier
 
     authentication_controller._get_authentication_identifier_from_request = (
         _patched_get_authentication_identifier_from_request
@@ -525,6 +567,31 @@ def _handle_tenant_login_request(flask_app):
         return None
     if request.method != "GET":
         return None
+
+    # If the user previously authenticated with master realm (tracked by a long-lived cookie),
+    # redirect them back to master realm login even when the short-lived authentication_identifier
+    # cookie has been cleared by session expiry. This prevents master realm users from being
+    # redirected to the shared realm after their token expires.
+    master_id = _master_realm_identifier()
+    realm_hint = request.cookies.get("m8flow_auth_realm")
+    if realm_hint == master_id and not request.args.get("tenant"):
+        requested_id = (
+            request.args.get("authentication_identifier")
+            or request.cookies.get("authentication_identifier")
+            or ""
+        )
+        if requested_id != master_id:
+            realm_redirect_url = request.args.get("redirect_url") or flask_app.config.get(
+                "SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND", "/"
+            )
+            realm_frontend_url = str(flask_app.config.get("SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND", ""))
+            if not _is_allowed_frontend_redirect_url(realm_redirect_url, realm_frontend_url):
+                realm_redirect_url = realm_frontend_url or "/"
+            login_redirect_url = AuthenticationService().get_login_redirect_url(
+                authentication_identifier=master_id,
+                final_url=realm_redirect_url,
+            )
+            return redirect(login_redirect_url)
 
     tenant = request.args.get("tenant")
     if not tenant or not str(tenant).strip():

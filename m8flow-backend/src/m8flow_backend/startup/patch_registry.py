@@ -117,6 +117,11 @@ POST_APP_CORE_PATCH_SPECS: tuple[PatchSpec, ...] = (
         minimum_phase=BootPhase.APP_CREATED,
     ),
     PatchSpec(
+        target="m8flow_backend.routes.health_controller_patch:apply",
+        minimum_phase=BootPhase.APP_CREATED,
+        needs_flask_app=True,
+    ),
+    PatchSpec(
         target="m8flow_backend.services.file_system_service_patch:apply",
         minimum_phase=BootPhase.APP_CREATED,
     ),

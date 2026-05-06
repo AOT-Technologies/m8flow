@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from types import ModuleType
 from types import SimpleNamespace
+from typing import Any
 
 from m8flow_backend.services.tenant_identity_helpers import display_group_identifier
 from m8flow_backend.services.tenant_identity_helpers import filter_users_for_current_tenant
@@ -11,6 +12,7 @@ from m8flow_backend.services.tenant_identity_helpers import organization_members
 from m8flow_backend.services.tenant_identity_helpers import organization_group_identifiers_from_payload
 from m8flow_backend.services.tenant_identity_helpers import find_users_for_current_tenant_by_identifier
 from m8flow_backend.services.tenant_identity_helpers import qualify_group_identifier
+from m8flow_backend.services.tenant_identity_helpers import is_global_permission_group_identifier
 from m8flow_backend.services.tenant_identity_helpers import resolve_user_for_current_tenant
 from m8flow_backend.services.tenant_identity_helpers import authentication_identifier_from_payload
 from m8flow_backend.services.tenant_identity_helpers import single_organization_from_payload
@@ -28,6 +30,18 @@ def test_qualify_group_identifier_qualifies_bare_and_preserves_qualified(monkeyp
 
     assert qualify_group_identifier("reviewer") == "tenant-a:reviewer"
     assert qualify_group_identifier("tenant-b:admin") == "tenant-b:admin"
+
+
+def test_qualify_group_identifier_preserves_global_super_admin_aliases(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "m8flow_backend.services.tenant_identity_helpers.current_tenant_id_or_none",
+        lambda: "tenant-a",
+    )
+
+    assert qualify_group_identifier("super-admin") == "super-admin"
+    assert qualify_group_identifier("default:super-admin") == "super-admin"
+    assert is_global_permission_group_identifier("super-admin") is True
+    assert is_global_permission_group_identifier("default:super-admin") is True
 
 
 def test_display_group_identifier_rewrites_tenant_prefix_to_slug(monkeypatch) -> None:
@@ -160,6 +174,160 @@ def test_find_users_for_current_tenant_by_username_prefix_includes_shared_realm_
     users = find_users_for_current_tenant_by_username_prefix("edit")
 
     assert [user.username for user in users] == ["editor", "editorial"]
+
+
+def test_organization_id_for_tenant_prefers_canonical_tenant_id(monkeypatch) -> None:
+    from m8flow_backend.services import tenant_identity_helpers as helpers
+
+    fake_keycloak_service = ModuleType("m8flow_backend.services.keycloak_service")
+    fake_keycloak_service.get_organization_by_id = (
+        lambda organization_id, admin_token=None: {"id": "org-uuid", "alias": "tenant-slug"}
+        if organization_id == "tenant-uuid"
+        else None
+    )
+    fake_keycloak_service.get_organization_by_alias = (
+        lambda alias, admin_token=None: {"id": "org-legacy", "alias": alias} if alias == "tenant-slug" else None
+    )
+    monkeypatch.setitem(sys.modules, "m8flow_backend.services.keycloak_service", fake_keycloak_service)
+    monkeypatch.setattr(helpers, "_tenant_slug_for_identifier", lambda tenant_identifier: "tenant-slug")
+    monkeypatch.setattr(helpers, "current_tenant_id_or_none", lambda: "tenant-uuid")
+
+    assert helpers._organization_id_for_tenant() == "org-uuid"
+
+
+def test_upsert_local_shared_realm_member_reuses_existing_shared_realm_user(monkeypatch) -> None:
+    from m8flow_backend.services import tenant_identity_helpers as helpers
+
+    existing_user = SimpleNamespace(
+        id=7,
+        username="admin",
+        service="http://localhost:7002/realms/m8flow",
+        service_id="legacy-member-id",
+        email="old@example.com",
+        display_name="Old Admin",
+        updated_at_in_seconds=10,
+        created_at_in_seconds=5,
+    )
+    fake_query = SimpleNamespace(
+        filter=lambda *_args, **_kwargs: fake_query,
+        first=lambda: None,
+        all=lambda: [existing_user],
+    )
+    fake_user_module = ModuleType("spiffworkflow_backend.models.user")
+    fake_user_module.UserModel = SimpleNamespace(query=fake_query, service=object(), service_id=object(), username=object())
+
+    add_calls: list[Any] = []
+    commit_calls: list[int] = []
+    fake_db_module = ModuleType("spiffworkflow_backend.models.db")
+    fake_db_module.db = SimpleNamespace(
+        session=SimpleNamespace(
+            add=lambda user: add_calls.append(user),
+            commit=lambda: commit_calls.append(1),
+            rollback=lambda: None,
+        )
+    )
+
+    create_user_calls: list[tuple[Any, ...]] = []
+    fake_user_service_module = ModuleType("spiffworkflow_backend.services.user_service")
+    fake_user_service_module.UserService = SimpleNamespace(
+        create_user=lambda *args, **kwargs: create_user_calls.append((args, kwargs))
+    )
+
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.models.user", fake_user_module)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.models.db", fake_db_module)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.services.user_service", fake_user_service_module)
+    monkeypatch.setattr(
+        helpers,
+        "_shared_realm_service_issuer",
+        lambda: "http://localhost:7002/realms/m8flow",
+    )
+
+    result = helpers._upsert_local_shared_realm_member(
+        {
+            "id": "member-1",
+            "username": "admin",
+            "email": "admin@example.com",
+            "firstName": "Admin",
+            "lastName": "User",
+        }
+    )
+
+    assert result is existing_user
+    assert existing_user.service_id == "member-1"
+    assert existing_user.email == "admin@example.com"
+    assert existing_user.display_name == "Admin User"
+    assert len(add_calls) == 1
+    assert len(commit_calls) == 1
+    assert create_user_calls == []
+
+
+def test_upsert_local_shared_realm_member_reuses_existing_user_even_if_realm_metadata_is_stale(
+    monkeypatch,
+) -> None:
+    from m8flow_backend.services import tenant_identity_helpers as helpers
+
+    existing_user = SimpleNamespace(
+        id=7,
+        username="admin",
+        service="http://localhost:7002/realms/master",
+        service_id="legacy-member-id",
+        email="old@example.com",
+        display_name="Old Admin",
+        updated_at_in_seconds=10,
+        created_at_in_seconds=5,
+    )
+    fake_query = SimpleNamespace(
+        filter=lambda *_args, **_kwargs: fake_query,
+        first=lambda: None,
+        all=lambda: [existing_user],
+    )
+    fake_user_module = ModuleType("spiffworkflow_backend.models.user")
+    fake_user_module.UserModel = SimpleNamespace(query=fake_query, service=object(), service_id=object(), username=object())
+
+    add_calls: list[Any] = []
+    commit_calls: list[int] = []
+    fake_db_module = ModuleType("spiffworkflow_backend.models.db")
+    fake_db_module.db = SimpleNamespace(
+        session=SimpleNamespace(
+            add=lambda user: add_calls.append(user),
+            commit=lambda: commit_calls.append(1),
+            rollback=lambda: None,
+        )
+    )
+
+    create_user_calls: list[tuple[Any, ...]] = []
+    fake_user_service_module = ModuleType("spiffworkflow_backend.services.user_service")
+    fake_user_service_module.UserService = SimpleNamespace(
+        create_user=lambda *args, **kwargs: create_user_calls.append((args, kwargs))
+    )
+
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.models.user", fake_user_module)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.models.db", fake_db_module)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.services.user_service", fake_user_service_module)
+    monkeypatch.setattr(
+        helpers,
+        "_shared_realm_service_issuer",
+        lambda: "http://localhost:7002/realms/m8flow",
+    )
+
+    result = helpers._upsert_local_shared_realm_member(
+        {
+            "id": "member-1",
+            "username": "admin",
+            "email": "admin@example.com",
+            "firstName": "Admin",
+            "lastName": "User",
+        }
+    )
+
+    assert result is existing_user
+    assert existing_user.service == "http://localhost:7002/realms/m8flow"
+    assert existing_user.service_id == "member-1"
+    assert existing_user.email == "admin@example.com"
+    assert existing_user.display_name == "Admin User"
+    assert len(add_calls) == 1
+    assert len(commit_calls) == 1
+    assert create_user_calls == []
 
 
 def test_resolve_user_for_current_tenant_prefers_unique_exact_username_match(monkeypatch) -> None:

@@ -73,6 +73,7 @@ def _load_tenant_role_service(monkeypatch):
         "viewer",
     )
     fake_keycloak_service_module.add_organization_group_member = lambda *_args, **_kwargs: None
+    fake_keycloak_service_module.get_organization_by_id = lambda *_args, **_kwargs: None
     fake_keycloak_service_module.get_organization_by_alias = lambda *_args, **_kwargs: None
     fake_keycloak_service_module.get_organization_member_by_username = lambda *_args, **_kwargs: None
     fake_keycloak_service_module.get_organization_member_groups = lambda *_args, **_kwargs: []
@@ -149,6 +150,76 @@ def test_list_tenant_members_with_roles_uses_organization_memberships(monkeypatc
     ]
 
 
+def test_organization_for_tenant_prefers_canonical_tenant_id(monkeypatch):
+    tenant_role_service = _load_tenant_role_service(monkeypatch)
+    organization_id_calls: list[str] = []
+    alias_calls: list[str] = []
+
+    monkeypatch.setattr(
+        tenant_role_service.TenantService,
+        "get_tenant_by_id",
+        lambda tenant_id: SimpleNamespace(id=tenant_id, slug="it", name="Information Technology"),
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "get_organization_by_id",
+        lambda organization_id: (
+            organization_id_calls.append(organization_id)
+            or {"id": "org-it", "alias": "it", "name": "Information Technology"}
+            if organization_id == "tenant-it-id"
+            else None
+        ),
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "get_organization_by_alias",
+        lambda alias: alias_calls.append(alias) or None,
+    )
+
+    tenant, organization, organization_id = tenant_role_service._organization_for_tenant("tenant-it-id")
+
+    assert tenant.id == "tenant-it-id"
+    assert organization["id"] == "org-it"
+    assert organization_id == "org-it"
+    assert organization_id_calls == ["tenant-it-id"]
+    assert alias_calls == []
+
+
+def test_organization_for_tenant_falls_back_to_alias(monkeypatch):
+    tenant_role_service = _load_tenant_role_service(monkeypatch)
+    organization_id_calls: list[str] = []
+    alias_calls: list[str] = []
+
+    monkeypatch.setattr(
+        tenant_role_service.TenantService,
+        "get_tenant_by_id",
+        lambda tenant_id: SimpleNamespace(id=tenant_id, slug="it", name="Information Technology"),
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "get_organization_by_id",
+        lambda organization_id: organization_id_calls.append(organization_id) or None,
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "get_organization_by_alias",
+        lambda alias: (
+            alias_calls.append(alias)
+            or {"id": "org-it", "alias": "it", "name": "Information Technology"}
+            if alias == "it"
+            else None
+        ),
+    )
+
+    tenant, organization, organization_id = tenant_role_service._organization_for_tenant("tenant-it-id")
+
+    assert tenant.id == "tenant-it-id"
+    assert organization["id"] == "org-it"
+    assert organization_id == "org-it"
+    assert organization_id_calls == ["tenant-it-id"]
+    assert alias_calls == ["it"]
+
+
 def test_assign_tenant_role_syncs_keycloak_and_local_assignment(monkeypatch):
     tenant_role_service = _load_tenant_role_service(monkeypatch)
     synced_assignments: list[tuple[int, set[int], set[int]]] = []
@@ -204,6 +275,52 @@ def test_assign_tenant_role_syncs_keycloak_and_local_assignment(monkeypatch):
     assert synced_assignments == [(9, {42}, set())]
 
 
+def test_assign_tenant_role_returns_requested_role_even_if_keycloak_roles_are_stale(monkeypatch):
+    tenant_role_service = _load_tenant_role_service(monkeypatch)
+    group = SimpleNamespace(id=42, identifier="tenant-it-id:editor")
+    local_user = SimpleNamespace(id=9, username="editor")
+    member = {"id": "member-1", "username": "editor", "email": "editor@example.com"}
+
+    monkeypatch.setattr(
+        tenant_role_service,
+        "_organization_for_tenant",
+        lambda tenant_id: (
+            SimpleNamespace(id=tenant_id, slug="it", name="Information Technology"),
+            {"id": "org-it", "alias": "it"},
+            "org-it",
+        ),
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "get_organization_member_by_username",
+        lambda organization_id, username: member,
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "upsert_local_shared_realm_member",
+        lambda input_member: local_user,
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "_tenant_role_group",
+        lambda role_name, tenant_id: group,
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "_ensure_local_assignment",
+        lambda user, role_group, tenant_id: True,
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "_normalized_member_roles",
+        lambda organization_id, member_id: [],
+    )
+
+    result = tenant_role_service.assign_tenant_role("tenant-it-id", "editor", "editor")
+
+    assert result["roles"] == ["editor"]
+
+
 def test_remove_tenant_role_syncs_keycloak_and_local_assignment(monkeypatch):
     tenant_role_service = _load_tenant_role_service(monkeypatch)
     synced_assignments: list[tuple[int, set[int], set[int]]] = []
@@ -257,3 +374,49 @@ def test_remove_tenant_role_syncs_keycloak_and_local_assignment(monkeypatch):
 
     assert result["roles"] == []
     assert synced_assignments == [(9, set(), {42})]
+
+
+def test_remove_tenant_role_returns_updated_roles_even_if_keycloak_readback_is_stale(monkeypatch):
+    tenant_role_service = _load_tenant_role_service(monkeypatch)
+    group = SimpleNamespace(id=42, identifier="tenant-it-id:editor")
+    local_user = SimpleNamespace(id=9, username="editor")
+    member = {"id": "member-1", "username": "editor", "email": "editor@example.com"}
+
+    monkeypatch.setattr(
+        tenant_role_service,
+        "_organization_for_tenant",
+        lambda tenant_id: (
+            SimpleNamespace(id=tenant_id, slug="it", name="Information Technology"),
+            {"id": "org-it", "alias": "it"},
+            "org-it",
+        ),
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "get_organization_member_by_username",
+        lambda organization_id, username: member,
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "upsert_local_shared_realm_member",
+        lambda input_member: local_user,
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "_tenant_role_group",
+        lambda role_name, tenant_id: group,
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "_delete_local_assignment",
+        lambda user, role_group, tenant_id: True,
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "_normalized_member_roles",
+        lambda organization_id, member_id: ["editor"],
+    )
+
+    result = tenant_role_service.remove_tenant_role("tenant-it-id", "editor", "editor")
+
+    assert result["roles"] == []

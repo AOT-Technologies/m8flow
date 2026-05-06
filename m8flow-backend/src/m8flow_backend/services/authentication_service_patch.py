@@ -449,20 +449,23 @@ def _authentication_identifier_from_request() -> str | None:
     cookie_identifier = request.cookies.get("authentication_identifier")
     header_identifier = request.headers.get("SpiffWorkflow-Authentication-Identifier")
     state_identifier = _decode_state_authentication_identifier(request.args.get("state"))
+    realm_hint = request.cookies.get("m8flow_auth_realm")
+    if isinstance(realm_hint, str):
+        realm_hint = realm_hint.strip() or None
 
     try:
         from spiffworkflow_backend.routes.authentication_controller import _get_authentication_identifier_from_request
 
         identifier = _get_authentication_identifier_from_request()
-        if (
-            isinstance(identifier, str)
-            and identifier.strip()
-            and (identifier != DEFAULT_TENANT_ID or not any((cookie_identifier, header_identifier, state_identifier)))
-        ):
-            return identifier
+        if isinstance(identifier, str):
+            normalized_identifier = identifier.strip()
+            if normalized_identifier and normalized_identifier != DEFAULT_TENANT_ID:
+                return normalized_identifier
     except Exception:
         pass
 
+    if realm_hint:
+        return realm_hint
     if cookie_identifier:
         return cookie_identifier
     if header_identifier:

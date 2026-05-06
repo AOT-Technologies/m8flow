@@ -576,9 +576,8 @@ done
 if /opt/keycloak/bin/kcadm.sh update "realms/${SHARED_REALM}" \
   -s organizationsEnabled=true \
   -s registrationEmailAsUsername=false \
-  -s loginWithEmailAllowed=false \
-  -s duplicateEmailsAllowed=true 2>/dev/null; then
-  echo "[keycloak-init-realms] Realm ${SHARED_REALM}: organizations, username-only login, and duplicate-email policy set successfully."
+  -s loginWithEmailAllowed=false 2>/dev/null; then
+  echo "[keycloak-init-realms] Realm ${SHARED_REALM}: organizations and username-only login policy set successfully."
 else
   echo "[keycloak-init-realms] Realm ${SHARED_REALM}: failed to enforce organizations and username-only login policy." >&2
 fi

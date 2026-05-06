@@ -12,11 +12,11 @@ TEMPLATE_PATH = (
 )
 
 
-def test_shared_realm_template_disables_email_login_and_allows_duplicate_emails() -> None:
+def test_shared_realm_template_disables_email_login_and_duplicate_emails() -> None:
     with TEMPLATE_PATH.open("r", encoding="utf-8") as template_file:
         realm_template = json.load(template_file)
 
     assert realm_template["organizationsEnabled"] is True
     assert realm_template["registrationEmailAsUsername"] is False
     assert realm_template["loginWithEmailAllowed"] is False
-    assert realm_template["duplicateEmailsAllowed"] is True
+    assert realm_template["duplicateEmailsAllowed"] is False

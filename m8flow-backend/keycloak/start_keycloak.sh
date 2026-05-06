@@ -470,8 +470,7 @@ function ensure_shared_realm_user_policy() {
     -s sslRequired=NONE \
     -s organizationsEnabled=true \
     -s registrationEmailAsUsername=false \
-    -s loginWithEmailAllowed=false \
-    -s duplicateEmailsAllowed=true >/dev/null
+    -s loginWithEmailAllowed=false >/dev/null
 }
 
 function organization_alias_exists() {

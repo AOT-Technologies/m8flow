@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from flask import Flask, g
 
 
-def test_user_group_list_filters_to_current_tenant_and_hides_default_group(monkeypatch) -> None:
+def test_user_group_list_filters_to_current_tenant_hides_default_group_and_keeps_global_super_admin(monkeypatch) -> None:
     app = Flask(__name__)
     app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
 
@@ -67,4 +67,4 @@ def test_user_group_list_filters_to_current_tenant_and_hides_default_group(monke
             response = fake_users_controller.user_group_list_for_current_user()
 
     assert response.status_code == 200
-    assert response.get_json() == ["tenant-a:admin", "tenant-a:reviewer"]
+    assert response.get_json() == ["super-admin", "tenant-a:admin", "tenant-a:reviewer"]

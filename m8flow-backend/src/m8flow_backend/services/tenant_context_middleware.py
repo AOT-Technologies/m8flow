@@ -11,11 +11,14 @@ from urllib.parse import unquote
 from flask import g, request
 from sqlalchemy import or_
 
+from m8flow_backend.services.tenant_identity_helpers import authentication_identifier_from_payload
 from m8flow_backend.services.tenant_identity_helpers import current_tenant_identifiers
+from m8flow_backend.services.tenant_identity_helpers import extract_realm_from_issuer
 from m8flow_backend.services.tenant_identity_helpers import tenant_id_from_payload
 from m8flow_backend.services.tenant_identity_helpers import user_belongs_to_current_tenant
 from spiffworkflow_backend.exceptions.api_error import ApiError
 from spiffworkflow_backend.services.authentication_service import AuthenticationService
+from spiffworkflow_backend.services.authorization_service import AuthorizationService
 
 try:
     from sqlalchemy.exc import InvalidRequestError
@@ -44,6 +47,36 @@ def _shared_realm_identifier() -> str:
     from m8flow_backend.config import shared_realm_name
 
     return shared_realm_name()
+
+
+def _master_realm_identifier() -> str:
+    from m8flow_backend.config import master_realm_name
+
+    return master_realm_name()
+
+
+def _decoded_payload_from_bearer_token_without_verification(token: str | None = None) -> dict[str, Any] | None:
+    """Decode the bearer token payload without signature verification for tenant routing."""
+    bearer_token = token or _token_from_request()
+    if not bearer_token:
+        return None
+
+    try:
+        import jwt
+
+        payload = jwt.decode(
+            bearer_token,
+            options={"verify_signature": False, "verify_exp": False},
+        )
+    except Exception:
+        return None
+
+    if not isinstance(payload, dict):
+        return None
+
+    g._m8flow_decoded_token = payload
+    g._m8flow_decoded_token_raw = bearer_token
+    return payload
 
 
 def _authenticated_tenant_id_from_payload(payload: dict[str, Any] | None) -> str | None:
@@ -80,7 +113,7 @@ def resolve_request_tenant() -> None:
       2) Request tenant header (x-m8flow-tenant-id), validated against the authenticated user
       3) ContextVar tenant id (e.g. ASGI middleware)
       4) Selected tenant cookie for shared-realm requests
-      5) DEFAULT_TENANT_ID (only if allow_missing_tenant_context() is true)
+      5) DEFAULT_TENANT_ID (only if allow_missing_tenant_context() is true and no bearer token is present)
 
     Validation:
       - If g already has a non-default tenant and the request resolves a different tenant -> tenant_override_forbidden
@@ -108,6 +141,18 @@ def resolve_request_tenant() -> None:
     tenant_reason = tenant_resolution["reason"]
     jwt_tenant_id = tenant_resolution["jwt_tenant_id"]
     header_tenant_id = tenant_resolution["header_tenant_id"]
+
+    if tenant_source == "master_realm":
+        g._m8flow_global_request = True
+        g.m8flow_tenant_id = None
+        _log_tenant_resolution(
+            tenant_id=None,
+            source=tenant_source,
+            reason=tenant_reason,
+            jwt_tenant_id=jwt_tenant_id,
+            header_tenant_id=header_tenant_id,
+        )
+        return
 
     if existing_tenant and not tenant_id:
         tenant_id = existing_tenant
@@ -149,7 +194,8 @@ def resolve_request_tenant() -> None:
         return
 
     if not tenant_id:
-        if allow_missing_tenant_context():
+        has_request_token = _token_from_request() is not None
+        if allow_missing_tenant_context() and not has_request_token:
             tenant_id = DEFAULT_TENANT_ID
             tenant_source = "default"
             tenant_reason = "No tenant candidate was available; using default tenant because missing tenant context is allowed."
@@ -244,6 +290,24 @@ def _resolve_tenant_details() -> dict[str, Optional[str]]:
     # Auth-disabled endpoints like /v1.0/status still need to honor an incoming JWT
     # tenant claim. Decoding is safe here because token parsing is already guarded
     # and returns None on failure.
+
+    # login_return from the master realm does not carry a tenant — detect this
+    # early before attempting JWT decoding so it doesn't raise tenant_required.
+    try:
+        path = getattr(request, "path", "") or ""
+        if "/login_return" in path:
+            state_auth_id = _decode_state_authentication_identifier(request.args.get("state"))
+            if state_auth_id and state_auth_id == _master_realm_identifier():
+                return {
+                    "tenant_id": None,
+                    "source": "master_realm",
+                    "reason": "login_return from master realm does not use tenant context.",
+                    "jwt_tenant_id": None,
+                    "header_tenant_id": _tenant_from_request_header(),
+                }
+    except Exception:
+        pass
+
     allow_decode = True
     tenant_from_claim = _tenant_from_jwt_claim_cached(allow_decode=allow_decode)
     if tenant_from_claim:
@@ -254,6 +318,19 @@ def _resolve_tenant_details() -> dict[str, Optional[str]]:
             "jwt_tenant_id": tenant_from_claim,
             "header_tenant_id": _tenant_from_request_header(),
         }
+
+    decoded_token = getattr(g, "_m8flow_decoded_token", None)
+    if isinstance(decoded_token, dict):
+        authentication_identifier = authentication_identifier_from_payload(decoded_token)
+        issuer_realm = extract_realm_from_issuer(decoded_token.get("iss"))
+        if authentication_identifier == _master_realm_identifier() or issuer_realm == _master_realm_identifier():
+            return {
+                "tenant_id": None,
+                "source": "master_realm",
+                "reason": "Authenticated master-realm request does not use tenant context.",
+                "jwt_tenant_id": None,
+                "header_tenant_id": _tenant_from_request_header(),
+            }
 
     header_tenant_id = _tenant_from_request_header()
     if header_tenant_id:
@@ -360,6 +437,10 @@ def _tenant_from_jwt_claim_cached(*, allow_decode: bool) -> Optional[str]:
 
     if not allow_decode:
         return None
+
+    unverified_decoded = _decoded_payload_from_bearer_token_without_verification(token)
+    if isinstance(unverified_decoded, dict):
+        return _authenticated_tenant_id_from_payload(unverified_decoded)
 
     try:
         authentication_identifier = _authentication_identifier() or DEFAULT_TENANT_ID

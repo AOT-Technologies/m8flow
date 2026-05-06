@@ -81,6 +81,153 @@ def test_set_new_access_token_in_cookie_uses_named_host_domain_when_valid(
     assert any("Domain=app.example.com" in header for header in headers)
 
 
+def test_set_new_access_token_in_cookie_sets_persistent_realm_hint_on_login(
+    cookie_domain_patch,
+) -> None:
+    app = Flask(__name__)
+    app.config["SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND"] = "http://localhost:7001"
+    app.config["THREAD_LOCAL_DATA"] = SimpleNamespace(
+        new_access_token="access-token",
+        new_id_token="id-token",
+        new_authentication_identifier="master",
+    )
+
+    with app.app_context():
+        response = app.make_response(("ok", 200))
+        updated = authentication_controller._set_new_access_token_in_cookie(response)
+        headers = updated.headers.getlist("Set-Cookie")
+
+    assert any("m8flow_auth_realm=master" in h for h in headers)
+    assert any("m8flow_auth_realm=master" in h and "Max-Age=2592000" in h for h in headers)
+
+
+def test_set_new_access_token_in_cookie_clears_persistent_realm_hint_on_logout(
+    cookie_domain_patch,
+) -> None:
+    """Realm hint must be cleared on explicit /logout, not on token expiry."""
+    app = Flask(__name__)
+    app.config["SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND"] = "http://localhost:7001"
+    app.config["THREAD_LOCAL_DATA"] = SimpleNamespace(user_has_logged_out=True)
+
+    with app.test_request_context(path="/v1.0/logout", method="GET"):
+        response = app.make_response(("ok", 200))
+        updated = authentication_controller._set_new_access_token_in_cookie(response)
+        headers = updated.headers.getlist("Set-Cookie")
+
+    assert any("m8flow_auth_realm" in h and "Max-Age=0" in h for h in headers)
+
+
+def test_set_new_access_token_in_cookie_preserves_realm_hint_on_token_expiry(
+    cookie_domain_patch,
+) -> None:
+    """Token expiry sets user_has_logged_out=True but must NOT clear m8flow_auth_realm."""
+    app = Flask(__name__)
+    app.config["SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND"] = "http://localhost:7001"
+    app.config["THREAD_LOCAL_DATA"] = SimpleNamespace(user_has_logged_out=True)
+
+    # Simulate a non-logout request path (e.g. an API call whose token just expired)
+    with app.test_request_context(path="/v1.0/process-instances", method="GET"):
+        response = app.make_response(("ok", 200))
+        updated = authentication_controller._set_new_access_token_in_cookie(response)
+        headers = updated.headers.getlist("Set-Cookie")
+
+    assert not any("m8flow_auth_realm" in h and "Max-Age=0" in h for h in headers)
+
+
+def test_handle_tenant_login_request_redirects_to_master_when_realm_hint_present(
+    monkeypatch,
+) -> None:
+    app = Flask(__name__)
+    app.config["SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"] = "/v1.0"
+    app.config["SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND"] = "http://localhost:7001"
+    monkeypatch.setattr(auth_patch_module, "_master_realm_identifier", lambda: "master")
+
+    captured = {}
+
+    def fake_get_login_redirect_url(self, authentication_identifier, final_url=None):
+        captured["auth_id"] = authentication_identifier
+        captured["final_url"] = final_url
+        return f"http://keycloak/realms/{authentication_identifier}/protocol/openid-connect/auth"
+
+    with (
+        app.test_request_context(
+            path="/v1.0/login",
+            method="GET",
+            query_string={"authentication_identifier": "m8flow", "redirect_url": "http://localhost:7001/tenants"},
+            headers={"Cookie": "m8flow_auth_realm=master"},
+        ),
+        patch(
+            "spiffworkflow_backend.services.authentication_service.AuthenticationService.get_login_redirect_url",
+            fake_get_login_redirect_url,
+        ),
+    ):
+        response = _handle_tenant_login_request(app)
+
+    assert response is not None
+    assert response.status_code in (301, 302)
+    assert captured["auth_id"] == "master"
+    assert captured["final_url"] == "http://localhost:7001/tenants"
+
+
+def test_handle_tenant_login_request_does_not_redirect_when_realm_hint_matches_requested(
+    monkeypatch,
+) -> None:
+    app = Flask(__name__)
+    app.config["SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"] = "/v1.0"
+    app.config["SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND"] = "http://localhost:7001"
+    monkeypatch.setattr(auth_patch_module, "_master_realm_identifier", lambda: "master")
+
+    with app.test_request_context(
+        path="/v1.0/login",
+        method="GET",
+        query_string={"authentication_identifier": "master"},
+        headers={"Cookie": "m8flow_auth_realm=master"},
+    ):
+        response = _handle_tenant_login_request(app)
+
+    assert response is None
+
+
+def test_handle_tenant_login_request_does_not_intercept_tenant_param_when_realm_hint_present(
+    monkeypatch,
+) -> None:
+    """Realm hint must not redirect master-hint users who have a tenant= param in the request."""
+    app = Flask(__name__)
+    app.config["SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"] = "/v1.0"
+    app.config["SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND"] = "https://app.example.com"
+    monkeypatch.setattr(auth_patch_module, "_master_realm_identifier", lambda: "master")
+    monkeypatch.setenv("M8FLOW_KEYCLOAK_SHARED_REALM", "m8flow")
+
+    captured: dict = {}
+
+    def fake_get_login_redirect_url(self, authentication_identifier, final_url=None):
+        captured["auth_id"] = authentication_identifier
+        return f"https://keycloak/realms/{authentication_identifier}/auth"
+
+    with (
+        app.test_request_context(
+            path="/v1.0/login",
+            method="GET",
+            query_string={"tenant": "tenant-a"},
+            headers={"Cookie": "m8flow_auth_realm=master"},
+        ),
+        patch(
+            "m8flow_backend.services.tenant_service.TenantService.check_tenant_exists",
+            return_value={"exists": True, "tenant_id": "tenant-a-id"},
+        ),
+        patch(
+            "spiffworkflow_backend.services.authentication_service.AuthenticationService.get_login_redirect_url",
+            fake_get_login_redirect_url,
+        ),
+    ):
+        response = _handle_tenant_login_request(app)
+
+    assert response is not None
+    assert response.status_code == 302
+    # Must redirect to the shared realm, not to master
+    assert captured["auth_id"] != "master"
+
+
 def test_handle_tenant_login_request_rejects_prefix_trick_redirect_url() -> None:
     app = Flask(__name__)
     app.config["SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"] = "/v1.0"
@@ -215,6 +362,69 @@ def test_master_realm_auth_patch_uses_configured_admin_realm(monkeypatch) -> Non
     finally:
         authentication_controller._get_authentication_identifier_from_request = original
         monkeypatch.setattr(auth_patch_module, "_MASTER_REALM_PATCHED", False)
+
+
+def test_master_realm_auth_patch_uses_realm_hint_cookie_when_auth_cookie_is_missing(monkeypatch) -> None:
+    app = Flask(__name__)
+
+    original = authentication_controller._get_authentication_identifier_from_request
+    monkeypatch.setattr(auth_patch_module, "_MASTER_REALM_PATCHED", False)
+    authentication_controller._get_authentication_identifier_from_request = lambda: "default"
+    try:
+        apply_master_realm_auth_patch()
+
+        with app.test_request_context(
+            path="/v1.0/login",
+            method="GET",
+            headers={"Cookie": "m8flow_auth_realm=master"},
+        ):
+            assert authentication_controller._get_authentication_identifier_from_request() == "master"
+    finally:
+        authentication_controller._get_authentication_identifier_from_request = original
+        monkeypatch.setattr(auth_patch_module, "_MASTER_REALM_PATCHED", False)
+
+
+def test_omni_auth_stores_decoded_token_before_tenant_resolution(monkeypatch) -> None:
+    app = Flask(__name__)
+    original_omni_auth = authentication_controller.omni_auth
+    decoded_token = {
+        "iss": "http://localhost:7002/realms/master",
+        "preferred_username": "super-admin",
+        "groups": ["super-admin"],
+    }
+    seen: dict[str, object] = {}
+
+    from spiffworkflow_backend.services.authorization_service import AuthorizationService
+
+    def fake_verify_token(*args, **kwargs):
+        return decoded_token
+
+    def fake_resolve_request_tenant():
+        from flask import g
+
+        seen["decoded_token"] = getattr(g, "_m8flow_decoded_token", None)
+
+    def fake_check_for_permission(cls, token):
+        seen["permission_token"] = token
+
+    monkeypatch.setattr(auth_patch_module, "_PATCHED", False)
+    monkeypatch.setattr(authentication_controller, "verify_token", fake_verify_token)
+    monkeypatch.setattr(auth_patch_module, "resolve_request_tenant", fake_resolve_request_tenant)
+    monkeypatch.setattr(AuthorizationService, "check_for_permission", classmethod(fake_check_for_permission))
+
+    try:
+        auth_patch_module.apply()
+        with app.test_request_context(
+            path="/v1.0/m8flow/tenants",
+            headers={"Authorization": "Bearer test-token"},
+        ):
+            authentication_controller.omni_auth()
+    finally:
+        authentication_controller.omni_auth = original_omni_auth
+        monkeypatch.setattr(auth_patch_module, "_PATCHED", False)
+
+    assert seen["decoded_token"] == decoded_token
+    assert seen["permission_token"] == decoded_token
 
 
 def test_authentication_identifier_from_bearer_token_prefers_explicit_auth_claim() -> None:

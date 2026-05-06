@@ -496,6 +496,61 @@ def test_resolves_tenant_from_jwt_claim_on_status_path(monkeypatch) -> None:
             assert org_tenant_id in current_tenant_identifiers(org_tenant_id)
 
 
+def test_resolves_tenant_from_jwt_claim_on_status_path_without_auth_realm_lookup(monkeypatch) -> None:
+    import jwt
+
+    from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
+    from m8flow_backend.tenancy import DEFAULT_TENANT_ID
+    from spiffworkflow_backend.services.authentication_service import AuthenticationService
+
+    app = _make_app()
+    org_tenant_id = "bb768eda-e8cb-4452-9a49-acd2115db07c"
+
+    monkeypatch.setenv("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", "true")
+    monkeypatch.setattr(
+        "m8flow_backend.services.tenant_context_middleware._tenant_from_context_var",
+        lambda: DEFAULT_TENANT_ID,
+    )
+    monkeypatch.setattr(
+        AuthenticationService,
+        "parse_jwt_token",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("parse_jwt_token should not be called")),
+    )
+
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+        now = int(datetime.now(timezone.utc).timestamp())
+        db.session.add(
+            M8flowTenantModel(
+                id=org_tenant_id,
+                name="Org Tenant",
+                slug="org-tenant",
+                created_by="test",
+                modified_by="test",
+                created_at_in_seconds=now,
+                updated_at_in_seconds=now,
+            )
+        )
+        db.session.commit()
+
+        token = jwt.encode(
+            {
+                "iss": "http://localhost:7002/realms/shared-users",
+                "m8flow_tenant_id": org_tenant_id,
+            },
+            "test-secret",
+            algorithm="HS256",
+        )
+
+        with app.test_request_context("/v1.0/status", headers={"Authorization": f"Bearer {token}"}):
+            resolve_request_tenant()
+
+            assert current_tenant_id_or_none() == org_tenant_id
+            assert g.m8flow_tenant_id == org_tenant_id
+            assert org_tenant_id in current_tenant_identifiers(org_tenant_id)
+
+
 def test_resolves_tenant_from_request_header_when_user_belongs(monkeypatch) -> None:
     app = _make_app()
 
@@ -643,4 +698,33 @@ def test_login_return_skips_tenant_validation_for_master_auth_identifier() -> No
 
         with app.test_request_context(f"/v1.0/login_return?state={state}"):
             resolve_request_tenant()
+            assert getattr(g, "m8flow_tenant_id", None) is None
+
+
+def test_master_realm_request_does_not_fall_back_to_default_tenant(monkeypatch) -> None:
+    app = _make_app()
+
+    monkeypatch.setenv("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", "true")
+    monkeypatch.setattr(
+        "m8flow_backend.services.tenant_context_middleware._tenant_from_jwt_claim_cached",
+        lambda *, allow_decode: None,
+    )
+
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+
+        with app.test_request_context(
+            "/v1.0/m8flow/tenants",
+            headers={"Authorization": "Bearer test-token"},
+        ):
+            g._m8flow_decoded_token = {
+                "iss": "http://localhost:7002/realms/master",
+                "preferred_username": "super-admin",
+                "groups": ["super-admin"],
+            }
+            resolve_request_tenant()
+
+            assert current_tenant_id_or_none() is None
+            assert getattr(g, "_m8flow_global_request", False) is True
             assert getattr(g, "m8flow_tenant_id", None) is None

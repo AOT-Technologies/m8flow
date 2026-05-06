@@ -38,6 +38,19 @@ const getAuthenticationLabel = (
   return identifier || 'Default';
 };
 
+const originalUrlTargetsOrganizationManagement = (originalUrl: string | null) => {
+  if (!originalUrl) {
+    return false;
+  }
+
+  try {
+    const pathname = new URL(originalUrl, window.location.origin).pathname.replace(/\/+$/, '') || '/';
+    return pathname === '/tenants';
+  } catch {
+    return false;
+  }
+};
+
 const clearSelectedTenantState = () => {
   localStorage.removeItem(M8FLOW_TENANT_STORAGE_KEY);
   localStorage.removeItem('m8f_tenant_id');
@@ -53,6 +66,11 @@ export default function TenantAwareLogin() {
   const requestedAuthIdentifier = (
     searchParams.get('authentication_identifier') || ''
   ).trim();
+  const persistedRealmHintIdentifier =
+    UserService.getAuthenticationRealmHint()?.trim() || '';
+  const destinationRealmIdentifier = originalUrlTargetsOrganizationManagement(originalUrl)
+    ? MASTER_REALM_IDENTIFIER
+    : persistedRealmHintIdentifier || SHARED_REALM_IDENTIFIER;
 
   useEffect(() => {
     if (!ENABLE_MULTITENANT) {
@@ -63,7 +81,7 @@ export default function TenantAwareLogin() {
         return;
       }
 
-      const identifier = requestedAuthIdentifier || SHARED_REALM_IDENTIFIER;
+      const identifier = requestedAuthIdentifier || destinationRealmIdentifier;
       UserService.doLogin(
         {
           identifier,
@@ -84,10 +102,8 @@ export default function TenantAwareLogin() {
       return;
     }
 
-    const identifier = requestedAuthIdentifier || SHARED_REALM_IDENTIFIER;
-    if (identifier === SHARED_REALM_IDENTIFIER) {
-      clearSelectedTenantState();
-    }
+    clearSelectedTenantState();
+    const identifier = requestedAuthIdentifier || destinationRealmIdentifier;
 
     UserService.doLogin(
       {
@@ -105,6 +121,8 @@ export default function TenantAwareLogin() {
     ENABLE_MULTITENANT,
     MASTER_REALM_IDENTIFIER,
     SHARED_REALM_IDENTIFIER,
+    destinationRealmIdentifier,
+    persistedRealmHintIdentifier,
     requestedAuthIdentifier,
     originalUrl,
   ]);

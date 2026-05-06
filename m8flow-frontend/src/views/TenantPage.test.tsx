@@ -326,4 +326,72 @@ describe("TenantPage", () => {
       );
     });
   });
+
+  it("does not submit the same organization role toggle twice while pending", async () => {
+    mockUseTenants.mockReturnValue({
+      data: [
+        {
+          id: "tenant-uuid",
+          name: "Information Technology",
+          slug: "it",
+          status: "ACTIVE",
+          createdBy: "system",
+          modifiedBy: "system",
+          createdAtInSeconds: 1,
+          updatedAtInSeconds: 1,
+        },
+      ],
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    mockUsePermissionFetcher.mockReturnValue({
+      ability: { can: () => true },
+      permissionsLoaded: true,
+    });
+    mockGetTenantMembers.mockResolvedValue([
+      {
+        id: "member-1",
+        username: "admin",
+        email: "admin@example.com",
+        display_name: "Admin User",
+        roles: [],
+      },
+    ]);
+
+    let resolveAssign: ((value: unknown) => void) | null = null;
+    mockAssignTenantMemberRole.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveAssign = resolve;
+        }),
+    );
+
+    render(<TenantPage />);
+
+    fireEvent.click(screen.getByTestId("tenant-roles-button-tenant-uuid"));
+
+    const tenantAdminCheckbox = await screen.findByRole("checkbox", {
+      name: "admin-tenant-admin",
+    });
+
+    fireEvent.click(tenantAdminCheckbox);
+    fireEvent.click(tenantAdminCheckbox);
+
+    expect(mockAssignTenantMemberRole).toHaveBeenCalledTimes(1);
+
+    resolveAssign?.({
+      id: "member-1",
+      username: "admin",
+      email: "admin@example.com",
+      display_name: "Admin User",
+      roles: ["tenant-admin"],
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("checkbox", { name: "admin-tenant-admin" }),
+      ).toBeChecked();
+    });
+  });
 });

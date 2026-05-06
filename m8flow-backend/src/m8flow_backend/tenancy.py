@@ -145,6 +145,8 @@ def clear_tenant_context() -> None:
     """Clear tenant context variables to prevent cross-request leakage."""
     _CONTEXT_TENANT_ID.set(None)
     _CONTEXT_WARNED_DEFAULT.set(False)
+    if has_request_context() and hasattr(g, "_m8flow_global_request"):
+        g._m8flow_global_request = False
 
 def is_tenant_context_exempt_request() -> bool:
     if not has_request_context():

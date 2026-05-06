@@ -13,6 +13,7 @@ from m8flow_backend.services.tenant_identity_helpers import current_tenant_id_or
 from m8flow_backend.services.tenant_identity_helpers import find_users_for_current_tenant_by_username
 from m8flow_backend.services.tenant_identity_helpers import find_users_for_current_tenant_by_username_prefix
 from m8flow_backend.services.tenant_identity_helpers import is_group_for_tenant
+from m8flow_backend.services.tenant_identity_helpers import is_global_permission_group_identifier
 from m8flow_backend.services.tenant_identity_helpers import qualified_config_group_identifier
 
 _PATCHED = False
@@ -56,7 +57,11 @@ def apply() -> None:
             group.identifier
             for group in groups
             if (default_group_identifier is None or group.identifier != default_group_identifier)
-            and (tenant_id is None or is_group_for_tenant(group.identifier, tenant_id))
+            and (
+                tenant_id is None
+                or is_group_for_tenant(group.identifier, tenant_id)
+                or is_global_permission_group_identifier(group.identifier)
+            )
         ]
         return make_response(jsonify(sorted(group_identifiers)), 200)
 

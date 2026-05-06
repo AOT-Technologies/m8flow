@@ -358,6 +358,30 @@ def test_add_organization_group_member_targets_group_member_endpoint(
 @patch("m8flow_backend.services.keycloak_service.get_master_admin_token")
 @patch("m8flow_backend.services.keycloak_service.shared_realm_name")
 @patch("m8flow_backend.services.keycloak_service.keycloak_url")
+@patch("m8flow_backend.services.keycloak_service.requests.put")
+def test_add_organization_group_member_ignores_conflict_when_member_already_assigned(
+    mock_put,
+    mock_keycloak_url,
+    mock_shared_realm_name,
+    mock_get_master_admin_token,
+    mock_get_organization_group_by_name,
+):
+    mock_get_master_admin_token.return_value = "master-token"
+    mock_shared_realm_name.return_value = "shared-users"
+    mock_keycloak_url.return_value = "http://keycloak"
+    mock_get_organization_group_by_name.return_value = {"id": "group-editor", "name": "editor"}
+    mock_put.return_value = MagicMock(status_code=409, raise_for_status=MagicMock())
+
+    add_organization_group_member("org-uuid-123", "editor", "user-1")
+
+    mock_put.assert_called_once()
+    mock_put.return_value.raise_for_status.assert_not_called()
+
+
+@patch("m8flow_backend.services.keycloak_service.get_organization_group_by_name")
+@patch("m8flow_backend.services.keycloak_service.get_master_admin_token")
+@patch("m8flow_backend.services.keycloak_service.shared_realm_name")
+@patch("m8flow_backend.services.keycloak_service.keycloak_url")
 @patch("m8flow_backend.services.keycloak_service.requests.delete")
 def test_remove_organization_group_member_targets_group_member_endpoint(
     mock_delete,

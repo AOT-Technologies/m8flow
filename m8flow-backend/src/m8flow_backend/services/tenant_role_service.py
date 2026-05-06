@@ -6,6 +6,7 @@ from typing import Any
 from m8flow_backend.services.keycloak_service import (
     DEFAULT_ORGANIZATION_ROLE_GROUP_NAMES,
     add_organization_group_member,
+    get_organization_by_id,
     get_organization_by_alias,
     get_organization_member_by_username,
     get_organization_member_groups,
@@ -39,11 +40,25 @@ def _normalize_role_name(role_name: str) -> str:
 
 def _organization_for_tenant(tenant_id: str) -> tuple[Any, dict[str, Any], str]:
     tenant = TenantService.get_tenant_by_id(tenant_id)
-    organization = get_organization_by_alias(tenant.slug)
+    organization = None
+
+    tenant_identifier = tenant.id.strip() if isinstance(tenant.id, str) and tenant.id.strip() else ""
+    if tenant_identifier:
+        organization = get_organization_by_id(tenant_identifier)
+
+    if not isinstance(organization, dict):
+        tenant_alias = tenant.slug.strip() if isinstance(tenant.slug, str) and tenant.slug.strip() else ""
+        if tenant_alias:
+            organization = get_organization_by_alias(tenant_alias)
+
     if not isinstance(organization, dict):
         raise ApiError(
             error_code="organization_not_found",
-            message=f"Organization '{tenant.slug}' could not be found in Keycloak.",
+            message=(
+                f"Organization for tenant '{tenant_identifier or tenant_id}'"
+                f"{f' (alias: {tenant.slug})' if getattr(tenant, 'slug', None) else ''}"
+                " could not be found in Keycloak."
+            ),
             status_code=404,
         )
 
@@ -51,7 +66,11 @@ def _organization_for_tenant(tenant_id: str) -> tuple[Any, dict[str, Any], str]:
     if not isinstance(organization_id, str) or not organization_id.strip():
         raise ApiError(
             error_code="organization_not_found",
-            message=f"Organization '{tenant.slug}' does not have a valid Keycloak id.",
+            message=(
+                f"Organization for tenant '{tenant_identifier or tenant_id}'"
+                f"{f' (alias: {tenant.slug})' if getattr(tenant, 'slug', None) else ''}"
+                " does not have a valid Keycloak id."
+            ),
             status_code=404,
         )
     return tenant, organization, organization_id.strip()
@@ -202,9 +221,11 @@ def assign_tenant_role(tenant_id: str, username: str, role_name: str) -> dict[st
             old_group_ids=set(),
         )
 
+    current_roles = _normalized_member_roles(organization_id, member_id.strip())
+    updated_roles = sorted(set(current_roles).union({normalized_role_name}))
     return _serialize_member(
         member,
-        roles=_normalized_member_roles(organization_id, member_id.strip()),
+        roles=updated_roles,
     )
 
 
@@ -241,7 +262,9 @@ def remove_tenant_role(tenant_id: str, username: str, role_name: str) -> dict[st
                 old_group_ids={group.id},
             )
 
+    current_roles = _normalized_member_roles(organization_id, member_id.strip())
+    updated_roles = sorted(role for role in current_roles if role != normalized_role_name)
     return _serialize_member(
         member,
-        roles=_normalized_member_roles(organization_id, member_id.strip()),
+        roles=updated_roles,
     )

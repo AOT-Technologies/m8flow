@@ -5,6 +5,10 @@ from collections.abc import Iterable
 from collections.abc import Mapping
 from typing import Any
 
+from flask import g
+from flask import has_request_context
+
+from m8flow_backend.tenancy import DEFAULT_TENANT_ID
 from m8flow_backend.tenancy import TENANT_CLAIM
 from m8flow_backend.tenancy import get_tenant_id
 
@@ -18,6 +22,24 @@ ORGANIZATION_SCOPE = "organization"
 ALL_ORGANIZATIONS_SCOPE = "organization:*"
 
 logger = logging.getLogger(__name__)
+GLOBAL_PERMISSION_GROUP_IDENTIFIERS = frozenset({"super-admin"})
+GLOBAL_PERMISSION_GROUP_ALIASES = frozenset(
+    {
+        "default:super-admin",
+        f"{DEFAULT_TENANT_ID}:super-admin",
+    }
+)
+
+
+def is_global_permission_group_identifier(group_identifier: str) -> bool:
+    """Return whether the identifier should stay global instead of tenant-qualified."""
+    normalized_group_identifier = group_identifier.strip()
+    if not normalized_group_identifier:
+        return False
+    return (
+        normalized_group_identifier in GLOBAL_PERMISSION_GROUP_IDENTIFIERS
+        or normalized_group_identifier in GLOBAL_PERMISSION_GROUP_ALIASES
+    )
 
 
 def _string_claim(payload: Mapping[str, Any] | None, claim: str) -> str | None:
@@ -204,6 +226,8 @@ def _canonical_tenant_id_from_identifiers(*identifiers: str | None) -> str | Non
 def current_tenant_id_or_none() -> str | None:
     """Return the active tenant id, or ``None`` when no tenant context is set."""
     try:
+        if has_request_context() and getattr(g, "_m8flow_global_request", False):
+            return None
         return get_tenant_id(warn_on_default=False)
     except RuntimeError:
         return None
@@ -394,6 +418,55 @@ def _display_name_from_keycloak_member(member: Mapping[str, Any]) -> str | None:
     return None
 
 
+def _user_recency_key(user: Any) -> tuple[int, int, int]:
+    """Sort users by most recently updated, then created, then id."""
+    return (
+        int(getattr(user, "updated_at_in_seconds", 0) or 0),
+        int(getattr(user, "created_at_in_seconds", 0) or 0),
+        int(getattr(user, "id", 0) or 0),
+    )
+
+
+def _refresh_local_shared_realm_user(
+    local_user: Any,
+    member: Mapping[str, Any],
+    *,
+    member_id: str,
+    shared_realm_service: str,
+) -> Any:
+    """Refresh a local user row from a shared-realm Keycloak member representation."""
+    from spiffworkflow_backend.models.db import db
+
+    updated = False
+
+    if getattr(local_user, "service", None) != shared_realm_service:
+        local_user.service = shared_realm_service
+        updated = True
+
+    if getattr(local_user, "service_id", None) != member_id:
+        local_user.service_id = member_id
+        updated = True
+
+    member_email = member.get("email")
+    if isinstance(member_email, str):
+        member_email = member_email.strip()
+    else:
+        member_email = ""
+    if getattr(local_user, "email", None) != member_email:
+        local_user.email = member_email
+        updated = True
+
+    display_name = _display_name_from_keycloak_member(member)
+    if getattr(local_user, "display_name", None) != display_name:
+        local_user.display_name = display_name
+        updated = True
+
+    if updated:
+        db.session.add(local_user)
+        db.session.commit()
+    return local_user
+
+
 def _upsert_local_shared_realm_member(member: Mapping[str, Any]) -> Any | None:
     """Create or refresh one local user row from a shared-realm Keycloak member representation."""
     member_id = member.get("id")
@@ -423,52 +496,86 @@ def _upsert_local_shared_realm_member(member: Mapping[str, Any]) -> Any | None:
         .first()
     )
     if exact_user is not None:
-        updated = False
-
         if exact_user.username != member_username:
             exact_user.username = member_username
-            updated = True
-
-        member_email = member.get("email")
-        if isinstance(member_email, str):
-            member_email = member_email.strip()
-        else:
-            member_email = ""
-        if exact_user.email != member_email:
-            exact_user.email = member_email
-            updated = True
-
-        display_name = _display_name_from_keycloak_member(member)
-        if exact_user.display_name != display_name:
-            exact_user.display_name = display_name
-            updated = True
-
-        if updated:
             db.session.add(exact_user)
             db.session.commit()
-        return exact_user
+        return _refresh_local_shared_realm_user(
+            exact_user,
+            member,
+            member_id=member_id,
+            shared_realm_service=shared_realm_service,
+        )
 
     same_username_matches = UserModel.query.filter(UserModel.username == member_username).all()
-    for user in same_username_matches:
-        if realm_from_service(getattr(user, "service", None)) == realm_from_service(shared_realm_service):
+    if same_username_matches:
+        shared_realm = realm_from_service(shared_realm_service)
+        same_username_matches.sort(
+            key=lambda user: (
+                realm_from_service(getattr(user, "service", None)) == shared_realm,
+                *_user_recency_key(user),
+            ),
+            reverse=True,
+        )
+        if len(same_username_matches) > 1:
             logger.warning(
-                "shared_realm_user_provision_conflict: username=%s existing_user_id=%s",
+                "shared_realm_user_provision_match: found %s local users for username=%s realm=%s; reusing id=%s",
+                len(same_username_matches),
                 member_username,
-                getattr(user, "id", None),
+                realm_from_service(shared_realm_service),
+                getattr(same_username_matches[0], "id", None),
             )
-            return None
+
+        existing_user = same_username_matches[0]
+        if realm_from_service(getattr(existing_user, "service", None)) != shared_realm:
+            logger.warning(
+                "shared_realm_user_provision_match: reusing username=%s from service=%s for shared realm service=%s",
+                member_username,
+                getattr(existing_user, "service", None),
+                shared_realm_service,
+            )
+        return _refresh_local_shared_realm_user(
+            existing_user,
+            member,
+            member_id=member_id,
+            shared_realm_service=shared_realm_service,
+        )
 
     member_email = member.get("email")
     if not isinstance(member_email, str):
         member_email = ""
+    try:
+        return UserService.create_user(
+            member_username,
+            shared_realm_service,
+            member_id,
+            email=member_email,
+            display_name=_display_name_from_keycloak_member(member) or "",
+        )
+    except Exception:
+        fallback_matches = UserModel.query.filter(UserModel.username == member_username).all()
+        if not fallback_matches:
+            raise
 
-    return UserService.create_user(
-        member_username,
-        shared_realm_service,
-        member_id,
-        email=member_email,
-        display_name=_display_name_from_keycloak_member(member) or "",
-    )
+        fallback_matches.sort(
+            key=lambda user: (
+                realm_from_service(getattr(user, "service", None)) == realm_from_service(shared_realm_service),
+                *_user_recency_key(user),
+            ),
+            reverse=True,
+        )
+        fallback_user = fallback_matches[0]
+        logger.warning(
+            "shared_realm_user_provision_fallback: reusing username=%s from service=%s after create_user failure",
+            member_username,
+            getattr(fallback_user, "service", None),
+        )
+        return _refresh_local_shared_realm_user(
+            fallback_user,
+            member,
+            member_id=member_id,
+            shared_realm_service=shared_realm_service,
+        )
 
 
 def upsert_local_shared_realm_member(member: Mapping[str, Any]) -> Any | None:
@@ -483,19 +590,32 @@ def _organization_id_for_tenant(tenant_id: str | None = None) -> str | None:
         return None
 
     tenant_slug = _tenant_slug_for_identifier(effective_tenant_id)
-    if not tenant_slug:
-        return None
 
     from m8flow_backend.services.keycloak_service import get_organization_by_alias
+    from m8flow_backend.services.keycloak_service import get_organization_by_id
 
-    organization = get_organization_by_alias(tenant_slug)
-    if not isinstance(organization, Mapping):
-        return None
+    organization_candidates: list[tuple[str, str]] = []
+    if effective_tenant_id:
+        organization_candidates.append(("id", effective_tenant_id))
+    if tenant_slug:
+        organization_candidates.append(("alias", tenant_slug))
 
-    organization_id = organization.get("id")
-    if not isinstance(organization_id, str) or not organization_id.strip():
-        return None
-    return organization_id.strip()
+    for lookup_kind, organization_identifier in organization_candidates:
+        if lookup_kind == "id":
+            organization = get_organization_by_id(organization_identifier)
+        else:
+            organization = get_organization_by_alias(organization_identifier)
+
+        if not isinstance(organization, Mapping):
+            continue
+
+        organization_id = organization.get("id")
+        if isinstance(organization_id, str):
+            normalized_organization_id = organization_id.strip()
+            if normalized_organization_id:
+                return normalized_organization_id
+
+    return None
 
 
 def _provision_shared_realm_user_for_tenant(username: str, tenant_id: str | None = None) -> Any | None:
@@ -640,6 +760,8 @@ def qualify_group_identifier(group_identifier: str, tenant_id: str | None = None
     identifier = group_identifier.strip()
     if not identifier:
         return identifier
+    if is_global_permission_group_identifier(identifier):
+        return "super-admin"
     if ":" in identifier:
         prefix, _, remainder = identifier.partition(":")
         if prefix and remainder:
@@ -723,6 +845,8 @@ def display_group_identifier(group_identifier: str) -> str:
 
 def is_group_for_tenant(group_identifier: str, tenant_id: str | None = None) -> bool:
     """True when the group identifier is scoped to the given tenant."""
+    if is_global_permission_group_identifier(group_identifier):
+        return False
     effective_tenant_id = (tenant_id or current_tenant_id_or_none() or "").strip()
     if not effective_tenant_id:
         return False

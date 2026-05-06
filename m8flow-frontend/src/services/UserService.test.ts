@@ -26,6 +26,8 @@ describe('UserService.doLogin', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.resetModules();
+    localStorage.clear();
+    document.cookie = 'm8flow_auth_realm=; Max-Age=0; Path=/';
   });
 
   it('uses the current absolute location without double encoding when redirectUrl is omitted', async () => {
@@ -47,6 +49,15 @@ describe('UserService.doLogin', () => {
     expect(globalThis.location.href).toBe(
       `http://localhost:8000/v1.0/login?redirect_url=${encodeURIComponent(`http://localhost:8001/tasks/24/${TASK_GUID}?tab=details`)}&process_instance_id=24&task_guid=${TASK_GUID}`,
     );
+  });
+
+  it('persists the selected authentication realm when building the login URL', async () => {
+    const UserService = await loadUserService('http://localhost:8001/login');
+
+    UserService.doLogin({ identifier: 'ops-admin', label: 'Master', uri: '' }, '/tenants');
+
+    expect(localStorage.getItem('m8flow_auth_realm')).toBe('ops-admin');
+    expect(document.cookie).toContain('m8flow_auth_realm=ops-admin');
   });
 
   it('returns all organization memberships from the id token', async () => {

@@ -80,7 +80,11 @@ permissions:
     uri: /script-assist/enabled
 
 
-  # Super Admins have access to tenants management only.
+  # Super Admins have access to the frontend and tenants management.
+  super-admin-frontend-access:
+    groups: ["super-admin"]
+    actions: [read]
+    uri: /frontend-access
   super-admin:
     groups: ["super-admin"]
     actions: [all]

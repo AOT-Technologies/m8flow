@@ -11,6 +11,7 @@ from m8flow_backend.services.tenant_identity_helpers import current_tenant_ident
 from m8flow_backend.services.tenant_identity_helpers import current_tenant_id_or_none
 from m8flow_backend.services.tenant_identity_helpers import extract_realm_from_issuer
 from m8flow_backend.services.tenant_identity_helpers import is_group_for_tenant
+from m8flow_backend.services.tenant_identity_helpers import is_global_permission_group_identifier
 from m8flow_backend.services.tenant_identity_helpers import normalize_group_identifiers
 from m8flow_backend.services.tenant_identity_helpers import normalize_group_permissions
 from m8flow_backend.services.tenant_identity_helpers import organization_group_identifiers_from_payload
@@ -19,6 +20,7 @@ from m8flow_backend.services.tenant_identity_helpers import qualify_group_identi
 from m8flow_backend.services.tenant_identity_helpers import qualified_config_group_identifier
 from m8flow_backend.services.tenant_identity_helpers import realm_from_service
 from m8flow_backend.services.tenant_identity_helpers import tenant_id_from_payload
+from m8flow_backend.tenancy import DEFAULT_TENANT_ID
 
 _PATCHED = False
 logger = logging.getLogger(__name__)
@@ -37,7 +39,6 @@ M8FLOW_AUTH_EXCLUSION_ADDITIONS = [
 M8FLOW_ROLE_GROUP_IDENTIFIERS = frozenset(
     {"super-admin", "tenant-admin", "editor", "viewer", "integrator", "reviewer"}
 )
-M8FLOW_GLOBAL_PERMISSION_GROUP_IDENTIFIERS = frozenset({"super-admin"})
 M8FLOW_TENANT_ROLE_ALIASES = {
     "admin": "tenant-admin",
     "tenant-admin": "tenant-admin",
@@ -105,7 +106,7 @@ def _group_identifier_applies_to_active_permission_scope(
     if not normalized_group_identifier:
         return False
 
-    if normalized_group_identifier in M8FLOW_GLOBAL_PERMISSION_GROUP_IDENTIFIERS:
+    if is_global_permission_group_identifier(normalized_group_identifier):
         return True
 
     tenant_identifiers = current_tenant_identifiers(tenant_id)
@@ -218,6 +219,15 @@ def _keycloak_realm_roles_as_groups(user_info: dict[str, Any]) -> list[str]:
     return normalized_roles
 
 
+def _is_master_realm_user_info(user_info: dict[str, Any]) -> bool:
+    """Return whether the token belongs to the configured master realm."""
+    authentication_identifier = authentication_identifier_from_payload(user_info)
+    if authentication_identifier == _master_realm_identifier():
+        return True
+
+    return extract_realm_from_issuer(user_info.get("iss")) == _master_realm_identifier()
+
+
 def _tenant_id_for_user_info(user_info: dict[str, Any]) -> str | None:
     """Resolve the effective tenant for the current sign-in payload."""
     token_tenant = tenant_id_from_payload(user_info)
@@ -225,12 +235,15 @@ def _tenant_id_for_user_info(user_info: dict[str, Any]) -> str | None:
         return token_tenant
 
     context_tenant = current_tenant_id_or_none()
-    if context_tenant:
+    if context_tenant and context_tenant != DEFAULT_TENANT_ID:
         return context_tenant
 
     authentication_identifier = authentication_identifier_from_payload(user_info)
     if authentication_identifier in {_shared_realm_identifier(), _master_realm_identifier()}:
         return None
+
+    if context_tenant:
+        return context_tenant
 
     return extract_realm_from_issuer(user_info.get("iss"))
 
@@ -437,6 +450,13 @@ def _openid_group_identifiers_from_user_info(
             seen_groups.add(normalized_group_name)
             raw_group_identifiers.append(normalized_group_name)
 
+    if _is_master_realm_user_info(user_info):
+        raw_group_identifiers = [
+            group_identifier
+            for group_identifier in raw_group_identifiers
+            if is_global_permission_group_identifier(group_identifier)
+        ]
+
     if authentication_identifier_from_payload(user_info) == _shared_realm_identifier():
         organization_group_identifiers = organization_group_identifiers_from_payload(
             user_info,
@@ -459,7 +479,7 @@ def _openid_group_identifiers_from_user_info(
             raw_group_identifiers = [
                 group_identifier
                 for group_identifier in raw_group_identifiers
-                if group_identifier in M8FLOW_GLOBAL_PERMISSION_GROUP_IDENTIFIERS
+                if is_global_permission_group_identifier(group_identifier)
             ]
 
             seen_groups = set(raw_group_identifiers)
@@ -663,18 +683,18 @@ def apply() -> None:
                 user_attributes.get("service"),
             )
             if conflicting_user is not None:
-                raise ApiError(
-                    error_code="realm_username_already_exists",
-                    message=(
-                        f"Cannot create user '{user_attributes.get('username')}' because it already exists in realm "
-                        f"'{realm_from_service(user_attributes.get('service'))}'."
-                    ),
-                    status_code=409,
+                current_app.logger.warning(
+                    "auth_reuse_same_realm_user: reusing user id=%s username=%s realm=%s instead of creating a duplicate",
+                    getattr(conflicting_user, "id", None),
+                    user_attributes.get("username"),
+                    realm_from_service(user_attributes.get("service")),
                 )
-            current_app.logger.debug("create_user in login_return")
-            user_model = UserService().create_user(**user_attributes)
-            new_user = True
-        else:
+                user_model = conflicting_user
+            else:
+                current_app.logger.debug("create_user in login_return")
+                user_model = UserService().create_user(**user_attributes)
+                new_user = True
+        if user_model is not None:
             user_db_model_changed = False
             for key, value in user_attributes.items():
                 current_value = getattr(user_model, key)
@@ -685,9 +705,16 @@ def apply() -> None:
                 db.session.add(user_model)
                 db.session.commit()
 
+        is_master_realm_user = _is_master_realm_user_info(user_info)
+
         with _permission_scope_tenant(effective_tenant_id):
             desired_group_identifiers: list[str] | Any | None = None
-            if current_app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_IS_AUTHORITY_FOR_USER_GROUPS"]:
+            if is_master_realm_user:
+                desired_group_identifiers = _openid_group_identifiers_from_user_info(
+                    user_info,
+                    tenant_id=effective_tenant_id,
+                )
+            elif current_app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_IS_AUTHORITY_FOR_USER_GROUPS"]:
                 desired_group_identifiers = _openid_group_identifiers_from_user_info(
                     user_info,
                     tenant_id=effective_tenant_id,
@@ -714,14 +741,21 @@ def apply() -> None:
                         if new_group is not None:
                             new_group_ids.add(new_group.id)
 
-                    default_group_identifier = qualified_config_group_identifier(
-                        "SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP",
-                        tenant_id=effective_tenant_id,
-                    )
                     group_ids_to_remove_from_user = []
                     for group in user_model.groups:
                         if group.identifier in desired_group_identifiers:
                             continue
+
+                        if is_master_realm_user:
+                            if is_global_permission_group_identifier(group.identifier):
+                                continue
+                            group_ids_to_remove_from_user.append(group.id)
+                            continue
+
+                        default_group_identifier = qualified_config_group_identifier(
+                            "SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP",
+                            tenant_id=effective_tenant_id,
+                        )
                         if default_group_identifier and group.identifier == default_group_identifier:
                             continue
                         if effective_tenant_id and not is_group_for_tenant(group.identifier, effective_tenant_id):
@@ -732,16 +766,26 @@ def apply() -> None:
                         old_group_ids.add(group_id)
                         UserService.remove_user_from_group(user_model, group_id)
 
-            group_ids_before_yaml_import = {group.id for group in user_model.groups}
-            cls.import_permissions_from_yaml_file(user_model)
+            if is_master_realm_user:
+                for target, permission in (
+                    ("/frontend-access", "read"),
+                    ("/m8flow/tenants", "read"),
+                    ("/m8flow/tenants/*", "all"),
+                    ("/m8flow/tenant-realms", "all"),
+                    ("/m8flow/tenant-realms/*", "all"),
+                ):
+                    cls.add_permission_from_uri_or_macro("super-admin", permission, target)
+            else:
+                group_ids_before_yaml_import = {group.id for group in user_model.groups}
+                cls.import_permissions_from_yaml_file(user_model)
 
-            db.session.expire(user_model, ["groups"])
-            group_ids_after_yaml_import = {group.id for group in user_model.groups}
-            yaml_added_group_ids = group_ids_after_yaml_import - group_ids_before_yaml_import
-            yaml_removed_group_ids = group_ids_before_yaml_import - group_ids_after_yaml_import
+                db.session.expire(user_model, ["groups"])
+                group_ids_after_yaml_import = {group.id for group in user_model.groups}
+                yaml_added_group_ids = group_ids_after_yaml_import - group_ids_before_yaml_import
+                yaml_removed_group_ids = group_ids_before_yaml_import - group_ids_after_yaml_import
 
-            new_group_ids.update(yaml_added_group_ids)
-            old_group_ids.update(yaml_removed_group_ids)
+                new_group_ids.update(yaml_added_group_ids)
+                old_group_ids.update(yaml_removed_group_ids)
 
             if new_user:
                 new_group_ids.update({group.id for group in user_model.groups})

@@ -665,9 +665,8 @@ else
   if /opt/keycloak/bin/kcadm.sh update "realms/${M8FLOW_REALM_NAME}" \
     -s organizationsEnabled=true \
     -s registrationEmailAsUsername=false \
-    -s loginWithEmailAllowed=false \
-    -s duplicateEmailsAllowed=true 2>/dev/null; then
-    echo "[keycloak-entrypoint] Realm ${M8FLOW_REALM_NAME}: organizations, username-only login, and duplicate-email policy set successfully."
+    -s loginWithEmailAllowed=false 2>/dev/null; then
+    echo "[keycloak-entrypoint] Realm ${M8FLOW_REALM_NAME}: organizations and username-only login policy set successfully."
   else
     echo "[keycloak-entrypoint] Realm ${M8FLOW_REALM_NAME}: failed to enforce organizations and username-only login policy." >&2
   fi

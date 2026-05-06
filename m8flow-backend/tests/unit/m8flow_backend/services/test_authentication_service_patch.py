@@ -267,6 +267,23 @@ def test_login_scope_patch_prefers_explicit_requested_tenant_over_existing_selec
     assert scopes == ["openid", "profile", "email", "organization:tenant-b"]
 
 
+def test_authentication_identifier_from_request_uses_realm_hint_cookie_when_auth_cookie_is_missing() -> None:
+    from flask import Flask
+
+    from spiffworkflow_backend.routes import authentication_controller
+
+    from m8flow_backend.services.authentication_service_patch import _authentication_identifier_from_request
+
+    app = Flask(__name__)
+    original = authentication_controller._get_authentication_identifier_from_request
+    authentication_controller._get_authentication_identifier_from_request = lambda: "default"
+    try:
+        with app.test_request_context(path="/v1.0/login", headers={"Cookie": "m8flow_auth_realm=master"}):
+            assert _authentication_identifier_from_request() == "master"
+    finally:
+        authentication_controller._get_authentication_identifier_from_request = original
+
+
 def test_patched_omni_auth_resolves_tenant_before_permission_check(monkeypatch) -> None:
     from flask import Flask, g
 

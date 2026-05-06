@@ -22,7 +22,7 @@ import {
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 import RefreshIcon from "@mui/icons-material/Refresh";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import TenantService, { Tenant, TenantMember, TenantMemberRole } from "../services/TenantService";
 
@@ -61,6 +61,7 @@ export default function TenantRoleDialog({
   const [members, setMembers] = useState<TenantMember[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
   const [pendingRoleKey, setPendingRoleKey] = useState<string | null>(null);
+  const pendingRoleKeyRef = useRef<string | null>(null);
 
   const translate = (
     key: string,
@@ -99,6 +100,7 @@ export default function TenantRoleDialog({
       setMembers([]);
       setErrorMessage("");
       setPendingRoleKey(null);
+      pendingRoleKeyRef.current = null;
       return;
     }
     loadMembers();
@@ -128,6 +130,10 @@ export default function TenantRoleDialog({
       return;
     }
     const mutationKey = `${member.username}:${roleName}`;
+    if (pendingRoleKeyRef.current === mutationKey) {
+      return;
+    }
+    pendingRoleKeyRef.current = mutationKey;
     setPendingRoleKey(mutationKey);
     setErrorMessage("");
     try {
@@ -149,6 +155,7 @@ export default function TenantRoleDialog({
           ),
       );
     } finally {
+      pendingRoleKeyRef.current = null;
       setPendingRoleKey(null);
     }
   };

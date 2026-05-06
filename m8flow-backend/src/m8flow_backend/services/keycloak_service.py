@@ -828,7 +828,7 @@ def add_organization_group_member(
             f"Organization group '{normalized_group_name}' in organization '{organization_id}' has no id."
         )
 
-    requests.put(
+    response = requests.put(
         _shared_realm_organization_groups_url(
             organization_id,
             quote(group_id.strip(), safe=""),
@@ -837,7 +837,16 @@ def add_organization_group_member(
         ),
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
         timeout=30,
-    ).raise_for_status()
+    )
+    if response.status_code == 409:
+        logger.info(
+            "Organization member %s is already assigned to organization group %s in organization %s; ignoring conflict.",
+            member_id,
+            normalized_group_name,
+            organization_id,
+        )
+        return
+    response.raise_for_status()
 
 
 def remove_organization_group_member(

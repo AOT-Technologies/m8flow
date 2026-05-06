@@ -25,6 +25,7 @@ describe('TenantAwareLogin', () => {
     vi.unstubAllGlobals();
     localStorage.clear();
     document.cookie = 'm8flow_selected_tenant=; Max-Age=0; Path=/';
+    document.cookie = 'm8flow_auth_realm=; Max-Age=0; Path=/';
   });
 
   it('auto-redirects to the m8flow login flow when multitenant is disabled', async () => {
@@ -72,6 +73,63 @@ describe('TenantAwareLogin', () => {
       <MemoryRouter
         initialEntries={['/login?authentication_identifier=ops-admin&original_url=/tenants']}
       >
+        <Routes>
+          <Route path="/login" element={<TenantAwareLogin />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(mockDoLogin).toHaveBeenCalledWith(
+        {
+          identifier: 'ops-admin',
+          label: 'Master',
+          uri: '',
+        },
+        '/tenants',
+      );
+    });
+  });
+
+  it('prefers the persisted master-realm hint when no authentication_identifier is present', async () => {
+    mockUseConfig.mockReturnValue({
+      ENABLE_MULTITENANT: true,
+      MASTER_REALM_IDENTIFIER: 'ops-admin',
+      SHARED_REALM_IDENTIFIER: 'shared-users',
+    });
+    mockIsLoggedIn.mockReturnValue(false);
+    localStorage.setItem('m8flow_auth_realm', 'ops-admin');
+
+    render(
+      <MemoryRouter initialEntries={['/login?original_url=/reports']}>
+        <Routes>
+          <Route path="/login" element={<TenantAwareLogin />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(mockDoLogin).toHaveBeenCalledWith(
+        {
+          identifier: 'ops-admin',
+          label: 'Master',
+          uri: '',
+        },
+        '/reports',
+      );
+    });
+  });
+
+  it('uses the master realm for organization-management destinations even without a persisted hint', async () => {
+    mockUseConfig.mockReturnValue({
+      ENABLE_MULTITENANT: true,
+      MASTER_REALM_IDENTIFIER: 'ops-admin',
+      SHARED_REALM_IDENTIFIER: 'shared-users',
+    });
+    mockIsLoggedIn.mockReturnValue(false);
+
+    render(
+      <MemoryRouter initialEntries={['/login?original_url=/tenants']}>
         <Routes>
           <Route path="/login" element={<TenantAwareLogin />} />
         </Routes>

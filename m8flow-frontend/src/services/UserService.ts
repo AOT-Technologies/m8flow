@@ -14,6 +14,7 @@ import { parseTaskShowUrl } from '@spiffworkflow-frontend/helpers';
 // https://dev.to/nilanth/how-to-secure-jwt-in-a-single-page-application-cko
 
 const SIGN_IN_PATH = '/';
+const AUTH_REALM_HINT_STORAGE_KEY = 'm8flow_auth_realm';
 
 export interface OrganizationMembership {
   alias: string;
@@ -81,6 +82,29 @@ const getAccessToken = () => {
 };
 const getAuthenticationIdentifier = () => {
   return getCookie('authentication_identifier');
+};
+
+const getAuthenticationRealmHint = () => {
+  const cookieValue = getCookie(AUTH_REALM_HINT_STORAGE_KEY);
+  if (cookieValue) {
+    return cookieValue;
+  }
+  return localStorage.getItem(AUTH_REALM_HINT_STORAGE_KEY);
+};
+
+const setAuthenticationRealmHint = (identifier: string) => {
+  const normalizedIdentifier = identifier.trim();
+  if (!normalizedIdentifier) {
+    return;
+  }
+
+  document.cookie = `${AUTH_REALM_HINT_STORAGE_KEY}=${encodeURIComponent(normalizedIdentifier)}; Path=/`;
+  localStorage.setItem(AUTH_REALM_HINT_STORAGE_KEY, normalizedIdentifier);
+};
+
+const clearAuthenticationRealmHint = () => {
+  document.cookie = `${AUTH_REALM_HINT_STORAGE_KEY}=; Max-Age=0; Path=/`;
+  localStorage.removeItem(AUTH_REALM_HINT_STORAGE_KEY);
 };
 
 const getDecodedIdToken = (): Record<string, unknown> | null => {
@@ -206,6 +230,7 @@ const doLogin = (
     loginParams.push(`task_guid=${taskShowParams.task_guid}`);
   }
   if (authenticationOption) {
+    setAuthenticationRealmHint(authenticationOption.identifier);
     loginParams.push(
       `authentication_identifier=${authenticationOption.identifier}`,
     );
@@ -216,6 +241,7 @@ const doLogin = (
 
 const doLogout = () => {
   const idToken = getIdToken();
+  clearAuthenticationRealmHint();
 
   const frontendBaseUrl = globalThis.location.origin;
   let logoutRedirectUrl = `${BACKEND_BASE_URL}/logout?redirect_url=${frontendBaseUrl}&id_token=${idToken}&authentication_identifier=${getAuthenticationIdentifier()}`;
@@ -361,6 +387,7 @@ const UserService = {
   doLogout,
   getAccessToken,
   getAuthenticationIdentifier,
+  getAuthenticationRealmHint,
   getCurrentLocation,
   getPreferredUsername,
   getOrganizationMemberships,
