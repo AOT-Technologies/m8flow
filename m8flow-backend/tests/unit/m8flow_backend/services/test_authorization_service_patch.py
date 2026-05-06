@@ -251,6 +251,33 @@ def test_parse_permissions_yaml_into_group_info_qualifies_default_group_referenc
     assert super_admin_group["permissions"][0]["uri"] == "/m8flow/tenants*"
 
 
+def test_parse_permissions_yaml_submitter_includes_process_model_read_dependencies(monkeypatch) -> None:
+    app = Flask(__name__)  # NOSONAR - unit test
+    permissions_path = (
+        Path(__file__).resolve().parents[4] / "src" / "m8flow_backend" / "config" / "permissions" / "m8flow.yml"
+    )
+    app.config["SPIFFWORKFLOW_BACKEND_PERMISSIONS_FILE_ABSOLUTE_PATH"] = str(permissions_path)
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP"] = "spiff_public"
+
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_id_or_none", lambda: "tenant-a")
+
+    with app.app_context():
+        authorization_service_patch.apply()
+        from spiffworkflow_backend.services.authorization_service import AuthorizationService
+
+        group_permissions = AuthorizationService.parse_permissions_yaml_into_group_info()
+
+    group_permissions_by_name = {group["name"]: group for group in group_permissions}
+    submitter_group = group_permissions_by_name["tenant-a:submitter"]
+    submitter_uris = {permission["uri"] for permission in submitter_group["permissions"]}
+
+    assert "/script-assist/*" in submitter_uris
+    assert "/service-tasks/*" in submitter_uris
+    assert "/service-tasks" in submitter_uris
+    assert "/m8flow/templates/process-models/*" in submitter_uris
+
+
 def test_add_permissions_from_group_permissions_keeps_config_unqualified(monkeypatch) -> None:
     app = Flask(__name__)  # NOSONAR - unit test
     app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"

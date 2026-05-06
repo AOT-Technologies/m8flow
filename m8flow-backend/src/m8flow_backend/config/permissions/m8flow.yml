@@ -97,13 +97,17 @@ permissions:
     actions: [read]
     uri: /user-groups/*
   read-script-assist-items:
-    groups: ["tenant-admin", "editor", "viewer", "reviewer"]
+    groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter"]
     actions: [read]
     uri: /script-assist/*
   read-service-tasks:
-    groups: ["tenant-admin", "editor", "viewer"]
+    groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter"]
     actions: [read]
     uri: /service-tasks/*
+  read-service-tasks-root:
+    groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter"]
+    actions: [read]
+    uri: /service-tasks
   manage-data-stores:
     groups: ["tenant-admin", "editor"]
     actions: [all]
@@ -154,6 +158,10 @@ permissions:
     groups: ["viewer"]
     actions: [read]
     uri: /m8flow/templates/*
+  read-template-process-model-template-info:
+    groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter"]
+    actions: [read]
+    uri: /m8flow/templates/process-models/*
   manage-tasks:
     groups: ["tenant-admin", "editor", "reviewer", "submitter"]
     actions: [all]
