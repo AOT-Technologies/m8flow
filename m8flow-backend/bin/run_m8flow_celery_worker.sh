@@ -9,6 +9,31 @@ is_running_in_container() {
   [[ -r /proc/1/cgroup ]] && grep -qaE '(docker|containerd|kubepods)' /proc/1/cgroup
 }
 
+command_exists() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+uv_has_active_environment() {
+  [[ -n "${VIRTUAL_ENV:-}" ]]
+}
+
+run_uv_python() {
+  if uv_has_active_environment; then
+    uv run --active python "$@"
+    return
+  fi
+
+  uv run python "$@"
+}
+
+exec_uv_python() {
+  if uv_has_active_environment; then
+    exec uv run --active python "$@"
+  fi
+
+  exec uv run python "$@"
+}
+
 resolve_repo_relative_path() {
   local path_value="$1"
 
@@ -46,9 +71,19 @@ if [[ "$mode" == "worker" || "$mode" == "flower" ]]; then
   shift
 fi
 
-export PYTHONPATH=./spiffworkflow-backend:$PYTHONPATH
-export PYTHONPATH=./spiffworkflow-backend/src:$PYTHONPATH
-export PYTHONPATH=./m8flow-backend/src:$PYTHONPATH
+use_uv_runner="false"
+if ! is_running_in_container && command_exists uv && [[ "${M8FLOW_BACKEND_USE_UV:-auto}" != "false" ]]; then
+  use_uv_runner="true"
+fi
+if [[ "${M8FLOW_BACKEND_USE_UV:-auto}" == "true" && "$use_uv_runner" != "true" ]]; then
+  echo >&2 "M8FLOW_BACKEND_USE_UV=true was requested but 'uv' is not available."
+  exit 1
+fi
+
+export PYTHONPATH="$repo_root:${PYTHONPATH:-}"
+export PYTHONPATH="$repo_root/spiffworkflow-backend:$PYTHONPATH"
+export PYTHONPATH="$repo_root/spiffworkflow-backend/src:$PYTHONPATH"
+export PYTHONPATH="$repo_root/m8flow-backend/src:$PYTHONPATH"
 
 env_file="$repo_root/.env"
 if [[ -f "$env_file" ]]; then
@@ -103,7 +138,11 @@ fi
 
 if [[ "${M8FLOW_BACKEND_SW_UPGRADE_DB:-}" == "true" ]]; then
   cd "$repo_root/spiffworkflow-backend"
-  python -m flask db upgrade
+  if [[ "$use_uv_runner" == "true" ]]; then
+    run_uv_python -m flask db upgrade
+  else
+    python -m flask db upgrade
+  fi
   cd "$repo_root"
 fi
 
@@ -142,6 +181,10 @@ if [[ "$mode" == "worker" ]]; then
     worker_args+=("--concurrency=$concurrency")
   fi
 
+  if [[ "$use_uv_runner" == "true" ]]; then
+    cd "$repo_root/spiffworkflow-backend"
+    exec_uv_python -m celery -A m8flow_backend.background_processing.celery_worker:celery_app "${worker_args[@]}" "$@"
+  fi
   exec python -m celery -A m8flow_backend.background_processing.celery_worker:celery_app "${worker_args[@]}" "$@"
 fi
 
@@ -172,6 +215,10 @@ if [[ "$mode" == "flower" ]]; then
     flower_args+=("--basic-auth=${M8FLOW_BACKEND_CELERY_FLOWER_BASIC_AUTH}")
   fi
 
+  if [[ "$use_uv_runner" == "true" ]]; then
+    cd "$repo_root/spiffworkflow-backend"
+    exec_uv_python -m celery -A m8flow_backend.background_processing.celery_worker:celery_app "${flower_args[@]}" "$@"
+  fi
   exec python -m celery -A m8flow_backend.background_processing.celery_worker:celery_app "${flower_args[@]}" "$@"
 fi
 
