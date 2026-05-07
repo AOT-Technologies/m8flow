@@ -486,6 +486,74 @@ def test_store_refresh_token_uses_default_storage_scope_for_configured_master(mo
         assert g.m8flow_tenant_id == "ops-admin"
 
 
+def test_store_refresh_token_uses_default_scope_for_master_login_return_without_explicit_tenant(monkeypatch) -> None:
+    import base64
+    import sys
+
+    from flask import Flask, g
+
+    from m8flow_backend.services.authentication_service_patch import _patched_store_refresh_token
+    from m8flow_backend.tenancy import DEFAULT_TENANT_ID
+
+    app = Flask(__name__)
+    seen: dict[str, object] = {}
+
+    class DummyColumn:
+        def __init__(self, name: str):
+            self.name = name
+
+        def __eq__(self, other: object):
+            return (self.name, other)
+
+    class DummyQuery:
+        def filter(self, *args):
+            seen.setdefault("filters", []).extend(args)
+            seen["scoped_tenant"] = getattr(g, "m8flow_tenant_id", None)
+            return self
+
+        def first(self):
+            return None
+
+    class DummyRefreshTokenModel:
+        user_id = DummyColumn("user_id")
+        m8f_tenant_id = DummyColumn("m8f_tenant_id")
+        query = DummyQuery()
+
+        def __init__(self, user_id: int, token: str, m8f_tenant_id: str):
+            self.user_id = user_id
+            self.token = token
+            self.m8f_tenant_id = m8f_tenant_id
+
+    class DummySession:
+        def add(self, obj):
+            seen["added"] = obj
+
+        def commit(self):
+            seen["committed"] = True
+
+        def rollback(self):
+            seen["rolled_back"] = True
+
+    refresh_token_module = ModuleType("spiffworkflow_backend.models.refresh_token")
+    refresh_token_module.RefreshTokenModel = DummyRefreshTokenModel
+    db_module = ModuleType("spiffworkflow_backend.models.db")
+    db_module.db = SimpleNamespace(session=DummySession())
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.models.refresh_token", refresh_token_module)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.models.db", db_module)
+
+    state = base64.b64encode(
+        bytes(str({"authentication_identifier": "master", "final_url": "http://localhost:7001/tenants"}), "utf-8")
+    ).decode("utf-8")
+
+    with app.test_request_context(f"/v1.0/login_return?state={state}"):
+        _patched_store_refresh_token(user_id=7, refresh_token="refresh-token")
+
+        added = seen["added"]
+        assert getattr(added, "m8f_tenant_id") == DEFAULT_TENANT_ID
+        assert seen["scoped_tenant"] == DEFAULT_TENANT_ID
+        assert getattr(g, "m8flow_tenant_id", None) is None
+
+
 def test_get_refresh_token_uses_default_storage_scope_for_master(monkeypatch) -> None:
     import sys
 
@@ -531,6 +599,57 @@ def test_get_refresh_token_uses_default_storage_scope_for_master(monkeypatch) ->
         assert g.m8flow_tenant_id == "master"
 
 
+def test_get_refresh_token_uses_default_storage_scope_for_master_request_without_explicit_tenant(monkeypatch) -> None:
+    import sys
+
+    from flask import Flask, g
+
+    from m8flow_backend.services.authentication_service_patch import _patched_get_refresh_token
+    from m8flow_backend.tenancy import DEFAULT_TENANT_ID
+
+    app = Flask(__name__)
+    seen: dict[str, object] = {}
+
+    class DummyColumn:
+        def __init__(self, name: str):
+            self.name = name
+
+        def __eq__(self, other: object):
+            return (self.name, other)
+
+    class DummyQuery:
+        def filter(self, *args):
+            seen.setdefault("filters", []).extend(args)
+            seen["scoped_tenant"] = getattr(g, "m8flow_tenant_id", None)
+            return self
+
+        def first(self):
+            return SimpleNamespace(token="stored-refresh-token")
+
+    class DummyRefreshTokenModel:
+        user_id = DummyColumn("user_id")
+        m8f_tenant_id = DummyColumn("m8f_tenant_id")
+        query = DummyQuery()
+
+    refresh_token_module = ModuleType("spiffworkflow_backend.models.refresh_token")
+    refresh_token_module.RefreshTokenModel = DummyRefreshTokenModel
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.models.refresh_token", refresh_token_module)
+    monkeypatch.setattr(
+        "m8flow_backend.services.authentication_service_patch._jwt_payload_without_verification",
+        lambda _token: {"iss": "http://localhost:7002/realms/master", "sub": "user-123"},
+    )
+
+    with app.test_request_context(
+        "/v1.0/permissions-check",
+        headers={"Authorization": "Bearer expired-master-token"},
+    ):
+        token = _patched_get_refresh_token(user_id=7)
+
+        assert token == "stored-refresh-token"
+        assert seen["scoped_tenant"] == DEFAULT_TENANT_ID
+        assert getattr(g, "m8flow_tenant_id", None) is None
+
+
 def test_resolve_refresh_token_tenant_prefers_selected_tenant_for_shared_realm(monkeypatch) -> None:
     import base64
 
@@ -549,6 +668,56 @@ def test_resolve_refresh_token_tenant_prefers_selected_tenant_for_shared_realm(m
         environ_overrides={"HTTP_COOKIE": "m8flow_selected_tenant=tenant-a-id"},
     ):
         assert _resolve_refresh_token_tenant_id() == "tenant-a-id"
+
+
+def test_resolve_refresh_token_tenant_returns_master_for_master_realm_cookie_request(monkeypatch) -> None:
+    from flask import Flask
+
+    from spiffworkflow_backend.routes import authentication_controller
+
+    from m8flow_backend.services.authentication_service_patch import _resolve_refresh_token_tenant_id
+
+    app = Flask(__name__)
+    original = authentication_controller._get_authentication_identifier_from_request
+    authentication_controller._get_authentication_identifier_from_request = lambda: "default"
+    try:
+        with app.test_request_context(
+            "/v1.0/permissions-check",
+            headers={"Cookie": "authentication_identifier=master; m8flow_auth_realm=master"},
+        ):
+            assert _resolve_refresh_token_tenant_id() == "master"
+    finally:
+        authentication_controller._get_authentication_identifier_from_request = original
+
+
+def test_resolve_refresh_token_tenant_returns_master_for_master_realm_decoded_token() -> None:
+    from m8flow_backend.services.authentication_service_patch import _resolve_refresh_token_tenant_id
+
+    decoded_token = {
+        "iss": "http://localhost:7002/realms/master",
+        "sub": "user-123",
+    }
+
+    assert _resolve_refresh_token_tenant_id(decoded_token=decoded_token) == "master"
+
+
+def test_resolve_refresh_token_tenant_returns_master_from_bearer_token_payload(monkeypatch) -> None:
+    from flask import Flask
+
+    from m8flow_backend.services.authentication_service_patch import _resolve_refresh_token_tenant_id
+
+    app = Flask(__name__)
+
+    monkeypatch.setattr(
+        "m8flow_backend.services.authentication_service_patch._jwt_payload_without_verification",
+        lambda _token: {"iss": "http://localhost:7002/realms/master", "sub": "user-123"},
+    )
+
+    with app.test_request_context(
+        "/v1.0/permissions-check",
+        headers={"Authorization": "Bearer expired-master-token"},
+    ):
+        assert _resolve_refresh_token_tenant_id() == "master"
 
 
 # ---------------------------------------------------------------------------

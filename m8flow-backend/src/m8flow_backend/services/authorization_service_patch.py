@@ -25,9 +25,13 @@ from m8flow_backend.tenancy import DEFAULT_TENANT_ID
 _PATCHED = False
 logger = logging.getLogger(__name__)
 
-_PERMISSION_SCOPE_TENANT_ID: ContextVar[str | None] = ContextVar(
+# Sentinel that distinguishes "no permission scope active" from "scope explicitly set to None".
+# An explicit None is needed for master-realm sign-ins, which must NOT inherit the request's
+# tenant id (typically the default tenant) when qualifying group identifiers.
+_PERMISSION_SCOPE_TENANT_ID_NOT_SET: object = object()
+_PERMISSION_SCOPE_TENANT_ID: ContextVar[Any] = ContextVar(
     "m8flow_permission_scope_tenant_id",
-    default=None,
+    default=_PERMISSION_SCOPE_TENANT_ID_NOT_SET,
 )
 
 # Endpoints that must be callable without authentication (pre-login tenant selection, tenant login URL,
@@ -57,8 +61,16 @@ def _active_permission_scope_tenant_id(fallback: str | None = None) -> str | Non
     especially during login. In that case, the login token already provides an
     effective tenant id, so the patch stores it in a context variable while
     syncing groups and importing permissions.
+
+    An explicit None scope (set via ``_permission_scope_tenant(None)``) is honored
+    and short-circuits the request-tenant fallback so master-realm code paths,
+    which intentionally have no tenant context, get unqualified group identifiers
+    instead of accidentally being qualified with the default request tenant id.
     """
-    return _PERMISSION_SCOPE_TENANT_ID.get() or fallback or current_tenant_id_or_none()
+    scoped_value = _PERMISSION_SCOPE_TENANT_ID.get()
+    if scoped_value is not _PERMISSION_SCOPE_TENANT_ID_NOT_SET:
+        return scoped_value
+    return fallback or current_tenant_id_or_none()
 
 
 @contextmanager
@@ -101,6 +113,11 @@ def _group_identifier_applies_to_active_permission_scope(
 
     Only explicit global groups stay effective without tenant context. All
     tenant-scoped RBAC groups must be qualified for the active tenant.
+
+    Exception: the default user group ("everybody") is also effective when there
+    is no tenant context.  Master-realm super-admins never have a tenant context,
+    so without this carve-out they would lose all "everybody" permissions even
+    though they are enrolled in the group.
     """
     normalized_group_identifier = group_identifier.strip()
     if not normalized_group_identifier:
@@ -111,7 +128,13 @@ def _group_identifier_applies_to_active_permission_scope(
 
     tenant_identifiers = current_tenant_identifiers(tenant_id)
     if not tenant_identifiers:
-        return False
+        # Allow the bare default-user-group identifier ("everybody") to remain
+        # effective for users who have no tenant context (e.g. master-realm admins).
+        try:
+            default_group = qualified_config_group_identifier("SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP") or ""
+        except RuntimeError:
+            return False
+        return bool(default_group and normalized_group_identifier == default_group)
 
     tenant_prefix, separator, _ = normalized_group_identifier.partition(":")
     return bool(separator and tenant_prefix in tenant_identifiers)
@@ -245,7 +268,13 @@ def _tenant_id_for_user_info(user_info: dict[str, Any]) -> str | None:
     if context_tenant:
         return context_tenant
 
-    return extract_realm_from_issuer(user_info.get("iss"))
+    realm_from_iss = extract_realm_from_issuer(user_info.get("iss"))
+    # Raw Keycloak tokens from the master or shared realm may lack the explicit
+    # m8flow_realm_name claim, so check the iss-derived realm before returning it
+    # as a tenant id.  Master-realm tokens must never be scoped to a tenant.
+    if realm_from_iss in {_shared_realm_identifier(), _master_realm_identifier()}:
+        return None
+    return realm_from_iss
 
 
 def _should_defer_tenant_group_sync(user_info: dict[str, Any], tenant_id: str | None) -> bool:
@@ -749,6 +778,13 @@ def apply() -> None:
                         if is_master_realm_user:
                             if is_global_permission_group_identifier(group.identifier):
                                 continue
+                            # Also preserve the default user group ("everybody") so that
+                            # master realm users keep basic permissions between logins.
+                            master_default_group_id = qualified_config_group_identifier(
+                                "SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"
+                            )
+                            if master_default_group_id and group.identifier == master_default_group_id:
+                                continue
                             group_ids_to_remove_from_user.append(group.id)
                             continue
 
@@ -764,7 +800,17 @@ def apply() -> None:
 
                     for group_id in group_ids_to_remove_from_user:
                         old_group_ids.add(group_id)
-                        UserService.remove_user_from_group(user_model, group_id)
+                        # `remove_user_from_group` raises if the assignment is missing; the
+                        # in-memory user_model.groups list can be stale relative to the DB
+                        # when prior transactions in this flow already removed the row,
+                        # so look it up first and only call when it still exists.
+                        if (
+                            UserGroupAssignmentModel.query.filter_by(
+                                user_id=user_model.id, group_id=group_id
+                            ).first()
+                            is not None
+                        ):
+                            UserService.remove_user_from_group(user_model, group_id)
 
             if is_master_realm_user:
                 for target, permission in (
@@ -775,6 +821,18 @@ def apply() -> None:
                     ("/m8flow/tenant-realms/*", "all"),
                 ):
                     cls.add_permission_from_uri_or_macro("super-admin", permission, target)
+
+                # Import the full YAML permission set so that:
+                # - the "everybody" group is created and the user is enrolled in it, and
+                # - all "everybody" permissions from m8flow.yml (onboarding, active-users, etc.)
+                #   are assigned to the group and become visible at request time via
+                #   _group_identifier_applies_to_active_permission_scope.
+                group_ids_before_yaml_import = {group.id for group in user_model.groups}
+                cls.import_permissions_from_yaml_file(user_model)
+                db.session.expire(user_model, ["groups"])
+                group_ids_after_yaml_import = {group.id for group in user_model.groups}
+                new_group_ids.update(group_ids_after_yaml_import - group_ids_before_yaml_import)
+                old_group_ids.update(group_ids_before_yaml_import - group_ids_after_yaml_import)
             else:
                 group_ids_before_yaml_import = {group.id for group in user_model.groups}
                 cls.import_permissions_from_yaml_file(user_model)

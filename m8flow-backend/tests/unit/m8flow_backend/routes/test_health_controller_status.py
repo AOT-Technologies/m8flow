@@ -3,12 +3,14 @@ from __future__ import annotations
 from datetime import datetime
 from datetime import timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 from flask import Flask
 import jwt
 
 from m8flow_backend.canonical_db import set_canonical_db
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
+from m8flow_backend.routes import authentication_controller_patch as m8_auth_controller_patch
 from m8flow_backend.services import authorization_service_patch
 from m8flow_backend.routes import health_controller_patch
 from m8flow_backend.startup.flask_hooks import register_request_active_hooks
@@ -38,6 +40,7 @@ def _make_status_app(
     register_auth_hook: bool = True,
     register_tenant_resolution_hook: bool = True,
 ) -> Flask:
+    health_controller_patch._PATCHED = False
     app = Flask(__name__)
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -265,12 +268,13 @@ def test_status_endpoint_repairs_stale_same_realm_user_and_returns_frontend_acce
 
 
 def test_status_endpoint_uses_selected_org_for_multi_org_external_token(monkeypatch) -> None:
-    app = _make_status_app()
+    app = _make_status_app(register_auth_hook=False, register_tenant_resolution_hook=False)
 
     with app.app_context():
         db.create_all()
         _seed_tenants()
         authorization_service_patch.apply()
+        health_controller_patch._PATCHED = False
         health_controller_patch.apply(app)
 
         UserService.create_user(
@@ -322,6 +326,71 @@ def test_status_endpoint_uses_selected_org_for_multi_org_external_token(monkeypa
     assert seen["tenant_id"] == ORG_TENANT_ID
     assert f"{ORG_TENANT_ID}:everybody" in seen["principal_group_identifiers"]
     assert f"{OTHER_TENANT_ID}:everybody" not in seen["principal_group_identifiers"]
+
+
+def test_status_endpoint_does_not_clear_auth_cookies_when_external_token_fallback_succeeds(
+    monkeypatch,
+) -> None:
+    app = _make_status_app(register_auth_hook=False, register_tenant_resolution_hook=False)
+    app.config["THREAD_LOCAL_DATA"] = SimpleNamespace()
+
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+        m8_auth_controller_patch._PATCHED = False
+        m8_auth_controller_patch._COOKIE_DOMAIN_PATCHED = False
+        m8_auth_controller_patch._PUBLIC_GROUP_PATCHED = False
+        m8_auth_controller_patch.apply()
+        authorization_service_patch.apply()
+        health_controller_patch._PATCHED = False
+        health_controller_patch.apply(app)
+
+        UserService.create_user(
+            username="admin",
+            service="http://localhost:7002/realms/m8flow",
+            service_id="26b0e310-ea33-4cea-8bfd-a32dc6bc11d4",
+        )
+
+        raw_token = jwt.encode(
+            {
+                "iss": "http://localhost:7002/realms/m8flow",
+                "sub": "26b0e310-ea33-4cea-8bfd-a32dc6bc11d4",
+                "preferred_username": "admin",
+                "groups": ["tenant-admin"],
+                "organization": {
+                    "it": {"id": ORG_TENANT_ID, "groups": ["/tenant-admin"]},
+                    "other-tenant": {"id": OTHER_TENANT_ID, "groups": ["/viewer"]},
+                },
+            },
+            "status-test-secret",
+            algorithm="HS256",
+        )
+
+        verify_called = {"value": False}
+
+        def _fail_verify_token(*_args, **_kwargs):
+            verify_called["value"] = True
+            app.config["THREAD_LOCAL_DATA"].user_has_logged_out = True
+            raise RuntimeError("status verify_token lookup failed for external token")
+
+        monkeypatch.setattr(authentication_controller, "verify_token", _fail_verify_token)
+
+        app.after_request(authentication_controller._set_new_access_token_in_cookie)
+
+    client = app.test_client()
+    client.set_cookie("authentication_identifier", "m8flow")
+    client.set_cookie("m8flow_selected_tenant", ORG_TENANT_ID)
+    app.config["THREAD_LOCAL_DATA"].user_has_logged_out = True
+    response = client.get("/v1.0/status", headers={"Authorization": f"Bearer {raw_token}"})
+
+    assert response.status_code == 200
+    assert response.get_json() == {"ok": True, "can_access_frontend": True}
+    assert verify_called["value"] is False
+    set_cookie_headers = response.headers.getlist("Set-Cookie")
+    assert not any(header.startswith("access_token=;") for header in set_cookie_headers)
+    assert not any(header.startswith("id_token=;") for header in set_cookie_headers)
+    assert not any(header.startswith("authentication_identifier=;") for header in set_cookie_headers)
+    assert not hasattr(app.config["THREAD_LOCAL_DATA"], "user_has_logged_out")
 
 
 def test_status_endpoint_denies_frontend_access_for_other_tenant_group() -> None:

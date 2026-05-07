@@ -786,24 +786,47 @@ function update_browser_execution_requirement() {
   return 1
 }
 
+function set_browser_execution_requirement_by_name() {
+  local realm_name="$1"
+  local display_name="$2"
+  local requirement="$3"
+  local execution_id
+
+  execution_id="$(resolve_browser_execution_id_by_name "${realm_name}" "${display_name}")"
+  if [[ -z "${execution_id}" ]]; then
+    echo ":: Realm ${realm_name}: browser execution '${display_name}' not found; nothing to update."
+    return 0
+  fi
+
+  if update_browser_execution_requirement "${realm_name}" "${execution_id}" "${requirement}"; then
+    echo ":: Realm ${realm_name}: browser execution '${display_name}' set to ${requirement}."
+    return 0
+  fi
+
+  return 1
+}
+
 function disable_shared_realm_identity_first_login() {
   local realm_name="$1"
   local display_name
-  local execution_id
 
   for display_name in "Organization" "Organization Identity-First Login"; do
-    execution_id="$(resolve_browser_execution_id_by_name "${realm_name}" "${display_name}")"
-    if [[ -z "${execution_id}" ]]; then
-      echo ":: Realm ${realm_name}: browser execution '${display_name}' not found; nothing to disable."
-      continue
-    fi
-
-    if update_browser_execution_requirement "${realm_name}" "${execution_id}" "DISABLED"; then
-      echo ":: Realm ${realm_name}: browser execution '${display_name}' disabled."
-    else
+    if ! set_browser_execution_requirement_by_name "${realm_name}" "${display_name}" "DISABLED"; then
       return 1
     fi
   done
+}
+
+function ensure_shared_realm_single_page_login() {
+  local realm_name="$1"
+
+  if ! set_browser_execution_requirement_by_name "${realm_name}" "Username" "DISABLED"; then
+    return 1
+  fi
+
+  if ! set_browser_execution_requirement_by_name "${realm_name}" "Username Password Form" "REQUIRED"; then
+    return 1
+  fi
 }
 
 # Start Keycloak container
@@ -1127,6 +1150,11 @@ fi
 
 if ! disable_shared_realm_identity_first_login "$keycloak_shared_realm_name"; then
   echo >&2 "ERROR: Failed to disable identity-first browser login in realm ${keycloak_shared_realm_name}"
+  exit 1
+fi
+
+if ! ensure_shared_realm_single_page_login "$keycloak_shared_realm_name"; then
+  echo >&2 "ERROR: Failed to enforce single-page browser login in realm ${keycloak_shared_realm_name}"
   exit 1
 fi
 

@@ -51,6 +51,14 @@ Changes should preserve the patch-based architecture:
 - Prefer small, targeted patches over broad rewrites.
 - Preserve compatibility with upstream SpiffArena where practical.
 
+## Keycloak Login UX
+
+- Do not change the Keycloak login experience to a two-step username-then-password flow.
+- For both the `m8flow` realm and the `master` realm, the login page must collect username and password on the same page.
+- If you touch Keycloak themes, browser flows, realm imports, or bootstrap scripts, preserve single-page login by keeping `Username Password Form` active and preventing username-only / identity-first login steps from becoming the user-facing path unless explicitly requested.
+- Do not rely on the upstream/base Keycloak `login-username` page for normal sign-in. Repo-owned theme logic must keep the effective sign-in UX on one page.
+- After Keycloak login/theme/flow changes, verify both realm login pages still render combined username and password fields before considering the work complete.
+
 ## Multi-Tenancy and RBAC
 
 Be careful with tenant and permission-related behavior.

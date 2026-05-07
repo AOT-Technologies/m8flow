@@ -1,5 +1,6 @@
 import base64
 import inspect
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 from urllib.parse import quote
@@ -21,7 +22,15 @@ from m8flow_backend.routes.authentication_controller_patch import (
     apply_refresh_token_tenant_patch,
     apply_login_tenant_patch,
 )
+from m8flow_backend.canonical_db import set_canonical_db
+from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
+from m8flow_backend.services import authorization_service_patch
+from m8flow_backend.startup.flask_hooks import register_request_active_hooks
+from m8flow_backend.startup.flask_hooks import register_request_tenant_context_hooks
+from m8flow_backend.startup.guard import BootPhase
+from m8flow_backend.startup.guard import set_phase
 from m8flow_backend.tenancy import SELECTED_TENANT_COOKIE_NAME
+from spiffworkflow_backend.models.db import db
 
 
 @pytest.fixture
@@ -494,6 +503,113 @@ def test_refresh_token_tenant_patch_auto_provisions_missing_user(monkeypatch) ->
         authentication_controller.login_return = original_login_return
         authentication_controller._get_user_model_from_token = original_get_user_model_from_token
         monkeypatch.setattr(auth_patch_module, "_REFRESH_TOKEN_TENANT_PATCHED", False)
+
+
+def test_protected_requests_refresh_existing_shared_realm_user_from_token_claims(monkeypatch) -> None:
+    org_tenant_id = "7338e743-e0cf-4161-83a4-3b3ff446609b"
+    permissions_path = (
+        Path(__file__).resolve().parents[4] / "src" / "m8flow_backend" / "config" / "permissions" / "m8flow.yml"
+    )
+
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SQLALCHEMY_EXPIRE_ON_COMMIT"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    app.config["SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"] = "/v1.0"
+    app.config["SPIFFWORKFLOW_BACKEND_URL"] = "http://localhost:7000"
+    app.config["SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND"] = "http://localhost:7001"
+    app.config["SPIFFWORKFLOW_BACKEND_USE_AUTH_FOR_METRICS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_IS_AUTHORITY_FOR_USER_GROUPS"] = True
+    app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_TENANT_SPECIFIC_FIELDS"] = []
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP"] = "spiff_public"
+    app.config["SPIFFWORKFLOW_BACKEND_PERMISSIONS_FILE_ABSOLUTE_PATH"] = str(permissions_path)
+    app.config["THREAD_LOCAL_DATA"] = SimpleNamespace()
+
+    db.init_app(app)
+    set_canonical_db(db)
+    set_phase(BootPhase.APP_CREATED)
+    register_request_active_hooks(app)
+    register_request_tenant_context_hooks(app)
+
+    app.add_url_rule("/v1.0/onboarding", "onboarding", lambda: ("ok", 200), methods=["GET"])
+    app.add_url_rule("/v1.0/tasks", "tasks", lambda: ("ok", 200), methods=["GET"])
+
+    decoded_token = {
+        "iss": "http://localhost:7002/realms/m8flow",
+        "sub": "reviewer-subject",
+        "preferred_username": "reviewer",
+        "m8flow_authentication_identifier": "m8flow",
+        "m8flow_tenant_id": org_tenant_id,
+        "groups": ["/reviewer"],
+        "organization": {
+            "it": {"id": org_tenant_id, "groups": ["/reviewer"]},
+        },
+    }
+
+    monkeypatch.setattr(auth_patch_module, "_PATCHED", False)
+    monkeypatch.setattr(auth_patch_module, "_REFRESH_TOKEN_TENANT_PATCHED", False)
+    monkeypatch.setattr(auth_patch_module, "_COOKIE_DOMAIN_PATCHED", False)
+    monkeypatch.setattr(auth_patch_module, "_PUBLIC_GROUP_PATCHED", False)
+    monkeypatch.setattr(authorization_service_patch, "_PATCHED", False)
+    monkeypatch.setattr(authentication_controller, "_get_decoded_token", lambda _token: decoded_token)
+
+    from spiffworkflow_backend.services.authentication_service import AuthenticationService
+    from spiffworkflow_backend.services.user_service import UserService
+    from spiffworkflow_backend.models.user import UserModel
+
+    monkeypatch.setattr(
+        AuthenticationService,
+        "validate_decoded_token",
+        classmethod(lambda cls, decoded, authentication_identifier=None: decoded is decoded_token),
+    )
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(
+            M8flowTenantModel(
+                id=org_tenant_id,
+                name="Information Technology",
+                slug="it",
+                created_by="test",
+                modified_by="test",
+                created_at_in_seconds=1,
+                updated_at_in_seconds=1,
+            )
+        )
+        db.session.commit()
+
+        apply_refresh_token_tenant_patch()
+        auth_patch_module.apply()
+        authorization_service_patch.apply()
+        app.before_request(authentication_controller.omni_auth)
+
+        stale_user = UserService.create_user(
+            username="reviewer",
+            service="http://localhost:7002/realms/m8flow",
+            service_id="reviewer-subject",
+        )
+        assert stale_user.groups == []
+
+    client = app.test_client()
+    client.set_cookie("authentication_identifier", "m8flow")
+
+    onboarding_response = client.get("/v1.0/onboarding", headers={"Authorization": "Bearer stale-reviewer-token"})
+    tasks_response = client.get("/v1.0/tasks", headers={"Authorization": "Bearer stale-reviewer-token"})
+
+    assert onboarding_response.status_code == 200
+    assert tasks_response.status_code == 200
+
+    with app.app_context():
+        refreshed_user = UserModel.query.filter_by(
+            service="http://localhost:7002/realms/m8flow",
+            service_id="reviewer-subject",
+        ).one()
+        assert {group.identifier for group in refreshed_user.groups} >= {
+            f"{org_tenant_id}:everybody",
+            f"{org_tenant_id}:reviewer",
+        }
 
 
 def test_public_group_patch_uses_qualified_group_without_mutating_config(monkeypatch) -> None:

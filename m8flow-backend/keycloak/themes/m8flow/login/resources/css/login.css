@@ -462,6 +462,29 @@
   #kc-form-buttons {
       margin-top: 20px;
   }
+
+  .m8f-master-login-action {
+      width: 100%;
+      margin-top: 20px;
+  }
+
+  .m8f-master-login-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      text-decoration: none;
+  }
+
+  .m8f-master-login-link:hover,
+  .m8f-master-login-link:focus {
+      text-decoration: none;
+  }
+
+  .m8f-master-login-link[aria-disabled="true"] {
+      pointer-events: none;
+      opacity: 0.65;
+  }
   
   .login-pf-page .login-pf-brand {
       margin-top: 20px;

@@ -20,6 +20,8 @@ from m8flow_backend.services.authorization_service_patch import _permission_scop
 from m8flow_backend.services.authorization_service_patch import _normalize_permissions_yaml_config
 from m8flow_backend.services.authorization_service_patch import _should_defer_tenant_group_sync
 from m8flow_backend.services.authorization_service_patch import _tenant_id_for_user_info
+from m8flow_backend.services.authorization_service_patch import _active_permission_scope_tenant_id
+from m8flow_backend.services.authorization_service_patch import _permission_scope_tenant
 from m8flow_backend.services.authorization_service_patch import _username_from_user_info
 from m8flow_backend.services.authorization_service_patch import extract_realm_from_issuer
 from m8flow_backend.tenancy import TENANT_CLAIM
@@ -632,6 +634,71 @@ def test_all_permission_assignments_for_user_includes_frontend_access_for_active
     assert [assignment.grant_type for assignment in permission_assignments] == ["permit"]
 
 
+def test_reviewer_permissions_from_yaml_include_onboarding_for_me_and_tasks_collection(monkeypatch) -> None:
+    app = Flask(__name__)  # NOSONAR - unit test
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SQLALCHEMY_EXPIRE_ON_COMMIT"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"] = "/v1.0"
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP"] = "spiff_public"
+    app.config["SPIFFWORKFLOW_BACKEND_PERMISSIONS_FILE_ABSOLUTE_PATH"] = str(
+        Path(__file__).resolve().parents[4] / "src" / "m8flow_backend" / "config" / "permissions" / "m8flow.yml"
+    )
+
+    from spiffworkflow_backend.models.db import db
+
+    db.init_app(app)
+
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_id_or_none", lambda: "org-id")
+    monkeypatch.setattr(
+        authorization_service_patch,
+        "current_tenant_identifiers",
+        lambda tenant_id=None: {"org-id", "org-alias"},
+    )
+
+    with app.app_context():
+        from spiffworkflow_backend.models.group import GroupModel
+        from spiffworkflow_backend.models.permission_assignment import PermissionAssignmentModel
+        from spiffworkflow_backend.models.permission_target import PermissionTargetModel
+        from spiffworkflow_backend.models.principal import PrincipalModel
+        from spiffworkflow_backend.models.user import UserModel
+        from spiffworkflow_backend.models.user_group_assignment import UserGroupAssignmentModel
+        from spiffworkflow_backend.services.authorization_service import AuthorizationService
+        from spiffworkflow_backend.services.user_service import UserService
+
+        _ = (
+            GroupModel,
+            PermissionAssignmentModel,
+            PermissionTargetModel,
+            PrincipalModel,
+            UserModel,
+            UserGroupAssignmentModel,
+        )
+
+        db.create_all()
+
+        authorization_service_patch.apply()
+
+        user = UserService.create_user(username="reviewer", service="service", service_id="service-id")
+        reviewer_group = UserService.find_or_create_group("org-id:reviewer")
+        everybody_group = UserService.find_or_create_group("org-id:everybody")
+
+        UserService.add_user_to_group(user, reviewer_group)
+        UserService.add_user_to_group(user, everybody_group)
+        AuthorizationService.import_permissions_from_yaml_file(user)
+
+        onboarding_allowed = AuthorizationService.user_has_permission(user, "read", "/v1.0/onboarding")
+        for_me_allowed = AuthorizationService.user_has_permission(user, "create", "/v1.0/process-instances/for-me")
+        tasks_collection_allowed = AuthorizationService.user_has_permission(user, "read", "/v1.0/tasks")
+        task_item_allowed = AuthorizationService.user_has_permission(user, "read", "/v1.0/tasks/123")
+
+    assert onboarding_allowed is True
+    assert for_me_allowed is True
+    assert tasks_collection_allowed is True
+    assert task_item_allowed is True
+
+
 def test_user_service_all_principals_for_user_includes_global_super_admin_without_tenant_context(monkeypatch) -> None:
     app = Flask(__name__)  # NOSONAR - unit test
 
@@ -787,6 +854,9 @@ def test_tenant_scoped_user_does_not_automatically_get_global_super_admin_permis
 
 
 def test_master_realm_create_user_from_sign_in_assigns_global_super_admin_group(monkeypatch) -> None:
+    permissions_path = (
+        Path(__file__).resolve().parents[4] / "src" / "m8flow_backend" / "config" / "permissions" / "m8flow.yml"
+    )
     app = Flask(__name__)  # NOSONAR - unit test
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -794,6 +864,9 @@ def test_master_realm_create_user_from_sign_in_assigns_global_super_admin_group(
     app.config["SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"] = "/v1.0"
     app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_IS_AUTHORITY_FOR_USER_GROUPS"] = True
     app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_TENANT_SPECIFIC_FIELDS"] = []
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP"] = "spiff_public"
+    app.config["SPIFFWORKFLOW_BACKEND_PERMISSIONS_FILE_ABSOLUTE_PATH"] = str(permissions_path)
 
     from spiffworkflow_backend.models.db import db
 
@@ -854,14 +927,74 @@ def test_master_realm_create_user_from_sign_in_assigns_global_super_admin_group(
             "create",
             "/v1.0/m8flow/tenant-realms",
         )
+        # "everybody" permissions must apply for master realm users even though there is no tenant context.
+        # SpiffWorkflow automatically adds all users to "everybody"; m8flow must do the same for super-admins.
+        everybody_active_users_allowed = AuthorizationService.user_has_permission(
+            user, "create", "/v1.0/active-users/ping"
+        )
+        everybody_extensions_allowed = AuthorizationService.user_has_permission(user, "read", "/v1.0/extensions")
 
-    assert group_identifiers == ["super-admin"]
+    assert "everybody" in group_identifiers, f"expected 'everybody' in {group_identifiers}"
+    assert "super-admin" in group_identifiers
     assert "/m8flow/tenants" in permission_targets
     assert "/frontend-access" in permission_targets
     assert permission_allowed is True
     assert child_permission_allowed is True
     assert frontend_access_allowed is True
     assert tenant_realm_create_allowed is True
+    assert everybody_active_users_allowed is True
+    assert everybody_extensions_allowed is True
+
+
+def test_permission_scope_tenant_explicit_none_does_not_fall_through_to_request_tenant(
+    monkeypatch,
+) -> None:
+    """
+    Master-realm sign-ins call ``_permission_scope_tenant(None)`` to opt out of any tenant
+    qualification.  The resolver must honor that explicit None and NOT fall back to the
+    request-context tenant id, otherwise master-realm groups get qualified with the default
+    tenant prefix and master-realm users end up enrolled in ``default:everybody`` instead of
+    the unqualified ``everybody`` group.
+    """
+    monkeypatch.setattr(
+        authorization_service_patch,
+        "current_tenant_id_or_none",
+        lambda: "default",
+    )
+
+    # Without an explicit scope, falls back to the request tenant.
+    assert _active_permission_scope_tenant_id() == "default"
+
+    # An explicit None scope overrides the fallback.
+    with _permission_scope_tenant(None):
+        assert _active_permission_scope_tenant_id() is None
+
+    # Scope reset after the with-block.
+    assert _active_permission_scope_tenant_id() == "default"
+
+    # An explicit string scope still wins.
+    with _permission_scope_tenant("tenant-x"):
+        assert _active_permission_scope_tenant_id() == "tenant-x"
+
+
+def test_group_identifier_applies_to_active_permission_scope_includes_everybody_without_tenant(
+    monkeypatch,
+) -> None:
+    """The bare 'everybody' group must be visible even when there is no tenant context."""
+    app = Flask(__name__)  # NOSONAR - unit test
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
+
+    monkeypatch.setattr(
+        authorization_service_patch,
+        "current_tenant_identifiers",
+        lambda tenant_id=None: set(),
+    )
+
+    with app.app_context():
+        assert _group_identifier_applies_to_active_permission_scope("everybody") is True
+        assert _group_identifier_applies_to_active_permission_scope("super-admin") is True
+        assert _group_identifier_applies_to_active_permission_scope("tenant-a:editor") is False
+        assert _group_identifier_applies_to_active_permission_scope("tenant-admin") is False
 
 
 def test_shared_realm_create_user_from_sign_in_reuses_existing_same_realm_user(monkeypatch) -> None:

@@ -12,6 +12,8 @@ from urllib.parse import urlparse, urlunparse
 import requests
 from security import safe_requests  # type: ignore
 
+from m8flow_backend.services.tenant_identity_helpers import authentication_identifier_from_payload
+from m8flow_backend.services.tenant_identity_helpers import extract_realm_from_issuer
 from m8flow_backend.services.tenant_identity_helpers import organization_scope_for_tenant
 from m8flow_backend.services.tenant_identity_helpers import tenant_id_from_payload
 from spiffworkflow_backend.config import HTTP_REQUEST_TIMEOUT_SECONDS
@@ -439,6 +441,44 @@ def _tenant_from_request_token() -> str | None:
     return tenant_id_from_payload(payload)
 
 
+def _refresh_token_scope_from_payload(payload: dict | None) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+
+    tenant_id = tenant_id_from_payload(payload)
+    if tenant_id:
+        return tenant_id
+
+    authentication_identifier = authentication_identifier_from_payload(payload)
+    if authentication_identifier == _master_realm_identifier():
+        return authentication_identifier
+
+    issuer_realm = extract_realm_from_issuer(payload.get("iss"))
+    if issuer_realm == _master_realm_identifier():
+        return issuer_realm
+
+    return None
+
+
+def _refresh_token_scope_from_request_token() -> str | None:
+    from flask import has_request_context, request
+
+    if not has_request_context():
+        return None
+
+    auth_header = (request.headers.get("Authorization") or "").strip()
+    token: str | None = None
+    if auth_header.startswith("Bearer ") and len(auth_header) > 7:
+        token = auth_header[7:].strip() or None
+    if not token:
+        token = request.cookies.get("access_token")
+    if not token:
+        return None
+
+    payload = _jwt_payload_without_verification(token)
+    return _refresh_token_scope_from_payload(payload)
+
+
 def _authentication_identifier_from_request() -> str | None:
     from flask import has_request_context, request
     from m8flow_backend.tenancy import DEFAULT_TENANT_ID
@@ -497,9 +537,9 @@ def _resolve_refresh_token_tenant_id(
         return tenant_id
 
     if isinstance(decoded_token, dict):
-        claim_tenant = tenant_id_from_payload(decoded_token)
-        if claim_tenant:
-            return claim_tenant
+        refresh_scope = _refresh_token_scope_from_payload(decoded_token)
+        if refresh_scope:
+            return refresh_scope
 
     if has_request_context():
         tenant_from_g = getattr(g, "m8flow_tenant_id", None)
@@ -507,11 +547,14 @@ def _resolve_refresh_token_tenant_id(
             return tenant_from_g
 
     identifier = _authentication_identifier_from_request()
+    if identifier == _master_realm_identifier():
+        return identifier
+
     selected_tenant = _selected_tenant_from_request(identifier)
     if selected_tenant:
         return selected_tenant
 
-    return _tenant_from_request_token()
+    return _refresh_token_scope_from_request_token()
 
 
 def _refresh_token_storage_tenant_id(tenant_id: str | None) -> str | None:

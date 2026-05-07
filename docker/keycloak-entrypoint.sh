@@ -564,24 +564,45 @@ EOF
   return 1
 }
 
-disable_shared_realm_identity_first_login() {
-  local display_name
+set_browser_execution_requirement_by_name() {
+  local realm_name="$1"
+  local display_name="$2"
+  local requirement="$3"
   local execution_id
 
-  for display_name in "Organization" "Organization Identity-First Login"; do
-    execution_id="$(resolve_browser_execution_id_by_name "${M8FLOW_REALM_NAME}" "${display_name}")"
-    if [ -z "${execution_id}" ]; then
-      echo "[keycloak-entrypoint] Realm ${M8FLOW_REALM_NAME}: browser execution '${display_name}' not found; nothing to disable."
-      continue
-    fi
+  execution_id="$(resolve_browser_execution_id_by_name "${realm_name}" "${display_name}")"
+  if [ -z "${execution_id}" ]; then
+    echo "[keycloak-entrypoint] Realm ${realm_name}: browser execution '${display_name}' not found; nothing to update."
+    return 0
+  fi
 
-    if update_browser_execution_requirement "${M8FLOW_REALM_NAME}" "${execution_id}" "DISABLED"; then
-      echo "[keycloak-entrypoint] Realm ${M8FLOW_REALM_NAME}: browser execution '${display_name}' disabled."
-    else
-      echo "[keycloak-entrypoint] Realm ${M8FLOW_REALM_NAME}: failed to disable browser execution '${display_name}'." >&2
+  if update_browser_execution_requirement "${realm_name}" "${execution_id}" "${requirement}"; then
+    echo "[keycloak-entrypoint] Realm ${realm_name}: browser execution '${display_name}' set to ${requirement}."
+    return 0
+  fi
+
+  echo "[keycloak-entrypoint] Realm ${realm_name}: failed to set browser execution '${display_name}' to ${requirement}." >&2
+  return 1
+}
+
+disable_shared_realm_identity_first_login() {
+  local display_name
+
+  for display_name in "Organization" "Organization Identity-First Login"; do
+    if ! set_browser_execution_requirement_by_name "${M8FLOW_REALM_NAME}" "${display_name}" "DISABLED"; then
       return 1
     fi
   done
+}
+
+ensure_shared_realm_single_page_login() {
+  if ! set_browser_execution_requirement_by_name "${M8FLOW_REALM_NAME}" "Username" "DISABLED"; then
+    return 1
+  fi
+
+  if ! set_browser_execution_requirement_by_name "${M8FLOW_REALM_NAME}" "Username Password Form" "REQUIRED"; then
+    return 1
+  fi
 }
 
 echo "[keycloak-entrypoint] Running bootstrap-admin user..."
@@ -676,6 +697,7 @@ else
   ensure_default_organization_seed_members
   ensure_default_organization_seed_roles
   disable_shared_realm_identity_first_login
+  ensure_shared_realm_single_page_login
   echo "[keycloak-entrypoint] Realm configuration complete."
 fi
 

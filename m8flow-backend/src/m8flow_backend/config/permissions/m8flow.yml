@@ -227,6 +227,10 @@ permissions:
     groups: ["tenant-admin", "editor", "reviewer"]
     actions: [all]
     uri: /tasks/*
+  read-task-list:
+    groups: ["tenant-admin", "editor", "viewer", "reviewer"]
+    actions: [read]
+    uri: /tasks
   read-tasks:
     groups: ["viewer"]
     actions: [read]

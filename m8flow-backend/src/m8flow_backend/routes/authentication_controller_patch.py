@@ -174,14 +174,22 @@ def apply_cookie_domain_patch() -> None:
 
     original = authentication_controller._set_new_access_token_in_cookie
 
+    def _is_auth_cookie_clear_header(header: str) -> bool:
+        return header.startswith("access_token=;") or header.startswith("id_token=;") or header.startswith(
+            "authentication_identifier=;"
+        )
+
     @wraps(original)
     def patched_set_new_access_token_in_cookie(response):
         """Set auth cookies using a host-only or normalized frontend domain as needed."""
         from flask import current_app
+        from flask import g
+        from flask import has_request_context
 
         frontend_url = str(current_app.config.get("SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND", ""))
         cookie_domain = _frontend_cookie_domain(frontend_url)
         patched_frontend_url = "localhost" if cookie_domain is None else f"https://{cookie_domain}"
+        preserve_auth_cookies = has_request_context() and bool(getattr(g, "_m8flow_preserve_auth_cookies", False))
 
         # Read TLD before original() clears it via _clear_auth_tokens_from_thread_local_data.
         tld = current_app.config.get("THREAD_LOCAL_DATA")
@@ -192,6 +200,17 @@ def apply_cookie_domain_patch() -> None:
 
         with _temporary_frontend_url(patched_frontend_url):
             result = original(response)
+
+        if preserve_auth_cookies:
+            set_cookie_headers = result.headers.getlist("Set-Cookie")
+            filtered_set_cookie_headers = [
+                header for header in set_cookie_headers if not _is_auth_cookie_clear_header(header)
+            ]
+            if len(filtered_set_cookie_headers) != len(set_cookie_headers):
+                if "Set-Cookie" in result.headers:
+                    del result.headers["Set-Cookie"]
+                for header in filtered_set_cookie_headers:
+                    result.headers.add("Set-Cookie", header)
 
         cookies_after = len(result.headers.getlist("Set-Cookie"))
         if cookies_after != cookies_before:
@@ -312,6 +331,30 @@ def _temporary_request_tenant(tenant_id: str | None):
             g.m8flow_tenant_id = previous
 
 
+def _token_contains_authoritative_membership_claims(decoded_token: dict | None) -> bool:
+    """Return whether the token can safely refresh local group memberships."""
+    if not isinstance(decoded_token, dict):
+        return False
+
+    groups = decoded_token.get("groups")
+    if isinstance(groups, list) and any(isinstance(group, str) and group.strip() for group in groups):
+        return True
+
+    organization = decoded_token.get("organization")
+    if isinstance(organization, dict) and organization:
+        return True
+    if isinstance(organization, list) and organization:
+        return True
+
+    realm_access = decoded_token.get("realm_access")
+    if isinstance(realm_access, dict):
+        roles = realm_access.get("roles")
+        if isinstance(roles, list) and any(isinstance(role, str) and role.strip() for role in roles):
+            return True
+
+    return False
+
+
 def apply_refresh_token_tenant_patch() -> None:
     """
     Ensure refresh-token operations have tenant context during auth controller
@@ -382,7 +425,7 @@ def apply_refresh_token_tenant_patch() -> None:
         tenant_id = _tenant_for_refresh_tokens(decoded_token=decoded_token)
         with _temporary_request_tenant(tenant_id):
             try:
-                return original_get_user_model_from_token(decoded_token)
+                user_model = original_get_user_model_from_token(decoded_token)
             except Exception as exc:
                 from spiffworkflow_backend.exceptions.api_error import ApiError
 
@@ -400,6 +443,25 @@ def apply_refresh_token_tenant_patch() -> None:
                     decoded_token.get("sub"),
                 )
                 return user_model
+
+            if not _token_contains_authoritative_membership_claims(decoded_token):
+                return user_model
+
+            from spiffworkflow_backend.models.user import UserModel
+            from spiffworkflow_backend.services.authorization_service import AuthorizationService
+
+            issuer = decoded_token.get("iss")
+            if not isinstance(issuer, str) or issuer == UserModel.spiff_generated_jwt_issuer():
+                return user_model
+
+            refreshed_user = AuthorizationService.create_user_from_sign_in(decoded_token)
+            logger.info(
+                "refresh_token_tenant_patch: refreshed existing user from token issuer=%s subject=%s user_id=%s",
+                decoded_token.get("iss"),
+                decoded_token.get("sub"),
+                getattr(refreshed_user, "id", None),
+            )
+            return refreshed_user
 
     authentication_controller.login_return = patched_login_return  # type: ignore[assignment]
     authentication_controller._get_user_model_from_token = patched_get_user_model_from_token  # type: ignore[assignment]

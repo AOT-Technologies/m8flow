@@ -3,8 +3,17 @@
     <#if section = "header">
         ${msg("loginAccountTitle")}
     <#elseif section = "form">
+        <#assign isMasterRealmLogin = url.loginAction?contains("/realms/master/")>
+        <#assign isM8flowRealmLogin = url.loginAction?contains("/realms/m8flow/")>
         <div id="kc-form">
           <div id="kc-form-wrapper">
+            <#if usernameHidden??>
+                <div
+                    id="m8f-hidden-username-login"
+                    data-login-restart-url="${url.loginRestartFlowUrl}"
+                    hidden
+                ></div>
+            </#if>
             <#if realm.password>
                 <form id="kc-form-login" onsubmit="login.disabled = true; return true;" action="${url.loginAction}" method="post">
                     <#if !usernameHidden??>
@@ -73,11 +82,36 @@
                           <input type="hidden" id="id-hidden-input" name="credentialId" <#if auth.selectedCredential?has_content>value="${auth.selectedCredential}"</#if>/>
                           <input tabindex="7" class="${properties.kcButtonClass!} ${properties.kcButtonPrimaryClass!} ${properties.kcButtonBlockClass!} ${properties.kcButtonLargeClass!}" name="login" id="kc-login" type="submit" value="${msg("doLogIn")}"/>
                       </div>
+                      <#if isMasterRealmLogin>
+                          <div class="m8f-master-login-action">
+                              <a
+                                  id="m8f-master-login-button"
+                                  class="${properties.kcButtonClass!} ${properties.kcButtonPrimaryClass!} ${properties.kcButtonBlockClass!} ${properties.kcButtonLargeClass!} m8f-master-login-link"
+                                  data-master-realm="m8flow"
+                                  data-platform-admin-path="/"
+                                  href="#"
+                                  aria-disabled="true"
+                              >${msg("m8flowRegularUserSignIn")}</a>
+                          </div>
+                      <#elseif isM8flowRealmLogin>
+                          <div class="m8f-master-login-action">
+                              <a
+                                  id="m8f-master-login-button"
+                                  class="${properties.kcButtonClass!} ${properties.kcButtonPrimaryClass!} ${properties.kcButtonBlockClass!} ${properties.kcButtonLargeClass!} m8f-master-login-link"
+                                  data-master-realm="master"
+                                  data-platform-admin-path="/tenants"
+                                  href="#"
+                                  aria-disabled="true"
+                              >${msg("platformAdminSignIn")}</a>
+                          </div>
+                      </#if>
                 </form>
             </#if>
             </div>
         </div>
         <script type="module" src="${url.resourcesPath}/js/passwordVisibility.js"></script>
+        <script type="module" src="${url.resourcesPath}/js/restartHiddenUsernameLogin.js"></script>
+        <script type="module" src="${url.resourcesPath}/js/masterRealmLogin.js"></script>
     <#elseif section = "info" >
         <#if realm.password && realm.registrationAllowed && !registrationDisabled??>
             <div id="kc-registration-container">

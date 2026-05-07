@@ -13,6 +13,7 @@ from m8flow_backend.services.keycloak_service import (
     remove_organization_group_member,
     search_organization_members,
 )
+from m8flow_backend.services.authorization_service_patch import _permission_scope_tenant
 from m8flow_backend.services.tenant_identity_helpers import (
     qualify_group_identifier,
     upsert_local_shared_realm_member,
@@ -21,6 +22,7 @@ from m8flow_backend.services.tenant_service import TenantService
 from spiffworkflow_backend.exceptions.api_error import ApiError
 from spiffworkflow_backend.models.db import db
 from spiffworkflow_backend.models.user_group_assignment import UserGroupAssignmentModel
+from spiffworkflow_backend.services.authorization_service import AuthorizationService
 from spiffworkflow_backend.services.user_service import UserService
 
 
@@ -136,6 +138,20 @@ def _ensure_local_assignment(user: Any, group: Any, tenant_id: str) -> bool:
     return True
 
 
+def _ensure_tenant_yaml_permissions_and_everybody_membership(user: Any, tenant_id: str) -> None:
+    """
+    Ensure the user is enrolled in the tenant's "everybody" group with YAML permissions applied.
+
+    `assign_tenant_role` only writes the requested role group (e.g. ":editor").
+    Without this step the tenant's ":everybody" group is never created and the user
+    cannot reach permissions like /onboarding, /extensions, /active-users, etc. that
+    SpiffWorkflow grants to every signed-in user.  Run the YAML import inside the
+    target tenant's permission scope so groups and permissions are tenant-qualified.
+    """
+    with _permission_scope_tenant(tenant_id):
+        AuthorizationService.import_permissions_from_yaml_file(user)
+
+
 def _delete_local_assignment(user: Any, group: Any, tenant_id: str) -> bool:
     assignment = _local_assignment_query(user, group, tenant_id).first()
     if assignment is None:
@@ -220,6 +236,11 @@ def assign_tenant_role(tenant_id: str, username: str, role_name: str) -> dict[st
             new_group_ids={group.id},
             old_group_ids=set(),
         )
+
+    # Ensure the tenant's "everybody" group exists, has its YAML permissions, and
+    # the user is enrolled in it. Without this the user only gets the explicit
+    # role group and is denied basic SpiffWorkflow endpoints (/onboarding, etc.).
+    _ensure_tenant_yaml_permissions_and_everybody_membership(local_user, tenant.id)
 
     current_roles = _normalized_member_roles(organization_id, member_id.strip())
     updated_roles = sorted(set(current_roles).union({normalized_role_name}))

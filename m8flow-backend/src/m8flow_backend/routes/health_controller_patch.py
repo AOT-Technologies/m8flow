@@ -17,6 +17,7 @@ from flask import current_app
 from m8flow_backend.services.tenant_context_middleware import resolve_request_tenant
 from m8flow_backend.tenancy import SELECTED_TENANT_COOKIE_NAME
 from m8flow_backend.tenancy import TENANT_CLAIM
+from m8flow_backend.tenancy import reset_context_tenant_id
 from m8flow_backend.tenancy import set_context_tenant_id
 
 _PATCHED = False
@@ -101,8 +102,6 @@ def _synchronize_status_token_to_selected_tenant(decoded_token: dict[str, Any] |
 
 
 def _bind_status_tenant_context(decoded_token: dict[str, Any] | None) -> None:
-    if getattr(g, "m8flow_tenant_id", None):
-        return
     if not isinstance(decoded_token, dict):
         return
 
@@ -113,9 +112,42 @@ def _bind_status_tenant_context(decoded_token: dict[str, Any] | None) -> None:
     if not canonical_tenant_id:
         return
 
+    existing_tenant_id = getattr(g, "m8flow_tenant_id", None)
+    existing_ctx_token = getattr(g, "_m8flow_ctx_token", None)
+    if existing_tenant_id == canonical_tenant_id and existing_ctx_token is not None:
+        return
+
+    if existing_ctx_token is not None:
+        reset_context_tenant_id(existing_ctx_token)
+
+    g._m8flow_global_request = False
     g.m8flow_tenant_id = canonical_tenant_id
-    if getattr(g, "_m8flow_ctx_token", None) is None:
-        g._m8flow_ctx_token = set_context_tenant_id(canonical_tenant_id)
+    g._m8flow_ctx_token = set_context_tenant_id(canonical_tenant_id)
+
+
+def _should_verify_status_token(decoded_token: dict[str, Any] | None) -> bool:
+    """
+    Only run the upstream token verifier when we do not already have a decoded
+    external identity token we can safely use for status checks.
+
+    Upstream ``verify_token()`` marks the request as logged out on validation
+    failures and the after-request cookie hook then clears auth cookies. That is
+    correct for ordinary protected endpoints, but the status endpoint is auth
+    exempt and already has enough information to resolve frontend access from a
+    decoded external token plus selected-tenant context.
+    """
+    if not isinstance(decoded_token, dict):
+        return True
+
+    issuer = decoded_token.get("iss")
+    if not isinstance(issuer, str) or not issuer.strip():
+        return True
+
+    backend_issuer = str(current_app.config.get("SPIFFWORKFLOW_BACKEND_URL", "")).strip().rstrip("/")
+    if not backend_issuer:
+        return True
+
+    return issuer.strip().rstrip("/") == backend_issuer
 
 
 def _log_status_frontend_access_state(
@@ -141,6 +173,34 @@ def _log_status_frontend_access_state(
         organization_keys,
         can_access_frontend,
     )
+
+
+def _status_request_has_auth_context(decoded_token: dict[str, Any] | None, user: Any | None) -> bool:
+    if user is not None:
+        return True
+    if isinstance(decoded_token, dict) and bool(decoded_token):
+        return True
+
+    authorization_header = request.headers.get("Authorization")
+    if isinstance(authorization_header, str) and authorization_header.strip():
+        return True
+
+    return bool(getattr(g, "authenticated", False))
+
+
+def _preserve_status_auth_cookies_for_external_token(_decoded_token: dict[str, Any] | None) -> None:
+    """
+    Prevent the auth-exempt status endpoint from clearing auth cookies.
+
+    Upstream after-request cookie handling treats ``user_has_logged_out`` as a
+    signal to expire auth cookies. That is correct for protected endpoints, but
+    ``/v1.0/status`` is auth exempt and should never be the request that clears
+    an otherwise-usable session or forces a redirect loop.
+    """
+    g._m8flow_preserve_auth_cookies = True
+    tld = current_app.config.get("THREAD_LOCAL_DATA")
+    if tld is not None and hasattr(tld, "user_has_logged_out"):
+        delattr(tld, "user_has_logged_out")
 
 
 def apply(flask_app: Any | None = None) -> None:
@@ -172,16 +232,40 @@ def apply(flask_app: Any | None = None) -> None:
         user = getattr(g, "user", None)
         _log_status_frontend_access_state(stage="post_tenant_resolution", user=user, decoded_token=decoded_token)
         if user is None:
-            try:
-                verified_decoded_token = authentication_controller.verify_token(force_run=True)
-                if isinstance(verified_decoded_token, dict):
-                    decoded_token = _synchronize_status_token_to_selected_tenant(verified_decoded_token)
-                    g._m8flow_decoded_token = decoded_token
-                    _bind_status_tenant_context(decoded_token)
-                user = getattr(g, "user", None)
-            except Exception:
-                logger.info("health_controller_patch: status request has no verified authenticated user", exc_info=True)
+            if _should_verify_status_token(decoded_token):
+                try:
+                    verified_decoded_token = authentication_controller.verify_token(force_run=True)
+                    if isinstance(verified_decoded_token, dict):
+                        decoded_token = _synchronize_status_token_to_selected_tenant(verified_decoded_token)
+                        g._m8flow_decoded_token = decoded_token
+                        _bind_status_tenant_context(decoded_token)
+                    user = getattr(g, "user", None)
+                except Exception:
+                    logger.info("health_controller_patch: status request has no verified authenticated user", exc_info=True)
+            else:
+                logger.debug(
+                    "health_controller_patch: skipping verify_token for external decoded status token issuer=%s",
+                    decoded_token.get("iss") if isinstance(decoded_token, dict) else None,
+                )
             _log_status_frontend_access_state(stage="post_verify_token", user=user, decoded_token=decoded_token)
+
+        if user is None and isinstance(decoded_token, dict):
+            try:
+                resolved_user = authentication_controller._get_user_model_from_token(decoded_token)
+                if resolved_user is not None:
+                    user = resolved_user
+                    g.user = resolved_user
+                    logger.info(
+                        "health_controller_patch: resolved user from decoded status token user_id=%s username=%s",
+                        getattr(resolved_user, "id", None),
+                        getattr(resolved_user, "username", None),
+                    )
+            except Exception:
+                logger.info(
+                    "health_controller_patch: failed to resolve user model from decoded status token",
+                    exc_info=True,
+                )
+            _log_status_frontend_access_state(stage="post_user_lookup", user=user, decoded_token=decoded_token)
 
         if user is None and isinstance(decoded_token, dict):
             try:
@@ -199,7 +283,7 @@ def apply(flask_app: Any | None = None) -> None:
                 )
             _log_status_frontend_access_state(stage="post_user_sync", user=user, decoded_token=decoded_token)
 
-        can_access_frontend = True
+        can_access_frontend = not _status_request_has_auth_context(decoded_token, user)
         if user is not None:
             can_access_frontend = AuthorizationService.user_has_permission(
                 user=user,
@@ -240,6 +324,7 @@ def apply(flask_app: Any | None = None) -> None:
                     can_access_frontend=can_access_frontend,
                 )
 
+        _preserve_status_auth_cookies_for_external_token(decoded_token)
         return make_response({"ok": True, "can_access_frontend": can_access_frontend}, 200)
 
     health_controller.status = patched_status

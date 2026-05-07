@@ -530,24 +530,45 @@ EOF
   return 1
 }
 
-disable_shared_realm_identity_first_login() {
-  local display_name
+set_browser_execution_requirement_by_name() {
+  local realm_name="$1"
+  local display_name="$2"
+  local requirement="$3"
   local execution_id
 
-  for display_name in "Organization" "Organization Identity-First Login"; do
-    execution_id="$(resolve_browser_execution_id_by_name "${SHARED_REALM}" "${display_name}")"
-    if [ -z "${execution_id}" ]; then
-      echo "[keycloak-init-realms] Realm ${SHARED_REALM}: browser execution '${display_name}' not found; nothing to disable."
-      continue
-    fi
+  execution_id="$(resolve_browser_execution_id_by_name "${realm_name}" "${display_name}")"
+  if [ -z "${execution_id}" ]; then
+    echo "[keycloak-init-realms] Realm ${realm_name}: browser execution '${display_name}' not found; nothing to update."
+    return 0
+  fi
 
-    if update_browser_execution_requirement "${SHARED_REALM}" "${execution_id}" "DISABLED"; then
-      echo "[keycloak-init-realms] Realm ${SHARED_REALM}: browser execution '${display_name}' disabled."
-    else
-      echo "[keycloak-init-realms] Realm ${SHARED_REALM}: failed to disable browser execution '${display_name}'." >&2
+  if update_browser_execution_requirement "${realm_name}" "${execution_id}" "${requirement}"; then
+    echo "[keycloak-init-realms] Realm ${realm_name}: browser execution '${display_name}' set to ${requirement}."
+    return 0
+  fi
+
+  echo "[keycloak-init-realms] Realm ${realm_name}: failed to set browser execution '${display_name}' to ${requirement}." >&2
+  return 1
+}
+
+disable_shared_realm_identity_first_login() {
+  local display_name
+
+  for display_name in "Organization" "Organization Identity-First Login"; do
+    if ! set_browser_execution_requirement_by_name "${SHARED_REALM}" "${display_name}" "DISABLED"; then
       return 1
     fi
   done
+}
+
+ensure_shared_realm_single_page_login() {
+  if ! set_browser_execution_requirement_by_name "${SHARED_REALM}" "Username" "DISABLED"; then
+    return 1
+  fi
+
+  if ! set_browser_execution_requirement_by_name "${SHARED_REALM}" "Username Password Form" "REQUIRED"; then
+    return 1
+  fi
 }
 
 echo "[keycloak-init-realms] Waiting for Keycloak admin API at ${BASE} (up to ${TIMEOUT}s)..."
@@ -587,4 +608,5 @@ ensure_all_organization_role_groups "${SHARED_REALM}"
 ensure_default_organization_seed_members
 ensure_default_organization_seed_roles
 disable_shared_realm_identity_first_login
+ensure_shared_realm_single_page_login
 echo "[keycloak-init-realms] Realm configuration complete."

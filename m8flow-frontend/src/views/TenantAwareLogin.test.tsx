@@ -6,6 +6,7 @@ import TenantAwareLogin from './TenantAwareLogin';
 
 const mockUseConfig = vi.fn();
 const mockDoLogin = vi.fn();
+const mockGetAuthenticationRealmHint = vi.fn();
 const mockIsLoggedIn = vi.fn();
 
 vi.mock('../utils/useConfig', () => ({
@@ -15,6 +16,7 @@ vi.mock('../utils/useConfig', () => ({
 vi.mock('../services/UserService', () => ({
   default: {
     doLogin: (...args: unknown[]) => mockDoLogin(...args),
+    getAuthenticationRealmHint: () => mockGetAuthenticationRealmHint(),
     isLoggedIn: () => mockIsLoggedIn(),
   },
 }));
@@ -35,6 +37,7 @@ describe('TenantAwareLogin', () => {
       SHARED_REALM_IDENTIFIER: 'shared-users',
     });
     mockIsLoggedIn.mockReturnValue(false);
+    mockGetAuthenticationRealmHint.mockReturnValue('');
     localStorage.setItem('m8flow_tenant', 'it');
     localStorage.setItem('m8f_tenant_id', 'it');
 
@@ -68,6 +71,7 @@ describe('TenantAwareLogin', () => {
       SHARED_REALM_IDENTIFIER: 'shared-users',
     });
     mockIsLoggedIn.mockReturnValue(false);
+    mockGetAuthenticationRealmHint.mockReturnValue('');
 
     render(
       <MemoryRouter
@@ -98,7 +102,7 @@ describe('TenantAwareLogin', () => {
       SHARED_REALM_IDENTIFIER: 'shared-users',
     });
     mockIsLoggedIn.mockReturnValue(false);
-    localStorage.setItem('m8flow_auth_realm', 'ops-admin');
+    mockGetAuthenticationRealmHint.mockReturnValue('ops-admin');
 
     render(
       <MemoryRouter initialEntries={['/login?original_url=/reports']}>
@@ -127,6 +131,7 @@ describe('TenantAwareLogin', () => {
       SHARED_REALM_IDENTIFIER: 'shared-users',
     });
     mockIsLoggedIn.mockReturnValue(false);
+    mockGetAuthenticationRealmHint.mockReturnValue('');
 
     render(
       <MemoryRouter initialEntries={['/login?original_url=/tenants']}>
@@ -155,6 +160,7 @@ describe('TenantAwareLogin', () => {
       SHARED_REALM_IDENTIFIER: 'shared-users',
     });
     mockIsLoggedIn.mockReturnValue(false);
+    mockGetAuthenticationRealmHint.mockReturnValue('');
     document.cookie = 'm8flow_selected_tenant=tenant-a-id';
     localStorage.setItem('m8flow_tenant', 'tenant-a');
     localStorage.setItem('m8f_tenant_id', 'tenant-a-id');
@@ -199,6 +205,7 @@ describe('TenantAwareLogin', () => {
       SHARED_REALM_IDENTIFIER: 'shared-users',
     });
     mockIsLoggedIn.mockReturnValue(true);
+    mockGetAuthenticationRealmHint.mockReturnValue('');
 
     const replaceMock = vi.fn();
     vi.stubGlobal('location', {
