@@ -8,8 +8,21 @@
                 <div
                     id="m8f-username-only-login"
                     data-login-restart-url="${url.loginRestartFlowUrl}"
+                    data-login-restart-fallback-id="m8f-hidden-username-login-fallback"
                     hidden
                 ></div>
+                <div
+                    id="m8f-hidden-username-login-fallback"
+                    class="m8f-hidden-username-login-fallback"
+                >
+                    <p class="instruction">${msg("hiddenUsernameLoginFallback")}</p>
+                    <div class="${properties.kcFormGroupClass!}">
+                        <a
+                            class="${properties.kcButtonClass!} ${properties.kcButtonPrimaryClass!} ${properties.kcButtonBlockClass!} ${properties.kcButtonLargeClass!}"
+                            href="${url.loginRestartFlowUrl}"
+                        >${msg("returnToFullSignIn")}</a>
+                    </div>
+                </div>
                 <noscript>
                     <div class="${properties.kcFormGroupClass!}">
                         <a

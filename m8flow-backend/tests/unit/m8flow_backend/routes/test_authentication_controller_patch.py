@@ -1000,3 +1000,77 @@ def test_tenant_finalization_falls_back_to_standard_login_when_session_cannot_be
     assert result is not None
     assert result.status_code == 302
     assert result.headers["Location"] == "https://keycloak/auth?response_type=code&client_id=app&scope=openid+profile+email"
+
+
+def test_tenant_finalization_falls_back_to_standard_login_when_session_lacks_organization_memberships(
+    monkeypatch,
+) -> None:
+    app = Flask(__name__)
+    app.config["SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"] = "/v1.0"
+    app.config["SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND"] = "https://app.example.com"
+    monkeypatch.setenv("M8FLOW_KEYCLOAK_SHARED_REALM", "shared-users")
+
+    captured: dict[str, object] = {"create_user_called": False}
+
+    def fake_get_login_redirect_url(self, authentication_identifier, final_url=None):
+        captured["auth_id"] = authentication_identifier
+        captured["final_url"] = final_url
+        return "https://keycloak/auth?response_type=code&client_id=app&scope=openid+profile+email"
+
+    def fake_parse_jwt_token(authentication_identifier, token):
+        captured["parsed_auth_identifier"] = authentication_identifier
+        captured["parsed_token"] = token
+        return {
+            "iss": "http://localhost:7002/realms/shared-users",
+            "sub": "user-1",
+            "preferred_username": "admin",
+        }
+
+    def fake_create_user_from_sign_in(decoded_token):
+        captured["create_user_called"] = True
+        captured["decoded_token"] = decoded_token
+        return object()
+
+    with (
+        app.test_request_context(
+            path="/v1.0/login?tenant=tenant-a&tenant_finalization=1&authentication_identifier=shared-users",
+            method="GET",
+            environ_overrides={
+                "HTTP_COOKIE": (
+                    "authentication_identifier=shared-users; "
+                    "access_token=existing-access-token"
+                )
+            },
+        ),
+        patch(
+            "m8flow_backend.services.tenant_service.TenantService.check_tenant_exists",
+            return_value={"exists": True, "tenant_id": "tenant-a-id"},
+        ),
+        patch(
+            "spiffworkflow_backend.services.authentication_service.AuthenticationService.parse_jwt_token",
+            fake_parse_jwt_token,
+        ),
+        patch(
+            "spiffworkflow_backend.services.authentication_service.AuthenticationService.get_login_redirect_url",
+            fake_get_login_redirect_url,
+        ),
+        patch(
+            "spiffworkflow_backend.services.authorization_service.AuthorizationService.create_user_from_sign_in",
+            fake_create_user_from_sign_in,
+        ),
+    ):
+        result = _handle_tenant_login_request(app)
+
+    assert result is not None
+    assert result.status_code == 302
+    assert result.headers["Location"] == "https://keycloak/auth?response_type=code&client_id=app&scope=openid+profile+email"
+    assert captured["auth_id"] == "shared-users"
+    assert captured["final_url"] == "https://app.example.com"
+    assert captured["parsed_auth_identifier"] == "shared-users"
+    assert captured["parsed_token"] == "existing-access-token"
+    assert captured["create_user_called"] is False
+    cookie_headers = result.headers.getlist("Set-Cookie")
+    assert any(
+        f"{SELECTED_TENANT_COOKIE_NAME}=tenant-a-id" in header and "Path=/" in header
+        for header in cookie_headers
+    )

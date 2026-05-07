@@ -141,7 +141,7 @@ def test_health_controller_patch_resolves_tenant_before_status(monkeypatch) -> N
 
     health_controller_patch.apply(app)
 
-    response = app.test_client().get("/v1.0/status")
+    response = app.test_client().get("/v1.0/status", headers={"Authorization": "Bearer verified-token"})
 
     assert response.status_code == 200
     assert response.get_json() == {"ok": True, "can_access_frontend": True}
@@ -180,7 +180,15 @@ def test_health_controller_patch_synchronizes_selected_org_when_multi_org_token_
     fake_authentication_controller_module = ModuleType("spiffworkflow_backend.routes.authentication_controller")
 
     def fake_verify_token(*_args, **_kwargs):
-        raise RuntimeError("invalid_token")
+        g.user = type("User", (), {"id": 10, "username": "synced-admin"})()
+        return {
+            "iss": "http://localhost:7002/realms/m8flow",
+            "preferred_username": "admin",
+            "organization": {
+                "it": {"id": "tenant-it", "groups": ["/tenant-admin"]},
+                "m8flow": {"id": "tenant-default", "groups": ["/tenant-admin"]},
+            },
+        }
 
     fake_authentication_controller_module.verify_token = fake_verify_token
 
@@ -196,11 +204,6 @@ def test_health_controller_patch_synchronizes_selected_org_when_multi_org_token_
                 and getattr(g, "m8flow_tenant_id", None) == "tenant-it"
                 and target_uri == "/frontend-access"
             )
-
-        @classmethod
-        def create_user_from_sign_in(cls, decoded_token):
-            call_state["synced_token"] = decoded_token
-            return type("User", (), {"id": 10, "username": "synced-admin"})()
 
     fake_authorization_service_module.AuthorizationService = FakeAuthorizationService
 
@@ -303,12 +306,3 @@ def test_health_controller_patch_synchronizes_selected_org_when_multi_org_token_
     assert response.get_json() == {"ok": True, "can_access_frontend": True}
     assert call_state["permission_user"] == "synced-admin"
     assert call_state["permission_tenant"] == "tenant-it"
-    assert call_state["synced_token"] == {
-        "iss": "http://localhost:7002/realms/m8flow",
-        "preferred_username": "admin",
-        "organization": {
-            "it": {"id": "tenant-it", "groups": ["/tenant-admin"]},
-        },
-        "m8flow_tenant_id": "tenant-it",
-        "m8flow_tenant_alias": "it",
-    }

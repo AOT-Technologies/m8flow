@@ -56,6 +56,7 @@ def _make_status_app(
     app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
     app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP"] = "spiff_public"
     app.config["SPIFFWORKFLOW_BACKEND_PERMISSIONS_FILE_ABSOLUTE_PATH"] = str(PERMISSIONS_PATH)
+    app.config["THREAD_LOCAL_DATA"] = SimpleNamespace()
 
     db.init_app(app)
     set_canonical_db(db)
@@ -235,22 +236,20 @@ def test_status_endpoint_repairs_stale_same_realm_user_and_returns_frontend_acce
         )
         stale_user_id = stale_user.id
 
-        raw_token = jwt.encode(
-            {
-                "iss": "http://localhost:7002/realms/m8flow",
-                "sub": "new-subject",
-                "preferred_username": "admin",
-                "groups": ["everybody"],
-                "m8flow_tenant_id": ORG_TENANT_ID,
-            },
-            "status-test-secret",
-            algorithm="HS256",
-        )
+        verified_token = {
+            "iss": "http://localhost:7002/realms/m8flow",
+            "sub": "new-subject",
+            "preferred_username": "admin",
+            "groups": ["everybody"],
+            "m8flow_tenant_id": ORG_TENANT_ID,
+        }
 
-        def _fail_verify_token(*_args, **_kwargs):
-            raise RuntimeError("status verify_token lookup failed before local user sync")
+        raw_token = jwt.encode(verified_token, "status-test-secret", algorithm="HS256")
 
-        monkeypatch.setattr(authentication_controller, "verify_token", _fail_verify_token)
+        def _verified_status_token(*_args, **_kwargs):
+            return dict(verified_token)
+
+        monkeypatch.setattr(authentication_controller, "verify_token", _verified_status_token)
 
     response = app.test_client().get("/v1.0/status", headers={"Authorization": f"Bearer {raw_token}"})
 
@@ -283,25 +282,28 @@ def test_status_endpoint_uses_selected_org_for_multi_org_external_token(monkeypa
             service_id="26b0e310-ea33-4cea-8bfd-a32dc6bc11d4",
         )
 
-        raw_token = jwt.encode(
-            {
-                "iss": "http://localhost:7002/realms/m8flow",
-                "sub": "26b0e310-ea33-4cea-8bfd-a32dc6bc11d4",
-                "preferred_username": "admin",
-                "groups": ["tenant-admin"],
-                "organization": {
-                    "it": {"id": ORG_TENANT_ID, "groups": ["/tenant-admin"]},
-                    "other-tenant": {"id": OTHER_TENANT_ID, "groups": ["/viewer"]},
-                },
+        verified_token = {
+            "iss": "http://localhost:7002/realms/m8flow",
+            "sub": "26b0e310-ea33-4cea-8bfd-a32dc6bc11d4",
+            "preferred_username": "admin",
+            "groups": ["tenant-admin"],
+            "organization": {
+                "it": {"id": ORG_TENANT_ID, "groups": ["/tenant-admin"]},
+                "other-tenant": {"id": OTHER_TENANT_ID, "groups": ["/viewer"]},
             },
-            "status-test-secret",
-            algorithm="HS256",
-        )
+        }
+        raw_token = jwt.encode(verified_token, "status-test-secret", algorithm="HS256")
 
-        def _fail_verify_token(*_args, **_kwargs):
-            raise RuntimeError("status verify_token lookup failed for external token")
+        def _verified_status_token(*_args, **_kwargs):
+            from flask import g
 
-        monkeypatch.setattr(authentication_controller, "verify_token", _fail_verify_token)
+            g.user = UserService.get_user_by_service_and_service_id(
+                "http://localhost:7002/realms/m8flow",
+                "26b0e310-ea33-4cea-8bfd-a32dc6bc11d4",
+            )
+            return dict(verified_token)
+
+        monkeypatch.setattr(authentication_controller, "verify_token", _verified_status_token)
 
         original_user_has_permission = AuthorizationService.user_has_permission
         seen: dict[str, object] = {}
@@ -328,7 +330,7 @@ def test_status_endpoint_uses_selected_org_for_multi_org_external_token(monkeypa
     assert f"{OTHER_TENANT_ID}:everybody" not in seen["principal_group_identifiers"]
 
 
-def test_status_endpoint_does_not_clear_auth_cookies_when_external_token_fallback_succeeds(
+def test_status_endpoint_does_not_clear_auth_cookies_when_verified_external_token_succeeds(
     monkeypatch,
 ) -> None:
     app = _make_status_app(register_auth_hook=False, register_tenant_resolution_hook=False)
@@ -351,29 +353,31 @@ def test_status_endpoint_does_not_clear_auth_cookies_when_external_token_fallbac
             service_id="26b0e310-ea33-4cea-8bfd-a32dc6bc11d4",
         )
 
-        raw_token = jwt.encode(
-            {
-                "iss": "http://localhost:7002/realms/m8flow",
-                "sub": "26b0e310-ea33-4cea-8bfd-a32dc6bc11d4",
-                "preferred_username": "admin",
-                "groups": ["tenant-admin"],
-                "organization": {
-                    "it": {"id": ORG_TENANT_ID, "groups": ["/tenant-admin"]},
-                    "other-tenant": {"id": OTHER_TENANT_ID, "groups": ["/viewer"]},
-                },
+        verified_token = {
+            "iss": "http://localhost:7002/realms/m8flow",
+            "sub": "26b0e310-ea33-4cea-8bfd-a32dc6bc11d4",
+            "preferred_username": "admin",
+            "groups": ["tenant-admin"],
+            "organization": {
+                "it": {"id": ORG_TENANT_ID, "groups": ["/tenant-admin"]},
+                "other-tenant": {"id": OTHER_TENANT_ID, "groups": ["/viewer"]},
             },
-            "status-test-secret",
-            algorithm="HS256",
-        )
+        }
+        raw_token = jwt.encode(verified_token, "status-test-secret", algorithm="HS256")
 
         verify_called = {"value": False}
 
-        def _fail_verify_token(*_args, **_kwargs):
-            verify_called["value"] = True
-            app.config["THREAD_LOCAL_DATA"].user_has_logged_out = True
-            raise RuntimeError("status verify_token lookup failed for external token")
+        def _verified_status_token(*_args, **_kwargs):
+            from flask import g
 
-        monkeypatch.setattr(authentication_controller, "verify_token", _fail_verify_token)
+            verify_called["value"] = True
+            g.user = UserService.get_user_by_service_and_service_id(
+                "http://localhost:7002/realms/m8flow",
+                "26b0e310-ea33-4cea-8bfd-a32dc6bc11d4",
+            )
+            return dict(verified_token)
+
+        monkeypatch.setattr(authentication_controller, "verify_token", _verified_status_token)
 
         app.after_request(authentication_controller._set_new_access_token_in_cookie)
 
@@ -385,12 +389,51 @@ def test_status_endpoint_does_not_clear_auth_cookies_when_external_token_fallbac
 
     assert response.status_code == 200
     assert response.get_json() == {"ok": True, "can_access_frontend": True}
-    assert verify_called["value"] is False
+    assert verify_called["value"] is True
     set_cookie_headers = response.headers.getlist("Set-Cookie")
     assert not any(header.startswith("access_token=;") for header in set_cookie_headers)
     assert not any(header.startswith("id_token=;") for header in set_cookie_headers)
     assert not any(header.startswith("authentication_identifier=;") for header in set_cookie_headers)
     assert not hasattr(app.config["THREAD_LOCAL_DATA"], "user_has_logged_out")
+
+
+def test_status_endpoint_does_not_sync_or_grant_access_from_unverified_external_token(monkeypatch) -> None:
+    app = _make_status_app(register_auth_hook=False, register_tenant_resolution_hook=False)
+
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+        authorization_service_patch.apply()
+        health_controller_patch._PATCHED = False
+        health_controller_patch.apply(app)
+
+        raw_token = jwt.encode(
+            {
+                "iss": "http://localhost:7002/realms/m8flow",
+                "sub": "forged-subject",
+                "preferred_username": "forged-admin",
+                "groups": ["everybody"],
+                "m8flow_tenant_id": ORG_TENANT_ID,
+            },
+            "status-test-secret",
+            algorithm="HS256",
+        )
+
+        def _fail_verify_token(*_args, **_kwargs):
+            raise RuntimeError("status verify_token rejected external token")
+
+        monkeypatch.setattr(authentication_controller, "verify_token", _fail_verify_token)
+
+    response = app.test_client().get("/v1.0/status", headers={"Authorization": f"Bearer {raw_token}"})
+
+    assert response.status_code == 200
+    assert response.get_json() == {"ok": True, "can_access_frontend": False}
+
+    with app.app_context():
+        assert UserService.get_user_by_service_and_service_id(
+            "http://localhost:7002/realms/m8flow",
+            "forged-subject",
+        ) is None
 
 
 def test_status_endpoint_denies_frontend_access_for_other_tenant_group() -> None:

@@ -789,7 +789,13 @@ def _finalize_tenant_from_existing_shared_realm_session(
         organization_alias
         for organization_alias, _organization_details in organization_memberships_from_payload(decoded_token)
     }
-    if organization_aliases and selected_tenant_alias not in organization_aliases:
+    if not organization_aliases:
+        logger.warning(
+            "tenant_finalization: shared-realm session lacked organization memberships; falling back to standard login"
+        )
+        return None
+
+    if selected_tenant_alias not in organization_aliases:
         return jsonify({"detail": "Selected tenant is not available for this session"}), 403
 
     synchronized_token = _synchronize_selected_organization_claims(

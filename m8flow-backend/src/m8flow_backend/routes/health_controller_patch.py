@@ -125,31 +125,6 @@ def _bind_status_tenant_context(decoded_token: dict[str, Any] | None) -> None:
     g._m8flow_ctx_token = set_context_tenant_id(canonical_tenant_id)
 
 
-def _should_verify_status_token(decoded_token: dict[str, Any] | None) -> bool:
-    """
-    Only run the upstream token verifier when we do not already have a decoded
-    external identity token we can safely use for status checks.
-
-    Upstream ``verify_token()`` marks the request as logged out on validation
-    failures and the after-request cookie hook then clears auth cookies. That is
-    correct for ordinary protected endpoints, but the status endpoint is auth
-    exempt and already has enough information to resolve frontend access from a
-    decoded external token plus selected-tenant context.
-    """
-    if not isinstance(decoded_token, dict):
-        return True
-
-    issuer = decoded_token.get("iss")
-    if not isinstance(issuer, str) or not issuer.strip():
-        return True
-
-    backend_issuer = str(current_app.config.get("SPIFFWORKFLOW_BACKEND_URL", "")).strip().rstrip("/")
-    if not backend_issuer:
-        return True
-
-    return issuer.strip().rstrip("/") == backend_issuer
-
-
 def _log_status_frontend_access_state(
     *,
     stage: str,
@@ -229,6 +204,7 @@ def apply(flask_app: Any | None = None) -> None:
         ProcessInstanceModel.query.filter().first()
 
         decoded_token = getattr(g, "_m8flow_decoded_token", None)
+        decoded_token_verified = False
 
         try:
             resolve_request_tenant()
@@ -239,29 +215,23 @@ def apply(flask_app: Any | None = None) -> None:
             decoded_token = getattr(g, "_m8flow_decoded_token", decoded_token)
 
         decoded_token = _synchronize_status_token_to_selected_tenant(decoded_token)
-        _bind_status_tenant_context(decoded_token)
 
         user = getattr(g, "user", None)
         _log_status_frontend_access_state(stage="post_tenant_resolution", user=user, decoded_token=decoded_token)
-        if user is None:
-            if _should_verify_status_token(decoded_token):
-                try:
-                    verified_decoded_token = authentication_controller.verify_token(force_run=True)
-                    if isinstance(verified_decoded_token, dict):
-                        decoded_token = _synchronize_status_token_to_selected_tenant(verified_decoded_token)
-                        g._m8flow_decoded_token = decoded_token
-                        _bind_status_tenant_context(decoded_token)
-                    user = getattr(g, "user", None)
-                except Exception:
-                    logger.info("health_controller_patch: status request has no verified authenticated user", exc_info=True)
-            else:
-                logger.debug(
-                    "health_controller_patch: skipping verify_token for external decoded status token issuer=%s",
-                    decoded_token.get("iss") if isinstance(decoded_token, dict) else None,
-                )
+        if user is None and _status_request_has_auth_context(decoded_token, user):
+            try:
+                verified_decoded_token = authentication_controller.verify_token(force_run=True)
+                if isinstance(verified_decoded_token, dict):
+                    decoded_token = _synchronize_status_token_to_selected_tenant(verified_decoded_token)
+                    g._m8flow_decoded_token = decoded_token
+                    _bind_status_tenant_context(decoded_token)
+                    decoded_token_verified = True
+                user = getattr(g, "user", None)
+            except Exception:
+                logger.info("health_controller_patch: status request has no verified authenticated user", exc_info=True)
             _log_status_frontend_access_state(stage="post_verify_token", user=user, decoded_token=decoded_token)
 
-        if user is None and isinstance(decoded_token, dict):
+        if user is None and decoded_token_verified and isinstance(decoded_token, dict):
             try:
                 resolved_user = authentication_controller._get_user_model_from_token(decoded_token)
                 if resolved_user is not None:
@@ -279,7 +249,7 @@ def apply(flask_app: Any | None = None) -> None:
                 )
             _log_status_frontend_access_state(stage="post_user_lookup", user=user, decoded_token=decoded_token)
 
-        if user is None and _status_token_can_refresh_memberships(decoded_token):
+        if user is None and decoded_token_verified and _status_token_can_refresh_memberships(decoded_token):
             try:
                 user = AuthorizationService.create_user_from_sign_in(decoded_token)
                 g.user = user
@@ -296,7 +266,7 @@ def apply(flask_app: Any | None = None) -> None:
             _log_status_frontend_access_state(stage="post_user_sync", user=user, decoded_token=decoded_token)
         elif user is None and isinstance(decoded_token, dict):
             logger.debug(
-                "health_controller_patch: skipping user synchronization for non-authoritative decoded status token"
+                "health_controller_patch: skipping user synchronization for unverified or non-authoritative decoded status token"
             )
 
         can_access_frontend = not _status_request_has_auth_context(decoded_token, user)
@@ -312,7 +282,7 @@ def apply(flask_app: Any | None = None) -> None:
                 decoded_token=decoded_token,
                 can_access_frontend=can_access_frontend,
             )
-            if not can_access_frontend and _status_token_can_refresh_memberships(decoded_token):
+            if not can_access_frontend and decoded_token_verified and _status_token_can_refresh_memberships(decoded_token):
                 try:
                     refreshed_user = AuthorizationService.create_user_from_sign_in(decoded_token)
                     g.user = refreshed_user
@@ -341,7 +311,7 @@ def apply(flask_app: Any | None = None) -> None:
                 )
             elif not can_access_frontend and isinstance(decoded_token, dict):
                 logger.debug(
-                    "health_controller_patch: skipping frontend-access retry for non-authoritative decoded status token"
+                    "health_controller_patch: skipping frontend-access retry for unverified or non-authoritative decoded status token"
                 )
 
         _preserve_status_auth_cookies_for_external_token(decoded_token)
