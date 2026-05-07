@@ -147,11 +147,17 @@ function Invoke-BackendPythonInBackendDir {
 }
 
 function Test-HasM8FlowBackendRuntimeDependencies {
-  Invoke-UvPython @('-c', 'import nats') *> $null
-  if ($LASTEXITCODE -ne 0) {
-    return $false
+  $oldPreference = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    Invoke-UvPython @('-c', 'import nats') 2>&1 > $null
+    if ($LASTEXITCODE -ne 0) {
+      return $false
+    }
+    return $true
+  } finally {
+    $ErrorActionPreference = $oldPreference
   }
-  return $true
 }
 
 function Sync-LocalBackendEnvironment {
