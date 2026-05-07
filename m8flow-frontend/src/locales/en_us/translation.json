@@ -23,6 +23,8 @@
   "template_gallery": "Template Gallery",
   "templates": "Templates",
   "tenant": "Tenant",
+  "select_tenant_placeholder": "Select a tenant",
+  "tenant_required_for_super_admin": "Please select a tenant before creating this process model.",
   "tenants": "Tenants",
   "try_adjusting_filters_templates": "Try adjusting your filters to see more templates.",
   "version": "Version",

@@ -7,6 +7,7 @@ from flask import Response, jsonify, request, g
 
 from spiffworkflow_backend.exceptions.api_error import ApiError
 
+from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
 from m8flow_backend.models.template import TemplateModel
 from m8flow_backend.services.template_service import TemplateService
 
@@ -17,9 +18,14 @@ def _safe_content_disposition(filename: str) -> dict[str, str]:
     return {"Content-Disposition": f"attachment; filename*=UTF-8''{safe}"}
 
 
-def _serialize_template(template: TemplateModel, include_bpmn: bool = True) -> dict:
+def _serialize_template(
+    template: TemplateModel,
+    include_bpmn: bool = True,
+    tenant_details_by_id: dict[str, dict[str, str]] | None = None,
+) -> dict:
     """Serialize template with optional BPMN content. Includes files list from template.files."""
     files_list = template.files or []
+    tenant_id = template.m8f_tenant_id
     result = {
         "id": template.id,
         "templateKey": template.template_key,
@@ -28,7 +34,7 @@ def _serialize_template(template: TemplateModel, include_bpmn: bool = True) -> d
         "description": template.description,
         "tags": template.tags,
         "category": template.category,
-        "tenantId": template.m8f_tenant_id,
+        "tenantId": tenant_id,
         "visibility": template.visibility,
         "files": [
             {"fileType": e.get("file_type", "bpmn"), "fileName": e.get("file_name", "")}
@@ -41,6 +47,8 @@ def _serialize_template(template: TemplateModel, include_bpmn: bool = True) -> d
         "createdAtInSeconds": template.created_at_in_seconds,
         "updatedAtInSeconds": template.updated_at_in_seconds,
     }
+    if tenant_details_by_id and tenant_id in tenant_details_by_id:
+        result["tenant"] = tenant_details_by_id[tenant_id]
 
     if include_bpmn:
         try:
@@ -92,9 +100,24 @@ def template_list():
         page=page,
         per_page=per_page,
     )
+    tenant_ids = sorted({t.m8f_tenant_id for t in templates if t.m8f_tenant_id})
+    tenant_details_by_id: dict[str, dict[str, str]] = {}
+    if tenant_ids:
+        tenants = (
+            M8flowTenantModel.query.filter(M8flowTenantModel.id.in_(tenant_ids))
+            .all()
+        )
+        tenant_details_by_id = {
+            tenant.id: {"id": tenant.id, "name": tenant.name, "slug": tenant.slug}
+            for tenant in tenants
+        }
+
     # For list responses, omit BPMN content for performance
     return jsonify({
-        "results": [_serialize_template(t, include_bpmn=False) for t in templates],
+        "results": [
+            _serialize_template(t, include_bpmn=False, tenant_details_by_id=tenant_details_by_id)
+            for t in templates
+        ],
         "pagination": pagination,
     })
 

@@ -10,6 +10,20 @@ from m8flow_backend.tenancy import reset_context_tenant_id, set_context_tenant_i
 from m8flow_backend.tenancy import is_super_admin_request
 
 _PATCHED = False
+_ORIGINAL_METHODS: dict[str, Any] = {}
+
+
+def reset() -> None:
+    """Restore ProcessModelService classmethods (for tests). Safe no-op if not patched."""
+    global _PATCHED
+    if not _PATCHED:
+        return
+    from spiffworkflow_backend.services.process_model_service import ProcessModelService
+
+    for name, descriptor in _ORIGINAL_METHODS.items():
+        setattr(ProcessModelService, name, descriptor)
+    _ORIGINAL_METHODS.clear()
+    _PATCHED = False
 
 
 def _tenant_roots(base_dir: str) -> list[str]:
@@ -26,6 +40,46 @@ def _tenant_roots(base_dir: str) -> list[str]:
             roots.append(name)
     roots.sort()
     return roots
+
+
+def _lock_super_admin_tenant_for_process_model(base_dir: str, process_model_id: str) -> None:
+    """If super-admin has no tenant set, find owning tenant on disk and lock g + ContextVar."""
+    if not is_super_admin_request() or not has_request_context():
+        return
+    if getattr(g, "m8flow_tenant_id", None):
+        return
+    if not base_dir or not os.path.isdir(base_dir):
+        return
+
+    from spiffworkflow_backend.services.file_system_service import FileSystemService
+
+    rel = process_model_id.replace("/", os.sep)
+    for tenant_id in _tenant_roots(base_dir):
+        candidate = os.path.join(base_dir, tenant_id, rel, FileSystemService.PROCESS_MODEL_JSON_FILE)
+        if os.path.isfile(candidate):
+            g.m8flow_tenant_id = tenant_id
+            set_context_tenant_id(tenant_id)
+            return
+
+
+def _lock_super_admin_tenant_for_process_group(base_dir: str, process_group_id: str) -> None:
+    """If super-admin has no tenant set, find owning tenant on disk and lock g + ContextVar."""
+    if not is_super_admin_request() or not has_request_context():
+        return
+    if getattr(g, "m8flow_tenant_id", None):
+        return
+    if not base_dir or not os.path.isdir(base_dir):
+        return
+
+    from spiffworkflow_backend.services.file_system_service import FileSystemService
+
+    rel = process_group_id.replace("/", os.sep)
+    for tenant_id in _tenant_roots(base_dir):
+        candidate = os.path.join(base_dir, tenant_id, rel, FileSystemService.PROCESS_GROUP_JSON_FILE)
+        if os.path.isfile(candidate):
+            g.m8flow_tenant_id = tenant_id
+            set_context_tenant_id(tenant_id)
+            return
 
 
 @contextmanager
@@ -54,8 +108,19 @@ def apply() -> None:
     from flask import current_app
     from spiffworkflow_backend.services.process_model_service import ProcessModelService
 
+    _ORIGINAL_METHODS["get_process_groups_for_api"] = ProcessModelService.get_process_groups_for_api
+    _ORIGINAL_METHODS["get_process_models_for_api"] = ProcessModelService.get_process_models_for_api
+    _ORIGINAL_METHODS["get_process_model"] = ProcessModelService.get_process_model
+    _ORIGINAL_METHODS["is_process_model_identifier"] = ProcessModelService.is_process_model_identifier
+    _ORIGINAL_METHODS["is_process_group_identifier"] = ProcessModelService.is_process_group_identifier
+    _ORIGINAL_METHODS["get_process_group"] = ProcessModelService.get_process_group
+
     original_get_process_groups_for_api = ProcessModelService.get_process_groups_for_api.__func__
     original_get_process_models_for_api = ProcessModelService.get_process_models_for_api.__func__
+    original_get_process_model = ProcessModelService.get_process_model.__func__
+    original_is_process_model_identifier = ProcessModelService.is_process_model_identifier.__func__
+    original_is_process_group_identifier = ProcessModelService.is_process_group_identifier.__func__
+    original_get_process_group = ProcessModelService.get_process_group.__func__
 
     @classmethod
     def patched_get_process_groups_for_api(
@@ -131,7 +196,55 @@ def apply() -> None:
 
         return merged
 
+    @classmethod
+    def patched_get_process_model(cls, process_model_id: str):
+        if is_super_admin_request() and has_request_context() and not getattr(g, "m8flow_tenant_id", None):
+            base_dir = current_app.config.get("SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR")
+            if isinstance(base_dir, str):
+                _lock_super_admin_tenant_for_process_model(base_dir, process_model_id)
+        return original_get_process_model(cls, process_model_id)
+
+    @classmethod
+    def patched_is_process_model_identifier(cls, process_model_identifier: str) -> bool:
+        if is_super_admin_request() and has_request_context() and not getattr(g, "m8flow_tenant_id", None):
+            base_dir = current_app.config.get("SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR")
+            if isinstance(base_dir, str):
+                _lock_super_admin_tenant_for_process_model(base_dir, process_model_identifier)
+        return original_is_process_model_identifier(cls, process_model_identifier)
+
+    @classmethod
+    def patched_is_process_group_identifier(cls, process_group_identifier: str) -> bool:
+        if is_super_admin_request() and has_request_context() and not getattr(g, "m8flow_tenant_id", None):
+            base_dir = current_app.config.get("SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR")
+            if isinstance(base_dir, str):
+                _lock_super_admin_tenant_for_process_group(base_dir, process_group_identifier)
+        return original_is_process_group_identifier(cls, process_group_identifier)
+
+    @classmethod
+    def patched_get_process_group(
+        cls,
+        process_group_id: str,
+        find_direct_nested_items: bool = True,
+        find_all_nested_items: bool = True,
+        create_if_not_exists: bool = False,
+    ):
+        if is_super_admin_request() and has_request_context() and not getattr(g, "m8flow_tenant_id", None):
+            base_dir = current_app.config.get("SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR")
+            if isinstance(base_dir, str):
+                _lock_super_admin_tenant_for_process_group(base_dir, process_group_id)
+        return original_get_process_group(
+            cls,
+            process_group_id,
+            find_direct_nested_items=find_direct_nested_items,
+            find_all_nested_items=find_all_nested_items,
+            create_if_not_exists=create_if_not_exists,
+        )
+
     ProcessModelService.get_process_groups_for_api = patched_get_process_groups_for_api
     ProcessModelService.get_process_models_for_api = patched_get_process_models_for_api
+    ProcessModelService.get_process_model = patched_get_process_model
+    ProcessModelService.is_process_model_identifier = patched_is_process_model_identifier
+    ProcessModelService.is_process_group_identifier = patched_is_process_group_identifier
+    ProcessModelService.get_process_group = patched_get_process_group
 
     _PATCHED = True

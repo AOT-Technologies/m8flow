@@ -12,7 +12,7 @@ users:
 
 # Groups should be managed in OIDC provider or user management system and mapped to these names.
 groups:
-  # The "super-admin" group has access to tenants management only.
+  # The "super-admin" group has platform-wide access, including tenant management and cross-tenant operations.
   "super-admin":
     users: []
   # The "tenant-admin" group has access to everything within a tenant, but does not have access to tenant management features. 
@@ -94,61 +94,61 @@ permissions:
     actions: [read]
     uri: /user-groups/*
   read-script-assist-items:
-    groups: ["tenant-admin", "editor", "viewer", "reviewer"]
+    groups: ["tenant-admin", "editor", "viewer", "reviewer", "super-admin"]
     actions: [read]
     uri: /script-assist/*
   read-service-tasks:
-    groups: ["tenant-admin", "editor", "viewer"]
+    groups: ["tenant-admin", "editor", "viewer", "super-admin"]
     actions: [read]
     uri: /service-tasks/*
   manage-data-stores:
-    groups: ["tenant-admin", "editor"]
+    groups: ["tenant-admin", "editor", "super-admin"]
     actions: [all]
     uri: /data-stores/*
   manage-data-stores-types:
-    groups: ["tenant-admin", "editor"]
+    groups: ["tenant-admin", "editor", "super-admin"]
     actions: [all]
     uri: /data-stores/types/
   manage-messages:
-    groups: ["tenant-admin", "editor"]
+    groups: ["tenant-admin", "editor", "super-admin"]
     actions: [all]
     uri: /messages/*
   manage-secrets:
-    groups: ["tenant-admin", "integrator"]
+    groups: ["tenant-admin", "integrator", "super-admin"]
     actions: [all]
     uri: /secrets
   manage-secret-items:
-    groups: ["tenant-admin", "integrator"]
+    groups: ["tenant-admin", "integrator", "super-admin"]
     actions: [all]
     uri: /secrets/*
   # authentication (singular)
   manage-authentication-items:
-    groups: ["tenant-admin", "integrator"]
+    groups: ["tenant-admin", "integrator", "super-admin"]
     actions: [all]
     uri: /authentication/*
   # authentications (plural)
   manage-authentications:
-    groups: ["tenant-admin", "integrator"]
+    groups: ["tenant-admin", "integrator", "super-admin"]
     actions: [all]
     uri: /authentications
   manage-authentications-items:
-    groups: ["tenant-admin", "integrator"]
+    groups: ["tenant-admin", "integrator", "super-admin"]
     actions: [all]
     uri: /authentications/*
   manage-templates:
-    groups: ["tenant-admin", "editor"]
+    groups: ["tenant-admin", "editor", "super-admin"]
     actions: [all]
     uri: /m8flow/templates
   manage-template-items:
-    groups: ["tenant-admin", "editor"]
+    groups: ["tenant-admin", "editor", "super-admin"]
     actions: [all]
     uri: /m8flow/templates/*
   read-templates:
-    groups: ["viewer"]
+    groups: ["viewer", "super-admin"]
     actions: [read]
     uri: /m8flow/templates
   viewer-template-items:
-    groups: ["viewer"]
+    groups: ["viewer", "super-admin"]
     actions: [read]
     uri: /m8flow/templates/*
   manage-tasks:
@@ -160,6 +160,6 @@ permissions:
     actions: [read]
     uri: /tasks/*
   manage-nats-tokens:
-    groups: ["tenant-admin", "integrator"]
+    groups: ["tenant-admin", "integrator", "super-admin"]
     actions: [all]
     uri: /m8flow/nats-tokens

@@ -3,12 +3,22 @@ import asyncio
 import json
 import logging
 import uuid
-from nats.aio.client import Client as NATS
-from nats.js.errors import NotFoundError
 from m8flow_backend.config import nats_url
 from spiffworkflow_backend.exceptions.api_error import ApiError
 
 logger = logging.getLogger("m8flow.nats.service")
+
+try:
+    from nats.aio.client import Client as NATS
+    from nats.js.errors import NotFoundError
+    _NATS_IMPORT_ERROR: ModuleNotFoundError | None = None
+except ModuleNotFoundError as import_error:
+    NATS = None
+
+    class NotFoundError(Exception):
+        """Fallback when nats-py is unavailable."""
+
+    _NATS_IMPORT_ERROR = import_error
 
 class NatsService:
     @staticmethod
@@ -22,6 +32,13 @@ class NatsService:
         stream_name: str | None = None,
         reply_timeout: float = 30.0,
     ) -> dict:
+        if _NATS_IMPORT_ERROR is not None or NATS is None:
+            raise ApiError(
+                error_code="nats_dependency_missing",
+                message="NATS support is unavailable. Install the 'nats-py' dependency to use this endpoint.",
+                status_code=503,
+            )
+
         nc = NATS()
         try:
             await nc.connect(nats_url(), connect_timeout=5)

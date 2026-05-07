@@ -248,6 +248,10 @@ def test_parse_permissions_yaml_into_group_info_qualifies_default_group_referenc
         "/active-users/*",
     ]
     assert super_admin_group["permissions"][0]["uri"] == "/m8flow/tenants*"
+    super_admin_permission_uris = {permission["uri"] for permission in super_admin_group["permissions"]}
+    assert "/m8flow/templates/*" in super_admin_permission_uris
+    assert "/authentications/*" in super_admin_permission_uris
+    assert "/secrets/*" in super_admin_permission_uris
 
 
 def test_add_permissions_from_group_permissions_keeps_config_unqualified(monkeypatch) -> None:

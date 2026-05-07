@@ -7,6 +7,12 @@ export interface TemplateFile {
   fileName: string;
 }
 
+export interface TemplateTenant {
+  id: string;
+  name: string;
+  slug: string;
+}
+
 export interface Template {
   id: number;
   templateKey: string;
@@ -16,6 +22,7 @@ export interface Template {
   tags: string[] | null;
   category: string | null;
   tenantId: string | null;
+  tenant?: TemplateTenant | null;
   visibility: TemplateVisibility;
   files: TemplateFile[];
   bpmnContent?: string; // Included in GET when include_contents true

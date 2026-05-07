@@ -25,6 +25,19 @@ from m8flow_backend.tenancy import (
 _ORIGINALS: dict[str, Any] = {}
 _PATCHED = False
 
+
+def _locked_tenant_id_for_writes() -> str | None:
+    """Tenant explicitly set for this request (super-admin cross-tenant lock-in)."""
+    if has_request_context():
+        tid = getattr(g, "m8flow_tenant_id", None)
+        if isinstance(tid, str) and tid.strip():
+            return tid.strip()
+    ctx = get_context_tenant_id()
+    if isinstance(ctx, str) and ctx.strip():
+        return ctx.strip()
+    return None
+
+
 def _with_tenant(values: Mapping[str, Any] | Sequence[Mapping[str, Any]], tenant_id: str) -> Any:
     """Add tenant id to values if missing."""
     if isinstance(values, Mapping):
@@ -42,7 +55,7 @@ def _with_tenant(values: Mapping[str, Any] | Sequence[Mapping[str, Any]], tenant
 
 def _set_tenant_on_objects(objects: Sequence[Any]) -> None:
     """Set tenant id on objects if missing."""
-    if is_tenant_context_exempt_request():
+    if is_tenant_context_exempt_request() and not _locked_tenant_id_for_writes():
         return
     tenant_id = get_tenant_id()
     for obj in objects:
@@ -80,7 +93,7 @@ def _patch_insert_or_ignore_duplicate() -> None:
     ) -> Any:
         """Insert record(s), ignoring duplicates, with tenant scoping."""
         if isinstance(model_class, type) and issubclass(model_class, TenantScoped):
-            if is_tenant_context_exempt_request():
+            if is_tenant_context_exempt_request() and not _locked_tenant_id_for_writes():
                 return _ORIGINALS["insert_or_ignore_duplicate"](
                     model_class, values, postgres_conflict_index_elements
                 )
@@ -307,7 +320,7 @@ def _patch_reference_cache_basic_query() -> None:
 @event.listens_for(Session, "before_flush")  # type: ignore[misc]
 def _set_tenant_on_flush(session: Session, _flush_context: Any, _instances: Any) -> None:
     """Set tenant id on objects if missing."""
-    if is_tenant_context_exempt_request():
+    if is_tenant_context_exempt_request() and not _locked_tenant_id_for_writes():
         return
     for obj in session.new:
         if hasattr(obj, "m8f_tenant_id") and not getattr(obj, "m8f_tenant_id"):

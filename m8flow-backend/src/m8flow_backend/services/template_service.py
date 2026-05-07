@@ -204,9 +204,9 @@ class TemplateService:
         query = TemplateAuthorizationService.filter_query_by_visibility(query, user=user)
         query = query.filter(TemplateModel.is_deleted.is_(False))
         
-        # Filter by tenant: show current tenant's templates + PUBLIC templates from any tenant
+        # Non-super-admin tenant scoping: current tenant plus PUBLIC from any tenant.
         tenant = tenant_id or getattr(g, "m8flow_tenant_id", None)
-        if tenant:
+        if tenant and not TemplateAuthorizationService._is_super_admin_request(user=user):
             query = query.filter(
                 or_(
                     TemplateModel.m8f_tenant_id == tenant,
