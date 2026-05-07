@@ -81,7 +81,16 @@ function Ensure-LocalUvEnvironment {
     python -m venv $venvDir
   }
 
-  . (Join-Path $venvDir 'Scripts\Activate.ps1')
+$activateScript = @(
+  (Join-Path $venvDir 'Scripts/Activate.ps1'),
+  (Join-Path $venvDir 'bin/Activate.ps1')
+) | Where-Object { Test-Path $_ } | Select-Object -First 1
+
+if (-not $activateScript) {
+  throw "No PowerShell venv activation script found in $venvDir"
+}
+
+. $activateScript
 
   if (-not (Test-CommandAvailable uv)) {
     Write-Host 'uv not found; installing into the virtual environment...'
@@ -138,12 +147,11 @@ function Invoke-BackendPythonInBackendDir {
 }
 
 function Test-HasM8FlowBackendRuntimeDependencies {
-  try {
-    Invoke-UvPython @('-c', 'import nats') *> $null
-    return $true
-  } catch {
+  Invoke-UvPython @('-c', 'import nats') *> $null
+  if ($LASTEXITCODE -ne 0) {
     return $false
   }
+  return $true
 }
 
 function Sync-LocalBackendEnvironment {
@@ -157,9 +165,6 @@ function Sync-LocalBackendEnvironment {
 
     if (-not (Test-HasM8FlowBackendRuntimeDependencies)) {
       $uvPipArgs = @('pip', 'install', 'nats-py>=2.6.0')
-      if ($env:VIRTUAL_ENV) {
-        $uvPipArgs += '--active'
-      }
       & uv @uvPipArgs
     }
   } finally {

@@ -111,11 +111,6 @@ sync_m8flow_backend_runtime_dependencies() {
     return
   fi
 
-  if uv_has_active_environment; then
-    uv pip install --active "${packages[@]}"
-    return
-  fi
-
   uv pip install "${packages[@]}"
 }
 
