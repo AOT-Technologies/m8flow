@@ -29,9 +29,12 @@ groups:
   # but does not have access to tenant management or most frontend features.
   "integrator":
     users: []
-  # The "reviewer" group has access to features that are relevant for reviewing and monitoring processes, such as viewing tasks and process instances, 
+  # The "reviewer" group has access to features that are relevant for reviewing and monitoring processes, such as viewing tasks and process instances,
   # but does not have access to tenant management or most frontend features.
   "reviewer":
+    users: []
+  # The "submitter" group can start processes and submit assigned tasks/forms, but cannot access admin or configuration features.
+  "submitter":
     users: []
   # The "everybody" group is a special group that includes all users, and is used to assign permissions that should be available to everyone.
   
@@ -62,7 +65,7 @@ permissions:
     actions: [all]
     uri: /m8flow/tenant-realms*
   read-all-process-groups:
-    groups: ["viewer"]
+    groups: ["viewer", "submitter"]
     actions: [read]
     uri: PG:ALL
   manage-all-process-groups:
@@ -70,7 +73,7 @@ permissions:
     actions: [all]
     uri: PG:ALL
   read-all-process-models:
-    groups: ["viewer", "reviewer"]
+    groups: ["viewer", "reviewer", "submitter"]
     actions: [read]
     uri: PM:ALL
   manage-all-process-models:
@@ -78,29 +81,33 @@ permissions:
     actions: [all]
     uri: PM:ALL
   read-processes:
-    groups: ["tenant-admin", "editor", "viewer", "reviewer"]
+    groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter"]
     actions: [read]
     uri: /processes/*
   run-all-process-models:
-    groups: ["tenant-admin", "editor"]
+    groups: ["tenant-admin", "editor", "submitter"]
     actions: [start]
     uri: PM:ALL
   read-process-instances:
-    groups: ["tenant-admin", "editor", "viewer"]
+    groups: ["tenant-admin", "editor", "viewer", "submitter"]
     actions: [read]
     uri: /process-instances/*
   read-user-groups-items:
-    groups: ["tenant-admin", "editor", "viewer"]
+    groups: ["tenant-admin", "editor", "viewer", "submitter"]
     actions: [read]
     uri: /user-groups/*
   read-script-assist-items:
-    groups: ["tenant-admin", "editor", "viewer", "reviewer"]
+    groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter"]
     actions: [read]
     uri: /script-assist/*
   read-service-tasks:
-    groups: ["tenant-admin", "editor", "viewer"]
+    groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter"]
     actions: [read]
     uri: /service-tasks/*
+  read-service-tasks-root:
+    groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter"]
+    actions: [read]
+    uri: /service-tasks
   manage-data-stores:
     groups: ["tenant-admin", "editor"]
     actions: [all]
@@ -151,8 +158,12 @@ permissions:
     groups: ["viewer"]
     actions: [read]
     uri: /m8flow/templates/*
+  read-template-process-model-template-info:
+    groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter"]
+    actions: [read]
+    uri: /m8flow/templates/process-models/*
   manage-tasks:
-    groups: ["tenant-admin", "editor", "reviewer"]
+    groups: ["tenant-admin", "editor", "reviewer", "submitter"]
     actions: [all]
     uri: /tasks/*
   read-tasks:

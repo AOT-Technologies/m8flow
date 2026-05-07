@@ -25,7 +25,7 @@ M8FLOW_AUTH_EXCLUSION_ADDITIONS = [
 ]
 
 M8FLOW_ROLE_GROUP_IDENTIFIERS = frozenset(
-    {"super-admin", "tenant-admin", "editor", "viewer", "integrator", "reviewer"}
+    {"super-admin", "tenant-admin", "editor", "viewer", "integrator", "reviewer", "submitter"}
 )
 
 
