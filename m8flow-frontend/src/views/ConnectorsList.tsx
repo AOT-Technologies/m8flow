@@ -1,10 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { usePermissionFetcher } from '@spiffworkflow-frontend/hooks/PermissionService';
 import type { PermissionsToCheck } from '@spiffworkflow-frontend/interfaces';
-// @ts-expect-error — @mui/icons-material typings may be unavailable in strict TS setup
-import { Cable } from '@mui/icons-material';
 import {
   Alert,
   Box,
@@ -18,7 +16,9 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
-import { SiSalesforce, SiSlack } from 'react-icons/si';
+import { SiPostgresql, SiSalesforce, SiSlack, SiStripe } from 'react-icons/si';
+import { FaGlobe, FaPlug } from 'react-icons/fa';
+import { MdEmail } from 'react-icons/md';
 import HttpService from '../services/HttpService';
 import { useM8flowUriListForPermissions } from '../hooks/M8flowUriListForPermissions';
 
@@ -160,13 +160,34 @@ type ConnectorRow = {
 function ConnectorCardIcon({ rawKey }: { rawKey: string }) {
   const k = rawKey.toLowerCase();
   const size = 28;
+  const themed = (node: ReactNode) => (
+    <Box
+      sx={{ display: 'flex', alignItems: 'center', color: 'primary.main' }}
+      aria-hidden
+    >
+      {node}
+    </Box>
+  );
+
   if (k.includes('slack')) {
     return <SiSlack size={size} color="#4A154B" aria-hidden />;
   }
   if (k.includes('salesforce')) {
     return <SiSalesforce size={size} color="#00A1E0" aria-hidden />;
   }
-  return <Cable color="primary" sx={{ fontSize: size }} aria-hidden />;
+  if (k.includes('postgres')) {
+    return themed(<SiPostgresql size={size} />);
+  }
+  if (k.includes('smtp') || k.includes('email') || k.includes('mail')) {
+    return themed(<MdEmail size={size} />);
+  }
+  if (k.includes('stripe')) {
+    return <SiStripe size={size} color="#635BFF" aria-hidden />;
+  }
+  if (k.includes('http') || k.includes('rest') || k.includes('api')) {
+    return themed(<FaGlobe size={size} />);
+  }
+  return themed(<FaPlug size={size} />);
 }
 
 export default function ConnectorsList() {
