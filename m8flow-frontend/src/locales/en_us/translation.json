@@ -101,5 +101,14 @@
   "delete_failed": "Delete failed",
   "download_failed": "Download failed",
   "new_draft_created_redirecting": "A new draft version ({{version}}) was created because the template was published. Redirecting...",
-  "updated": "Updated"
+  "updated": "Updated",
+  "connectors": "Connectors",
+  "connectors_description": "Use these connectors via Service Tasks in a process model.",
+  "available_operations_count_one": "{{count}} operation",
+  "available_operations_count_other": "{{count}} operations",
+  "connector_usage_hint": "Use in a Service Task in your process model.",
+  "unable_to_load_connectors": "Unable to load connectors.",
+  "connectors_unauthorized": "You do not have permission to view connectors.",
+  "connectors_unavailable": "Connectors service is currently unavailable.",
+  "no_connectors_available": "No connectors are currently available."
 }

@@ -122,7 +122,7 @@ function SideNav({
     selectedTab = routeIdentifiers.PROCESSES; // This might need further refinement
   } else if (location.pathname === "/messages") {
     selectedTab = routeIdentifiers.MESSAGES;
-  } else if (location.pathname.startsWith("/connectors")) {
+  } else if (location.pathname === "/connectors") {
     selectedTab = routeIdentifiers.CONNECTORS;
   } else if (location.pathname.startsWith("/configuration")) {
     selectedTab = routeIdentifiers.CONFIGURATION;
@@ -233,7 +233,7 @@ function SideNav({
       permissionRoutes: [targetUris.secretListPath],
     },
     {
-      text: "Connectors",
+      text: t("connectors"),
       icon: <Cable />,
       route: "/connectors",
       id: routeIdentifiers.CONNECTORS,

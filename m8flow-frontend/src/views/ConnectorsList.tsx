@@ -1,18 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+// @ts-expect-error — @mui/icons-material typings may be unavailable in strict TS setup
+import { Cable } from '@mui/icons-material';
 import {
   Alert,
   Box,
+  Card,
+  CardContent,
+  Chip,
   CircularProgress,
-  Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
+  Grid,
+  Stack,
   Typography,
 } from '@mui/material';
 import HttpService from '../services/HttpService';
+import { useM8flowUriListForPermissions } from '../hooks/M8flowUriListForPermissions';
 
 type ServiceTaskOperator = {
   id?: string;
@@ -94,11 +96,15 @@ function normalizeOperatorPayload(payload: unknown): ServiceTaskOperator[] {
     const payloadObj = payload as Record<string, unknown>;
 
     if (Array.isArray(payloadObj.items)) {
-      return payloadObj.items as ServiceTaskOperator[];
+      return payloadObj.items.flatMap((entry) =>
+        normalizeOperatorEntry(entry),
+      );
     }
 
     if (Array.isArray(payloadObj.results)) {
-      return payloadObj.results as ServiceTaskOperator[];
+      return payloadObj.results.flatMap((entry) =>
+        normalizeOperatorEntry(entry),
+      );
     }
 
     return Object.entries(payloadObj).flatMap(([key, value]) => {
@@ -118,24 +124,57 @@ function normalizeOperatorPayload(payload: unknown): ServiceTaskOperator[] {
   return [];
 }
 
+function failureStatusCode(errorOrJson: unknown): number | undefined {
+  if (errorOrJson && typeof errorOrJson === 'object') {
+    const o = errorOrJson as Record<string, unknown>;
+    const code = o.status_code ?? o.statusCode;
+    if (typeof code === 'number') {
+      return code;
+    }
+    if (typeof code === 'string') {
+      const n = parseInt(code, 10);
+      if (!Number.isNaN(n)) {
+        return n;
+      }
+    }
+    const resp = o.response as { status?: number } | undefined;
+    if (resp && typeof resp.status === 'number') {
+      return resp.status;
+    }
+  }
+  return undefined;
+}
+
 export default function ConnectorsList() {
+  const { t } = useTranslation();
+  const { targetUris } = useM8flowUriListForPermissions();
   const [operators, setOperators] = useState<ServiceTaskOperator[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
+    setLoading(true);
+    setErrorMessage(null);
     HttpService.makeCallToBackend({
-      path: '/service-tasks',
+      path: targetUris.serviceTaskListPath,
       successCallback: (result: unknown) => {
         setOperators(normalizeOperatorPayload(result));
         setLoading(false);
       },
-      failureCallback: () => {
-        setErrorMessage('Unable to load connectors.');
+      failureCallback: (errorOrJson: unknown) => {
+        const status = failureStatusCode(errorOrJson);
+        if (status === 401 || status === 403) {
+          setErrorMessage(t('connectors_unauthorized'));
+        } else if (status === 503 || status === 502) {
+          setErrorMessage(t('connectors_unavailable'));
+        } else {
+          setErrorMessage(t('unable_to_load_connectors'));
+        }
         setLoading(false);
       },
     });
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once per API path; avoid refetch when i18n changes
+  }, [targetUris.serviceTaskListPath]);
 
   const connectorRows = useMemo(() => {
     const connectorMap = new Map<string, { name: string; operators: number }>();
@@ -177,10 +216,10 @@ export default function ConnectorsList() {
     <Box sx={{ p: 3, width: '100%', boxSizing: 'border-box' }}>
       <Box sx={{ maxWidth: 1200 }}>
         <Typography variant="h1" sx={{ mb: 0.5 }}>
-          Connectors
+          {t('connectors')}
         </Typography>
         <Typography sx={{ mb: 3 }} variant="body2" color="text.secondary">
-          Use these connectors via Service Tasks in a process model.
+          {t('connectors_description')}
         </Typography>
 
         {errorMessage && (
@@ -190,35 +229,42 @@ export default function ConnectorsList() {
         )}
 
         {!errorMessage && connectorRows.length === 0 && (
-          <Alert severity="info">No connectors are currently available.</Alert>
+          <Alert severity="info">{t('no_connectors_available')}</Alert>
         )}
 
         {!errorMessage && connectorRows.length > 0 && (
-          <TableContainer
-            component={Paper}
-            sx={{ borderRadius: 1.5, overflow: 'hidden' }}
-          >
-            <Table>
-              <TableHead>
-                <TableRow sx={{ bgcolor: 'background.default' }}>
-                  <TableCell>Connector</TableCell>
-                  <TableCell>Available Operations</TableCell>
-                  <TableCell>Usage</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {connectorRows.map((row) => (
-                  <TableRow key={row.name}>
-                    <TableCell>{row.name}</TableCell>
-                    <TableCell sx={{ fontWeight: 500 }}>{row.operators}</TableCell>
-                    <TableCell>
-                      Use in a Service Task in your process model.
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
+          <Grid container spacing={2}>
+            {connectorRows.map((row) => (
+              <Grid size={{ xs: 12, sm: 6, md: 4, lg: 3 }} key={row.name}>
+                <Card
+                  variant="outlined"
+                  sx={{ height: '100%', borderRadius: 1.5 }}
+                >
+                  <CardContent>
+                    <Stack spacing={1.5}>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <Cable color="primary" aria-hidden />
+                        <Typography variant="h6" component="h2">
+                          {row.name}
+                        </Typography>
+                      </Stack>
+                      <Chip
+                        size="small"
+                        label={t('available_operations_count', {
+                          count: row.operators,
+                        })}
+                        color="primary"
+                        variant="outlined"
+                      />
+                      <Typography variant="body2" color="text.secondary">
+                        {t('connector_usage_hint')}
+                      </Typography>
+                    </Stack>
+                  </CardContent>
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
         )}
       </Box>
     </Box>
