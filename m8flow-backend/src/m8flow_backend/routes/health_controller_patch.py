@@ -203,6 +203,18 @@ def _preserve_status_auth_cookies_for_external_token(_decoded_token: dict[str, A
         delattr(tld, "user_has_logged_out")
 
 
+def _status_token_can_refresh_memberships(decoded_token: dict[str, Any] | None) -> bool:
+    """Only sync local users from tokens that carry authoritative membership claims."""
+    if not isinstance(decoded_token, dict):
+        return False
+
+    from m8flow_backend.routes.authentication_controller_patch import (
+        _token_contains_authoritative_membership_claims,
+    )
+
+    return _token_contains_authoritative_membership_claims(decoded_token)
+
+
 def apply(flask_app: Any | None = None) -> None:
     """Resolve tenant context and frontend access inside the status endpoint."""
     global _PATCHED
@@ -267,7 +279,7 @@ def apply(flask_app: Any | None = None) -> None:
                 )
             _log_status_frontend_access_state(stage="post_user_lookup", user=user, decoded_token=decoded_token)
 
-        if user is None and isinstance(decoded_token, dict):
+        if user is None and _status_token_can_refresh_memberships(decoded_token):
             try:
                 user = AuthorizationService.create_user_from_sign_in(decoded_token)
                 g.user = user
@@ -282,6 +294,10 @@ def apply(flask_app: Any | None = None) -> None:
                     exc_info=True,
                 )
             _log_status_frontend_access_state(stage="post_user_sync", user=user, decoded_token=decoded_token)
+        elif user is None and isinstance(decoded_token, dict):
+            logger.debug(
+                "health_controller_patch: skipping user synchronization for non-authoritative decoded status token"
+            )
 
         can_access_frontend = not _status_request_has_auth_context(decoded_token, user)
         if user is not None:
@@ -296,7 +312,7 @@ def apply(flask_app: Any | None = None) -> None:
                 decoded_token=decoded_token,
                 can_access_frontend=can_access_frontend,
             )
-            if not can_access_frontend and isinstance(decoded_token, dict):
+            if not can_access_frontend and _status_token_can_refresh_memberships(decoded_token):
                 try:
                     refreshed_user = AuthorizationService.create_user_from_sign_in(decoded_token)
                     g.user = refreshed_user
@@ -322,6 +338,10 @@ def apply(flask_app: Any | None = None) -> None:
                     user=user,
                     decoded_token=decoded_token,
                     can_access_frontend=can_access_frontend,
+                )
+            elif not can_access_frontend and isinstance(decoded_token, dict):
+                logger.debug(
+                    "health_controller_patch: skipping frontend-access retry for non-authoritative decoded status token"
                 )
 
         _preserve_status_auth_cookies_for_external_token(decoded_token)
