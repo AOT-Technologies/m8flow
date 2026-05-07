@@ -110,5 +110,6 @@
   "unable_to_load_connectors": "Unable to load connectors.",
   "connectors_unauthorized": "You do not have permission to view connectors.",
   "connectors_unavailable": "Connectors service is currently unavailable.",
-  "no_connectors_available": "No connectors are currently available."
+  "no_connectors_available": "No connectors are currently available.",
+  "configure": "Configure"
 }

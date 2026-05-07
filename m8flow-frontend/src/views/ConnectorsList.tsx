@@ -1,11 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
+import { usePermissionFetcher } from '@spiffworkflow-frontend/hooks/PermissionService';
+import type { PermissionsToCheck } from '@spiffworkflow-frontend/interfaces';
 // @ts-expect-error — @mui/icons-material typings may be unavailable in strict TS setup
 import { Cable } from '@mui/icons-material';
 import {
   Alert,
   Box,
+  Button,
   Card,
+  CardActions,
   CardContent,
   Chip,
   CircularProgress,
@@ -13,6 +18,7 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
+import { SiSalesforce, SiSlack } from 'react-icons/si';
 import HttpService from '../services/HttpService';
 import { useM8flowUriListForPermissions } from '../hooks/M8flowUriListForPermissions';
 
@@ -145,9 +151,31 @@ function failureStatusCode(errorOrJson: unknown): number | undefined {
   return undefined;
 }
 
+type ConnectorRow = {
+  rawKey: string;
+  name: string;
+  operators: number;
+};
+
+function ConnectorCardIcon({ rawKey }: { rawKey: string }) {
+  const k = rawKey.toLowerCase();
+  const size = 28;
+  if (k.includes('slack')) {
+    return <SiSlack size={size} color="#4A154B" aria-hidden />;
+  }
+  if (k.includes('salesforce')) {
+    return <SiSalesforce size={size} color="#00A1E0" aria-hidden />;
+  }
+  return <Cable color="primary" sx={{ fontSize: size }} aria-hidden />;
+}
+
 export default function ConnectorsList() {
   const { t } = useTranslation();
   const { targetUris } = useM8flowUriListForPermissions();
+  const permissionRequestData: PermissionsToCheck = {
+    [targetUris.secretListPath]: ['GET'],
+  };
+  const { ability } = usePermissionFetcher(permissionRequestData);
   const [operators, setOperators] = useState<ServiceTaskOperator[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -177,7 +205,7 @@ export default function ConnectorsList() {
   }, [targetUris.serviceTaskListPath]);
 
   const connectorRows = useMemo(() => {
-    const connectorMap = new Map<string, { name: string; operators: number }>();
+    const connectorMap = new Map<string, ConnectorRow>();
 
     operators.forEach((operator, index) => {
       const operatorIdentifier = extractOperatorIdentifier(operator, index);
@@ -188,6 +216,7 @@ export default function ConnectorsList() {
 
       if (!connectorMap.has(key)) {
         connectorMap.set(key, {
+          rawKey: key,
           name: formatConnectorName(key),
           operators: 0,
         });
@@ -235,7 +264,7 @@ export default function ConnectorsList() {
         {!errorMessage && connectorRows.length > 0 && (
           <Grid container spacing={2}>
             {connectorRows.map((row) => (
-              <Grid size={{ xs: 12, sm: 6, md: 4, lg: 3 }} key={row.name}>
+              <Grid size={{ xs: 12, sm: 6, md: 4, lg: 3 }} key={row.rawKey}>
                 <Card
                   variant="outlined"
                   sx={{ height: '100%', borderRadius: 1.5 }}
@@ -243,7 +272,7 @@ export default function ConnectorsList() {
                   <CardContent>
                     <Stack spacing={1.5}>
                       <Stack direction="row" spacing={1} alignItems="center">
-                        <Cable color="primary" aria-hidden />
+                        <ConnectorCardIcon rawKey={row.rawKey} />
                         <Typography variant="h6" component="h2">
                           {row.name}
                         </Typography>
@@ -260,6 +289,19 @@ export default function ConnectorsList() {
                         {t('connector_usage_hint')}
                       </Typography>
                     </Stack>
+                    <CardActions sx={{ pt: 0, pl: 0 }}>
+                      {ability.can('GET', targetUris.secretListPath) ? (
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          component={Link}
+                          to="/configuration/secrets"
+                          data-testid={`connector-configure-${row.rawKey}`}
+                        >
+                          {t('configure')}
+                        </Button>
+                      ) : null}
+                    </CardActions>
                   </CardContent>
                 </Card>
               </Grid>
