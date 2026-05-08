@@ -22,16 +22,15 @@ import { CONFIGURATION_ERRORS } from '@spiffworkflow-frontend/config';
 import { CustomGroupingProvider } from './contexts/CustomGroupingContext';
 import TenantGateContext from './contexts/TenantGateContext';
 import { useConfig } from './utils/useConfig';
-import { M8FLOW_TENANT_STORAGE_KEY } from './views/TenantSelectPage';
 import UserService from './services/UserService';
 
 const queryClient = new QueryClient();
 
 const TenantSelectPage = lazy(() => import('./views/TenantSelectPage'));
 
-function getStoredTenant(): boolean {
+function hasFinalizedTenantSelection(): boolean {
   if (typeof globalThis === 'undefined') return false;
-  return !!localStorage.getItem(M8FLOW_TENANT_STORAGE_KEY);
+  return UserService.hasSelectedTenantCookie();
 }
 
 function getCurrentPathname(): string {
@@ -64,15 +63,15 @@ function shouldShowTenantSelectionGate(
     return false;
   }
 
-  if (getStoredTenant()) {
-    return false;
-  }
-
   if (!UserService.isLoggedIn()) {
     return true;
   }
 
-  return UserService.getAuthenticationIdentifier() !== masterRealmIdentifier;
+  if (UserService.getAuthenticationIdentifier() === masterRealmIdentifier) {
+    return false;
+  }
+
+  return !hasFinalizedTenantSelection();
 }
 
 function AutoLoginRedirect({
@@ -97,7 +96,7 @@ function AutoLoginRedirect({
 export default function App() {
   const ability = defineAbility(() => {});
   const { ENABLE_MULTITENANT, MASTER_REALM_IDENTIFIER, SHARED_REALM_IDENTIFIER } = useConfig();
-  const [hasTenant, setHasTenant] = useState(getStoredTenant);
+  const [hasTenant, setHasTenant] = useState(hasFinalizedTenantSelection);
   const currentPathname = getCurrentPathname();
   const showTenantSelectionGate = shouldShowTenantSelectionGate(
     currentPathname,

@@ -69,10 +69,6 @@ def _synchronize_status_token_to_selected_tenant(decoded_token: dict[str, Any] |
     if not isinstance(decoded_token, dict):
         return decoded_token
 
-    explicit_tenant_id = decoded_token.get(TENANT_CLAIM)
-    if isinstance(explicit_tenant_id, str) and explicit_tenant_id.strip():
-        return decoded_token
-
     selected_tenant = _canonical_tenant_id_for_status(_selected_tenant_from_status_request())
     if not selected_tenant:
         return decoded_token
@@ -190,6 +186,18 @@ def _status_token_can_refresh_memberships(decoded_token: dict[str, Any] | None) 
     return _token_contains_authoritative_membership_claims(decoded_token)
 
 
+def _enrich_verified_status_token_for_active_tenant(decoded_token: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Enrich verified shared-realm status tokens when the active org's local groups are missing."""
+    if not isinstance(decoded_token, dict):
+        return decoded_token
+
+    from m8flow_backend.routes.authentication_controller_patch import (
+        _enrich_shared_realm_token_for_active_tenant,
+    )
+
+    return _enrich_shared_realm_token_for_active_tenant(decoded_token)
+
+
 def apply(flask_app: Any | None = None) -> None:
     """Resolve tenant context and frontend access inside the status endpoint."""
     global _PATCHED
@@ -223,6 +231,7 @@ def apply(flask_app: Any | None = None) -> None:
                 verified_decoded_token = authentication_controller.verify_token(force_run=True)
                 if isinstance(verified_decoded_token, dict):
                     decoded_token = _synchronize_status_token_to_selected_tenant(verified_decoded_token)
+                    decoded_token = _enrich_verified_status_token_for_active_tenant(decoded_token)
                     g._m8flow_decoded_token = decoded_token
                     _bind_status_tenant_context(decoded_token)
                     decoded_token_verified = True

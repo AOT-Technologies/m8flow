@@ -8,6 +8,7 @@ const mockUseConfig = vi.fn();
 const mockDoLogin = vi.fn();
 const mockIsLoggedIn = vi.fn();
 const mockGetAuthenticationIdentifier = vi.fn();
+const mockHasSelectedTenantCookie = vi.fn();
 
 vi.mock('./utils/useConfig', () => ({
   useConfig: () => mockUseConfig(),
@@ -17,6 +18,7 @@ vi.mock('./services/UserService', () => ({
   default: {
     doLogin: (...args: unknown[]) => mockDoLogin(...args),
     getAuthenticationIdentifier: () => mockGetAuthenticationIdentifier(),
+    hasSelectedTenantCookie: () => mockHasSelectedTenantCookie(),
     isLoggedIn: () => mockIsLoggedIn(),
   },
 }));
@@ -83,6 +85,7 @@ describe('App', () => {
     });
     mockIsLoggedIn.mockReturnValue(false);
     mockGetAuthenticationIdentifier.mockReturnValue(null);
+    mockHasSelectedTenantCookie.mockReturnValue(false);
 
     vi.stubGlobal('location', {
       origin: 'http://localhost:7001',
@@ -116,6 +119,7 @@ describe('App', () => {
     });
     mockIsLoggedIn.mockReturnValue(true);
     mockGetAuthenticationIdentifier.mockReturnValue('m8flow');
+    mockHasSelectedTenantCookie.mockReturnValue(false);
 
     vi.stubGlobal('location', {
       origin: 'http://localhost:7001',
@@ -127,5 +131,52 @@ describe('App', () => {
 
     expect(await screen.findByText('tenant-selection-page')).toBeInTheDocument();
     expect(mockDoLogin).not.toHaveBeenCalled();
+  });
+
+  it('does not let stale local tenant storage bypass tenant selection for shared-realm users', async () => {
+    mockUseConfig.mockReturnValue({
+      ENABLE_MULTITENANT: true,
+      MASTER_REALM_IDENTIFIER: 'master',
+      SHARED_REALM_IDENTIFIER: 'm8flow',
+    });
+    mockIsLoggedIn.mockReturnValue(true);
+    mockGetAuthenticationIdentifier.mockReturnValue('m8flow');
+    mockHasSelectedTenantCookie.mockReturnValue(false);
+
+    localStorage.setItem('m8flow_tenant', 'it');
+    localStorage.setItem('m8f_tenant_id', 'tenant-it-id');
+
+    vi.stubGlobal('location', {
+      origin: 'http://localhost:7001',
+      pathname: '/',
+      search: '',
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText('tenant-selection-page')).toBeInTheDocument();
+    expect(screen.queryByText('container-for-extensions')).not.toBeInTheDocument();
+  });
+
+  it('skips tenant selection once the selected-tenant cookie is present', async () => {
+    mockUseConfig.mockReturnValue({
+      ENABLE_MULTITENANT: true,
+      MASTER_REALM_IDENTIFIER: 'master',
+      SHARED_REALM_IDENTIFIER: 'm8flow',
+    });
+    mockIsLoggedIn.mockReturnValue(true);
+    mockGetAuthenticationIdentifier.mockReturnValue('m8flow');
+    mockHasSelectedTenantCookie.mockReturnValue(true);
+
+    vi.stubGlobal('location', {
+      origin: 'http://localhost:7001',
+      pathname: '/',
+      search: '',
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText('container-for-extensions')).toBeInTheDocument();
+    expect(screen.queryByText('tenant-selection-page')).not.toBeInTheDocument();
   });
 });

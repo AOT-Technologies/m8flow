@@ -111,8 +111,7 @@ function MultitenantRootGate({
     );
   }
 
-  const storedTenant = typeof window !== 'undefined' ? localStorage.getItem(M8FLOW_TENANT_STORAGE_KEY) : null;
-  if (storedTenant) {
+  if (UserService.hasSelectedTenantCookie()) {
     return (
       <RoleBasedRootGate
         extensionUxElements={extensionUxElements}

@@ -128,13 +128,24 @@ def _group_identifier_applies_to_active_permission_scope(
 
     tenant_identifiers = current_tenant_identifiers(tenant_id)
     if not tenant_identifiers:
-        # Allow the bare default-user-group identifier ("everybody") to remain
-        # effective for users who have no tenant context (e.g. master-realm admins).
+        # Allow the default-user-group identifier to remain effective for users
+        # who have no tenant context (e.g. master-realm admins). Some
+        # environments may still surface the compatibility-qualified
+        # "default:everybody" identifier, so accept either form here.
         try:
-            default_group = qualified_config_group_identifier("SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP") or ""
+            from flask import current_app
+
+            bare_default_group = str(current_app.config.get("SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP") or "").strip()
+            qualified_default_group = (
+                qualified_config_group_identifier("SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP") or ""
+            ).strip()
         except RuntimeError:
             return False
-        return bool(default_group and normalized_group_identifier == default_group)
+        return normalized_group_identifier in {
+            identifier
+            for identifier in (bare_default_group, qualified_default_group)
+            if identifier
+        }
 
     tenant_prefix, separator, _ = normalized_group_identifier.partition(":")
     return bool(separator and tenant_prefix in tenant_identifiers)
@@ -258,17 +269,21 @@ def _tenant_id_for_user_info(user_info: dict[str, Any]) -> str | None:
         return token_tenant
 
     context_tenant = current_tenant_id_or_none()
-    if context_tenant and context_tenant != DEFAULT_TENANT_ID:
+    context_tenant_is_concrete = bool(context_tenant and context_tenant not in {DEFAULT_TENANT_ID, "public"})
+    if context_tenant_is_concrete:
         return context_tenant
 
     authentication_identifier = authentication_identifier_from_payload(user_info)
-    if authentication_identifier in {_shared_realm_identifier(), _master_realm_identifier()}:
+    realm_from_iss = extract_realm_from_issuer(user_info.get("iss"))
+    if (
+        authentication_identifier in {_shared_realm_identifier(), _master_realm_identifier()}
+        or realm_from_iss in {_shared_realm_identifier(), _master_realm_identifier()}
+    ):
         return None
 
-    if context_tenant:
+    if context_tenant_is_concrete:
         return context_tenant
 
-    realm_from_iss = extract_realm_from_issuer(user_info.get("iss"))
     # Raw Keycloak tokens from the master or shared realm may lack the explicit
     # m8flow_realm_name claim, so check the iss-derived realm before returning it
     # as a tenant id.  Master-realm tokens must never be scoped to a tenant.
@@ -287,7 +302,8 @@ def _should_defer_tenant_group_sync(user_info: dict[str, Any], tenant_id: str | 
     group normalization must wait until the user completes the tenant-specific
     follow-up login.
     """
-    if tenant_id:
+    normalized_tenant_id = tenant_id.strip() if isinstance(tenant_id, str) else None
+    if normalized_tenant_id and normalized_tenant_id not in {DEFAULT_TENANT_ID, "public"}:
         return False
 
     authentication_identifier = authentication_identifier_from_payload(user_info)
@@ -584,6 +600,20 @@ def _find_existing_user_for_sign_in(
     return UserModel.query.filter(UserModel.service == service).filter(UserModel.service_id == service_id).first()
 
 
+def _ignore_duplicate_group_assignment_error(exc: Exception) -> bool:
+    """Return whether an exception represents a benign duplicate user/group assignment race."""
+    try:
+        from sqlalchemy.exc import IntegrityError
+    except Exception:
+        IntegrityError = None  # type: ignore[assignment]
+
+    if IntegrityError is not None and isinstance(exc, IntegrityError):
+        return True
+
+    message = str(exc).lower()
+    return "user_group_assignment_unique" in message or "duplicate key value violates unique constraint" in message
+
+
 def apply() -> None:
     """Patch AuthorizationService for m8flow auth behavior and tenant-qualified groups."""
     global _PATCHED
@@ -601,6 +631,10 @@ def apply() -> None:
     from spiffworkflow_backend.models.user import SPIFF_GUEST_USER
     from spiffworkflow_backend.models.user import UserModel
     from spiffworkflow_backend.models.user_group_assignment import UserGroupAssignmentModel
+    try:
+        from spiffworkflow_backend.models.user_group_assignment import UserGroupAssignmentNotFoundError
+    except Exception:
+        UserGroupAssignmentNotFoundError = Exception  # type: ignore[misc, assignment]
     from spiffworkflow_backend.models.user_group_assignment_waiting import UserGroupAssignmentWaitingModel
     from spiffworkflow_backend.services import authorization_service
     from spiffworkflow_backend.services.authorization_service import AuthorizationService
@@ -621,6 +655,89 @@ def apply() -> None:
 
     authorization_service.AuthorizationService.authentication_exclusion_list = _patched_authentication_exclusion_list
     logger.info("auth_exclusion_patch: added %s to authentication_exclusion_list", M8FLOW_AUTH_EXCLUSION_ADDITIONS)
+
+    def _safe_add_user_to_group(user_model: UserModel, group_model: Any) -> bool:
+        """Add a user/group assignment idempotently even if overlapping requests race."""
+        if getattr(group_model, "id", None) is None:
+            return False
+        if (
+            UserGroupAssignmentModel.query.filter_by(
+                user_id=user_model.id,
+                group_id=group_model.id,
+            ).first()
+            is not None
+        ):
+            return False
+
+        try:
+            UserService.add_user_to_group(user_model, group_model)
+            return True
+        except Exception as exc:
+            db.session.rollback()
+            if (
+                _ignore_duplicate_group_assignment_error(exc)
+                and UserGroupAssignmentModel.query.filter_by(
+                    user_id=user_model.id,
+                    group_id=group_model.id,
+                ).first()
+                is not None
+            ):
+                current_app.logger.info(
+                    "auth_group_assignment_race: ignored duplicate add for user_id=%s group_id=%s identifier=%s",
+                    user_model.id,
+                    group_model.id,
+                    getattr(group_model, "identifier", None),
+                )
+                return False
+            raise
+
+    def _safe_add_user_to_group_identifier(
+        user_model: UserModel,
+        group_identifier: str,
+        *,
+        source_is_open_id: bool = False,
+    ) -> Any | None:
+        """Find or create the group, then add the membership idempotently."""
+        if not hasattr(UserService, "find_or_create_group") or not hasattr(UserService, "add_user_to_group"):
+            return UserService.add_user_to_group_by_group_identifier(
+                user_model,
+                group_identifier,
+                source_is_open_id=source_is_open_id,
+            )
+
+        group_model = UserService.find_or_create_group(group_identifier, source_is_open_id=source_is_open_id)
+        _safe_add_user_to_group(user_model, group_model)
+        return group_model
+
+    def _safe_remove_user_from_group(user_model: UserModel, group_id: int) -> bool:
+        """Remove a user/group assignment idempotently when stale reads race with another request."""
+        query = UserGroupAssignmentModel.query.filter_by(user_id=user_model.id, group_id=group_id)
+        if hasattr(query, "delete"):
+            try:
+                deleted_count = query.delete(synchronize_session=False)
+                if deleted_count:
+                    db.session.commit()
+                    return True
+                return False
+            except Exception:
+                db.session.rollback()
+                raise
+
+        assignment_exists = query.first() is not None
+        if not assignment_exists:
+            return False
+
+        try:
+            UserService.remove_user_from_group(user_model, group_id)
+            return True
+        except UserGroupAssignmentNotFoundError:
+            db.session.rollback()
+            current_app.logger.info(
+                "auth_group_assignment_race: ignored missing assignment during remove for user_id=%s group_id=%s",
+                user_model.id,
+                group_id,
+            )
+            return False
 
     @classmethod
     def patched_get_permission_targets_for_user(cls, user: UserModel, check_groups: bool = True) -> set[tuple[str, str, str]]:
@@ -764,12 +881,15 @@ def apply() -> None:
                     )
                 else:
                     for desired_group_identifier in desired_group_identifiers:
-                        new_group = UserService.add_user_to_group_by_group_identifier(
-                            user_model, desired_group_identifier, source_is_open_id=True
+                        new_group = _safe_add_user_to_group_identifier(
+                            user_model,
+                            desired_group_identifier,
+                            source_is_open_id=True,
                         )
                         if new_group is not None:
                             new_group_ids.add(new_group.id)
 
+                    db.session.expire(user_model, ["groups"])
                     group_ids_to_remove_from_user = []
                     for group in user_model.groups:
                         if group.identifier in desired_group_identifiers:
@@ -800,17 +920,9 @@ def apply() -> None:
 
                     for group_id in group_ids_to_remove_from_user:
                         old_group_ids.add(group_id)
-                        # `remove_user_from_group` raises if the assignment is missing; the
-                        # in-memory user_model.groups list can be stale relative to the DB
-                        # when prior transactions in this flow already removed the row,
-                        # so look it up first and only call when it still exists.
-                        if (
-                            UserGroupAssignmentModel.query.filter_by(
-                                user_id=user_model.id, group_id=group_id
-                            ).first()
-                            is not None
-                        ):
-                            UserService.remove_user_from_group(user_model, group_id)
+                        _safe_remove_user_from_group(user_model, group_id)
+
+                    db.session.expire(user_model, ["groups"])
 
             if is_master_realm_user:
                 for target, permission in (
@@ -1054,7 +1166,7 @@ def apply() -> None:
                     user_model.username,
                     default_group_identifier,
                 )
-                UserService.add_user_to_group(user_model, default_group)
+                _safe_add_user_to_group(user_model, default_group)
             else:
                 users = UserModel.query.filter(UserModel.username.not_in([SPIFF_GUEST_USER])).all()  # type: ignore
                 current_app.logger.debug(
@@ -1063,7 +1175,7 @@ def apply() -> None:
                     default_group_identifier,
                 )
                 for user in users:
-                    UserService.add_user_to_group(user, default_group)
+                    _safe_add_user_to_group(user, default_group)
 
         result: dict[str, Any] = {
             "group_identifiers": unique_user_group_identifiers,

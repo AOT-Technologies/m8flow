@@ -137,6 +137,29 @@ def test_tenant_id_for_user_info_prefers_non_default_request_tenant_for_shared_r
     assert _tenant_id_for_user_info(user_info) == "7338e743-e0cf-4161-83a4-3b3ff446609b"
 
 
+def test_tenant_id_for_user_info_does_not_treat_public_context_as_tenant_for_shared_realm(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "m8flow_backend.services.authorization_service_patch.current_tenant_id_or_none",
+        lambda: "public",
+    )
+    monkeypatch.setenv("M8FLOW_KEYCLOAK_SHARED_REALM", "m8flow")
+    user_info = {
+        "m8flow_authentication_identifier": "m8flow",
+        "iss": "http://localhost:7002/realms/m8flow",
+        "organization": {
+            "it": {"id": "7338e743-e0cf-4161-83a4-3b3ff446609b"},
+            "m8flow": {"id": "fb30cdf7-bae8-45ea-b81f-e10d210ba413"},
+        },
+    }
+
+    monkeypatch.setattr(
+        "m8flow_backend.services.authorization_service_patch.tenant_id_from_payload",
+        lambda payload: None,
+    )
+
+    assert _tenant_id_for_user_info(user_info) is None
+
+
 def test_tenant_id_for_user_info_does_not_treat_master_realm_as_tenant(monkeypatch) -> None:
     monkeypatch.setattr(
         "m8flow_backend.services.authorization_service_patch.current_tenant_id_or_none",
@@ -163,6 +186,19 @@ def test_should_defer_tenant_group_sync_for_multi_org_shared_realm_login(monkeyp
 
     assert _should_defer_tenant_group_sync(user_info, tenant_id=None) is True
     assert _should_defer_tenant_group_sync(user_info, tenant_id="tenant-a-id") is False
+
+
+def test_should_defer_tenant_group_sync_for_multi_org_shared_realm_login_with_public_context(monkeypatch) -> None:
+    monkeypatch.setenv("M8FLOW_KEYCLOAK_SHARED_REALM", "shared-users")
+    user_info = {
+        "m8flow_authentication_identifier": "shared-users",
+        "organization": {
+            "tenant-a": {"id": "tenant-a-id"},
+            "tenant-b": {"id": "tenant-b-id"},
+        },
+    }
+
+    assert _should_defer_tenant_group_sync(user_info, tenant_id="public") is True
 
 
 def test_extract_realm_from_issuer() -> None:
@@ -944,6 +980,85 @@ def test_master_realm_create_user_from_sign_in_assigns_global_super_admin_group(
     assert tenant_realm_create_allowed is True
     assert everybody_active_users_allowed is True
     assert everybody_extensions_allowed is True
+
+
+def test_master_realm_create_user_from_sign_in_tolerates_default_group_assignment_race(monkeypatch) -> None:
+    from sqlalchemy.exc import IntegrityError
+
+    permissions_path = (
+        Path(__file__).resolve().parents[4] / "src" / "m8flow_backend" / "config" / "permissions" / "m8flow.yml"
+    )
+    app = Flask(__name__)  # NOSONAR - unit test
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SQLALCHEMY_EXPIRE_ON_COMMIT"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"] = "/v1.0"
+    app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_IS_AUTHORITY_FOR_USER_GROUPS"] = True
+    app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_TENANT_SPECIFIC_FIELDS"] = []
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP"] = "spiff_public"
+    app.config["SPIFFWORKFLOW_BACKEND_PERMISSIONS_FILE_ABSOLUTE_PATH"] = str(permissions_path)
+
+    from spiffworkflow_backend.models.db import db
+
+    db.init_app(app)
+
+    monkeypatch.setattr(authorization_service_patch, "_master_realm_identifier", lambda: "master")
+
+    with app.app_context():
+        from spiffworkflow_backend.models.group import GroupModel
+        from spiffworkflow_backend.models.permission_assignment import PermissionAssignmentModel
+        from spiffworkflow_backend.models.permission_target import PermissionTargetModel
+        from spiffworkflow_backend.models.principal import PrincipalModel
+        from spiffworkflow_backend.models.user import UserModel
+        from spiffworkflow_backend.models.user_group_assignment import UserGroupAssignmentModel
+        from spiffworkflow_backend.services.authorization_service import AuthorizationService
+        from spiffworkflow_backend.services.user_service import UserService
+
+        _ = (
+            GroupModel,
+            PermissionAssignmentModel,
+            PermissionTargetModel,
+            PrincipalModel,
+            UserModel,
+            UserGroupAssignmentModel,
+        )
+
+        db.create_all()
+        authorization_service_patch.apply()
+
+        original_add_user_to_group = UserService.add_user_to_group.__func__
+
+        def fake_add_user_to_group(cls, user, group):
+            if getattr(group, "identifier", None) == "everybody":
+                assignment_exists = (
+                    UserGroupAssignmentModel.query.filter_by(user_id=user.id, group_id=group.id).first() is not None
+                )
+                if not assignment_exists:
+                    db.session.add(UserGroupAssignmentModel(user_id=user.id, group_id=group.id))
+                    db.session.commit()
+                raise IntegrityError(
+                    "INSERT INTO user_group_assignment (user_id, group_id) VALUES (?, ?)",
+                    {"user_id": user.id, "group_id": group.id},
+                    Exception("duplicate key value violates unique constraint user_group_assignment_unique"),
+                )
+
+            return original_add_user_to_group(cls, user, group)
+
+        monkeypatch.setattr(UserService, "add_user_to_group", classmethod(fake_add_user_to_group))
+
+        user_info = {
+            "iss": "http://localhost:7002/realms/master",
+            "sub": "subject-123",
+            "preferred_username": "super-admin",
+            "groups": ["super-admin"],
+        }
+
+        user = AuthorizationService.create_user_from_sign_in(user_info)
+        group_identifiers = sorted(group.identifier for group in user.groups)
+
+    assert "everybody" in group_identifiers
+    assert "super-admin" in group_identifiers
 
 
 def test_permission_scope_tenant_explicit_none_does_not_fall_through_to_request_tenant(

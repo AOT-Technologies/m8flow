@@ -397,6 +397,99 @@ def test_status_endpoint_does_not_clear_auth_cookies_when_verified_external_toke
     assert not hasattr(app.config["THREAD_LOCAL_DATA"], "user_has_logged_out")
 
 
+def test_status_endpoint_enrichs_multi_org_shared_realm_token_without_active_org_groups(monkeypatch) -> None:
+    app = _make_status_app(register_auth_hook=False, register_tenant_resolution_hook=False)
+    home_tenant_id = "1ca82290-ffa0-4fa5-b89f-8e0b969e2c48"
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(
+            M8flowTenantModel(
+                id=home_tenant_id,
+                name="m8flow",
+                slug="m8flow",
+                created_by="test",
+                modified_by="test",
+                created_at_in_seconds=1,
+                updated_at_in_seconds=1,
+            )
+        )
+        _seed_tenants()
+        authorization_service_patch.apply()
+        health_controller_patch._PATCHED = False
+        health_controller_patch.apply(app)
+
+        UserService.create_user(
+            username="editor-multi-org",
+            service="http://localhost:7002/realms/m8flow",
+            service_id="editor-multi-org-subject",
+        )
+        stale_user = UserService.get_user_by_service_and_service_id(
+            "http://localhost:7002/realms/m8flow",
+            "editor-multi-org-subject",
+        )
+        assert stale_user is not None
+        assert stale_user.groups == []
+
+        verified_token = {
+            "iss": "http://localhost:7002/realms/m8flow",
+            "sub": "editor-multi-org-subject",
+            "preferred_username": "editor-multi-org",
+            "m8flow_authentication_identifier": "m8flow",
+            "m8flow_tenant_id": home_tenant_id,
+            "m8flow_tenant_alias": "m8flow",
+            "organization": {
+                "m8flow": {"id": home_tenant_id},
+                "org-tenant": {"id": ORG_TENANT_ID},
+                "other-tenant": {"id": OTHER_TENANT_ID},
+            },
+        }
+        enriched_token = {
+            **verified_token,
+            "m8flow_tenant_id": ORG_TENANT_ID,
+            "m8flow_tenant_alias": "org-tenant",
+            "organization": {
+                "org-tenant": {"id": ORG_TENANT_ID, "groups": ["/editor"]},
+            },
+        }
+        raw_token = jwt.encode(verified_token, "status-test-secret", algorithm="HS256")
+
+        def _verified_status_token(*_args, **_kwargs):
+            from flask import g
+
+            g.user = UserService.get_user_by_service_and_service_id(
+                "http://localhost:7002/realms/m8flow",
+                "editor-multi-org-subject",
+            )
+            return dict(verified_token)
+
+        monkeypatch.setattr(authentication_controller, "verify_token", _verified_status_token)
+        monkeypatch.setattr(
+            m8_auth_controller_patch,
+            "_synchronize_selected_organization_claims",
+            lambda decoded_token, *, selected_tenant_alias, selected_tenant_id: enriched_token,
+        )
+
+    client = app.test_client()
+    client.set_cookie("authentication_identifier", "m8flow")
+    client.set_cookie("m8flow_selected_tenant", ORG_TENANT_ID)
+    response = client.get("/v1.0/status", headers={"Authorization": f"Bearer {raw_token}"})
+
+    assert response.status_code == 200
+    assert response.get_json() == {"ok": True, "can_access_frontend": True}
+
+    with app.app_context():
+        refreshed_user = UserService.get_user_by_service_and_service_id(
+            "http://localhost:7002/realms/m8flow",
+            "editor-multi-org-subject",
+        )
+        assert refreshed_user is not None
+        assert {group.identifier for group in refreshed_user.groups} >= {
+            f"{ORG_TENANT_ID}:everybody",
+            f"{ORG_TENANT_ID}:editor",
+        }
+
+
 def test_status_endpoint_does_not_sync_or_grant_access_from_unverified_external_token(monkeypatch) -> None:
     app = _make_status_app(register_auth_hook=False, register_tenant_resolution_hook=False)
 

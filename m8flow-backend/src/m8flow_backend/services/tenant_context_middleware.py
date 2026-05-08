@@ -14,6 +14,7 @@ from sqlalchemy import or_
 from m8flow_backend.services.tenant_identity_helpers import authentication_identifier_from_payload
 from m8flow_backend.services.tenant_identity_helpers import current_tenant_identifiers
 from m8flow_backend.services.tenant_identity_helpers import extract_realm_from_issuer
+from m8flow_backend.services.tenant_identity_helpers import organization_memberships_from_payload
 from m8flow_backend.services.tenant_identity_helpers import tenant_id_from_payload
 from m8flow_backend.services.tenant_identity_helpers import user_belongs_to_current_tenant
 from spiffworkflow_backend.exceptions.api_error import ApiError
@@ -310,6 +311,17 @@ def _resolve_tenant_details() -> dict[str, Optional[str]]:
 
     allow_decode = True
     tenant_from_claim = _tenant_from_jwt_claim_cached(allow_decode=allow_decode)
+    selected_tenant_override = _selected_tenant_override_for_shared_multi_org_token(
+        getattr(g, "_m8flow_decoded_token", None)
+    )
+    if selected_tenant_override:
+        return {
+            "tenant_id": selected_tenant_override,
+            "source": "selected_tenant_cookie",
+            "reason": "Resolved tenant from selected tenant cookie for shared-realm multi-organization token.",
+            "jwt_tenant_id": tenant_from_claim,
+            "header_tenant_id": _tenant_from_request_header(),
+        }
     if tenant_from_claim:
         return {
             "tenant_id": tenant_from_claim,
@@ -432,7 +444,7 @@ def _tenant_from_jwt_claim_cached(*, allow_decode: bool) -> Optional[str]:
 
     cached_decoded = getattr(g, "_m8flow_decoded_token", None)
     cached_raw = getattr(g, "_m8flow_decoded_token_raw", None)
-    if cached_decoded is not None and cached_raw == token:
+    if cached_decoded is not None and (cached_raw is None or cached_raw == token):
         return _authenticated_tenant_id_from_payload(cached_decoded)
 
     if not allow_decode:
@@ -495,6 +507,36 @@ def _selected_tenant_from_request() -> Optional[str]:
     selected_tenant = request.cookies.get(SELECTED_TENANT_COOKIE_NAME)
     if isinstance(selected_tenant, str) and selected_tenant.strip():
         return selected_tenant.strip()
+    return None
+
+
+def _selected_tenant_override_for_shared_multi_org_token(payload: dict[str, Any] | None) -> Optional[str]:
+    """Prefer the selected-tenant cookie over token tenant claims for shared-realm multi-org sessions."""
+    if not isinstance(payload, dict):
+        return None
+
+    selected_tenant = _selected_tenant_from_request()
+    if not isinstance(selected_tenant, str) or not selected_tenant.strip():
+        return None
+
+    authentication_identifier = authentication_identifier_from_payload(payload)
+    issuer_realm = extract_realm_from_issuer(payload.get("iss"))
+    if authentication_identifier != _shared_realm_identifier() and issuer_realm != _shared_realm_identifier():
+        return None
+
+    memberships = organization_memberships_from_payload(payload)
+    if len(memberships) <= 1:
+        return None
+
+    selected_identifiers = current_tenant_identifiers(selected_tenant) or {selected_tenant}
+    for organization_alias, organization_details in memberships:
+        organization_identifiers = {organization_alias}
+        organization_id = organization_details.get("id")
+        if isinstance(organization_id, str) and organization_id.strip():
+            organization_identifiers.add(organization_id.strip())
+        if organization_identifiers.intersection(selected_identifiers):
+            return selected_tenant
+
     return None
 
 

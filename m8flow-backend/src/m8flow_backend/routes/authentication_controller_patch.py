@@ -12,11 +12,15 @@ from urllib.parse import urlsplit
 
 from m8flow_backend.services.tenant_context_middleware import resolve_request_tenant
 from m8flow_backend.services.tenant_identity_helpers import authentication_identifier_from_payload
+from m8flow_backend.services.tenant_identity_helpers import extract_realm_from_issuer
+from m8flow_backend.services.tenant_identity_helpers import current_tenant_identifiers
+from m8flow_backend.services.tenant_identity_helpers import organization_group_identifiers_from_payload
 from m8flow_backend.services.tenant_identity_helpers import organization_memberships_from_payload
 from m8flow_backend.services.tenant_identity_helpers import qualified_config_group_identifier
 from m8flow_backend.services.tenant_identity_helpers import TENANT_ALIAS_CLAIM
 from m8flow_backend.services.tenant_identity_helpers import TENANT_NAME_CLAIM
 from m8flow_backend.services.tenant_identity_helpers import tenant_id_from_payload
+from m8flow_backend.services.tenant_identity_helpers import tenant_slug_for_identifier
 from spiffworkflow_backend.routes import authentication_controller
 
 logger = logging.getLogger(__name__)
@@ -67,6 +71,9 @@ def apply() -> None:
 
         decoded_token = authentication_controller.verify_token(*args, **kwargs)
         g._m8flow_decoded_token = decoded_token
+        token = getattr(g, "token", None)
+        if isinstance(token, str) and token:
+            g._m8flow_decoded_token_raw = token
         resolve_request_tenant()
         AuthorizationService.check_for_permission(decoded_token)
 
@@ -272,6 +279,37 @@ def _selected_tenant_from_request(authentication_identifier: str | None = None) 
     return None
 
 
+def _selected_tenant_overrides_shared_multi_org_token(
+    decoded_token: dict[str, Any] | None,
+    selected_tenant: str | None,
+) -> bool:
+    """Return whether the selected tenant should override token tenant claims for shared-realm multi-org sessions."""
+    if not isinstance(decoded_token, dict):
+        return False
+    if not isinstance(selected_tenant, str) or not selected_tenant.strip():
+        return False
+
+    authentication_identifier = authentication_identifier_from_payload(decoded_token)
+    issuer_realm = extract_realm_from_issuer(decoded_token.get("iss"))
+    if authentication_identifier != _shared_realm_identifier() and issuer_realm != _shared_realm_identifier():
+        return False
+
+    memberships = organization_memberships_from_payload(decoded_token)
+    if len(memberships) <= 1:
+        return False
+
+    selected_identifiers = current_tenant_identifiers(selected_tenant) or {selected_tenant}
+    for organization_alias, organization_details in memberships:
+        organization_identifiers = {organization_alias}
+        organization_id = organization_details.get("id")
+        if isinstance(organization_id, str) and organization_id.strip():
+            organization_identifiers.add(organization_id.strip())
+        if organization_identifiers.intersection(selected_identifiers):
+            return True
+
+    return False
+
+
 def _tenant_for_refresh_tokens(
     decoded_token: dict | None = None,
     state: str | None = None,
@@ -279,13 +317,15 @@ def _tenant_for_refresh_tokens(
     """Derive tenant context for refresh-token flows before normal tenant hooks run."""
     from flask import g, has_request_context, request
 
+    state_identifier = _decode_state_authentication_identifier(state)
+    selected_tenant = _selected_tenant_from_request(state_identifier)
     if isinstance(decoded_token, dict):
+        if selected_tenant and _selected_tenant_overrides_shared_multi_org_token(decoded_token, selected_tenant):
+            return selected_tenant
         tenant_from_claim = tenant_id_from_payload(decoded_token)
         if tenant_from_claim:
             return tenant_from_claim
 
-    state_identifier = _decode_state_authentication_identifier(state)
-    selected_tenant = _selected_tenant_from_request(state_identifier)
     if selected_tenant:
         return selected_tenant
 
@@ -353,6 +393,80 @@ def _token_contains_authoritative_membership_claims(decoded_token: dict | None) 
             return True
 
     return False
+
+
+def _shared_realm_token_has_active_organization_groups(
+    decoded_token: dict | None,
+    *,
+    tenant_id: str | None,
+) -> bool:
+    """Return whether the shared-realm token already carries org-local groups for the active tenant."""
+    if not isinstance(decoded_token, dict):
+        return False
+    if not isinstance(tenant_id, str) or not tenant_id.strip():
+        return False
+    return bool(organization_group_identifiers_from_payload(decoded_token, tenant_id=tenant_id.strip()))
+
+
+def _enrich_shared_realm_token_for_active_tenant(
+    decoded_token: dict | None,
+    *,
+    tenant_id: str | None = None,
+) -> dict | None:
+    """
+    Reconstruct active-organization membership claims for thin shared-realm tokens.
+
+    Some shared-realm access tokens identify the active tenant but do not carry the
+    organization-local groups needed to refresh local M8Flow RBAC. When the request
+    already has a concrete tenant context, fetch the selected organization's member
+    groups from Keycloak and rewrite the token into the same single-organization
+    shape used by tenant finalization.
+    """
+    if not isinstance(decoded_token, dict):
+        return decoded_token
+
+    authentication_identifier = authentication_identifier_from_payload(decoded_token)
+    issuer_realm = extract_realm_from_issuer(decoded_token.get("iss"))
+    is_shared_realm_token = (
+        authentication_identifier == _shared_realm_identifier() or issuer_realm == _shared_realm_identifier()
+    )
+    if not is_shared_realm_token:
+        if _token_contains_authoritative_membership_claims(decoded_token):
+            return decoded_token
+        return decoded_token
+
+    effective_tenant_id = tenant_id or _tenant_for_refresh_tokens(decoded_token=decoded_token)
+    if not isinstance(effective_tenant_id, str) or not effective_tenant_id.strip():
+        return decoded_token
+    effective_tenant_id = effective_tenant_id.strip()
+
+    if _shared_realm_token_has_active_organization_groups(decoded_token, tenant_id=effective_tenant_id):
+        return decoded_token
+
+    selected_tenant_alias = tenant_slug_for_identifier(effective_tenant_id)
+    if not isinstance(selected_tenant_alias, str) or not selected_tenant_alias.strip():
+        token_alias = decoded_token.get(TENANT_ALIAS_CLAIM)
+        if isinstance(token_alias, str) and token_alias.strip():
+            selected_tenant_alias = token_alias.strip()
+        else:
+            selected_tenant_alias = effective_tenant_id
+
+    try:
+        enriched_token = _synchronize_selected_organization_claims(
+            decoded_token,
+            selected_tenant_alias=selected_tenant_alias,
+            selected_tenant_id=effective_tenant_id,
+        )
+    except Exception:
+        logger.warning(
+            "shared_realm_token_enrichment_failed: tenant_id=%s alias=%s",
+            effective_tenant_id,
+            selected_tenant_alias,
+            exc_info=True,
+        )
+        return decoded_token
+
+    return enriched_token if isinstance(enriched_token, dict) else decoded_token
 
 
 def apply_refresh_token_tenant_patch() -> None:
@@ -424,6 +538,10 @@ def apply_refresh_token_tenant_patch() -> None:
         """Resolve or auto-provision the user while refresh-token tenant context is temporarily bound."""
         tenant_id = _tenant_for_refresh_tokens(decoded_token=decoded_token)
         with _temporary_request_tenant(tenant_id):
+            decoded_token = _enrich_shared_realm_token_for_active_tenant(
+                decoded_token,
+                tenant_id=tenant_id,
+            )
             try:
                 user_model = original_get_user_model_from_token(decoded_token)
             except Exception as exc:

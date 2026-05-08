@@ -84,6 +84,14 @@ const getAuthenticationIdentifier = () => {
   return getCookie('authentication_identifier');
 };
 
+const getSelectedTenantCookie = () => {
+  return getCookie('m8flow_selected_tenant');
+};
+
+const hasSelectedTenantCookie = () => {
+  return !!getSelectedTenantCookie();
+};
+
 const getAuthenticationRealmHint = () => {
   const cookieValue = getCookie(AUTH_REALM_HINT_STORAGE_KEY);
   if (cookieValue) {
@@ -391,9 +399,11 @@ const UserService = {
   getCurrentLocation,
   getPreferredUsername,
   getOrganizationMemberships,
+  getSelectedTenantCookie,
   getUserEmail,
   getUserName,
   getTenantId,
+  hasSelectedTenantCookie,
   isLoggedIn,
   isPublicUser,
   redirectToLogin,

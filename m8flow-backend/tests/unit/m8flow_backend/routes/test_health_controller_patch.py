@@ -129,6 +129,7 @@ def test_health_controller_patch_resolves_tenant_before_status(monkeypatch) -> N
     sys.modules.pop("m8flow_backend.routes.health_controller_patch", None)
     health_controller_patch = importlib.import_module("m8flow_backend.routes.health_controller_patch")
     monkeypatch.setattr(health_controller_patch, "_PATCHED", False)
+    monkeypatch.setattr(health_controller_patch, "_enrich_verified_status_token_for_active_tenant", lambda decoded_token: decoded_token)
 
     app = Flask(__name__)
     app.config["TESTING"] = True
@@ -285,6 +286,7 @@ def test_health_controller_patch_synchronizes_selected_org_when_multi_org_token_
     health_controller_patch = importlib.import_module("m8flow_backend.routes.health_controller_patch")
     monkeypatch.setattr(health_controller_patch, "_PATCHED", False)
     monkeypatch.setattr(health_controller_patch, "_canonical_tenant_id_for_status", lambda tenant_identifier: tenant_identifier)
+    monkeypatch.setattr(health_controller_patch, "_enrich_verified_status_token_for_active_tenant", lambda decoded_token: decoded_token)
 
     app = Flask(__name__)
     app.config["TESTING"] = True

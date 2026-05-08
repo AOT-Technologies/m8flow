@@ -5,6 +5,8 @@ from types import ModuleType
 from types import SimpleNamespace
 from typing import Any
 
+from flask import Flask
+
 from m8flow_backend.services.tenant_identity_helpers import display_group_identifier
 from m8flow_backend.services.tenant_identity_helpers import filter_users_for_current_tenant
 from m8flow_backend.services.tenant_identity_helpers import active_organization_from_payload
@@ -17,9 +19,12 @@ from m8flow_backend.services.tenant_identity_helpers import resolve_user_for_cur
 from m8flow_backend.services.tenant_identity_helpers import authentication_identifier_from_payload
 from m8flow_backend.services.tenant_identity_helpers import single_organization_from_payload
 from m8flow_backend.services.tenant_identity_helpers import tenant_alias_from_payload
+from m8flow_backend.services.tenant_identity_helpers import current_tenant_id_or_none
 from m8flow_backend.services.tenant_identity_helpers import tenant_id_from_payload
 from m8flow_backend.services.tenant_identity_helpers import tenant_slug_for_identifier
 from m8flow_backend.services.tenant_identity_helpers import user_belongs_to_current_tenant
+from m8flow_backend.tenancy import set_context_tenant_id
+from m8flow_backend.tenancy import reset_context_tenant_id
 
 
 def test_qualify_group_identifier_qualifies_bare_and_preserves_qualified(monkeypatch) -> None:
@@ -193,6 +198,29 @@ def test_organization_id_for_tenant_prefers_canonical_tenant_id(monkeypatch) -> 
     monkeypatch.setattr(helpers, "current_tenant_id_or_none", lambda: "tenant-uuid")
 
     assert helpers._organization_id_for_tenant() == "org-uuid"
+
+
+def test_current_tenant_id_or_none_ignores_default_and_public_context() -> None:
+    default_token = set_context_tenant_id("default")
+    public_token = None
+    try:
+        assert current_tenant_id_or_none() is None
+        public_token = set_context_tenant_id("public")
+        assert current_tenant_id_or_none() is None
+    finally:
+        if public_token is not None:
+            reset_context_tenant_id(public_token)
+        reset_context_tenant_id(default_token)
+
+
+def test_current_tenant_id_or_none_prefers_real_request_tenant() -> None:
+    app = Flask(__name__)
+
+    with app.test_request_context("/v1.0/tasks"):
+        from flask import g
+
+        g.m8flow_tenant_id = "tenant-real-id"
+        assert current_tenant_id_or_none() == "tenant-real-id"
 
 
 def test_upsert_local_shared_realm_member_reuses_existing_shared_realm_user(monkeypatch) -> None:

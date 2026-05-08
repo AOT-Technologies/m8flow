@@ -551,6 +551,52 @@ def test_resolves_tenant_from_jwt_claim_on_status_path_without_auth_realm_lookup
             assert org_tenant_id in current_tenant_identifiers(org_tenant_id)
 
 
+def test_selected_tenant_cookie_overrides_explicit_token_tenant_for_shared_realm_multi_org_status(monkeypatch) -> None:
+    import jwt
+
+    from spiffworkflow_backend.services.authentication_service import AuthenticationService
+
+    app = _make_app()
+
+    monkeypatch.setenv("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", "true")
+    monkeypatch.setenv("M8FLOW_KEYCLOAK_SHARED_REALM", "m8flow")
+    monkeypatch.setattr(
+        AuthenticationService,
+        "parse_jwt_token",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("parse_jwt_token should not be called")),
+    )
+
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+
+        token = jwt.encode(
+            {
+                "iss": "http://localhost:7002/realms/m8flow",
+                "m8flow_authentication_identifier": "m8flow",
+                "m8flow_tenant_id": "tenant-a",
+                "m8flow_tenant_alias": "tenant-a",
+                "organization": {
+                    "tenant-a": {"id": "tenant-a"},
+                    "it": {"id": "tenant-it-id"},
+                },
+            },
+            "test-secret",
+            algorithm="HS256",
+        )
+
+        with app.test_request_context(
+            "/v1.0/status",
+            headers={"Authorization": f"Bearer {token}"},
+            environ_base={"HTTP_COOKIE": "authentication_identifier=m8flow; m8flow_selected_tenant=tenant-it-id"},
+        ):
+            resolve_request_tenant()
+
+            assert current_tenant_id_or_none() == "tenant-it-id"
+            assert g.m8flow_tenant_id == "tenant-it-id"
+            assert "tenant-it-id" in current_tenant_identifiers("tenant-it-id")
+
+
 def test_resolves_tenant_from_request_header_when_user_belongs(monkeypatch) -> None:
     app = _make_app()
 
