@@ -11,6 +11,8 @@ const FILTER_PARAM_KEYS: (keyof TemplateFilters)[] = [
   'visibility',
   'owner',
   'latest_only',
+  'include_deleted',
+  'deleted_only',
   'page',
   'per_page',
 ];

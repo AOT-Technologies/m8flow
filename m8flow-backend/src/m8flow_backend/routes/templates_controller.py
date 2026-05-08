@@ -60,6 +60,8 @@ def template_list():
     search = request.args.get("search")  # Text search in name/description
     template_key = request.args.get("template_key")
     published_only = request.args.get("published_only", "false").lower() == "true"
+    include_deleted = request.args.get("include_deleted", "false").lower() == "true"
+    deleted_only = request.args.get("deleted_only", "false").lower() == "true"
     sort_by = request.args.get("sort_by")  # created, name
     order = request.args.get("order", "desc").lower()
     if order not in ("asc", "desc"):
@@ -87,6 +89,8 @@ def template_list():
         search=search,
         template_key=template_key,
         published_only=published_only,
+        include_deleted=include_deleted,
+        deleted_only=deleted_only,
         sort_by=sort_by,
         order=order,
         page=page,
@@ -344,6 +348,12 @@ def template_delete_by_id(id: int):
     user = getattr(g, "user", None)
     TemplateService.delete_template_by_id(id, user=user)
     return jsonify({"status": "success", "message": "Template deleted successfully"}), 200
+
+
+def template_restore_by_id(id: int):
+    user = getattr(g, "user", None)
+    template = TemplateService.restore_template_by_id(id, user=user)
+    return jsonify(_serialize_template(template)), 200
 
 
 def template_create_process_model(id: int):

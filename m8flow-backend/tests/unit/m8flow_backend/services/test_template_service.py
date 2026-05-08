@@ -20,6 +20,7 @@ from m8flow_backend.services import model_override_patch
 
 model_override_patch.apply()
 
+from m8flow_backend.models.process_model_template import ProcessModelTemplateModel  # noqa: E402
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel  # noqa: E402
 from m8flow_backend.models.template import TemplateModel, TemplateVisibility  # noqa: E402
 from m8flow_backend.services.template_service import TemplateService  # noqa: E402
@@ -1644,8 +1645,8 @@ def test_update_template_allowed_fields() -> None:
 # ============================================================================
 
 
-def test_delete_template_by_id() -> None:
-    """Soft delete unpublished template."""
+def test_delete_template_by_id_hard_deletes_draft_and_provenance() -> None:
+    """Draft templates are hard-deleted and linked provenance rows are removed."""
     app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -1677,12 +1678,28 @@ def test_delete_template_by_id() -> None:
             db.session.commit()
             template_id = template.id
 
+            provenance = ProcessModelTemplateModel(
+                process_model_identifier="group/model-a",
+                source_template_id=template_id,
+                source_template_key=template.template_key,
+                source_template_version=template.version,
+                source_template_name=template.name,
+                m8f_tenant_id="tenant-a",
+                created_by="tester",
+            )
+            db.session.add(provenance)
+            db.session.commit()
+
             TemplateService.delete_template_by_id(template_id, user=user)
 
-            # Row should still exist but be marked as deleted
             deleted = TemplateModel.query.filter_by(id=template_id).first()
-            assert deleted is not None
-            assert deleted.is_deleted is True
+            assert deleted is None
+            assert (
+                ProcessModelTemplateModel.query.filter_by(
+                    source_template_id=template_id
+                ).count()
+                == 0
+            )
 
             # Service-level accessors should no longer see the template
             assert TemplateService.get_template_by_id(template_id, user=user) is None
@@ -1701,7 +1718,7 @@ def test_delete_template_by_id() -> None:
 
 
 def test_soft_deleted_templates_are_excluded_from_queries() -> None:
-    """Ensure soft-deleted templates are excluded from list/get queries."""
+    """Ensure soft-deleted templates are excluded by default and query flags work."""
     app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -1750,6 +1767,28 @@ def test_soft_deleted_templates_are_excluded_from_queries() -> None:
             assert "active-template" in keys
             assert "deleted-template" not in keys
 
+            # deleted_only should return only soft-deleted templates
+            deleted_results, _ = TemplateService.list_templates(
+                user=user,
+                tenant_id="tenant-a",
+                latest_only=False,
+                deleted_only=True,
+            )
+            deleted_keys = {t.template_key for t in deleted_results}
+            assert "deleted-template" in deleted_keys
+            assert "active-template" not in deleted_keys
+
+            # include_deleted should return both
+            all_results, _ = TemplateService.list_templates(
+                user=user,
+                tenant_id="tenant-a",
+                latest_only=False,
+                include_deleted=True,
+            )
+            all_keys = {t.template_key for t in all_results}
+            assert "active-template" in all_keys
+            assert "deleted-template" in all_keys
+
             # get_template should not return the deleted template
             assert (
                 TemplateService.get_template(
@@ -1765,8 +1804,8 @@ def test_soft_deleted_templates_are_excluded_from_queries() -> None:
             assert TemplateService.get_template_by_id(deleted.id, user=user) is None
 
 
-def test_delete_template_published_immutable() -> None:
-    """Should raise ApiError for published templates."""
+def test_delete_template_published_soft_delete_for_tenant_admin() -> None:
+    """Published templates are soft-deleted and renamed by tenant-admin."""
     app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -1798,12 +1837,100 @@ def test_delete_template_published_immutable() -> None:
             db.session.commit()
             template_id = template.id
 
-            try:
+            with patch("m8flow_backend.services.template_service.TemplateAuthorizationService.is_tenant_admin", return_value=True):
                 TemplateService.delete_template_by_id(template_id, user=user)
-                assert False, "Should have raised ApiError"
-            except ApiError as e:
-                assert e.error_code == "immutable"
-                assert e.status_code == 400
+
+            deleted = TemplateModel.query.filter_by(id=template_id).first()
+            assert deleted is not None
+            assert deleted.is_deleted is True
+            assert deleted.name.startswith("Published_deleted_")
+            suffix = deleted.name.split("_deleted_")[-1]
+            assert len(suffix) == 14
+            assert suffix.isdigit()
+
+
+def test_delete_template_published_requires_tenant_admin() -> None:
+    """Published template delete should fail for non-tenant-admin users."""
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = user
+
+            template = TemplateModel(
+                template_key="published-delete-forbidden",
+                version="V1",
+                name="Published",
+                m8f_tenant_id="tenant-a",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
+                is_published=True,
+                created_by="tester",
+                modified_by="tester",
+            )
+            db.session.add(template)
+            db.session.commit()
+
+            with patch("m8flow_backend.services.template_service.TemplateAuthorizationService.is_tenant_admin", return_value=False):
+                try:
+                    TemplateService.delete_template_by_id(template.id, user=user)
+                    assert False, "Should have raised ApiError"
+                except ApiError as e:
+                    assert e.error_code == "forbidden"
+                    assert e.status_code == 403
+
+
+def test_delete_template_published_allows_tenant_admin_for_non_owner_private() -> None:
+    """Tenant-admin can soft-delete a published private template they do not own."""
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        owner = UserModel(username="owner", email="owner@example.com", service="local", service_id="owner")
+        admin = UserModel(username="admin", email="admin@example.com", service="local", service_id="admin")
+        db.session.add_all([owner, admin])
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = admin
+
+            template = TemplateModel(
+                template_key="published-private-admin-delete",
+                version="V1",
+                name="Published Private",
+                m8f_tenant_id="tenant-a",
+                visibility=TemplateVisibility.private.value,
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
+                is_published=True,
+                created_by="owner",
+                modified_by="owner",
+            )
+            db.session.add(template)
+            db.session.commit()
+
+            with patch("m8flow_backend.services.template_service.TemplateAuthorizationService.is_tenant_admin", return_value=True):
+                TemplateService.delete_template_by_id(template.id, user=admin)
+
+            deleted = TemplateModel.query.filter_by(id=template.id).first()
+            assert deleted is not None
+            assert deleted.is_deleted is True
+            assert deleted.name.startswith("Published Private_deleted_")
 
 
 def test_delete_template_unauthorized() -> None:
@@ -1848,6 +1975,212 @@ def test_delete_template_unauthorized() -> None:
             except ApiError as e:
                 assert e.error_code == "forbidden"
                 assert e.status_code == 403
+
+
+def test_delete_draft_template_allows_tenant_admin() -> None:
+    """Tenant-admin can hard-delete draft templates not owned by them."""
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        owner = UserModel(username="owner", email="owner@example.com", service="local", service_id="owner")
+        admin = UserModel(username="admin", email="admin@example.com", service="local", service_id="admin")
+        db.session.add_all([owner, admin])
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = admin
+
+            template = TemplateModel(
+                template_key="tenant-admin-delete",
+                version="V1",
+                name="Draft",
+                m8f_tenant_id="tenant-a",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
+                is_published=False,
+                created_by="owner",
+                modified_by="owner",
+            )
+            db.session.add(template)
+            db.session.commit()
+            template_id = template.id
+
+            with patch("m8flow_backend.services.template_service.TemplateAuthorizationService.is_tenant_admin", return_value=True):
+                TemplateService.delete_template_by_id(template_id, user=admin)
+
+            assert TemplateModel.query.filter_by(id=template_id).first() is None
+
+
+def test_restore_template_by_id_tenant_admin() -> None:
+    """Tenant-admin can restore a soft-deleted template and recover base name."""
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = user
+
+            deleted_template = TemplateModel(
+                template_key="restore-me",
+                version="V1",
+                name="Restore Name_deleted_20260224123456",
+                m8f_tenant_id="tenant-a",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
+                is_published=True,
+                is_deleted=True,
+                created_by="tester",
+                modified_by="tester",
+            )
+            db.session.add(deleted_template)
+            db.session.commit()
+
+            with patch("m8flow_backend.services.template_service.TemplateAuthorizationService.is_tenant_admin", return_value=True):
+                restored = TemplateService.restore_template_by_id(deleted_template.id, user=user)
+
+            assert restored.is_deleted is False
+            assert restored.name == "Restore Name"
+
+
+def test_restore_template_requires_tenant_admin() -> None:
+    """Restore should fail for non-tenant-admin users."""
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = user
+
+            deleted_template = TemplateModel(
+                template_key="restore-forbidden",
+                version="V1",
+                name="Restore Name_deleted_20260224123456",
+                m8f_tenant_id="tenant-a",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
+                is_published=True,
+                is_deleted=True,
+                created_by="tester",
+                modified_by="tester",
+            )
+            db.session.add(deleted_template)
+            db.session.commit()
+
+            with patch("m8flow_backend.services.template_service.TemplateAuthorizationService.is_tenant_admin", return_value=False):
+                try:
+                    TemplateService.restore_template_by_id(deleted_template.id, user=user)
+                    assert False, "Should have raised ApiError"
+                except ApiError as e:
+                    assert e.error_code == "forbidden"
+                    assert e.status_code == 403
+
+
+def test_restore_template_invalid_state() -> None:
+    """Restore should fail when template is not deleted."""
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = user
+
+            active_template = TemplateModel(
+                template_key="restore-invalid",
+                version="V1",
+                name="Active Template",
+                m8f_tenant_id="tenant-a",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
+                is_published=True,
+                is_deleted=False,
+                created_by="tester",
+                modified_by="tester",
+            )
+            db.session.add(active_template)
+            db.session.commit()
+
+            with patch("m8flow_backend.services.template_service.TemplateAuthorizationService.is_tenant_admin", return_value=True):
+                try:
+                    TemplateService.restore_template_by_id(active_template.id, user=user)
+                    assert False, "Should have raised ApiError"
+                except ApiError as e:
+                    assert e.error_code == "invalid_state"
+                    assert e.status_code == 400
+
+
+def test_restore_template_by_id_allows_tenant_admin_for_non_owner_private() -> None:
+    """Tenant-admin can restore a private soft-deleted template created by another user."""
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        owner = UserModel(username="owner", email="owner@example.com", service="local", service_id="owner")
+        admin = UserModel(username="admin", email="admin@example.com", service="local", service_id="admin")
+        db.session.add_all([owner, admin])
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = admin
+
+            deleted_template = TemplateModel(
+                template_key="restore-private-admin",
+                version="V1",
+                name="Restore Private_deleted_20260224123456",
+                m8f_tenant_id="tenant-a",
+                visibility=TemplateVisibility.private.value,
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
+                is_published=True,
+                is_deleted=True,
+                created_by="owner",
+                modified_by="owner",
+            )
+            db.session.add(deleted_template)
+            db.session.commit()
+
+            with patch("m8flow_backend.services.template_service.TemplateAuthorizationService.is_tenant_admin", return_value=True):
+                restored = TemplateService.restore_template_by_id(deleted_template.id, user=admin)
+
+            assert restored.is_deleted is False
+            assert restored.name == "Restore Private"
 
 
 def test_delete_template_not_found() -> None:

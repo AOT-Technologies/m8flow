@@ -18,21 +18,32 @@ class TemplateAuthorizationService:
 
     @classmethod
     def can_view(cls, template: TemplateModel, user: UserModel | None = None) -> bool:
+        tenant_id = cls._tenant_id()
+
+        # Tenant-admin can view any template in their tenant.
+        if (
+            user is not None
+            and cls.is_tenant_admin(user)
+            and tenant_id is not None
+            and tenant_id == template.m8f_tenant_id
+        ):
+            return True
+
         # PUBLIC: anyone with auth context
         if template.is_public():
             return True
 
         # TENANT: must match tenant
         if template.is_tenant_visible():
-            return cls._tenant_id() is not None and cls._tenant_id() == template.m8f_tenant_id
+            return tenant_id is not None and tenant_id == template.m8f_tenant_id
 
         # PRIVATE: must be creator and same tenant
         if template.is_private():
             return (
                 user is not None
                 and template.created_by == user.username
-                and cls._tenant_id() is not None
-                and cls._tenant_id() == template.m8f_tenant_id
+                and tenant_id is not None
+                and tenant_id == template.m8f_tenant_id
             )
         return False
 
@@ -57,6 +68,25 @@ class TemplateAuthorizationService:
 
         return False
 
+    @staticmethod
+    def _user_group_identifiers(user: UserModel | None = None) -> set[str]:
+        if user is None or not hasattr(user, "groups"):
+            return set()
+        identifiers: set[str] = set()
+        for group in getattr(user, "groups", []) or []:
+            identifier = getattr(group, "identifier", None) or getattr(group, "name", None)
+            if isinstance(identifier, str) and identifier:
+                identifiers.add(identifier)
+        return identifiers
+
+    @classmethod
+    def is_tenant_admin(cls, user: UserModel | None = None) -> bool:
+        """Return True when user belongs to tenant-admin group (plain or tenant-qualified)."""
+        for identifier in cls._user_group_identifiers(user):
+            if identifier == "tenant-admin" or identifier.endswith(":tenant-admin"):
+                return True
+        return False
+
     @classmethod
     def filter_query_by_visibility(cls, query, user: UserModel | None = None):
         """Apply visibility filters for the current tenant/user."""
@@ -74,11 +104,19 @@ class TemplateAuthorizationService:
             ),
         ]
         if user is not None:
-            conditions.append(
-                and_(
-                    TemplateModel.visibility == TemplateVisibility.private.value,
-                    TemplateModel.m8f_tenant_id == tenant_id,
-                    TemplateModel.created_by == user.username
+            if cls.is_tenant_admin(user):
+                conditions.append(
+                    and_(
+                        TemplateModel.visibility == TemplateVisibility.private.value,
+                        TemplateModel.m8f_tenant_id == tenant_id,
+                    )
                 )
-            )
+            else:
+                conditions.append(
+                    and_(
+                        TemplateModel.visibility == TemplateVisibility.private.value,
+                        TemplateModel.m8f_tenant_id == tenant_id,
+                        TemplateModel.created_by == user.username
+                    )
+                )
         return query.filter(or_(*conditions))

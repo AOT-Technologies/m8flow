@@ -36,6 +36,8 @@ export interface TemplateFilters {
   visibility?: TemplateVisibility;
   owner?: string;
   latest_only?: boolean;
+  include_deleted?: boolean;
+  deleted_only?: boolean;
   page?: number;
   per_page?: number;
 }
