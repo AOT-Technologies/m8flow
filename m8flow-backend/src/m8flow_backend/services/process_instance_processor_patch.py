@@ -31,6 +31,48 @@ def apply() -> None:
     from spiffworkflow_backend.services.process_instance_processor import ProcessInstanceProcessor
     from spiffworkflow_backend.services.user_service import UserService
 
+    def _resolve_lane_owners(task: SpiffTask) -> dict | None:
+        lane_owners = getattr(task, "data", None)
+        if isinstance(lane_owners, dict):
+            candidate = lane_owners.get("lane_owners")
+            if isinstance(candidate, dict) and candidate:
+                return candidate
+
+        task_workflow = getattr(task, "workflow", None)
+        if task_workflow is not None:
+            workflow_data = getattr(task_workflow, "data", None)
+            if isinstance(workflow_data, dict):
+                workflow_data_objects = workflow_data.get("data_objects")
+                if isinstance(workflow_data_objects, dict):
+                    candidate = workflow_data_objects.get("lane_owners")
+                    if isinstance(candidate, dict) and candidate:
+                        return candidate
+
+                candidate = workflow_data.get("lane_owners")
+                if isinstance(candidate, dict) and candidate:
+                    return candidate
+
+            workflow_data_objects_attr = getattr(task_workflow, "data_objects", None)
+            if isinstance(workflow_data_objects_attr, dict):
+                candidate = workflow_data_objects_attr.get("lane_owners")
+                if isinstance(candidate, dict) and candidate:
+                    return candidate
+
+            if hasattr(ProcessInstanceProcessor, "get_tasks_with_data"):
+                completed_tasks_with_data = ProcessInstanceProcessor.get_tasks_with_data(task_workflow)
+                for completed_task in sorted(
+                    completed_tasks_with_data,
+                    key=_task_sort_ts,
+                ):
+                    completed_task_data = getattr(completed_task, "data", None)
+                    if not isinstance(completed_task_data, dict) or not completed_task_data:
+                        continue
+                    candidate = completed_task_data.get("lane_owners")
+                    if isinstance(candidate, dict) and candidate:
+                        return candidate
+
+        return None
+
     def patched_get_potential_owners_from_task(self: ProcessInstanceProcessor, task: SpiffTask) -> PotentialOwnerIdList:
         """Resolve guest, initiator, lane-assignment, and lane-owner users within the current tenant."""
         task_spec = task.task_spec
@@ -56,8 +98,9 @@ def apply() -> None:
         else:
             group_model = UserService.find_or_create_group(task_lane)
             lane_assignment_id = group_model.id
-            if "lane_owners" in task.data and task_lane in task.data["lane_owners"]:
-                for username_or_email in task.data["lane_owners"][task_lane]:
+            resolved_lane_owners = _resolve_lane_owners(task)
+            if isinstance(resolved_lane_owners, dict) and task_lane in resolved_lane_owners:
+                for username_or_email in resolved_lane_owners[task_lane]:
                     for lane_owner_user in find_users_for_current_tenant_by_identifier(username_or_email):
                         potential_owners.append(
                             {"added_by": HumanTaskUserAddedBy.lane_owner.value, "user_id": lane_owner_user.id}
@@ -67,7 +110,7 @@ def apply() -> None:
                     (
                         "No users found in task data lane owner list for lane:"
                         f" {task_lane}. The user list used:"
-                        f" {task.data['lane_owners'][task_lane]}"
+                        f" {resolved_lane_owners[task_lane]}"
                     ),
                 )
             else:

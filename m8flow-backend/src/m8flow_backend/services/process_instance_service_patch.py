@@ -27,6 +27,7 @@ def apply() -> None:
 
     from spiffworkflow_backend.data_migrations.process_instance_migrator import ProcessInstanceMigrator
     from spiffworkflow_backend.models.db import db
+    from spiffworkflow_backend.models.human_task import HumanTaskModel
     from spiffworkflow_backend.services.process_instance_processor import ProcessInstanceProcessor
     from spiffworkflow_backend.services.process_instance_queue_service import ProcessInstanceQueueService
     from spiffworkflow_backend.services.process_instance_service import ProcessInstanceService
@@ -174,21 +175,35 @@ def apply() -> None:
             if merged_data_objects:
                 processor.bpmn_process_instance.data["data_objects"] = merged_data_objects
 
-        if status_value and cls.can_optimistically_skip(processor, status_value):
-            current_app.logger.info(f"Optimistically skipped process_instance {process_instance.id}")
-            return (processor, task_runnability)
+            if status_value and cls.can_optimistically_skip(processor, status_value):
+                current_app.logger.info(f"Optimistically skipped process_instance {process_instance.id}")
+                return (processor, task_runnability)
 
-        db.session.refresh(process_instance)
-        if status_value is None or process_instance.status == status_value:
-            task_runnability = processor.do_engine_steps(
-                save=True,
-                execution_strategy_name=execution_strategy_name,
-                should_schedule_waiting_timer_events=should_schedule_waiting_timer_events,
-            )
+            db.session.refresh(process_instance)
+            if status_value is None or process_instance.status == status_value:
+                task_runnability = processor.do_engine_steps(
+                    save=True,
+                    execution_strategy_name=execution_strategy_name,
+                    should_schedule_waiting_timer_events=should_schedule_waiting_timer_events,
+                )
 
         return (processor, task_runnability)
+
+    original_spiff_task_to_api_task = ProcessInstanceService.spiff_task_to_api_task
+
+    @staticmethod
+    def patched_spiff_task_to_api_task(processor, spiff_task):  # type: ignore[override]
+        """Guard against potential owners with None email/username."""
+        task_guid = str(spiff_task.id)
+        human_task = HumanTaskModel.query.filter_by(task_id=task_guid).first()
+        if human_task is not None:
+            for owner in human_task.potential_owners:
+                if owner is not None and getattr(owner, "email", None) is None:
+                    owner.email = getattr(owner, "username", None) or str(getattr(owner, "id", ""))
+        return original_spiff_task_to_api_task(processor, spiff_task)
 
     ProcessInstanceService.create_process_instance = patched_create_process_instance  # type: ignore[assignment]
     ProcessInstanceService.update_form_task_data = patched_update_form_task_data
     ProcessInstanceService.run_process_instance_with_processor = patched_run_process_instance_with_processor
+    ProcessInstanceService.spiff_task_to_api_task = patched_spiff_task_to_api_task
     _PATCHED = True
