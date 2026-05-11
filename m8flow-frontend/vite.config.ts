@@ -28,7 +28,7 @@ const multiTenantOn =
 
 export default defineConfig({
   base: '/',
-  publicDir: path.resolve(__dirname, '../spiffworkflow-frontend/public'),
+  publicDir: path.resolve(__dirname, 'public'),
   define: {
     'import.meta.env.VITE_MULTI_TENANT_ON': JSON.stringify(multiTenantOn),
   },
