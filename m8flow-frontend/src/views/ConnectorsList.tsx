@@ -42,13 +42,42 @@ function normalizeOperatorEntry(entry: unknown): ServiceTaskOperator[] {
 }
 
 function titleCase(value: string): string {
+  const excludeUppercase = new Set([
+    'mail',
+    'file',
+    'chat',
+    'data',
+    'push',
+    'pull',
+    'send',
+    'read',
+    'write',
+    'list',
+    'get',
+    'put',
+    'post',
+    'patch',
+    'head',
+  ]);
+
   return value
     .split(' ')
     .map((part) => {
-      if (part.toLowerCase() === 'http') return 'HTTP';
-      if (part.toLowerCase() === 'smtp') return 'SMTP';
-      if (part.toLowerCase() === 'api') return 'API';
-      return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+      const token = part.trim();
+      if (!token) {
+        return token;
+      }
+
+      const lower = token.toLowerCase();
+      if (
+        token.length <= 4 &&
+        /^[a-z]+$/.test(lower) &&
+        !excludeUppercase.has(lower)
+      ) {
+        return token.toUpperCase();
+      }
+
+      return token.charAt(0).toUpperCase() + token.slice(1).toLowerCase();
     })
     .join(' ');
 }
