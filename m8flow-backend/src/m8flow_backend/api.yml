@@ -246,7 +246,7 @@ paths:
         "401":
           description: Unauthorized - user not authenticated
         "403":
-          description: Forbidden - cannot access default tenant
+          description: Forbidden - insufficient permissions
           content:
             application/json:
               schema:
@@ -303,7 +303,7 @@ paths:
         "401":
           description: Unauthorized - user not authenticated
         "403":
-          description: Forbidden - cannot access default tenant
+          description: Forbidden - insufficient permissions
         "404":
           description: Tenant not found
 
@@ -350,7 +350,7 @@ paths:
         "401":
           description: Unauthorized - user not authenticated
         "403":
-          description: Forbidden - cannot update default tenant
+          description: Forbidden - insufficient permissions
           content:
             application/json:
               schema:

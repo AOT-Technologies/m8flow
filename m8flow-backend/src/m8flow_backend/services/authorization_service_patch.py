@@ -20,14 +20,14 @@ from m8flow_backend.services.tenant_identity_helpers import qualify_group_identi
 from m8flow_backend.services.tenant_identity_helpers import qualified_config_group_identifier
 from m8flow_backend.services.tenant_identity_helpers import realm_from_service
 from m8flow_backend.services.tenant_identity_helpers import tenant_id_from_payload
-from m8flow_backend.tenancy import DEFAULT_TENANT_ID
+from m8flow_backend.tenancy import is_concrete_tenant_id
 
 _PATCHED = False
 logger = logging.getLogger(__name__)
 
 # Sentinel that distinguishes "no permission scope active" from "scope explicitly set to None".
-# An explicit None is needed for master-realm sign-ins, which must NOT inherit the request's
-# tenant id (typically the default tenant) when qualifying group identifiers.
+# An explicit None is needed for master-realm sign-ins, which must NOT inherit an unrelated
+# request tenant id when qualifying group identifiers.
 _PERMISSION_SCOPE_TENANT_ID_NOT_SET: object = object()
 _PERMISSION_SCOPE_TENANT_ID: ContextVar[Any] = ContextVar(
     "m8flow_permission_scope_tenant_id",
@@ -65,7 +65,7 @@ def _active_permission_scope_tenant_id(fallback: str | None = None) -> str | Non
     An explicit None scope (set via ``_permission_scope_tenant(None)``) is honored
     and short-circuits the request-tenant fallback so master-realm code paths,
     which intentionally have no tenant context, get unqualified group identifiers
-    instead of accidentally being qualified with the default request tenant id.
+    instead of accidentally being qualified with an unrelated request tenant id.
     """
     scoped_value = _PERMISSION_SCOPE_TENANT_ID.get()
     if scoped_value is not _PERMISSION_SCOPE_TENANT_ID_NOT_SET:
@@ -129,9 +129,7 @@ def _group_identifier_applies_to_active_permission_scope(
     tenant_identifiers = current_tenant_identifiers(tenant_id)
     if not tenant_identifiers:
         # Allow the default-user-group identifier to remain effective for users
-        # who have no tenant context (e.g. master-realm admins). Some
-        # environments may still surface the compatibility-qualified
-        # "default:everybody" identifier, so accept either form here.
+        # who have no tenant context (e.g. master-realm admins).
         try:
             from flask import current_app
 
@@ -269,7 +267,7 @@ def _tenant_id_for_user_info(user_info: dict[str, Any]) -> str | None:
         return token_tenant
 
     context_tenant = current_tenant_id_or_none()
-    context_tenant_is_concrete = bool(context_tenant and context_tenant not in {DEFAULT_TENANT_ID, "public"})
+    context_tenant_is_concrete = bool(context_tenant and context_tenant != "public")
     if context_tenant_is_concrete:
         return context_tenant
 
@@ -303,7 +301,7 @@ def _should_defer_tenant_group_sync(user_info: dict[str, Any], tenant_id: str | 
     follow-up login.
     """
     normalized_tenant_id = tenant_id.strip() if isinstance(tenant_id, str) else None
-    if normalized_tenant_id and normalized_tenant_id not in {DEFAULT_TENANT_ID, "public"}:
+    if is_concrete_tenant_id(normalized_tenant_id):
         return False
 
     authentication_identifier = authentication_identifier_from_payload(user_info)

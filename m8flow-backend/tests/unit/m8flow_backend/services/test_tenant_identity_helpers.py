@@ -37,16 +37,16 @@ def test_qualify_group_identifier_qualifies_bare_and_preserves_qualified(monkeyp
     assert qualify_group_identifier("tenant-b:admin") == "tenant-b:admin"
 
 
-def test_qualify_group_identifier_preserves_global_super_admin_aliases(monkeypatch) -> None:
+def test_qualify_group_identifier_only_treats_bare_super_admin_as_global(monkeypatch) -> None:
     monkeypatch.setattr(
         "m8flow_backend.services.tenant_identity_helpers.current_tenant_id_or_none",
         lambda: "tenant-a",
     )
 
     assert qualify_group_identifier("super-admin") == "super-admin"
-    assert qualify_group_identifier("default:super-admin") == "super-admin"
     assert is_global_permission_group_identifier("super-admin") is True
-    assert is_global_permission_group_identifier("default:super-admin") is True
+    assert qualify_group_identifier("default:super-admin") == "default:super-admin"
+    assert is_global_permission_group_identifier("default:super-admin") is False
 
 
 def test_display_group_identifier_rewrites_tenant_prefix_to_slug(monkeypatch) -> None:

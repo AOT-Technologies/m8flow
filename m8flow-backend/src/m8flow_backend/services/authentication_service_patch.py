@@ -461,7 +461,7 @@ def _refresh_token_scope_from_payload(payload: dict | None) -> str | None:
 
 
 def _refresh_token_scope_from_request_token() -> str | None:
-    from flask import has_request_context, request
+    from flask import g, has_request_context, request
 
     if not has_request_context():
         return None
@@ -472,6 +472,14 @@ def _refresh_token_scope_from_request_token() -> str | None:
         token = auth_header[7:].strip() or None
     if not token:
         token = request.cookies.get("access_token")
+    # During /login_return the auth code has just been exchanged for tokens.
+    # The new id_token is set on g.token by login_return immediately before it
+    # calls store_refresh_token, but is not yet in cookies — so fall back to it
+    # here so refresh-token storage can resolve a tenant from the fresh JWT.
+    if not token:
+        g_token = getattr(g, "token", None)
+        if isinstance(g_token, str) and g_token.strip():
+            token = g_token.strip()
     if not token:
         return None
 
@@ -480,8 +488,7 @@ def _refresh_token_scope_from_request_token() -> str | None:
 
 
 def _authentication_identifier_from_request() -> str | None:
-    from flask import has_request_context, request
-    from m8flow_backend.tenancy import DEFAULT_TENANT_ID
+    from flask import current_app, has_request_context, request
 
     if not has_request_context():
         return None
@@ -492,6 +499,11 @@ def _authentication_identifier_from_request() -> str | None:
     realm_hint = request.cookies.get("m8flow_auth_realm")
     if isinstance(realm_hint, str):
         realm_hint = realm_hint.strip() or None
+    auth_config_identifiers = {
+        str(config.get("identifier")).strip()
+        for config in (current_app.config.get("SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS") or [])
+        if isinstance(config, dict) and isinstance(config.get("identifier"), str) and str(config.get("identifier")).strip()
+    }
 
     try:
         from spiffworkflow_backend.routes.authentication_controller import _get_authentication_identifier_from_request
@@ -499,7 +511,7 @@ def _authentication_identifier_from_request() -> str | None:
         identifier = _get_authentication_identifier_from_request()
         if isinstance(identifier, str):
             normalized_identifier = identifier.strip()
-            if normalized_identifier and normalized_identifier != DEFAULT_TENANT_ID:
+            if normalized_identifier and normalized_identifier in auth_config_identifiers:
                 return normalized_identifier
     except Exception:
         pass
@@ -562,13 +574,13 @@ def _refresh_token_storage_tenant_id(tenant_id: str | None) -> str | None:
     Refresh tokens remain tenant-scoped in the database schema.
 
     Master realm users are global and do not have an m8flow_tenant row, so their
-    refresh tokens must be stored under a real tenant FK. We use the default
-    tenant row only as an internal storage namespace for that case.
+    refresh tokens must be stored under a real tenant FK. We use the canonical
+    shared-realm tenant row as an internal storage namespace for that case.
     """
     if tenant_id == _master_realm_identifier():
-        from m8flow_backend.tenancy import DEFAULT_TENANT_ID
+        from m8flow_backend.startup.shared_realm_bootstrap import resolve_default_shared_realm_tenant_id
 
-        return DEFAULT_TENANT_ID
+        return resolve_default_shared_realm_tenant_id()
     return tenant_id
 
 
@@ -640,6 +652,10 @@ def _patched_store_refresh_token(
     if not effective_tenant_id:
         raise RefreshTokenStorageError("We could not store the refresh token: missing tenant context.")
     storage_tenant_id = _refresh_token_storage_tenant_id(effective_tenant_id)
+    if not storage_tenant_id:
+        raise RefreshTokenStorageError(
+            "We could not store the refresh token: canonical shared-realm tenant storage is unavailable."
+        )
 
     with _temporary_refresh_token_tenant_scope(storage_tenant_id):
         refresh_token_model = (
@@ -680,6 +696,8 @@ def _patched_get_refresh_token(
     if not effective_tenant_id:
         return None
     storage_tenant_id = _refresh_token_storage_tenant_id(effective_tenant_id)
+    if not storage_tenant_id:
+        return None
 
     with _temporary_refresh_token_tenant_scope(storage_tenant_id):
         refresh_token_object = (

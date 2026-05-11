@@ -375,10 +375,14 @@ def test_master_realm_auth_patch_uses_configured_admin_realm(monkeypatch) -> Non
 
 def test_master_realm_auth_patch_uses_realm_hint_cookie_when_auth_cookie_is_missing(monkeypatch) -> None:
     app = Flask(__name__)
+    app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"] = [
+        {"identifier": "master", "uri": "http://keycloak/realms/master"},
+        {"identifier": "shared-users", "uri": "http://keycloak/realms/shared-users"},
+    ]
 
     original = authentication_controller._get_authentication_identifier_from_request
     monkeypatch.setattr(auth_patch_module, "_MASTER_REALM_PATCHED", False)
-    authentication_controller._get_authentication_identifier_from_request = lambda: "default"
+    authentication_controller._get_authentication_identifier_from_request = lambda: "stale-fallback"
     try:
         apply_master_realm_auth_patch()
 

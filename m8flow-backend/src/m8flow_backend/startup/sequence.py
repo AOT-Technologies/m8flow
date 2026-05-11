@@ -91,7 +91,7 @@ def _configure_created_app(cnx_app: Any, db: Any, upgrade_m8flow_db: Callable[[]
     # Run migrations at startup (after db bound).
     run_migrations_if_enabled(flask_app, upgrade_m8flow_db)
 
-    # Reconcile the default shared-realm tenant row before any permission or sample-data import runs.
+    # Reconcile the canonical shared-realm tenant row before any permission or sample-data import runs.
     from m8flow_backend.startup.shared_realm_bootstrap import reconcile_default_shared_realm_tenant
 
     reconcile_default_shared_realm_tenant(flask_app)

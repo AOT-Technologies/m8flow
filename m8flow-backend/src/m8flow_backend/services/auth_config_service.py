@@ -62,7 +62,7 @@ def ensure_tenant_auth_config(flask_app, tenant: str) -> None:
     if any(c.get("identifier") == tenant for c in configs):
         return
 
-    # Use the first config as template (usually "default" with Keycloak realm).
+    # Use the first config as template (usually the shared-realm Keycloak config).
     if not configs:
         logger.warning("auth_config_service: no auth configs; cannot add tenant %s", tenant)
         return

@@ -46,40 +46,11 @@ def _make_app() -> Flask:
     app.add_url_rule("/v1.0/permissions-check", "permissions_check_endpoint", lambda: "ok")
     return app
 
-
-@pytest.fixture(autouse=True)
-def _clean_env():
-    """
-    Prevent env leakage between tests, since tenant resolution behavior
-    is controlled by M8FLOW_ALLOW_MISSING_TENANT_CONTEXT.
-    """
-    import os
-
-    old = os.environ.get("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT")
-    os.environ.pop("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", None)
-    yield
-    if old is None:
-        os.environ.pop("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", None)
-    else:
-        os.environ["M8FLOW_ALLOW_MISSING_TENANT_CONTEXT"] = old
-
-
 def _seed_tenants() -> None:
     from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
 
     now = int(datetime.now(timezone.utc).timestamp())
 
-    db.session.add(
-        M8flowTenantModel(
-            id="default",
-            name="Default",
-            slug="default",
-            created_by="test",
-            modified_by="test",
-            created_at_in_seconds=now,
-            updated_at_in_seconds=now,
-        )
-    )
     db.session.add(
         M8flowTenantModel(
             id="tenant-a",
@@ -161,19 +132,28 @@ def test_missing_tenant_raises_by_default() -> None:
                 assert exc.value.error_code == "tenant_required"
 
 
-def test_missing_tenant_defaults_when_allowed() -> None:
-    import os
-
-    os.environ["M8FLOW_ALLOW_MISSING_TENANT_CONTEXT"] = "true"
-
+def test_missing_tenant_still_raises_on_protected_request() -> None:
     app = _make_app()
     with app.app_context():
         db.create_all()
         _seed_tenants()
 
         with app.test_request_context("/test"):
+            with pytest.raises(ApiError) as exc:
+                resolve_request_tenant()
+            assert exc.value.error_code == "tenant_required"
+
+
+def test_missing_tenant_keeps_exempt_request_public() -> None:
+    app = _make_app()
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+
+        with app.test_request_context("/v1.0/status"):
             resolve_request_tenant()
-            assert g.m8flow_tenant_id == "default"
+            assert getattr(g, "m8flow_tenant_id", None) is None
+            assert getattr(g, "_m8flow_public_request", False) is True
 
 
 def test_invalid_tenant_raises() -> None:
@@ -400,7 +380,6 @@ def test_resolves_tenant_from_jwt_claim_on_permissions_check_path(monkeypatch) -
     app = _make_app()
     org_tenant_id = "bb768eda-e8cb-4452-9a49-acd2115db07c"
 
-    monkeypatch.setenv("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", "true")
     monkeypatch.setattr(
         "m8flow_backend.services.tenant_context_middleware._tenant_from_context_var",
         lambda: None,
@@ -447,16 +426,15 @@ def test_resolves_tenant_from_jwt_claim_on_permissions_check_path(monkeypatch) -
 
 def test_resolves_tenant_from_jwt_claim_on_status_path(monkeypatch) -> None:
     from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
-    from m8flow_backend.tenancy import DEFAULT_TENANT_ID
     from spiffworkflow_backend.models.user import UserModel
 
     app = _make_app()
     org_tenant_id = "bb768eda-e8cb-4452-9a49-acd2115db07c"
+    stale_placeholder_tenant_id = "default"
 
-    monkeypatch.setenv("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", "true")
     monkeypatch.setattr(
         "m8flow_backend.services.tenant_context_middleware._tenant_from_context_var",
-        lambda: DEFAULT_TENANT_ID,
+        lambda: stale_placeholder_tenant_id,
     )
 
     with app.app_context():
@@ -488,7 +466,7 @@ def test_resolves_tenant_from_jwt_claim_on_status_path(monkeypatch) -> None:
         db.session.commit()
 
         with app.test_request_context("/v1.0/status", headers={"Authorization": f"Bearer {token}"}):
-            g.m8flow_tenant_id = DEFAULT_TENANT_ID
+            g.m8flow_tenant_id = stale_placeholder_tenant_id
             resolve_request_tenant()
 
             assert current_tenant_id_or_none() == org_tenant_id
@@ -500,16 +478,15 @@ def test_resolves_tenant_from_jwt_claim_on_status_path_without_auth_realm_lookup
     import jwt
 
     from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
-    from m8flow_backend.tenancy import DEFAULT_TENANT_ID
     from spiffworkflow_backend.services.authentication_service import AuthenticationService
 
     app = _make_app()
     org_tenant_id = "bb768eda-e8cb-4452-9a49-acd2115db07c"
+    stale_placeholder_tenant_id = "default"
 
-    monkeypatch.setenv("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", "true")
     monkeypatch.setattr(
         "m8flow_backend.services.tenant_context_middleware._tenant_from_context_var",
-        lambda: DEFAULT_TENANT_ID,
+        lambda: stale_placeholder_tenant_id,
     )
     monkeypatch.setattr(
         AuthenticationService,
@@ -551,6 +528,39 @@ def test_resolves_tenant_from_jwt_claim_on_status_path_without_auth_realm_lookup
             assert org_tenant_id in current_tenant_identifiers(org_tenant_id)
 
 
+def test_protected_request_without_tenant_claim_does_not_fall_back_to_default_auth_identifier(monkeypatch) -> None:
+    import jwt
+
+    from spiffworkflow_backend.services.authentication_service import AuthenticationService
+
+    app = _make_app()
+
+    monkeypatch.setattr(
+        AuthenticationService,
+        "parse_jwt_token",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("parse_jwt_token should not be called")),
+    )
+
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+
+        token = jwt.encode(
+            {
+                "iss": "http://localhost:7002/realms/shared-users",
+                "preferred_username": "editor",
+            },
+            "test-secret",
+            algorithm="HS256",
+        )
+
+        with app.test_request_context("/test", headers={"Authorization": f"Bearer {token}"}):
+            with pytest.raises(ApiError) as exc:
+                resolve_request_tenant()
+
+            assert exc.value.error_code == "tenant_required"
+
+
 def test_selected_tenant_cookie_overrides_explicit_token_tenant_for_shared_realm_multi_org_status(monkeypatch) -> None:
     import jwt
 
@@ -558,7 +568,6 @@ def test_selected_tenant_cookie_overrides_explicit_token_tenant_for_shared_realm
 
     app = _make_app()
 
-    monkeypatch.setenv("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", "true")
     monkeypatch.setenv("M8FLOW_KEYCLOAK_SHARED_REALM", "m8flow")
     monkeypatch.setattr(
         AuthenticationService,
@@ -702,8 +711,13 @@ def test_login_return_resolves_tenant_from_shared_realm_and_cookie() -> None:
     os.environ.pop("M8FLOW_KEYCLOAK_SHARED_REALM", None)
 
 
-def test_login_return_fails_without_selected_tenant_cookie() -> None:
-    """Login return from shared realm without a selected-tenant cookie fails closed."""
+def test_login_return_skips_tenant_resolution_when_no_selected_tenant_cookie() -> None:
+    """
+    /login_return is the OAuth callback and runs BEFORE the auth code is exchanged for a JWT.
+    The before_request hook must NOT enforce tenant context here — the handler resolves the
+    tenant from the issued token (or routes shared-realm multi-org users to tenant selection).
+    Failing closed here would break every shared-realm login that didn't pre-set the cookie.
+    """
     import base64
     import os
 
@@ -721,9 +735,10 @@ def test_login_return_fails_without_selected_tenant_cookie() -> None:
         state = base64.b64encode(bytes(str(state_payload), "utf-8")).decode("utf-8")
 
         with app.test_request_context(f"/v1.0/login_return?state={state}"):
-            with pytest.raises(ApiError) as exc:
-                resolve_request_tenant()
-            assert exc.value.error_code == "tenant_required"
+            resolve_request_tenant()
+            # Resolution succeeds without a tenant; the login_return handler will set context later.
+            assert getattr(g, "m8flow_tenant_id", "<unset>") is None
+            assert getattr(g, "_m8flow_global_request", False) is True
 
     os.environ.pop("M8FLOW_KEYCLOAK_SHARED_REALM", None)
 
@@ -750,7 +765,6 @@ def test_login_return_skips_tenant_validation_for_master_auth_identifier() -> No
 def test_master_realm_request_does_not_fall_back_to_default_tenant(monkeypatch) -> None:
     app = _make_app()
 
-    monkeypatch.setenv("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", "true")
     monkeypatch.setattr(
         "m8flow_backend.services.tenant_context_middleware._tenant_from_jwt_claim_cached",
         lambda *, allow_decode: None,

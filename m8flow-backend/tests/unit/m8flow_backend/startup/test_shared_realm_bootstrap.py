@@ -222,6 +222,35 @@ def _install_fake_modules(
     monkeypatch.setitem(sys.modules, "spiffworkflow_backend.models.group", fake_group_module)
 
 
+def test_resolve_default_shared_realm_tenant_id_uses_slug_lookup(monkeypatch) -> None:
+    from m8flow_backend.startup import shared_realm_bootstrap
+
+    alias = "m8flow"
+    organization_id = "c206bc65-dc9c-41cf-8ebc-9d4971984806"
+    tenant_rows_by_id = {
+        organization_id: SimpleNamespace(id=organization_id, slug=alias, name="M8Flow Realm"),
+    }
+    fake_session = FakeSession(tenant_rows_by_id, [], {})
+    fake_db = FakeDb(fake_session)
+
+    _install_fake_modules(monkeypatch, fake_db, tenant_rows_by_id=tenant_rows_by_id, group_rows=[])
+    monkeypatch.setattr(shared_realm_bootstrap, "default_organization_alias", lambda: alias)
+
+    assert shared_realm_bootstrap.resolve_default_shared_realm_tenant_id() == organization_id
+
+
+def test_resolve_default_shared_realm_tenant_id_returns_none_when_missing(monkeypatch) -> None:
+    from m8flow_backend.startup import shared_realm_bootstrap
+
+    fake_session = FakeSession({}, [], {})
+    fake_db = FakeDb(fake_session)
+
+    _install_fake_modules(monkeypatch, fake_db, tenant_rows_by_id={}, group_rows=[])
+    monkeypatch.setattr(shared_realm_bootstrap, "default_organization_alias", lambda: "m8flow")
+
+    assert shared_realm_bootstrap.resolve_default_shared_realm_tenant_id() is None
+
+
 def test_reconcile_default_shared_realm_tenant_rekeys_legacy_alias_rows_and_groups(monkeypatch) -> None:
     from m8flow_backend.startup import shared_realm_bootstrap
 

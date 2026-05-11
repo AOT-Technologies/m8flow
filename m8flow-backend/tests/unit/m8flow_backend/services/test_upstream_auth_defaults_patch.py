@@ -18,7 +18,7 @@ def test_apply_seeds_env_defaults_without_importing_upstream(monkeypatch) -> Non
     upstream_auth_defaults_patch.apply()
 
     assert upstream_auth_defaults_patch.os.environ["SPIFFWORKFLOW_BACKEND_OPEN_ID_CLIENT_ID"] == "m8flow-backend"
-    assert upstream_auth_defaults_patch.os.environ["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__identifier"] == "default"
+    assert upstream_auth_defaults_patch.os.environ["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__identifier"] == "m8flow"
     assert upstream_auth_defaults_patch.os.environ["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__label"] == "M8Flow Realm"
     assert upstream_auth_defaults_patch.os.environ["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__uri"] == "http://public-keycloak:7002/realms/m8flow"
     assert (
@@ -41,6 +41,7 @@ def test_apply_seeds_env_defaults_respects_configured_shared_realm(monkeypatch) 
 
     upstream_auth_defaults_patch.apply()
 
+    assert upstream_auth_defaults_patch.os.environ["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__identifier"] == "tenant-hub"
     assert upstream_auth_defaults_patch.os.environ["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__label"] == "tenant-hub"
     assert upstream_auth_defaults_patch.os.environ["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__uri"] == "http://public-keycloak:7002/realms/tenant-hub"
     assert (
@@ -66,6 +67,8 @@ def test_apply_runtime_rewrites_upstream_defaults_on_flask_config() -> None:
     upstream_auth_defaults_patch.apply_runtime(app)
 
     assert app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_CLIENT_ID"] == "m8flow-backend"
+    assert app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"][0]["identifier"] == "m8flow"
+    assert app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"][0]["label"] == "M8Flow Realm"
     assert app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"][0]["uri"] == "http://localhost:7002/realms/m8flow"
     assert app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"][0]["internal_uri"] == "http://localhost:7002/realms/m8flow"
     assert app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"][0]["client_id"] == "m8flow-backend"

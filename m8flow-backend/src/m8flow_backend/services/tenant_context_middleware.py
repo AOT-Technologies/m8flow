@@ -29,12 +29,12 @@ except ImportError:
 from m8flow_backend.canonical_db import get_canonical_db
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
 from m8flow_backend.tenancy import (
-    DEFAULT_TENANT_ID,
     SELECTED_TENANT_COOKIE_NAME,
     TENANT_CLAIM,
     TENANT_CONTEXT_EXEMPT_PATH_PREFIXES,
-    allow_missing_tenant_context,
     get_context_tenant_id,
+    is_concrete_tenant_id,
+    is_legacy_placeholder_tenant_id,
     path_matches_any_prefix,
     reset_context_tenant_id,
     set_context_tenant_id,
@@ -114,10 +114,10 @@ def resolve_request_tenant() -> None:
       2) Request tenant header (x-m8flow-tenant-id), validated against the authenticated user
       3) ContextVar tenant id (e.g. ASGI middleware)
       4) Selected tenant cookie for shared-realm requests
-      5) DEFAULT_TENANT_ID (only if allow_missing_tenant_context() is true and no bearer token is present)
+      5) No implicit default tenant fallback; exempt/public requests remain global/public.
 
     Validation:
-      - If g already has a non-default tenant and the request resolves a different tenant -> tenant_override_forbidden
+      - If g already has a concrete tenant and the request resolves a different tenant -> tenant_override_forbidden
       - Header-selected tenants must belong to the authenticated user
       - If resolved tenant does not exist -> invalid_tenant
 
@@ -142,8 +142,9 @@ def resolve_request_tenant() -> None:
     tenant_reason = tenant_resolution["reason"]
     jwt_tenant_id = tenant_resolution["jwt_tenant_id"]
     header_tenant_id = tenant_resolution["header_tenant_id"]
+    existing_tenant_is_concrete = is_concrete_tenant_id(existing_tenant)
 
-    if tenant_source == "master_realm":
+    if tenant_source in {"master_realm", "login_return"}:
         g._m8flow_global_request = True
         g.m8flow_tenant_id = None
         _log_tenant_resolution(
@@ -155,19 +156,18 @@ def resolve_request_tenant() -> None:
         )
         return
 
-    if existing_tenant and not tenant_id:
+    if existing_tenant_is_concrete and not tenant_id:
         tenant_id = existing_tenant
         tenant_source = "existing_request_tenant"
         tenant_reason = "Using existing request tenant context."
 
-    if existing_tenant == DEFAULT_TENANT_ID and tenant_id and tenant_id != DEFAULT_TENANT_ID:
-        tenant_reason = f"{tenant_reason} Overrode default tenant context."
+    if is_legacy_placeholder_tenant_id(existing_tenant) and is_concrete_tenant_id(tenant_id):
+        tenant_reason = f"{tenant_reason} Overrode legacy default tenant context."
 
     if (
-        existing_tenant
+        existing_tenant_is_concrete
         and tenant_id
         and existing_tenant not in current_tenant_identifiers(tenant_id)
-        and existing_tenant != DEFAULT_TENANT_ID
     ):
         _log_tenant_resolution(
             tenant_id=existing_tenant,
@@ -195,29 +195,23 @@ def resolve_request_tenant() -> None:
         return
 
     if not tenant_id:
-        has_request_token = _token_from_request() is not None
-        if allow_missing_tenant_context() and not has_request_token:
-            tenant_id = DEFAULT_TENANT_ID
-            tenant_source = "default"
-            tenant_reason = "No tenant candidate was available; using default tenant because missing tenant context is allowed."
-        else:
-            path = getattr(request, "path", "") or ""
-            _log_tenant_resolution(
-                tenant_id=None,
-                source="unresolved",
-                reason="No tenant candidate was available and missing tenant context is not allowed.",
-                jwt_tenant_id=jwt_tenant_id,
-                header_tenant_id=header_tenant_id,
-            )
-            LOGGER.warning(
-                "Tenant context not resolved for request path=%s (no JWT claim, no header tenant, no context tenant).",
-                path,
-            )
-            raise ApiError(
-                error_code="tenant_required",
-                message=f"Tenant context could not be resolved from authentication data for path '{path}'.",
-                status_code=400,
-            )
+        path = getattr(request, "path", "") or ""
+        _log_tenant_resolution(
+            tenant_id=None,
+            source="unresolved",
+            reason="No tenant candidate was available.",
+            jwt_tenant_id=jwt_tenant_id,
+            header_tenant_id=header_tenant_id,
+        )
+        LOGGER.warning(
+            "Tenant context not resolved for request path=%s (no JWT claim, no header tenant, no context tenant).",
+            path,
+        )
+        raise ApiError(
+            error_code="tenant_required",
+            message=f"Tenant context could not be resolved from authentication data for path '{path}'.",
+            status_code=400,
+        )
 
     # Validate tenant exists in DB (your tests expect this).
     # Return 503 when DB is not bound so we never proceed with unvalidated tenant id.
@@ -385,6 +379,26 @@ def _resolve_tenant_details() -> dict[str, Optional[str]]:
             "header_tenant_id": header_tenant_id,
         }
 
+    # Final fallback: /login_return is the OAuth callback. The before_request hook fires BEFORE
+    # the handler exchanges the auth code for a JWT, so when no other resolution path produced a
+    # tenant we must NOT raise tenant_required here — the handler itself resolves the tenant
+    # from the issued token (or routes shared-realm multi-org users to tenant selection).
+    try:
+        path = getattr(request, "path", "") or ""
+    except Exception:
+        path = ""
+    if "/login_return" in path:
+        return {
+            "tenant_id": None,
+            "source": "login_return",
+            "reason": (
+                "login_return is the OAuth callback; tenant context is established by the "
+                "handler after the auth code is exchanged for a JWT."
+            ),
+            "jwt_tenant_id": None,
+            "header_tenant_id": header_tenant_id,
+        }
+
     return {
         "tenant_id": None,
         "source": "unresolved",
@@ -454,8 +468,11 @@ def _tenant_from_jwt_claim_cached(*, allow_decode: bool) -> Optional[str]:
     if isinstance(unverified_decoded, dict):
         return _authenticated_tenant_id_from_payload(unverified_decoded)
 
+    authentication_identifier = _authentication_identifier()
+    if not authentication_identifier:
+        return None
+
     try:
-        authentication_identifier = _authentication_identifier() or DEFAULT_TENANT_ID
         decoded = AuthenticationService.parse_jwt_token(authentication_identifier, token)
     except Exception as exc:
         if not getattr(g, "_m8flow_warned_decode_token", False):
@@ -501,7 +518,7 @@ def _decode_state_authentication_identifier(state: str | None) -> Optional[str]:
 
 
 def _selected_tenant_from_request() -> Optional[str]:
-    auth_identifier = _authentication_identifier(include_default=False)
+    auth_identifier = _authentication_identifier()
     if auth_identifier != _shared_realm_identifier():
         return None
     selected_tenant = request.cookies.get(SELECTED_TENANT_COOKIE_NAME)
@@ -540,7 +557,7 @@ def _selected_tenant_override_for_shared_multi_org_token(payload: dict[str, Any]
     return None
 
 
-def _authentication_identifier(*, include_default: bool = True) -> Optional[str]:
+def _authentication_identifier() -> Optional[str]:
     path = (getattr(request, "path", "") or "").strip()
     if "/login_return" in path:
         state_identifier = _decode_state_authentication_identifier(request.args.get("state"))
@@ -555,6 +572,4 @@ def _authentication_identifier(*, include_default: bool = True) -> Optional[str]
     if header_identifier:
         return header_identifier
 
-    if include_default:
-        return DEFAULT_TENANT_ID
     return None

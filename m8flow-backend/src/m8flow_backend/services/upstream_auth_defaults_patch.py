@@ -83,8 +83,21 @@ def apply_runtime(flask_app) -> None:
             continue
         auth_config = _normalize_auth_config_keys(auth_config)
         normalized_auth_configs.append(auth_config)
+        identifier = str(auth_config.get("identifier") or "").strip()
+        uri = str(auth_config.get("uri") or "").strip()
+        internal_uri = str(auth_config.get("internal_uri") or "").strip()
+        default_alias_points_to_shared_realm = identifier == "default" and any(
+            candidate in {UPSTREAM_REALM_URI, shared_realm_uri}
+            or candidate.endswith(f"/realms/{shared_realm_name}")
+            for candidate in (uri, internal_uri)
+            if candidate
+        )
+        if default_alias_points_to_shared_realm:
+            auth_config["identifier"] = shared_realm_name
+            identifier = shared_realm_name
+            if str(auth_config.get("label") or "").strip().lower() in {"", "default"}:
+                auth_config["label"] = shared_realm_label
         if not auth_config.get("label"):
-            identifier = str(auth_config.get("identifier") or "").strip()
             auth_config["label"] = (
                 "Master"
                 if identifier == master_realm_name
@@ -110,7 +123,7 @@ def apply() -> None:
 
     if not _has_structured_auth_configs() and not os.environ.get("SPIFFWORKFLOW_BACKEND_OPEN_ID_SERVER_URL"):
         shared_realm_name = _shared_realm_name()
-        _setdefault_env("SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__identifier", "default")
+        _setdefault_env("SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__identifier", shared_realm_name)
         _setdefault_env("SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__label", _shared_realm_label())
         _setdefault_env("SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__uri", f"{_public_keycloak_base()}/realms/{shared_realm_name}")
         _setdefault_env("SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__internal_uri", f"{_internal_keycloak_base()}/realms/{shared_realm_name}")

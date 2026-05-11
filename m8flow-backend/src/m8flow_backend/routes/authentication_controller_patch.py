@@ -708,8 +708,6 @@ def apply_master_realm_auth_patch() -> None:
             if derived:
                 return derived
 
-        from m8flow_backend.tenancy import DEFAULT_TENANT_ID
-
         realm_hint = request.cookies.get("m8flow_auth_realm")
         if isinstance(realm_hint, str):
             realm_hint = realm_hint.strip() or None
@@ -717,7 +715,7 @@ def apply_master_realm_auth_patch() -> None:
         identifier = original()
         if isinstance(identifier, str):
             normalized_identifier = identifier.strip()
-            if normalized_identifier and normalized_identifier != DEFAULT_TENANT_ID:
+            if normalized_identifier and normalized_identifier in _auth_config_identifiers():
                 return normalized_identifier
 
         if realm_hint:

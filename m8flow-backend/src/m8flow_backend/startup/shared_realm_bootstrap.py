@@ -93,9 +93,36 @@ def _rename_tenant_scoped_groups(db_session: Any, old_tenant_id: str, new_tenant
     return renamed_groups
 
 
+def resolve_default_shared_realm_tenant_id() -> str | None:
+    """
+    Resolve the tenant id for shared-realm bootstrap data.
+
+    The canonical shared-realm tenant row always keeps the default organization
+    alias as its slug, so a slug lookup works for both the legacy alias-id row
+    and the post-reconciliation canonical organization-id row.
+    """
+    organization_alias = default_organization_alias()
+    if not isinstance(organization_alias, str) or not organization_alias.strip():
+        return None
+
+    try:
+        from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
+
+        tenant = M8flowTenantModel.query.filter_by(slug=organization_alias.strip()).first()
+    except Exception:
+        return None
+
+    tenant_id = getattr(tenant, "id", None)
+    if not isinstance(tenant_id, str):
+        return None
+
+    normalized_tenant_id = tenant_id.strip()
+    return normalized_tenant_id or None
+
+
 def reconcile_default_shared_realm_tenant(flask_app: Any) -> None:
     """
-    Reconcile the default shared-realm tenant row with the Keycloak organization id.
+    Reconcile the canonical shared-realm tenant row with the Keycloak organization id.
 
     The m8flow seed migration creates a legacy alias-based row. On shared-realm
     installs we want the canonical tenant id to be the Keycloak organization id so
@@ -155,7 +182,7 @@ def reconcile_default_shared_realm_tenant(flask_app: Any) -> None:
                 slug=organization_alias,
             )
             logger.info(
-                "shared_realm_bootstrap: created canonical default tenant id=%s slug=%s",
+                "shared_realm_bootstrap: created canonical shared-realm tenant id=%s slug=%s",
                 organization_id,
                 organization_alias,
             )
@@ -173,7 +200,7 @@ def reconcile_default_shared_realm_tenant(flask_app: Any) -> None:
             tenant.id = organization_id
             tenant_changed = True
             logger.info(
-                "shared_realm_bootstrap: canonicalized default tenant id from %s to %s (updated_tables=%s renamed_groups=%s)",
+                "shared_realm_bootstrap: canonicalized shared-realm tenant id from %s to %s (updated_tables=%s renamed_groups=%s)",
                 old_tenant_id,
                 organization_id,
                 updated_tables,

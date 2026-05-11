@@ -45,7 +45,7 @@ def test_on_demand_adds_config_when_realm_exists(reset_patched_flag):
 
     app = Flask(__name__)
     app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"] = [
-        {"identifier": "default", "uri": "http://keycloak/realms/default", "label": "default"}
+        {"identifier": "m8flow", "uri": "http://keycloak/realms/m8flow", "label": "M8Flow Realm"}
     ]
     tenant_config = {"identifier": "tenant-realm", "uri": "http://keycloak/realms/tenant-realm", "label": "tenant-realm"}
 
@@ -82,7 +82,7 @@ def test_re_raises_when_realm_does_not_exist(reset_patched_flag):
 
     app = Flask(__name__)
     app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"] = [
-        {"identifier": "default", "uri": "http://keycloak/realms/default"}
+        {"identifier": "m8flow", "uri": "http://keycloak/realms/m8flow"}
     ]
 
     with patch(
@@ -108,7 +108,7 @@ def test_on_demand_adds_master_config(reset_patched_flag):
 
     app = Flask(__name__)
     app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"] = [
-        {"identifier": "default", "uri": "http://keycloak/realms/default", "label": "default"}
+        {"identifier": "m8flow", "uri": "http://keycloak/realms/m8flow", "label": "M8Flow Realm"}
     ]
     master_config = {
         "identifier": "master",
@@ -141,7 +141,7 @@ def test_on_demand_adds_config_for_configured_master_realm(reset_patched_flag, m
 
     app = Flask(__name__)
     app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"] = [
-        {"identifier": "default", "uri": "http://keycloak/realms/default", "label": "default"}
+        {"identifier": "m8flow", "uri": "http://keycloak/realms/m8flow", "label": "M8Flow Realm"}
     ]
     master_config = {
         "identifier": "ops-admin",
@@ -275,8 +275,12 @@ def test_authentication_identifier_from_request_uses_realm_hint_cookie_when_auth
     from m8flow_backend.services.authentication_service_patch import _authentication_identifier_from_request
 
     app = Flask(__name__)
+    app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"] = [
+        {"identifier": "master", "uri": "http://keycloak/realms/master"},
+        {"identifier": "shared-users", "uri": "http://keycloak/realms/shared-users"},
+    ]
     original = authentication_controller._get_authentication_identifier_from_request
-    authentication_controller._get_authentication_identifier_from_request = lambda: "default"
+    authentication_controller._get_authentication_identifier_from_request = lambda: "stale-fallback"
     try:
         with app.test_request_context(path="/v1.0/login", headers={"Cookie": "m8flow_auth_realm=master"}):
             assert _authentication_identifier_from_request() == "master"
@@ -337,33 +341,37 @@ def test_patched_omni_auth_resolves_tenant_before_permission_check(monkeypatch) 
     ]
 
 
-def test_refresh_token_storage_tenant_maps_master_to_default() -> None:
+def test_refresh_token_storage_tenant_maps_master_to_shared_realm_tenant() -> None:
     from m8flow_backend.services.authentication_service_patch import (
         _refresh_token_storage_tenant_id,
     )
-    from m8flow_backend.tenancy import DEFAULT_TENANT_ID
 
-    assert _refresh_token_storage_tenant_id("master") == DEFAULT_TENANT_ID
+    with patch(
+        "m8flow_backend.startup.shared_realm_bootstrap.resolve_default_shared_realm_tenant_id",
+        return_value="shared-realm-tenant",
+    ):
+        assert _refresh_token_storage_tenant_id("master") == "shared-realm-tenant"
     assert _refresh_token_storage_tenant_id("tenant-a") == "tenant-a"
 
-
-def test_refresh_token_storage_tenant_maps_configured_master_to_default(monkeypatch) -> None:
+def test_refresh_token_storage_tenant_maps_configured_master_to_shared_realm_tenant(monkeypatch) -> None:
     from m8flow_backend.services.authentication_service_patch import (
         _refresh_token_storage_tenant_id,
     )
-    from m8flow_backend.tenancy import DEFAULT_TENANT_ID
 
     monkeypatch.setenv("M8FLOW_KEYCLOAK_MASTER_REALM", "ops-admin")
-    assert _refresh_token_storage_tenant_id("ops-admin") == DEFAULT_TENANT_ID
+    with patch(
+        "m8flow_backend.startup.shared_realm_bootstrap.resolve_default_shared_realm_tenant_id",
+        return_value="shared-realm-tenant",
+    ):
+        assert _refresh_token_storage_tenant_id("ops-admin") == "shared-realm-tenant"
 
 
-def test_store_refresh_token_uses_default_storage_scope_for_master(monkeypatch) -> None:
+def test_store_refresh_token_uses_shared_realm_storage_scope_for_master(monkeypatch) -> None:
     import sys
 
     from flask import Flask, g
 
     from m8flow_backend.services.authentication_service_patch import _patched_store_refresh_token
-    from m8flow_backend.tenancy import DEFAULT_TENANT_ID
 
     app = Flask(__name__)
     seen: dict[str, object] = {}
@@ -410,24 +418,27 @@ def test_store_refresh_token_uses_default_storage_scope_for_master(monkeypatch) 
     db_module.db = SimpleNamespace(session=DummySession())
     monkeypatch.setitem(sys.modules, "spiffworkflow_backend.models.refresh_token", refresh_token_module)
     monkeypatch.setitem(sys.modules, "spiffworkflow_backend.models.db", db_module)
+    monkeypatch.setattr(
+        "m8flow_backend.startup.shared_realm_bootstrap.resolve_default_shared_realm_tenant_id",
+        lambda: "shared-realm-tenant",
+    )
 
     with app.test_request_context("/"):
         g.m8flow_tenant_id = "master"
         _patched_store_refresh_token(user_id=7, refresh_token="refresh-token", tenant_id="master")
 
         added = seen["added"]
-        assert getattr(added, "m8f_tenant_id") == DEFAULT_TENANT_ID
-        assert seen["scoped_tenant"] == DEFAULT_TENANT_ID
+        assert getattr(added, "m8f_tenant_id") == "shared-realm-tenant"
+        assert seen["scoped_tenant"] == "shared-realm-tenant"
         assert g.m8flow_tenant_id == "master"
 
 
-def test_store_refresh_token_uses_default_storage_scope_for_configured_master(monkeypatch) -> None:
+def test_store_refresh_token_uses_shared_realm_storage_scope_for_configured_master(monkeypatch) -> None:
     import sys
 
     from flask import Flask, g
 
     from m8flow_backend.services.authentication_service_patch import _patched_store_refresh_token
-    from m8flow_backend.tenancy import DEFAULT_TENANT_ID
 
     app = Flask(__name__)
     seen: dict[str, object] = {}
@@ -475,25 +486,28 @@ def test_store_refresh_token_uses_default_storage_scope_for_configured_master(mo
     db_module.db = SimpleNamespace(session=DummySession())
     monkeypatch.setitem(sys.modules, "spiffworkflow_backend.models.refresh_token", refresh_token_module)
     monkeypatch.setitem(sys.modules, "spiffworkflow_backend.models.db", db_module)
+    monkeypatch.setattr(
+        "m8flow_backend.startup.shared_realm_bootstrap.resolve_default_shared_realm_tenant_id",
+        lambda: "shared-realm-tenant",
+    )
 
     with app.test_request_context("/"):
         g.m8flow_tenant_id = "ops-admin"
         _patched_store_refresh_token(user_id=7, refresh_token="refresh-token", tenant_id="ops-admin")
 
         added = seen["added"]
-        assert getattr(added, "m8f_tenant_id") == DEFAULT_TENANT_ID
-        assert seen["scoped_tenant"] == DEFAULT_TENANT_ID
+        assert getattr(added, "m8f_tenant_id") == "shared-realm-tenant"
+        assert seen["scoped_tenant"] == "shared-realm-tenant"
         assert g.m8flow_tenant_id == "ops-admin"
 
 
-def test_store_refresh_token_uses_default_scope_for_master_login_return_without_explicit_tenant(monkeypatch) -> None:
+def test_store_refresh_token_uses_shared_realm_scope_for_master_login_return_without_explicit_tenant(monkeypatch) -> None:
     import base64
     import sys
 
     from flask import Flask, g
 
     from m8flow_backend.services.authentication_service_patch import _patched_store_refresh_token
-    from m8flow_backend.tenancy import DEFAULT_TENANT_ID
 
     app = Flask(__name__)
     seen: dict[str, object] = {}
@@ -540,6 +554,10 @@ def test_store_refresh_token_uses_default_scope_for_master_login_return_without_
     db_module.db = SimpleNamespace(session=DummySession())
     monkeypatch.setitem(sys.modules, "spiffworkflow_backend.models.refresh_token", refresh_token_module)
     monkeypatch.setitem(sys.modules, "spiffworkflow_backend.models.db", db_module)
+    monkeypatch.setattr(
+        "m8flow_backend.startup.shared_realm_bootstrap.resolve_default_shared_realm_tenant_id",
+        lambda: "shared-realm-tenant",
+    )
 
     state = base64.b64encode(
         bytes(str({"authentication_identifier": "master", "final_url": "http://localhost:7001/tenants"}), "utf-8")
@@ -549,18 +567,17 @@ def test_store_refresh_token_uses_default_scope_for_master_login_return_without_
         _patched_store_refresh_token(user_id=7, refresh_token="refresh-token")
 
         added = seen["added"]
-        assert getattr(added, "m8f_tenant_id") == DEFAULT_TENANT_ID
-        assert seen["scoped_tenant"] == DEFAULT_TENANT_ID
+        assert getattr(added, "m8f_tenant_id") == "shared-realm-tenant"
+        assert seen["scoped_tenant"] == "shared-realm-tenant"
         assert getattr(g, "m8flow_tenant_id", None) is None
 
 
-def test_get_refresh_token_uses_default_storage_scope_for_master(monkeypatch) -> None:
+def test_get_refresh_token_uses_shared_realm_storage_scope_for_master(monkeypatch) -> None:
     import sys
 
     from flask import Flask, g
 
     from m8flow_backend.services.authentication_service_patch import _patched_get_refresh_token
-    from m8flow_backend.tenancy import DEFAULT_TENANT_ID
 
     app = Flask(__name__)
     seen: dict[str, object] = {}
@@ -589,23 +606,26 @@ def test_get_refresh_token_uses_default_storage_scope_for_master(monkeypatch) ->
     refresh_token_module = ModuleType("spiffworkflow_backend.models.refresh_token")
     refresh_token_module.RefreshTokenModel = DummyRefreshTokenModel
     monkeypatch.setitem(sys.modules, "spiffworkflow_backend.models.refresh_token", refresh_token_module)
+    monkeypatch.setattr(
+        "m8flow_backend.startup.shared_realm_bootstrap.resolve_default_shared_realm_tenant_id",
+        lambda: "shared-realm-tenant",
+    )
 
     with app.test_request_context("/"):
         g.m8flow_tenant_id = "master"
         token = _patched_get_refresh_token(user_id=7, tenant_id="master")
 
         assert token == "stored-refresh-token"
-        assert seen["scoped_tenant"] == DEFAULT_TENANT_ID
+        assert seen["scoped_tenant"] == "shared-realm-tenant"
         assert g.m8flow_tenant_id == "master"
 
 
-def test_get_refresh_token_uses_default_storage_scope_for_master_request_without_explicit_tenant(monkeypatch) -> None:
+def test_get_refresh_token_uses_shared_realm_storage_scope_for_master_request_without_explicit_tenant(monkeypatch) -> None:
     import sys
 
     from flask import Flask, g
 
     from m8flow_backend.services.authentication_service_patch import _patched_get_refresh_token
-    from m8flow_backend.tenancy import DEFAULT_TENANT_ID
 
     app = Flask(__name__)
     seen: dict[str, object] = {}
@@ -638,6 +658,10 @@ def test_get_refresh_token_uses_default_storage_scope_for_master_request_without
         "m8flow_backend.services.authentication_service_patch._jwt_payload_without_verification",
         lambda _token: {"iss": "http://localhost:7002/realms/master", "sub": "user-123"},
     )
+    monkeypatch.setattr(
+        "m8flow_backend.startup.shared_realm_bootstrap.resolve_default_shared_realm_tenant_id",
+        lambda: "shared-realm-tenant",
+    )
 
     with app.test_request_context(
         "/v1.0/permissions-check",
@@ -646,7 +670,7 @@ def test_get_refresh_token_uses_default_storage_scope_for_master_request_without
         token = _patched_get_refresh_token(user_id=7)
 
         assert token == "stored-refresh-token"
-        assert seen["scoped_tenant"] == DEFAULT_TENANT_ID
+        assert seen["scoped_tenant"] == "shared-realm-tenant"
         assert getattr(g, "m8flow_tenant_id", None) is None
 
 
@@ -678,8 +702,12 @@ def test_resolve_refresh_token_tenant_returns_master_for_master_realm_cookie_req
     from m8flow_backend.services.authentication_service_patch import _resolve_refresh_token_tenant_id
 
     app = Flask(__name__)
+    app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"] = [
+        {"identifier": "master", "uri": "http://keycloak/realms/master"},
+        {"identifier": "shared-users", "uri": "http://keycloak/realms/shared-users"},
+    ]
     original = authentication_controller._get_authentication_identifier_from_request
-    authentication_controller._get_authentication_identifier_from_request = lambda: "default"
+    authentication_controller._get_authentication_identifier_from_request = lambda: "stale-fallback"
     try:
         with app.test_request_context(
             "/v1.0/permissions-check",
@@ -718,6 +746,44 @@ def test_resolve_refresh_token_tenant_returns_master_from_bearer_token_payload(m
         headers={"Authorization": "Bearer expired-master-token"},
     ):
         assert _resolve_refresh_token_tenant_id() == "master"
+
+
+def test_resolve_refresh_token_tenant_falls_back_to_g_token_during_login_return(monkeypatch) -> None:
+    """
+    During /v1.0/login_return, the new id_token has just been exchanged from the
+    auth code and is set on g.token, but is NOT yet in cookies (cookies are
+    written by the after_request hook).  The resolver must look at g.token so
+    refresh-token storage can derive the tenant from the fresh JWT — otherwise
+    every login_return raises RefreshTokenStorageError("missing tenant context").
+    """
+    from flask import Flask, g
+
+    from m8flow_backend.services.authentication_service_patch import _resolve_refresh_token_tenant_id
+
+    app = Flask(__name__)
+
+    captured_tokens: list[str] = []
+
+    def _fake_payload(token: str) -> dict | None:
+        captured_tokens.append(token)
+        return {"organization": {"tenant-a": {"id": "tenant-a-id"}}}
+
+    monkeypatch.setattr(
+        "m8flow_backend.services.authentication_service_patch._jwt_payload_without_verification",
+        _fake_payload,
+    )
+    monkeypatch.setattr(
+        "m8flow_backend.services.authentication_service_patch.tenant_id_from_payload",
+        lambda payload: "tenant-a-id",
+    )
+
+    with app.test_request_context("/v1.0/login_return"):
+        # Simulate what login_return sets right before calling store_refresh_token: g.token is
+        # populated but no Authorization header / access_token cookie / m8flow_tenant_id exists.
+        g.token = "fresh-id-token"
+        assert _resolve_refresh_token_tenant_id() == "tenant-a-id"
+
+    assert captured_tokens == ["fresh-id-token"]
 
 
 # ---------------------------------------------------------------------------

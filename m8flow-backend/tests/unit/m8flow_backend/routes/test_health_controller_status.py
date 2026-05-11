@@ -18,7 +18,6 @@ from m8flow_backend.startup.flask_hooks import register_request_tenant_context_h
 from m8flow_backend.startup.guard import BootPhase
 from m8flow_backend.startup.guard import set_phase
 from m8flow_backend.startup.tenant_resolution import register_tenant_resolution_after_auth
-from m8flow_backend.tenancy import DEFAULT_TENANT_ID
 from m8flow_backend.services.tenant_identity_helpers import current_tenant_id_or_none
 from spiffworkflow_backend.models.db import db
 from spiffworkflow_backend.routes import authentication_controller
@@ -77,7 +76,6 @@ def _seed_tenants() -> None:
     now = int(datetime.now(timezone.utc).timestamp())
 
     for tenant_id, name, slug in [
-        (DEFAULT_TENANT_ID, "Default", DEFAULT_TENANT_ID),
         (ORG_TENANT_ID, "Org Tenant", "org-tenant"),
         (OTHER_TENANT_ID, "Other Tenant", "other-tenant"),
     ]:
@@ -133,11 +131,11 @@ def test_status_endpoint_allows_frontend_access_for_active_tenant_everybody() ->
 
 def test_status_endpoint_prefers_jwt_tenant_over_default(monkeypatch) -> None:
     app = _make_status_app()
+    stale_placeholder_tenant_id = "default"
 
-    monkeypatch.setenv("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", "true")
     monkeypatch.setattr(
         "m8flow_backend.services.tenant_context_middleware._tenant_from_context_var",
-        lambda: DEFAULT_TENANT_ID,
+        lambda: stale_placeholder_tenant_id,
     )
 
     with app.app_context():
@@ -170,11 +168,11 @@ def test_status_endpoint_prefers_jwt_tenant_over_default(monkeypatch) -> None:
 
 def test_status_endpoint_keeps_jwt_tenant_for_frontend_access_regression(monkeypatch) -> None:
     app = _make_status_app(register_auth_hook=False, register_tenant_resolution_hook=False)
+    stale_placeholder_tenant_id = "default"
 
-    monkeypatch.setenv("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", "true")
     monkeypatch.setattr(
         "m8flow_backend.services.tenant_context_middleware._tenant_from_context_var",
-        lambda: DEFAULT_TENANT_ID,
+        lambda: stale_placeholder_tenant_id,
     )
 
     with app.app_context():
@@ -216,11 +214,11 @@ def test_status_endpoint_keeps_jwt_tenant_for_frontend_access_regression(monkeyp
 
 def test_status_endpoint_repairs_stale_same_realm_user_and_returns_frontend_access(monkeypatch) -> None:
     app = _make_status_app(register_auth_hook=False, register_tenant_resolution_hook=False)
+    stale_placeholder_tenant_id = "default"
 
-    monkeypatch.setenv("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", "true")
     monkeypatch.setattr(
         "m8flow_backend.services.tenant_context_middleware._tenant_from_context_var",
-        lambda: DEFAULT_TENANT_ID,
+        lambda: stale_placeholder_tenant_id,
     )
 
     with app.app_context():

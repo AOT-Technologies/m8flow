@@ -1067,25 +1067,25 @@ def test_permission_scope_tenant_explicit_none_does_not_fall_through_to_request_
     """
     Master-realm sign-ins call ``_permission_scope_tenant(None)`` to opt out of any tenant
     qualification.  The resolver must honor that explicit None and NOT fall back to the
-    request-context tenant id, otherwise master-realm groups get qualified with the default
-    tenant prefix and master-realm users end up enrolled in ``default:everybody`` instead of
+    request-context tenant id, otherwise master-realm groups get qualified with an unrelated
+    tenant prefix and master-realm users end up enrolled in ``tenant-fallback:everybody`` instead of
     the unqualified ``everybody`` group.
     """
     monkeypatch.setattr(
         authorization_service_patch,
         "current_tenant_id_or_none",
-        lambda: "default",
+        lambda: "tenant-fallback",
     )
 
     # Without an explicit scope, falls back to the request tenant.
-    assert _active_permission_scope_tenant_id() == "default"
+    assert _active_permission_scope_tenant_id() == "tenant-fallback"
 
     # An explicit None scope overrides the fallback.
     with _permission_scope_tenant(None):
         assert _active_permission_scope_tenant_id() is None
 
     # Scope reset after the with-block.
-    assert _active_permission_scope_tenant_id() == "default"
+    assert _active_permission_scope_tenant_id() == "tenant-fallback"
 
     # An explicit string scope still wins.
     with _permission_scope_tenant("tenant-x"):

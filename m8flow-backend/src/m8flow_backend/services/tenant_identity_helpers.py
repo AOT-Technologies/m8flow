@@ -8,9 +8,9 @@ from typing import Any
 from flask import g
 from flask import has_request_context
 
-from m8flow_backend.tenancy import DEFAULT_TENANT_ID
 from m8flow_backend.tenancy import TENANT_CLAIM
 from m8flow_backend.tenancy import get_context_tenant_id
+from m8flow_backend.tenancy import is_concrete_tenant_id
 
 TENANT_ALIAS_CLAIM = "m8flow_tenant_alias"
 TENANT_NAME_CLAIM = "m8flow_tenant_name"
@@ -23,12 +23,6 @@ ALL_ORGANIZATIONS_SCOPE = "organization:*"
 
 logger = logging.getLogger(__name__)
 GLOBAL_PERMISSION_GROUP_IDENTIFIERS = frozenset({"super-admin"})
-GLOBAL_PERMISSION_GROUP_ALIASES = frozenset(
-    {
-        "default:super-admin",
-        f"{DEFAULT_TENANT_ID}:super-admin",
-    }
-)
 
 
 def is_global_permission_group_identifier(group_identifier: str) -> bool:
@@ -36,10 +30,7 @@ def is_global_permission_group_identifier(group_identifier: str) -> bool:
     normalized_group_identifier = group_identifier.strip()
     if not normalized_group_identifier:
         return False
-    return (
-        normalized_group_identifier in GLOBAL_PERMISSION_GROUP_IDENTIFIERS
-        or normalized_group_identifier in GLOBAL_PERMISSION_GROUP_ALIASES
-    )
+    return normalized_group_identifier in GLOBAL_PERMISSION_GROUP_IDENTIFIERS
 
 
 def _string_claim(payload: Mapping[str, Any] | None, claim: str) -> str | None:
@@ -232,13 +223,13 @@ def current_tenant_id_or_none() -> str | None:
         request_tenant = getattr(g, "m8flow_tenant_id", None)
         if isinstance(request_tenant, str):
             normalized_request_tenant = request_tenant.strip()
-            if normalized_request_tenant and normalized_request_tenant not in {DEFAULT_TENANT_ID, "public"}:
+            if is_concrete_tenant_id(normalized_request_tenant):
                 return normalized_request_tenant
 
     context_tenant = get_context_tenant_id()
     if isinstance(context_tenant, str):
         normalized_context_tenant = context_tenant.strip()
-        if normalized_context_tenant and normalized_context_tenant not in {DEFAULT_TENANT_ID, "public"}:
+        if is_concrete_tenant_id(normalized_context_tenant):
             return normalized_context_tenant
 
     return None

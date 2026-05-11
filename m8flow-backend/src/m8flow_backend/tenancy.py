@@ -5,15 +5,12 @@ import logging
 import os
 from contextvars import ContextVar, Token
 from collections.abc import Iterable
+from datetime import datetime, timezone
 from typing import Optional, cast
 
-from flask import g, has_request_context
+from flask import g, has_request_context, request
 
 LOGGER = logging.getLogger(__name__)
-
-# Default tenant used when no request context is available.
-# This must exist in the database before runtime/migrations that backfill tenant ids.
-DEFAULT_TENANT_ID = os.getenv("M8FLOW_DEFAULT_TENANT_ID", "default")
 
 # JWT claim name used to resolve tenant id. From M8FLOW_TENANT_CLAIM.
 TENANT_CLAIM = (os.getenv("M8FLOW_TENANT_CLAIM") or "").strip() or "m8flow_tenant_id"
@@ -76,10 +73,6 @@ _CONTEXT_TENANT_ID: ContextVar[Optional[str]] = ContextVar("m8flow_tenant_id", d
 # "Are we inside a request handler?" (works for ASGI/WSGI alike)
 _REQUEST_ACTIVE: ContextVar[bool] = ContextVar("m8flow_request_active", default=False)
 
-# Local flag to avoid warning spam outside Flask request context
-_CONTEXT_WARNED_DEFAULT: ContextVar[bool] = ContextVar("m8flow_warned_default_tenant", default=False)
-
-
 def get_healthy_response() -> tuple[dict, int]:
     """Return the canonical healthy response (payload, status_code) for reuse by health endpoints and callers."""
     return ({"status": "ok", "ok": True, "healthy": True}, 200)
@@ -88,13 +81,6 @@ def get_healthy_response() -> tuple[dict, int]:
 def health_check():
     """Public health check for load balancers and monitoring. Returns 200 when the process is up."""
     return get_healthy_response()
-
-
-def allow_missing_tenant_context() -> bool:
-    value = os.getenv("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT")
-    if value is None:
-        return False
-    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def path_matches_prefix(path: str, prefix: str) -> bool:
@@ -141,12 +127,79 @@ def get_context_tenant_id() -> str | None:
     return _CONTEXT_TENANT_ID.get()
 
 
+def is_legacy_placeholder_tenant_id(tenant_id: object) -> bool:
+    """Return whether a tenant id is the legacy pre-scoping placeholder."""
+    if not isinstance(tenant_id, str):
+        return False
+    return tenant_id.strip() == "default"
+
+
+def is_concrete_tenant_id(tenant_id: object) -> bool:
+    """Return whether a tenant id represents a concrete tenant context."""
+    if not isinstance(tenant_id, str):
+        return False
+
+    normalized_tenant_id = tenant_id.strip()
+    if not normalized_tenant_id:
+        return False
+
+    # Older migrations and stale pre-step-4 request context can still surface
+    # the legacy placeholder value "default". Treat it the same as "public":
+    # not a usable tenant-scoped runtime identifier.
+    return not is_legacy_placeholder_tenant_id(normalized_tenant_id) and normalized_tenant_id != "public"
+
+
 def clear_tenant_context() -> None:
     """Clear tenant context variables to prevent cross-request leakage."""
     _CONTEXT_TENANT_ID.set(None)
-    _CONTEXT_WARNED_DEFAULT.set(False)
     if has_request_context() and hasattr(g, "_m8flow_global_request"):
         g._m8flow_global_request = False
+
+
+def _request_uses_master_realm_without_tenant_context() -> bool:
+    """Detect master-realm requests when the resolver did not tag the request."""
+    if not has_request_context():
+        return False
+
+    try:
+        from m8flow_backend.config import master_realm_name
+        from m8flow_backend.services.tenant_identity_helpers import (
+            authentication_identifier_from_payload,
+            extract_realm_from_issuer,
+        )
+    except Exception:
+        return False
+
+    decoded_token = getattr(g, "_m8flow_decoded_token", None)
+    if not isinstance(decoded_token, dict):
+        try:
+            import jwt
+
+            token: str | None = getattr(g, "token", None) if isinstance(getattr(g, "token", None), str) else None
+            if not token:
+                auth_header = (request.headers.get("Authorization") or "").strip()
+                if auth_header.startswith("Bearer ") and len(auth_header) > 7:
+                    token = auth_header[7:].strip() or None
+            if not token:
+                token = request.cookies.get("access_token")
+            if token:
+                payload = jwt.decode(
+                    token,
+                    options={"verify_signature": False, "verify_exp": False},
+                )
+                if isinstance(payload, dict):
+                    decoded_token = payload
+                    g._m8flow_decoded_token = payload
+        except Exception:
+            decoded_token = None
+
+    if not isinstance(decoded_token, dict):
+        return False
+
+    master_realm = master_realm_name()
+    authentication_identifier = authentication_identifier_from_payload(decoded_token)
+    issuer_realm = extract_realm_from_issuer(decoded_token.get("iss"))
+    return authentication_identifier == master_realm or issuer_realm == master_realm
 
 def is_tenant_context_exempt_request() -> bool:
     if not has_request_context():
@@ -154,6 +207,15 @@ def is_tenant_context_exempt_request() -> bool:
     return bool(
         getattr(g, "_m8flow_tenant_context_exempt_request", False)
         or getattr(g, "_m8flow_public_request", False)
+        # Master-realm sign-ins, /login_return callbacks, and other
+        # intentionally tenant-less requests are tagged via
+        # ``g._m8flow_global_request`` by the tenant resolver.  Treat them
+        # the same as path-exempt requests: tenant-scoped DB queries (e.g.
+        # ReferenceCacheModel.basic_query) skip the tenant filter and
+        # return the global view, instead of raising "missing tenant
+        # context" for users who legitimately have no tenant.
+        or getattr(g, "_m8flow_global_request", False)
+        or _request_uses_master_realm_without_tenant_context()
     )
 
 
@@ -161,26 +223,12 @@ def is_public_request() -> bool:
     return is_tenant_context_exempt_request()
 
 
-def _warn_default_once(message: str, **extra: object) -> None:
-    """
-    Warn once per Flask request (via g flag), otherwise once per execution context (ContextVar flag).
-    """
-    if has_request_context():
-        if getattr(g, "_m8flow_warned_default_tenant", False):
-            return
-        g._m8flow_warned_default_tenant = True
-        LOGGER.warning(message, DEFAULT_TENANT_ID, extra=extra)  # type: ignore[arg-type]
-        return
-
-    if _CONTEXT_WARNED_DEFAULT.get():
-        return
-    _CONTEXT_WARNED_DEFAULT.set(True)
-    LOGGER.warning(message, extra=extra)  # type: ignore[arg-type]
-
-
 def get_tenant_id(*, warn_on_default: bool = True) -> str:
     """
     Return the tenant id for the current execution.
+
+    ``warn_on_default`` is retained for compatibility with older call sites but
+    no implicit default-tenant fallback remains.
     """
     if has_request_context():
         tid = cast(Optional[str], getattr(g, "m8flow_tenant_id", None))
@@ -194,31 +242,12 @@ def get_tenant_id(*, warn_on_default: bool = True) -> str:
             g.m8flow_tenant_id = ctx_tid
             return ctx_tid
 
-        if allow_missing_tenant_context():
-            g.m8flow_tenant_id = DEFAULT_TENANT_ID
-            _CONTEXT_TENANT_ID.set(DEFAULT_TENANT_ID)
-            if warn_on_default:
-                _warn_default_once(
-                    "No tenant id found in request context; defaulting to '%s'.",
-                    m8flow_tenant=DEFAULT_TENANT_ID,
-                )
-            return DEFAULT_TENANT_ID
-
         raise RuntimeError("Missing tenant id in request context.")
 
     # Non-request context
     ctx_tid = get_context_tenant_id()
     if ctx_tid:
         return ctx_tid
-
-    if allow_missing_tenant_context():
-        _CONTEXT_TENANT_ID.set(DEFAULT_TENANT_ID)
-        if warn_on_default:
-            _warn_default_once(
-                "No tenant id found in non-request context; defaulting to '%s'.",
-                m8flow_tenant=DEFAULT_TENANT_ID,
-            )
-        return DEFAULT_TENANT_ID
 
     raise RuntimeError("Missing tenant id in non-request context.")
 
@@ -262,12 +291,15 @@ def create_tenant_if_not_exists(
     if db.session.get(M8flowTenantModel, tenant_id) is not None:
         return
     # slug, created_by, modified_by are NOT NULL; use slug_value for slug, 'system' for audit when no user context
+    now = int(datetime.now(timezone.utc).timestamp())
     tenant = M8flowTenantModel(
         id=tenant_id,
         name=display_name,
         slug=slug_value,
         created_by="system",
         modified_by="system",
+        created_at_in_seconds=now,
+        updated_at_in_seconds=now,
     )
     db.session.add(tenant)
     db.session.commit()
