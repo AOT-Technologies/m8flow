@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from flask import request
+from flask import g, request
 from spiffworkflow_backend.exceptions.api_error import ApiError
 
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
@@ -11,8 +11,15 @@ from m8flow_backend.services.nats_token_service import NatsTokenService
 
 from m8flow_backend.services.nats_service import NatsService
 from m8flow_backend.services.tenant_service import TenantService
+from m8flow_backend.tenancy import get_context_tenant_id, set_context_tenant_id
 
 logger = logging.getLogger("m8flow.events.controller")
+
+
+def _set_validated_tenant_context(tenant_id: str) -> None:
+    g.m8flow_tenant_id = tenant_id
+    if get_context_tenant_id() != tenant_id:
+        g._m8flow_ctx_token = set_context_tenant_id(tenant_id)
 
 
 def _resolve_tenant_and_validate_key() -> tuple[str, str, str]:
@@ -80,6 +87,7 @@ def m8flow_trigger() -> tuple:
     }
     """
     tenant_id, tenant_slug, api_key = _resolve_tenant_and_validate_key()
+    _set_validated_tenant_context(tenant_id)
 
     process_identifier = request.headers.get("X-M8FLOW-Process-Identifier")
     username = request.headers.get("X-M8FLOW-Username")
@@ -177,4 +185,4 @@ def m8flow_trigger() -> tuple:
     )
 
 
-
+m8flow_trigger._m8flow_sets_tenant_context = True  # type: ignore[attr-defined]
