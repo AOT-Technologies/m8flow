@@ -8,11 +8,10 @@ Pre-built workflow templates that can be loaded into the database on startup.
 |----------|-------------|
 | [`Single Approval - ( WFH Approval Process with Timeout ).zip`](#template-1) | WFH Approval Process with Timeout |
 | [`Two-Step Leave Approval with Email Notifications.zip`](#template-2) | Two-Step Leave Approval with Email Notifications |
-| [`Sequential Approval with Rework Loop - ( Content Review & Iteration Workflow ).zip`](#template-3) | Content Review & Iteration Workflow with rework loop |
-| [`Approval with Conditional Escalation - ( Expense Claim Process with DMN ).zip`](#template-4) | Expense Claim Process with DMN-based conditional escalation |
-| [`Form-Driven Approval with Dynamic Assignee - ( IT Support Complaint Handling ).zip`](#template-5) | IT Support Complaint Handling with dynamic assignee |
-| [`Salesforce Lead Creation with Slack Notification.zip`](#template-6) | Salesforce Lead Creation with Slack Notification |
-| [`PostgreSQL Table Lifecycle Management.zip`](#template-7) | PostgreSQL Table Lifecycle Management |
+| [`Approval with Conditional Escalation - ( Expense Claim Process with DMN ).zip`](#template-3) | Expense Claim Process with DMN-based conditional escalation |
+| [`Form-Driven Approval with Dynamic Assignee - ( IT Support Complaint Handling ).zip`](#template-4) | IT Support Complaint Handling with dynamic assignee |
+| [`Salesforce Lead Creation with Slack Notification.zip`](#template-5) | Salesforce Lead Creation with Slack Notification |
+| [`PostgreSQL Table Lifecycle Management.zip`](#template-6) | PostgreSQL Table Lifecycle Management |
 
 
 
@@ -130,23 +129,7 @@ This is a two-step leave approval workflow. The employee submits a leave request
 
 <a id="template-3"></a>
 
-#### 3. `Sequential Approval with Rework Loop - ( Content Review & Iteration Workflow ).zip`
-
-This workflow handles a content review loop. The Publisher submits content, and the Reviewer either approves it or requests changes. If changes are requested, the content goes back to the Publisher for revision. The loop repeats until the Reviewer approves the content.
-
-**Prerequisites:**
-- Open the template in the Process Editor and find the **"Determine Reviewer"** script task.
-- Update the user assignments to match users in your tenant:
-  - `james` — the publisher who submits and revises content
-  - `emma` — the reviewer who approves or requests changes
-- Make sure both users are created in your tenant under **Administration → Users**.
-- No secrets required for this template.
-
----
-
-<a id="template-4"></a>
-
-#### 4. `Approval with Conditional Escalation - ( Expense Claim Process with DMN ).zip`
+#### 3. `Approval with Conditional Escalation - ( Expense Claim Process with DMN ).zip`
 
 This is an expense claim workflow with DMN-based automatic eligibility checking. The employee submits an expense claim, the Manager reviews it, and if approved, a DMN rule (`check_eligibility`) evaluates whether the claim can be auto-approved or if it needs Finance team review.
 
@@ -160,9 +143,9 @@ This is an expense claim workflow with DMN-based automatic eligibility checking.
 
 ---
 
-<a id="template-5"></a>
+<a id="template-4"></a>
 
-#### 5. `Form-Driven Approval with Dynamic Assignee - ( IT Support Complaint Handling ).zip`
+#### 4. `Form-Driven Approval with Dynamic Assignee - ( IT Support Complaint Handling ).zip`
 
 This workflow handles IT support complaints. The submitter registers a complaint and selects a complaint type (Hardware or Software). The workflow then dynamically routes the complaint to the correct support team member based on the type selected.
 
@@ -176,9 +159,9 @@ This workflow handles IT support complaints. The submitter registers a complaint
 
 ---
 
-<a id="template-6"></a>
+<a id="template-5"></a>
 
-#### 6. `Salesforce Lead Creation with Slack Notification.zip`
+#### 5. `Salesforce Lead Creation with Slack Notification.zip`
 
 This workflow allows any user to enter lead details via a form, creates the lead in Salesforce using the API, and then sends a notification to a Slack channel confirming the lead was created.
 
@@ -195,9 +178,9 @@ This workflow allows any user to enter lead details via a form, creates the lead
 
 ---
 
-<a id="template-7"></a>
+<a id="template-6"></a>
 
-#### 7. `PostgreSQL Table Lifecycle Management.zip`
+#### 6. `PostgreSQL Table Lifecycle Management.zip`
 
 This workflow demonstrates reading from and writing to a PostgreSQL database directly through the workflow engine. It walks through a user registration scenario where data is inserted into and retrieved from a Postgres table.
 
