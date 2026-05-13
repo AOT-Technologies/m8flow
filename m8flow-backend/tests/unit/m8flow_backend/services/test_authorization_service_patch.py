@@ -9,8 +9,6 @@ from flask import Flask
 
 from m8flow_backend.services import authorization_service_patch
 from m8flow_backend.services.authorization_service_patch import _keycloak_realm_roles_as_groups
-from m8flow_backend.services.authorization_service_patch import _legacy_groups_as_roles_fallback_enabled
-from m8flow_backend.services.authorization_service_patch import _legacy_keycloak_groups_as_roles
 from m8flow_backend.services.authorization_service_patch import _find_existing_user_for_sign_in
 from m8flow_backend.services.authorization_service_patch import _find_existing_user_in_same_realm
 from m8flow_backend.services.authorization_service_patch import _normalize_keycloak_groups
@@ -103,12 +101,6 @@ def test_keycloak_realm_roles_as_groups_returns_empty_without_roles() -> None:
     assert _keycloak_realm_roles_as_groups({}) == []
 
 
-def test_legacy_keycloak_groups_as_roles_uses_leaf_for_path_values() -> None:
-    user_info = {"groups": ["/super-admin", "/a/b/reviewer", "viewer", "/viewer", "/Engineering", "", None]}
-
-    assert _legacy_keycloak_groups_as_roles(user_info) == ["super-admin", "reviewer", "viewer"]
-
-
 def test_normalize_keycloak_roles_prefers_top_level_roles_claim() -> None:
     user_info = {
         "roles": ["editor", "integrator", "unknown-role", "", None],
@@ -119,22 +111,13 @@ def test_normalize_keycloak_roles_prefers_top_level_roles_claim() -> None:
     assert _normalize_keycloak_roles(user_info) == ["editor", "integrator"]
 
 
-def test_normalize_keycloak_roles_falls_back_to_legacy_sources_without_roles_claim() -> None:
+def test_normalize_keycloak_roles_falls_back_to_realm_access_without_roles_claim() -> None:
     user_info = {
         "groups": ["/tenant-admin", "/Business", "submitter"],
         "realm_access": {"roles": ["integrator", "offline_access"]},
     }
 
-    assert _normalize_keycloak_roles(user_info) == ["tenant-admin", "submitter", "integrator"]
-
-
-def test_normalize_keycloak_roles_without_roles_claim_ignores_groups_when_legacy_fallback_disabled() -> None:
-    user_info = {
-        "groups": ["/tenant-admin", "submitter"],
-        "realm_access": {"roles": ["integrator", "offline_access"]},
-    }
-
-    assert _normalize_keycloak_roles(user_info, allow_legacy_groups_as_roles_fallback=False) == ["integrator"]
+    assert _normalize_keycloak_roles(user_info) == ["integrator"]
 
 
 def test_normalize_keycloak_groups_canonicalizes_organizational_group_paths() -> None:
@@ -158,29 +141,31 @@ def test_normalized_open_id_group_identifiers_uses_separate_roles_and_groups_whe
     ]
 
 
-def test_normalized_open_id_group_identifiers_keeps_legacy_mixed_group_behavior_without_roles_claim() -> None:
+def test_normalized_open_id_group_identifiers_treats_groups_as_organizational_without_roles_claim() -> None:
     user_info = {
         "groups": ["/tenant-admin", "/group_keycloak", "reviewer"],
         "realm_access": {"roles": ["submitter"]},
     }
 
     assert _normalized_open_id_group_identifiers(user_info) == [
+        "/tenant-admin",
         "/group_keycloak",
-        "tenant-admin",
-        "reviewer",
+        "/reviewer",
         "submitter",
     ]
 
 
-def test_normalized_open_id_group_identifiers_does_not_grant_roles_from_groups_when_legacy_fallback_disabled() -> None:
+def test_normalized_open_id_group_identifiers_keeps_plain_group_names_as_organizational_groups() -> None:
     user_info = {
         "groups": ["tenant-admin", "/Engineering", "/reviewer", "default-roles-m8flow"],
     }
 
-    assert _normalized_open_id_group_identifiers(
-        user_info,
-        allow_legacy_groups_as_roles_fallback=False,
-    ) == ["/Engineering", "/reviewer", "/default-roles-m8flow"]
+    assert _normalized_open_id_group_identifiers(user_info) == [
+        "/tenant-admin",
+        "/Engineering",
+        "/reviewer",
+        "/default-roles-m8flow",
+    ]
 
 
 def test_normalized_open_id_role_and_org_group_helpers_stay_separate_for_new_tokens() -> None:
@@ -199,24 +184,16 @@ def test_normalized_open_id_role_and_org_group_helpers_stay_separate_for_new_tok
     ) == ["tenant-a:/Engineering", "tenant-a:/editor", "tenant-a:editor"]
 
 
-def test_normalized_open_id_organizational_groups_filter_plain_role_names_when_legacy_fallback_disabled() -> None:
+def test_normalized_open_id_organizational_groups_normalize_all_group_values() -> None:
     user_info = {
         "groups": ["editor", "/Engineering", "/editor", "default-roles-m8flow"],
     }
 
-    assert _normalized_open_id_organizational_group_identifiers(
-        user_info,
-        allow_legacy_groups_as_roles_fallback=False,
-    ) == ["/Engineering", "/editor", "/default-roles-m8flow"]
-
-
-def test_legacy_groups_as_roles_fallback_enabled_reads_app_config(monkeypatch) -> None:
-    app = Flask(__name__)
-
-    with app.app_context():
-        app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_ALLOW_LEGACY_GROUPS_AS_ROLES"] = False
-
-        assert _legacy_groups_as_roles_fallback_enabled() is False
+    assert _normalized_open_id_organizational_group_identifiers(user_info) == [
+        "/editor",
+        "/Engineering",
+        "/default-roles-m8flow",
+    ]
 
 
 def test_find_existing_user_in_same_realm_prefers_most_recent_match() -> None:
@@ -564,14 +541,11 @@ def test_create_user_from_sign_in_syncs_roles_and_org_groups_separately(monkeypa
     assert update_calls == [({1, 2, 3}, set())]
 
 
-def test_create_user_from_sign_in_groups_only_token_does_not_sync_role_groups_when_legacy_fallback_disabled(
-    monkeypatch,
-) -> None:
+def test_create_user_from_sign_in_groups_only_token_syncs_only_organizational_groups(monkeypatch) -> None:
     app = Flask(__name__)  # NOSONAR - unit test
     app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_IS_AUTHORITY_FOR_USER_GROUPS"] = True
     app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_TENANT_SPECIFIC_FIELDS"] = []
     app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
-    app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_ALLOW_LEGACY_GROUPS_AS_ROLES"] = False
 
     fake_user = SimpleNamespace(
         id=7,
@@ -630,5 +604,6 @@ def test_create_user_from_sign_in_groups_only_token_does_not_sync_role_groups_wh
         AuthorizationService.create_user_from_sign_in(user_info)
 
     assert captured_group_identifiers == [
+        ("tenant-a:/reviewer", True),
         ("tenant-a:/Operations", True),
     ]

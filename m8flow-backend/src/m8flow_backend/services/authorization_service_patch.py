@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any
 
 from m8flow_backend.services.tenant_identity_helpers import current_tenant_id_or_none
@@ -29,8 +28,6 @@ M8FLOW_AUTH_EXCLUSION_ADDITIONS = [
 M8FLOW_ROLE_GROUP_IDENTIFIERS = frozenset(
     {"super-admin", "tenant-admin", "editor", "viewer", "integrator", "reviewer", "submitter"}
 )
-OPEN_ID_LEGACY_GROUPS_AS_ROLES_CONFIG_KEY = "SPIFFWORKFLOW_BACKEND_OPEN_ID_ALLOW_LEGACY_GROUPS_AS_ROLES"
-OPEN_ID_LEGACY_GROUPS_AS_ROLES_ENV_KEY = "M8FLOW_BACKEND_OPEN_ID_ALLOW_LEGACY_GROUPS_AS_ROLES"
 
 
 def _normalize_string_claim_values(raw_values: Any) -> list[str]:
@@ -49,38 +46,6 @@ def _normalize_string_claim_values(raw_values: Any) -> list[str]:
         seen.add(value)
         normalized.append(value)
     return normalized
-
-
-def _config_bool(value: Any, default: bool) -> bool:
-    """Interpret common config/env boolean spellings."""
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        normalized = value.strip().lower()
-        if normalized in {"1", "true", "yes", "on"}:
-            return True
-        if normalized in {"0", "false", "no", "off"}:
-            return False
-    return bool(value)
-
-
-def _legacy_groups_as_roles_fallback_enabled() -> bool:
-    """Return whether mixed-token groups should still be treated as permission roles."""
-    from flask import has_app_context
-
-    if has_app_context():
-        from flask import current_app
-
-        config_value = current_app.config.get(OPEN_ID_LEGACY_GROUPS_AS_ROLES_CONFIG_KEY)
-        if config_value is not None:
-            return _config_bool(config_value, default=True)
-
-    env_value = os.getenv(OPEN_ID_LEGACY_GROUPS_AS_ROLES_CONFIG_KEY)
-    if env_value is None:
-        env_value = os.getenv(OPEN_ID_LEGACY_GROUPS_AS_ROLES_ENV_KEY)
-    return _config_bool(env_value, default=True)
 
 
 def _keycloak_realm_roles_as_groups(user_info: dict[str, Any]) -> list[str]:
@@ -103,48 +68,13 @@ def _keycloak_realm_roles_as_groups(user_info: dict[str, Any]) -> list[str]:
     ]
 
 
-def _legacy_keycloak_groups_as_roles(user_info: dict[str, Any]) -> list[str]:
+def _normalize_keycloak_roles(user_info: dict[str, Any]) -> list[str]:
     """
-    Extract known M8Flow role identifiers from legacy mixed groups claims.
-
-    Older Keycloak setups may emit permission roles in the ``groups`` claim as
-    plain names or path-style values such as ``/super-admin``.
-    """
-    groups = user_info.get("groups")
-    if not isinstance(groups, list):
-        return []
-
-    normalized: list[str] = []
-    seen: set[str] = set()
-    for group in groups:
-        if not isinstance(group, str):
-            continue
-        value = group.strip()
-        if not value:
-            continue
-
-        candidates = [value]
-        if "/" in value:
-            leaf = value.rstrip("/").split("/")[-1].strip()
-            if leaf:
-                candidates.append(leaf)
-
-        for candidate in candidates:
-            if candidate in M8FLOW_ROLE_GROUP_IDENTIFIERS and candidate not in seen:
-                seen.add(candidate)
-                normalized.append(candidate)
-    return normalized
-
-
-def _normalize_keycloak_roles(
-    user_info: dict[str, Any],
-    allow_legacy_groups_as_roles_fallback: bool = True,
-) -> list[str]:
-    """
-    Return permission-role identifiers from separated or legacy token shapes.
+    Return permission-role identifiers from the token.
 
     When a top-level ``roles`` claim exists, it is authoritative. Otherwise,
-    fall back to the historical mixed ``groups`` claim plus ``realm_access.roles``.
+    fall back to ``realm_access.roles`` for tokens such as master-realm admin
+    tokens that omit the top-level claim.
     """
     if "roles" in user_info:
         return [
@@ -155,10 +85,7 @@ def _normalize_keycloak_roles(
 
     normalized: list[str] = []
     seen: set[str] = set()
-    role_sources = _keycloak_realm_roles_as_groups(user_info)
-    if allow_legacy_groups_as_roles_fallback:
-        role_sources = _legacy_keycloak_groups_as_roles(user_info) + role_sources
-    for role in role_sources:
+    for role in _keycloak_realm_roles_as_groups(user_info):
         if role not in seen:
             seen.add(role)
             normalized.append(role)
@@ -223,69 +150,19 @@ def _normalize_keycloak_groups(user_info: dict[str, Any]) -> list[str]:
     return normalize_organizational_group_identifiers(_normalize_string_claim_values(user_info.get("groups")))
 
 
-def _normalize_legacy_keycloak_groups(user_info: dict[str, Any]) -> list[str]:
-    """
-    Preserve the historical mixed-token behavior for old ``groups`` claims.
-
-    This keeps path-style values mapped to their leaf names until the caller is
-    ready to rely on a separate top-level ``roles`` claim.
-    """
-    groups = user_info.get("groups")
-    if not isinstance(groups, list):
-        return []
-
-    normalized: list[str] = []
-    seen: set[str] = set()
-    for group in groups:
-        if not isinstance(group, str):
-            continue
-        value = group.strip()
-        if not value:
-            continue
-        candidate = value.rstrip("/").split("/")[-1].strip() if "/" in value else value
-        if candidate and candidate not in seen:
-            seen.add(candidate)
-            normalized.append(candidate)
-    return normalized
-
-
-def _group_claim_value_matches_role_identifier(group_identifier: str) -> bool:
-    """Return ``True`` when a raw group claim value matches a known M8Flow role name."""
-    value = group_identifier.strip()
-    if not value:
-        return False
-
-    candidates = [value]
-    if "/" in value:
-        leaf = value.rstrip("/").split("/")[-1].strip()
-        if leaf:
-            candidates.append(leaf)
-
-    return any(candidate in M8FLOW_ROLE_GROUP_IDENTIFIERS for candidate in candidates)
-
-
-def _normalized_open_id_group_identifiers(
-    user_info: dict[str, Any],
-    allow_legacy_groups_as_roles_fallback: bool = True,
-) -> list[str]:
+def _normalized_open_id_group_identifiers(user_info: dict[str, Any]) -> list[str]:
     """
     Return the effective group identifiers to sync from the token.
 
-    New tokens with a top-level ``roles`` claim keep roles and groups separate.
-    Legacy tokens without ``roles`` retain the historical mixed-claim behavior.
+    Organizational groups come from ``groups`` and permission roles come from
+    ``roles`` or ``realm_access.roles``.
     """
     normalized: list[str] = []
     seen: set[str] = set()
 
     for group_identifier in (
-        _normalized_open_id_organizational_group_identifiers(
-            user_info,
-            allow_legacy_groups_as_roles_fallback=allow_legacy_groups_as_roles_fallback,
-        )
-        + _normalized_open_id_permission_role_group_identifiers(
-            user_info,
-            allow_legacy_groups_as_roles_fallback=allow_legacy_groups_as_roles_fallback,
-        )
+        _normalized_open_id_organizational_group_identifiers(user_info)
+        + _normalized_open_id_permission_role_group_identifiers(user_info)
     ):
         if group_identifier not in seen:
             seen.add(group_identifier)
@@ -293,49 +170,18 @@ def _normalized_open_id_group_identifiers(
     return normalized
 
 
-def _normalized_open_id_organizational_group_identifiers(
-    user_info: dict[str, Any],
-    allow_legacy_groups_as_roles_fallback: bool = True,
-) -> list[str]:
+def _normalized_open_id_organizational_group_identifiers(user_info: dict[str, Any]) -> list[str]:
     """
     Return organizational group identifiers from the token.
 
-    For separated token shapes, only the top-level ``groups`` claim contributes
-    organizational membership. Legacy mixed tokens keep the historical
-    flattened-groups behavior until the caller migrates to a dedicated
-    top-level ``roles`` claim.
+    The ``groups`` claim is always treated as organizational membership.
     """
-    raw_groups = _normalize_string_claim_values(user_info.get("groups"))
-    if "roles" in user_info:
-        return normalize_organizational_group_identifiers(raw_groups)
-
-    if allow_legacy_groups_as_roles_fallback:
-        return normalize_organizational_group_identifiers(
-            [
-                group_identifier
-                for group_identifier in raw_groups
-                if not _group_claim_value_matches_role_identifier(group_identifier)
-            ]
-        )
-
-    return normalize_organizational_group_identifiers(
-        [
-            group_identifier
-            for group_identifier in raw_groups
-            if group_identifier not in M8FLOW_ROLE_GROUP_IDENTIFIERS
-        ]
-    )
+    return normalize_organizational_group_identifiers(_normalize_string_claim_values(user_info.get("groups")))
 
 
-def _normalized_open_id_permission_role_group_identifiers(
-    user_info: dict[str, Any],
-    allow_legacy_groups_as_roles_fallback: bool = True,
-) -> list[str]:
+def _normalized_open_id_permission_role_group_identifiers(user_info: dict[str, Any]) -> list[str]:
     """Return permission-bearing role identifiers from the token."""
-    return _normalize_keycloak_roles(
-        user_info,
-        allow_legacy_groups_as_roles_fallback=allow_legacy_groups_as_roles_fallback,
-    )
+    return _normalize_keycloak_roles(user_info)
 
 
 def _normalized_open_id_local_group_identifiers(
@@ -487,15 +333,8 @@ def apply() -> None:
         user_attributes["service_id"] = user_info["sub"]
 
         effective_tenant_id = _tenant_id_for_user_info(user_info)
-        allow_legacy_groups_as_roles_fallback = _legacy_groups_as_roles_fallback_enabled()
-        desired_role_group_identifiers = _normalized_open_id_permission_role_group_identifiers(
-            user_info,
-            allow_legacy_groups_as_roles_fallback=allow_legacy_groups_as_roles_fallback,
-        )
-        desired_organizational_group_identifiers = _normalized_open_id_organizational_group_identifiers(
-            user_info,
-            allow_legacy_groups_as_roles_fallback=allow_legacy_groups_as_roles_fallback,
-        )
+        desired_role_group_identifiers = _normalized_open_id_permission_role_group_identifiers(user_info)
+        desired_organizational_group_identifiers = _normalized_open_id_organizational_group_identifiers(user_info)
 
         desired_group_identifiers: list[str] | Any | None = None
         if current_app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_IS_AUTHORITY_FOR_USER_GROUPS"]:
