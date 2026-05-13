@@ -4,7 +4,7 @@ This file is the **canonical** place for environment variable meanings and examp
 
 ## Host ports (Docker Compose defaults)
 
-These control what **your machine** listens on when you run [docker/m8flow-docker-compose.yml](../docker/m8flow-docker-compose.yml). Defaults are chosen to avoid common clashes (macOS AirPlay on 7000, MinIO on 9000, etc.). Set overrides in `.env` (from [sample.env](../sample.env)) and rebuild.
+These control what **your machine** listens on when you run [docker/m8flow-docker-compose.yml](../docker/m8flow-docker-compose.yml). Defaults are chosen to avoid common host port clashes (for example reserved or popular defaults in the 7000 and 9000 ranges). Set overrides in `.env` (from [sample.env](../sample.env)) and rebuild.
 
 | Variable | Default | Service / use |
 |----------|---------|----------------|

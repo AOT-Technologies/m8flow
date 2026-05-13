@@ -110,7 +110,6 @@ cp sample.env .env
 - **Change a port**: edit `.env` (for example `M8FLOW_BACKEND_PORT=16840`) and re-run Compose.
 - **See what Compose published** (after `up`):
   - `docker compose -f docker/m8flow-docker-compose.yml port m8flow-backend 6840`
-- **macOS AirPlay**: if you ever map the backend back to **7000**, disable **AirPlay Receiver** under *System Settings → General → AirDrop & Handoff → AirPlay Receiver*.
 
 ### 4. Start m8flow
 
@@ -151,7 +150,7 @@ docker compose -f docker/m8flow-docker-compose.yml up -d --build
 
 
 3. **Try the Default Test Users:**  
-   Each tenant comes with a set of default test users for you to explore the platform. **_The password for each user is the same as their username._**
+   Each tenant (including tenants you add later) is provisioned with these default test users.
 
    | Username     | Role                                  |
    |--------------|---------------------------------------|
@@ -160,6 +159,9 @@ docker compose -f docker/m8flow-docker-compose.yml up -d --build
    | `viewer`     | Read-only access                      |
    | `integrator` | Service task / connector access       |
    | `reviewer`   | Review and approve tasks              |
+   | `submitter`  | Submit work                           |
+
+   **Password:** the initial password for each user is the **same as the username** (for example `admin` / `admin`). Passwords are imported as **temporary** in Keycloak, so users are prompted for a **password change on first login**.
 
 
 You’re all set! Continue with [Tenant creation](#tenant-creation) to add your own tenants or explore the rich features of m8flow.
@@ -190,23 +192,6 @@ You’re all set! Continue with [Tenant creation](#tenant-creation) to add your 
         <img src="./docs/images/tenant-creation.png" alt="Tenant Creation Screen"/>
     </div>
 
-   Once your tenant is created, it will automatically include the set of default test users described above in [Try the Default Test Users](#try-the-default-test-users).
-
-### Default users in a newly created tenant
-
-When you add a tenant through the UI, m8flow provisions a Keycloak realm from [m8flow-backend/keycloak/realm_exports/m8flow-tenant-template.json](m8flow-backend/keycloak/realm_exports/m8flow-tenant-template.json). That realm includes these users:
-
-| Username | Notes |
-|----------|--------|
-| `admin` | Tenant administrator |
-| `editor` | Create and edit process models |
-| `viewer` | Read-only |
-| `integrator` | Service task / connector access |
-| `reviewer` | Review and approve tasks |
-| `submitter` | Submit work |
-
-**Password:** for each user, the **initial password is the same as the username** (e.g. `admin` / `admin`). Passwords are imported as **temporary** — Keycloak will prompt for a **password change on first login**.
- 
 ---
 
 ## Docker Compose services

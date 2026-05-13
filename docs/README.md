@@ -119,8 +119,6 @@ Docker bind-mounts the repo `process_models/` directory into the backend and Cel
 
 If the frontend fails with a missing Rollup native package such as `@rollup/rollup-win32-x64-msvc`, reinstall `m8flow-frontend` dependencies on that machine with `npm install`.
 
-**Note:** The default backend port is **6840** (not 7000), to avoid the macOS AirPlay Receiver port conflict.
-
 ### 4. Running a Celery worker
 
 ```bash
