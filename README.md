@@ -49,9 +49,9 @@ Install the following tools:
 - **Git** — [Downloads](https://git-scm.com/downloads)
 - **Docker Desktop** (includes Docker Compose v2) — [Product page](https://www.docker.com/products/docker-desktop/) — install guides: [Windows](https://docs.docker.com/desktop/install/windows-install/), [macOS](https://docs.docker.com/desktop/install/mac-install/)
 
-### Default host ports (Docker)
+### Default host ports
 
-By default, the stack publishes **6840–6852** on your machine (configured in [sample.env](sample.env)). These defaults avoid common conflicts such as **macOS AirPlay Receiver on port 7000** and host MinIO defaults (9000/9001).
+By default, the stack publishes **6840–6852** on your machine (configured in [sample.env](sample.env)).
 
 | Port(s) | Service |
 |---------|---------|
@@ -107,8 +107,8 @@ cp sample.env .env
   - macOS/Linux: `lsof -i :6840` (or `sudo lsof -nP -iTCP:6840 -sTCP:LISTEN`)
   - Windows PowerShell: `Get-NetTCPConnection -LocalPort 6840`
   - Windows CMD: `netstat -ano | findstr :6840`
-- **Change a port**: edit `.env` (for example `M8FLOW_BACKEND_PORT=16840`) and re-run Compose.
-- **See what Compose published** (after `up`):
+- **Change a port**: edit `.env` (for example `M8FLOW_BACKEND_PORT=16840`) and re-run docker compose.
+- **See what docker published** (after `up`):
   - `docker compose -f docker/m8flow-docker-compose.yml port m8flow-backend 6840`
 
 ### 4. Start m8flow
@@ -119,17 +119,13 @@ First-time start (includes one-time init jobs):
 docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build
 ```
 
-Next time (skip init jobs):
+> **Note:** Run the above command only the first time to perform initialization. For future starts, skip the init profile:
 
 ```bash
 docker compose -f docker/m8flow-docker-compose.yml up -d --build
 ```
 
-### 5. Open the app
-
-- **UI**: [http://localhost:6841/](http://localhost:6841/)
-- **Keycloak**: [http://localhost:6842/](http://localhost:6842/)
-
+Once started, open [http://localhost:6841/](http://localhost:6841/) in your browser to access m8flow.
 ---
 
 ## Signing In — Application Usage
@@ -149,6 +145,7 @@ docker compose -f docker/m8flow-docker-compose.yml up -d --build
    </div>
 
 
+<a id="try-the-default-test-users"></a>
 3. **Try the Default Test Users:**  
    Each tenant (including tenants you add later) is provisioned with these default test users.
 
@@ -192,6 +189,7 @@ You’re all set! Continue with [Tenant creation](#tenant-creation) to add your 
         <img src="./docs/images/tenant-creation.png" alt="Tenant Creation Screen"/>
     </div>
 
+Once your tenant is created, it will automatically include the set of default test users described above in [Try the Default Test Users](#try-the-default-test-users).
 ---
 
 ## Docker Compose services
@@ -234,14 +232,9 @@ docker compose -f docker/m8flow-docker-compose.yml down -v
 ```
 
 ---
+## Additional Documentation & Developer Resources
 
-## More documentation
-
-- **Docker details**: [docker/README.md](docker/README.md)
-- **Environment variables**: [docs/env-reference.md](docs/env-reference.md)
-- **Sample templates**: [m8flow-backend/sample_templates/README.md](m8flow-backend/sample_templates/README.md)
-- **Integration services**: [m8flow-connector-proxy/README.md](m8flow-connector-proxy/README.md), [m8flow-nats-consumer/README.md](m8flow-nats-consumer/README.md)
-- **Developer docs**: browse the [docs/](docs/) folder
+For details on active development of backend/frontend workflows without docker,  and other development topics, refer to [docs/README.md](docs/README.md). More guides and references are available in the `docs/` folder as the documentation expands.
 
 ---
 

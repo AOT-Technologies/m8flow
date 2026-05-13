@@ -7,6 +7,8 @@ This folder contains project documentation for setup, architecture, and developm
 - [Repository structure](#repository-structure)
 - [Running locally (without Docker for backend/frontend)](#running-locally-without-docker-for-backendfrontend)
 - [Access the application with multitenant mode off](#access-the-application-with-multitenant-mode-off)
+- [Sample Templates](#sample-templates)
+- [Integration Services](#integration-services)
 
 ---
 
@@ -157,3 +159,23 @@ Default test users (password = username):
 | `viewer` | Read-only access |
 | `integrator` | Service task / connector access |
 | `reviewer` | Review and approve tasks |
+
+## Sample Templates
+
+m8flow includes sample workflow templates that can help teams get started quickly with common approval, notification, escalation, and integration scenarios.
+
+The sample templates package includes pre-built workflows and guidance for:
+
+- automatically loading templates during startup
+- using integration-focused templates such as Salesforce, Slack, SMTP, and PostgreSQL examples
+
+For the full template catalog and setup instructions, refer to [m8flow-backend/sample_templates/README.md](m8flow-backend/sample_templates/README.md).
+
+## Integration Services
+
+m8flow includes supporting services for connector execution and event-driven workflow processing. These components can be run alongside the core platform depending on your deployment needs.
+
+For service-specific setup, configuration, and usage details, refer to:
+
+- [m8flow-connector-proxy/README.md](m8flow-connector-proxy/README.md) for connector proxy support such as SMTP, Slack, HTTP, and related integrations
+- [m8flow-nats-consumer/README.md](m8flow-nats-consumer/README.md) for NATS-based event consumption and event-driven workflow execution
