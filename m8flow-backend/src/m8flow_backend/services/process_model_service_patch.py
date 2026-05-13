@@ -11,6 +11,7 @@ from m8flow_backend.tenancy import is_super_admin_request
 
 _PATCHED = False
 _ORIGINAL_METHODS: dict[str, Any] = {}
+SUPER_ADMIN_READ_ONLY_MESSAGE = "Super-admin is read-only across tenants."
 
 
 def reset() -> None:
@@ -106,6 +107,7 @@ def apply() -> None:
         return
 
     from flask import current_app
+    from spiffworkflow_backend.exceptions.api_error import ApiError
     from spiffworkflow_backend.services.process_model_service import ProcessModelService
 
     _ORIGINAL_METHODS["get_process_groups_for_api"] = ProcessModelService.get_process_groups_for_api
@@ -114,6 +116,14 @@ def apply() -> None:
     _ORIGINAL_METHODS["is_process_model_identifier"] = ProcessModelService.is_process_model_identifier
     _ORIGINAL_METHODS["is_process_group_identifier"] = ProcessModelService.is_process_group_identifier
     _ORIGINAL_METHODS["get_process_group"] = ProcessModelService.get_process_group
+    _ORIGINAL_METHODS["save_process_model"] = ProcessModelService.save_process_model
+    _ORIGINAL_METHODS["process_model_delete"] = ProcessModelService.process_model_delete
+    _ORIGINAL_METHODS["process_model_move"] = ProcessModelService.process_model_move
+    _ORIGINAL_METHODS["copy_process_model"] = ProcessModelService.copy_process_model
+    _ORIGINAL_METHODS["add_process_group"] = ProcessModelService.add_process_group
+    _ORIGINAL_METHODS["update_process_group"] = ProcessModelService.update_process_group
+    _ORIGINAL_METHODS["process_group_move"] = ProcessModelService.process_group_move
+    _ORIGINAL_METHODS["process_group_delete"] = ProcessModelService.process_group_delete
 
     original_get_process_groups_for_api = ProcessModelService.get_process_groups_for_api.__func__
     original_get_process_models_for_api = ProcessModelService.get_process_models_for_api.__func__
@@ -121,6 +131,14 @@ def apply() -> None:
     original_is_process_model_identifier = ProcessModelService.is_process_model_identifier.__func__
     original_is_process_group_identifier = ProcessModelService.is_process_group_identifier.__func__
     original_get_process_group = ProcessModelService.get_process_group.__func__
+    original_save_process_model = ProcessModelService.save_process_model.__func__
+    original_process_model_delete = ProcessModelService.process_model_delete.__func__
+    original_process_model_move = ProcessModelService.process_model_move.__func__
+    original_copy_process_model = ProcessModelService.copy_process_model.__func__
+    original_add_process_group = ProcessModelService.add_process_group.__func__
+    original_update_process_group = ProcessModelService.update_process_group.__func__
+    original_process_group_move = ProcessModelService.process_group_move.__func__
+    original_process_group_delete = ProcessModelService.process_group_delete.__func__
 
     @classmethod
     def patched_get_process_groups_for_api(
@@ -240,11 +258,69 @@ def apply() -> None:
             create_if_not_exists=create_if_not_exists,
         )
 
+    @classmethod
+    def patched_save_process_model(cls, process_model: Any) -> None:
+        if is_super_admin_request():
+            raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
+        return original_save_process_model(cls, process_model)
+
+    @classmethod
+    def patched_process_model_delete(cls, process_model_id: str) -> None:
+        if is_super_admin_request():
+            raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
+        return original_process_model_delete(cls, process_model_id)
+
+    @classmethod
+    def patched_process_model_move(cls, original_process_model_id: str, new_location: str) -> Any:
+        if is_super_admin_request():
+            raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
+        return original_process_model_move(cls, original_process_model_id, new_location)
+
+    @classmethod
+    def patched_copy_process_model(
+        cls, original_process_model_id: str, new_process_model_id: str, new_display_name: str
+    ) -> Any:
+        if is_super_admin_request():
+            raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
+        return original_copy_process_model(cls, original_process_model_id, new_process_model_id, new_display_name)
+
+    @classmethod
+    def patched_add_process_group(cls, process_group: Any) -> Any:
+        if is_super_admin_request():
+            raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
+        return original_add_process_group(cls, process_group)
+
+    @classmethod
+    def patched_update_process_group(cls, process_group: Any) -> Any:
+        if is_super_admin_request():
+            raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
+        return original_update_process_group(cls, process_group)
+
+    @classmethod
+    def patched_process_group_move(cls, original_process_group_id: str, new_location: str) -> Any:
+        if is_super_admin_request():
+            raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
+        return original_process_group_move(cls, original_process_group_id, new_location)
+
+    @classmethod
+    def patched_process_group_delete(cls, process_group_id: str) -> None:
+        if is_super_admin_request():
+            raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
+        return original_process_group_delete(cls, process_group_id)
+
     ProcessModelService.get_process_groups_for_api = patched_get_process_groups_for_api
     ProcessModelService.get_process_models_for_api = patched_get_process_models_for_api
     ProcessModelService.get_process_model = patched_get_process_model
     ProcessModelService.is_process_model_identifier = patched_is_process_model_identifier
     ProcessModelService.is_process_group_identifier = patched_is_process_group_identifier
     ProcessModelService.get_process_group = patched_get_process_group
+    ProcessModelService.save_process_model = patched_save_process_model
+    ProcessModelService.process_model_delete = patched_process_model_delete
+    ProcessModelService.process_model_move = patched_process_model_move
+    ProcessModelService.copy_process_model = patched_copy_process_model
+    ProcessModelService.add_process_group = patched_add_process_group
+    ProcessModelService.update_process_group = patched_update_process_group
+    ProcessModelService.process_group_move = patched_process_group_move
+    ProcessModelService.process_group_delete = patched_process_group_delete
 
     _PATCHED = True

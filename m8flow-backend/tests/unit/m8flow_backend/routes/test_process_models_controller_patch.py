@@ -26,11 +26,11 @@ def test_prepare_super_admin_strips_m8f_and_locks_g(app, monkeypatch) -> None:
 
     with app.test_request_context("/"):
         g._m8flow_super_admin_request = True
-        out = prepare_process_model_create_body_for_upstream(
-            {"display_name": "D", "description": "", "m8f_tenant_id": "abil"},
-        )
-        assert "m8f_tenant_id" not in out
-        assert getattr(g, "m8flow_tenant_id", None) == "abil"
+        with pytest.raises(ApiError) as exc:
+            prepare_process_model_create_body_for_upstream(
+                {"display_name": "D", "description": "", "m8f_tenant_id": "abil"},
+            )
+        assert exc.value.error_code == "forbidden"
     clear_tenant_context()
 
 
@@ -60,4 +60,4 @@ def test_prepare_super_admin_unknown_tenant_raises(app, monkeypatch) -> None:
         g._m8flow_super_admin_request = True
         with pytest.raises(ApiError) as exc:
             prepare_process_model_create_body_for_upstream({"m8f_tenant_id": "nope"})
-        assert exc.value.error_code == "tenant_not_found"
+        assert exc.value.error_code == "forbidden"

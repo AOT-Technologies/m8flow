@@ -59,3 +59,19 @@ def test_filter_query_by_visibility_bypasses_filters_for_super_admin() -> None:
             result = TemplateAuthorizationService.filter_query_by_visibility(query, user=user)
             assert result is query
             assert query.filtered is False
+
+
+def test_can_edit_denies_super_admin() -> None:
+    app = Flask(__name__)  # NOSONAR - unit test with no HTTP/CSRF involved
+    with app.app_context():
+        with app.test_request_context("/"):
+            g._m8flow_super_admin_request = True
+            user = SimpleNamespace(username="super-admin")
+            template = _DummyTemplate(
+                tenant_id="tenant-b",
+                created_by="owner-b",
+                public=False,
+                tenant_visible=False,
+                private=True,
+            )
+            assert TemplateAuthorizationService.can_edit(template, user=user) is False

@@ -68,9 +68,13 @@ def apply(flask_app: object | None = None) -> None:
 
     original_get_tasks = tasks_controller._get_tasks
     original_task_list_my_tasks = tasks_controller.task_list_my_tasks
-    original_task_list_for_me = tasks_controller.task_list_for_me
-    original_task_list_for_my_open_processes = tasks_controller.task_list_for_my_open_processes
-    original_task_list_for_my_groups = tasks_controller.task_list_for_my_groups
+    # Upstream task list endpoints have varied across versions; fall back to _get_tasks
+    # when a specific handler does not exist.
+    original_task_list_for_me = getattr(tasks_controller, "task_list_for_me", original_get_tasks)
+    original_task_list_for_my_open_processes = getattr(
+        tasks_controller, "task_list_for_my_open_processes", original_get_tasks
+    )
+    original_task_list_for_my_groups = getattr(tasks_controller, "task_list_for_my_groups", original_get_tasks)
     original_task_data_show = getattr(tasks_controller, "task_data_show", None)
 
     def _task_list_all_open_tasks(*args, **kwargs) -> flask.wrappers.Response:

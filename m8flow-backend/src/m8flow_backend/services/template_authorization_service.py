@@ -61,7 +61,8 @@ class TemplateAuthorizationService:
     @classmethod
     def can_edit(cls, template: TemplateModel, user: UserModel | None = None) -> bool:
         if cls._is_super_admin_request(user=user):
-            return True
+            # Master-realm super-admin is intentionally read-only across tenants.
+            return False
 
         if user is None:
             return False

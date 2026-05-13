@@ -8,6 +8,7 @@ import pytest
 from flask import Flask, g
 
 from m8flow_backend.tenancy import clear_tenant_context, get_context_tenant_id
+from spiffworkflow_backend.exceptions.api_error import ApiError
 from spiffworkflow_backend.exceptions.process_entity_not_found_error import ProcessEntityNotFoundError
 from spiffworkflow_backend.services.file_system_service import FileSystemService
 from spiffworkflow_backend.services.process_model_service import ProcessModelService
@@ -147,3 +148,17 @@ def test_super_admin_preset_tenant_skips_scan_other_tenant_model(
 
         with pytest.raises(ProcessEntityNotFoundError):
             ProcessModelService.get_process_model("abil/test")
+
+
+def test_super_admin_process_model_mutators_are_forbidden(app: Flask, patched_services) -> None:
+    with app.test_request_context("/"):
+        g._m8flow_super_admin_request = True
+        g._m8flow_tenant_context_exempt_request = True
+
+        with pytest.raises(ApiError) as exc:
+            ProcessModelService.process_model_delete("abil/test")
+        assert exc.value.error_code == "forbidden"
+
+        with pytest.raises(ApiError) as exc:
+            ProcessModelService.process_group_delete("abil")
+        assert exc.value.error_code == "forbidden"

@@ -18,26 +18,21 @@ _ORIGINAL_PROCESS_MODEL_CREATE: Callable[..., Any] | None = None
 def prepare_process_model_create_body_for_upstream(
     body: dict[str, str | bool | int | None | list],
 ) -> dict[str, str | bool | int | None | list]:
-    """Copy body for upstream handler; super-admin may lock tenant from ``m8f_tenant_id`` (stripped from copy)."""
+    """Copy body for upstream handler; strips ``m8f_tenant_id`` from the payload.
+
+    Super-admin is read-only across tenants and cannot create process models.
+    """
     body_for_upstream = dict(body)
     raw_tid = body_for_upstream.pop("m8f_tenant_id", None)
-    if is_super_admin_request() and raw_tid is not None:
-        tenant_id = str(raw_tid).strip()
-        if not tenant_id:
-            raise ApiError(
-                error_code="invalid_tenant_id",
-                message="m8f_tenant_id must be a non-empty string when provided.",
-                status_code=400,
-            )
-        tenant = db.session.get(M8flowTenantModel, tenant_id)
-        if tenant is None:
-            raise ApiError(
-                error_code="tenant_not_found",
-                message=f"Tenant not found: {tenant_id}",
-                status_code=400,
-            )
-        g.m8flow_tenant_id = tenant_id
-        set_context_tenant_id(tenant_id)
+    if is_super_admin_request():
+        raise ApiError(
+            error_code="forbidden",
+            message="Super-admin is read-only across tenants.",
+            status_code=403,
+        )
+    # Non-super-admin calls may still include m8f_tenant_id from older clients;
+    # ignore it and rely on normal tenant scoping instead.
+    _ = raw_tid
 
     return body_for_upstream
 

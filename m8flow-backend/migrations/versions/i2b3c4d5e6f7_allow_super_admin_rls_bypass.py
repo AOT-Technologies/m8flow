@@ -1,4 +1,4 @@
-"""Allow app-level super-admin RLS bypass via app.bypass_rls session setting.
+"""Allow app-level super-admin RLS bypass via app.bypass_rls session setting (SELECT-only).
 
 Revision ID: i2b3c4d5e6f7
 Revises: h1a2b3c4d5e6
@@ -17,42 +17,67 @@ branch_labels = None
 depends_on = None
 
 
-_RLS_PREDICATE_WITH_BYPASS = (
-    "(m8f_tenant_id = current_setting('app.current_tenant', true) "
-    "OR current_setting('app.bypass_rls', true) = 'on')"
-)
-_RLS_PREDICATE_TENANT_ONLY = "(m8f_tenant_id = current_setting('app.current_tenant', true))"
+_TENANT_ONLY_PREDICATE = "(m8f_tenant_id = current_setting('app.current_tenant', true))"
+_BYPASS_ONLY_PREDICATE = "(current_setting('app.bypass_rls', true) = 'on')"
 
 
-def _policy_names_for_tenant_tables() -> list[str]:
+def _is_postgres() -> bool:
+    return op.get_bind().dialect.name == "postgresql"
+
+
+def _tenant_tables() -> list[str]:
+    """All tables in current schema that have an m8f_tenant_id column."""
     rows = op.get_bind().execute(
         sa.text(
             """
-            SELECT policyname
-            FROM pg_policies
-            WHERE schemaname = current_schema()
-              AND qual LIKE '%m8f_tenant_id = current_setting(''app.current_tenant'', true)%'
+            SELECT table_name
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND column_name = 'm8f_tenant_id'
+            ORDER BY table_name
             """
         )
     ).fetchall()
-    return [str(row[0]) for row in rows]
+    return [str(r[0]) for r in rows]
 
 
-def _replace_rls_predicate(predicate_sql: str) -> None:
-    for policy_name in _policy_names_for_tenant_tables():
-        table_name = policy_name.removesuffix("_tenant_rls")
+def _apply_policies(*, predicate_all: str, add_bypass_select: bool) -> None:
+    for table in _tenant_tables():
+        tenant_policy = f"{table}_tenant_isolation"
+        super_admin_select_policy = f"{table}_super_admin_select"
+
+        # Ensure RLS is on (safe if already enabled).
+        op.execute(sa.text(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY"))
+
+        # Replace the tenant isolation policy to control write behavior.
+        op.execute(sa.text(f"DROP POLICY IF EXISTS {tenant_policy} ON {table}"))
         op.execute(
             sa.text(
-                f"ALTER POLICY {policy_name} ON {table_name} "
-                f"USING {predicate_sql} "
-                f"WITH CHECK {predicate_sql}"
+                f"CREATE POLICY {tenant_policy} ON {table} "
+                f"FOR ALL USING {predicate_all} WITH CHECK {predicate_all}"
             )
         )
 
+        # Super-admin read policy (bypass is SELECT-only).
+        op.execute(sa.text(f"DROP POLICY IF EXISTS {super_admin_select_policy} ON {table}"))
+        if add_bypass_select:
+            op.execute(
+                sa.text(
+                    f"CREATE POLICY {super_admin_select_policy} ON {table} "
+                    f"FOR SELECT USING {_BYPASS_ONLY_PREDICATE}"
+                )
+            )
+
 
 def upgrade() -> None:
-    _replace_rls_predicate(_RLS_PREDICATE_WITH_BYPASS)
+    if not _is_postgres():
+        return
+    # Strict tenant-only writes; bypass only for SELECT.
+    _apply_policies(predicate_all=_TENANT_ONLY_PREDICATE, add_bypass_select=True)
 
 
 def downgrade() -> None:
-    _replace_rls_predicate(_RLS_PREDICATE_TENANT_ONLY)
+    if not _is_postgres():
+        return
+    # Restore pre-i2b3 behavior: tenant-only isolation, without bypass SELECT policy.
+    _apply_policies(predicate_all=_TENANT_ONLY_PREDICATE, add_bypass_select=False)
