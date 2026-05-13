@@ -1,10 +1,8 @@
 {
   "groups": [
-    "/Engineering",
-    "/Business",
-    "/Operations",
-    "/Support",
-    "/Integrations",
-    "/Admins"
+    "/Approvers",
+    "/Designers",
+    "/Administrators",
+    "/Support"
   ]
 }

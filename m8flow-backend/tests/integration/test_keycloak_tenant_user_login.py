@@ -221,7 +221,8 @@ def test_tenant_user_access_token_separates_groups_and_roles_claims() -> None:
         assert decoded_access_token.get("roles") is not None
         assert "editor" in decoded_access_token["roles"]
         assert decoded_access_token.get("groups") is not None
-        assert "/Engineering" in decoded_access_token["groups"]
+        assert "Engineering" in decoded_access_token["groups"]
+        assert "/Engineering" not in decoded_access_token["groups"]
         assert "editor" not in decoded_access_token["groups"]
         assert "tenant-admin" not in decoded_access_token["groups"]
     finally:

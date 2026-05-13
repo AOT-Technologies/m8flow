@@ -15,6 +15,7 @@ backend_redirect_uri="${backend_public_url%/}/*"
 frontend_logout_redirect_uri="${frontend_public_url%/}/*"
 m8flow_realm_name="${KEYCLOAK_REALM:-m8flow}"
 placeholder_client_id="__M8FLOW_SPOKE_CLIENT_ID__"
+normalized_group_mapper_provider_id="oidc-normalized-group-membership-mapper"
 
 echo ":: Waiting for Keycloak master realm at ${keycloak_url}..."
 i=0
@@ -35,30 +36,162 @@ echo ":: Connected to Keycloak admin API."
 
 /opt/keycloak/bin/kcadm.sh update realms/master -s sslRequired=NONE >/dev/null 2>&1 || true
 
+resolve_named_resource_id() {
+  match_field="$1"
+  match_value="$2"
+  current_id=""
+  resolved_id=""
+
+  while IFS= read -r line; do
+    next_id="$(printf '%s\n' "${line}" | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+    if [ -n "${next_id}" ]; then
+      current_id="${next_id}"
+    fi
+
+    next_value="$(
+      printf '%s\n' "${line}" \
+        | sed -n 's/.*"'"${match_field}"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'
+    )"
+    if [ "${next_value}" = "${match_value}" ]; then
+      resolved_id="${current_id}"
+    fi
+  done
+
+  if [ -n "${resolved_id}" ]; then
+    printf '%s\n' "${resolved_id}"
+  fi
+}
+
 resolve_client_internal_id() {
   realm_name="$1"
   client_name="$2"
   /opt/keycloak/bin/kcadm.sh get clients -r "${realm_name}" -q clientId="${client_name}" --fields id,clientId \
-    | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
-    | head -n 1
+    | resolve_named_resource_id clientId "${client_name}"
 }
 
-ensure_group_membership_mapper() {
+resolve_client_scope_internal_id() {
   realm_name="$1"
-  client_internal_id="$2"
-  if ! /opt/keycloak/bin/kcadm.sh get "clients/${client_internal_id}/protocol-mappers/models" -r "${realm_name}" 2>/dev/null | grep -q '"name" : "groups"\|"name":"groups"'; then
-    /opt/keycloak/bin/kcadm.sh create "clients/${client_internal_id}/protocol-mappers/models" -r "${realm_name}" \
+  scope_name="$2"
+  /opt/keycloak/bin/kcadm.sh get client-scopes -r "${realm_name}" -q name="${scope_name}" --fields id,name \
+    | resolve_named_resource_id name "${scope_name}"
+}
+
+resolve_user_internal_id() {
+  realm_name="$1"
+  username="$2"
+  /opt/keycloak/bin/kcadm.sh get users -r "${realm_name}" -q username="${username}" --fields id,username \
+    | resolve_named_resource_id username "${username}"
+}
+
+resolve_group_internal_id() {
+  realm_name="$1"
+  group_name="$2"
+  /opt/keycloak/bin/kcadm.sh get groups -r "${realm_name}" --fields id,name \
+    | resolve_named_resource_id name "${group_name}"
+}
+
+resolve_protocol_mapper_id() {
+  resource_path="$1"
+  realm_name="$2"
+  mapper_name="$3"
+  /opt/keycloak/bin/kcadm.sh get "${resource_path}/protocol-mappers/models" -r "${realm_name}" --fields id,name 2>/dev/null \
+    | resolve_named_resource_id name "${mapper_name}"
+}
+
+ensure_default_group_in_realm() {
+  realm_name="$1"
+  group_name="$2"
+  group_internal_id="$(resolve_group_internal_id "${realm_name}" "${group_name}")"
+  if [ -z "${group_internal_id}" ]; then
+    /opt/keycloak/bin/kcadm.sh create groups -r "${realm_name}" -s name="${group_name}" >/dev/null
+    group_internal_id="$(resolve_group_internal_id "${realm_name}" "${group_name}")"
+  fi
+
+  printf '%s\n' "${group_internal_id}"
+}
+
+ensure_user_default_group_assignment() {
+  realm_name="$1"
+  username="$2"
+  group_name="$3"
+  user_internal_id="$(resolve_user_internal_id "${realm_name}" "${username}")"
+  if [ -z "${user_internal_id}" ]; then
+    echo ":: User ${username} not present in realm ${realm_name}; skipping default group assignment."
+    return 0
+  fi
+
+  group_internal_id="$(resolve_group_internal_id "${realm_name}" "${group_name}")"
+  if [ -z "${group_internal_id}" ]; then
+    echo >&2 "ERROR: Failed to resolve group ${group_name} in realm ${realm_name}"
+    return 1
+  fi
+
+  membership_payload_file="$(mktemp)"
+  printf '{}\n' > "${membership_payload_file}"
+  /opt/keycloak/bin/kcadm.sh update "users/${user_internal_id}/groups/${group_internal_id}" -r "${realm_name}" -f "${membership_payload_file}" >/dev/null
+  rm -f "${membership_payload_file}"
+}
+
+ensure_default_groups_and_memberships_in_realm() {
+  realm_name="$1"
+
+  ensure_default_group_in_realm "${realm_name}" "Approvers" >/dev/null
+  ensure_default_group_in_realm "${realm_name}" "Designers" >/dev/null
+  ensure_default_group_in_realm "${realm_name}" "Administrators" >/dev/null
+  ensure_default_group_in_realm "${realm_name}" "Support" >/dev/null
+
+  ensure_user_default_group_assignment "${realm_name}" "reviewer" "Approvers"
+  ensure_user_default_group_assignment "${realm_name}" "editor" "Designers"
+  ensure_user_default_group_assignment "${realm_name}" "admin" "Administrators"
+  ensure_user_default_group_assignment "${realm_name}" "integrator" "Support"
+}
+
+ensure_normalized_groups_mapper_on_resource() {
+  realm_name="$1"
+  resource_path="$2"
+  mapper_id="$(resolve_protocol_mapper_id "${resource_path}" "${realm_name}" groups)"
+  if [ -n "${mapper_id}" ]; then
+    /opt/keycloak/bin/kcadm.sh update "${resource_path}/protocol-mappers/models/${mapper_id}" -r "${realm_name}" \
       -s name=groups \
       -s protocol=openid-connect \
-      -s protocolMapper=oidc-group-membership-mapper \
+      -s protocolMapper="${normalized_group_mapper_provider_id}" \
       -s consentRequired=false \
       -s 'config."introspection.token.claim"=true' \
       -s 'config."userinfo.token.claim"=true' \
       -s 'config."id.token.claim"=true' \
       -s 'config."access.token.claim"=true' \
       -s 'config."claim.name"=groups' \
-      -s 'config."full.path"=true' \
+      -s 'config.multivalued=true' \
+      -s 'config."jsonType.label"=String' \
       >/dev/null
+  else
+    /opt/keycloak/bin/kcadm.sh create "${resource_path}/protocol-mappers/models" -r "${realm_name}" \
+      -s name=groups \
+      -s protocol=openid-connect \
+      -s protocolMapper="${normalized_group_mapper_provider_id}" \
+      -s consentRequired=false \
+      -s 'config."introspection.token.claim"=true' \
+      -s 'config."userinfo.token.claim"=true' \
+      -s 'config."id.token.claim"=true' \
+      -s 'config."access.token.claim"=true' \
+      -s 'config."claim.name"=groups' \
+      -s 'config.multivalued=true' \
+      -s 'config."jsonType.label"=String' \
+      >/dev/null
+  fi
+}
+
+ensure_group_membership_mapper() {
+  realm_name="$1"
+  client_internal_id="$2"
+  ensure_normalized_groups_mapper_on_resource "${realm_name}" "clients/${client_internal_id}"
+}
+
+ensure_profile_scope_group_membership_mapper() {
+  realm_name="$1"
+  profile_scope_internal_id="$(resolve_client_scope_internal_id "${realm_name}" profile)"
+  if [ -n "${profile_scope_internal_id}" ]; then
+    ensure_normalized_groups_mapper_on_resource "${realm_name}" "client-scopes/${profile_scope_internal_id}"
   fi
 }
 
@@ -140,6 +273,8 @@ ensure_spoke_client_in_realm() {
     >/dev/null
 
   ensure_roles_mapper "${realm_name}" "${current_client_internal_id}"
+  ensure_profile_scope_group_membership_mapper "${realm_name}"
+  ensure_default_groups_and_memberships_in_realm "${realm_name}"
   echo ":: Realm ${realm_name} client ${keycloak_client_id} ensured."
 }
 

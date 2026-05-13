@@ -197,37 +197,33 @@ def test_fill_realm_template_client_attributes() -> None:
 
 def test_load_default_organizational_group_paths() -> None:
     assert load_default_organizational_group_paths() == [
-        "/Engineering",
-        "/Business",
-        "/Operations",
+        "/Approvers",
+        "/Designers",
+        "/Administrators",
         "/Support",
-        "/Integrations",
-        "/Admins",
     ]
 
 
 @patch("m8flow_backend.services.keycloak_service.load_default_organizational_group_paths")
 def test_fill_realm_template_merges_default_organizational_groups(mock_default_groups) -> None:
-    mock_default_groups.return_value = ["/Engineering", "/Business/Finance", "/Integrations"]
+    mock_default_groups.return_value = ["/Designers", "/Approvers", "/Support"]
     template = {
         "id": "m8flow",
         "realm": "m8flow",
         "groups": [
-            {"name": "group_keycloak", "path": "/group_keycloak", "subGroups": []},
-            {"name": "Business", "path": "/Business", "subGroups": []},
+            {"name": "Administrators", "path": "/Administrators", "subGroups": []},
         ],
     }
 
     result = _fill_realm_template(template, "tenant-j", None, "m8flow")
 
     assert _flatten_group_paths(result["groups"]) == [
-        "/group_keycloak",
-        "/Business",
-        "/Business/Finance",
-        "/Engineering",
-        "/Integrations",
+        "/Administrators",
+        "/Designers",
+        "/Approvers",
+        "/Support",
     ]
-    assert _flatten_group_paths(template["groups"]) == ["/group_keycloak", "/Business"]
+    assert _flatten_group_paths(template["groups"]) == ["/Administrators"]
 
 
 def test_fill_realm_template_injects_runtime_redirects_for_backend_client(monkeypatch) -> None:
