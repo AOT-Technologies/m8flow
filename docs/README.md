@@ -81,18 +81,18 @@ docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build 
 
 ```bash
 bin/fetch-upstream.sh
-./m8flow-backend/bin/run_m8flow_backend.sh 7000 --reload
+./m8flow-backend/bin/run_m8flow_backend.sh 6840 --reload
 ```
 
 ```powershell
 bin/fetch-upstream.ps1
-.\m8flow-backend\bin\run_m8flow_backend.ps1 7000
+.\m8flow-backend\bin\run_m8flow_backend.ps1 6840
 ```
 
 Verify the backend:
 
 ```bash
-curl http://localhost:7000/v1.0/status
+curl http://localhost:6840/v1.0/status
 ```
 
 Expected response:
@@ -119,7 +119,7 @@ Docker bind-mounts the repo `process_models/` directory into the backend and Cel
 
 If the frontend fails with a missing Rollup native package such as `@rollup/rollup-win32-x64-msvc`, reinstall `m8flow-frontend` dependencies on that machine with `npm install`.
 
-**macOS note:** Port 7000 may be claimed by AirPlay Receiver. Disable it in System Settings > General > AirDrop & Handoff > AirPlay Receiver.
+**Note:** The default backend port is **6840** (not 7000), to avoid the macOS AirPlay Receiver port conflict.
 
 ### 4. Running a Celery worker
 
@@ -140,7 +140,7 @@ docker compose -f docker/m8flow-docker-compose.yml up -d --build m8flow-backend 
 
 Although m8flow is designed as a fully multitenant system, you can configure it to present as a single-tenant UI by setting the environment variable `MULTI_TENANT_ON=false`. 
 
-With this setting, open `http://localhost:7001/` in your browser. You will be redirected directly to the Keycloak login page.
+With this setting, open `http://localhost:6841/` in your browser. You will be redirected directly to the Keycloak login page.
 
 <div align="center">
     <img src="./images/access-m8flow-1.png" />
