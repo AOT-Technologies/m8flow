@@ -28,7 +28,7 @@
   "oauth2DevicePollingInterval": 5,
   "enabled": true,
   "sslRequired": "none",
-  "registrationAllowed": false,
+  "registrationAllowed": true,
   "registrationEmailAsUsername": false,
   "rememberMe": false,
   "verifyEmail": false,
@@ -50,10 +50,15 @@
         "id": "c9f0ff93-642d-402b-965a-04d70719886b",
         "name": "default-roles-m8flow",
         "description": "${role_default-roles}",
-        "composite": false,
+        "composite": true,
         "clientRole": false,
         "containerId": "m8flow",
-        "attributes": {}
+        "attributes": {},
+        "composites": {
+          "realm": [
+            "viewer"
+          ]
+        }
       },
       {
         "id": "9f474167-5707-4c10-8f9e-bb54ec715cd3",
@@ -499,7 +504,12 @@
     "description": "${role_default-roles}",
     "composite": true,
     "clientRole": false,
-    "containerId": "m8flow"
+    "containerId": "m8flow",
+    "composites": {
+      "realm": [
+        "viewer"
+      ]
+    }
   },
   "requiredCredentials": [
     "password"

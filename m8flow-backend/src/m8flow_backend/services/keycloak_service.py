@@ -36,6 +36,8 @@ SPOKE_CLIENT_ID_PLACEHOLDER = "__M8FLOW_SPOKE_CLIENT_ID__"
 BACKEND_REDIRECT_PLACEHOLDER = "replace-me-with-m8flow-backend-host-and-path"
 FRONTEND_REDIRECT_PLACEHOLDER = "replace-me-with-m8flow-frontend-host-and-path"
 DEFAULT_ROLES_PREFIX = "default-roles-"  # role name "default-roles-{realm}" must be updated
+# Realm role assigned to every user created via Admin API so backend RBAC sees a known group (m8flow.yml).
+DEFAULT_NEW_USER_REALM_ROLE = "viewer"
 REALM_URL_PREFIX = "/realms/"  # client baseUrl/redirectUris contain /realms/{realm}/
 ADMIN_CONSOLE_URL_PREFIX = "/admin/"  # security-admin-console has /admin/{realm}/console/
 BACKEND_URL_PLACEHOLDER = "https://replace-me-with-m8flow-backend-host-and-path/*"
@@ -763,6 +765,10 @@ def _minimal_realm_creation_payload(full_payload: dict[str, Any]) -> dict[str, A
         "displayName": full_payload.get("displayName"),
         "enabled": full_payload.get("enabled", True),
         "sslRequired": full_payload.get("sslRequired", "none"),
+        # Carry the realm-level registration flag from the template so new tenant
+        # realms expose the "Register" link on the login screen. partialImport does
+        # not apply realm-level settings, so this must be set on initial creation.
+        "registrationAllowed": full_payload.get("registrationAllowed", False),
     }
 
     login_theme = full_payload.get("loginTheme")
@@ -943,6 +949,40 @@ def create_realm_from_template(realm_id: str, display_name: str | None = None) -
     }
 
 
+def _assign_realm_roles_to_user(
+    realm: str,
+    user_id: str,
+    role_names: list[str],
+    *,
+    token: str,
+    base_url: str,
+) -> None:
+    """Assign existing realm roles by name (Keycloak Admin API)."""
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    mappings: list[dict[str, str]] = []
+    for name in role_names:
+        if not isinstance(name, str) or not name.strip():
+            continue
+        r_role = requests.get(
+            f"{base_url}/admin/realms/{realm}/roles/{name.strip()}",
+            headers=headers,
+            timeout=30,
+        )
+        r_role.raise_for_status()
+        role_rep = r_role.json()
+        if isinstance(role_rep, dict) and role_rep.get("id") and role_rep.get("name"):
+            mappings.append({"id": str(role_rep["id"]), "name": str(role_rep["name"])})
+    if not mappings:
+        return
+    r_map = requests.post(
+        f"{base_url}/admin/realms/{realm}/users/{user_id}/role-mappings/realm",
+        json=mappings,
+        headers=headers,
+        timeout=30,
+    )
+    r_map.raise_for_status()
+
+
 def tenant_login(realm: str, username: str, password: str) -> dict:
     """
     Login as a user in a spoke realm (resource owner password grant).
@@ -1038,8 +1078,17 @@ def create_user_in_realm(
         timeout=30,
     )
     r2.raise_for_status()
-    
+
+    _assign_realm_roles_to_user(
+        realm,
+        user_id,
+        [DEFAULT_NEW_USER_REALM_ROLE],
+        token=token,
+        base_url=base_url,
+    )
+
     return user_id
+
 
 def delete_realm(realm_id: str, admin_token: str | None = None) -> None:
     """Delete a realm in Keycloak using the provided admin token or the master admin token."""
