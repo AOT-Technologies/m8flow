@@ -245,7 +245,7 @@ def _patched_open_id_endpoint_for_name(
     # For internal calls, rewrite the discovery URL to use the internal host/port while
     # preserving the path/query/fragment from the discovery document. This ensures that
     # server-to-Keycloak requests from Docker containers do not attempt to call
-    # localhost:7002 (or other public hosts) when the internal URL is keycloak-proxy:7002.
+    # localhost:6842 (or other public hosts) when the internal URL is keycloak-proxy:6842.
     if internal and config:
         internal_parsed = urlparse(internal_server_url)
         parsed = urlparse(config)
