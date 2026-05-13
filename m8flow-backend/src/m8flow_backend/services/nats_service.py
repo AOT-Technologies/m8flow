@@ -11,14 +11,13 @@ logger = logging.getLogger("m8flow.nats.service")
 try:
     from nats.aio.client import Client as NATS
     from nats.js.errors import NotFoundError
-    _NATS_IMPORT_ERROR: ModuleNotFoundError | None = None
-except ModuleNotFoundError as import_error:
+except ModuleNotFoundError:  # pragma: no cover - environment-dependent optional dependency
     NATS = None
 
     class NotFoundError(Exception):
-        """Fallback when nats-py is unavailable."""
+        """Fallback error type when nats-py is unavailable."""
 
-    _NATS_IMPORT_ERROR = import_error
+        pass
 
 class NatsService:
     @staticmethod
@@ -32,10 +31,10 @@ class NatsService:
         stream_name: str | None = None,
         reply_timeout: float = 30.0,
     ) -> dict:
-        if _NATS_IMPORT_ERROR is not None or NATS is None:
+        if NATS is None:
             raise ApiError(
                 error_code="nats_dependency_missing",
-                message="NATS support is unavailable. Install the 'nats-py' dependency to use this endpoint.",
+                message="NATS support is not available because the 'nats-py' dependency is not installed.",
                 status_code=503,
             )
 
