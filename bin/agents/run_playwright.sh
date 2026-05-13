@@ -54,7 +54,7 @@ trap cleanup EXIT INT TERM
 
 # Check if backend is running
 echo "Checking if backend server is running..."
-if ! curl -s -o /dev/null http://localhost:7000/v1.0/status; then
+if ! curl -s -o /dev/null http://localhost:6840/v1.0/status; then
     echo "🚀 Starting backend server..."
     cd "$ROOT_DIR/spiffworkflow-backend"
     source ./bin/local_development_environment_setup
@@ -65,7 +65,7 @@ if ! curl -s -o /dev/null http://localhost:7000/v1.0/status; then
     # Wait for backend to be ready
     echo "Waiting for backend to be ready..."
     for i in {1..60}; do
-        if curl -s -o /dev/null http://localhost:7000/v1.0/status; then
+        if curl -s -o /dev/null http://localhost:6840/v1.0/status; then
             echo "✅ Backend is ready!"
             break
         fi
@@ -81,7 +81,7 @@ fi
 
 # Check if frontend is running
 echo "Checking if frontend server is running..."
-if ! curl -s -o /dev/null http://localhost:7001; then
+if ! curl -s -o /dev/null http://localhost:6841; then
     echo "🚀 Starting frontend server..."
     cd "$ROOT_DIR/spiffworkflow-frontend"
 

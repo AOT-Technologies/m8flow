@@ -190,13 +190,13 @@ def test_fill_realm_template_injects_runtime_redirects_for_backend_client(monkey
             {
                 "clientId": "m8flow-backend",
                 "redirectUris": [
-                    "http://localhost:7000/*",
+                    "http://localhost:6840/*",
                     "https://replace-me-with-m8flow-backend-host-and-path/*",
                 ],
                 "webOrigins": [],
                 "attributes": {
                     "post.logout.redirect.uris": (
-                        "https://replace-me-with-m8flow-frontend-host-and-path/*##http://localhost:7001/*"
+                        "https://replace-me-with-m8flow-frontend-host-and-path/*##http://localhost:6841/*"
                     ),
                 },
             }
@@ -212,7 +212,7 @@ def test_fill_realm_template_injects_runtime_redirects_for_backend_client(monkey
     assert "http://192.168.1.105:8001" in client["webOrigins"]
     assert (
         client["attributes"]["post.logout.redirect.uris"]
-        == "http://192.168.1.105:8001/*##http://localhost:7001/*##http://192.168.1.105:8000/*"
+        == "http://192.168.1.105:8001/*##http://localhost:6841/*##http://192.168.1.105:8000/*"
     )
 
 
@@ -244,7 +244,7 @@ def test_fill_realm_template_injects_runtime_redirects_for_frontend_client(monke
 @patch("m8flow_backend.services.keycloak_service.requests.get")
 def test_realm_exists_true(mock_get, mock_keycloak_url) -> None:
     """realm_exists returns True when Keycloak returns 200 from public discovery endpoint."""
-    mock_keycloak_url.return_value = "http://localhost:7002"
+    mock_keycloak_url.return_value = "http://localhost:6842"
     mock_get.return_value = MagicMock(status_code=200)
     assert realm_exists("tenant-a") is True
     mock_get.assert_called_once()
@@ -256,7 +256,7 @@ def test_realm_exists_true(mock_get, mock_keycloak_url) -> None:
 @patch("m8flow_backend.services.keycloak_service.requests.get")
 def test_realm_exists_false_404(mock_get, mock_keycloak_url) -> None:
     """realm_exists returns False when Keycloak returns 404."""
-    mock_keycloak_url.return_value = "http://localhost:7002"
+    mock_keycloak_url.return_value = "http://localhost:6842"
     mock_get.return_value = MagicMock(status_code=404)
     assert realm_exists("missing-realm") is False
 
@@ -277,9 +277,9 @@ def test_realm_exists_empty_realm() -> None:
 @patch("m8flow_backend.services.keycloak_service.keycloak_url")
 def test_tenant_login_authorization_url(mock_keycloak_url) -> None:
     """tenant_login_authorization_url returns Keycloak auth endpoint for realm."""
-    mock_keycloak_url.return_value = "http://localhost:7002"
+    mock_keycloak_url.return_value = "http://localhost:6842"
     url = tenant_login_authorization_url("tenant-a")
-    assert url == "http://localhost:7002/realms/tenant-a/protocol/openid-connect/auth"
+    assert url == "http://localhost:6842/realms/tenant-a/protocol/openid-connect/auth"
 
 
 @patch("m8flow_backend.services.keycloak_service.keycloak_url")

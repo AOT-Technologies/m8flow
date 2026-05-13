@@ -297,7 +297,7 @@ if ($env:M8FLOW_BACKEND_RUN_BOOTSTRAP -ne 'false') {
 }
 
 $logConfig = Join-Path $repoRoot 'uvicorn-log.yaml'
-$defaultBackendPort = 7000
+$defaultBackendPort = 6840
 $backendPort = if ($PSBoundParameters.ContainsKey('Port')) {
   $Port
 } elseif ($env:M8FLOW_BACKEND_PORT) {

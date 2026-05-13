@@ -108,7 +108,7 @@ MinIO is **not** built from this repo. It uses the official image `minio/minio:R
 - **ECS / Terraform (e.g. m8flow-deployment):** MinIO is typically defined in Terraform as its own ECS task (official image, EFS volume for `/data`, secrets for credentials, service discovery). The **backend** task definition must have: (1) `MINIO_ENDPOINT` (e.g. `http://minio:9000` via service discovery), and (2) EFS mounts for `/app/data/process_models` and `/app/data/templates` if process models are synced from MinIO to EFS. There is no separate "deploy MinIO image" step from this repo.
 - **Run MinIO locally (same image as production):**
   ```bash
-  docker run -p 9000:9000 -p 9001:9001 \
+  docker run -p 6846:9000 -p 6847:9001 \
     -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
     minio/minio:RELEASE.2025-01-20T14-49-07Z server /data --console-address ":9001"
   ```

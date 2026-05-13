@@ -255,7 +255,7 @@ if [[ -z "${UVICORN_LOG_LEVEL:-}" && ! is_running_in_container ]]; then
   export UVICORN_LOG_LEVEL=debug
 fi
 
-log_launcher_status "Preparing backend startup (port=${port_arg:-${M8FLOW_BACKEND_PORT:-7000}}, reload=${reload_mode}, uv_runner=${use_uv_runner})"
+log_launcher_status "Preparing backend startup (port=${port_arg:-${M8FLOW_BACKEND_PORT:-6840}}, reload=${reload_mode}, uv_runner=${use_uv_runner})"
 if [[ "$reload_mode" == "true" ]]; then
   log_launcher_status "Reload mode starts a reloader first, then a worker. A short quiet pause after 'Uvicorn running' is normal on first startup."
 fi
@@ -277,7 +277,7 @@ if [[ "${M8FLOW_BACKEND_RUN_BOOTSTRAP:-}" != "false" ]]; then
 fi
 
 log_config="$repo_root/uvicorn-log.yaml"
-default_backend_port="7000"
+default_backend_port="6840"
 backend_port="${port_arg:-${M8FLOW_BACKEND_PORT:-$default_backend_port}}"
 
 # Only pass --env-file when the file exists (ECS/task definition inject env; no .env in container).

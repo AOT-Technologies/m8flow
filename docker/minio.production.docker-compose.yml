@@ -17,8 +17,8 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${MINIO_API_PORT:-6846}:9000"
+      - "${MINIO_CONSOLE_PORT:-6847}:9001"
     volumes:
       - minio_data:/data
     restart: unless-stopped

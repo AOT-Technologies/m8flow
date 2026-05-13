@@ -23,7 +23,7 @@ All variables are strictly required and must be provided via `.env` or the Docke
 | Variable                    | Example                    | Description                                                                                              |
 | --------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------- |
 | `M8FLOW_NATS_ENABLED`           | `true`    | Enable NATS                                                                                           |
-| `M8FLOW_NATS_URL`           | `nats://localhost:4222`    | NATS server URL                                                                                          |
+| `M8FLOW_NATS_URL`           | `nats://localhost:6845`    | NATS server URL (host port default; see `M8FLOW_NATS_PORT` in [sample.env](../sample.env)) |
 | `M8FLOW_NATS_STREAM_NAME`   | `M8FLOW_EVENTS`            | JetStream stream name                                                                                    |
 | `M8FLOW_NATS_SUBJECT`       | `m8flow.events.>`          | Subject filter for subscription                                                                          |
 | `M8FLOW_NATS_DURABLE_NAME`  | `m8flow-engine-consumer`   | Durable consumer name                                                                                    |

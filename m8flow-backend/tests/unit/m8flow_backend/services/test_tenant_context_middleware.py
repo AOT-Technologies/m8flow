@@ -350,7 +350,7 @@ def test_login_return_resolves_tenant_from_state_when_auth_is_excluded() -> None
         _seed_tenants()
 
         state_payload = {
-            "final_url": "http://localhost:7000/",
+            "final_url": "http://localhost:6840/",
             "authentication_identifier": "it",
         }
         state = base64.b64encode(bytes(str(state_payload), "utf-8")).decode("utf-8")
@@ -369,7 +369,7 @@ def test_login_return_skips_tenant_validation_for_master_auth_identifier() -> No
         _seed_tenants()
 
         state_payload = {
-            "final_url": "http://localhost:7000/tenants",
+            "final_url": "http://localhost:6840/tenants",
             "authentication_identifier": "master",
         }
         state = base64.b64encode(bytes(str(state_payload), "utf-8")).decode("utf-8")

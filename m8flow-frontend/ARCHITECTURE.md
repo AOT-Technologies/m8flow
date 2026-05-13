@@ -53,7 +53,7 @@ m8flow-frontend/
 The extension frontend is a complete, runnable application with:
 - Its own `package.json` with all required dependencies
 - Independent build process via Vite
-- Development server on port 7001 (same as core, run one at a time)
+- Development server on port 6841 (same as core, run one at a time)
 - Own entry point (`index.html` → `src/index.tsx`)
 - API proxy to backend (avoids CORS issues)
 
@@ -84,8 +84,8 @@ All dependencies are installed in `m8flow-frontend/node_modules`, ensuring:
 │                    m8flow-frontend                          │
 │                                                              │
 │  ┌──────────────────────────────────────────────────────┐  │
-│  │         Vite Dev Server (port 7001)                  │  │
-│  │         + API Proxy → localhost:7000                 │  │
+│  │         Vite Dev Server (port 6841)                  │  │
+│  │         + API Proxy → localhost:6840                 │  │
 │  └──────────────────────────────────────────────────────┘  │
 │                          │                                   │
 │                          ▼                                   │
@@ -125,7 +125,7 @@ All dependencies are installed in `m8flow-frontend/node_modules`, ensuring:
 │  Files       │  │   Files      │  │   API        │
 │              │  │              │  │              │
 │ extensions/  │  │ spiffworkflow│  │ localhost:   │
-│ frontend/    │  │ -frontend/   │  │ 7000         │
+│ frontend/    │  │ -frontend/   │  │ 6840         │
 │ src/         │  │ src/         │  │              │
 │              │  │              │  │ (via proxy)  │
 │ SpiffLogo.tsx│  │ SideNav.tsx  │  │              │
@@ -613,7 +613,7 @@ import ContainerForExtensions from './ContainerForExtensions';
 
 **3. Create ContainerForExtensions override** with the new route added to `routeComponents()`.
 
-**4. Access your new page** at `http://localhost:7001/reports`
+**4. Access your new page** at `http://localhost:6841/reports`
 
 ### Adding Navigation Links
 
@@ -853,9 +853,9 @@ npm install
 npm start
 ```
 
-The server runs on `http://localhost:7001` (same port as core - run one at a time).
+The server runs on `http://localhost:6841` (same port as core - run one at a time).
 
-**Note**: The extension app uses a Vite proxy to route API requests to the backend (default: `http://localhost:7000`). This avoids CORS issues.
+**Note**: The extension app uses a Vite proxy to route API requests to the backend (default: `http://localhost:6840`). This avoids CORS issues.
 
 ### 3. Create an Override
 
@@ -890,13 +890,13 @@ npm run serve
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PORT` | `7001` | Dev server port |
-| `BACKEND_PORT` | `7000` | Backend API port (for proxy) |
+| `PORT` | `6841` | Dev server port |
+| `BACKEND_PORT` | `6840` | Backend API port (for proxy) |
 | `HOST` | `localhost` | Dev server host |
 
 Example:
 ```bash
-PORT=7002 BACKEND_PORT=8000 npm start
+PORT=7841 BACKEND_PORT=7840 npm start
 ```
 
 ---
@@ -921,7 +921,7 @@ plugins: [
 2. **API Proxy** (avoids CORS issues):
 ```typescript
 server: {
-  port: 7001,
+  port: 6841,
   proxy: {
     '/v1.0': {
       target: `http://localhost:${backendPort}`,

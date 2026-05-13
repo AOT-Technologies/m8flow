@@ -7,8 +7,8 @@ services:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     ports:
-      - "19000:9000"
-      - "19001:9001"
+      - "${MINIO_LOCAL_DEV_API_PORT:-16846}:9000"
+      - "${MINIO_LOCAL_DEV_CONSOLE_PORT:-16847}:9001"
     volumes:
       - ${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-./data/bpmn}:/data
       - ${M8FLOW_TEMPLATES_STORAGE_DIR:-./data/templates}:/m8flow-templates

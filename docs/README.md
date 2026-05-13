@@ -7,6 +7,8 @@ This folder contains project documentation for setup, architecture, and developm
 - [Repository structure](#repository-structure)
 - [Running locally (without Docker for backend/frontend)](#running-locally-without-docker-for-backendfrontend)
 - [Access the application with multitenant mode off](#access-the-application-with-multitenant-mode-off)
+- [Sample Templates](#sample-templates)
+- [Integration Services](#integration-services)
 
 ---
 
@@ -81,18 +83,18 @@ docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build 
 
 ```bash
 bin/fetch-upstream.sh
-./m8flow-backend/bin/run_m8flow_backend.sh 7000 --reload
+./m8flow-backend/bin/run_m8flow_backend.sh 6840 --reload
 ```
 
 ```powershell
 bin/fetch-upstream.ps1
-.\m8flow-backend\bin\run_m8flow_backend.ps1 7000
+.\m8flow-backend\bin\run_m8flow_backend.ps1 6840
 ```
 
 Verify the backend:
 
 ```bash
-curl http://localhost:7000/v1.0/status
+curl http://localhost:6840/v1.0/status
 ```
 
 Expected response:
@@ -119,8 +121,6 @@ Docker bind-mounts the repo `process_models/` directory into the backend and Cel
 
 If the frontend fails with a missing Rollup native package such as `@rollup/rollup-win32-x64-msvc`, reinstall `m8flow-frontend` dependencies on that machine with `npm install`.
 
-**macOS note:** Port 7000 may be claimed by AirPlay Receiver. Disable it in System Settings > General > AirDrop & Handoff > AirPlay Receiver.
-
 ### 4. Running a Celery worker
 
 ```bash
@@ -140,7 +140,7 @@ docker compose -f docker/m8flow-docker-compose.yml up -d --build m8flow-backend 
 
 Although m8flow is designed as a fully multitenant system, you can configure it to present as a single-tenant UI by setting the environment variable `MULTI_TENANT_ON=false`. 
 
-With this setting, open `http://localhost:7001/` in your browser. You will be redirected directly to the Keycloak login page.
+With this setting, open `http://localhost:6841/` in your browser. You will be redirected directly to the Keycloak login page.
 
 <div align="center">
     <img src="./images/access-m8flow-1.png" />
@@ -159,3 +159,23 @@ Default test users (password = username):
 | `viewer` | Read-only access |
 | `integrator` | Service task / connector access |
 | `reviewer` | Review and approve tasks |
+
+## Sample Templates
+
+m8flow includes sample workflow templates that can help teams get started quickly with common approval, notification, escalation, and integration scenarios.
+
+The sample templates package includes pre-built workflows and guidance for:
+
+- automatically loading templates during startup
+- using integration-focused templates such as Salesforce, Slack, SMTP, and PostgreSQL examples
+
+For the full template catalog and setup instructions, refer to [m8flow-backend/sample_templates/README.md](m8flow-backend/sample_templates/README.md).
+
+## Integration Services
+
+m8flow includes supporting services for connector execution and event-driven workflow processing. These components can be run alongside the core platform depending on your deployment needs.
+
+For service-specific setup, configuration, and usage details, refer to:
+
+- [m8flow-connector-proxy/README.md](m8flow-connector-proxy/README.md) for connector proxy support such as SMTP, Slack, HTTP, and related integrations
+- [m8flow-nats-consumer/README.md](m8flow-nats-consumer/README.md) for NATS-based event consumption and event-driven workflow execution

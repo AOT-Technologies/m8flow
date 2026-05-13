@@ -3,7 +3,7 @@ Full integration test: create tenant realm, create user in tenant, fetch access 
 
 Requires:
 - Keycloak running (e.g. m8flow-backend/keycloak/start_keycloak.sh)
-- KEYCLOAK_URL (or M8FLOW_KEYCLOAK_URL), default http://localhost:7002
+- KEYCLOAK_URL (or M8FLOW_KEYCLOAK_URL), default http://localhost:6842
 - KEYCLOAK_ADMIN_PASSWORD (or M8FLOW_KEYCLOAK_ADMIN_PASSWORD)
 - M8FLOW_KEYCLOAK_SPOKE_KEYSTORE_P12 pointing to m8flow-backend/keystore.p12
 - M8FLOW_KEYCLOAK_SPOKE_KEYSTORE_PASSWORD
@@ -45,7 +45,7 @@ from m8flow_backend.services.keycloak_service import (  # noqa: E402
 def _keycloak_skip_reason() -> str | None:
     """
     Return None if Keycloak is configured and reachable, else a string reason to skip.
-    Keycloak API is on KEYCLOAK_URL (default http://localhost:7002); health may be on another port.
+    Keycloak API is on KEYCLOAK_URL (default http://localhost:6842); health may be on another port.
     """
     if not keycloak_admin_password():
         return (
@@ -65,7 +65,7 @@ def _keycloak_skip_reason() -> str | None:
         return f"Realm template not found at {template_path}. Run from repo root or set M8FLOW_KEYCLOAK_REALM_TEMPLATE_PATH."
     base = keycloak_url()
     try:
-        # Keycloak API port (7002); health/ready may be on another port (7009), so check API reachability
+        # Keycloak API port (6842); health/ready may be on another port (6849), so check API reachability
         r = requests.get(f"{base}/realms/master", timeout=5)
         # 200 = realm exists, 401/403 = auth required, 404 = no realm yet; all mean server is up
         if r.status_code in (200, 401, 403, 404):

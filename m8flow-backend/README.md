@@ -80,11 +80,11 @@ At a high level:
 2. Start the backend:
 
 ```bash
-./m8flow-backend/bin/run_m8flow_backend.sh 7000 --reload
+./m8flow-backend/bin/run_m8flow_backend.sh 6840 --reload
 ```
 
 ```powershell
-.\m8flow-backend\bin\run_m8flow_backend.ps1 7000 --Reload
+.\m8flow-backend\bin\run_m8flow_backend.ps1 6840 --Reload
 ```
 
 ## Related docs
