@@ -43,12 +43,31 @@ resolve_client_internal_id() {
     | head -n 1
 }
 
-ensure_groups_mapper() {
+ensure_group_membership_mapper() {
   realm_name="$1"
   client_internal_id="$2"
   if ! /opt/keycloak/bin/kcadm.sh get "clients/${client_internal_id}/protocol-mappers/models" -r "${realm_name}" 2>/dev/null | grep -q '"name" : "groups"\|"name":"groups"'; then
     /opt/keycloak/bin/kcadm.sh create "clients/${client_internal_id}/protocol-mappers/models" -r "${realm_name}" \
       -s name=groups \
+      -s protocol=openid-connect \
+      -s protocolMapper=oidc-group-membership-mapper \
+      -s consentRequired=false \
+      -s 'config."introspection.token.claim"=true' \
+      -s 'config."userinfo.token.claim"=true' \
+      -s 'config."id.token.claim"=true' \
+      -s 'config."access.token.claim"=true' \
+      -s 'config."claim.name"=groups' \
+      -s 'config."full.path"=true' \
+      >/dev/null
+  fi
+}
+
+ensure_roles_mapper() {
+  realm_name="$1"
+  client_internal_id="$2"
+  if ! /opt/keycloak/bin/kcadm.sh get "clients/${client_internal_id}/protocol-mappers/models" -r "${realm_name}" 2>/dev/null | grep -q '"name" : "roles"\|"name":"roles"'; then
+    /opt/keycloak/bin/kcadm.sh create "clients/${client_internal_id}/protocol-mappers/models" -r "${realm_name}" \
+      -s name=roles \
       -s protocol=openid-connect \
       -s protocolMapper=oidc-usermodel-realm-role-mapper \
       -s consentRequired=false \
@@ -57,7 +76,7 @@ ensure_groups_mapper() {
       -s 'config."userinfo.token.claim"=true' \
       -s 'config."id.token.claim"=true' \
       -s 'config."access.token.claim"=true' \
-      -s 'config."claim.name"=groups' \
+      -s 'config."claim.name"=roles' \
       -s 'config."jsonType.label"=String' \
       >/dev/null
   fi
@@ -120,7 +139,7 @@ ensure_spoke_client_in_realm() {
     -s "attributes.\"post.logout.redirect.uris\"=${frontend_logout_redirect_uri}" \
     >/dev/null
 
-  ensure_groups_mapper "${realm_name}" "${current_client_internal_id}"
+  ensure_roles_mapper "${realm_name}" "${current_client_internal_id}"
   echo ":: Realm ${realm_name} client ${keycloak_client_id} ensured."
 }
 
@@ -175,21 +194,8 @@ fi
   -s "attributes.\"post.logout.redirect.uris\"=${frontend_logout_redirect_uri}" \
   >/dev/null
 
-if ! /opt/keycloak/bin/kcadm.sh get "clients/${client_id}/protocol-mappers/models" -r master 2>/dev/null | grep -q '"name" : "groups"\|"name":"groups"'; then
-  /opt/keycloak/bin/kcadm.sh create "clients/${client_id}/protocol-mappers/models" -r master \
-    -s name=groups \
-    -s protocol=openid-connect \
-    -s protocolMapper=oidc-usermodel-realm-role-mapper \
-    -s consentRequired=false \
-    -s 'config."introspection.token.claim"=true' \
-    -s 'config.multivalued=true' \
-    -s 'config."userinfo.token.claim"=true' \
-    -s 'config."id.token.claim"=true' \
-    -s 'config."access.token.claim"=true' \
-    -s 'config."claim.name"=groups' \
-    -s 'config."jsonType.label"=String' \
-    >/dev/null
-fi
+ensure_group_membership_mapper master "${client_id}"
+ensure_roles_mapper master "${client_id}"
 
 /opt/keycloak/bin/kcadm.sh create users -r master \
   -s username="${keycloak_super_admin_user}" \

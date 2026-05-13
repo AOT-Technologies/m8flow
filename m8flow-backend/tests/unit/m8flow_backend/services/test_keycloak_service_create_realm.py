@@ -2,16 +2,34 @@
 from unittest.mock import MagicMock, patch
 
 
+def _flatten_group_paths(groups: list[dict]) -> list[str]:
+    paths: list[str] = []
+
+    def _visit(group_items: list[dict]) -> None:
+        for group in group_items:
+            group_path = group.get("path")
+            if isinstance(group_path, str):
+                paths.append(group_path)
+            sub_groups = group.get("subGroups") or []
+            if isinstance(sub_groups, list):
+                _visit(sub_groups)
+
+    _visit(groups)
+    return paths
+
+
+@patch("m8flow_backend.services.keycloak_service.load_default_organizational_group_paths")
 @patch("m8flow_backend.services.keycloak_service.get_master_admin_token")
 @patch("m8flow_backend.services.keycloak_service.requests.get")
 @patch("m8flow_backend.services.keycloak_service.requests.put")
 @patch("m8flow_backend.services.keycloak_service.requests.post")
 @patch("m8flow_backend.services.keycloak_service.load_realm_template")
 def test_create_realm_from_template_includes_client_scopes(
-    mock_load, mock_post, mock_put, mock_get, mock_token
+    mock_load, mock_post, mock_put, mock_get, mock_token, mock_default_groups
 ):
     from m8flow_backend.services.keycloak_service import create_realm_from_template
-    
+
+    mock_default_groups.return_value = ["/Engineering", "/Integrations"]
     mock_token.return_value = "token"
     mock_load.return_value = {
         "realm": "template",
@@ -73,7 +91,8 @@ def test_create_realm_from_template_includes_client_scopes(
     assert "identityProviders" in payload
     assert payload["identityProviders"][0]["alias"] == "google"
     assert "internalId" not in payload["identityProviders"][0]
-    
+    assert _flatten_group_paths(payload["groups"]) == ["/Engineering", "/Integrations"]
+
     assert payload["defaultDefaultClientScopes"] == ["profile"]
     assert payload["defaultOptionalClientScopes"] == ["address"]
     assert [role["name"] for role in payload["roles"]["realm"]] == ["tenant-admin"]

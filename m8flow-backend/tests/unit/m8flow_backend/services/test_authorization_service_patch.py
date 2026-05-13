@@ -8,10 +8,17 @@ from types import SimpleNamespace
 from flask import Flask
 
 from m8flow_backend.services import authorization_service_patch
+from m8flow_backend.services.authorization_service_patch import _keycloak_realm_roles_as_groups
+from m8flow_backend.services.authorization_service_patch import _legacy_groups_as_roles_fallback_enabled
+from m8flow_backend.services.authorization_service_patch import _legacy_keycloak_groups_as_roles
 from m8flow_backend.services.authorization_service_patch import _find_existing_user_for_sign_in
 from m8flow_backend.services.authorization_service_patch import _find_existing_user_in_same_realm
-from m8flow_backend.services.authorization_service_patch import _keycloak_realm_roles_as_groups
 from m8flow_backend.services.authorization_service_patch import _normalize_keycloak_groups
+from m8flow_backend.services.authorization_service_patch import _normalize_keycloak_roles
+from m8flow_backend.services.authorization_service_patch import _normalized_open_id_group_identifiers
+from m8flow_backend.services.authorization_service_patch import _normalized_open_id_local_group_identifiers
+from m8flow_backend.services.authorization_service_patch import _normalized_open_id_organizational_group_identifiers
+from m8flow_backend.services.authorization_service_patch import _normalized_open_id_permission_role_group_identifiers
 from m8flow_backend.services.authorization_service_patch import _normalize_permissions_yaml_config
 from m8flow_backend.services.authorization_service_patch import _tenant_id_for_user_info
 from m8flow_backend.services.authorization_service_patch import extract_realm_from_issuer
@@ -96,10 +103,120 @@ def test_keycloak_realm_roles_as_groups_returns_empty_without_roles() -> None:
     assert _keycloak_realm_roles_as_groups({}) == []
 
 
-def test_normalize_keycloak_groups_uses_leaf_for_path_values() -> None:
-    user_info = {"groups": ["/super-admin", "/a/b/reviewer", "viewer", "/viewer", "", None]}
+def test_legacy_keycloak_groups_as_roles_uses_leaf_for_path_values() -> None:
+    user_info = {"groups": ["/super-admin", "/a/b/reviewer", "viewer", "/viewer", "/Engineering", "", None]}
 
-    assert _normalize_keycloak_groups(user_info) == ["super-admin", "reviewer", "viewer"]
+    assert _legacy_keycloak_groups_as_roles(user_info) == ["super-admin", "reviewer", "viewer"]
+
+
+def test_normalize_keycloak_roles_prefers_top_level_roles_claim() -> None:
+    user_info = {
+        "roles": ["editor", "integrator", "unknown-role", "", None],
+        "groups": ["/tenant-admin"],
+        "realm_access": {"roles": ["reviewer", "submitter"]},
+    }
+
+    assert _normalize_keycloak_roles(user_info) == ["editor", "integrator"]
+
+
+def test_normalize_keycloak_roles_falls_back_to_legacy_sources_without_roles_claim() -> None:
+    user_info = {
+        "groups": ["/tenant-admin", "/Business", "submitter"],
+        "realm_access": {"roles": ["integrator", "offline_access"]},
+    }
+
+    assert _normalize_keycloak_roles(user_info) == ["tenant-admin", "submitter", "integrator"]
+
+
+def test_normalize_keycloak_roles_without_roles_claim_ignores_groups_when_legacy_fallback_disabled() -> None:
+    user_info = {
+        "groups": ["/tenant-admin", "submitter"],
+        "realm_access": {"roles": ["integrator", "offline_access"]},
+    }
+
+    assert _normalize_keycloak_roles(user_info, allow_legacy_groups_as_roles_fallback=False) == ["integrator"]
+
+
+def test_normalize_keycloak_groups_canonicalizes_organizational_group_paths() -> None:
+    user_info = {"groups": ["/Engineering", "/Business/Finance", "Integrations", "/Engineering", "", None]}
+
+    assert _normalize_keycloak_groups(user_info) == ["/Engineering", "/Business/Finance", "/Integrations"]
+
+
+def test_normalized_open_id_group_identifiers_uses_separate_roles_and_groups_when_roles_claim_exists() -> None:
+    user_info = {
+        "groups": ["/Engineering", "/Integrations"],
+        "roles": ["editor", "integrator"],
+        "realm_access": {"roles": ["tenant-admin"]},
+    }
+
+    assert _normalized_open_id_group_identifiers(user_info) == [
+        "/Engineering",
+        "/Integrations",
+        "editor",
+        "integrator",
+    ]
+
+
+def test_normalized_open_id_group_identifiers_keeps_legacy_mixed_group_behavior_without_roles_claim() -> None:
+    user_info = {
+        "groups": ["/tenant-admin", "/group_keycloak", "reviewer"],
+        "realm_access": {"roles": ["submitter"]},
+    }
+
+    assert _normalized_open_id_group_identifiers(user_info) == [
+        "/group_keycloak",
+        "tenant-admin",
+        "reviewer",
+        "submitter",
+    ]
+
+
+def test_normalized_open_id_group_identifiers_does_not_grant_roles_from_groups_when_legacy_fallback_disabled() -> None:
+    user_info = {
+        "groups": ["tenant-admin", "/Engineering", "/reviewer", "default-roles-m8flow"],
+    }
+
+    assert _normalized_open_id_group_identifiers(
+        user_info,
+        allow_legacy_groups_as_roles_fallback=False,
+    ) == ["/Engineering", "/reviewer", "/default-roles-m8flow"]
+
+
+def test_normalized_open_id_role_and_org_group_helpers_stay_separate_for_new_tokens() -> None:
+    user_info = {
+        "groups": ["/Engineering", "/editor"],
+        "roles": ["editor"],
+        "realm_access": {"roles": ["reviewer"]},
+    }
+
+    assert _normalized_open_id_organizational_group_identifiers(user_info) == ["/Engineering", "/editor"]
+    assert _normalized_open_id_permission_role_group_identifiers(user_info) == ["editor"]
+    assert _normalized_open_id_local_group_identifiers(
+        _normalized_open_id_permission_role_group_identifiers(user_info),
+        _normalized_open_id_organizational_group_identifiers(user_info),
+        tenant_id="tenant-a",
+    ) == ["tenant-a:/Engineering", "tenant-a:/editor", "tenant-a:editor"]
+
+
+def test_normalized_open_id_organizational_groups_filter_plain_role_names_when_legacy_fallback_disabled() -> None:
+    user_info = {
+        "groups": ["editor", "/Engineering", "/editor", "default-roles-m8flow"],
+    }
+
+    assert _normalized_open_id_organizational_group_identifiers(
+        user_info,
+        allow_legacy_groups_as_roles_fallback=False,
+    ) == ["/Engineering", "/editor", "/default-roles-m8flow"]
+
+
+def test_legacy_groups_as_roles_fallback_enabled_reads_app_config(monkeypatch) -> None:
+    app = Flask(__name__)
+
+    with app.app_context():
+        app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_ALLOW_LEGACY_GROUPS_AS_ROLES"] = False
+
+        assert _legacy_groups_as_roles_fallback_enabled() is False
 
 
 def test_find_existing_user_in_same_realm_prefers_most_recent_match() -> None:
@@ -160,6 +277,65 @@ def test_find_existing_user_for_sign_in_resolves_exact_subject_only() -> None:
     )
 
     assert match is None
+
+
+def test_create_user_from_sign_in_relinks_stale_same_realm_user_subject(monkeypatch) -> None:
+    app = Flask(__name__)  # NOSONAR - unit test
+    app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_IS_AUTHORITY_FOR_USER_GROUPS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_TENANT_SPECIFIC_FIELDS"] = []
+
+    fake_user = SimpleNamespace(
+        id=6,
+        username="reviewer",
+        display_name="reviewer",
+        email=None,
+        service="http://localhost:7002/realms/m8flow",
+        service_id="old-subject",
+        groups=[],
+    )
+    create_user_calls: list[dict[str, str | None]] = []
+
+    with app.app_context():
+        authorization_service_patch.apply()
+        from spiffworkflow_backend.models.db import db
+        from spiffworkflow_backend.services.authorization_service import AuthorizationService
+        from spiffworkflow_backend.services.user_service import UserService
+
+        monkeypatch.setattr(authorization_service_patch, "_find_existing_user_for_sign_in", lambda *args, **kwargs: None)
+        monkeypatch.setattr(
+            authorization_service_patch,
+            "_find_existing_user_in_same_realm",
+            lambda *args, **kwargs: fake_user,
+        )
+        monkeypatch.setattr(
+            UserService,
+            "create_user",
+            lambda self, **kwargs: create_user_calls.append(kwargs) or SimpleNamespace(),
+        )
+        monkeypatch.setattr(db.session, "add", lambda _obj: None)
+        monkeypatch.setattr(db.session, "commit", lambda: None)
+        monkeypatch.setattr(db.session, "expire", lambda _obj, _attrs: None)
+        monkeypatch.setattr(
+            AuthorizationService,
+            "import_permissions_from_yaml_file",
+            classmethod(lambda cls, user_model: None),
+        )
+        monkeypatch.setattr(
+            UserService,
+            "update_human_task_assignments_for_user",
+            classmethod(lambda cls, user_model, new_group_ids, old_group_ids: None),
+        )
+
+        user_info = {
+            "iss": "http://localhost:7002/realms/m8flow",
+            "sub": "new-subject",
+            "preferred_username": "reviewer",
+        }
+        result = AuthorizationService.create_user_from_sign_in(user_info)
+
+    assert result is fake_user
+    assert fake_user.service_id == "new-subject"
+    assert create_user_calls == []
 
 
 def test_user_realm_migration_picks_most_recent_duplicate() -> None:
@@ -311,3 +487,148 @@ def test_add_permissions_from_group_permissions_keeps_config_unqualified(monkeyp
         assert app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP"] == "spiff_public"
         assert "tenant-a:everybody" in captured_group_identifiers
         assert "tenant-a:reviewer" in captured_group_identifiers
+
+
+def test_create_user_from_sign_in_syncs_roles_and_org_groups_separately(monkeypatch) -> None:
+    app = Flask(__name__)  # NOSONAR - unit test
+    app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_IS_AUTHORITY_FOR_USER_GROUPS"] = True
+    app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_TENANT_SPECIFIC_FIELDS"] = []
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
+
+    fake_user = SimpleNamespace(
+        id=42,
+        username="editor-user",
+        display_name="editor-user",
+        email="editor@example.com",
+        service="http://localhost:7002/realms/shared",
+        service_id="subject-123",
+        groups=[],
+    )
+    captured_group_identifiers: list[tuple[str, bool]] = []
+    update_calls: list[tuple[set[int], set[int]]] = []
+
+    with app.app_context():
+        authorization_service_patch.apply()
+        from spiffworkflow_backend.models.db import db
+        from spiffworkflow_backend.services.authorization_service import AuthorizationService
+        from spiffworkflow_backend.services.user_service import UserService
+
+        monkeypatch.setattr(authorization_service_patch, "_find_existing_user_for_sign_in", lambda *args, **kwargs: fake_user)
+        monkeypatch.setattr(db.session, "add", lambda _obj: None)
+        monkeypatch.setattr(db.session, "commit", lambda: None)
+        monkeypatch.setattr(db.session, "expire", lambda _obj, _attrs: None)
+        monkeypatch.setattr(
+            AuthorizationService,
+            "import_permissions_from_yaml_file",
+            classmethod(lambda cls, user_model: None),
+        )
+        monkeypatch.setattr(
+            UserService,
+            "add_user_to_group_by_group_identifier",
+            classmethod(
+                lambda cls, user_model, group_identifier, source_is_open_id=False: (
+                    captured_group_identifiers.append((group_identifier, source_is_open_id))
+                    or user_model.groups.append(
+                        SimpleNamespace(id=len(captured_group_identifiers), identifier=group_identifier)
+                    )
+                    or user_model.groups[-1]
+                )
+            ),
+        )
+        monkeypatch.setattr(UserService, "remove_user_from_group", classmethod(lambda cls, user_model, group_id: None))
+        monkeypatch.setattr(
+            UserService,
+            "update_human_task_assignments_for_user",
+            classmethod(
+                lambda cls, user_model, new_group_ids, old_group_ids: update_calls.append((new_group_ids, old_group_ids))
+            ),
+        )
+
+        user_info = {
+            TENANT_CLAIM: "tenant-a",
+            "iss": "http://localhost:7002/realms/shared",
+            "sub": "subject-123",
+            "preferred_username": "editor-user",
+            "email": "editor@example.com",
+            "groups": ["/Engineering", "/editor"],
+            "roles": ["editor"],
+        }
+        result = AuthorizationService.create_user_from_sign_in(user_info)
+
+    assert result is fake_user
+    assert captured_group_identifiers == [
+        ("tenant-a:/Engineering", True),
+        ("tenant-a:/editor", True),
+        ("tenant-a:editor", True),
+    ]
+    assert update_calls == [({1, 2, 3}, set())]
+
+
+def test_create_user_from_sign_in_groups_only_token_does_not_sync_role_groups_when_legacy_fallback_disabled(
+    monkeypatch,
+) -> None:
+    app = Flask(__name__)  # NOSONAR - unit test
+    app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_IS_AUTHORITY_FOR_USER_GROUPS"] = True
+    app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_TENANT_SPECIFIC_FIELDS"] = []
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
+    app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_ALLOW_LEGACY_GROUPS_AS_ROLES"] = False
+
+    fake_user = SimpleNamespace(
+        id=7,
+        username="reviewer-user",
+        display_name="reviewer-user",
+        email="reviewer@example.com",
+        service="http://localhost:7002/realms/shared",
+        service_id="subject-456",
+        groups=[],
+    )
+    captured_group_identifiers: list[tuple[str, bool]] = []
+
+    with app.app_context():
+        authorization_service_patch.apply()
+        from spiffworkflow_backend.models.db import db
+        from spiffworkflow_backend.services.authorization_service import AuthorizationService
+        from spiffworkflow_backend.services.user_service import UserService
+
+        monkeypatch.setattr(authorization_service_patch, "_find_existing_user_for_sign_in", lambda *args, **kwargs: fake_user)
+        monkeypatch.setattr(db.session, "add", lambda _obj: None)
+        monkeypatch.setattr(db.session, "commit", lambda: None)
+        monkeypatch.setattr(db.session, "expire", lambda _obj, _attrs: None)
+        monkeypatch.setattr(
+            AuthorizationService,
+            "import_permissions_from_yaml_file",
+            classmethod(lambda cls, user_model: None),
+        )
+        monkeypatch.setattr(
+            UserService,
+            "add_user_to_group_by_group_identifier",
+            classmethod(
+                lambda cls, user_model, group_identifier, source_is_open_id=False: (
+                    captured_group_identifiers.append((group_identifier, source_is_open_id))
+                    or user_model.groups.append(
+                        SimpleNamespace(id=len(captured_group_identifiers), identifier=group_identifier)
+                    )
+                    or user_model.groups[-1]
+                )
+            ),
+        )
+        monkeypatch.setattr(UserService, "remove_user_from_group", classmethod(lambda cls, user_model, group_id: None))
+        monkeypatch.setattr(
+            UserService,
+            "update_human_task_assignments_for_user",
+            classmethod(lambda cls, user_model, new_group_ids, old_group_ids: None),
+        )
+
+        user_info = {
+            TENANT_CLAIM: "tenant-a",
+            "iss": "http://localhost:7002/realms/shared",
+            "sub": "subject-456",
+            "preferred_username": "reviewer-user",
+            "email": "reviewer@example.com",
+            "groups": ["reviewer", "/Operations"],
+        }
+        AuthorizationService.create_user_from_sign_in(user_info)
+
+    assert captured_group_identifiers == [
+        ("tenant-a:/Operations", True),
+    ]

@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 from m8flow_backend.config import (
     keycloak_admin_password,
     keycloak_admin_user,
+    keycloak_default_groups_path,
     keycloak_url,
     realm_template_path,
     redirect_uri_backend_host_and_path,
@@ -28,6 +29,8 @@ from m8flow_backend.config import (
     spoke_keystore_p12_path,
     template_realm_name,
 )
+from m8flow_backend.services.tenant_identity_helpers import normalize_organizational_group_identifier
+from m8flow_backend.services.tenant_identity_helpers import normalize_organizational_group_identifiers
 
 # Template source: m8flow-backend/keycloak/realm_exports/m8flow-tenant-template.json
 # Only necessary values are changed for a new tenant; roles, groups, users, and clients are preserved.
@@ -42,6 +45,8 @@ BACKEND_URL_PLACEHOLDER = "https://replace-me-with-m8flow-backend-host-and-path/
 FRONTEND_URL_PLACEHOLDER = "https://replace-me-with-m8flow-frontend-host-and-path/*"
 FRONTEND_CLIENT_ID = "spiffworkflow-frontend"
 POST_LOGOUT_REDIRECT_URIS_ATTR = "post.logout.redirect.uris"
+GROUPS_CLAIM_NAME = "groups"
+ROLES_CLAIM_NAME = "roles"
 # Names reserved for global (non-tenant) administration; never cloned into tenant realms.
 GLOBAL_ONLY_REALM_ROLE_NAMES = frozenset({"super-admin"})
 GLOBAL_ONLY_USERNAMES = frozenset({"super-admin"})
@@ -89,6 +94,83 @@ def _replace_redirect_placeholders_in_place(
                     obj[i] = s
             else:
                 _replace_redirect_placeholders_in_place(item, backend_val, frontend_val)
+
+
+def load_default_organizational_group_paths() -> list[str]:
+    """Load the repo-owned default organizational groups for Keycloak tenant provisioning."""
+    config_path = Path(keycloak_default_groups_path())
+    if not config_path.exists():
+        raise FileNotFoundError(f"Default Keycloak groups config not found: {config_path}")
+
+    with open(config_path, "r", encoding="utf-8") as config_file:
+        config_data = json.load(config_file)
+
+    raw_group_paths = config_data.get("groups") if isinstance(config_data, dict) else config_data
+    if not isinstance(raw_group_paths, list):
+        raise ValueError(f"Default Keycloak groups config must contain a list of group paths: {config_path}")
+
+    return normalize_organizational_group_identifiers(
+        [group_path for group_path in raw_group_paths if isinstance(group_path, str)]
+    )
+
+
+def _normalized_keycloak_group_path(group: dict[str, Any], parent_path: str = "") -> str:
+    path = group.get("path")
+    if isinstance(path, str) and path.strip():
+        return normalize_organizational_group_identifier(path)
+
+    name = group.get("name")
+    if not isinstance(name, str) or not name.strip():
+        return ""
+
+    group_path = f"{parent_path}/{name.strip()}" if parent_path else name.strip()
+    return normalize_organizational_group_identifier(group_path)
+
+
+def _merge_group_path_into_keycloak_groups(groups: list[dict[str, Any]], group_path: str) -> None:
+    normalized_path = normalize_organizational_group_identifier(group_path)
+    if not normalized_path:
+        return
+
+    current_groups = groups
+    parent_path = ""
+    for segment in normalized_path.strip("/").split("/"):
+        candidate_path = normalize_organizational_group_identifier(
+            f"{parent_path}/{segment}" if parent_path else segment
+        )
+        match = next(
+            (
+                group
+                for group in current_groups
+                if isinstance(group, dict)
+                and _normalized_keycloak_group_path(group, parent_path) == candidate_path
+            ),
+            None,
+        )
+        if match is None:
+            match = {"name": segment, "path": candidate_path, "subGroups": []}
+            current_groups.append(match)
+        else:
+            match.setdefault("name", segment)
+            match.setdefault("path", candidate_path)
+            if not isinstance(match.get("subGroups"), list):
+                match["subGroups"] = []
+
+        parent_path = candidate_path
+        current_groups = match["subGroups"]
+
+
+def _merge_default_organizational_groups(
+    groups: list[dict[str, Any]],
+    default_group_paths: list[str],
+) -> list[dict[str, Any]]:
+    """Merge canonical organizational group paths into the Keycloak group tree."""
+    merged_groups = copy.deepcopy(groups)
+    for group_path in default_group_paths:
+        _merge_group_path_into_keycloak_groups(merged_groups, group_path)
+    return merged_groups
+
+
 def _env_public_url(*keys: str) -> str | None:
     """Return the first non-empty public URL from environment."""
     for key in keys:
@@ -456,9 +538,132 @@ def tenant_login_authorization_url(realm: str) -> str:
     return f"{keycloak_url()}/realms/{realm}/protocol/openid-connect/auth"
 
 
+def _list_client_protocol_mappers(
+    *,
+    base_url: str,
+    realm_id: str,
+    client_internal_id: str,
+    headers: dict[str, str],
+) -> list[dict[str, Any]]:
+    mappers_url = f"{base_url}/admin/realms/{realm_id}/clients/{client_internal_id}/protocol-mappers/models"
+    response = requests.get(mappers_url, headers=headers, timeout=30)
+    response.raise_for_status()
+    mappers = response.json()
+    return mappers if isinstance(mappers, list) else []
+
+
+def _is_legacy_roles_as_groups_mapper(mapper: dict[str, Any]) -> bool:
+    config = mapper.get("config") or {}
+    return (
+        mapper.get("name") == GROUPS_CLAIM_NAME
+        and mapper.get("protocolMapper") == "oidc-usermodel-realm-role-mapper"
+        and isinstance(config, dict)
+        and config.get("claim.name") == GROUPS_CLAIM_NAME
+    )
+
+
+def _is_roles_claim_mapper(mapper: dict[str, Any]) -> bool:
+    config = mapper.get("config") or {}
+    return (
+        mapper.get("name") == ROLES_CLAIM_NAME
+        and mapper.get("protocolMapper") == "oidc-usermodel-realm-role-mapper"
+        and isinstance(config, dict)
+        and config.get("claim.name") == ROLES_CLAIM_NAME
+    )
+
+
+def _reconcile_backend_client_claim_mappers(
+    *,
+    base_url: str,
+    realm_id: str,
+    client_internal_id: str,
+    headers: dict[str, str],
+) -> None:
+    """Remove legacy roles-as-groups mappers and ensure the separate roles claim mapper exists."""
+    try:
+        mappers = _list_client_protocol_mappers(
+            base_url=base_url,
+            realm_id=realm_id,
+            client_internal_id=client_internal_id,
+            headers=headers,
+        )
+    except Exception as exc:
+        logger.warning(
+            "ensure_backend_redirect_uri_in_keycloak_client: list protocol mappers realm=%s client=%s error=%s",
+            realm_id,
+            client_internal_id,
+            exc,
+        )
+        return
+
+    legacy_mapper_ids = [
+        mapper.get("id")
+        for mapper in mappers
+        if isinstance(mapper, dict) and _is_legacy_roles_as_groups_mapper(mapper)
+    ]
+    for mapper_id in legacy_mapper_ids:
+        if not isinstance(mapper_id, str) or not mapper_id.strip():
+            continue
+        delete_url = (
+            f"{base_url}/admin/realms/{realm_id}/clients/{client_internal_id}/protocol-mappers/models/{mapper_id}"
+        )
+        try:
+            delete_response = requests.delete(delete_url, headers=headers, timeout=30)
+            delete_response.raise_for_status()
+            logger.info(
+                "ensure_backend_redirect_uri_in_keycloak_client: removed legacy groups<-roles mapper realm=%s client=%s mapper_id=%s",
+                realm_id,
+                client_internal_id,
+                mapper_id,
+            )
+        except Exception as exc:
+            logger.warning(
+                "ensure_backend_redirect_uri_in_keycloak_client: delete legacy mapper realm=%s client=%s mapper_id=%s error=%s",
+                realm_id,
+                client_internal_id,
+                mapper_id,
+                exc,
+            )
+
+    if any(isinstance(mapper, dict) and _is_roles_claim_mapper(mapper) for mapper in mappers):
+        return
+
+    create_url = f"{base_url}/admin/realms/{realm_id}/clients/{client_internal_id}/protocol-mappers/models"
+    payload = {
+        "name": ROLES_CLAIM_NAME,
+        "protocol": "openid-connect",
+        "protocolMapper": "oidc-usermodel-realm-role-mapper",
+        "consentRequired": False,
+        "config": {
+            "introspection.token.claim": "true",
+            "multivalued": "true",
+            "userinfo.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": ROLES_CLAIM_NAME,
+            "jsonType.label": "String",
+        },
+    }
+    try:
+        create_response = requests.post(create_url, json=payload, headers=headers, timeout=30)
+        create_response.raise_for_status()
+        logger.info(
+            "ensure_backend_redirect_uri_in_keycloak_client: created roles claim mapper realm=%s client=%s",
+            realm_id,
+            client_internal_id,
+        )
+    except Exception as exc:
+        logger.warning(
+            "ensure_backend_redirect_uri_in_keycloak_client: create roles mapper realm=%s client=%s error=%s",
+            realm_id,
+            client_internal_id,
+            exc,
+        )
+
+
 def ensure_backend_redirect_uri_in_keycloak_client(realm_id: str) -> None:
     """Ensure the m8flow-backend client in the given realm has the current backend and frontend
-    redirect URIs / web origins. Idempotent; safe to call on every ensure_tenant_auth_config.
+    redirect URIs / web origins and reconcile its claim mappers. Idempotent; safe to call on every ensure_tenant_auth_config.
     Uses Keycloak Admin API; logs and skips on failure (e.g. missing admin credentials)."""
     if not realm_id or not str(realm_id).strip():
         return
@@ -501,6 +706,14 @@ def ensure_backend_redirect_uri_in_keycloak_client(realm_id: str) -> None:
     client_internal_id = clients[0].get("id")
     if not client_internal_id:
         return
+
+    _reconcile_backend_client_claim_mappers(
+        base_url=base_url,
+        realm_id=realm_id,
+        client_internal_id=client_internal_id,
+        headers=headers,
+    )
+
     get_url = f"{base_url}/admin/realms/{realm_id}/clients/{client_internal_id}"
     try:
         r2 = requests.get(get_url, headers=headers, timeout=30)
@@ -565,6 +778,10 @@ def _fill_realm_template(
     payload["realm"] = realm_id
     payload["displayName"] = display_name if display_name else realm_id
     payload.pop("id", None)
+    payload["groups"] = _merge_default_organizational_groups(
+        payload.get("groups") or [],
+        load_default_organizational_group_paths(),
+    )
 
     backend_origin = _origin_from_url(
         _env_public_url("SPIFFWORKFLOW_BACKEND_URL", "M8FLOW_BACKEND_URL")

@@ -146,12 +146,30 @@ function resolve_client_internal_id() {
     | jq -r "${JQ_FIRST_ID_EXPR}"
 }
 
-function ensure_groups_mapper() {
+function ensure_group_membership_mapper() {
   local realm_name="$1"
   local client_internal_id="$2"
   if ! docker exec keycloak /opt/keycloak/bin/kcadm.sh get "clients/${client_internal_id}/protocol-mappers/models" -r "${realm_name}" 2>/dev/null | jq -e '.[] | select(.name == "groups")' >/dev/null; then
     docker exec keycloak /opt/keycloak/bin/kcadm.sh create "clients/${client_internal_id}/protocol-mappers/models" -r "${realm_name}" \
       -s name=groups \
+      -s protocol=openid-connect \
+      -s protocolMapper=oidc-group-membership-mapper \
+      -s consentRequired=false \
+      -s 'config."introspection.token.claim"=true' \
+      -s 'config."userinfo.token.claim"=true' \
+      -s 'config."id.token.claim"=true' \
+      -s 'config."access.token.claim"=true' \
+      -s 'config."claim.name"=groups' \
+      -s 'config."full.path"=true' >/dev/null
+  fi
+}
+
+function ensure_roles_mapper() {
+  local realm_name="$1"
+  local client_internal_id="$2"
+  if ! docker exec keycloak /opt/keycloak/bin/kcadm.sh get "clients/${client_internal_id}/protocol-mappers/models" -r "${realm_name}" 2>/dev/null | jq -e '.[] | select(.name == "roles")' >/dev/null; then
+    docker exec keycloak /opt/keycloak/bin/kcadm.sh create "clients/${client_internal_id}/protocol-mappers/models" -r "${realm_name}" \
+      -s name=roles \
       -s protocol=openid-connect \
       -s protocolMapper=oidc-usermodel-realm-role-mapper \
       -s consentRequired=false \
@@ -160,7 +178,7 @@ function ensure_groups_mapper() {
       -s 'config."userinfo.token.claim"=true' \
       -s 'config."id.token.claim"=true' \
       -s 'config."access.token.claim"=true' \
-      -s 'config."claim.name"=groups' \
+      -s 'config."claim.name"=roles' \
       -s 'config."jsonType.label"=String' >/dev/null
   fi
 }
@@ -222,7 +240,7 @@ function ensure_spoke_client_in_realm() {
     -s "webOrigins=[\"${frontend_public_url%/}\"]" \
     -s "attributes.\"post.logout.redirect.uris\"=${frontend_logout_redirect_uri}" >/dev/null
 
-  ensure_groups_mapper "${realm_name}" "${current_client_internal_id}"
+  ensure_roles_mapper "${realm_name}" "${current_client_internal_id}"
   echo ":: Realm ${realm_name} client ${keycloak_master_client_id} ensured."
 }
 
@@ -308,20 +326,8 @@ function ensure_master_super_admin() {
     -s "webOrigins=[\"${frontend_public_url%/}\"]" \
     -s "attributes.\"post.logout.redirect.uris\"=${frontend_logout_redirect_uri}" >/dev/null
 
-  if ! docker exec keycloak /opt/keycloak/bin/kcadm.sh get "clients/${client_id}/protocol-mappers/models" -r master 2>/dev/null | jq -e '.[] | select(.name == "groups")' >/dev/null; then
-    docker exec keycloak /opt/keycloak/bin/kcadm.sh create "clients/${client_id}/protocol-mappers/models" -r master \
-      -s name=groups \
-      -s protocol=openid-connect \
-      -s protocolMapper=oidc-usermodel-realm-role-mapper \
-      -s consentRequired=false \
-      -s 'config."introspection.token.claim"=true' \
-      -s 'config.multivalued=true' \
-      -s 'config."userinfo.token.claim"=true' \
-      -s 'config."id.token.claim"=true' \
-      -s 'config."access.token.claim"=true' \
-      -s 'config."claim.name"=groups' \
-      -s 'config."jsonType.label"=String' >/dev/null
-  fi
+  ensure_group_membership_mapper master "${client_id}"
+  ensure_roles_mapper master "${client_id}"
 
   docker exec keycloak /opt/keycloak/bin/kcadm.sh get roles/super-admin -r master >/dev/null 2>&1 \
     || docker exec keycloak /opt/keycloak/bin/kcadm.sh create roles -r master -s name=super-admin >/dev/null

@@ -1220,7 +1220,7 @@
         },
         {
           "id": "144579f3-168a-4dc3-a8ff-a9ac89dd7658",
-          "name": "groups",
+          "name": "roles",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-usermodel-realm-role-mapper",
           "consentRequired": false,
@@ -1231,7 +1231,7 @@
             "user.attribute": "foo",
             "id.token.claim": "true",
             "access.token.claim": "true",
-            "claim.name": "groups",
+            "claim.name": "roles",
             "jsonType.label": "String"
           }
         }
@@ -1768,7 +1768,7 @@
       "protocolMappers": [
         {
           "id": "252fdd9f-cc91-4ca3-aaab-cdf053360e94",
-          "name": "groups",
+          "name": "roles",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-usermodel-realm-role-mapper",
           "consentRequired": false,
@@ -1778,7 +1778,7 @@
             "user.attribute": "foo",
             "id.token.claim": "true",
             "access.token.claim": "true",
-            "claim.name": "groups",
+            "claim.name": "roles",
             "jsonType.label": "String"
           }
         },
