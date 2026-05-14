@@ -41,45 +41,79 @@ _A complete list of the latest features is available in our [release notes](http
 
 
 ---
-## Pre-requisites
 
-Ensure the following tools are installed:
+## Prerequisites (Docker setup)
 
-- Git
-- Docker and Docker Compose
-- Python 3.12.1 and [uv](https://docs.astral.sh/uv/) _(for local backend development only)_
-- Node.js 20.19+ or 22.12+ and npm _(for local frontend development only)_
+Install the following tools:
+
+- **Git** — [Downloads](https://git-scm.com/downloads)
+- **Docker Desktop** (includes Docker Compose v2) — [Product page](https://www.docker.com/products/docker-desktop/) — install guides: [Windows](https://docs.docker.com/desktop/install/windows-install/), [macOS](https://docs.docker.com/desktop/install/mac-install/)
+
+### Default host ports
+
+By default, the stack publishes **6840–6852** on your machine (configured in [sample.env](sample.env)).
+
+| Port(s) | Service |
+|---------|---------|
+| 6840 | `m8flow-backend` (API) |
+| 6841 | `m8flow-frontend` (UI) |
+| 6842 | `keycloak-proxy` (Keycloak URL for browsers) |
+| 6843 | `m8flow-db` (PostgreSQL) |
+| 6844 | `m8flow-connector-proxy` |
+| 6846 / 6847 | `minio` (API / console) |
+| 6848 | `redis` |
+| 6849 | `keycloak` management/health port on host |
+| 6850 | `m8flow-celery-flower` |
+| 6845 / 6851 / 6852 | NATS client / monitoring / UI (optional; see [docker/m8flow-nats-docker-compose.yml](docker/m8flow-nats-docker-compose.yml)) |
+
+Environment variable reference: [docs/env-reference.md](docs/env-reference.md).
 
 ---
 
-## Quick Start Guide
+## Quick start (Docker)
 
-Getting started with m8flow is simple! Follow the steps below to set up your local environment and launch the platform.
-
-### 1. Clone the Repository
-
-First, clone the repository from GitHub and navigate into the project directory:
+### 1. Clone the repository
 
 ```bash
 git clone https://github.com/AOT-Technologies/m8flow.git
 cd m8flow
 ```
 
-### 2. Set Up Your Environment
+### 2. Create your `.env`
 
-Copy the provided environment template and customize it for your setup:
+Copy [sample.env](sample.env) to `.env` (repo root). Use the command for your OS/shell:
+
+**Windows (Command Prompt)**
+
+```bat
+copy sample.env .env
+```
+
+**Windows (PowerShell)**
+
+```powershell
+Copy-Item sample.env .env
+```
+
+**macOS / Linux**
 
 ```bash
 cp sample.env .env
 ```
 
-You can find comprehensive environment variable explanations in the [docs/env-reference.md](docs/env-reference.md) file.
+### 3. Port conflicts (read this first)
 
----
+- **Detect a busy port** (example: backend **6840**):
+  - macOS/Linux: `lsof -i :6840` (or `sudo lsof -nP -iTCP:6840 -sTCP:LISTEN`)
+  - Windows PowerShell: `Get-NetTCPConnection -LocalPort 6840`
+  - Windows CMD: `netstat -ano | findstr :6840`
+- **Change a port**: edit `.env` (for example `M8FLOW_BACKEND_PORT=16840`) and re-run docker compose.
+- **See what docker published** (after `up`):
+  - `docker compose -f docker/m8flow-docker-compose.yml port m8flow-backend 6840`
 
-### 3. Start m8flow with Docker
+### 4. Start m8flow
 
-To bring up all required services (PostgreSQL, Keycloak, MinIO, Redis, NATS, and initialization steps), run:
+First-time start (includes one-time init jobs):
 
 ```bash
 docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build
@@ -91,8 +125,7 @@ docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build
 docker compose -f docker/m8flow-docker-compose.yml up -d --build
 ```
 
-Once started, open [http://localhost:7001/](http://localhost:7001/) in your browser to access m8flow.
-
+Once started, open [http://localhost:6841/](http://localhost:6841/) in your browser to access m8flow.
 ---
 
 ## Signing In — Application Usage
@@ -112,8 +145,9 @@ Once started, open [http://localhost:7001/](http://localhost:7001/) in your brow
    </div>
 
 
+<a id="try-the-default-test-users"></a>
 3. **Try the Default Test Users:**  
-   Each tenant comes with a set of default test users for you to explore the platform. **_The password for each user is the same as their username._**
+   Each tenant (including tenants you add later) is provisioned with these default test users.
 
    | Username     | Role                                  |
    |--------------|---------------------------------------|
@@ -122,6 +156,9 @@ Once started, open [http://localhost:7001/](http://localhost:7001/) in your brow
    | `viewer`     | Read-only access                      |
    | `integrator` | Service task / connector access       |
    | `reviewer`   | Review and approve tasks              |
+   | `submitter`  | Submit work                           |
+
+   **Password:** the initial password for each user is the **same as the username** (for example `admin` / `admin`). Passwords are imported as **temporary** in Keycloak, so users are prompted for a **password change on first login**.
 
 
 You’re all set! Continue with [Tenant creation](#tenant-creation) to add your own tenants or explore the rich features of m8flow.
@@ -131,7 +168,7 @@ You’re all set! Continue with [Tenant creation](#tenant-creation) to add your 
 ## Tenant creation
 
 1. **Open the Application:**  
-   Go to [http://localhost:7001/](http://localhost:7001/) in your web browser.
+   Go to [http://localhost:6841/](http://localhost:6841/) in your web browser.
 
 2. **Sign in as Global Admin:**  
    Click on **"Global admin sign in"**.  
@@ -152,28 +189,26 @@ You’re all set! Continue with [Tenant creation](#tenant-creation) to add your 
         <img src="./docs/images/tenant-creation.png" alt="Tenant Creation Screen"/>
     </div>
 
-   Once your tenant is created, it will automatically include the set of default test users described above in [Try the Default Test Users](#try-the-default-test-users).  
- 
+Once your tenant is created, it will automatically include the set of default test users described above in [Try the Default Test Users](#try-the-default-test-users).
 ---
 
 ## Docker Compose services
 
-The Keycloak image is built with the **m8flow realm-info-mapper** provider, so tokens include `m8flow_tenant_id` and `m8flow_tenant_name`. No separate build of the keycloak-extensions JAR is required. Realm import can be done manually in the Keycloak Admin Console (see Keycloak Setup below) or by running `./m8flow-backend/keycloak/start_keycloak.sh` once after Keycloak is up; the script imports the `m8flow` realm only (expects Keycloak on ports 7002 and 7009, e.g. when using Docker Compose).
+The Keycloak image is built with the **m8flow realm-info-mapper** provider, so tokens include `m8flow_tenant_id` and `m8flow_tenant_name`. No separate build of the keycloak-extensions JAR is required.
 
-| Service | Description | Port |
-|---------|-------------|------|
-| `m8flow-db` | PostgreSQL — m8flow application database | 1111 |
+| Service | Description | Host port (default) |
+|---------|-------------|----------------------|
+| `m8flow-db` | PostgreSQL — m8flow application database | 6843 |
 | `keycloak-db` | PostgreSQL — Keycloak database | — |
-| `keycloak` | Keycloak identity provider (with m8flow realm mapper) | 7002, 7009 |
-| `keycloak-proxy` | Nginx proxy in front of Keycloak | 7002 |
-| `redis` | Redis — Celery broker and cache | 6379 |
-| `nats` | NATS messaging server _(optional profile)_ | 4222 |
-| `minio` | MinIO object storage (process models, templates) | 9000, 9001 |
-| `m8flow-backend` | SpiffWorkflow backend + m8flow extensions | 7000 |
-| `m8flow-frontend` | SpiffWorkflow frontend + m8flow extensions | 7001 |
-| `m8flow-connector-proxy` | m8flow connector proxy (SMTP, Slack, HTTP, etc.) | 8004 |
+| `keycloak` | Keycloak identity provider (with m8flow realm mapper) | 6849 (mgmt/health) |
+| `keycloak-proxy` | Nginx proxy in front of Keycloak | 6842 |
+| `redis` | Redis — Celery broker and cache | 6848 |
+| `minio` | MinIO object storage (process models, templates) | 6846, 6847 |
+| `m8flow-backend` | SpiffWorkflow backend + m8flow extensions | 6840 |
+| `m8flow-frontend` | SpiffWorkflow frontend + m8flow extensions | 6841 |
+| `m8flow-connector-proxy` | m8flow connector proxy (SMTP, Slack, HTTP, etc.) | 6844 |
 | `m8flow-celery-worker` | Celery background task worker | — |
-| `m8flow-celery-flower` | Celery monitoring UI | 5555 |
+| `m8flow-celery-flower` | Celery monitoring UI | 6850 |
 | `m8flow-nats-consumer` | NATS event consumer | — |
 
 **Init-only services** (run once via `--profile init`):
@@ -196,32 +231,7 @@ docker compose -f docker/m8flow-docker-compose.yml down
 docker compose -f docker/m8flow-docker-compose.yml down -v
 ```
 
-
 ---
-## Sample Templates
-
-m8flow includes sample workflow templates that can help teams get started quickly with common approval, notification, escalation, and integration scenarios.
-
-The sample templates package includes pre-built workflows and guidance for:
-
-- automatically loading templates during startup
-- using integration-focused templates such as Salesforce, Slack, SMTP, and PostgreSQL examples
-
-For the full template catalog and setup instructions, refer to [m8flow-backend/sample_templates/README.md](m8flow-backend/sample_templates/README.md).
-
----
-
-## Integration Services
-
-m8flow includes supporting services for connector execution and event-driven workflow processing. These components can be run alongside the core platform depending on your deployment needs.
-
-For service-specific setup, configuration, and usage details, refer to:
-
-- [m8flow-connector-proxy/README.md](m8flow-connector-proxy/README.md) for connector proxy support such as SMTP, Slack, HTTP, and related integrations
-- [m8flow-nats-consumer/README.md](m8flow-nats-consumer/README.md) for NATS-based event consumption and event-driven workflow execution
-
----
-
 ## Additional Documentation & Developer Resources
 
 For details on active development of backend/frontend workflows without docker,  and other development topics, refer to [docs/README.md](docs/README.md). More guides and references are available in the `docs/` folder as the documentation expands.
