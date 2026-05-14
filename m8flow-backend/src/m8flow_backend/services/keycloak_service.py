@@ -36,8 +36,6 @@ SPOKE_CLIENT_ID_PLACEHOLDER = "__M8FLOW_SPOKE_CLIENT_ID__"
 BACKEND_REDIRECT_PLACEHOLDER = "replace-me-with-m8flow-backend-host-and-path"
 FRONTEND_REDIRECT_PLACEHOLDER = "replace-me-with-m8flow-frontend-host-and-path"
 DEFAULT_ROLES_PREFIX = "default-roles-"  # role name "default-roles-{realm}" must be updated
-# Realm role assigned to every user created via Admin API so backend RBAC sees a known group (m8flow.yml).
-DEFAULT_NEW_USER_REALM_ROLE = "viewer"
 REALM_URL_PREFIX = "/realms/"  # client baseUrl/redirectUris contain /realms/{realm}/
 ADMIN_CONSOLE_URL_PREFIX = "/admin/"  # security-admin-console has /admin/{realm}/console/
 BACKEND_URL_PLACEHOLDER = "https://replace-me-with-m8flow-backend-host-and-path/*"
@@ -1078,14 +1076,6 @@ def create_user_in_realm(
         timeout=30,
     )
     r2.raise_for_status()
-
-    _assign_realm_roles_to_user(
-        realm,
-        user_id,
-        [DEFAULT_NEW_USER_REALM_ROLE],
-        token=token,
-        base_url=base_url,
-    )
 
     return user_id
 

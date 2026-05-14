@@ -50,15 +50,10 @@
         "id": "c9f0ff93-642d-402b-965a-04d70719886b",
         "name": "default-roles-m8flow",
         "description": "${role_default-roles}",
-        "composite": true,
+        "composite": false,
         "clientRole": false,
         "containerId": "m8flow",
-        "attributes": {},
-        "composites": {
-          "realm": [
-            "viewer"
-          ]
-        }
+        "attributes": {}
       },
       {
         "id": "9f474167-5707-4c10-8f9e-bb54ec715cd3",
@@ -504,12 +499,7 @@
     "description": "${role_default-roles}",
     "composite": true,
     "clientRole": false,
-    "containerId": "m8flow",
-    "composites": {
-      "realm": [
-        "viewer"
-      ]
-    }
+    "containerId": "m8flow"
   },
   "requiredCredentials": [
     "password"
