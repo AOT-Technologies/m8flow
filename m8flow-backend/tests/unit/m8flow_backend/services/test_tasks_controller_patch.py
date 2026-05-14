@@ -33,7 +33,8 @@ def test_apply_rewrites_assigned_group_identifier_for_task_list_responses(monkey
         "spiffworkflow_backend.routes.tasks_controller",
         fake_tasks_controller_module,
     )
-    monkeypatch.setattr(tasks_controller_patch, "_PATCHED", False)
+    monkeypatch.setattr(tasks_controller_patch, "_MODULE_PATCHED", False)
+    monkeypatch.setattr(tasks_controller_patch, "_ORIGINAL_TASK_DATA_SHOW", None)
     monkeypatch.setattr(
         tasks_controller_patch,
         "display_group_identifier",
@@ -90,7 +91,8 @@ def test_apply_rewrites_task_data_show_to_return_combined_task_data(monkeypatch)
         "spiffworkflow_backend.routes.tasks_controller",
         fake_tasks_controller_module,
     )
-    monkeypatch.setattr(tasks_controller_patch, "_PATCHED", False)
+    monkeypatch.setattr(tasks_controller_patch, "_MODULE_PATCHED", False)
+    monkeypatch.setattr(tasks_controller_patch, "_ORIGINAL_TASK_DATA_SHOW", None)
 
     app = Flask(__name__)
     app.add_url_rule(
@@ -137,7 +139,8 @@ def test_apply_rewrites_task_data_show_to_use_delta_updates_when_task_hashes_are
         "spiffworkflow_backend.routes.tasks_controller",
         fake_tasks_controller_module,
     )
-    monkeypatch.setattr(tasks_controller_patch, "_PATCHED", False)
+    monkeypatch.setattr(tasks_controller_patch, "_MODULE_PATCHED", False)
+    monkeypatch.setattr(tasks_controller_patch, "_ORIGINAL_TASK_DATA_SHOW", None)
 
     app = Flask(__name__)
     app.add_url_rule(
@@ -156,3 +159,53 @@ def test_apply_rewrites_task_data_show_to_use_delta_updates_when_task_hashes_are
         payload = response.get_json()
 
     assert payload["data"]["decision"] == "Approved"
+
+
+def test_apply_rewrites_task_data_show_for_task_data_route_when_handler_identity_is_wrapped(monkeypatch) -> None:
+    fake_tasks_controller_module = ModuleType("spiffworkflow_backend.routes.tasks_controller")
+
+    def fake_get_task_model_from_guid_or_raise(*args, **kwargs):
+        return _FakeTaskModel(
+            task_data={},
+            properties_json={
+                "delta": {
+                    "updates": {
+                        "lane_owners": {"Manager": ["admin"]},
+                    }
+                }
+            },
+        )
+
+    def wrapped_connexion_handler(*args, **kwargs):
+        return jsonify({})
+
+    fake_tasks_controller_module._get_task_model_from_guid_or_raise = fake_get_task_model_from_guid_or_raise
+    fake_tasks_controller_module._get_tasks = lambda *args, **kwargs: jsonify({"results": [], "pagination": {}})
+    fake_tasks_controller_module.task_list_my_tasks = fake_tasks_controller_module._get_tasks
+    fake_tasks_controller_module.task_data_show = lambda *args, **kwargs: jsonify({})
+
+    monkeypatch.setitem(
+        sys.modules,
+        "spiffworkflow_backend.routes.tasks_controller",
+        fake_tasks_controller_module,
+    )
+    monkeypatch.setattr(tasks_controller_patch, "_MODULE_PATCHED", False)
+    monkeypatch.setattr(tasks_controller_patch, "_ORIGINAL_TASK_DATA_SHOW", None)
+
+    app = Flask(__name__)
+    app.add_url_rule(
+        "/v1.0/task-data/<modified_process_model_identifier>/<int:process_instance_id>/<task_guid>",
+        endpoint="connexion_wrapped_task_data_endpoint",
+        view_func=wrapped_connexion_handler,
+        methods=["GET"],
+    )
+    with app.app_context():
+        tasks_controller_patch.apply(app)
+        response = app.view_functions["connexion_wrapped_task_data_endpoint"](
+            modified_process_model_identifier="model",
+            process_instance_id=1,
+            task_guid="task",
+        )
+        payload = response.get_json()
+
+    assert payload["data"]["lane_owners"] == {"Manager": ["admin"]}

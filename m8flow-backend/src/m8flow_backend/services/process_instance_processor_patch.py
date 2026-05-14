@@ -22,19 +22,35 @@ def _task_sort_ts(task: object) -> float:
 
 def _lane_owner_identifiers_for_task(task: object, task_lane: str) -> list[str] | None:
     """Return explicit lane-owner identifiers for the task lane, if present."""
+    candidate_lane_owner_maps: list[object] = []
+
     task_data = getattr(task, "data", None)
-    if not isinstance(task_data, dict):
-        return None
+    if isinstance(task_data, dict):
+        candidate_lane_owner_maps.append(task_data.get("lane_owners"))
 
-    lane_owners = task_data.get("lane_owners")
-    if not isinstance(lane_owners, dict):
-        return None
+    task_workflow = getattr(task, "workflow", None)
+    workflow_data = getattr(task_workflow, "data", None)
+    if isinstance(workflow_data, dict):
+        candidate_lane_owner_maps.append(workflow_data.get("lane_owners"))
+        workflow_data_objects = workflow_data.get("data_objects")
+        if isinstance(workflow_data_objects, dict):
+            candidate_lane_owner_maps.append(workflow_data_objects.get("lane_owners"))
 
-    lane_owner_values = lane_owners.get(task_lane)
-    if not isinstance(lane_owner_values, list):
-        return None
+    workflow_data_objects_attr = getattr(task_workflow, "data_objects", None)
+    if isinstance(workflow_data_objects_attr, dict):
+        candidate_lane_owner_maps.append(workflow_data_objects_attr.get("lane_owners"))
 
-    return [value for value in lane_owner_values if isinstance(value, str)]
+    for lane_owners in candidate_lane_owner_maps:
+        if not isinstance(lane_owners, dict):
+            continue
+
+        lane_owner_values = lane_owners.get(task_lane)
+        if not isinstance(lane_owner_values, list):
+            continue
+
+        return [value for value in lane_owner_values if isinstance(value, str)]
+
+    return None
 
 
 def _candidate_lane_group_identifiers(task_lane: str) -> list[str]:
@@ -117,19 +133,18 @@ def apply() -> None:
                         break
 
                 if group_model is None:
-                    self.raise_if_no_potential_owners(
-                        [],
-                        (
-                            "No matching local group found for BPMN lane:"
-                            f" {task_lane}. Checked identifiers: {candidate_group_identifiers}"
-                        ),
-                    )
-                else:
-                    lane_assignment_id = group_model.id
-                    potential_owners = [
-                        {"added_by": HumanTaskUserAddedBy.lane_assignment.value, "user_id": assignment.user_id}
-                        for assignment in group_model.user_group_assignments
-                    ]
+                    if not candidate_group_identifiers:
+                        self.raise_if_no_potential_owners(
+                            [],
+                            f"No usable BPMN lane group identifier could be derived from lane: {task_lane}",
+                        )
+                    group_model = UserService.find_or_create_group(candidate_group_identifiers[0])
+
+                lane_assignment_id = group_model.id
+                potential_owners = [
+                    {"added_by": HumanTaskUserAddedBy.lane_assignment.value, "user_id": assignment.user_id}
+                    for assignment in group_model.user_group_assignments
+                ]
 
         return {
             "potential_owners": potential_owners,

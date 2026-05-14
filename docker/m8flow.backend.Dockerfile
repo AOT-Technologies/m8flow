@@ -78,8 +78,12 @@ COPY uvicorn-log.yaml /app/uvicorn-log.yaml
 # Create venv and install backend into it (prod). Use editable install so
 # non-code assets like api.yml remain available from the source tree.
 # Pin flask>=3.1.3 to fix CVE-2026-27205 (info disclosure via improper session cache)
+# Upstream SpiffWorkflow needs setuptools and imports lxml while evaluating
+# dynamic version metadata, so preinstall both and disable build isolation only
+# for that package.
 RUN uv venv /opt/venv \
-  && uv pip install --python /opt/venv/bin/python -e /app/spiffworkflow-backend \
+  && uv pip install --python /opt/venv/bin/python setuptools lxml \
+  && uv pip install --python /opt/venv/bin/python --no-build-isolation-package SpiffWorkflow -e /app/spiffworkflow-backend \
   && uv pip install --python /opt/venv/bin/python flower "flask>=3.1.3"
 
 # -----------------------------------------------------------------------------
@@ -188,7 +192,11 @@ COPY --from=fetch-upstream /upstream/spiff-arena-common /app/spiff-arena-common
 #   - build-essential: brings in patch (CVE-2018-6952, CVE-2021-45261)
 #   - python3-pip-whl: bundles outdated requests/urllib3 (CVE-2024-35195,
 #     CVE-2025-66418, CVE-2025-66471, CVE-2026-21441) - not needed since we use uv
-RUN cd /app/spiffworkflow-backend && uv pip install --system --break-system-packages -e . --group dev \
+# Upstream SpiffWorkflow needs setuptools and imports lxml while evaluating
+# dynamic version metadata, so preinstall both and disable build isolation only
+# for that package.
+RUN uv pip install --system --break-system-packages setuptools lxml \
+  && cd /app/spiffworkflow-backend && uv pip install --system --break-system-packages --no-build-isolation-package SpiffWorkflow -e . --group dev \
   && uv pip install --system --break-system-packages flower nats-py httpx python-dotenv "flask>=3.1.3" \
   && uv cache clean \
   && apt-get purge -y build-essential python3-dev default-libmysqlclient-dev patch python3-pip-whl \

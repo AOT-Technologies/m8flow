@@ -329,6 +329,12 @@ def test_ensure_backend_redirect_uri_in_keycloak_client_reconciles_legacy_roles_
         ),
         MagicMock(
             status_code=200,
+            json=lambda: [{"id": "profile-scope-123", "name": "profile"}],
+            raise_for_status=lambda: None,
+        ),
+        MagicMock(status_code=200, json=lambda: [], raise_for_status=lambda: None),
+        MagicMock(
+            status_code=200,
             json=lambda: {
                 "id": "client-123",
                 "redirectUris": ["http://192.168.1.105:8000/*", "http://192.168.1.105:8001/*"],
@@ -345,11 +351,61 @@ def test_ensure_backend_redirect_uri_in_keycloak_client_reconciles_legacy_roles_
 
     mock_delete.assert_called_once()
     assert mock_delete.call_args[0][0].endswith("/protocol-mappers/models/legacy-mapper")
-    mock_post.assert_called_once()
-    _, post_kwargs = mock_post.call_args
-    assert post_kwargs["json"]["name"] == "roles"
-    assert post_kwargs["json"]["protocolMapper"] == "oidc-usermodel-realm-role-mapper"
-    assert post_kwargs["json"]["config"]["claim.name"] == "roles"
+    assert mock_post.call_count == 2
+    roles_mapper_payload = mock_post.call_args_list[0].kwargs["json"]
+    groups_mapper_payload = mock_post.call_args_list[1].kwargs["json"]
+    assert roles_mapper_payload["name"] == "roles"
+    assert roles_mapper_payload["protocolMapper"] == "oidc-usermodel-realm-role-mapper"
+    assert roles_mapper_payload["config"]["claim.name"] == "roles"
+    assert groups_mapper_payload["name"] == "groups"
+    assert groups_mapper_payload["protocolMapper"] == "oidc-normalized-group-membership-mapper"
+    assert groups_mapper_payload["config"]["claim.name"] == "groups"
+    mock_put.assert_not_called()
+
+
+@patch("m8flow_backend.services.keycloak_service.spoke_client_id")
+@patch("m8flow_backend.services.keycloak_service.keycloak_url")
+@patch("m8flow_backend.services.keycloak_service.get_master_admin_token")
+@patch("m8flow_backend.services.keycloak_service.requests.delete")
+@patch("m8flow_backend.services.keycloak_service.requests.post")
+@patch("m8flow_backend.services.keycloak_service.requests.put")
+@patch("m8flow_backend.services.keycloak_service.requests.get")
+def test_ensure_backend_redirect_uri_in_keycloak_client_reconciles_mappers_without_backend_url(
+    mock_get,
+    mock_put,
+    mock_post,
+    mock_delete,
+    mock_token,
+    mock_keycloak_url,
+    mock_spoke_client_id,
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("M8FLOW_BACKEND_URL", raising=False)
+    monkeypatch.delenv("SPIFFWORKFLOW_BACKEND_URL", raising=False)
+    monkeypatch.setenv("M8FLOW_BACKEND_URL_FOR_FRONTEND", "http://192.168.1.105:8001")
+
+    mock_spoke_client_id.return_value = "m8flow-backend"
+    mock_keycloak_url.return_value = "http://localhost:7002"
+    mock_token.return_value = "admin-token"
+
+    mock_get.side_effect = [
+        MagicMock(status_code=200, json=lambda: [{"id": "client-123"}], raise_for_status=lambda: None),
+        MagicMock(status_code=200, json=lambda: [], raise_for_status=lambda: None),
+        MagicMock(
+            status_code=200,
+            json=lambda: [{"id": "profile-scope-123", "name": "profile"}],
+            raise_for_status=lambda: None,
+        ),
+        MagicMock(status_code=200, json=lambda: [], raise_for_status=lambda: None),
+    ]
+    mock_post.return_value = MagicMock(status_code=201, raise_for_status=lambda: None)
+
+    ensure_backend_redirect_uri_in_keycloak_client("tenant-a")
+
+    mock_delete.assert_not_called()
+    assert mock_post.call_count == 2
+    assert mock_post.call_args_list[0].kwargs["json"]["name"] == "roles"
+    assert mock_post.call_args_list[1].kwargs["json"]["name"] == "groups"
     mock_put.assert_not_called()
 
 

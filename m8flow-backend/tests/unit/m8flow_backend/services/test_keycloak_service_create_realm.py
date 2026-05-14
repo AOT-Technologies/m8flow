@@ -20,12 +20,19 @@ def _flatten_group_paths(groups: list[dict]) -> list[str]:
 
 @patch("m8flow_backend.services.keycloak_service.load_default_organizational_group_paths")
 @patch("m8flow_backend.services.keycloak_service.get_master_admin_token")
+@patch("m8flow_backend.services.keycloak_service.ensure_backend_redirect_uri_in_keycloak_client")
 @patch("m8flow_backend.services.keycloak_service.requests.get")
 @patch("m8flow_backend.services.keycloak_service.requests.put")
 @patch("m8flow_backend.services.keycloak_service.requests.post")
 @patch("m8flow_backend.services.keycloak_service.load_realm_template")
 def test_create_realm_from_template_includes_client_scopes(
-    mock_load, mock_post, mock_put, mock_get, mock_token, mock_default_groups
+    mock_load,
+    mock_post,
+    mock_put,
+    mock_get,
+    mock_ensure_backend_client,
+    mock_token,
+    mock_default_groups,
 ):
     from m8flow_backend.services.keycloak_service import create_realm_from_template
 
@@ -97,6 +104,7 @@ def test_create_realm_from_template_includes_client_scopes(
     assert payload["defaultOptionalClientScopes"] == ["address"]
     assert [role["name"] for role in payload["roles"]["realm"]] == ["tenant-admin"]
     assert [user["username"] for user in payload["users"]] == ["tenant-admin"]
+    mock_ensure_backend_client.assert_called_once_with("new-realm")
     
     # Verify theme update (PUT realm) was called
     mock_put.assert_called_once()

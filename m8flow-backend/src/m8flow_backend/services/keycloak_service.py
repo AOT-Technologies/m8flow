@@ -47,6 +47,7 @@ FRONTEND_CLIENT_ID = "spiffworkflow-frontend"
 POST_LOGOUT_REDIRECT_URIS_ATTR = "post.logout.redirect.uris"
 GROUPS_CLAIM_NAME = "groups"
 ROLES_CLAIM_NAME = "roles"
+NORMALIZED_GROUP_MAPPER_PROVIDER_ID = "oidc-normalized-group-membership-mapper"
 # Names reserved for global (non-tenant) administration; never cloned into tenant realms.
 GLOBAL_ONLY_REALM_ROLE_NAMES = frozenset({"super-admin"})
 GLOBAL_ONLY_USERNAMES = frozenset({"super-admin"})
@@ -552,6 +553,33 @@ def _list_client_protocol_mappers(
     return mappers if isinstance(mappers, list) else []
 
 
+def _list_resource_protocol_mappers(
+    *,
+    base_url: str,
+    realm_id: str,
+    resource_path: str,
+    headers: dict[str, str],
+) -> list[dict[str, Any]]:
+    mappers_url = f"{base_url}/admin/realms/{realm_id}/{resource_path}/protocol-mappers/models"
+    response = requests.get(mappers_url, headers=headers, timeout=30)
+    response.raise_for_status()
+    mappers = response.json()
+    return mappers if isinstance(mappers, list) else []
+
+
+def _list_client_scopes(
+    *,
+    base_url: str,
+    realm_id: str,
+    headers: dict[str, str],
+) -> list[dict[str, Any]]:
+    scopes_url = f"{base_url}/admin/realms/{realm_id}/client-scopes"
+    response = requests.get(scopes_url, headers=headers, timeout=30)
+    response.raise_for_status()
+    scopes = response.json()
+    return scopes if isinstance(scopes, list) else []
+
+
 def _is_legacy_roles_as_groups_mapper(mapper: dict[str, Any]) -> bool:
     config = mapper.get("config") or {}
     return (
@@ -570,6 +598,41 @@ def _is_roles_claim_mapper(mapper: dict[str, Any]) -> bool:
         and isinstance(config, dict)
         and config.get("claim.name") == ROLES_CLAIM_NAME
     )
+
+
+def _is_groups_claim_mapper(mapper: dict[str, Any]) -> bool:
+    config = mapper.get("config") or {}
+    if mapper.get("name") == GROUPS_CLAIM_NAME:
+        return True
+    return isinstance(config, dict) and config.get("claim.name") == GROUPS_CLAIM_NAME
+
+
+def _is_normalized_groups_claim_mapper(mapper: dict[str, Any]) -> bool:
+    config = mapper.get("config") or {}
+    return (
+        mapper.get("name") == GROUPS_CLAIM_NAME
+        and mapper.get("protocolMapper") == NORMALIZED_GROUP_MAPPER_PROVIDER_ID
+        and isinstance(config, dict)
+        and config.get("claim.name") == GROUPS_CLAIM_NAME
+    )
+
+
+def _groups_claim_mapper_payload() -> dict[str, Any]:
+    return {
+        "name": GROUPS_CLAIM_NAME,
+        "protocol": "openid-connect",
+        "protocolMapper": NORMALIZED_GROUP_MAPPER_PROVIDER_ID,
+        "consentRequired": False,
+        "config": {
+            "introspection.token.claim": "true",
+            "multivalued": "true",
+            "userinfo.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": GROUPS_CLAIM_NAME,
+            "jsonType.label": "String",
+        },
+    }
 
 
 def _reconcile_backend_client_claim_mappers(
@@ -661,6 +724,117 @@ def _reconcile_backend_client_claim_mappers(
         )
 
 
+def _reconcile_groups_claim_mapper_on_resource(
+    *,
+    base_url: str,
+    realm_id: str,
+    resource_path: str,
+    headers: dict[str, str],
+) -> None:
+    try:
+        mappers = _list_resource_protocol_mappers(
+            base_url=base_url,
+            realm_id=realm_id,
+            resource_path=resource_path,
+            headers=headers,
+        )
+    except Exception as exc:
+        logger.warning(
+            "ensure_backend_redirect_uri_in_keycloak_client: list groups mappers realm=%s resource=%s error=%s",
+            realm_id,
+            resource_path,
+            exc,
+        )
+        return
+
+    if any(isinstance(mapper, dict) and _is_normalized_groups_claim_mapper(mapper) for mapper in mappers):
+        return
+
+    conflicting_mapper_ids = [
+        mapper.get("id")
+        for mapper in mappers
+        if isinstance(mapper, dict) and _is_groups_claim_mapper(mapper)
+    ]
+    for mapper_id in conflicting_mapper_ids:
+        if not isinstance(mapper_id, str) or not mapper_id.strip():
+            continue
+        delete_url = f"{base_url}/admin/realms/{realm_id}/{resource_path}/protocol-mappers/models/{mapper_id}"
+        try:
+            delete_response = requests.delete(delete_url, headers=headers, timeout=30)
+            delete_response.raise_for_status()
+            logger.info(
+                "ensure_backend_redirect_uri_in_keycloak_client: removed conflicting groups mapper realm=%s resource=%s mapper_id=%s",
+                realm_id,
+                resource_path,
+                mapper_id,
+            )
+        except Exception as exc:
+            logger.warning(
+                "ensure_backend_redirect_uri_in_keycloak_client: delete groups mapper realm=%s resource=%s mapper_id=%s error=%s",
+                realm_id,
+                resource_path,
+                mapper_id,
+                exc,
+            )
+
+    create_url = f"{base_url}/admin/realms/{realm_id}/{resource_path}/protocol-mappers/models"
+    try:
+        create_response = requests.post(
+            create_url,
+            json=_groups_claim_mapper_payload(),
+            headers=headers,
+            timeout=30,
+        )
+        create_response.raise_for_status()
+        logger.info(
+            "ensure_backend_redirect_uri_in_keycloak_client: created groups mapper realm=%s resource=%s",
+            realm_id,
+            resource_path,
+        )
+    except Exception as exc:
+        logger.warning(
+            "ensure_backend_redirect_uri_in_keycloak_client: create groups mapper realm=%s resource=%s error=%s",
+            realm_id,
+            resource_path,
+            exc,
+        )
+
+
+def _reconcile_profile_scope_groups_claim_mapper(
+    *,
+    base_url: str,
+    realm_id: str,
+    headers: dict[str, str],
+) -> None:
+    try:
+        scopes = _list_client_scopes(base_url=base_url, realm_id=realm_id, headers=headers)
+    except Exception as exc:
+        logger.warning(
+            "ensure_backend_redirect_uri_in_keycloak_client: list client scopes realm=%s error=%s",
+            realm_id,
+            exc,
+        )
+        return
+
+    profile_scope = next(
+        (
+            scope
+            for scope in scopes
+            if isinstance(scope, dict) and scope.get("name") == "profile" and isinstance(scope.get("id"), str)
+        ),
+        None,
+    )
+    if profile_scope is None:
+        return
+
+    _reconcile_groups_claim_mapper_on_resource(
+        base_url=base_url,
+        realm_id=realm_id,
+        resource_path=f"client-scopes/{profile_scope['id']}",
+        headers=headers,
+    )
+
+
 def ensure_backend_redirect_uri_in_keycloak_client(realm_id: str) -> None:
     """Ensure the m8flow-backend client in the given realm has the current backend and frontend
     redirect URIs / web origins and reconcile its claim mappers. Idempotent; safe to call on every ensure_tenant_auth_config.
@@ -676,8 +850,6 @@ def ensure_backend_redirect_uri_in_keycloak_client(realm_id: str) -> None:
     )
     backend_wildcard = _wildcard_from_origin(backend_origin)
     frontend_wildcard = _wildcard_from_origin(frontend_origin)
-    if not backend_wildcard:
-        return
     try:
         token = get_master_admin_token()
     except Exception as e:
@@ -713,6 +885,14 @@ def ensure_backend_redirect_uri_in_keycloak_client(realm_id: str) -> None:
         client_internal_id=client_internal_id,
         headers=headers,
     )
+    _reconcile_profile_scope_groups_claim_mapper(
+        base_url=base_url,
+        realm_id=realm_id,
+        headers=headers,
+    )
+
+    if not backend_wildcard:
+        return
 
     get_url = f"{base_url}/admin/realms/{realm_id}/clients/{client_internal_id}"
     try:
@@ -1138,6 +1318,10 @@ def create_realm_from_template(realm_id: str, display_name: str | None = None) -
             timeout=30,
         )
         r_theme.raise_for_status()
+
+    # Partial import skips built-in scopes like "profile" when they already exist in the
+    # new realm, so reconcile the client/group claim mappers explicitly before first login.
+    ensure_backend_redirect_uri_in_keycloak_client(realm_id)
 
     # Step 3: Fetch realm to obtain Keycloak's internal UUID (used as M8flowTenantModel.id)
     r3 = requests.get(

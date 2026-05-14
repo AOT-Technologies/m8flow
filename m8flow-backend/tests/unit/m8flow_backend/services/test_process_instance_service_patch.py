@@ -360,7 +360,7 @@ def test_apply_promotes_submitted_form_data_into_workflow_data_objects(monkeypat
     }
 
 
-def test_validate_queued_follow_up_work_turns_missing_lane_assignment_into_api_error(monkeypatch) -> None:
+def test_validate_queued_follow_up_work_turns_explicit_lane_owner_failure_into_api_error(monkeypatch) -> None:
     fake_api_error_module = ModuleType("spiffworkflow_backend.exceptions.api_error")
     fake_db_module = ModuleType("spiffworkflow_backend.models.db")
     fake_error_handling_module = ModuleType("spiffworkflow_backend.services.error_handling_service")
@@ -409,7 +409,9 @@ def test_validate_queued_follow_up_work_turns_missing_lane_assignment_into_api_e
                 "should_schedule_waiting_timer_events": should_schedule_waiting_timer_events,
             }
         )
-        raise FakeNoPotentialOwnersForTaskError("No matching local group found for BPMN lane: Finance")
+        raise FakeNoPotentialOwnersForTaskError(
+            "No users found in task data lane owner list for lane: Employee. The user list used: ['submitter']"
+        )
 
     processor = SimpleNamespace(
         process_instance_model=process_instance,
@@ -430,13 +432,102 @@ def test_validate_queued_follow_up_work_turns_missing_lane_assignment_into_api_e
         }
     ]
     assert rollback_calls == [None]
-    assert handle_error_calls == [(process_instance, handle_error_calls[0][1])]
-    assert isinstance(handle_error_calls[0][1], FakeNoPotentialOwnersForTaskError)
+    assert handle_error_calls == []
     assert raised_error is not None
     assert raised_error.error_code == "task_lane_assignment_error"
     assert raised_error.status_code == 400
     assert raised_error.message == (
-        "Task submission could not continue. No matching local group found for BPMN lane: Finance"
+        "Task submission could not continue. No users found in task data lane owner list for lane: Employee. "
+        "The user list used: ['submitter']"
+    )
+
+
+def test_validate_queued_process_start_turns_missing_lane_assignment_into_api_error(monkeypatch) -> None:
+    fake_api_error_module = ModuleType("spiffworkflow_backend.exceptions.api_error")
+    fake_db_module = ModuleType("spiffworkflow_backend.models.db")
+    fake_error_handling_module = ModuleType("spiffworkflow_backend.services.error_handling_service")
+    fake_processor_module = ModuleType("spiffworkflow_backend.services.process_instance_processor")
+    fake_service_module = ModuleType("spiffworkflow_backend.services.process_instance_service")
+
+    class FakeApiError(Exception):
+        def __init__(self, error_code: str, message: str, status_code: int) -> None:
+            super().__init__(message)
+            self.error_code = error_code
+            self.message = message
+            self.status_code = status_code
+
+    class FakeNoPotentialOwnersForTaskError(Exception):
+        pass
+
+    rollback_calls: list[None] = []
+    handle_error_calls: list[tuple[object, Exception]] = []
+    run_calls: list[dict[str, object]] = []
+
+    class FakeDbSession:
+        def rollback(self) -> None:
+            rollback_calls.append(None)
+
+    class FakeErrorHandlingService:
+        @staticmethod
+        def handle_error(process_instance, error: Exception) -> None:
+            handle_error_calls.append((process_instance, error))
+
+    class FakeProcessInstanceService:
+        @staticmethod
+        def run_process_instance_with_processor(
+            process_instance,
+            status_value: str | None = None,
+            execution_strategy_name: str | None = None,
+            should_schedule_waiting_timer_events: bool = True,
+        ) -> tuple[None, str]:
+            run_calls.append(
+                {
+                    "process_instance": process_instance,
+                    "status_value": status_value,
+                    "execution_strategy_name": execution_strategy_name,
+                    "should_schedule_waiting_timer_events": should_schedule_waiting_timer_events,
+                }
+            )
+            raise FakeNoPotentialOwnersForTaskError(
+                "No users found in task data lane owner list for lane: Employee. The user list used: ['submitter']"
+            )
+
+    fake_api_error_module.ApiError = FakeApiError
+    fake_db_module.db = SimpleNamespace(session=FakeDbSession())
+    fake_error_handling_module.ErrorHandlingService = FakeErrorHandlingService
+    fake_processor_module.NoPotentialOwnersForTaskError = FakeNoPotentialOwnersForTaskError
+    fake_service_module.ProcessInstanceService = FakeProcessInstanceService
+
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.exceptions.api_error", fake_api_error_module)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.models.db", fake_db_module)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.services.error_handling_service", fake_error_handling_module)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.services.process_instance_processor", fake_processor_module)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.services.process_instance_service", fake_service_module)
+
+    process_instance = SimpleNamespace(id=55)
+
+    try:
+        process_instance_service_patch._validate_queued_process_start(process_instance)
+        raised_error = None
+    except FakeApiError as exc:
+        raised_error = exc
+
+    assert run_calls == [
+        {
+            "process_instance": process_instance,
+            "status_value": None,
+            "execution_strategy_name": "run_until_user_message",
+            "should_schedule_waiting_timer_events": False,
+        }
+    ]
+    assert rollback_calls == [None]
+    assert handle_error_calls == []
+    assert raised_error is not None
+    assert raised_error.error_code == "task_lane_assignment_error"
+    assert raised_error.status_code == 400
+    assert raised_error.message == (
+        "Process start could not continue. No users found in task data lane owner list for lane: Employee. "
+        "The user list used: ['submitter']"
     )
 
 
@@ -598,7 +689,7 @@ def test_apply_preflights_queued_form_submissions_before_returning(monkeypatch) 
     monkeypatch.setattr(
         process_instance_service_patch,
         "_validate_queued_follow_up_work",
-        lambda processor: validate_calls.append(processor),
+        lambda processor, handle_error=False: validate_calls.append(processor),
     )
     monkeypatch.setattr(process_instance_service_patch, "_PATCHED", False)
     monkeypatch.setattr(
