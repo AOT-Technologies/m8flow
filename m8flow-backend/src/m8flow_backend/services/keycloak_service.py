@@ -947,40 +947,6 @@ def create_realm_from_template(realm_id: str, display_name: str | None = None) -
     }
 
 
-def _assign_realm_roles_to_user(
-    realm: str,
-    user_id: str,
-    role_names: list[str],
-    *,
-    token: str,
-    base_url: str,
-) -> None:
-    """Assign existing realm roles by name (Keycloak Admin API)."""
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-    mappings: list[dict[str, str]] = []
-    for name in role_names:
-        if not isinstance(name, str) or not name.strip():
-            continue
-        r_role = requests.get(
-            f"{base_url}/admin/realms/{realm}/roles/{name.strip()}",
-            headers=headers,
-            timeout=30,
-        )
-        r_role.raise_for_status()
-        role_rep = r_role.json()
-        if isinstance(role_rep, dict) and role_rep.get("id") and role_rep.get("name"):
-            mappings.append({"id": str(role_rep["id"]), "name": str(role_rep["name"])})
-    if not mappings:
-        return
-    r_map = requests.post(
-        f"{base_url}/admin/realms/{realm}/users/{user_id}/role-mappings/realm",
-        json=mappings,
-        headers=headers,
-        timeout=30,
-    )
-    r_map.raise_for_status()
-
-
 def tenant_login(realm: str, username: str, password: str) -> dict:
     """
     Login as a user in a spoke realm (resource owner password grant).
