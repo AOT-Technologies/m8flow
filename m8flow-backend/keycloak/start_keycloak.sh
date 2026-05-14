@@ -16,15 +16,15 @@ setup_traps
 set -o errtrace -o errexit -o nounset -o pipefail
 
 keycloak_version=26.0.7
-keycloak_base_url="http://localhost:7002"
+keycloak_base_url="${KEYCLOAK_HOSTNAME:-http://localhost:${KEYCLOAK_PROXY_PORT:-6842}}"
 keycloak_admin_user="admin"
 keycloak_admin_password="admin"
 keycloak_super_admin_user="${KEYCLOAK_SUPER_ADMIN_USER:-super-admin}"
 keycloak_super_admin_password="${KEYCLOAK_SUPER_ADMIN_PASSWORD:-super-admin}"
 keycloak_master_client_id="${M8FLOW_KEYCLOAK_SPOKE_CLIENT_ID:-m8flow-backend}"
 keycloak_master_client_secret="${M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET:-${M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET:-JXeQExm0JhQPLumgHtIIqf52bDalHz0q}}"
-backend_public_url="${M8FLOW_BACKEND_URL:-http://localhost:8000}"
-frontend_public_url="${M8FLOW_BACKEND_URL_FOR_FRONTEND:-http://localhost:8001}"
+backend_public_url="${M8FLOW_BACKEND_URL:-http://localhost:6840}"
+frontend_public_url="${M8FLOW_BACKEND_URL_FOR_FRONTEND:-http://localhost:6841}"
 backend_redirect_uri="${backend_public_url%/}/*"
 frontend_logout_redirect_uri="${frontend_public_url%/}/*"
 placeholder_client_id="__M8FLOW_SPOKE_CLIENT_ID__"
@@ -105,7 +105,7 @@ function wait_for_keycloak_to_be_up() {
   local max_attempts=600
   echo ":: Waiting for Keycloak to be ready..."
   local attempts=0
-  local url="http://localhost:7009/health/ready"
+  local url="http://localhost:${KEYCLOAK_MGMT_PORT:-6849}/health/ready"
   while [[ "$(curl -s -o /dev/null -w '%{http_code}' "$url" 2>/dev/null || echo "000")" != "200" ]]; do
     if [[ "$attempts" -gt "$max_attempts" ]]; then
       echo >&2 "ERROR: Keycloak health check failed after $max_attempts attempts. URL: $url"
@@ -228,9 +228,11 @@ function ensure_spoke_client_in_realm() {
 
 # Start Keycloak container
 echo ":: Starting Keycloak container..."
+KEYCLOAK_PROXY_PORT="${KEYCLOAK_PROXY_PORT:-6842}"
+KEYCLOAK_MGMT_PORT="${KEYCLOAK_MGMT_PORT:-6849}"
 if ! docker run \
-  -p 7002:8080 \
-  -p 7009:9000 \
+  -p "${KEYCLOAK_PROXY_PORT}:8080" \
+  -p "${KEYCLOAK_MGMT_PORT}:9000" \
   -d \
   --network=m8flow \
   --name keycloak \
