@@ -12,6 +12,7 @@ from spiffworkflow_backend.services import user_service
 from m8flow_backend.services.tenant_identity_helpers import current_tenant_identifiers
 from m8flow_backend.services.tenant_identity_helpers import find_users_for_current_tenant_by_identifier
 from m8flow_backend.services.tenant_identity_helpers import is_group_for_tenant
+from m8flow_backend.services.tenant_identity_helpers import normalize_organizational_group_identifier
 from m8flow_backend.services.tenant_identity_helpers import qualify_group_identifier
 
 _PATCHED = False
@@ -31,7 +32,10 @@ def apply() -> None:
     @classmethod
     def patched_find_or_create_group(cls, group_identifier: str, source_is_open_id: bool = False):
         """Canonicalize group identifiers to the tenant-qualified form before persistence."""
-        qualified_group_identifier = qualify_group_identifier(group_identifier)
+        normalized_group_identifier = group_identifier
+        if source_is_open_id and "/" in group_identifier:
+            normalized_group_identifier = normalize_organizational_group_identifier(group_identifier)
+        qualified_group_identifier = qualify_group_identifier(normalized_group_identifier)
         return original_find_or_create_group(
             cls,
             qualified_group_identifier,

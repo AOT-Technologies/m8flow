@@ -89,11 +89,35 @@ class TaskModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
     def get_data(self) -> dict:
         return {**self.python_env_data(), **self.json_data()}
 
+    def _delta_updates(self) -> dict:
+        properties_json = self.properties_json
+        if not isinstance(properties_json, dict):
+            return {}
+
+        delta = properties_json.get("delta")
+        if not isinstance(delta, dict):
+            return {}
+
+        updates = delta.get("updates")
+        if not isinstance(updates, dict):
+            return {}
+        return updates
+
     def python_env_data(self) -> dict:
-        return JsonDataModel.find_data_dict_by_hash(self.python_env_data_hash)
+        data = JsonDataModel.find_data_dict_by_hash(self.python_env_data_hash)
+        if isinstance(data, dict):
+            return data
+        return {}
 
     def json_data(self) -> dict:
-        return JsonDataModel.find_data_dict_by_hash(self.json_data_hash)
+        data = JsonDataModel.find_data_dict_by_hash(self.json_data_hash)
+        if not isinstance(data, dict):
+            data = {}
+
+        delta_updates = self._delta_updates()
+        if not delta_updates:
+            return data
+        return {**data, **delta_updates}
 
     def parent_guid(self) -> str | None:
         if "parent" not in self.properties_json:

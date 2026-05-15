@@ -7,7 +7,8 @@ from flask import make_response
 
 from m8flow_backend.services.tenant_identity_helpers import display_group_identifier
 
-_PATCHED = False
+_MODULE_PATCHED = False
+_ORIGINAL_TASK_DATA_SHOW: object | None = None
 
 
 def _task_data_for_display(task_model: object) -> dict:
@@ -53,19 +54,25 @@ def _rewrite_assigned_group_identifiers(response: flask.wrappers.Response) -> fl
     return make_response(jsonify(payload), response.status_code)
 
 
-def apply(flask_app: object | None = None) -> None:
-    """Patch task endpoints so waiting-for group labels and task data display are m8flow-aware."""
-    global _PATCHED
-    if _PATCHED:
-        return
+def _rule_looks_like_task_data_show(rule: object) -> bool:
+    rule_path = getattr(rule, "rule", None)
+    if not isinstance(rule_path, str):
+        return False
+    return "task-data" in rule_path and "task_guid" in rule_path and "process_instance_id" in rule_path
 
+
+def _apply_module_patches():
     import importlib
 
     tasks_controller = importlib.import_module("spiffworkflow_backend.routes.tasks_controller")
+    global _MODULE_PATCHED
+    global _ORIGINAL_TASK_DATA_SHOW
+    if _MODULE_PATCHED:
+        return tasks_controller, _ORIGINAL_TASK_DATA_SHOW, getattr(tasks_controller, "task_data_show", None)
 
     original_get_tasks = tasks_controller._get_tasks
     original_task_list_my_tasks = tasks_controller.task_list_my_tasks
-    original_task_data_show = getattr(tasks_controller, "task_data_show", None)
+    _ORIGINAL_TASK_DATA_SHOW = getattr(tasks_controller, "task_data_show", None)
 
     def patched_get_tasks(*args, **kwargs) -> flask.wrappers.Response:
         return _rewrite_assigned_group_identifiers(original_get_tasks(*args, **kwargs))
@@ -82,28 +89,44 @@ def apply(flask_app: object | None = None) -> None:
         task_model.data = _task_data_for_display(task_model)
         return make_response(jsonify(task_model), 200)
 
-    app = flask_app or current_app._get_current_object()
-
     tasks_controller._get_tasks = patched_get_tasks
     tasks_controller.task_list_my_tasks = patched_task_list_my_tasks
     tasks_controller.task_data_show = patched_task_data_show
+    _MODULE_PATCHED = True
+    return tasks_controller, _ORIGINAL_TASK_DATA_SHOW, patched_task_data_show
 
-    for endpoint, view_function in list(app.view_functions.items()):
+
+def apply(flask_app: object | None = None) -> None:
+    """Patch task endpoints so waiting-for group labels and task data display are m8flow-aware."""
+    tasks_controller, original_task_data_show, patched_task_data_show = _apply_module_patches()
+
+    if flask_app is None:
+        try:
+            flask_app = current_app._get_current_object()
+        except RuntimeError:
+            return
+
+    app_already_patched = getattr(flask_app, "_m8flow_tasks_controller_patch_applied", False)
+    if app_already_patched:
+        return
+
+    for endpoint, view_function in list(flask_app.view_functions.items()):
         if endpoint.endswith("task_data_show") or (
             getattr(view_function, "__module__", None) == tasks_controller.__name__
             and getattr(view_function, "__name__", None) == "task_data_show"
         ):
-            app.view_functions[endpoint] = patched_task_data_show
+            flask_app.view_functions[endpoint] = patched_task_data_show
 
-    # Connexion endpoint names vary between environments; fall back to scanning all GET
-    # rules and replacing any whose handler is (or wraps) the original task_data_show.
-    # Matching by function identity avoids accidentally patching unrelated routes whose
-    # path happens to contain the substring "task-data".
-    for rule in app.url_map.iter_rules():
+    # Connexion endpoint names and wrapper identities vary between environments.
+    # First try function identity, then fall back to the concrete task-data route path.
+    for rule in flask_app.url_map.iter_rules():
         if "GET" not in rule.methods:
             continue
-        vf = app.view_functions.get(rule.endpoint)
+        vf = flask_app.view_functions.get(rule.endpoint)
         if original_task_data_show is not None and getattr(vf, "__wrapped__", vf) is original_task_data_show:
-            app.view_functions[rule.endpoint] = patched_task_data_show
+            flask_app.view_functions[rule.endpoint] = patched_task_data_show
+            continue
+        if _rule_looks_like_task_data_show(rule):
+            flask_app.view_functions[rule.endpoint] = patched_task_data_show
 
-    _PATCHED = True
+    setattr(flask_app, "_m8flow_tasks_controller_patch_applied", True)
