@@ -1,70 +1,51 @@
-# Realm Info Mapper
+# Keycloak Mappers
 
-A Keycloak OIDC protocol mapper that adds the current realm’s name and ID to access tokens and ID tokens.
+This JAR contains M8Flow-specific Keycloak OIDC protocol mappers.
 
-## What it does
+## Included mappers
 
-- **Type**: Keycloak OIDC protocol mapper (SPI provider).
-- **Provider ID**: `oidc-realm-info-mapper`.
-- **Display name**: “Realm Info Mapper”.
+- `oidc-realm-info-mapper`
+  Adds `m8flow_tenant_name` and `m8flow_tenant_id` to tokens.
+- `oidc-normalized-group-membership-mapper`
+  Emits Keycloak group paths without leading slash characters.
 
-When attached to a client, it adds two claims to the token:
+Examples for normalized groups:
 
-| Claim                | Description                                    |
-|----------------------|------------------------------------------------|
-| `m8flow_tenant_name` | Name of the realm that issued the token       |
-| `m8flow_tenant_id`   | ID of the realm that issued the token (tenant)|
+- `/Manager` becomes `Manager`
+- `/Business/Finance` becomes `Business/Finance`
 
-The mapper reads the realm from the current Keycloak session, so the values are always for the realm in which the user authenticated. Applications can use these claims for multi-realm or tenant-aware logic without extra lookups.
+Compatibility: Keycloak `26.0.7`, Java `17`.
 
-**Compatibility**: Keycloak 26.0.7, Java 17.
+## Build
 
-## How to build
-
-### Prerequisites
-
-- **Java 17** (or compatible JDK)
-- **Maven** (e.g. `mvn` on `PATH`)
-
-### Build steps
-
-From this directory (`keycloak-extensions/realm-info-mapper/`):
-
-**Option 1 – script (recommended)**
+From `keycloak-extensions/realm-info-mapper/`:
 
 ```bash
 ./build.sh
 ```
 
-**Option 2 – Maven**
+Or:
 
 ```bash
 mvn clean package
 ```
 
-### Build output
+Build output:
 
-- **Artifact**: `target/realm-info-mapper.jar`
-
-If the build succeeds, the JAR is ready to be used as a Keycloak provider.
+- `target/realm-info-mapper.jar`
 
 ## Deployment
 
-The JAR is loaded by Keycloak when placed in its providers directory. In this project, the Docker setup does that by mounting the built JAR:
+The Docker setup loads the built JAR into Keycloak at:
 
-- **Path in container**: `/opt/keycloak/providers/realm-info-mapper.jar`
-- **Compose**: `docker/m8flow-docker-compose.yml` mounts `keycloak-extensions/realm-info-mapper/target/realm-info-mapper.jar` into that location.
+- `/opt/keycloak/providers/realm-info-mapper.jar`
 
-So:
-
-1. Build the mapper (see above).
-2. Start (or restart) the stack that uses `m8flow-docker-compose.yml` so Keycloak picks up the JAR.
+After rebuilding the JAR, restart or rebuild the Keycloak container so the provider is reloaded.
 
 ## Configuring in Keycloak
 
-1. In the Keycloak admin UI, open the realm and go to **Clients** → select the client (e.g. the one used by m8flow).
-2. Open the **Client scopes** tab and either edit the client’s scope or the scope used by that client.
-3. Add a mapper: **Add mapper** → **By configuration** → choose **Realm Info Mapper**.
-4. Save.
-
-After that, tokens issued for that client will include `m8flow_tenant_name` and `m8flow_tenant_id` in the payload (typically under `otherClaims` or the root, depending on token type and client settings).
+1. Open the realm in the Keycloak admin UI.
+2. Open the target client or client scope.
+3. Add a mapper by configuration.
+4. Choose either `Realm Info Mapper` or `Normalized Group Membership Mapper`.
+5. Save.

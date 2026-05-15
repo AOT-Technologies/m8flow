@@ -4,6 +4,8 @@ from types import SimpleNamespace
 
 from m8flow_backend.services.tenant_identity_helpers import display_group_identifier
 from m8flow_backend.services.tenant_identity_helpers import filter_users_for_current_tenant
+from m8flow_backend.services.tenant_identity_helpers import normalize_organizational_group_identifier
+from m8flow_backend.services.tenant_identity_helpers import normalize_organizational_group_identifiers
 from m8flow_backend.services.tenant_identity_helpers import qualify_group_identifier
 from m8flow_backend.services.tenant_identity_helpers import resolve_user_for_current_tenant
 
@@ -35,6 +37,18 @@ def test_display_group_identifier_preserves_value_when_slug_lookup_fails(monkeyp
 
     assert display_group_identifier("tenant-id:reviewer") == "tenant-id:reviewer"
     assert display_group_identifier("reviewer") == "reviewer"
+
+
+def test_normalize_organizational_group_identifier_canonicalizes_bare_and_nested_paths() -> None:
+    assert normalize_organizational_group_identifier("Engineering") == "/Engineering"
+    assert normalize_organizational_group_identifier(" /Business/Finance/ ") == "/Business/Finance"
+    assert normalize_organizational_group_identifier("tenant-a:Operations/Support") == "tenant-a:/Operations/Support"
+
+
+def test_normalize_organizational_group_identifiers_deduplicates_equivalent_paths() -> None:
+    assert normalize_organizational_group_identifiers(
+        ["Engineering", "/Engineering", "/Business/Finance", " /Business/Finance/ "]
+    ) == ["/Engineering", "/Business/Finance"]
 
 
 def test_filter_users_for_current_tenant_accepts_service_realm_and_legacy_suffix(monkeypatch) -> None:

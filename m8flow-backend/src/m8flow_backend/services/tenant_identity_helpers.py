@@ -182,6 +182,39 @@ def qualify_group_identifier(group_identifier: str, tenant_id: str | None = None
     return f"{effective_tenant_id}:{identifier}"
 
 
+def normalize_organizational_group_identifier(group_identifier: str) -> str:
+    """Return a canonical full-path organizational group identifier."""
+    identifier = group_identifier.strip()
+    if not identifier:
+        return identifier
+
+    tenant_prefix = ""
+    if ":" in identifier:
+        prefix, _, remainder = identifier.partition(":")
+        if prefix and remainder:
+            tenant_prefix = f"{prefix}:"
+            identifier = remainder.strip()
+
+    path_segments = [segment.strip() for segment in identifier.split("/") if segment.strip()]
+    if not path_segments:
+        return tenant_prefix
+
+    normalized_path = "/" + "/".join(path_segments)
+    return f"{tenant_prefix}{normalized_path}"
+
+
+def normalize_organizational_group_identifiers(group_identifiers: list[str]) -> list[str]:
+    """Return deduplicated canonical organizational group paths."""
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for group_identifier in group_identifiers:
+        canonical_identifier = normalize_organizational_group_identifier(group_identifier)
+        if canonical_identifier and canonical_identifier not in seen:
+            seen.add(canonical_identifier)
+            normalized.append(canonical_identifier)
+    return normalized
+
+
 def _tenant_slug_for_identifier(tenant_identifier: str) -> str | None:
     """Resolve a tenant id or slug to the canonical tenant slug."""
     effective_tenant_identifier = tenant_identifier.strip()

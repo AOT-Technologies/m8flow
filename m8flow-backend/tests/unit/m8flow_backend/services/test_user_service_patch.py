@@ -54,6 +54,58 @@ def test_apply_patches_find_or_create_group_with_qualified_identifier(monkeypatc
     assert group.identifier == "tenant-a:reviewer"
 
 
+def test_apply_patches_find_or_create_group_normalizes_open_id_org_group_paths(monkeypatch) -> None:
+    original_find_or_create_group = user_service.UserService.find_or_create_group
+    original_add_user_to_group_or_add_to_waiting = user_service.UserService.add_user_to_group_or_add_to_waiting
+    original_apply_waiting_group_assignments = user_service.UserService.apply_waiting_group_assignments
+
+    captured: dict[str, object] = {}
+
+    @classmethod
+    def fake_original_find_or_create_group(cls, group_identifier: str, source_is_open_id: bool = False):
+        captured["group_identifier"] = group_identifier
+        captured["source_is_open_id"] = source_is_open_id
+        return SimpleNamespace(identifier=group_identifier)
+
+    monkeypatch.setattr(user_service_patch, "_PATCHED", False)
+    monkeypatch.setattr(
+        user_service.UserService,
+        "find_or_create_group",
+        fake_original_find_or_create_group,
+    )
+    monkeypatch.setattr(
+        user_service_patch,
+        "normalize_organizational_group_identifier",
+        lambda group_identifier: "tenant-a:/Engineering" if group_identifier == "tenant-a:/Engineering/" else group_identifier,
+    )
+    monkeypatch.setattr(
+        user_service_patch,
+        "qualify_group_identifier",
+        lambda group_identifier: f"tenant-a:{group_identifier}" if ":" not in group_identifier else group_identifier,
+    )
+
+    try:
+        user_service_patch.apply()
+        group = user_service.UserService.find_or_create_group("tenant-a:/Engineering/", source_is_open_id=True)
+    finally:
+        monkeypatch.setattr(user_service.UserService, "find_or_create_group", original_find_or_create_group)
+        monkeypatch.setattr(
+            user_service.UserService,
+            "add_user_to_group_or_add_to_waiting",
+            original_add_user_to_group_or_add_to_waiting,
+        )
+        monkeypatch.setattr(
+            user_service.UserService,
+            "apply_waiting_group_assignments",
+            original_apply_waiting_group_assignments,
+        )
+        monkeypatch.setattr(user_service_patch, "_PATCHED", False)
+
+    assert captured["group_identifier"] == "tenant-a:/Engineering"
+    assert captured["source_is_open_id"] is True
+    assert group.identifier == "tenant-a:/Engineering"
+
+
 def test_add_user_to_group_or_add_to_waiting_returns_users_from_tenant_scoped_resolver(monkeypatch) -> None:
     original_find_or_create_group = user_service.UserService.find_or_create_group
     original_add_user_to_group_or_add_to_waiting = user_service.UserService.add_user_to_group_or_add_to_waiting

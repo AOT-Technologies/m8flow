@@ -18,6 +18,7 @@ import uuid
 from pathlib import Path
 
 import pytest
+import jwt
 import requests
 
 # Ensure m8flow_backend is importable (run from repo root with PYTHONPATH or from test dir)
@@ -38,8 +39,72 @@ from m8flow_backend.config import (  # noqa: E402
 from m8flow_backend.services.keycloak_service import (  # noqa: E402
     create_realm_from_template,
     create_user_in_realm,
+    delete_realm,
+    get_master_admin_token,
     tenant_login,
 )
+
+
+def _admin_headers() -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {get_master_admin_token()}",
+        "Content-Type": "application/json",
+    }
+
+
+def _iter_groups(groups: list[dict]) -> list[dict]:
+    flattened: list[dict] = []
+    for group in groups:
+        flattened.append(group)
+        sub_groups = group.get("subGroups") or []
+        if isinstance(sub_groups, list):
+            flattened.extend(_iter_groups(sub_groups))
+    return flattened
+
+
+def _get_group_by_path(realm: str, group_path: str) -> dict:
+    response = requests.get(
+        f"{keycloak_url()}/admin/realms/{realm}/groups",
+        params={"briefRepresentation": "false", "max": 200},
+        headers=_admin_headers(),
+        timeout=30,
+    )
+    response.raise_for_status()
+    groups = response.json()
+    assert isinstance(groups, list)
+    for group in _iter_groups(groups):
+        if group.get("path") == group_path:
+            return group
+    raise AssertionError(f"Group {group_path!r} not found in realm {realm!r}")
+
+
+def _add_user_to_group(realm: str, user_id: str, group_path: str) -> None:
+    group = _get_group_by_path(realm, group_path)
+    group_id = group.get("id")
+    assert isinstance(group_id, str) and group_id
+    response = requests.put(
+        f"{keycloak_url()}/admin/realms/{realm}/users/{user_id}/groups/{group_id}",
+        headers=_admin_headers(),
+        timeout=30,
+    )
+    response.raise_for_status()
+
+
+def _assign_realm_role_to_user(realm: str, user_id: str, role_name: str) -> None:
+    response = requests.get(
+        f"{keycloak_url()}/admin/realms/{realm}/roles/{role_name}",
+        headers=_admin_headers(),
+        timeout=30,
+    )
+    response.raise_for_status()
+    role_representation = response.json()
+    add_response = requests.post(
+        f"{keycloak_url()}/admin/realms/{realm}/users/{user_id}/role-mappings/realm",
+        json=[role_representation],
+        headers=_admin_headers(),
+        timeout=30,
+    )
+    add_response.raise_for_status()
 
 
 def _keycloak_skip_reason() -> str | None:
@@ -123,3 +188,45 @@ def test_create_tenant_create_user_fetch_access_token() -> None:
     assert token_response.get("token_type", "").lower() in ("bearer", "")
     if "expires_in" in token_response:
         assert token_response["expires_in"] > 0
+
+
+@pytest.mark.skipif(
+    not _keycloak_available(),
+    reason=_KEYCLOAK_SKIP_REASON or "Keycloak not available",
+)
+def test_tenant_user_access_token_separates_groups_and_roles_claims() -> None:
+    realm_id = f"tenant-claims-{uuid.uuid4().hex[:12]}"
+    username = f"claimsuser-{uuid.uuid4().hex[:8]}"
+    password = "IntegrationTestPassword1!"
+
+    try:
+        create_realm_from_template(realm_id=realm_id, display_name=f"Claims Test {realm_id}")
+        time.sleep(2)
+
+        user_id = create_user_in_realm(
+            realm=realm_id,
+            username=username,
+            password=password,
+            email=f"{username}@integration-test.example.com",
+        )
+        _assign_realm_role_to_user(realm_id, user_id, "editor")
+        _add_user_to_group(realm_id, user_id, "/Engineering")
+
+        token_response = tenant_login(realm=realm_id, username=username, password=password)
+        decoded_access_token = jwt.decode(
+            token_response["access_token"],
+            options={"verify_signature": False, "verify_aud": False},
+        )
+
+        assert decoded_access_token.get("roles") is not None
+        assert "editor" in decoded_access_token["roles"]
+        assert decoded_access_token.get("groups") is not None
+        assert "Engineering" in decoded_access_token["groups"]
+        assert "/Engineering" not in decoded_access_token["groups"]
+        assert "editor" not in decoded_access_token["groups"]
+        assert "tenant-admin" not in decoded_access_token["groups"]
+    finally:
+        try:
+            delete_realm(realm_id)
+        except Exception:
+            pass
