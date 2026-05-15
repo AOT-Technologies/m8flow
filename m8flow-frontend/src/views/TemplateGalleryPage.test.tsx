@@ -96,6 +96,7 @@ vi.mock("../components/TemplateCard", () => ({
 import { useTemplates } from "../hooks/useTemplates";
 import HttpService from "../services/HttpService";
 import TemplateService from "../services/TemplateService";
+import { usePermissionFetcher } from "@spiffworkflow-frontend/hooks/PermissionService";
 
 const theme = createTheme();
 const fetchTemplatesMock = vi.fn();
@@ -136,10 +137,10 @@ describe("TemplateGalleryPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubGlobal("confirm", vi.fn(() => true));
-    vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts: any) => {
-      if (opts.path === "/user-groups/for-current-user") {
-        opts.successCallback?.([]);
-      }
+    vi.mocked(HttpService.makeCallToBackend).mockImplementation(() => {});
+    vi.mocked(usePermissionFetcher).mockReturnValue({
+      ability: { can: () => true } as any,
+      permissionsLoaded: true,
     });
     vi.mocked(useTemplates).mockReturnValue({
       templates: [makeTemplate()],
@@ -165,7 +166,17 @@ describe("TemplateGalleryPage", () => {
     expect(fetchTemplatesMock).toHaveBeenCalled();
   });
 
-  it("disables published delete for non-tenant-admin users in table view", async () => {
+  it("disables published delete for users without admin permission in table view", async () => {
+    // No admin permission (ability.can returns false for /m8flow/admin/templates)
+    vi.mocked(usePermissionFetcher).mockReturnValue({
+      ability: {
+        can: (method: string, uri: string) => {
+          if (uri === "/m8flow/admin/templates") return false;
+          return true;
+        },
+      } as any,
+      permissionsLoaded: true,
+    });
     vi.mocked(useTemplates).mockReturnValue({
       templates: [makeTemplate({ isPublished: true })],
       pagination: { count: 1, total: 1, pages: 1 },
@@ -195,10 +206,10 @@ describe("TemplateGalleryPage", () => {
   });
 
   it("shows deleted mode restore action and calls restore API", async () => {
-    vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts: any) => {
-      if (opts.path === "/user-groups/for-current-user") {
-        opts.successCallback?.(["tenant-admin"]);
-      }
+    // Admin permission (ability.can returns true for all URIs)
+    vi.mocked(usePermissionFetcher).mockReturnValue({
+      ability: { can: () => true } as any,
+      permissionsLoaded: true,
     });
     vi.mocked(useTemplates).mockReturnValue({
       templates: [makeTemplate({ isPublished: true, status: "published" })],

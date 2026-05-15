@@ -99,10 +99,6 @@ describe("TemplateModelerPage", () => {
     vi.clearAllMocks();
     vi.mocked(useParams).mockReturnValue({ templateId: "5" });
     vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
-      if (opts.path === "/user-groups/for-current-user") {
-        opts.successCallback?.([]);
-        return;
-      }
       opts.successCallback?.(templatePayload() as any);
     });
     vi.mocked(usePermissionFetcher).mockReturnValue({
@@ -113,10 +109,6 @@ describe("TemplateModelerPage", () => {
 
   it("renders template name and shows Delete button for draft owned by current user", async () => {
     vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
-      if (opts.path === "/user-groups/for-current-user") {
-        opts.successCallback?.([]);
-        return;
-      }
       opts.successCallback?.(templatePayload({ isPublished: false }) as any);
     });
 
@@ -144,10 +136,6 @@ describe("TemplateModelerPage", () => {
 
   it("does not show Publish button when template is published", async () => {
     vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
-      if (opts.path === "/user-groups/for-current-user") {
-        opts.successCallback?.([]);
-        return;
-      }
       opts.successCallback?.(templatePayload({ isPublished: true }) as any);
     });
 
@@ -162,10 +150,6 @@ describe("TemplateModelerPage", () => {
 
   it("disables Create Process Model button when template version is draft", async () => {
     vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
-      if (opts.path === "/user-groups/for-current-user") {
-        opts.successCallback?.([]);
-        return;
-      }
       opts.successCallback?.(templatePayload({ isPublished: false }) as any);
     });
 
@@ -177,10 +161,6 @@ describe("TemplateModelerPage", () => {
 
   it("enables Create Process Model button when template version is published", async () => {
     vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
-      if (opts.path === "/user-groups/for-current-user") {
-        opts.successCallback?.([]);
-        return;
-      }
       opts.successCallback?.(templatePayload({ isPublished: true }) as any);
     });
 
@@ -190,12 +170,18 @@ describe("TemplateModelerPage", () => {
     expect(createButton).toBeEnabled();
   });
 
-  it("disables Delete for published template when user is not tenant-admin", async () => {
+  it("disables Delete for published template when user lacks admin permission", async () => {
+    // No admin permission (ability.can returns false for /m8flow/admin/templates)
+    vi.mocked(usePermissionFetcher).mockReturnValue({
+      ability: {
+        can: (method: string, uri: string) => {
+          if (uri === "/m8flow/admin/templates") return false;
+          return true; // general template permissions
+        },
+      } as any,
+      permissionsLoaded: true,
+    });
     vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
-      if (opts.path === "/user-groups/for-current-user") {
-        opts.successCallback?.([]);
-        return;
-      }
       opts.successCallback?.(templatePayload({ isPublished: true }) as any);
     });
 
@@ -205,12 +191,13 @@ describe("TemplateModelerPage", () => {
     expect(deleteButton).toBeDisabled();
   });
 
-  it("enables Delete for published template when user is tenant-admin", async () => {
+  it("enables Delete for published template when user has admin permission", async () => {
+    // Has admin permission (ability.can returns true for /m8flow/admin/templates)
+    vi.mocked(usePermissionFetcher).mockReturnValue({
+      ability: { can: () => true } as any,
+      permissionsLoaded: true,
+    });
     vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
-      if (opts.path === "/user-groups/for-current-user") {
-        opts.successCallback?.(["tenant-admin"]);
-        return;
-      }
       opts.successCallback?.(templatePayload({ isPublished: true }) as any);
     });
 

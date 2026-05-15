@@ -581,6 +581,13 @@ paths:
             type: boolean
             default: true
           description: Whether to include BPMN content in the response. Set to false for better performance when only metadata is needed.
+        - name: include_deleted
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Whether to include soft-deleted templates. Set to true to fetch a deleted template's details.
       responses:
         "200":
           description: Template retrieved successfully

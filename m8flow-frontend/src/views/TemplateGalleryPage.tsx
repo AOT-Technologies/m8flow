@@ -30,9 +30,8 @@ import PaginationForTable from '@spiffworkflow-frontend/components/PaginationFor
 import { usePermissionFetcher } from "@spiffworkflow-frontend/hooks/PermissionService";
 import { useTranslation } from 'react-i18next';
 import TemplateService from '../services/TemplateService';
-import HttpService from '../services/HttpService';
 import UserService from '../services/UserService';
-import { hasTenantAdminGroup } from '../utils/userGroups';
+
 
 const DEFAULT_PER_PAGE = 10;
 
@@ -48,16 +47,17 @@ export default function TemplateGalleryPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
   const [templateMode, setTemplateMode] = useState<'active' | 'deleted'>('active');
-  const [userGroups, setUserGroups] = useState<string[]>([]);
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const { ability, permissionsLoaded } = usePermissionFetcher({
     "/m8flow/templates": ["POST", "DELETE"],
+    "/m8flow/admin/templates": ["DELETE"],
   });
   const { t } = useTranslation();
 
   const canCreate = ability.can("POST", "/m8flow/templates");
   const canDelete = ability.can("DELETE", "/m8flow/templates");
-  const isTenantAdmin = hasTenantAdminGroup(userGroups);
+  // RBAC: admin-level template permission (delete published, restore)
+  const hasAdminPermission = permissionsLoaded && ability.can("DELETE", "/m8flow/admin/templates");
   const currentUsername = UserService.getUserName() || UserService.getPreferredUsername() || "";
 
   // Read page/per_page from URL search params (PaginationForTable manages them)
@@ -69,19 +69,7 @@ export default function TemplateGalleryPage() {
     fetchTemplates({ ...filters, page, per_page: perPage });
   }, [filters, page, perPage, fetchTemplates]);
 
-  useEffect(() => {
-    if (!permissionsLoaded) return;
-    HttpService.makeCallToBackend({
-      path: "/user-groups/for-current-user",
-      httpMethod: HttpService.HttpMethods.GET,
-      successCallback: (result: unknown) => {
-        setUserGroups(Array.isArray(result) ? (result as string[]) : []);
-      },
-      failureCallback: () => {
-        setUserGroups([]);
-      },
-    });
-  }, [permissionsLoaded]);
+
 
   // Extract unique categories and tags from templates for filter options
   const { availableCategories, availableTags } = useMemo(() => {
@@ -150,25 +138,25 @@ export default function TemplateGalleryPage() {
 
   const canDeleteTemplate = (template: Template): boolean => {
     if (!canDelete) return false;
-    if (template.isPublished) return isTenantAdmin;
-    return isTenantAdmin || (!!currentUsername && template.createdBy === currentUsername);
+    if (template.isPublished) return hasAdminPermission;
+    return hasAdminPermission || (!!currentUsername && template.createdBy === currentUsername);
   };
 
   const deleteDisabledReason = (template: Template): string => {
-    if (template.isPublished && !isTenantAdmin) {
-      return t("published_delete_tenant_admin_only", {
-        defaultValue: "Only tenant-admin can delete published templates.",
+    if (template.isPublished && !hasAdminPermission) {
+      return t("published_delete_admin_only", {
+        defaultValue: "Insufficient permissions to delete published templates.",
       });
     }
-    if (!isTenantAdmin && currentUsername !== template.createdBy) {
-      return t("draft_delete_owner_or_tenant_admin_only", {
-        defaultValue: "Only the template creator or tenant-admin can delete this draft template.",
+    if (!hasAdminPermission && currentUsername !== template.createdBy) {
+      return t("draft_delete_owner_or_admin_only", {
+        defaultValue: "Only the template creator or an admin can delete this draft template.",
       });
     }
     return "";
   };
 
-  const canRestoreTemplate = canDelete && isTenantAdmin;
+  const canRestoreTemplate = canDelete && hasAdminPermission;
 
   const handleDeleteTemplate = (template: Template) => {
     const confirmMessage = template.isPublished
@@ -395,8 +383,8 @@ export default function TemplateGalleryPage() {
                                 title={
                                   canRestoreTemplate
                                     ? ""
-                                    : t("restore_tenant_admin_only", {
-                                        defaultValue: "Only tenant-admin can restore deleted templates.",
+                                    : t("restore_admin_only", {
+                                        defaultValue: "Insufficient permissions to restore deleted templates.",
                                       })
                                 }
                               >
@@ -463,8 +451,8 @@ export default function TemplateGalleryPage() {
                         deleteDisabled={templateMode === 'active' ? !canDeleteTemplate(template) : false}
                         deleteDisabledReason={deleteDisabledReason(template)}
                         restoreDisabled={templateMode === 'deleted' ? !canRestoreTemplate : false}
-                        restoreDisabledReason={t("restore_tenant_admin_only", {
-                          defaultValue: "Only tenant-admin can restore deleted templates.",
+                        restoreDisabledReason={t("restore_admin_only", {
+                          defaultValue: "Insufficient permissions to restore deleted templates.",
                         })}
                       />
                     </Grid>

@@ -20,6 +20,7 @@ export interface Template {
   files: TemplateFile[];
   bpmnContent?: string; // Included in GET when include_contents true
   isPublished: boolean;
+  isDeleted?: boolean;
   status: string | null;
   /** Epoch seconds for display (Spiff-style). */
   createdAtInSeconds: number;

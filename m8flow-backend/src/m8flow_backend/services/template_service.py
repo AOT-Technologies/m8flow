@@ -598,12 +598,12 @@ class TemplateService:
         if template.is_deleted:
             raise ApiError("not_found", "Template not found", status_code=404)
 
-        is_tenant_admin = TemplateAuthorizationService.is_tenant_admin(user)
+        is_template_admin = TemplateAuthorizationService.has_admin_permission(user, "delete")
         username = user.username if user and hasattr(user, "username") else None
 
         if template.is_published:
-            if not is_tenant_admin:
-                raise ApiError("forbidden", "Only tenant-admin can delete published templates", status_code=403)
+            if not is_template_admin:
+                raise ApiError("forbidden", "Insufficient permissions to delete published templates", status_code=403)
 
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
             original_name = template.name or "template"
@@ -615,7 +615,7 @@ class TemplateService:
             return
 
         can_hard_delete_draft = bool(
-            (username is not None and template.created_by == username) or is_tenant_admin
+            (username is not None and template.created_by == username) or is_template_admin
         )
         if not can_hard_delete_draft:
             raise ApiError("forbidden", "You cannot delete this template", status_code=403)
@@ -661,8 +661,8 @@ class TemplateService:
         if not template.is_deleted:
             raise ApiError("invalid_state", "Template is not deleted", status_code=400)
 
-        if not TemplateAuthorizationService.is_tenant_admin(user):
-            raise ApiError("forbidden", "Only tenant-admin can restore templates", status_code=403)
+        if not TemplateAuthorizationService.has_admin_permission(user, "update"):
+            raise ApiError("forbidden", "Insufficient permissions to restore templates", status_code=403)
 
         # Expected soft-delete format: <name>_deleted_YYYYMMDDHHMMSS
         match = re.match(r"^(?P<base>.*)_deleted_\d{14}$", template.name or "")

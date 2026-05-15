@@ -30,7 +30,7 @@ import { normalizeTemplate } from '../utils/templateHelpers';
 import './TemplateModelerPage.css';
 import { usePermissionFetcher } from '@spiffworkflow-frontend/hooks/PermissionService';
 import UserService from '../services/UserService';
-import { hasTenantAdminGroup } from '../utils/userGroups';
+
 
 const VISIBILITY_OPTIONS: { value: TemplateVisibility; label: string }[] = [
   { value: 'PRIVATE', label: 'private_only_you' },
@@ -228,11 +228,15 @@ export default function TemplateModelerPage() {
   const [isSavingVisibility, setIsSavingVisibility] = useState(false);
   const [saveVisibilitySuccess, setSaveVisibilitySuccess] = useState(false);
   const [deleteSuccess, setDeleteSuccess] = useState(false);
-  const [userGroups, setUserGroups] = useState<string[]>([]);
 
   const id = templateId ? Number.parseInt(templateId, 10) : NaN;
-  const isTenantAdmin = hasTenantAdminGroup(userGroups);
   const currentUsername = UserService.getUserName() || UserService.getPreferredUsername() || "";
+
+  // RBAC: check admin-level template permissions (delete published, restore)
+  const { ability: adminAbility, permissionsLoaded: adminPermissionsLoaded } = usePermissionFetcher({
+    "/m8flow/admin/templates": ["DELETE"],
+  });
+  const hasAdminPermission = adminPermissionsLoaded && adminAbility.can("DELETE", "/m8flow/admin/templates");
 
   const handleExport = useCallback(() => {
     if (isNaN(id)) return;
@@ -260,7 +264,7 @@ export default function TemplateModelerPage() {
     setError(null);
 
     HttpService.makeCallToBackend({
-      path: `/v1.0/m8flow/templates/${id}`,
+      path: `/v1.0/m8flow/templates/${id}?include_deleted=true`,
       httpMethod: HttpService.HttpMethods.GET,
       successCallback: (result: Record<string, unknown>) => {
         setTemplate(normalizeTemplate(result));
@@ -273,18 +277,7 @@ export default function TemplateModelerPage() {
     });
   }, [templateId, id]);
 
-  useEffect(() => {
-    HttpService.makeCallToBackend({
-      path: "/user-groups/for-current-user",
-      httpMethod: HttpService.HttpMethods.GET,
-      successCallback: (result: unknown) => {
-        setUserGroups(Array.isArray(result) ? (result as string[]) : []);
-      },
-      failureCallback: () => {
-        setUserGroups([]);
-      },
-    });
-  }, []);
+
 
   // Fetch all versions when template key changes
   const fetchAllVersions = useCallback(() => {
@@ -397,24 +390,24 @@ export default function TemplateModelerPage() {
 
   const canDeleteTemplate = useMemo(() => {
     if (!template) return false;
-    if (template.isPublished) return isTenantAdmin;
-    return isTenantAdmin || (!!currentUsername && template.createdBy === currentUsername);
-  }, [template, isTenantAdmin, currentUsername]);
+    if (template.isPublished) return hasAdminPermission;
+    return hasAdminPermission || (!!currentUsername && template.createdBy === currentUsername);
+  }, [template, hasAdminPermission, currentUsername]);
 
   const deleteDisabledReason = useMemo(() => {
     if (!template) return "";
-    if (template.isPublished && !isTenantAdmin) {
-      return t("published_delete_tenant_admin_only", {
-        defaultValue: "Only tenant-admin can delete published templates.",
+    if (template.isPublished && !hasAdminPermission) {
+      return t("published_delete_admin_only", {
+        defaultValue: "Insufficient permissions to delete published templates.",
       });
     }
-    if (!isTenantAdmin && template.createdBy !== currentUsername) {
-      return t("draft_delete_owner_or_tenant_admin_only", {
-        defaultValue: "Only the template creator or tenant-admin can delete this draft template.",
+    if (!hasAdminPermission && template.createdBy !== currentUsername) {
+      return t("draft_delete_owner_or_admin_only", {
+        defaultValue: "Only the template creator or an admin can delete this draft template.",
       });
     }
     return "";
-  }, [template, isTenantAdmin, currentUsername, t]);
+  }, [template, hasAdminPermission, currentUsername, t]);
 
   const createProcessModelDisabledReason = t("create_process_model_published_only_tooltip", {
     defaultValue: "Process models can only be created from a published template version.",

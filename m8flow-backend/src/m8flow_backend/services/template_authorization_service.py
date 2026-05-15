@@ -17,13 +17,29 @@ class TemplateAuthorizationService:
         return getattr(g, "m8flow_tenant_id", None)
 
     @classmethod
+    def has_admin_permission(cls, user: UserModel | None, permission: str) -> bool:
+        """Check if user has admin-level permission on templates via RBAC.
+
+        Delegates to AuthorizationService (backing /v1.0/permissions-check)
+        instead of inspecting group membership directly.
+        """
+        if user is None:
+            return False
+        try:
+            return AuthorizationService.user_has_permission(
+                user, permission, "/m8flow/admin/templates"
+            )
+        except Exception:
+            return False
+
+    @classmethod
     def can_view(cls, template: TemplateModel, user: UserModel | None = None) -> bool:
         tenant_id = cls._tenant_id()
 
-        # Tenant-admin can view any template in their tenant.
+        # Admin can view any template in their tenant.
         if (
             user is not None
-            and cls.is_tenant_admin(user)
+            and cls.has_admin_permission(user, "read")
             and tenant_id is not None
             and tenant_id == template.m8f_tenant_id
         ):
@@ -57,34 +73,13 @@ class TemplateAuthorizationService:
             return True
 
         # Permission check (Spiff permissions are CRUD: create/read/update/delete).
-        # TODO(RBAC): once m8flow has role-based permissions (e.g. admin/editor), map roles -> CRUD
-        # for templates and/or add a dedicated role-aware check here.
         try:
-            if AuthorizationService.user_has_permission(user, "update",  "/templates"):
+            if AuthorizationService.user_has_permission(user, "update",  "/m8flow/templates"):
                 return True
         except Exception:
             # Fallback to owner-only if permission system is not configured for templates
             return False
 
-        return False
-
-    @staticmethod
-    def _user_group_identifiers(user: UserModel | None = None) -> set[str]:
-        if user is None or not hasattr(user, "groups"):
-            return set()
-        identifiers: set[str] = set()
-        for group in getattr(user, "groups", []) or []:
-            identifier = getattr(group, "identifier", None) or getattr(group, "name", None)
-            if isinstance(identifier, str) and identifier:
-                identifiers.add(identifier)
-        return identifiers
-
-    @classmethod
-    def is_tenant_admin(cls, user: UserModel | None = None) -> bool:
-        """Return True when user belongs to tenant-admin group (plain or tenant-qualified)."""
-        for identifier in cls._user_group_identifiers(user):
-            if identifier == "tenant-admin" or identifier.endswith(":tenant-admin"):
-                return True
         return False
 
     @classmethod
@@ -104,7 +99,7 @@ class TemplateAuthorizationService:
             ),
         ]
         if user is not None:
-            if cls.is_tenant_admin(user):
+            if cls.has_admin_permission(user, "read"):
                 conditions.append(
                     and_(
                         TemplateModel.visibility == TemplateVisibility.private.value,

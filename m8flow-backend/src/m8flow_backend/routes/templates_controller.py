@@ -35,6 +35,7 @@ def _serialize_template(template: TemplateModel, include_bpmn: bool = True) -> d
             for e in files_list
         ],
         "isPublished": template.is_published,
+        "isDeleted": template.is_deleted if hasattr(template, 'is_deleted') else False,
         "status": "published" if template.is_published else (template.status or "draft"),
         "createdBy": template.created_by,
         "modifiedBy": template.modified_by,
@@ -182,7 +183,8 @@ def template_create():
 def template_get_by_id(id: int):
     user = getattr(g, "user", None)
     include_contents = request.args.get("include_contents", "true").lower() == "true"
-    template = TemplateService.get_template_by_id(id, user=user)
+    include_deleted = request.args.get("include_deleted", "false").lower() == "true"
+    template = TemplateService.get_template_by_id(id, user=user, include_deleted=include_deleted)
     if template is None:
         raise ApiError("not_found", "Template not found", status_code=404)
     return jsonify(_serialize_template(template, include_bpmn=include_contents))
@@ -258,7 +260,7 @@ def template_get_bpmn(id: int):
 def template_get_file(id: int, file_name: str):
     """Download a single file by name."""
     user = getattr(g, "user", None)
-    template = TemplateService.get_template_by_id(id, user=user)
+    template = TemplateService.get_template_by_id(id, user=user, include_deleted=True)
     if template is None:
         raise ApiError("not_found", "Template not found", status_code=404)
     found = None

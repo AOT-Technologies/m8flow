@@ -1837,7 +1837,7 @@ def test_delete_template_published_soft_delete_for_tenant_admin() -> None:
             db.session.commit()
             template_id = template.id
 
-            with patch("m8flow_backend.services.template_service.TemplateAuthorizationService.is_tenant_admin", return_value=True):
+            with patch("m8flow_backend.services.template_service.TemplateAuthorizationService.has_admin_permission", return_value=True):
                 TemplateService.delete_template_by_id(template_id, user=user)
 
             deleted = TemplateModel.query.filter_by(id=template_id).first()
@@ -1881,7 +1881,7 @@ def test_delete_template_published_requires_tenant_admin() -> None:
             db.session.add(template)
             db.session.commit()
 
-            with patch("m8flow_backend.services.template_service.TemplateAuthorizationService.is_tenant_admin", return_value=False):
+            with patch("m8flow_backend.services.template_service.TemplateAuthorizationService.has_admin_permission", return_value=False):
                 try:
                     TemplateService.delete_template_by_id(template.id, user=user)
                     assert False, "Should have raised ApiError"
@@ -1924,7 +1924,7 @@ def test_delete_template_published_allows_tenant_admin_for_non_owner_private() -
             db.session.add(template)
             db.session.commit()
 
-            with patch("m8flow_backend.services.template_service.TemplateAuthorizationService.is_tenant_admin", return_value=True):
+            with patch("m8flow_backend.services.template_service.TemplateAuthorizationService.has_admin_permission", return_value=True):
                 TemplateService.delete_template_by_id(template.id, user=admin)
 
             deleted = TemplateModel.query.filter_by(id=template.id).first()
@@ -2011,7 +2011,7 @@ def test_delete_draft_template_allows_tenant_admin() -> None:
             db.session.commit()
             template_id = template.id
 
-            with patch("m8flow_backend.services.template_service.TemplateAuthorizationService.is_tenant_admin", return_value=True):
+            with patch("m8flow_backend.services.template_service.TemplateAuthorizationService.has_admin_permission", return_value=True):
                 TemplateService.delete_template_by_id(template_id, user=admin)
 
             assert TemplateModel.query.filter_by(id=template_id).first() is None
@@ -2050,7 +2050,7 @@ def test_restore_template_by_id_tenant_admin() -> None:
             db.session.add(deleted_template)
             db.session.commit()
 
-            with patch("m8flow_backend.services.template_service.TemplateAuthorizationService.is_tenant_admin", return_value=True):
+            with patch("m8flow_backend.services.template_service.TemplateAuthorizationService.has_admin_permission", return_value=True):
                 restored = TemplateService.restore_template_by_id(deleted_template.id, user=user)
 
             assert restored.is_deleted is False
@@ -2090,7 +2090,7 @@ def test_restore_template_requires_tenant_admin() -> None:
             db.session.add(deleted_template)
             db.session.commit()
 
-            with patch("m8flow_backend.services.template_service.TemplateAuthorizationService.is_tenant_admin", return_value=False):
+            with patch("m8flow_backend.services.template_service.TemplateAuthorizationService.has_admin_permission", return_value=False):
                 try:
                     TemplateService.restore_template_by_id(deleted_template.id, user=user)
                     assert False, "Should have raised ApiError"
@@ -2132,7 +2132,7 @@ def test_restore_template_invalid_state() -> None:
             db.session.add(active_template)
             db.session.commit()
 
-            with patch("m8flow_backend.services.template_service.TemplateAuthorizationService.is_tenant_admin", return_value=True):
+            with patch("m8flow_backend.services.template_service.TemplateAuthorizationService.has_admin_permission", return_value=True):
                 try:
                     TemplateService.restore_template_by_id(active_template.id, user=user)
                     assert False, "Should have raised ApiError"
@@ -2176,7 +2176,7 @@ def test_restore_template_by_id_allows_tenant_admin_for_non_owner_private() -> N
             db.session.add(deleted_template)
             db.session.commit()
 
-            with patch("m8flow_backend.services.template_service.TemplateAuthorizationService.is_tenant_admin", return_value=True):
+            with patch("m8flow_backend.services.template_service.TemplateAuthorizationService.has_admin_permission", return_value=True):
                 restored = TemplateService.restore_template_by_id(deleted_template.id, user=admin)
 
             assert restored.is_deleted is False
