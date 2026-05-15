@@ -1160,6 +1160,10 @@ def _minimal_realm_creation_payload(full_payload: dict[str, Any]) -> dict[str, A
         "displayName": full_payload.get("displayName"),
         "enabled": full_payload.get("enabled", True),
         "sslRequired": full_payload.get("sslRequired", "none"),
+        # Carry the realm-level registration flag from the template so new tenant
+        # realms expose the "Register" link on the login screen. partialImport does
+        # not apply realm-level settings, so this must be set on initial creation.
+        "registrationAllowed": full_payload.get("registrationAllowed", False),
     }
 
     login_theme = full_payload.get("loginTheme")
@@ -1439,8 +1443,9 @@ def create_user_in_realm(
         timeout=30,
     )
     r2.raise_for_status()
-    
+
     return user_id
+
 
 def delete_realm(realm_id: str, admin_token: str | None = None) -> None:
     """Delete a realm in Keycloak using the provided admin token or the master admin token."""

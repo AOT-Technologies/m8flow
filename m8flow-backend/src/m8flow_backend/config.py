@@ -17,7 +17,7 @@ def _get(key: str, default: str | None = None) -> str | None:
 
 def keycloak_url() -> str:
     """Keycloak base URL (no trailing slash)."""
-    url = _get("KEYCLOAK_URL") or _get("M8FLOW_KEYCLOAK_URL") or "http://localhost:7002"
+    url = _get("KEYCLOAK_URL") or _get("M8FLOW_KEYCLOAK_URL") or "http://localhost:6842"
     return url.rstrip("/")
 
 

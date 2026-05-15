@@ -57,9 +57,9 @@ def test_filter_users_for_current_tenant_accepts_service_realm_and_legacy_suffix
         lambda tenant_id=None: {"tenant-a", "tenant-a-slug"},
     )
     users = [
-        SimpleNamespace(username="alice", service="http://localhost:7002/realms/tenant-a"),
-        SimpleNamespace(username="bob@tenant-a", service="http://localhost:7002/realms/other"),
-        SimpleNamespace(username="charlie", service="http://localhost:7002/realms/tenant-b"),
+        SimpleNamespace(username="alice", service="http://localhost:6842/realms/tenant-a"),
+        SimpleNamespace(username="bob@tenant-a", service="http://localhost:6842/realms/other"),
+        SimpleNamespace(username="charlie", service="http://localhost:6842/realms/tenant-b"),
     ]
 
     filtered = filter_users_for_current_tenant(users)

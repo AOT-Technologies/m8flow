@@ -47,7 +47,7 @@ def test_tenant_id_for_user_info_prefers_token_claim(monkeypatch) -> None:
     )
     user_info = {
         TENANT_CLAIM: "token-tenant",
-        "iss": "http://localhost:7002/realms/issuer-tenant",
+        "iss": "http://localhost:6842/realms/issuer-tenant",
     }
 
     assert _tenant_id_for_user_info(user_info) == "token-tenant"
@@ -58,7 +58,7 @@ def test_tenant_id_for_user_info_falls_back_to_context(monkeypatch) -> None:
         "m8flow_backend.services.authorization_service_patch.current_tenant_id_or_none",
         lambda: "context-tenant",
     )
-    user_info = {"iss": "http://localhost:7002/realms/issuer-tenant"}
+    user_info = {"iss": "http://localhost:6842/realms/issuer-tenant"}
 
     assert _tenant_id_for_user_info(user_info) == "context-tenant"
 
@@ -68,13 +68,13 @@ def test_tenant_id_for_user_info_falls_back_to_issuer_realm(monkeypatch) -> None
         "m8flow_backend.services.authorization_service_patch.current_tenant_id_or_none",
         lambda: None,
     )
-    user_info = {"iss": "http://localhost:7002/realms/issuer-tenant"}
+    user_info = {"iss": "http://localhost:6842/realms/issuer-tenant"}
 
     assert _tenant_id_for_user_info(user_info) == "issuer-tenant"
 
 
 def test_extract_realm_from_issuer() -> None:
-    assert extract_realm_from_issuer("http://localhost:7002/realms/test-realm") == "test-realm"  # NOSONAR
+    assert extract_realm_from_issuer("http://localhost:6842/realms/test-realm") == "test-realm"  # NOSONAR
     assert extract_realm_from_issuer("https://auth.example.com/realms/production/") == "production"
     assert extract_realm_from_issuer("http://localhost/auth") is None  # NOSONAR
 
@@ -201,27 +201,27 @@ def test_find_existing_user_in_same_realm_prefers_most_recent_match() -> None:
         SimpleNamespace(
             id=1,
             username="editor",
-            service="http://localhost:7002/realms/m8flow",
+            service="http://localhost:6842/realms/m8flow",
             created_at_in_seconds=100,
             updated_at_in_seconds=100,
         ),
         SimpleNamespace(
             id=6,
             username="editor",
-            service="http://localhost:7002/realms/m8flow",
+            service="http://localhost:6842/realms/m8flow",
             created_at_in_seconds=200,
             updated_at_in_seconds=250,
         ),
         SimpleNamespace(
             id=7,
             username="editor",
-            service="http://localhost:7002/realms/other",
+            service="http://localhost:6842/realms/other",
             created_at_in_seconds=300,
             updated_at_in_seconds=300,
         ),
     ]
 
-    match = _find_existing_user_in_same_realm("editor", "http://localhost:7002/realms/m8flow", users=users)
+    match = _find_existing_user_in_same_realm("editor", "http://localhost:6842/realms/m8flow", users=users)
 
     assert match is users[1]
 
@@ -231,7 +231,7 @@ def test_find_existing_user_for_sign_in_resolves_exact_subject_only() -> None:
         SimpleNamespace(
             id=6,
             username="editor",
-            service="http://localhost:7002/realms/m8flow",
+            service="http://localhost:6842/realms/m8flow",
             service_id="old-subject",
             created_at_in_seconds=200,
             updated_at_in_seconds=250,
@@ -239,7 +239,7 @@ def test_find_existing_user_for_sign_in_resolves_exact_subject_only() -> None:
         SimpleNamespace(
             id=7,
             username="editor",
-            service="http://localhost:7002/realms/other",
+            service="http://localhost:6842/realms/other",
             service_id="other-subject",
             created_at_in_seconds=300,
             updated_at_in_seconds=300,
@@ -248,7 +248,7 @@ def test_find_existing_user_for_sign_in_resolves_exact_subject_only() -> None:
 
     match = _find_existing_user_for_sign_in(
         username="editor",
-        service="http://localhost:7002/realms/m8flow",
+        service="http://localhost:6842/realms/m8flow",
         service_id="new-subject",
         users=users,
     )
@@ -322,14 +322,14 @@ def test_user_realm_migration_picks_most_recent_duplicate() -> None:
         {
             "id": 1,
             "username": "editor",
-            "service": "http://localhost:7002/realms/m8flow",
+            "service": "http://localhost:6842/realms/m8flow",
             "created_at_in_seconds": 100,
             "updated_at_in_seconds": 100,
         },
         {
             "id": 6,
             "username": "editor",
-            "service": "http://localhost:7002/realms/m8flow",
+            "service": "http://localhost:6842/realms/m8flow",
             "created_at_in_seconds": 200,
             "updated_at_in_seconds": 250,
         },

@@ -215,7 +215,7 @@ def test_refresh_token_tenant_patch_auto_provisions_missing_user(monkeypatch) ->
     try:
         apply_refresh_token_tenant_patch()
         decoded_token = {
-            "iss": "http://localhost:7002/realms/master",
+            "iss": "http://localhost:6842/realms/master",
             "sub": "subject-123",
             "preferred_username": "super-admin",
         }

@@ -28,7 +28,7 @@
   "oauth2DevicePollingInterval": 5,
   "enabled": true,
   "sslRequired": "none",
-  "registrationAllowed": false,
+  "registrationAllowed": true,
   "registrationEmailAsUsername": false,
   "rememberMe": false,
   "verifyEmail": false,
@@ -1124,7 +1124,7 @@
       "clientAuthenticatorType": "client-secret",
       "secret": "JXeQExm0JhQPLumgHtIIqf52bDalHz0q",
       "redirectUris": [
-        "http://localhost:7000/*",
+        "http://localhost:6840/*",
         "https://replace-me-with-m8flow-backend-host-and-path/*"
       ],
       "webOrigins": [],
@@ -1143,7 +1143,7 @@
         "saml.force.post.binding": "false",
         "saml.multivalued.roles": "false",
         "frontchannel.logout.session.required": "false",
-        "post.logout.redirect.uris": "https://replace-me-with-m8flow-frontend-host-and-path/*##http://localhost:7001/*",
+        "post.logout.redirect.uris": "https://replace-me-with-m8flow-frontend-host-and-path/*##http://localhost:6841/*",
         "oauth2.device.authorization.grant.enabled": "false",
         "backchannel.logout.revoke.offline.tokens": "false",
         "saml.server.signature.keyinfo.ext": "false",

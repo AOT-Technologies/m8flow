@@ -6,8 +6,8 @@ services:
     image: nats:2.10-alpine
     command: ["-js", "--store_dir=/data/nats", "-m", "8222", "--user", "${M8FLOW_NATS_USER:-admin}", "--pass", "${M8FLOW_NATS_PASSWORD:-admin}"]
     ports:
-      - "${M8FLOW_NATS_PORT:-4222}:4222/tcp"
-      - "8222:8222/tcp"
+      - "${M8FLOW_NATS_PORT:-6845}:4222/tcp"
+      - "${M8FLOW_NATS_MONITORING_PORT:-6851}:8222/tcp"
     volumes:
       - nats_data:/data/nats
     healthcheck:
@@ -24,7 +24,7 @@ services:
     image: ghcr.io/nats-nui/nui:latest
     container_name: m8flow-nats-ui
     ports:
-      - "8282:31311"
+      - "${M8FLOW_NATS_UI_PORT:-6852}:31311"
     environment:
       - PORT=31311
     volumes:
