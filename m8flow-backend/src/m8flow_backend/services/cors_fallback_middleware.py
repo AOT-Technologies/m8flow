@@ -2,8 +2,8 @@
 
 LOCAL_CORS_ORIGINS = frozenset(
     [
-        "http://localhost:7001",
-        "http://127.0.0.1:7001",
+        "http://localhost:6841",
+        "http://127.0.0.1:6841",
         "http://localhost:5173",
     ]
 )

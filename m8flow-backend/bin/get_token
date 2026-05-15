@@ -22,7 +22,7 @@ realm_name = get_argv(3, "m8flow")
 
 OPEN_ID_CODE = ":this_is_not_secure_do_not_use_in_production"
 
-backend_base_url = os.getenv("BACKEND_BASE_URL", "http://localhost:7000")
+backend_base_url = os.getenv("BACKEND_BASE_URL", "http://localhost:6840")
 backend_client_id = os.getenv("BACKEND_CLIENT_ID", "m8flow-backend")
 backend_client_secret = os.getenv("BACKEND_CLIENT_secret", "JXeQExm0JhQPLumgHtIIqf52bDalHz0q")
 
