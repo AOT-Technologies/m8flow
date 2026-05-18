@@ -55,6 +55,7 @@ const TemplateFileFormPage = lazy(() => import('./views/TemplateFileFormPage'));
 const ProcessModelShowWithSaveAsTemplate = lazy(
   () => import('./views/ProcessModelShowWithSaveAsTemplate'),
 );
+const ConnectorsPage = lazy(() => import('./views/Connectors'));
 
 // M8Flow Extension: clear tenant from localStorage on logout so next visit shows tenant selection
 const originalDoLogout = UserService.doLogout;
@@ -161,6 +162,11 @@ function RoleBasedRootGate({
         uri: targetUris.messageInstanceListPath,
       },
       {
+        route: "/connectors",
+        method: "GET",
+        uri: targetUris.serviceTaskListPath,
+      },
+      {
         route: "/configuration",
         method: "GET",
         uri: targetUris.secretListPath,
@@ -220,6 +226,7 @@ export default function ContainerForExtensions() {
     "/tasks/*": ["GET", "PUT"],
     [targetUris.m8flowTenantListPath]: ["GET"],
     [targetUris.m8flowTemplateListPath]: ["GET"],
+    [targetUris.serviceTaskListPath]: ["GET"],
   };
   const { ability, permissionsLoaded } = usePermissionFetcher(
     permissionRequestData,
@@ -502,6 +509,7 @@ export default function ContainerForExtensions() {
           />
           <Route path="templates/:templateId" element={<TemplateModelerPage />} />
           <Route path="templates" element={<TemplateGalleryPage />} />
+          <Route path="connectors" element={<ConnectorsPage />} />
           <Route
             path="process-models/:process_model_id"
             element={<ProcessModelShowWithSaveAsTemplate />}
@@ -582,6 +590,25 @@ export default function ContainerForExtensions() {
               color: ${globalTheme.palette.primary.main} !important;
             }
             a[href$="/tenants"] .MuiTypography-root {
+              font-weight: bold !important;
+            }
+          `}
+        </style>
+      )}
+      {location.pathname.startsWith("/connectors") && (
+        <style>
+          {`
+            a[href$="/connectors"] {
+              background-color: ${(globalTheme.palette as any).background?.light || "#e3f2fd"} !important;
+              color: ${globalTheme.palette.primary.main} !important;
+              border-left-width: 4px !important;
+              border-style: solid !important;
+              border-color: ${globalTheme.palette.primary.main} !important;
+            }
+            a[href$="/connectors"] .MuiListItemIcon-root {
+              color: ${globalTheme.palette.primary.main} !important;
+            }
+            a[href$="/connectors"] .MuiTypography-root {
               font-weight: bold !important;
             }
           `}

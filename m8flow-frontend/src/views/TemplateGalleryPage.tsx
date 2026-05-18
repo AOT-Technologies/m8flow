@@ -215,7 +215,7 @@ export default function TemplateGalleryPage() {
               paginationDataTestidTag="template-gallery-pagination"
               tableToDisplay={
                 <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid', borderColor: 'borders.primary', borderRadius: 2 }}>
-                    <Table size="medium" className="process-model-file-table" data-testid="template-gallery-table">
+                    <Table size="medium" sx={{ minWidth: 650, '& td': { wordBreak: 'break-word' } }} data-testid="template-gallery-table">
                     <TableHead>
                       <TableRow>
                         <TableCell>{t("name")}</TableCell>
