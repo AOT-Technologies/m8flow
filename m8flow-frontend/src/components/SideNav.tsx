@@ -34,6 +34,7 @@ import {
   Extension,
   Flag,
   Description,
+  Hub,
 } from "@mui/icons-material";
 import { Link, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -76,6 +77,7 @@ const routeIdentifiers = {
   PROCESS_INSTANCES: "processInstances",
   MESSAGES: "messages",
   CONFIGURATION: "configuration",
+  CONNECTORS: "connectors",
   TEMPLATES: "templates",
 };
 
@@ -101,6 +103,7 @@ function SideNav({
     [targetUris.processInstanceListPath]: ["GET"],
     [targetUris.processInstanceListForMePath]: ["POST"],
     [targetUris.secretListPath]: ["GET"],
+    [targetUris.serviceTaskListPath]: ["GET"],
     "/tasks/*": ["PUT"],
     "/m8flow/tenants": ["GET"],
     "/m8flow/templates": ["GET"],
@@ -121,6 +124,8 @@ function SideNav({
     selectedTab = routeIdentifiers.MESSAGES;
   } else if (location.pathname.startsWith("/configuration")) {
     selectedTab = routeIdentifiers.CONFIGURATION;
+  } else if (location.pathname.startsWith("/connectors")) {
+    selectedTab = routeIdentifiers.CONNECTORS;
   } else if (location.pathname.startsWith("/templates")) {
     selectedTab = routeIdentifiers.TEMPLATES;
   }
@@ -228,6 +233,13 @@ function SideNav({
       permissionRoutes: [
         targetUris.secretListPath,
       ],
+    },
+    {
+      text: t("connectors"),
+      icon: <Hub />,
+      route: "/connectors",
+      id: routeIdentifiers.CONNECTORS,
+      permissionRoutes: [targetUris.serviceTaskListPath],
     },
     {
       text: t("templates"),

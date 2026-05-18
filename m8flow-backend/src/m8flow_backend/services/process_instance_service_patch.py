@@ -17,6 +17,67 @@ def _task_sort_ts(task: object) -> float:
     return 0.0
 
 
+def _raise_lane_assignment_api_error(
+    process_instance: object,
+    exc: Exception,
+    *,
+    message_prefix: str,
+    handle_error: bool,
+) -> None:
+    """Rollback queued work and convert lane-assignment failures into a user-facing API error."""
+    from spiffworkflow_backend.exceptions.api_error import ApiError
+    from spiffworkflow_backend.models.db import db
+    from spiffworkflow_backend.services.error_handling_service import ErrorHandlingService
+
+    db.session.rollback()
+    if handle_error:
+        ErrorHandlingService.handle_error(process_instance, exc)
+    raise ApiError(
+        error_code="task_lane_assignment_error",
+        message=f"{message_prefix} {exc}",
+        status_code=400,
+    ) from exc
+
+
+def _validate_queued_follow_up_work(processor: object, *, handle_error: bool = False) -> None:
+    """Run immediate engine work during queued submission so assignment failures surface to the submitter."""
+    from spiffworkflow_backend.services.process_instance_processor import NoPotentialOwnersForTaskError
+
+    try:
+        processor.do_engine_steps(  # type: ignore[attr-defined]
+            save=True,
+            execution_strategy_name="run_until_user_message",
+            should_schedule_waiting_timer_events=False,
+        )
+    except NoPotentialOwnersForTaskError as exc:
+        _raise_lane_assignment_api_error(
+            processor.process_instance_model,  # type: ignore[attr-defined]
+            exc,
+            message_prefix="Task submission could not continue.",
+            handle_error=handle_error,
+        )
+
+
+def _validate_queued_process_start(process_instance: object, *, handle_error: bool = False) -> None:
+    """Run immediate engine work during queued process start so assignment failures surface to the starter."""
+    from spiffworkflow_backend.services.process_instance_processor import NoPotentialOwnersForTaskError
+    from spiffworkflow_backend.services.process_instance_service import ProcessInstanceService
+
+    try:
+        ProcessInstanceService.run_process_instance_with_processor(
+            process_instance,
+            execution_strategy_name="run_until_user_message",
+            should_schedule_waiting_timer_events=False,
+        )
+    except NoPotentialOwnersForTaskError as exc:
+        _raise_lane_assignment_api_error(
+            process_instance,
+            exc,
+            message_prefix="Process start could not continue.",
+            handle_error=handle_error,
+        )
+
+
 def apply() -> None:
     """Patch ProcessInstanceService: record BPMN XML version at creation time and fix completed-task data rehydration."""
     global _PATCHED
@@ -144,6 +205,39 @@ def apply() -> None:
             workflow_data_objects.update(submitted_form_data)
 
     @classmethod
+    def patched_complete_form_task(
+        cls,
+        processor,
+        spiff_task,
+        data: dict[str, object],
+        user,
+        human_task,
+        execution_mode: str | None = None,
+    ) -> None:
+        from SpiffWorkflow.util.task import TaskState  # type: ignore
+        from spiffworkflow_backend.background_processing.celery_tasks.process_instance_task_producer import (
+            should_queue_process_instance,
+        )
+        from spiffworkflow_backend.helpers.spiff_enum import ProcessInstanceExecutionMode
+        from spiffworkflow_backend.services.jinja_service import JinjaService
+        from spiffworkflow_backend.services.process_instance_tmp_service import ProcessInstanceTmpService
+
+        ProcessInstanceService.update_form_task_data(processor.process_instance_model, spiff_task, data, user)
+        processor.complete_task(spiff_task, human_task, user=user)
+
+        if should_queue_process_instance(execution_mode):
+            _validate_queued_follow_up_work(processor, handle_error=False)
+            processor.bpmn_process_instance.refresh_waiting_tasks()
+            tasks = processor.bpmn_process_instance.get_tasks(state=TaskState.WAITING | TaskState.READY)
+            JinjaService.add_instruction_for_end_user_if_appropriate(tasks, processor.process_instance_model.id, set())
+        elif not ProcessInstanceTmpService.is_enqueued_to_run_in_the_future(processor.process_instance_model):
+            execution_strategy_name = None
+            if execution_mode == ProcessInstanceExecutionMode.synchronous.value:
+                execution_strategy_name = "greedy"
+
+            processor.do_engine_steps(save=True, execution_strategy_name=execution_strategy_name)
+
+    @classmethod
     def patched_run_process_instance_with_processor(
         cls,
         process_instance,
@@ -189,6 +283,7 @@ def apply() -> None:
         return (processor, task_runnability)
 
     ProcessInstanceService.create_process_instance = patched_create_process_instance  # type: ignore[assignment]
+    ProcessInstanceService.complete_form_task = patched_complete_form_task
     ProcessInstanceService.update_form_task_data = patched_update_form_task_data
     ProcessInstanceService.run_process_instance_with_processor = patched_run_process_instance_with_processor
     _PATCHED = True
