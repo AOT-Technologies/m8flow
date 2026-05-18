@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  Box,
   Stack,
   Table,
   TableBody,
@@ -22,13 +21,6 @@ import { useUriListForPermissions } from '../hooks/UriListForPermissions';
 import { usePermissionFetcher } from '../hooks/PermissionService';
 import { Can } from '../contexts/Can';
 import ProcessBreadcrumb from '../components/ProcessBreadcrumb';
-import HttpService from '@spiffworkflow-frontend/services/HttpService';
-import { PermissionsToCheck, Secret } from '@spiffworkflow-frontend/interfaces';
-import { Notification } from '@spiffworkflow-frontend/components/Notification';
-import ConfirmButton from '@spiffworkflow-frontend/components/ConfirmButton';
-import { useUriListForPermissions } from '@spiffworkflow-frontend/hooks/UriListForPermissions';
-import { usePermissionFetcher } from '@spiffworkflow-frontend/hooks/PermissionService';
-import { Can } from '@spiffworkflow-frontend/contexts/Can';
 
 /**
  * M8Flow override of SecretShow.
@@ -55,7 +47,6 @@ export default function SecretShow() {
   const { targetUris } = useUriListForPermissions();
   const permissionRequestData: PermissionsToCheck = {
     [targetUris.secretShowPath]: ['PUT', 'DELETE', 'GET'],
-    [targetUris.secretShowValuePath]: ['GET'],
   };
   const { ability, permissionsLoaded } = usePermissionFetcher(
     permissionRequestData,
@@ -112,19 +103,6 @@ export default function SecretShow() {
     />
   );
 
-  const handleShowSecretValue = () => {
-    if (secret === null) {
-      return;
-    }
-    HttpService.makeCallToBackend({
-      path: `/secrets/show-value/${secret.key}`,
-      successCallback: (result: Secret) => {
-        setSecret(result);
-        setDisplaySecretValue(true);
-      },
-    });
-  };
-
   if (secret && permissionsLoaded) {
     const breadcrumbs = [
       [t('configuration'), '/configuration'],
@@ -135,9 +113,7 @@ export default function SecretShow() {
     return (
       <>
         {showSuccessNotification && successNotificationComponent}
-        <Box sx={{ mb: 1 }}>
-          <ProcessBreadcrumb hotCrumbs={breadcrumbs} />
-        </Box>
+        <ProcessBreadcrumb hotCrumbs={breadcrumbs} />
         <h1>
           {t('secret_key')}: {secret.key}
         </h1>
@@ -149,38 +125,15 @@ export default function SecretShow() {
               buttonLabel={t('delete')}
             />
           </Can>
-          <Can
-            I="GET"
-            a={targetUris.secretShowValuePath}
-            ability={ability}
-            passThrough
-          >
-            {(secretReadAllowed: boolean) => {
-              if (secretReadAllowed) {
-                return (
-                  <Button
-                    disabled={displaySecretValue}
-                    variant="contained"
-                    color="warning"
-                    onClick={handleShowSecretValue}
-                  >
-                    {t('retrieve_secret_value')}
-                  </Button>
-                );
-              }
-              return (
-                <Can I="PUT" a={targetUris.secretShowPath} ability={ability}>
-                  <Button
-                    disabled={displaySecretValue}
-                    variant="contained"
-                    color="warning"
-                    onClick={() => setDisplaySecretValue(true)}
-                  >
-                    {t('edit_secret_value')}
-                  </Button>
-                </Can>
-              );
-            }}
+          <Can I="PUT" a={targetUris.secretShowPath} ability={ability}>
+            <Button
+              disabled={displaySecretValue}
+              variant="contained"
+              color="warning"
+              onClick={() => setDisplaySecretValue(true)}
+            >
+              {t('edit_secret_value')}
+            </Button>
           </Can>
         </Stack>
         <div>
