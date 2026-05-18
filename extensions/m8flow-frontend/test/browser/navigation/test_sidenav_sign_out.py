@@ -4,6 +4,9 @@ from playwright.sync_api import Page, expect
 
 from helpers.login import expect_logged_out
 
+import logging
+logger = logging.getLogger(__name__)
+
 
 def test_sidenav_sign_out(authenticated_page: Page) -> None:
     page = authenticated_page
@@ -12,4 +15,4 @@ def test_sidenav_sign_out(authenticated_page: Page) -> None:
     user_menu.click()
     page.get_by_test_id("sign-out-button").click()
     expect_logged_out(page)
-
+    logger.info("User has been successfully logged out.")

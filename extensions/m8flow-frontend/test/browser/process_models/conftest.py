@@ -6,7 +6,8 @@ flow has deterministic data and does not skip due to missing seeded data.
 import pytest
 from playwright.sync_api import Page
 
-from helpers.config import BASE_URL
+from helpers.config import BASE_URL, ROLE_USERS, APP_READY_TIMEOUT, NAV_TIMEOUT, VIEWPORT
+from helpers.login import login, logout
 from helpers.waiters import wait_for_app_ready
 from helpers.mocks import (
     mock_template_api,
@@ -23,6 +24,37 @@ from helpers.mocks import (
     MOCK_PROCESS_GROUP_HR,
     ALL_MOCK_PROCESS_GROUPS,
 )
+
+
+@pytest.fixture(scope="session")
+def process_models_editor_page(browser, base_url) -> Page:
+    """Session-scoped editor page shared by all process_models tests."""
+    creds = ROLE_USERS["editor"]
+    ctx = browser.new_context(
+        base_url=base_url,
+        viewport=VIEWPORT,
+        ignore_https_errors=True,
+    )
+    ctx.set_default_timeout(APP_READY_TIMEOUT)
+    ctx.set_default_navigation_timeout(NAV_TIMEOUT)
+    page = ctx.new_page()
+    login(page, username=creds["username"], password=creds["password"])
+    wait_for_app_ready(page)
+    try:
+        yield page
+    finally:
+        try:
+            try:
+                page.unroute_all(behavior="ignoreErrors")
+            except Exception:
+                pass
+            try:
+                page.goto(base_url)
+            except Exception:
+                pass
+            logout(page)
+        finally:
+            ctx.close()
 
 
 def _reset_for_next_test(page: Page) -> None:
@@ -67,15 +99,15 @@ def _navigate_home_and_wait(page: Page) -> None:
 
 
 @pytest.fixture
-def mocked_process_model_page(authenticated_page_module: Page) -> Page:
-    """Module-scoped tenant-admin page with template + process group APIs mocked.
+def mocked_process_model_page(process_models_editor_page: Page) -> Page:
+    """Module-scoped editor page with template + process group APIs mocked.
 
     The underlying page is shared across tests in the module, so we clear
     stale route handlers, install fresh mocks, and reload the app root so
     any modal/state left open by the previous test is unmounted before this
     test runs.
     """
-    page = authenticated_page_module
+    page = process_models_editor_page
     _reset_for_next_test(page)
     _install_clear_spiff_favorites_init_script(page)
     mock_permissions_api(page)
@@ -88,13 +120,13 @@ def mocked_process_model_page(authenticated_page_module: Page) -> Page:
 
 
 @pytest.fixture
-def mocked_creation_page(authenticated_page_module: Page) -> Page:
-    """Module-scoped tenant-admin page with process group API mocked.
+def mocked_creation_page(process_models_editor_page: Page) -> Page:
+    """Module-scoped editor page with process group API mocked.
 
     Used by the process-model creation tests, which only need a navigable
     process group plus permissions to exercise the create dialog/form.
     """
-    page = authenticated_page_module
+    page = process_models_editor_page
     _reset_for_next_test(page)
     _install_clear_spiff_favorites_init_script(page)
     mock_permissions_api(page)
@@ -104,9 +136,9 @@ def mocked_creation_page(authenticated_page_module: Page) -> Page:
 
 
 @pytest.fixture
-def mocked_process_model_create_page(authenticated_page_module: Page) -> Page:
-    """Tenant-admin page with process groups + mocked process-model create/show/BPMN."""
-    page = authenticated_page_module
+def mocked_process_model_create_page(process_models_editor_page: Page) -> Page:
+    """Editor page with process groups + mocked process-model create/show/BPMN."""
+    page = process_models_editor_page
     _reset_for_next_test(page)
     _install_clear_spiff_favorites_init_script(page)
     mock_permissions_api(page)
@@ -117,9 +149,9 @@ def mocked_process_model_create_page(authenticated_page_module: Page) -> Page:
 
 
 @pytest.fixture
-def mocked_full_page(authenticated_page_module: Page) -> Page:
-    """Module-scoped tenant-admin page with all API routes mocked."""
-    page = authenticated_page_module
+def mocked_full_page(process_models_editor_page: Page) -> Page:
+    """Module-scoped editor page with all API routes mocked."""
+    page = process_models_editor_page
     _reset_for_next_test(page)
     _install_clear_spiff_favorites_init_script(page)
     mock_all_apis(page)

@@ -6,7 +6,7 @@ import logging
 import re
 
 import pytest
-from playwright.sync_api import Page, TimeoutError as PlaywrightTimeout
+from playwright.sync_api import Page, TimeoutError as PlaywrightTimeout, expect
 
 from helpers.config import ELEMENT_TIMEOUT
 from helpers.process_group_setup import navigate_into_process_group
@@ -34,4 +34,15 @@ def open_new_process_model_page(
         raise
     add_model_btn.click()
     wait_for_app_ready(page)
+
+
+def assert_create_page_open(page: Page, timeout: int = 10_000) -> None:
+    """Assert we are on the create-process-model route."""
+    expect(page).to_have_url(_PROCESS_MODEL_NEW_URL, timeout=timeout)
+
+
+def assert_create_form_fields_visible(page: Page, timeout: int = 10_000) -> None:
+    """Assert key create-process-model form fields are visible."""
+    expect(page.get_by_label("Display Name")).to_be_visible(timeout=timeout)
+    expect(page.get_by_label("Description")).to_be_visible(timeout=timeout)
 

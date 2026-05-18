@@ -9,7 +9,8 @@ import os
 # ---------------------------------------------------------------------------
 # App
 # ---------------------------------------------------------------------------
-BASE_URL = os.getenv("E2E_URL", "http://localhost:7001")
+# Keep this aligned with m8flow-frontend/vite.config.ts default PORT.
+BASE_URL = os.getenv("E2E_URL", "http://localhost:6841")
 
 # Relative API prefix on the frontend origin (Vite proxies ``/v1.0`` to the backend).
 # Must match ``VITE_BACKEND_BASE_URL`` (see ``m8flow-frontend/vite.config.ts``).

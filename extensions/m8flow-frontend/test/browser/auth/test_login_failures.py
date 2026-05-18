@@ -1,5 +1,7 @@
 """Invalid credential and role-based login rejection tests."""
 
+import logging
+
 import pytest
 from playwright.sync_api import Page
 
@@ -17,6 +19,7 @@ from helpers.config import (
 from helpers.login import TenantSelectionError, is_multi_tenant_mode, login_expect_failure
 
 INVALID_CREDENTIALS_ERROR = "Invalid username or password."
+logger = logging.getLogger(__name__)
 
 
 def test_login_with_wrong_password_shows_error(page: Page) -> None:
@@ -26,6 +29,7 @@ def test_login_with_wrong_password_shows_error(page: Page) -> None:
         password=f"{DEFAULT_PASSWORD}-wrong",
         error_text=INVALID_CREDENTIALS_ERROR,
     )
+    logger.info("Login with wrong password shows error.")
 
 
 def test_login_with_non_existing_user_shows_error(page: Page) -> None:
@@ -35,6 +39,7 @@ def test_login_with_non_existing_user_shows_error(page: Page) -> None:
         password="does-not-matter",
         error_text=INVALID_CREDENTIALS_ERROR,
     )
+    logger.info("Login with non-existing user shows error.")
 
 
 def test_user_with_no_role_cannot_login(page: Page) -> None:
@@ -63,7 +68,7 @@ def test_tenant_user_cannot_login_to_other_tenant(page: Page) -> None:
             f"(BROWSER_TEST_CROSS_TENANT_LOGIN_TENANT={CROSS_TENANT_LOGIN_TENANT!r}). "
             f"Tenant rejected: {error}"
         )
-
+    logger.info("Tenant user cannot login to other tenant.")
 
 def test_super_admin_cannot_login_in_tenant_flow(page: Page) -> None:
     login_expect_failure(
@@ -72,4 +77,4 @@ def test_super_admin_cannot_login_in_tenant_flow(page: Page) -> None:
         password=SUPER_ADMIN_PASSWORD,
         error_text=INVALID_CREDENTIALS_ERROR,
     )
-
+    logger.info("Super admin cannot login in tenant flow.")

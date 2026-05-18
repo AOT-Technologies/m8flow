@@ -1,13 +1,17 @@
 """Template breadcrumb navigation tests."""
 
+import logging
+
 from playwright.sync_api import Page, expect
 
 from helpers.config import PAGE_DATA_TIMEOUT
-from navigation._template_breadcrumb_helpers import open_template_detail
+from templates._template_breadcrumb_helpers import open_template_detail
+
+logger = logging.getLogger(__name__)
 
 
-def test_breadcrumb_back_to_gallery(mocked_template_page: Page) -> None:
-    page = mocked_template_page
+def test_breadcrumb_back_to_gallery(mocked_templates_page: Page) -> None:
+    page = mocked_templates_page
     open_template_detail(page)
 
     breadcrumb = page.locator("nav.spiff-breadcrumb")
@@ -18,10 +22,11 @@ def test_breadcrumb_back_to_gallery(mocked_template_page: Page) -> None:
     expect(
         page.get_by_test_id("template-gallery-view-mode-toggle")
     ).to_be_visible(timeout=PAGE_DATA_TIMEOUT)
+    logger.info("Breadcrumb back to gallery is visible.")
 
 
-def test_breadcrumb_back_to_details_from_template_files(mocked_template_page: Page) -> None:
-    page = mocked_template_page
+def test_breadcrumb_back_to_details_from_template_files(mocked_templates_page: Page) -> None:
+    page = mocked_templates_page
     open_template_detail(page)
 
     file_table = page.get_by_test_id("template-file-list-table")
@@ -37,4 +42,4 @@ def test_breadcrumb_back_to_details_from_template_files(mocked_template_page: Pa
     expect(template_name_link).to_be_visible()
     template_name_link.click()
     expect(page.get_by_test_id("template-export-button")).to_be_visible(timeout=PAGE_DATA_TIMEOUT)
-
+    logger.info("Breadcrumb back to details from template files is visible.")

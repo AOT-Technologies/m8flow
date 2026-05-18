@@ -7,7 +7,14 @@ import copy
 import pytest
 from playwright.sync_api import Page
 
-from helpers.config import BASE_URL
+from helpers.config import (
+    APP_READY_TIMEOUT,
+    BASE_URL,
+    NAV_TIMEOUT,
+    ROLE_USERS,
+    VIEWPORT,
+)
+from helpers.login import login, logout
 from helpers.mocks import (
     ALL_MOCK_TEMPLATES,
     MOCK_TEMPLATE_PUBLISHED,
@@ -20,13 +27,56 @@ from helpers.mocks import (
 from helpers.waiters import wait_for_app_ready
 
 
+@pytest.fixture(scope="session")
+def templates_editor_page(browser, base_url) -> Page:
+    """Session-scoped editor page for templates suite."""
+    creds = ROLE_USERS["editor"]
+    ctx = browser.new_context(
+        base_url=base_url,
+        viewport=VIEWPORT,
+        ignore_https_errors=True,
+    )
+    ctx.set_default_timeout(APP_READY_TIMEOUT)
+    ctx.set_default_navigation_timeout(NAV_TIMEOUT)
+    page = ctx.new_page()
+    login(page, username=creds["username"], password=creds["password"])
+    wait_for_app_ready(page)
+    try:
+        yield page
+    finally:
+        try:
+            try:
+                page.unroute_all(behavior="ignoreErrors")
+            except Exception:
+                pass
+            try:
+                page.goto(base_url)
+            except Exception:
+                pass
+            logout(page)
+        finally:
+            ctx.close()
+
+
+@pytest.fixture(scope="session")
+def authenticated_page(templates_editor_page: Page) -> Page:
+    """Templates-suite override: reuse one logged-in editor page."""
+    return templates_editor_page
+
+
+@pytest.fixture(scope="session")
+def authenticated_page_module(authenticated_page: Page) -> Page:
+    """Templates-suite alias to keep existing fixture wiring compatible."""
+    return authenticated_page
+
+
 def _reset_template_page(page: Page) -> None:
     page.unroute_all(behavior="ignoreErrors")
 
 
 @pytest.fixture
 def mocked_templates_page(authenticated_page_module: Page) -> Page:
-    """Tenant-admin session with template list/detail/files/export mocks."""
+    """Editor session with template list/detail/files/export mocks."""
     page = authenticated_page_module
     _reset_template_page(page)
     mock_permissions_api(page)

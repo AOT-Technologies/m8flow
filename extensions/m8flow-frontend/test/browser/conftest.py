@@ -22,6 +22,7 @@ from helpers.waiters import wait_for_app_ready
 _PAGE_FIXTURES = (
     "page",
     "authenticated_page",
+    "authenticated_page_session",
     "authenticated_page_module",
     "editor_page",
     "viewer_page",
@@ -101,6 +102,12 @@ def authenticated_page(browser, base_url):
     between cases (e.g. ``page.unroute_all()``). Sign-out tests must run last in
     the module or they will end the session for subsequent tests.
     """
+    yield from _tenant_admin_session(browser, base_url)
+
+
+@pytest.fixture(scope="session")
+def authenticated_page_session(browser, base_url):
+    """Session-scoped tenant-admin page: one login for the whole test run."""
     yield from _tenant_admin_session(browser, base_url)
 
 

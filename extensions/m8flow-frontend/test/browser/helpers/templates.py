@@ -1,6 +1,6 @@
 import pytest
 from playwright.sync_api import Page, expect, TimeoutError as PlaywrightTimeout
-from helpers.config import PAGE_DATA_TIMEOUT, ELEMENT_TIMEOUT, SHORT_TIMEOUT
+from helpers.config import BASE_URL, PAGE_DATA_TIMEOUT, ELEMENT_TIMEOUT, SHORT_TIMEOUT
 from helpers.waiters import wait_for_app_ready
 
 
@@ -8,9 +8,15 @@ def navigate_to_templates(page: Page) -> None:
     """Click the Templates nav item and wait for the gallery page to appear."""
     wait_for_app_ready(page)
     page.get_by_test_id("nav-templates").click()
-    expect(
-        page.get_by_test_id("template-gallery-view-mode-toggle")
-    ).to_be_visible(timeout=PAGE_DATA_TIMEOUT)
+    toggle = page.get_by_test_id("template-gallery-view-mode-toggle")
+    try:
+        expect(toggle).to_be_visible(timeout=PAGE_DATA_TIMEOUT)
+    except AssertionError:
+        # In shared-session runs, route/state can occasionally leave us on a
+        # non-gallery page after the nav click; hard-navigate as a fallback.
+        page.goto(f"{BASE_URL.rstrip('/')}/templates")
+        wait_for_app_ready(page)
+        expect(toggle).to_be_visible(timeout=PAGE_DATA_TIMEOUT)
 
 
 def open_import_template_modal(page: Page) -> None:

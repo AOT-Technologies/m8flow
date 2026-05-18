@@ -5,7 +5,7 @@ Playwright E2E tests for the m8flow extension frontend.
 ## Prerequisites
 
 - [uv](https://docs.astral.sh/uv/) (Python package manager)
-- The m8flow frontend running at `http://localhost:7001` (or set `E2E_URL`)
+- The m8flow frontend running at `http://localhost:6841` (or set `E2E_URL`)
 
 ## Setup
 
@@ -53,7 +53,7 @@ uv run python -m pytest PATH_OR_SELECTION -v --headed --qa-report
 uv run python -m pytest -k "not form_driven" -v
 
 # Against a different URL
-E2E_URL=http://localhost:7001 uv run python -m pytest -v
+E2E_URL=http://localhost:6841 uv run python -m pytest -v
 ```
 
 ### QA HTML & PDF reports
@@ -90,12 +90,20 @@ Outputs are anchored to **pytest’s rootdir** (`extensions/m8flow-frontend/test
 
 For a different long PDF you build yourself, `helpers/pdf_report.py` is separate; `--pdf-report` here is the executive PDF only.
 
-Failure screenshots and traces come from the test run (see `conftest.py` and `pytest.ini`). Logs per test follow `log_cli_*` and `log_file_*` in `pytest.ini` when reporting flags are on.
+Failure screenshots/traces are produced by the test run itself (configured in `conftest.py` and `pytest.ini`).
+Per-test logs follow `log_cli_*` and `log_file_*` settings in `pytest.ini` when report flags are enabled.
 
 ### Troubleshooting: `ModuleNotFoundError: No module named 'faker'`
 
-This means a `pytest` from outside the project venv is being executed.
-Verify which `pytest` is on PATH and switch to the module form:
+Cause: a `pytest` executable outside this project's `.venv` is being used.
+
+Recommended fix (always works for this repo):
+
+```bash
+uv run python -m pytest ...
+```
+
+To confirm which `pytest` is on PATH:
 
 ```bash
 # Windows (PowerShell)
@@ -105,8 +113,10 @@ where.exe pytest
 which pytest
 ```
 
-If the first hit is not under `test/browser/.venv/...`, use
-`uv run python -m pytest ...` (recommended), or activate the venv first:
+If the first result is not under `test/browser/.venv/...`, either:
+
+- keep using `uv run python -m pytest ...` (preferred), or
+- activate the venv first:
 
 ```bash
 # Windows (PowerShell)
@@ -120,7 +130,7 @@ source .venv/bin/activate
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `E2E_URL` | `http://localhost:7001` | Base URL of the frontend |
+| `E2E_URL` | `http://localhost:6841` | Base URL of the frontend |
 | `BROWSER_TEST_API_PREFIX` | `/v1.0` | API path prefix on that origin (Vite proxy to the backend); used by E2E helpers that `fetch` JSON from the browser |
 | `BROWSER_TEST_USERNAME` | `admin` | Login username |
 | `BROWSER_TEST_PASSWORD` | `admin` | Login password |

@@ -22,11 +22,19 @@ logger = logging.getLogger(__name__)
 _GALLERY_URL = f"{BASE_URL.rstrip('/')}/templates?per_page=50&page=1"
 
 
+def _template_cards(page: Page):
+    # Match only card roots. Child title nodes also use template-card-* test ids.
+    return page.locator('div[data-testid^="template-card-"][id^="template-card-"]')
+
+
 def _gallery_has_any_cards(page: Page) -> bool:
-    return page.locator('[data-testid^="template-card-"]').count() > 0
+    return _template_cards(page).count() > 0
 
 
 def _open_gallery(page: Page) -> None:
+    # Single-session runs can leave mock routes installed from earlier tests.
+    # This suite validates live backend data, so clear all route handlers first.
+    page.unroute_all(behavior="ignoreErrors")
     page.goto(_GALLERY_URL)
     wait_for_app_ready(page)
     expect(page.get_by_test_id("template-gallery-view-mode-toggle")).to_be_visible(
@@ -76,7 +84,7 @@ def test_readme_sample_template_visible_in_gallery(
     search_input.fill(row.ui_substring)
     page.wait_for_timeout(500)
 
-    card = page.locator('[data-testid^="template-card-"]').filter(
+    card = _template_cards(page).filter(
         has_text=re.compile(re.escape(row.ui_substring), re.I)
     )
     try:

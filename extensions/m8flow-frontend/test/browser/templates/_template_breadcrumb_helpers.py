@@ -19,4 +19,3 @@ def open_template_detail(page: Page) -> None:
         page.get_by_test_id("template-export-button")
     ).to_be_visible(timeout=PAGE_DATA_TIMEOUT)
     logger.info("Template detail opened successfully.")
-

@@ -12,6 +12,8 @@ from helpers.waiters import wait_for_app_ready
 from process_models._process_model_creation_helpers import (
     _MOCK_DEFAULT_BPMN_FILE,
     _PROCESS_MODEL_NEW_URL,
+    assert_create_form_fields_visible,
+    assert_create_page_open,
     open_new_process_model_page,
 )
 
@@ -25,7 +27,8 @@ def test_new_process_model_creates_default_bpmn_flow(
     slug = f"e2e-bpmn-{uuid.uuid4().hex[:8]}"
 
     open_new_process_model_page(page, skip_if_add_button_missing=False)
-    expect(page).to_have_url(_PROCESS_MODEL_NEW_URL, timeout=10_000)
+    assert_create_page_open(page)
+    assert_create_form_fields_visible(page)
 
     page.get_by_test_id("process-model-display-name-input").locator("input").fill(
         f"Default BPMN {slug}"

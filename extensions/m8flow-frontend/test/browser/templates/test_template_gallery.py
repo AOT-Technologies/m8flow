@@ -20,7 +20,9 @@ def _pagination_root(page: Page):
 
 
 def _template_cards(page: Page):
-    return page.locator('[data-testid^="template-card-"]')
+    # TemplateCard root has both data-testid and id. Child title typography also
+    # uses a template-card-* test id, so match roots only to avoid false hits.
+    return page.locator('div[data-testid^="template-card-"][id^="template-card-"]')
 
 
 def _gallery_table_rows(page: Page):
