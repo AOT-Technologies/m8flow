@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>M8Flow · QA Automation Report</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400..700;1,400&family=JetBrains+Mono:wght@400;500&family=Outfit:wght@500..800&display=swap" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg:#eef1f6; --panel:#fafbfd; --card:#fff; --text:#161b22; --muted:#5c6675; --border:#dfe4ec;
+      --shadow: 0 1px 2px rgba(15,23,42,.06), 0 8px 24px rgba(15,23,42,.06);
+      --pass:#0d7d4d; --fail:#c91835; --skip:#ca7a06; --err:#6639a8; --brand:#0747dc; --brand2:#2897ff;
+      --rail: 274px;
+    }
+    [data-theme="dark"] {
+      --bg:#0d1117; --panel:#121820; --card:#161d27; --text:#eef2f8; --muted:#9babbf; --border:#2e3a48;
+      --shadow: 0 1px 3px rgba(0,0,0,.35);
+      --fail-bg:rgba(214,54,71,.09);
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: "DM Sans", system-ui, sans-serif; background:var(--bg); color:var(--text); font-size:14px;}
+    code, pre, .mono { font-family:"JetBrains Mono", ui-monospace, monospace;}
+    .shell { display:flex; min-height:100vh; }
+    aside {
+      width: var(--rail); flex-shrink:0; background: var(--panel);
+      border-right:1px solid var(--border); padding:18px 16px;
+      display:flex; flex-direction:column; gap:14px;
+      position:sticky; top:0; align-self:flex-start; max-height:100vh; overflow:auto;
+    }
+    .brand { font-family:"Outfit", sans-serif; font-weight:780; letter-spacing:.04em;
+      font-size:1rem; background:linear-gradient(120deg,var(--brand),var(--brand2)); -webkit-background-clip:text; background-clip:text; color:transparent;}
+    aside .muted { font-size:.78rem; line-height:1.45;}
+    .pw-foot {
+      margin-top:auto; padding-top:12px; border-top:1px solid var(--border);
+      font-size:.68rem; color:var(--muted); line-height:1.35;
+    }
+    .pw-foot strong { color:var(--brand2); font-weight:700;}
+    .nav-pane { margin-top:4px;}
+    .nav-pane a, .pill {
+      display:block; font-size:.8rem; padding:8px 10px; border-radius:10px; color:inherit; cursor:pointer;
+      border:1px solid transparent;
+    }
+    .nav-pane a:hover, .pill:hover { background:rgba(11,101,251,.06);}
+    .nav-pane a.active, .pill.on { border-color:rgba(11,101,251,.35); background:rgba(11,101,251,.09); font-weight:600;}
+    .cat-list { margin:4px 0 12px;}
+    .cat-item { cursor:pointer; display:flex; justify-content:space-between; gap:8px;
+      padding:7px 8px; margin:4px 0; border-radius:8px; font-size:.8rem;}
+    .cat-item:hover { background: rgba(120,134,157,.07);}
+    .cat-item span.b { font-variant-numeric: tabular-nums; color:var(--muted); font-size:.73rem;}
+
+    main { flex:1; padding:22px clamp(14px,3vw,32px) 72px;}
+    main h2 { font-family:"Outfit",sans-serif; font-size:1.35rem; margin:0 0 16px; font-weight:720;}
+    .top-tools { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:18px;}
+    .top-tools input[type="search"] {
+      flex:1; min-width:200px; max-width:420px; padding:10px 14px; border-radius:12px; border:1px solid var(--border);
+      background:var(--card); color:inherit; font-size:.9rem;
+    }
+    .btn {
+      padding:9px 15px; border-radius:12px; border:1px solid var(--border); background:var(--card);
+      font-size:.8rem; font-weight:600; cursor:pointer; color:inherit;
+    }
+    .btn:hover { border-color: var(--brand); color: var(--brand);}
+    .btn-ghost { background:transparent;}
+    .theme-toggle { margin-left:auto;}
+
+    .kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(132px,1fr)); gap:12px; margin-bottom:18px;}
+    .kpi {
+      background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px 16px; box-shadow:var(--shadow);
+    }
+    .kpi .l { font-size:.68rem; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; font-weight:600;}
+    .kpi .v { font-size:1.6rem; font-weight:800; margin-top:6px; font-family:"Outfit",sans-serif;}
+    .kpi.pass .v { color:var(--pass);} .kpi.fail .v { color:var(--fail);} .kpi.warn .v { color:var(--skip);}
+    .kpi.errk .v { color:var(--err);}
+
+    .chart-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:18px; margin-bottom:22px;}
+    .chart-card {
+      background:var(--card); border:1px solid var(--border); border-radius:16px; padding:16px 18px 12px; box-shadow:var(--shadow);
+    }
+    .chart-card h3 { margin:0 0 12px; font-size:.88rem; font-weight:700; font-family:"Outfit",sans-serif;}
+
+    .status-chips { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:18px;}
+    .chip { padding:7px 13px; border-radius:999px; border:1px solid var(--border); background:var(--card); cursor:pointer; font-size:.76rem; font-weight:600;}
+    .chip.on { border-color:var(--brand); color:var(--brand); background:rgba(7,71,220,.07);}
+
+    section.panel { margin-bottom:36px; scroll-margin-top:72px;}
+    .hidden { display:none !important;}
+
+    .tree-section { margin-bottom:22px;}
+    .tree-section > h3 {
+      font-size:.88rem; font-family:"Outfit",sans-serif; margin:0 0 10px; padding-bottom:8px; border-bottom:2px solid var(--border);
+      display:flex; align-items:center; gap:10px;
+    }
+    .tree-section > h3 .count { font-size:.78rem; color:var(--muted); font-weight:600;}
+
+    .test {
+      background:var(--card); border:1px solid var(--border); border-radius:14px; margin-bottom:10px; overflow:hidden;
+      box-shadow:var(--shadow);
+    }
+    .test.failed { border-color:var(--fail);}
+    [data-theme="light"] .test.failed { background:#fff8f8;}
+    [data-theme="dark"] .test.failed { background:var(--fail-bg); border-color:#9b2b3b;}
+
+    .test-head {
+      display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:12px 14px; cursor:pointer;
+    }
+    .test-head::after { content:"\203A"; margin-left:auto; color:var(--muted); font-weight:700; transform:rotate(0deg); transition:.15s;}
+    .test-head.open::after { transform:rotate(90deg);}
+
+    .badge { font-size:.65rem; font-weight:800; padding:4px 10px; border-radius:999px; color:#fff; text-transform:uppercase; letter-spacing:.04em;}
+    .badge.pass { background:var(--pass);} .badge.fail { background:var(--fail);}
+    .badge.skip { background:var(--skip);} .badge.error { background:var(--err);}
+
+    .title { flex:1; font-weight:650; font-size:.9rem; min-width:140px;}
+    .meta { font-size:.78rem; color:var(--muted);}
+
+    .body { display:none; padding:14px 16px 18px; border-top:1px solid var(--border); background:rgba(120,134,157,.025);}
+    [data-theme="dark"] .body { background:rgba(255,255,255,.02);}
+    .body.open { display:block;}
+    .body h4 { margin:14px 0 8px; font-size:.74rem; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); font-weight:700;}
+    pre.log { background:#0d1117; color:#c9d1d9; padding:12px; border-radius:10px; overflow:auto; max-height:280px; font-size:.72rem;}
+    [data-theme="dark"] pre.log { background:#010409;}
+    .steps li { margin:4px 0; font-size:.82rem;} .steps .bad { color:var(--fail);}
+    img.shot { max-width:100%; border-radius:10px; border:1px solid var(--border); margin-top:8px; cursor:zoom-in;}
+    .links a { display:inline-block; margin:6px 14px 0 0; color:var(--brand); font-weight:600; font-size:.82rem;}
+    .err { background:rgba(201,24,53,.1); border-left:4px solid var(--fail); padding:10px 12px; border-radius:0 10px 10px 0; font-size:.82rem; white-space:pre-wrap;}
+
+    .gallery-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:12px;}
+    .gallery-item { position:relative; border-radius:12px; overflow:hidden; border:1px solid var(--border); cursor:pointer; background:var(--card);}
+    .gallery-item img { width:100%; height:120px; object-fit:cover; display:block;}
+    .gallery-cap { font-size:.7rem; padding:6px 8px; color:var(--muted); line-height:1.25; max-height:3.2em; overflow:hidden;}
+
+    .top-strip {
+      background: linear-gradient(105deg, #0636a8 0%, #0b5fff 45%, #1e6efd 100%);
+      color:#fff; padding:12px clamp(16px,4vw,36px); box-shadow:0 4px 20px rgba(7,71,160,.25);
+      position:sticky; top:0; z-index:40;
+    }
+    .strip-inner { max-width:1420px; margin:0 auto; display:flex; flex-wrap:wrap; align-items:baseline; gap:10px 18px;}
+    .strip-logo { font-family:"Outfit",sans-serif; font-weight:850; font-size:1.15rem; letter-spacing:.06em;}
+    .strip-sub { font-size:.82rem; opacity:.92;}
+    .strip-meta { font-size:.75rem; opacity:.85; margin-left:auto; font-family:"JetBrains Mono",monospace;}
+
+    .insights-row {
+      display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; margin-bottom:22px;
+    }
+    .insight-card {
+      background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px 16px;
+      border-left:4px solid var(--brand); box-shadow:var(--shadow);
+    }
+    .insight-card.warn { border-left-color:var(--skip);}
+    .insight-card.bad { border-left-color:var(--fail);}
+    .insight-card h4 { margin:0 0 6px; font-size:.72rem; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); font-weight:700;}
+    .insight-card p { margin:0; font-size:.86rem; line-height:1.45;}
+
+    details.trace-box { margin:10px 0; border:1px solid var(--border); border-radius:10px; overflow:hidden; background:rgba(120,134,157,.04);}
+    details.trace-box summary {
+      padding:10px 12px; cursor:pointer; font-weight:700; font-size:.82rem; list-style:none;
+    }
+    details.trace-box summary::-webkit-details-marker { display:none;}
+    details.trace-box[open] summary { border-bottom:1px solid var(--border);}
+    details.trace-box pre { margin:0; border-radius:0; max-height:420px;}
+
+    .section-head { display:flex; align-items:flex-end; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:14px;}
+    .section-head h2 { margin-bottom:0;}
+    .section-head .tag { font-size:.74rem; color:var(--muted); font-weight:600;}
+
+    #lightbox { display:none; position:fixed; inset:0; z-index:50; background:rgba(5,8,14,.88); align-items:center; justify-content:center; padding:24px;}
+    #lightbox.open { display:flex;}
+    #lightbox img { max-width:96vw; max-height:90vh; border-radius:12px; box-shadow:0 20px 80px rgba(0,0,0,.5);}
+    #lightbox .cap { position:absolute; bottom:20px; left:50%; transform:translateX(-50%); color:#fff; font-size:.85rem; text-align:center; max-width:90vw;}
+    #lightbox .close { position:absolute; top:18px; right:22px; color:#fff; font-size:1.6rem; cursor:pointer; font-weight:300;}
+
+    @media (max-width: 980px) {
+      .shell { flex-direction:column;}
+      aside { width:100%; position:relative; max-height:none; border-right:none; border-bottom:1px solid var(--border);}
+    }
+  </style>
+</head>
+<body>
+  <header class="top-strip" role="banner">
+    <div class="strip-inner">
+      <span class="strip-logo">M8FLOW</span>
+      <span class="strip-sub">pytest · Playwright Test · automation report</span>
+      <span class="strip-meta" id="stripMeta"></span>
+    </div>
+  </header>
+  <div class="shell">
+    <aside>
+      <div>
+        <div class="brand">M8FLOW</div>
+        <div class="muted" id="envBlurb"></div>
+      </div>
+      <div class="nav-pane">
+        <a href="#panel-overview" class="active">Overview</a>
+        <a href="#panel-insights">Insights</a>
+        <a href="#panel-tests">Test catalogue</a>
+        <a href="#panel-gallery">Screenshot gallery</a>
+      </div>
+      <div>
+        <div class="muted" style="margin-bottom:6px;">Areas</div>
+        <div class="cat-list" id="sidebarCats"></div>
+      </div>
+      <div class="pw-foot"><strong>Playwright Test</strong> drives browsers here. Trace/video links use <span class="mono">file://</span>; open zips in Trace Viewer.</div>
+    </aside>
+    <main>
+      <div class="top-tools">
+        <input type="search" id="q" placeholder="Filter by title, logs, paths, browser…"/>
+        <button type="button" class="btn" id="expandAll">Expand all</button>
+        <button type="button" class="btn btn-ghost" id="collapseAll">Collapse all</button>
+        <button type="button" class="btn theme-toggle" id="themeBtn" title="Toggle light/dark">Theme</button>
+      </div>
+
+      <section class="panel" id="panel-overview">
+        <div class="section-head">
+          <h2>Executive overview</h2>
+          <span class="tag">M8Flow frontend · E2E</span>
+        </div>
+        <div class="kpi-grid" id="kpis"></div>
+        <div id="panel-insights" style="margin-bottom:22px;">
+          <h3 style="font-family:Outfit,sans-serif;font-size:1rem;margin:0 0 12px;font-weight:720;">Insights</h3>
+          <div class="insights-row" id="insights"></div>
+        </div>
+        <div class="chart-grid">
+          <div class="chart-card"><h3>Outcomes</h3><canvas id="cOut"></canvas></div>
+          <div class="chart-card"><h3>Suite timeline (cumulative)</h3><canvas id="cTime"></canvas></div>
+          <div class="chart-card"><h3>Slowest cases (s)</h3><canvas id="cSlow"></canvas></div>
+          <div class="chart-card"><h3>Cases by area</h3><canvas id="cCat"></canvas></div>
+          <div class="chart-card"><h3>Time by area (sum)</h3><canvas id="cCatDur"></canvas></div>
+          <div class="chart-card"><h3>Time by module (sum)</h3><canvas id="cMod"></canvas></div>
+        </div>
+      </section>
+
+      <section class="panel" id="panel-tests">
+        <h2>Test catalogue</h2>
+        <div class="status-chips" id="chips"></div>
+        <div id="suites"></div>
+      </section>
+
+      <section class="panel" id="panel-gallery">
+        <h2>Failure screenshot gallery</h2>
+        <p class="muted" style="margin-top:-8px;margin-bottom:16px;font-size:.86rem;">
+          Only <strong>failed</strong> and <strong>error</strong> outcomes appear here (not skipped or passed).
+          Thumbnails come from the failure screenshot hook and matching PNGs under <span class="mono">test-results/</span> — click an image for a larger preview.</p>
+        <div id="galleryHint" class="muted" style="display:none;font-size:.82rem;margin-bottom:10px;"></div>
+        <div class="gallery-grid" id="gallery"></div>
+      </section>
+    </main>
+  </div>
+
+  <div id="lightbox" role="dialog" aria-modal="true">
+    <span class="close" id="lbClose">&times;</span>
+    <img alt="" src="" id="lbImg"/>
+    <div class="cap" id="lbCap"></div>
+  </div>
+
+  <script id="suite-data" type="application/json">{"meta": {"counts": {"passed": 10, "failed": 0, "skipped": 2, "error": 0}, "total_tests": 12, "session_started_iso": "2026-05-16T17:57:32.932508+00:00", "session_finished_iso": "2026-05-16T17:58:08.211891+00:00", "environment": {"platform": "Windows-11-10.0.26200-SP0", "python": "3.12.1", "pytest": "9.0.2", "playwright": "1.58.0", "browsers_cli": "chromium (default)", "e2e_url": "http://localhost:7001", "tracing_opt": "retain-on-failure", "video_opt": "off", "screenshot_opt": "only-on-failure", "results_dir": "C:\\Users\\ravee\\Downloads\\Automation M8F\\m8flow\\extensions\\m8flow-frontend\\test\\browser\\test-results", "git_revision": "a2552d3ed", "ci_workflow": ""}, "exit_status": 0}, "tests": [{"nodeid": "tenants/test_tenant_create_modal.py::test_tenant_add_modal_shows_realm_slug_and_display_name_fields[chromium]", "outcome": "skipped", "duration": 0.9442948999931104, "longrepr_text": "('C:\\\\Users\\\\ravee\\\\Downloads\\\\Automation M8F\\\\m8flow\\\\extensions\\\\m8flow-frontend\\\\test\\\\browser\\\\tenants\\\\test_tenant_create_modal.py', 17, 'Skipped: Add Tenant button not available (missing POST tenant-realms permission)')", "error_summary": "('C:\\\\Users\\\\ravee\\\\Downloads\\\\Automation M8F\\\\m8flow\\\\extensions\\\\m8flow-frontend\\\\test\\\\browser\\\\tenants\\\\test_tenant_create_modal.py', 17, 'Skipped: Add Tenant button not available (missing POST tenant-realms permission)')", "logs": [], "steps": [], "started_iso": "2026-05-16T17:57:33.019169+00:00", "finished_iso": "2026-05-16T17:57:33.963464+00:00", "browser": "chromium", "rerun": 0, "module": "tenants/test_tenant_create_modal.py", "category": "tenants", "test_name": "test_tenant_add_modal_shows_realm_slug_and_display_name_fields[chromium]", "display_name": "test_tenant_create_modal ›…", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "tenants/test_tenant_create_modal.py::test_tenant_add_modal_cancel_and_create_buttons[chromium]", "outcome": "skipped", "duration": 1.1394918000150938, "longrepr_text": "('C:\\\\Users\\\\ravee\\\\Downloads\\\\Automation M8F\\\\m8flow\\\\extensions\\\\m8flow-frontend\\\\test\\\\browser\\\\tenants\\\\test_tenant_create_modal.py', 17, 'Skipped: Add Tenant button not available (missing POST tenant-realms permission)')", "error_summary": "('C:\\\\Users\\\\ravee\\\\Downloads\\\\Automation M8F\\\\m8flow\\\\extensions\\\\m8flow-frontend\\\\test\\\\browser\\\\tenants\\\\test_tenant_create_modal.py', 17, 'Skipped: Add Tenant button not available (missing POST tenant-realms permission)')", "logs": [], "steps": [], "started_iso": "2026-05-16T17:57:39.513076+00:00", "finished_iso": "2026-05-16T17:57:40.652568+00:00", "browser": "chromium", "rerun": 0, "module": "tenants/test_tenant_create_modal.py", "category": "tenants", "test_name": "test_tenant_add_modal_cancel_and_create_buttons[chromium]", "display_name": "test_tenant_create_modal › test_tenant_add_modal_cancel_and_create_buttons", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "tenants/test_tenant_create_modal.py::test_tenant_add_modal_realm_slug_validation[chromium]", "outcome": "passed", "duration": 1.612413100025151, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-16 23:27:41,934 [INFO] tenants.test_tenant_create_modal: Realm slug validation error message shown", "2026-05-16 23:27:42,403 [INFO] tenants.test_tenant_create_modal: Tenant add modal closed"], "steps": [], "started_iso": "2026-05-16T17:57:40.794842+00:00", "finished_iso": "2026-05-16T17:57:42.407255+00:00", "browser": "chromium", "rerun": 0, "module": "tenants/test_tenant_create_modal.py", "category": "tenants", "test_name": "test_tenant_add_modal_realm_slug_validation[chromium]", "display_name": "test_tenant_create_modal › test_tenant_add_modal_realm_slug_validation", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "tenants/test_tenant_edit.py::test_tenant_edit_modal_opens[chromium]", "outcome": "passed", "duration": 1.535738799982937, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-16 23:27:43,413 [INFO] tenants.test_tenant_edit: Tenant edit button clicked", "2026-05-16 23:27:43,944 [INFO] tenants.test_tenant_edit: Tenant edit modal closed"], "steps": [], "started_iso": "2026-05-16T17:57:42.403204+00:00", "finished_iso": "2026-05-16T17:57:43.938943+00:00", "browser": "chromium", "rerun": 0, "module": "tenants/test_tenant_edit.py", "category": "tenants", "test_name": "test_tenant_edit_modal_opens[chromium]", "display_name": "test_tenant_edit › test_tenant_edit_modal_opens", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "tenants/test_tenant_filter.py::test_tenant_filter_status_active_table_shows_active[chromium]", "outcome": "passed", "duration": 1.4851373999845237, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-16 23:27:45,431 [INFO] tenants.test_tenant_filter: Status filter ACTIVE: 2 row(s), all ACTIVE"], "steps": [], "started_iso": "2026-05-16T17:57:43.948531+00:00", "finished_iso": "2026-05-16T17:57:45.433668+00:00", "browser": "chromium", "rerun": 0, "module": "tenants/test_tenant_filter.py", "category": "tenants", "test_name": "test_tenant_filter_status_active_table_shows_active[chromium]", "display_name": "test_tenant_filter › test_tenant_filter_status_active_table_shows_active", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "tenants/test_tenant_filter.py::test_tenant_filter_status_inactive_rows_or_empty_message[chromium]", "outcome": "passed", "duration": 11.492947099992307, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-16 23:27:56,662 [INFO] tenants.test_tenant_filter: No tenants are inactive"], "steps": [], "started_iso": "2026-05-16T17:57:45.432985+00:00", "finished_iso": "2026-05-16T17:57:56.925932+00:00", "browser": "chromium", "rerun": 0, "module": "tenants/test_tenant_filter.py", "category": "tenants", "test_name": "test_tenant_filter_status_inactive_rows_or_empty_message[chromium]", "display_name": "test_tenant_filter › test_tenant_filter_status_inactive_rows_or_empty_message", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "tenants/test_tenant_page.py::test_tenant_page_loads[chromium]", "outcome": "passed", "duration": 0.9248558999970555, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-16 23:27:57,854 [INFO] tenants.test_tenant_page: Tenant page loaded"], "steps": [], "started_iso": "2026-05-16T17:57:56.927625+00:00", "finished_iso": "2026-05-16T17:57:57.852481+00:00", "browser": "chromium", "rerun": 0, "module": "tenants/test_tenant_page.py", "category": "tenants", "test_name": "test_tenant_page_loads[chromium]", "display_name": "test_tenant_page › test_tenant_page_loads", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "tenants/test_tenant_page.py::test_tenant_list_displays_rows[chromium]", "outcome": "passed", "duration": 1.0218822000024375, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-16 23:27:58,888 [INFO] tenants.test_tenant_page: Tenants on page (2 rows): M8Flow Realm, QA Tenant"], "steps": [], "started_iso": "2026-05-16T17:57:57.869642+00:00", "finished_iso": "2026-05-16T17:57:58.891524+00:00", "browser": "chromium", "rerun": 0, "module": "tenants/test_tenant_page.py", "category": "tenants", "test_name": "test_tenant_list_displays_rows[chromium]", "display_name": "test_tenant_page › test_tenant_list_displays_rows", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "tenants/test_tenant_search.py::test_tenant_search_by_name_no_results[chromium]", "outcome": "passed", "duration": 1.2459654999838676, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-16 23:28:00,142 [INFO] tenants.test_tenant_search: Search by name returned no rows for nonexistent tenant"], "steps": [], "started_iso": "2026-05-16T17:57:58.894766+00:00", "finished_iso": "2026-05-16T17:58:00.140731+00:00", "browser": "chromium", "rerun": 0, "module": "tenants/test_tenant_search.py", "category": "tenants", "test_name": "test_tenant_search_by_name_no_results[chromium]", "display_name": "test_tenant_search › test_tenant_search_by_name_no_results", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "tenants/test_tenant_search.py::test_tenant_search_by_name_shows_matching_row[chromium]", "outcome": "passed", "duration": 1.9612559000088368, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-16 23:28:01,275 [INFO] tenants.test_tenant_search: Search by name for second-row tenant: 'tenant-row-1c8e4e3c-bbbe-4674-a5b4-d73ccea1dc5a' via term: 'QA Tenant'"], "steps": [], "started_iso": "2026-05-16T17:58:00.145582+00:00", "finished_iso": "2026-05-16T17:58:02.106838+00:00", "browser": "chromium", "rerun": 0, "module": "tenants/test_tenant_search.py", "category": "tenants", "test_name": "test_tenant_search_by_name_shows_matching_row[chromium]", "display_name": "test_tenant_search › test_tenant_search_by_name_shows_matching_row", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "tenants/test_tenant_search.py::test_tenant_search_by_slug_no_results[chromium]", "outcome": "passed", "duration": 1.674375799979316, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-16 23:28:03,773 [INFO] tenants.test_tenant_search: Search by slug returned no rows for nonexistent slug"], "steps": [], "started_iso": "2026-05-16T17:58:02.101951+00:00", "finished_iso": "2026-05-16T17:58:03.776327+00:00", "browser": "chromium", "rerun": 0, "module": "tenants/test_tenant_search.py", "category": "tenants", "test_name": "test_tenant_search_by_slug_no_results[chromium]", "display_name": "test_tenant_search › test_tenant_search_by_slug_no_results", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "tenants/test_tenant_search.py::test_tenant_search_by_slug_shows_matching_row[chromium]", "outcome": "passed", "duration": 1.9567446000000928, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-16 23:28:04,886 [INFO] tenants.test_tenant_search: Search by slug for row 'tenant-row-1c8e4e3c-bbbe-4674-a5b4-d73ccea1dc5a' via term: 'qa-test'"], "steps": [], "started_iso": "2026-05-16T17:58:03.773679+00:00", "finished_iso": "2026-05-16T17:58:05.730424+00:00", "browser": "chromium", "rerun": 0, "module": "tenants/test_tenant_search.py", "category": "tenants", "test_name": "test_tenant_search_by_slug_shows_matching_row[chromium]", "display_name": "test_tenant_search › test_tenant_search_by_slug_shows_matching_row", "screenshot_urls": [], "artifact_uris": {}}]}</script>
+  <script>
+(function() {
+  try {
+    var th = localStorage.getItem('m8flow-qa-theme');
+    if (th === 'dark' || th === 'light') document.documentElement.setAttribute('data-theme', th);
+  } catch (e) {}
+
+  function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  var DATA = JSON.parse(document.getElementById('suite-data').textContent);
+  var meta = DATA.meta;
+  var tests = DATA.tests;
+
+  var filterStatus = 'all';
+  var filterCat = 'all';
+
+  var co = meta.counts;
+
+  document.getElementById('envBlurb').textContent =
+    (meta.environment && meta.environment.e2e_url ? meta.environment.e2e_url + ' · ' : '')
+    + (meta.session_finished_iso || '').substring(0,19).replace('T',' ')
+    + (meta.environment && meta.environment.git_revision ? "\nGIT " + meta.environment.git_revision : '');
+
+  document.getElementById('stripMeta').textContent =
+    (meta.session_finished_iso || '').substring(0, 19).replace('T', ' ')
+      + (meta.environment && meta.environment.playwright
+        ? ' · Playwright ' + meta.environment.playwright : '')
+      + (meta.environment && meta.environment.browsers_cli ? ' · ' + meta.environment.browsers_cli : '');
+
+  var totalDur = tests.reduce(function(a,t){ return a + (t.duration||0); }, 0);
+  function fmtDur(s){ return s >= 60 ? (s/60).toFixed(1)+'m' : ((s||0).toFixed(2)+'s'); }
+
+  var kp = document.getElementById('kpis');
+  [
+    ['Total',tests.length,''],
+    ['Passed',meta.counts.passed,'pass'],
+    ['Failed',meta.counts.failed,'fail'],
+    ['Errors',meta.counts.error||0,'errk'],
+    ['Skipped',meta.counts.skipped,'warn'],
+    ['Duration',fmtDur(totalDur),''],
+    ['Browser',meta.environment && meta.environment.browsers_cli||'chromium',''],
+  ].forEach(function(kv){
+    var el = document.createElement('div');
+    var extra = kv[2] ? ' kpi '+kv[2] : ' kpi';
+    el.className = extra.trim();
+    el.innerHTML = '<div class="l">'+ kv[0] +'</div><div class="v">'+ esc(String(kv[1])) +'</div>';
+    kp.appendChild(el);
+  });
+
+  Chart.defaults.font.family = "'DM Sans', system-ui, sans-serif";
+  Chart.defaults.color = '#5c6570';
+
+  function cumSeries(rows) {
+    var s = 0; return rows.map(function(t){ s += +(t.duration||0); return +s.toFixed(3); });
+  }
+  var xLabels = tests.map(function(_,i){ return String(i+1); });
+
+  var dataOut = [co.passed, co.failed, co.skipped, co.error||0];
+  var sumZ = dataOut.reduce(function(a,b){ return a+b; },0);
+  if (sumZ === 0) dataOut = [1,0,0,0];
+
+  new Chart(document.getElementById('cOut'), {
+    type: 'doughnut',
+    data: {
+      labels: ['Passed','Failed','Skipped','Errors'],
+      datasets: [{ data: dataOut,
+        backgroundColor: ['#0d7d4d','#c91835','#e09b12','#6639a8'], borderWidth: 0 }] },
+    options: { plugins: { legend: { position: 'bottom', labels:{boxWidth:10} } }, cutout: '58%' }
+  });
+
+  new Chart(document.getElementById('cTime'), {
+    type: 'line',
+    data: {
+      labels: xLabels,
+      datasets: [{
+        label: 'Cumulative s',
+        data: cumSeries(tests),
+        tension: .25,
+        fill: true,
+        borderWidth: 2,
+        pointRadius: 0,
+        borderColor: '#0747dc',
+        backgroundColor: 'rgba(7,71,220,.12)',
+      }]
+    },
+    options: {
+      scales: { x: { ticks:{ maxTicksLimit:12} }, y: { beginAtZero: true } },
+      plugins: { legend: { display: false } }
+    }
+  });
+
+  var slow = tests.slice().sort(function(a,b){ return (b.duration||0)-(a.duration||0); }).slice(0,12);
+  new Chart(document.getElementById('cSlow'), {
+    type: 'bar',
+    data: {
+      labels: slow.map(function(t){ return (t.display_name || t.test_name||'').substring(0,36); }),
+      datasets: [{ label: 's', data: slow.map(function(t){ return +(t.duration||0).toFixed(2); }),
+        backgroundColor: slow.map(function(t){ return (t.outcome==='failed'||t.outcome==='error') ? '#c91835' : '#0747dc'; }) }]
+    },
+    options: { indexAxis:'y', plugins:{legend:{display:false}}, scales:{ x:{beginAtZero:true} } }
+  });
+
+  var catMap = {};
+  tests.forEach(function(t){ catMap[t.category] = (catMap[t.category]||0)+1; });
+  new Chart(document.getElementById('cCat'), {
+    type: 'bar',
+    data: { labels: Object.keys(catMap), datasets: [{ data: Object.values(catMap), backgroundColor: '#2897ff' }] },
+    options: { plugins:{ legend:{display:false} }, scales:{ y:{ beginAtZero:true } } }
+  });
+
+  var catDur = {};
+  tests.forEach(function(t){
+    catDur[t.category] = (catDur[t.category]||0) + (t.duration||0);
+  });
+  var cdSorted = Object.keys(catDur).sort(function(a,b){ return catDur[b]-catDur[a]; });
+  new Chart(document.getElementById('cCatDur'), {
+    type: 'bar',
+    data: {
+      labels: cdSorted,
+      datasets: [{
+        data: cdSorted.map(function(k){ return +catDur[k].toFixed(2); }),
+        backgroundColor: '#6366f1'
+      }]
+    },
+    options: { indexAxis:'y', plugins:{legend:{display:false}}, scales:{ x:{beginAtZero:true} } }
+  });
+
+  function stemMod(nid) {
+    var f = (nid||'').split('::')[0].replace(/\\/g,'/');
+    var base = f.split('/').pop() || f || '';
+    return base.replace(/\.py$/i,'') || base;
+  }
+  var modDur = {};
+  tests.forEach(function(t){
+    var sm = stemMod(t.nodeid);
+    if (!sm) return;
+    modDur[sm] = (modDur[sm]||0) + (t.duration||0);
+  });
+  var modItems = Object.keys(modDur).map(function(k){ return [k, modDur[k]]; })
+    .sort(function(a,b){ return b[1]-a[1]; }).slice(0,12);
+  new Chart(document.getElementById('cMod'), {
+    type: 'bar',
+    data: {
+      labels: modItems.map(function(x){ return x[0].substring(0, 34); }),
+      datasets: [{ data: modItems.map(function(x){ return +x[1].toFixed(2); }),
+        backgroundColor: '#059669' }]
+    },
+    options: { indexAxis:'y', plugins:{legend:{display:false}}, scales:{ x:{beginAtZero:true} } }
+  });
+
+  function fillInsights() {
+    var ins = document.getElementById('insights');
+    if (!ins) return;
+    ins.innerHTML = '';
+    var cards = [];
+    var fl = (co.failed||0)+(co.error||0);
+    if (fl > 0) cards.push({ cls:'bad', title:'Failures', text: fl+' case(s) require triage — expand rows for logs, traces, and screenshots.'});
+    if (tests.length > 2 && (co.skipped||0) >= tests.length * 0.2) cards.push({ cls:'warn', title:'Skips', text: 'Skip rate is high — check fixtures, sample data, and E2E_URL.'});
+    if (!fl && tests.length) cards.push({ title:'Health', text: 'No failed or error outcomes in this run.'});
+    cards.push({ title:'Traces', text: 'Use Trace Viewer for zip artifacts; links use file:// and open from the same machine as the run.'});
+    cards.slice(0,4).forEach(function(c){
+      var d = document.createElement('div');
+      d.className = 'insight-card' + (c.cls ? ' '+c.cls : '');
+      d.innerHTML = '<h4>'+esc(c.title)+'</h4><p>'+esc(c.text)+'</p>';
+      ins.appendChild(d);
+    });
+  }
+  fillInsights();
+
+  var cats = Object.keys(catMap).sort();
+  var side = document.getElementById('sidebarCats');
+  function mkCatRow(label, count, val) {
+    var d = document.createElement('div');
+    d.className = 'cat-item' + (filterCat === val ? ' pill on' : '');
+    d.dataset.cat = val;
+    d.innerHTML = '<span>'+ esc(label) +'</span><span class="b">'+ count +'</span>';
+    d.onclick = function(){
+      filterCat = val;
+      [].slice.call(side.querySelectorAll('.cat-item')).forEach(function(x){
+        x.classList.toggle('pill', x.dataset.cat === val);
+        x.classList.toggle('on', x.dataset.cat === val);
+      });
+      renderTests(); renderGallery();
+    };
+    return d;
+  }
+  side.appendChild(mkCatRow('All areas', tests.length, 'all'));
+  cats.forEach(function(c){ side.appendChild(mkCatRow(c, catMap[c], c)); });
+
+  var chipsEl = document.getElementById('chips');
+  ['all','passed','failed','skipped','error'].forEach(function(st){
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip' + (st==='all'?' on':'');
+    b.textContent = st;
+    b.dataset.st = st;
+    b.onclick = function(){
+      filterStatus = st;
+      [].slice.call(chipsEl.querySelectorAll('.chip')).forEach(function(x){
+        x.classList.toggle('on', x.dataset.st === st); });
+      renderTests(); renderGallery();
+    };
+    chipsEl.appendChild(b);
+  });
+
+  document.querySelectorAll('.nav-pane a').forEach(function(a){
+    a.addEventListener('click', function(e){
+      var href = a.getAttribute('href');
+      if (!href || href.charAt(0) !== '#') return;
+      e.preventDefault();
+      var el = document.querySelector(href);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      document.querySelectorAll('.nav-pane a').forEach(function(x){
+        x.classList.toggle('active', x === a);
+      });
+    });
+  });
+
+  function match(t,q){
+    if (!q) return true;
+    var blob = [t.nodeid, t.category, t.display_name||'', t.test_name||'', t.browser||'', (t.logs||[]).join(' ') ];
+    if (t.longrepr_text) blob.push(String(t.longrepr_text).substring(0, 12000));
+    if (t.steps) t.steps.forEach(function(s){ blob.push(s.title||''); });
+    return blob.join(' ').toLowerCase().indexOf(q) >= 0;
+  }
+
+  function rowFilter(t) {
+    if (filterStatus !== 'all' && t.outcome !== filterStatus) return false;
+    if (filterCat !== 'all' && t.category !== filterCat) return false;
+    return true;
+  }
+
+  var suitesEl = document.getElementById('suites');
+  function renderTests(){
+    var q = document.getElementById('q').value.trim().toLowerCase();
+    suitesEl.innerHTML = '';
+    var grouped = {};
+    tests.forEach(function(t){
+      if (!rowFilter(t)) return;
+      if (!match(t,q)) return;
+      (grouped[t.category] = grouped[t.category]||[]).push(t);
+    });
+    Object.keys(grouped).sort().forEach(function(cat){
+      var sec = document.createElement('section');
+      sec.className = 'tree-section';
+      sec.innerHTML = '<h3><span>'+ esc(cat) +'</span><span class="count">'+ grouped[cat].length +' cases</span></h3>';
+      grouped[cat].forEach(function(t, idx){
+        var id = 'b-'+ cat +'-'+ idx;
+        var bad = (t.outcome === 'failed' || t.outcome === 'error');
+        var badgeClass = 'pass';
+        if (t.outcome === 'failed') badgeClass = 'fail';
+        else if (t.outcome === 'skipped') badgeClass = 'skip';
+        else if (t.outcome === 'error') badgeClass = 'error';
+
+        var div = document.createElement('div');
+        div.className = 'test' + (bad ? ' failed':'');
+        var headLine = (t.display_name || t.test_name || '');
+        div.innerHTML =
+          '<div class="test-head"><span class="badge '+ badgeClass +'">'+ esc((t.outcome||'').toUpperCase())
+          +'</span><span class="title">'+ esc(headLine) +'</span><span class="meta">'
+          + (t.duration||0).toFixed(2)+'s · '+ esc(t.browser||'') +' · '
+          + (typeof t.rerun === 'number' ? 'rerun '+(t.rerun+1)+' · ' : '')
+          + esc(t.module||'') +'</span></div>'
+          + '<div class="body" id="'+ esc(id) +'"></div>';
+        var body = div.querySelector('.body');
+        var head = div.querySelector('.test-head');
+
+        var inner = '';
+        inner += '<p class="meta mono">'+ esc(t.nodeid) +'</p>';
+        inner += '<p class="meta">'+ esc(t.started_iso||'') +' \u2192 '+ esc(t.finished_iso||'') +'</p>';
+
+        if (t.steps && t.steps.length) {
+          inner += '<h4>Steps</h4><ol class="steps">';
+          t.steps.forEach(function(s){
+            inner += '<li class="'+ (s.ok===false?'bad':'') +'">'+ esc(s.title)+' <span class="meta">('+ s.duration_sec +'s)</span>'
+              +(s.error ? '<div class="err">'+ esc(s.error) +'</div>':'') +'</li>';
+          });
+          inner += '</ol>';
+        }
+        if (bad && t.error_summary)
+          inner += '<h4>Summary</h4><div class="err">'+ esc(t.error_summary) +'</div>';
+        if (bad && t.longrepr_text) {
+          inner += '<details class="trace-box"><summary>Full stack trace</summary><pre class="log mono">'
+            + esc(String(t.longrepr_text).substring(0, 200000)) +'</pre></details>';
+        }
+        if (t.logs && t.logs.length) {
+          inner += '<details class="trace-box"><summary>Execution logs ('+ t.logs.length +' lines)</summary>';
+          inner += '<pre class="log mono">'+ esc((t.logs||[]).join('\n')) +'</pre></details>';
+        }
+
+        if (t.screenshot_urls && t.screenshot_urls.length) {
+          inner += '<h4>Screenshots</h4>';
+          t.screenshot_urls.forEach(function(u){
+            inner += '<img class="shot" src="'+ u.replace(/"/g,'') +'" data-full="'+ u.replace(/"/g,'') +'" alt="screenshot"/>';
+          });
+        }
+        if (t.artifact_uris && Object.keys(t.artifact_uris).length) {
+          inner += '<h4>Trace &amp; video</h4><div class="links">';
+          for (var k in t.artifact_uris)
+            inner += '<a href="'+ esc(t.artifact_uris[k]) +'">'+ esc(k) +'</a>';
+          inner += '</div>';
+        }
+        inner += '<p class="muted" style="margin-top:10px;font-size:.78rem;">Open trace zips in <a href="https://trace.playwright.dev/" target="_blank" rel="noopener">Playwright Trace Viewer</a>.</p>';
+
+        body.innerHTML = inner;
+        head.onclick = function(){ head.classList.toggle('open'); body.classList.toggle('open'); };
+        body.querySelectorAll('details').forEach(function(dt){
+          dt.addEventListener('click', function(e){ e.stopPropagation(); });
+        });
+        body.querySelectorAll('img.shot').forEach(function(im){
+          im.addEventListener('click', function(){ openLb(im.getAttribute('data-full')||im.src, headLine); });
+        });
+        sec.appendChild(div);
+      });
+      suitesEl.appendChild(sec);
+    });
+    if (!suitesEl.children.length)
+      suitesEl.innerHTML = '<p class="muted">No tests match the current filters.</p>';
+  }
+
+  var gal = document.getElementById('gallery');
+  var galHint = document.getElementById('galleryHint');
+
+  function renderGallery(){
+    gal.innerHTML = '';
+    galHint.style.display = 'none';
+    galHint.textContent = '';
+
+    var q = document.getElementById('q').value.trim().toLowerCase();
+
+    var anyFail = tests.some(function(t){
+      return t.outcome === 'failed' || t.outcome === 'error';
+    });
+
+    if (!anyFail) {
+      gal.innerHTML =
+        '<p class="muted">' +
+        '<strong>Empty by design.</strong> This run has no <code>failed</code> or <code>error</code> tests. ' +
+        'A <strong>skipped</strong> test (e.g. missing template data) is not a failure, so no failure screenshot is taken and nothing is listed here. ' +
+        'Expand the skipped case in the catalogue below for the skip reason.</p>';
+      return;
+    }
+
+    var matchedFail = 0;
+    var withShots = 0;
+    tests.forEach(function(t){
+      if (t.outcome !== 'failed' && t.outcome !== 'error') return;
+      if (!rowFilter(t)) return;
+      if (!match(t,q)) return;
+      matchedFail++;
+      var urls = t.screenshot_urls || [];
+      if (urls.length) withShots++;
+      urls.forEach(function(u){
+        var cell = document.createElement('div');
+        cell.className = 'gallery-item';
+        var cap = t.display_name || t.test_name || t.nodeid;
+        cell.innerHTML = '<img src="'+ u.replace(/"/g,'') +'" alt=""/><div class="gallery-cap">'+ esc(cap) +'</div>';
+        cell.querySelector('img').addEventListener('click', function(){
+          openLb(u, cap);
+        });
+        gal.appendChild(cell);
+      });
+    });
+
+    if (!gal.children.length) {
+      if (matchedFail === 0) {
+        var hidden = tests.filter(function(t){ return t.outcome==='failed'||t.outcome==='error'; }).length;
+        gal.innerHTML =
+          '<p class="muted">No failures match the current <strong>area</strong>, <strong>status</strong>, or <strong>search</strong> filters. '
+          + (hidden ? ('(' + hidden + ' failed/error test(s) hidden — reset filters.)') : '') + '</p>';
+      } else {
+        gal.innerHTML =
+          '<p class="muted">' + matchedFail + ' failed/error test(s) matched, but <strong>no screenshot paths</strong> were attached. '
+          + 'Confirm <span class="mono">conftest</span> captures on failure, <span class="mono">--screenshot</span> / Playwright output under <span class="mono">test-results/</span>, '
+          + 'and that PNGs exist next to the HTML report.</p>';
+      }
+      return;
+    }
+
+    if (matchedFail > withShots) {
+      galHint.textContent = matchedFail - withShots + ' matching failure(s) have no linked images (only cases with paths are shown).';
+      galHint.style.display = 'block';
+    }
+  }
+
+  function openLb(src, cap) {
+    var lb = document.getElementById('lightbox');
+    document.getElementById('lbImg').src = src;
+    document.getElementById('lbCap').textContent = cap || '';
+    lb.classList.add('open');
+  }
+  document.getElementById('lbClose').onclick = function(){
+    document.getElementById('lightbox').classList.remove('open');
+  };
+  document.getElementById('lightbox').onclick = function(e){
+    if (e.target.id === 'lightbox') document.getElementById('lightbox').classList.remove('open');
+  };
+
+  document.getElementById('expandAll').onclick = function(){
+    document.querySelectorAll('#suites .test .body').forEach(function(b){ b.classList.add('open'); });
+    document.querySelectorAll('#suites .test-head').forEach(function(h){ h.classList.add('open'); });
+  };
+  document.getElementById('collapseAll').onclick = function(){
+    document.querySelectorAll('#suites .test .body').forEach(function(b){ b.classList.remove('open'); });
+    document.querySelectorAll('#suites .test-head').forEach(function(h){ h.classList.remove('open'); });
+  };
+
+  document.getElementById('q').addEventListener('input', function(){ renderTests(); renderGallery(); });
+
+  document.getElementById('themeBtn').onclick = function(){
+    var html = document.documentElement;
+    var next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    html.setAttribute('data-theme', next);
+    try { localStorage.setItem('m8flow-qa-theme', next); } catch (e) {}
+  };
+
+  renderTests();
+  renderGallery();
+})();
+  </script>
+</body>
+</html>
