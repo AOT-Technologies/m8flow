@@ -45,5 +45,5 @@ def test_configuration_secrets_add_when_empty(authenticated_page: Page) -> None:
     page.locator("#secret-key").fill(secret_key)
     page.locator("#secret-value-label").fill(secret_value)
     page.get_by_role("button", name="Submit").click()
-    logger.info("Submit finished for key %s.", secret_key)
+    logger.info("Submission finished for secret.")
 
