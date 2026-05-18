@@ -131,8 +131,12 @@ function RoleBasedRootGate({
 }) {
   if (!permissionsLoaded) return null;
 
-  // Users with task update permission (including master super-admin) can land on Home.
-  if (ability.can("PUT", "/tasks/*")) {
+  // Users with task update permission can land on Home.
+  // Master super-admin can also land on Home with read-only task access.
+  if (
+    ability.can("PUT", "/tasks/*") ||
+    (UserService.isSuperAdmin() && ability.can("GET", "/tasks/*"))
+  ) {
     return (
       <BaseRoutes
         extensionUxElements={extensionUxElements}

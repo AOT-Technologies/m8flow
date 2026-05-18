@@ -92,6 +92,14 @@ permissions:
     groups: ["tenant-admin", "editor", "viewer", "super-admin","submitter"]
     actions: [read]
     uri: /process-instances/*
+  super-admin-process-instances-for-me-list:
+    groups: ["super-admin"]
+    actions: [create]
+    uri: /process-instances/for-me
+  super-admin-process-instances-list:
+    groups: ["super-admin"]
+    actions: [create]
+    uri: /process-instances
   read-user-groups-items:
     groups: ["tenant-admin", "editor", "viewer", "super-admin","submitter"]
     actions: [read]
