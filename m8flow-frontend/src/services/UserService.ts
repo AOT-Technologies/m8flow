@@ -90,34 +90,60 @@ const isPublicUser = () => {
   return false;
 };
 
-const isSuperAdmin = (): boolean => {
-  const idToken = getIdToken();
-  if (!idToken) {
-    return false;
+const SUPER_ADMIN_ROLE = 'super-admin';
+
+const groupIndicatesSuperAdmin = (group: string): boolean => {
+  const normalized = group.replace(/^\/+|\/+$/g, '').split('/').pop();
+  return (
+    normalized === SUPER_ADMIN_ROLE ||
+    (normalized?.endsWith(`:${SUPER_ADMIN_ROLE}`) ?? false)
+  );
+};
+
+const tokenIndicatesSuperAdmin = (decoded: Record<string, unknown>): boolean => {
+  const roles = decoded.roles;
+  if (Array.isArray(roles) && roles.includes(SUPER_ADMIN_ROLE)) {
+    return true;
   }
-  try {
-    const idObject = jwtDecode(idToken) as Record<string, unknown>;
-    const groups = idObject.groups;
-    if (Array.isArray(groups)) {
-      for (const group of groups) {
-        if (typeof group !== 'string') {
-          continue;
-        }
-        const normalized = group.replace(/^\/+|\/+$/g, '').split('/').pop();
-        if (normalized === 'super-admin') {
-          return true;
-        }
-      }
-    }
-    const realmAccess = idObject.realm_access;
-    if (realmAccess && typeof realmAccess === 'object') {
-      const roles = (realmAccess as Record<string, unknown>).roles;
-      if (Array.isArray(roles) && roles.includes('super-admin')) {
+
+  const groups = decoded.groups;
+  if (Array.isArray(groups)) {
+    for (const group of groups) {
+      if (typeof group === 'string' && groupIndicatesSuperAdmin(group)) {
         return true;
       }
     }
+  }
+
+  const realmAccess = decoded.realm_access;
+  if (realmAccess && typeof realmAccess === 'object') {
+    const realmRoles = (realmAccess as Record<string, unknown>).roles;
+    if (Array.isArray(realmRoles) && realmRoles.includes(SUPER_ADMIN_ROLE)) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+const decodeTokenRecord = (token: string | null): Record<string, unknown> | null => {
+  if (!token) {
+    return null;
+  }
+  try {
+    return jwtDecode(token) as Record<string, unknown>;
   } catch {
-    return false;
+    return null;
+  }
+};
+
+const isSuperAdmin = (): boolean => {
+  // Prefer access_token: Keycloak puts M8Flow roles in a top-level `roles` claim there.
+  for (const token of [getAccessToken(), getIdToken()]) {
+    const decoded = decodeTokenRecord(token);
+    if (decoded && tokenIndicatesSuperAdmin(decoded)) {
+      return true;
+    }
   }
   return false;
 };
