@@ -112,5 +112,6 @@
   "operations": "operations",
   "configure": "Configure",
   "no_connectors_available": "No connectors are available at this time.",
-  "connectors_load_failed": "Could not load connectors. Check that the connector proxy is running and configured."
+  "connectors_load_failed": "Could not load connectors. Check that the connector proxy is running and configured.",
+  "tasks": "Tasks"
 }
