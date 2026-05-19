@@ -73,7 +73,7 @@ def apply_runtime(flask_app) -> None:
 
     shared_realm_name = _shared_realm_name()
     shared_realm_label = _shared_realm_label()
-    shared_realm_uri = f"http://localhost:7002/realms/{shared_realm_name}"
+    shared_realm_uri = f"{_public_keycloak_base()}/realms/{shared_realm_name}"
     master_realm_name = _master_realm_name()
     auth_configs = flask_app.config.get("SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS") or []
     normalized_auth_configs = []

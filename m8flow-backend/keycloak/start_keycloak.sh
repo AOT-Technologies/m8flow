@@ -16,7 +16,7 @@ setup_traps
 set -o errtrace -o errexit -o nounset -o pipefail
 
 keycloak_version=26.6.1
-keycloak_base_url="http://localhost:7002"
+keycloak_base_url="${KEYCLOAK_HOSTNAME:-http://localhost:${KEYCLOAK_PROXY_PORT:-7002}}"
 keycloak_admin_user="admin"
 keycloak_admin_password="admin"
 keycloak_super_admin_user="${KEYCLOAK_SUPER_ADMIN_USER:-super-admin}"
@@ -30,12 +30,13 @@ keycloak_organization_role_groups="tenant-admin editor integrator reviewer viewe
 keycloak_default_organization_seed_role_assignments="${M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_SEED_ROLE_ASSIGNMENTS:-admin:tenant-admin editor:editor integrator:integrator reviewer:reviewer viewer:viewer}"
 keycloak_master_client_id="${M8FLOW_KEYCLOAK_SPOKE_CLIENT_ID:-m8flow-backend}"
 keycloak_master_client_secret="${M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET:-${M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET:-JXeQExm0JhQPLumgHtIIqf52bDalHz0q}}"
-backend_public_url="${M8FLOW_BACKEND_URL:-http://localhost:8000}"
-frontend_public_url="${M8FLOW_BACKEND_URL_FOR_FRONTEND:-http://localhost:8001}"
+backend_public_url="${M8FLOW_BACKEND_URL:-http://localhost:7000}"
+frontend_public_url="${M8FLOW_BACKEND_URL_FOR_FRONTEND:-http://localhost:7001}"
 backend_redirect_uri="${backend_public_url%/}/*"
 frontend_logout_redirect_uri="${frontend_public_url%/}/*"
 placeholder_client_id="__M8FLOW_SPOKE_CLIENT_ID__"
 JQ_FIRST_ID_EXPR='.[0].id // empty'
+normalized_group_mapper_provider_id="oidc-normalized-group-membership-mapper"
 
 # Get script directory
 script_dir="$(
@@ -112,7 +113,7 @@ function wait_for_keycloak_to_be_up() {
   local max_attempts=600
   echo ":: Waiting for Keycloak to be ready..."
   local attempts=0
-  local url="http://localhost:7009/health/ready"
+  local url="http://localhost:${KEYCLOAK_MGMT_PORT:-7009}/health/ready"
   while [[ "$(curl -s -o /dev/null -w '%{http_code}' "$url" 2>/dev/null || echo "000")" != "200" ]]; do
     if [[ "$attempts" -gt "$max_attempts" ]]; then
       echo >&2 "ERROR: Keycloak health check failed after $max_attempts attempts. URL: $url"
@@ -238,16 +239,14 @@ function resolve_client_internal_id() {
   local realm_name="$1"
   local client_name="$2"
   docker exec keycloak /opt/keycloak/bin/kcadm.sh get clients -r "${realm_name}" -q clientId="${client_name}" --fields id,clientId 2>/dev/null \
-    | jq -r "${JQ_FIRST_ID_EXPR}"
+    | jq -r --arg client_name "${client_name}" 'map(select(.clientId == $client_name)) | .[0].id // empty'
 }
 
 function resolve_client_scope_internal_id() {
   local realm_name="$1"
   local scope_name="$2"
-  docker exec keycloak /opt/keycloak/bin/kcadm.sh get client-scopes -r "${realm_name}" --fields id,name 2>/dev/null \
-    | grep -B1 "\"name\" : \"${scope_name}\"" \
-    | sed -n 's/.*"id" : "\([^"]*\)".*/\1/p' \
-    | head -n 1
+  docker exec keycloak /opt/keycloak/bin/kcadm.sh get client-scopes -r "${realm_name}" -q name="${scope_name}" --fields id,name 2>/dev/null \
+    | jq -r --arg scope_name "${scope_name}" 'map(select(.name == $scope_name)) | .[0].id // empty'
 }
 
 function resolve_client_scope_protocol_mapper_internal_id() {
@@ -372,12 +371,140 @@ function ensure_shared_realm_organization_scope() {
   echo ":: Realm ${realm_name} organization client scope ensured."
 }
 
-function ensure_groups_mapper() {
+function resolve_user_internal_id() {
+  local realm_name="$1"
+  local username="$2"
+  docker exec keycloak /opt/keycloak/bin/kcadm.sh get users -r "${realm_name}" -q username="${username}" --fields id,username 2>/dev/null \
+    | jq -r --arg username "${username}" 'map(select(.username == $username)) | .[0].id // empty'
+}
+
+function resolve_group_internal_id() {
+  local realm_name="$1"
+  local group_name="$2"
+  docker exec keycloak /opt/keycloak/bin/kcadm.sh get groups -r "${realm_name}" --fields id,name 2>/dev/null \
+    | jq -r --arg group_name "${group_name}" 'map(select(.name == $group_name)) | .[0].id // empty'
+}
+
+function resolve_protocol_mapper_id() {
+  local realm_name="$1"
+  local resource_path="$2"
+  local mapper_name="$3"
+  docker exec keycloak /opt/keycloak/bin/kcadm.sh get "${resource_path}/protocol-mappers/models" -r "${realm_name}" --fields id,name 2>/dev/null \
+    | jq -r --arg mapper_name "${mapper_name}" 'map(select(.name == $mapper_name)) | .[0].id // empty'
+}
+
+function ensure_default_group_in_realm() {
+  local realm_name="$1"
+  local group_name="$2"
+  local group_internal_id
+
+  group_internal_id="$(resolve_group_internal_id "${realm_name}" "${group_name}")"
+  if [[ -z "${group_internal_id}" ]]; then
+    docker exec keycloak /opt/keycloak/bin/kcadm.sh create groups -r "${realm_name}" -s name="${group_name}" >/dev/null
+    group_internal_id="$(resolve_group_internal_id "${realm_name}" "${group_name}")"
+  fi
+
+  printf '%s\n' "${group_internal_id}"
+}
+
+function ensure_user_default_group_assignment() {
+  local realm_name="$1"
+  local username="$2"
+  local group_name="$3"
+  local user_internal_id
+  local group_internal_id
+
+  user_internal_id="$(resolve_user_internal_id "${realm_name}" "${username}")"
+  if [[ -z "${user_internal_id}" ]]; then
+    echo ":: User ${username} not present in realm ${realm_name}; skipping default group assignment."
+    return 0
+  fi
+
+  group_internal_id="$(resolve_group_internal_id "${realm_name}" "${group_name}")"
+  if [[ -z "${group_internal_id}" ]]; then
+    echo >&2 "ERROR: Failed to resolve group ${group_name} in realm ${realm_name}"
+    return 1
+  fi
+
+  local http_code
+  http_code=$(curl -s -o /dev/null -w '%{http_code}' -X PUT \
+    "${keycloak_base_url}/admin/realms/${realm_name}/users/${user_internal_id}/groups/${group_internal_id}" \
+    -H "Authorization: Bearer ${admin_token}")
+  if [[ "${http_code}" != "204" && "${http_code}" != "200" ]]; then
+    echo >&2 "ERROR: Failed to assign user ${username} to group ${group_name} in realm ${realm_name} (HTTP ${http_code})"
+    return 1
+  fi
+}
+
+function ensure_default_groups_and_memberships_in_realm() {
+  local realm_name="$1"
+
+  ensure_default_group_in_realm "${realm_name}" "Approvers" >/dev/null
+  ensure_default_group_in_realm "${realm_name}" "Designers" >/dev/null
+  ensure_default_group_in_realm "${realm_name}" "Administrators" >/dev/null
+  ensure_default_group_in_realm "${realm_name}" "Support" >/dev/null
+
+  ensure_user_default_group_assignment "${realm_name}" "reviewer" "Approvers"
+  ensure_user_default_group_assignment "${realm_name}" "editor" "Designers"
+  ensure_user_default_group_assignment "${realm_name}" "admin" "Administrators"
+  ensure_user_default_group_assignment "${realm_name}" "integrator" "Support"
+}
+
+function ensure_normalized_groups_mapper_on_resource() {
+  local realm_name="$1"
+  local resource_path="$2"
+  local mapper_id
+  mapper_id="$(resolve_protocol_mapper_id "${realm_name}" "${resource_path}" "groups")"
+  if [[ -n "${mapper_id}" ]]; then
+    docker exec keycloak /opt/keycloak/bin/kcadm.sh update "${resource_path}/protocol-mappers/models/${mapper_id}" -r "${realm_name}" \
+      -s name=groups \
+      -s protocol=openid-connect \
+      -s protocolMapper="${normalized_group_mapper_provider_id}" \
+      -s consentRequired=false \
+      -s 'config."introspection.token.claim"=true' \
+      -s 'config."userinfo.token.claim"=true' \
+      -s 'config."id.token.claim"=true' \
+      -s 'config."access.token.claim"=true' \
+      -s 'config."claim.name"=groups' \
+      -s 'config.multivalued=true' \
+      -s 'config."jsonType.label"=String' >/dev/null
+  else
+    docker exec keycloak /opt/keycloak/bin/kcadm.sh create "${resource_path}/protocol-mappers/models" -r "${realm_name}" \
+      -s name=groups \
+      -s protocol=openid-connect \
+      -s protocolMapper="${normalized_group_mapper_provider_id}" \
+      -s consentRequired=false \
+      -s 'config."introspection.token.claim"=true' \
+      -s 'config."userinfo.token.claim"=true' \
+      -s 'config."id.token.claim"=true' \
+      -s 'config."access.token.claim"=true' \
+      -s 'config."claim.name"=groups' \
+      -s 'config.multivalued=true' \
+      -s 'config."jsonType.label"=String' >/dev/null
+  fi
+}
+
+function ensure_group_membership_mapper() {
   local realm_name="$1"
   local client_internal_id="$2"
-  if ! docker exec keycloak /opt/keycloak/bin/kcadm.sh get "clients/${client_internal_id}/protocol-mappers/models" -r "${realm_name}" 2>/dev/null | jq -e '.[] | select(.name == "groups")' >/dev/null; then
+  ensure_normalized_groups_mapper_on_resource "${realm_name}" "clients/${client_internal_id}"
+}
+
+function ensure_profile_scope_group_membership_mapper() {
+  local realm_name="$1"
+  local profile_scope_internal_id
+  profile_scope_internal_id="$(resolve_client_scope_internal_id "${realm_name}" "profile")"
+  if [[ -n "${profile_scope_internal_id}" ]]; then
+    ensure_normalized_groups_mapper_on_resource "${realm_name}" "client-scopes/${profile_scope_internal_id}"
+  fi
+}
+
+function ensure_roles_mapper() {
+  local realm_name="$1"
+  local client_internal_id="$2"
+  if ! docker exec keycloak /opt/keycloak/bin/kcadm.sh get "clients/${client_internal_id}/protocol-mappers/models" -r "${realm_name}" 2>/dev/null | jq -e '.[] | select(.name == "roles")' >/dev/null; then
     docker exec keycloak /opt/keycloak/bin/kcadm.sh create "clients/${client_internal_id}/protocol-mappers/models" -r "${realm_name}" \
-      -s name=groups \
+      -s name=roles \
       -s protocol=openid-connect \
       -s protocolMapper=oidc-usermodel-realm-role-mapper \
       -s consentRequired=false \
@@ -386,7 +513,7 @@ function ensure_groups_mapper() {
       -s 'config."userinfo.token.claim"=true' \
       -s 'config."id.token.claim"=true' \
       -s 'config."access.token.claim"=true' \
-      -s 'config."claim.name"=groups' \
+      -s 'config."claim.name"=roles' \
       -s 'config."jsonType.label"=String' >/dev/null
   fi
 }
@@ -458,7 +585,10 @@ function ensure_spoke_client_in_realm() {
 
   docker exec keycloak /opt/keycloak/bin/kcadm.sh update "clients/${current_client_internal_id}/optional-client-scopes/${organization_scope_id}" -r "${realm_name}" -n >/dev/null
 
-  ensure_groups_mapper "${realm_name}" "${current_client_internal_id}"
+  ensure_group_membership_mapper "${realm_name}" "${current_client_internal_id}"
+  ensure_roles_mapper "${realm_name}" "${current_client_internal_id}"
+  ensure_profile_scope_group_membership_mapper "${realm_name}"
+  ensure_default_groups_and_memberships_in_realm "${realm_name}"
   echo ":: Realm ${realm_name} client ${keycloak_master_client_id} ensured."
 }
 
@@ -831,9 +961,11 @@ function ensure_shared_realm_single_page_login() {
 
 # Start Keycloak container
 echo ":: Starting Keycloak container..."
+KEYCLOAK_PROXY_PORT="${KEYCLOAK_PROXY_PORT:-7002}"
+KEYCLOAK_MGMT_PORT="${KEYCLOAK_MGMT_PORT:-7009}"
 if ! docker run \
-  -p 7002:8080 \
-  -p 7009:9000 \
+  -p "${KEYCLOAK_PROXY_PORT}:8080" \
+  -p "${KEYCLOAK_MGMT_PORT}:9000" \
   -d \
   --network=m8flow \
   --name keycloak \
@@ -931,20 +1063,8 @@ function ensure_master_super_admin() {
     -s "webOrigins=[\"${frontend_public_url%/}\"]" \
     -s "attributes.\"post.logout.redirect.uris\"=${frontend_logout_redirect_uri}" >/dev/null
 
-  if ! docker exec keycloak /opt/keycloak/bin/kcadm.sh get "clients/${client_id}/protocol-mappers/models" -r "${admin_realm_name}" 2>/dev/null | jq -e '.[] | select(.name == "groups")' >/dev/null; then
-    docker exec keycloak /opt/keycloak/bin/kcadm.sh create "clients/${client_id}/protocol-mappers/models" -r "${admin_realm_name}" \
-      -s name=groups \
-      -s protocol=openid-connect \
-      -s protocolMapper=oidc-usermodel-realm-role-mapper \
-      -s consentRequired=false \
-      -s 'config."introspection.token.claim"=true' \
-      -s 'config.multivalued=true' \
-      -s 'config."userinfo.token.claim"=true' \
-      -s 'config."id.token.claim"=true' \
-      -s 'config."access.token.claim"=true' \
-      -s 'config."claim.name"=groups' \
-      -s 'config."jsonType.label"=String' >/dev/null
-  fi
+  ensure_group_membership_mapper "${admin_realm_name}" "${client_id}"
+  ensure_roles_mapper "${admin_realm_name}" "${client_id}"
 
   docker exec keycloak /opt/keycloak/bin/kcadm.sh get roles/super-admin -r "${admin_realm_name}" >/dev/null 2>&1 \
     || docker exec keycloak /opt/keycloak/bin/kcadm.sh create roles -r "${admin_realm_name}" -s name=super-admin >/dev/null

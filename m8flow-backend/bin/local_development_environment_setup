@@ -12,7 +12,7 @@ if [ "${BASH_SOURCE[0]}" -ef "$0" ]; then
   exit 1
 fi
 
-PORT="${SPIFFWORKFLOW_BACKEND_PORT:-7000}"
+PORT="${SPIFFWORKFLOW_BACKEND_PORT:-6840}"
 acceptance_test_mode="false"
 
 use_local_open_id="true"
@@ -51,14 +51,14 @@ if [[ "$use_local_open_id" == "true" ]]; then
   export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__identifier="default"
   export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__label="internal openid"
   export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__uri="${backend_base_url}/openid"
-  export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__additional_valid_issuers__0="http://host.docker.internal:7000/openid"
+  export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__additional_valid_issuers__0="http://host.docker.internal:6840/openid"
   export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__client_id="m8flow-backend"
   export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__client_secret="JXeQExm0JhQPLumgHtIIqf52bDalHz0q"
 
 # else  # uncomment to test multiple auths
 #   export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__identifier="keycloak_internal"
 #   export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__label="I am a Core Contributor"
-#   export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__uri="http://localhost:7002/realms/m8flow"
+#   export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__uri="http://localhost:6842/realms/m8flow"
 #   export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__client_id="m8flow-backend"
 #   export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__client_secret="JXeQExm0JhQPLumgHtIIqf52bDalHz0q"
 #
@@ -69,7 +69,7 @@ if [[ "$use_local_open_id" == "true" ]]; then
 #   export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__1__client_secret="JXeQExm0JhQPLumgHtIIqf52bDalHz0q"
 
 # else # uncomment to test specified
-#   export SPIFFWORKFLOW_BACKEND_OPEN_ID_SERVER_URL="http://localhost:7002/realms/m8flow"
+#   export SPIFFWORKFLOW_BACKEND_OPEN_ID_SERVER_URL="http://localhost:6842/realms/m8flow"
 #   export SPIFFWORKFLOW_BACKEND_OPEN_ID_CLIENT_ID="m8flow-backend"
 #   export SPIFFWORKFLOW_BACKEND_OPEN_ID_CLIENT_SECRET_KEY="JXeQExm0JhQPLumgHtIIqf52bDalHz0q"
 

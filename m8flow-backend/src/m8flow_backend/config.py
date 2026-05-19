@@ -84,6 +84,20 @@ def realm_template_path() -> str:
     return str(default)
 
 
+def keycloak_default_groups_path() -> str:
+    """Path to the repo-owned default Keycloak organizational groups config."""
+    raw = _get("M8FLOW_KEYCLOAK_DEFAULT_GROUPS_PATH")
+    if raw:
+        p = Path(raw)
+        if not p.is_absolute():
+            p = Path.cwd() / raw
+        return str(p)
+
+    package_root = Path(__file__).resolve().parent
+    default = package_root / "config" / "keycloak" / "default_groups.json"
+    return str(default)
+
+
 def spoke_keystore_p12_path() -> str | None:
     """Path to PKCS#12 keystore for spoke realm client auth."""
     default = "m8flow-backend/keystore.p12"
@@ -164,3 +178,8 @@ def redirect_uri_frontend_host() -> str | None:
 def nats_token_salt() -> str:
     """Get the NATS token salt from environment variables."""
     return _get("M8FLOW_NATS_TOKEN_SALT") or "m8flow_default_salt"
+
+
+def nats_url() -> str:
+    """Get the NATS URL from environment variables."""
+    return _get("M8FLOW_NATS_URL")

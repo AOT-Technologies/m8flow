@@ -14,9 +14,27 @@ if str(extension_src) not in sys.path:
 
 from m8flow_backend.services.keycloak_service import (  # noqa: E402
     _fill_realm_template,
+    ensure_backend_redirect_uri_in_keycloak_client,
+    load_default_organizational_group_paths,
     realm_exists,
     tenant_login_authorization_url,
 )
+
+
+def _flatten_group_paths(groups: list[dict]) -> list[str]:
+    paths: list[str] = []
+
+    def _visit(group_items: list[dict]) -> None:
+        for group in group_items:
+            group_path = group.get("path")
+            if isinstance(group_path, str):
+                paths.append(group_path)
+            sub_groups = group.get("subGroups") or []
+            if isinstance(sub_groups, list):
+                _visit(sub_groups)
+
+    _visit(groups)
+    return paths
 
 
 def test_fill_realm_template_top_level() -> None:
@@ -177,6 +195,37 @@ def test_fill_realm_template_client_attributes() -> None:
     assert "/realms/tenant-i/account" in result["clients"][0]["attributes"]["post.logout.redirect.uris"]
 
 
+def test_load_default_organizational_group_paths() -> None:
+    assert load_default_organizational_group_paths() == [
+        "/Approvers",
+        "/Designers",
+        "/Administrators",
+        "/Support",
+    ]
+
+
+@patch("m8flow_backend.services.keycloak_service.load_default_organizational_group_paths")
+def test_fill_realm_template_merges_default_organizational_groups(mock_default_groups) -> None:
+    mock_default_groups.return_value = ["/Designers", "/Approvers", "/Support"]
+    template = {
+        "id": "m8flow",
+        "realm": "m8flow",
+        "groups": [
+            {"name": "Administrators", "path": "/Administrators", "subGroups": []},
+        ],
+    }
+
+    result = _fill_realm_template(template, "tenant-j", None, "m8flow")
+
+    assert _flatten_group_paths(result["groups"]) == [
+        "/Administrators",
+        "/Designers",
+        "/Approvers",
+        "/Support",
+    ]
+    assert _flatten_group_paths(template["groups"]) == ["/Administrators"]
+
+
 def test_fill_realm_template_injects_runtime_redirects_for_backend_client(monkeypatch) -> None:
     """Backend tenant client gets backend/frontend URLs from env instead of placeholder-only defaults."""
     monkeypatch.delenv("SPIFFWORKFLOW_BACKEND_URL", raising=False)
@@ -190,13 +239,13 @@ def test_fill_realm_template_injects_runtime_redirects_for_backend_client(monkey
             {
                 "clientId": "m8flow-backend",
                 "redirectUris": [
-                    "http://localhost:7000/*",
+                    "http://localhost:6840/*",
                     "https://replace-me-with-m8flow-backend-host-and-path/*",
                 ],
                 "webOrigins": [],
                 "attributes": {
                     "post.logout.redirect.uris": (
-                        "https://replace-me-with-m8flow-frontend-host-and-path/*##http://localhost:7001/*"
+                        "https://replace-me-with-m8flow-frontend-host-and-path/*##http://localhost:6841/*"
                     ),
                 },
             }
@@ -212,7 +261,7 @@ def test_fill_realm_template_injects_runtime_redirects_for_backend_client(monkey
     assert "http://192.168.1.105:8001" in client["webOrigins"]
     assert (
         client["attributes"]["post.logout.redirect.uris"]
-        == "http://192.168.1.105:8001/*##http://localhost:7001/*##http://192.168.1.105:8000/*"
+        == "http://192.168.1.105:8001/*##http://localhost:6841/*##http://192.168.1.105:8000/*"
     )
 
 
@@ -240,11 +289,131 @@ def test_fill_realm_template_injects_runtime_redirects_for_frontend_client(monke
     assert client["attributes"]["post.logout.redirect.uris"] == "http://192.168.1.105:8001/*"
 
 
+@patch("m8flow_backend.services.keycloak_service.spoke_client_id")
+@patch("m8flow_backend.services.keycloak_service.keycloak_url")
+@patch("m8flow_backend.services.keycloak_service.get_master_admin_token")
+@patch("m8flow_backend.services.keycloak_service.requests.delete")
+@patch("m8flow_backend.services.keycloak_service.requests.post")
+@patch("m8flow_backend.services.keycloak_service.requests.put")
+@patch("m8flow_backend.services.keycloak_service.requests.get")
+def test_ensure_backend_redirect_uri_in_keycloak_client_reconciles_legacy_roles_groups_mapper(
+    mock_get,
+    mock_put,
+    mock_post,
+    mock_delete,
+    mock_token,
+    mock_keycloak_url,
+    mock_spoke_client_id,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("M8FLOW_BACKEND_URL", "http://192.168.1.105:8000")
+    monkeypatch.setenv("M8FLOW_BACKEND_URL_FOR_FRONTEND", "http://192.168.1.105:8001")
+
+    mock_spoke_client_id.return_value = "m8flow-backend"
+    mock_keycloak_url.return_value = "http://localhost:7002"
+    mock_token.return_value = "admin-token"
+
+    mock_get.side_effect = [
+        MagicMock(status_code=200, json=lambda: [{"id": "client-123"}], raise_for_status=lambda: None),
+        MagicMock(
+            status_code=200,
+            json=lambda: [
+                {
+                    "id": "legacy-mapper",
+                    "name": "groups",
+                    "protocolMapper": "oidc-usermodel-realm-role-mapper",
+                    "config": {"claim.name": "groups"},
+                }
+            ],
+            raise_for_status=lambda: None,
+        ),
+        MagicMock(
+            status_code=200,
+            json=lambda: [{"id": "profile-scope-123", "name": "profile"}],
+            raise_for_status=lambda: None,
+        ),
+        MagicMock(status_code=200, json=lambda: [], raise_for_status=lambda: None),
+        MagicMock(
+            status_code=200,
+            json=lambda: {
+                "id": "client-123",
+                "redirectUris": ["http://192.168.1.105:8000/*", "http://192.168.1.105:8001/*"],
+                "webOrigins": ["http://192.168.1.105:8000", "http://192.168.1.105:8001"],
+                "attributes": {"post.logout.redirect.uris": "http://192.168.1.105:8001/*"},
+            },
+            raise_for_status=lambda: None,
+        ),
+    ]
+    mock_delete.return_value = MagicMock(status_code=204, raise_for_status=lambda: None)
+    mock_post.return_value = MagicMock(status_code=201, raise_for_status=lambda: None)
+
+    ensure_backend_redirect_uri_in_keycloak_client("tenant-a")
+
+    mock_delete.assert_called_once()
+    assert mock_delete.call_args[0][0].endswith("/protocol-mappers/models/legacy-mapper")
+    assert mock_post.call_count == 2
+    roles_mapper_payload = mock_post.call_args_list[0].kwargs["json"]
+    groups_mapper_payload = mock_post.call_args_list[1].kwargs["json"]
+    assert roles_mapper_payload["name"] == "roles"
+    assert roles_mapper_payload["protocolMapper"] == "oidc-usermodel-realm-role-mapper"
+    assert roles_mapper_payload["config"]["claim.name"] == "roles"
+    assert groups_mapper_payload["name"] == "groups"
+    assert groups_mapper_payload["protocolMapper"] == "oidc-normalized-group-membership-mapper"
+    assert groups_mapper_payload["config"]["claim.name"] == "groups"
+    mock_put.assert_not_called()
+
+
+@patch("m8flow_backend.services.keycloak_service.spoke_client_id")
+@patch("m8flow_backend.services.keycloak_service.keycloak_url")
+@patch("m8flow_backend.services.keycloak_service.get_master_admin_token")
+@patch("m8flow_backend.services.keycloak_service.requests.delete")
+@patch("m8flow_backend.services.keycloak_service.requests.post")
+@patch("m8flow_backend.services.keycloak_service.requests.put")
+@patch("m8flow_backend.services.keycloak_service.requests.get")
+def test_ensure_backend_redirect_uri_in_keycloak_client_reconciles_mappers_without_backend_url(
+    mock_get,
+    mock_put,
+    mock_post,
+    mock_delete,
+    mock_token,
+    mock_keycloak_url,
+    mock_spoke_client_id,
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("M8FLOW_BACKEND_URL", raising=False)
+    monkeypatch.delenv("SPIFFWORKFLOW_BACKEND_URL", raising=False)
+    monkeypatch.setenv("M8FLOW_BACKEND_URL_FOR_FRONTEND", "http://192.168.1.105:8001")
+
+    mock_spoke_client_id.return_value = "m8flow-backend"
+    mock_keycloak_url.return_value = "http://localhost:7002"
+    mock_token.return_value = "admin-token"
+
+    mock_get.side_effect = [
+        MagicMock(status_code=200, json=lambda: [{"id": "client-123"}], raise_for_status=lambda: None),
+        MagicMock(status_code=200, json=lambda: [], raise_for_status=lambda: None),
+        MagicMock(
+            status_code=200,
+            json=lambda: [{"id": "profile-scope-123", "name": "profile"}],
+            raise_for_status=lambda: None,
+        ),
+        MagicMock(status_code=200, json=lambda: [], raise_for_status=lambda: None),
+    ]
+    mock_post.return_value = MagicMock(status_code=201, raise_for_status=lambda: None)
+
+    ensure_backend_redirect_uri_in_keycloak_client("tenant-a")
+
+    mock_delete.assert_not_called()
+    assert mock_post.call_count == 2
+    assert mock_post.call_args_list[0].kwargs["json"]["name"] == "roles"
+    assert mock_post.call_args_list[1].kwargs["json"]["name"] == "groups"
+    mock_put.assert_not_called()
+
+
 @patch("m8flow_backend.services.keycloak_service.keycloak_url")
 @patch("m8flow_backend.services.keycloak_service.requests.get")
 def test_realm_exists_true(mock_get, mock_keycloak_url) -> None:
     """realm_exists returns True when Keycloak returns 200 from public discovery endpoint."""
-    mock_keycloak_url.return_value = "http://localhost:7002"
+    mock_keycloak_url.return_value = "http://localhost:6842"
     mock_get.return_value = MagicMock(status_code=200)
     assert realm_exists("tenant-a") is True
     mock_get.assert_called_once()
@@ -256,7 +425,7 @@ def test_realm_exists_true(mock_get, mock_keycloak_url) -> None:
 @patch("m8flow_backend.services.keycloak_service.requests.get")
 def test_realm_exists_false_404(mock_get, mock_keycloak_url) -> None:
     """realm_exists returns False when Keycloak returns 404."""
-    mock_keycloak_url.return_value = "http://localhost:7002"
+    mock_keycloak_url.return_value = "http://localhost:6842"
     mock_get.return_value = MagicMock(status_code=404)
     assert realm_exists("missing-realm") is False
 
@@ -277,9 +446,9 @@ def test_realm_exists_empty_realm() -> None:
 @patch("m8flow_backend.services.keycloak_service.keycloak_url")
 def test_tenant_login_authorization_url(mock_keycloak_url) -> None:
     """tenant_login_authorization_url returns Keycloak auth endpoint for realm."""
-    mock_keycloak_url.return_value = "http://localhost:7002"
+    mock_keycloak_url.return_value = "http://localhost:6842"
     url = tenant_login_authorization_url("tenant-a")
-    assert url == "http://localhost:7002/realms/tenant-a/protocol/openid-connect/auth"
+    assert url == "http://localhost:6842/realms/tenant-a/protocol/openid-connect/auth"
 
 
 @patch("m8flow_backend.services.keycloak_service.keycloak_url")

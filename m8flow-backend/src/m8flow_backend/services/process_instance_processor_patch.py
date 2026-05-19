@@ -6,6 +6,8 @@ from collections.abc import Mapping
 from flask import current_app
 
 from m8flow_backend.services.tenant_identity_helpers import find_users_for_current_tenant_by_identifier
+from m8flow_backend.services.tenant_identity_helpers import normalize_organizational_group_identifier
+from m8flow_backend.services.tenant_identity_helpers import qualify_group_identifier
 
 _PATCHED = False
 
@@ -19,43 +21,56 @@ def _task_sort_ts(task: object) -> float:
     return 0.0
 
 
-def _lane_owners_mapping(task: object) -> Mapping[str, object] | None:
-    """
-    Resolve lane-owner data from task-local state first, then workflow-level state.
+def _lane_owner_identifiers_for_task(task: object, task_lane: str) -> list[str] | None:
+    """Return explicit lane-owner identifiers for the task lane, if present."""
+    candidate_lane_owner_maps: list[object] = []
 
-    Downstream user tasks created after additional engine steps or Celery
-    rehydration may no longer have ``lane_owners`` on ``task.data`` even though
-    the initial script task stored it in workflow-level data objects.
-    """
     task_data = getattr(task, "data", None)
     if isinstance(task_data, Mapping):
-        lane_owners = task_data.get("lane_owners")
-        if isinstance(lane_owners, Mapping):
-            return lane_owners
+        candidate_lane_owner_maps.append(task_data.get("lane_owners"))
 
     task_workflow = getattr(task, "workflow", None)
-    if task_workflow is None:
-        return None
-
     workflow_data = getattr(task_workflow, "data", None)
     if isinstance(workflow_data, Mapping):
+        candidate_lane_owner_maps.append(workflow_data.get("lane_owners"))
         workflow_data_objects = workflow_data.get("data_objects")
         if isinstance(workflow_data_objects, Mapping):
-            lane_owners = workflow_data_objects.get("lane_owners")
-            if isinstance(lane_owners, Mapping):
-                return lane_owners
+            candidate_lane_owner_maps.append(workflow_data_objects.get("lane_owners"))
 
-        lane_owners = workflow_data.get("lane_owners")
-        if isinstance(lane_owners, Mapping):
-            return lane_owners
+    workflow_data_objects_attr = getattr(task_workflow, "data_objects", None)
+    if isinstance(workflow_data_objects_attr, Mapping):
+        candidate_lane_owner_maps.append(workflow_data_objects_attr.get("lane_owners"))
 
-    workflow_data_objects = getattr(task_workflow, "data_objects", None)
-    if isinstance(workflow_data_objects, Mapping):
-        lane_owners = workflow_data_objects.get("lane_owners")
-        if isinstance(lane_owners, Mapping):
-            return lane_owners
+    for lane_owners in candidate_lane_owner_maps:
+        if not isinstance(lane_owners, Mapping):
+            continue
+
+        lane_owner_values = lane_owners.get(task_lane)
+        if not isinstance(lane_owner_values, list):
+            continue
+
+        return [value for value in lane_owner_values if isinstance(value, str)]
 
     return None
+
+
+def _candidate_lane_group_identifiers(task_lane: str) -> list[str]:
+    """Return candidate tenant-qualified group identifiers for a BPMN lane."""
+    candidates: list[str] = []
+    seen: set[str] = set()
+
+    for raw_identifier in (
+        normalize_organizational_group_identifier(task_lane),
+        task_lane.strip(),
+    ):
+        if not raw_identifier:
+            continue
+        qualified_identifier = qualify_group_identifier(raw_identifier)
+        if qualified_identifier and qualified_identifier not in seen:
+            seen.add(qualified_identifier)
+            candidates.append(qualified_identifier)
+
+    return candidates
 
 
 def apply() -> None:
@@ -66,6 +81,7 @@ def apply() -> None:
 
     from SpiffWorkflow.task import Task as SpiffTask  # type: ignore
     from spiffworkflow_backend.interfaces import PotentialOwnerIdList
+    from spiffworkflow_backend.models.group import GroupModel
     from spiffworkflow_backend.models.human_task_user import HumanTaskUserAddedBy
     from spiffworkflow_backend.services.process_instance_processor import CustomBpmnScriptEngine
     from spiffworkflow_backend.services.process_instance_processor import ProcessInstanceProcessor
@@ -94,15 +110,10 @@ def apply() -> None:
                 }
             ]
         else:
-            group_model = UserService.find_or_create_group(task_lane)
-            lane_assignment_id = group_model.id
-            lane_owners = _lane_owners_mapping(task)
-            if isinstance(lane_owners, Mapping) and task_lane in lane_owners:
-                lane_owner_identifiers = lane_owners[task_lane]
-                if not isinstance(lane_owner_identifiers, list):
-                    lane_owner_identifiers = []
-                for username_identifier in lane_owner_identifiers:
-                    for lane_owner_user in find_users_for_current_tenant_by_identifier(username_identifier):
+            explicit_lane_owners = _lane_owner_identifiers_for_task(task, task_lane)
+            if explicit_lane_owners is not None:
+                for username_or_email in explicit_lane_owners:
+                    for lane_owner_user in find_users_for_current_tenant_by_identifier(username_or_email):
                         potential_owners.append(
                             {"added_by": HumanTaskUserAddedBy.lane_owner.value, "user_id": lane_owner_user.id}
                         )
@@ -111,10 +122,26 @@ def apply() -> None:
                     (
                         "No users found in task data lane owner list for lane:"
                         f" {task_lane}. The user list used:"
-                        f" {lane_owner_identifiers}"
+                        f" {explicit_lane_owners}"
                     ),
                 )
             else:
+                group_model = None
+                candidate_group_identifiers = _candidate_lane_group_identifiers(task_lane)
+                for group_identifier in candidate_group_identifiers:
+                    group_model = GroupModel.query.filter_by(identifier=group_identifier).first()
+                    if group_model is not None:
+                        break
+
+                if group_model is None:
+                    if not candidate_group_identifiers:
+                        self.raise_if_no_potential_owners(
+                            [],
+                            f"No usable BPMN lane group identifier could be derived from lane: {task_lane}",
+                        )
+                    group_model = UserService.find_or_create_group(candidate_group_identifiers[0])
+
+                lane_assignment_id = group_model.id
                 potential_owners = [
                     {"added_by": HumanTaskUserAddedBy.lane_assignment.value, "user_id": assignment.user_id}
                     for assignment in group_model.user_group_assignments

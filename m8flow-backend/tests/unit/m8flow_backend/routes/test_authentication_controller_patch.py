@@ -5,13 +5,14 @@ from types import SimpleNamespace
 from unittest.mock import patch
 from urllib.parse import quote
 
-from flask import Flask
+from flask import Flask, g
 import pytest
 
 from spiffworkflow_backend.routes import authentication_controller
 from spiffworkflow_backend.exceptions.api_error import ApiError
 
 import m8flow_backend.routes.authentication_controller_patch as auth_patch_module
+from m8flow_backend.tenancy import TENANT_CLAIM
 from m8flow_backend.routes.authentication_controller_patch import (
     _frontend_cookie_domain,
     _handle_tenant_login_request,
@@ -498,7 +499,7 @@ def test_refresh_token_tenant_patch_auto_provisions_missing_user(monkeypatch) ->
     try:
         apply_refresh_token_tenant_patch()
         decoded_token = {
-            "iss": "http://localhost:7002/realms/master",
+            "iss": "http://localhost:6842/realms/master",
             "sub": "subject-123",
             "preferred_username": "super-admin",
         }
@@ -983,6 +984,54 @@ def test_protected_requests_enrich_multi_org_shared_realm_token_without_active_o
             f"{org_tenant_id}:everybody",
             f"{org_tenant_id}:editor",
         }
+def test_refresh_token_tenant_patch_auto_provisions_missing_user_with_separate_roles_and_groups(
+    monkeypatch,
+) -> None:
+    original_login_return = authentication_controller.login_return
+    original_get_user_model_from_token = authentication_controller._get_user_model_from_token
+
+    sentinel_user = object()
+    observed: dict[str, object] = {}
+
+    def fake_original(decoded_token):
+        raise ApiError(
+            error_code="invalid_user",
+            message="Invalid user. Please log in.",
+            status_code=401,
+        )
+
+    def fake_create_user_from_sign_in(decoded_token):
+        observed["tenant"] = getattr(g, "m8flow_tenant_id", None)
+        observed["decoded_token"] = decoded_token
+        return sentinel_user
+
+    monkeypatch.setattr(auth_patch_module, "_REFRESH_TOKEN_TENANT_PATCHED", False)
+    monkeypatch.setattr(authentication_controller, "_get_user_model_from_token", fake_original)
+    monkeypatch.setattr(
+        "spiffworkflow_backend.services.authorization_service.AuthorizationService.create_user_from_sign_in",
+        fake_create_user_from_sign_in,
+    )
+
+    try:
+        apply_refresh_token_tenant_patch()
+        decoded_token = {
+            TENANT_CLAIM: "tenant-a",
+            "iss": "http://localhost:7002/realms/shared",
+            "sub": "subject-789",
+            "preferred_username": "editor-user",
+            "groups": ["/Engineering"],
+            "roles": ["editor"],
+        }
+        app = Flask(__name__)
+        with app.test_request_context(path="/v1.0/login_return"):
+            assert authentication_controller._get_user_model_from_token(decoded_token) is sentinel_user
+    finally:
+        authentication_controller.login_return = original_login_return
+        authentication_controller._get_user_model_from_token = original_get_user_model_from_token
+        monkeypatch.setattr(auth_patch_module, "_REFRESH_TOKEN_TENANT_PATCHED", False)
+
+    assert observed["tenant"] == "tenant-a"
+    assert observed["decoded_token"] == decoded_token
 
 
 def test_public_group_patch_uses_qualified_group_without_mutating_config(monkeypatch) -> None:

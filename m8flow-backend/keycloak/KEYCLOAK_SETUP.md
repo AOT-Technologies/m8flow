@@ -99,7 +99,7 @@ Defaults are `KEYCLOAK_SUPER_ADMIN_USER=super-admin` and `KEYCLOAK_SUPER_ADMIN_P
 
 Use the admin auth option with `client_id=m8flow-backend` for browser sign-in. If you also need API-style `admin-cli` tokens to pass backend validation, add `additional_valid_client_ids=admin-cli` to that auth config.
 
-**Permissions and role alignment:** For the backend to grant API and UI permissions, Keycloak realm role names must match the group names defined in `m8flow.yml`: `super-admin`, `tenant-admin`, `editor`, `viewer`, `integrator`, `reviewer`. Tenant realm templates still expose the tenant-scoped roles through the **m8flow-backend** client `groups` mapper. For admin-realm tokens that do not include a top-level `groups` claim (for example `admin-cli` tokens), the backend falls back to `realm_access.roles` and maps the matching M8Flow role names automatically.
+**Permissions and role alignment:** For the backend to grant API and UI permissions, Keycloak realm role names must match the group names defined in `m8flow.yml`: `super-admin`, `tenant-admin`, `editor`, `viewer`, `integrator`, `reviewer`. Shared-realm and tenant-realm tokens now separate organizational and authorization membership: organizational groups are emitted in the `groups` claim as normalized paths without a leading slash (for example `Engineering` or `Business/Finance`), and M8Flow permission roles are emitted in a separate top-level `roles` claim for the **m8flow-backend** client when available. The backend no longer derives tenant-scoped permission roles from the `groups` claim, but it still falls back to `realm_access.roles` for admin/master-realm tokens that do not include a top-level `roles` claim (for example `admin-cli` tokens).
 
 ## Troubleshooting
 

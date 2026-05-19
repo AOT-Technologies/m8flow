@@ -13,6 +13,8 @@ from m8flow_backend.services.tenant_identity_helpers import extract_realm_from_i
 from m8flow_backend.services.tenant_identity_helpers import is_group_for_tenant
 from m8flow_backend.services.tenant_identity_helpers import is_global_permission_group_identifier
 from m8flow_backend.services.tenant_identity_helpers import normalize_group_identifiers
+from m8flow_backend.services.tenant_identity_helpers import normalize_organizational_group_identifier
+from m8flow_backend.services.tenant_identity_helpers import normalize_organizational_group_identifiers
 from m8flow_backend.services.tenant_identity_helpers import normalize_group_permissions
 from m8flow_backend.services.tenant_identity_helpers import organization_group_identifiers_from_payload
 from m8flow_backend.services.tenant_identity_helpers import organization_memberships_from_payload
@@ -39,9 +41,11 @@ _PERMISSION_SCOPE_TENANT_ID: ContextVar[Any] = ContextVar(
 M8FLOW_AUTH_EXCLUSION_ADDITIONS = [
     "m8flow_backend.routes.keycloak_controller.get_tenant_login_url",
     "m8flow_backend.tenancy.health_check",
+    "m8flow_backend.routes.events_controller.m8flow_trigger",
 ]
+
 M8FLOW_ROLE_GROUP_IDENTIFIERS = frozenset(
-    {"super-admin", "tenant-admin", "editor", "viewer", "integrator", "reviewer"}
+    {"super-admin", "tenant-admin", "editor", "viewer", "integrator", "reviewer", "submitter"}
 )
 M8FLOW_TENANT_ROLE_ALIASES = {
     "admin": "tenant-admin",
@@ -211,9 +215,27 @@ def _shared_realm_identifier() -> str:
     return shared_realm_name()
 
 
+def _normalize_string_claim_values(raw_values: Any) -> list[str]:
+    """Return a deduplicated list of non-empty string claim values."""
+    if not isinstance(raw_values, list):
+        return []
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw_value in raw_values:
+        if not isinstance(raw_value, str):
+            continue
+        value = raw_value.strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        normalized.append(value)
+    return normalized
+
+
 def _keycloak_realm_roles_as_groups(user_info: dict[str, Any]) -> list[str]:
     """
-    Fallback for tokens that do not expose a top-level groups claim.
+    Fallback for tokens that do not expose a top-level roles claim.
 
     Master-realm admin tokens commonly carry application roles in
     realm_access.roles instead.
@@ -258,6 +280,30 @@ def _is_master_realm_user_info(user_info: dict[str, Any]) -> bool:
         return True
 
     return extract_realm_from_issuer(user_info.get("iss")) == _master_realm_identifier()
+
+
+def _normalize_keycloak_roles(user_info: dict[str, Any]) -> list[str]:
+    """
+    Return permission-role identifiers from the token.
+
+    When a top-level ``roles`` claim exists, it is authoritative. Otherwise,
+    fall back to ``realm_access.roles`` for tokens such as master-realm admin
+    tokens that omit the top-level claim.
+    """
+    if "roles" in user_info:
+        return [
+            role
+            for role in _normalize_string_claim_values(user_info.get("roles"))
+            if role in M8FLOW_ROLE_GROUP_IDENTIFIERS
+        ]
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for role in _keycloak_realm_roles_as_groups(user_info):
+        if role not in seen:
+            seen.add(role)
+            normalized.append(role)
+    return normalized
 
 
 def _tenant_id_for_user_info(user_info: dict[str, Any]) -> str | None:
@@ -364,28 +410,59 @@ def _normalize_permissions_yaml_config(permission_configs: dict[str, Any], tenan
 
 def _normalize_keycloak_groups(user_info: dict[str, Any]) -> list[str]:
     """
-    Normalize Keycloak group claims to identifiers used by permissions config.
+    Normalize Keycloak group claims while preserving group-path semantics.
 
-    Keycloak groups are frequently emitted as paths, e.g. "/super-admin" or
-    "/a/b/super-admin". Permission assignment expects plain identifiers like
-    "super-admin".
+    Separated group claims should remain usable as organizational identifiers,
+    so values such as ``/Engineering`` are preserved instead of being collapsed
+    to their leaf segment.
     """
-    groups = user_info.get("groups")
-    if not isinstance(groups, list):
-        return []
+    return normalize_organizational_group_identifiers(_normalize_string_claim_values(user_info.get("groups")))
 
+
+def _normalized_open_id_group_identifiers(user_info: dict[str, Any]) -> list[str]:
+    """
+    Return the effective group identifiers to sync from the token.
+
+    Organizational groups come from ``groups`` and permission roles come from
+    ``roles`` or ``realm_access.roles``.
+    """
     normalized: list[str] = []
     seen: set[str] = set()
-    for group in groups:
-        if not isinstance(group, str):
-            continue
 
-        candidate = _normalize_external_group_identifier(group)
-        if candidate and candidate not in seen:
-            seen.add(candidate)
-            normalized.append(candidate)
-
+    for group_identifier in (
+        _normalized_open_id_organizational_group_identifiers(user_info)
+        + _normalized_open_id_permission_role_group_identifiers(user_info)
+    ):
+        if group_identifier not in seen:
+            seen.add(group_identifier)
+            normalized.append(group_identifier)
     return normalized
+
+
+def _normalized_open_id_organizational_group_identifiers(user_info: dict[str, Any]) -> list[str]:
+    """
+    Return organizational group identifiers from the token.
+
+    The ``groups`` claim is always treated as organizational membership.
+    """
+    return normalize_organizational_group_identifiers(_normalize_string_claim_values(user_info.get("groups")))
+
+
+def _normalized_open_id_permission_role_group_identifiers(user_info: dict[str, Any]) -> list[str]:
+    """Return permission-bearing role identifiers from the token."""
+    return _normalize_keycloak_roles(user_info)
+
+
+def _normalized_open_id_local_group_identifiers(
+    role_group_identifiers: list[str],
+    organizational_group_identifiers: list[str],
+    tenant_id: str | None,
+) -> list[str]:
+    """Return tenant-qualified local group identifiers for the active token context."""
+    return _normalize_openid_group_identifiers(
+        organizational_group_identifiers + role_group_identifiers,
+        tenant_id=tenant_id,
+    )
 
 
 def _tenant_group_identifier_for_external_role(
@@ -437,6 +514,16 @@ def _normalize_openid_group_identifiers(
         if not normalized:
             continue
 
+        if normalized.startswith("/"):
+            qualified_organizational_group = qualify_group_identifier(
+                normalize_organizational_group_identifier(normalized),
+                tenant_id=tenant_id,
+            )
+            if qualified_organizational_group not in seen:
+                seen.add(qualified_organizational_group)
+                normalized_group_identifiers.append(qualified_organizational_group)
+            continue
+
         normalized_for_tenant = _tenant_group_identifier_for_external_role(
             normalized,
             tenant_id=tenant_id,
@@ -483,22 +570,34 @@ def _openid_group_identifiers_from_user_info(
     tokens and non-shared realms.
     """
     normalized_groups = _normalize_keycloak_groups(user_info)
-    derived_groups = _keycloak_realm_roles_as_groups(user_info)
+    derived_groups = _normalize_keycloak_roles(user_info)
     raw_group_identifiers: list[str] = []
     seen_groups: set[str] = set()
 
-    for group_name in normalized_groups + derived_groups:
+    for group_name in normalized_groups:
+        if group_name not in seen_groups:
+            seen_groups.add(group_name)
+            raw_group_identifiers.append(group_name)
+
+    for group_name in derived_groups:
         normalized_group_name = _normalize_external_group_identifier(group_name)
         if normalized_group_name and normalized_group_name not in seen_groups:
             seen_groups.add(normalized_group_name)
             raw_group_identifiers.append(normalized_group_name)
 
     if _is_master_realm_user_info(user_info):
-        raw_group_identifiers = [
-            group_identifier
-            for group_identifier in raw_group_identifiers
-            if is_global_permission_group_identifier(group_identifier)
-        ]
+        master_realm_group_identifiers: list[str] = []
+        seen_master_realm_groups: set[str] = set()
+        for group_identifier in raw_group_identifiers:
+            normalized_group_identifier = _normalize_external_group_identifier(group_identifier)
+            if (
+                normalized_group_identifier
+                and is_global_permission_group_identifier(normalized_group_identifier)
+                and normalized_group_identifier not in seen_master_realm_groups
+            ):
+                seen_master_realm_groups.add(normalized_group_identifier)
+                master_realm_group_identifiers.append(normalized_group_identifier)
+        raw_group_identifiers = master_realm_group_identifiers
 
     if authentication_identifier_from_payload(user_info) == _shared_realm_identifier():
         organization_group_identifiers = organization_group_identifiers_from_payload(
@@ -620,7 +719,6 @@ def apply() -> None:
         return
 
     from flask import current_app
-    from spiffworkflow_backend.exceptions.api_error import ApiError
     from spiffworkflow_backend.models.db import db
     from spiffworkflow_backend.models.group import SPIFF_GUEST_GROUP
     from spiffworkflow_backend.models.permission_assignment import PermissionAssignmentModel
@@ -828,17 +926,20 @@ def apply() -> None:
             )
             if conflicting_user is not None:
                 current_app.logger.warning(
-                    "auth_reuse_same_realm_user: reusing user id=%s username=%s realm=%s instead of creating a duplicate",
+                    "auth_reuse_same_realm_user: reusing local user id=%s username=%s realm=%s old_sub=%s new_sub=%s instead of creating a duplicate",
                     getattr(conflicting_user, "id", None),
                     user_attributes.get("username"),
                     realm_from_service(user_attributes.get("service")),
+                    getattr(conflicting_user, "service_id", None),
+                    user_attributes.get("service_id"),
                 )
                 user_model = conflicting_user
             else:
                 current_app.logger.debug("create_user in login_return")
                 user_model = UserService().create_user(**user_attributes)
                 new_user = True
-        if user_model is not None:
+
+        if not new_user:
             user_db_model_changed = False
             for key, value in user_attributes.items():
                 current_value = getattr(user_model, key)

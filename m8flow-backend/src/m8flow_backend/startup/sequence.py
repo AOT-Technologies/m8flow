@@ -131,6 +131,7 @@ def _wrap_asgi_if_needed(cnx_app: Any) -> Any:
         proxy_count = 0
 
     if proxy_count > 0:
+        # Import lazily to ensure model override bootstrap has run first.
         from spiffworkflow_backend.middleware.asgi_proxy_fix import ASGIProxyFix
         app = ASGIProxyFix(
             app,

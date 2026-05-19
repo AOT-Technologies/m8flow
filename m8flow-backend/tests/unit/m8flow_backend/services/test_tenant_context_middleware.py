@@ -299,9 +299,17 @@ def test_tenant_override_forbidden() -> None:
             assert exc.value.error_code == "tenant_override_forbidden"
 
 
-def test_tenant_context_propagates_to_queries() -> None:
+def test_tenant_context_propagates_to_queries(monkeypatch) -> None:
     from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScoped
     from m8flow_backend.services import tenant_scoping_patch
+
+    monkeypatch.setattr(tenant_scoping_patch, "_patch_bulk_save_objects", lambda: None)
+    monkeypatch.setattr(tenant_scoping_patch, "_patch_insert_or_ignore_duplicate", lambda: None)
+    monkeypatch.setattr(tenant_scoping_patch, "_patch_task_draft_data", lambda: None)
+    monkeypatch.setattr(tenant_scoping_patch, "_patch_task_instructions", lambda: None)
+    monkeypatch.setattr(tenant_scoping_patch, "_patch_future_task", lambda: None)
+    monkeypatch.setattr(tenant_scoping_patch, "_patch_process_caller_relationship", lambda: None)
+    monkeypatch.setattr(tenant_scoping_patch, "_patch_reference_cache_basic_query", lambda: None)
 
     tenant_scoping_patch.apply()
 
@@ -752,7 +760,7 @@ def test_login_return_skips_tenant_validation_for_master_auth_identifier() -> No
         _seed_tenants()
 
         state_payload = {
-            "final_url": "http://localhost:7000/tenants",
+            "final_url": "http://localhost:6840/tenants",
             "authentication_identifier": "master",
         }
         state = base64.b64encode(bytes(str(state_payload), "utf-8")).decode("utf-8")

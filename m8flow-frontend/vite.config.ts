@@ -13,8 +13,8 @@ if (rootEnv.MULTI_TENANT_ON !== undefined && process.env.VITE_MULTI_TENANT_ON ==
 }
 
 const host = process.env.HOST ?? '0.0.0.0';
-const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 7001;
-const backendPort = process.env.BACKEND_PORT ? parseInt(process.env.BACKEND_PORT, 10) : 7000;
+const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 6841;
+const backendPort = process.env.BACKEND_PORT ? parseInt(process.env.BACKEND_PORT, 10) : 6840;
 
 const backendUrl =
   process.env.SPIFFWORKFLOW_BACKEND_URL ??
@@ -36,7 +36,7 @@ const masterRealmIdentifier =
 
 export default defineConfig({
   base: '/',
-  publicDir: path.resolve(__dirname, '../spiffworkflow-frontend/public'),
+  publicDir: path.resolve(__dirname, 'public'),
   define: {
     'import.meta.env.VITE_MULTI_TENANT_ON': JSON.stringify(multiTenantOn),
     'import.meta.env.VITE_M8FLOW_KEYCLOAK_SHARED_REALM': JSON.stringify(sharedRealmIdentifier),
