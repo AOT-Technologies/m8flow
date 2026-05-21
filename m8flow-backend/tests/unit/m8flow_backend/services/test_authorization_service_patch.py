@@ -284,19 +284,23 @@ def test_openid_group_identifiers_from_user_info_prefers_active_org_groups_in_sh
     )
     user_info = {
         "m8flow_authentication_identifier": "shared-users",
-        "groups": ["viewer"],
+        "groups": ["/Administrators", "/Support"],
         "realm_access": {"roles": ["tenant-admin", "editor@tenant-b"]},
         "organization": {
             "tenant-a": {
                 "id": "tenant-a-id",
-                "groups": ["/editor"],
+                "groups": ["/Approvers"],
             }
         },
     }
 
     normalized = _openid_group_identifiers_from_user_info(user_info, tenant_id="tenant-a-id")
 
-    assert normalized == ["tenant-a-id:editor"]
+    assert normalized == [
+        "tenant-a-id:tenant-admin",
+        "tenant-a-id:reviewer",
+        "tenant-a-id:Approvers",
+    ]
 
 
 def test_openid_group_identifiers_from_user_info_selects_current_org_from_multi_org_payload(
@@ -320,7 +324,30 @@ def test_openid_group_identifiers_from_user_info_selects_current_org_from_multi_
     assert normalized == ["tenant-b-id:reviewer"]
 
 
-def test_openid_group_identifiers_from_user_info_falls_back_to_legacy_groups_without_org_groups(
+def test_openid_group_identifiers_from_user_info_derives_tenant_admin_from_org_group(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("M8FLOW_KEYCLOAK_SHARED_REALM", "shared-users")
+    monkeypatch.setattr(
+        "m8flow_backend.services.authorization_service_patch.current_tenant_identifiers",
+        lambda tenant_id=None: {"tenant-a-id", "tenant-a"},
+    )
+    user_info = {
+        "m8flow_authentication_identifier": "shared-users",
+        "organization": {
+            "tenant-a": {
+                "id": "tenant-a-id",
+                "groups": ["/Administrators"],
+            }
+        },
+    }
+
+    normalized = _openid_group_identifiers_from_user_info(user_info, tenant_id="tenant-a-id")
+
+    assert normalized == ["tenant-a-id:tenant-admin", "tenant-a-id:Administrators"]
+
+
+def test_openid_group_identifiers_from_user_info_ignores_legacy_root_groups_without_org_groups(
     monkeypatch,
 ) -> None:
     monkeypatch.setenv("M8FLOW_KEYCLOAK_SHARED_REALM", "shared-users")
@@ -340,7 +367,31 @@ def test_openid_group_identifiers_from_user_info_falls_back_to_legacy_groups_wit
 
     normalized = _openid_group_identifiers_from_user_info(user_info, tenant_id="tenant-a-id")
 
-    assert normalized == ["tenant-a-id:/viewer"]
+    assert normalized == []
+
+
+def test_openid_group_identifiers_from_user_info_keeps_shared_realm_permission_roles_without_root_groups(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("M8FLOW_KEYCLOAK_SHARED_REALM", "shared-users")
+    monkeypatch.setattr(
+        "m8flow_backend.services.authorization_service_patch.current_tenant_identifiers",
+        lambda tenant_id=None: {"tenant-a-id", "tenant-a"},
+    )
+    user_info = {
+        "m8flow_authentication_identifier": "shared-users",
+        "roles": ["tenant-admin", "viewer"],
+        "groups": ["Administrators"],
+        "organization": {
+            "tenant-a": {
+                "id": "tenant-a-id",
+            }
+        },
+    }
+
+    normalized = _openid_group_identifiers_from_user_info(user_info, tenant_id="tenant-a-id")
+
+    assert normalized == ["tenant-a-id:tenant-admin", "tenant-a-id:viewer"]
 
 
 def test_group_identifier_applies_to_active_permission_scope_accepts_current_tenant_and_global_group(
@@ -483,6 +534,24 @@ def test_normalized_open_id_organizational_groups_normalize_all_group_values() -
         "/editor",
         "/Engineering",
         "/default-roles-m8flow",
+    ]
+
+
+def test_normalized_open_id_organizational_groups_preserve_bare_org_group_names_for_shared_realm(monkeypatch) -> None:
+    monkeypatch.setenv("M8FLOW_KEYCLOAK_SHARED_REALM", "m8flow")
+    user_info = {
+        "m8flow_authentication_identifier": "m8flow",
+        "organization": {
+            "m8flow": {
+                "id": "tenant-a-id",
+                "groups": ["/Manager", "/Designers", "Manager", "/Designers/"],
+            }
+        },
+    }
+
+    assert _normalized_open_id_organizational_group_identifiers(user_info) == [
+        "Manager",
+        "Designers",
     ]
 
 

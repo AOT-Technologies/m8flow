@@ -71,11 +71,11 @@ export default function TenantPage() {
   };
   const organizationAliasLabel = translate(
     "organization_alias",
-    "Organization Alias",
+    "Tenant Alias",
   );
   const organizationNameLabel = translate(
     "organization_name",
-    "Organization Name",
+    "Tenant Name",
   );
 
   // Search and filter states
@@ -213,13 +213,13 @@ export default function TenantPage() {
             >
               {translate(
                 "organization_management",
-                "Organization Management",
+                "Tenant Management",
               )}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
               {translate(
                 "organization_management_description",
-                "Manage the Keycloak organizations that back tenant access in the shared realm.",
+                "Manage the Keycloak tenants that back access in Keycloak.",
               )}
             </Typography>
           </Box>
@@ -230,7 +230,7 @@ export default function TenantPage() {
               onClick={handleCreate}
               data-testid="tenant-add-button"
             >
-              {translate("add_organization", "Add Organization")}
+              {translate("add_organization", "Add Tenant")}
             </Button>
           )}
         </Box>
@@ -312,7 +312,7 @@ export default function TenantPage() {
 
             {/* Filter Summary */}
             <Typography variant="caption" color="text.secondary">
-              {translate("showing_organizations_count", "Showing {{filtered}} of {{total}} organization(s)", {
+              {translate("showing_organizations_count", "Showing {{filtered}} of {{total}} tenant(s)", {
                 filtered: filteredAndSortedTenants.length,
                 total: tenants.length,
               })}
@@ -336,11 +336,11 @@ export default function TenantPage() {
                 {searchQuery || statusFilter !== "all"
                   ? translate(
                       "no_organizations_matching_filters",
-                      "No organizations found matching your filters",
+                      "No tenants found matching your filters",
                     )
                   : translate(
                       "no_organizations_available",
-                      "No organizations available",
+                      "No tenants available",
                     )}
               </Typography>
             </Box>
@@ -408,8 +408,8 @@ export default function TenantPage() {
                       >
                         <Tooltip
                           title={translate(
-                            "manage_organization_roles",
-                            "Manage Organization Roles",
+                            "manage_tenant_groups",
+                            "Manage Tenant Groups",
                           )}
                         >
                           <IconButton
@@ -422,7 +422,7 @@ export default function TenantPage() {
                           </IconButton>
                         </Tooltip>
                         <Tooltip
-                          title={translate("edit_organization", "Edit Organization")}
+                          title={translate("edit_organization", "Edit Tenant")}
                           disableHoverListener={tenant.status === "DELETED"}
                         >
                           <span

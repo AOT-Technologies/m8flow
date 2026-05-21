@@ -4,16 +4,29 @@ from collections.abc import Mapping
 from typing import Any
 
 from m8flow_backend.services.keycloak_service import (
-    DEFAULT_ORGANIZATION_ROLE_GROUP_NAMES,
+    add_organization_member,
     add_organization_group_member,
     get_organization_by_id,
     get_organization_by_alias,
+    get_organization_group_by_id,
     get_organization_member_by_username,
     get_organization_member_groups,
+    get_realm_user_by_username,
+    list_organization_group_members,
+    list_organization_groups,
+    organization_group_role_names,
     remove_organization_group_member,
+    search_realm_users,
     search_organization_members,
+    set_organization_group_role_names,
+    shared_realm_name,
 )
 from m8flow_backend.services.authorization_service_patch import _permission_scope_tenant
+from m8flow_backend.services.tenant_group_mapping import (
+    VALID_TENANT_ROLE_NAMES,
+    organization_group_name_candidates_for_tenant_role,
+    tenant_roles_for_organization_group,
+)
 from m8flow_backend.services.tenant_identity_helpers import (
     qualify_group_identifier,
     upsert_local_shared_realm_member,
@@ -24,9 +37,6 @@ from spiffworkflow_backend.models.db import db
 from spiffworkflow_backend.models.user_group_assignment import UserGroupAssignmentModel
 from spiffworkflow_backend.services.authorization_service import AuthorizationService
 from spiffworkflow_backend.services.user_service import UserService
-
-
-VALID_TENANT_ROLE_NAMES = frozenset(DEFAULT_ORGANIZATION_ROLE_GROUP_NAMES)
 
 
 def _normalize_role_name(role_name: str) -> str:
@@ -78,15 +88,91 @@ def _organization_for_tenant(tenant_id: str) -> tuple[Any, dict[str, Any], str]:
     return tenant, organization, organization_id.strip()
 
 
-def _normalized_member_roles(organization_id: str, member_id: str) -> list[str]:
+def _role_lookup_key(value: str | None) -> str:
+    normalized_value = _normalize_group_name(value)
+    return normalized_value.casefold() if normalized_value else ""
+
+
+def _mapped_roles_from_group(group: Mapping[str, Any] | None) -> list[str]:
+    return list(organization_group_role_names(group))
+
+
+def _organization_group_role_lookup(organization_id: str) -> dict[str, dict[str, list[str]]]:
+    roles_by_group_id: dict[str, list[str]] = {}
+    roles_by_group_name: dict[str, list[str]] = {}
+
+    for group in list_organization_groups(organization_id):
+        group_id = group.get("id")
+        group_name = group.get("name")
+        if not isinstance(group_name, str) or not group_name.strip():
+            continue
+
+        effective_group = (
+            get_organization_group_by_id(organization_id, group_id.strip())
+            if isinstance(group_id, str) and group_id.strip()
+            else None
+        ) or group
+        mapped_roles = _mapped_roles_from_group(effective_group)
+
+        group_name_key = _role_lookup_key(group_name)
+        if group_name_key:
+            roles_by_group_name[group_name_key] = mapped_roles
+        if isinstance(group_id, str) and group_id.strip():
+            roles_by_group_id[group_id.strip()] = mapped_roles
+
+    return {
+        "by_group_id": roles_by_group_id,
+        "by_group_name": roles_by_group_name,
+    }
+
+
+def _roles_for_group(
+    group: Mapping[str, Any],
+    *,
+    organization_id: str | None = None,
+    group_role_lookup: dict[str, dict[str, list[str]]] | None = None,
+) -> list[str]:
+    group_id = group.get("id")
+    group_name = group.get("name")
+
+    if group_role_lookup is not None:
+        if isinstance(group_id, str) and group_id.strip():
+            mapped_roles = group_role_lookup["by_group_id"].get(group_id.strip())
+            if mapped_roles is not None:
+                return mapped_roles
+
+        group_name_key = _role_lookup_key(group_name if isinstance(group_name, str) else None)
+        if group_name_key:
+            mapped_roles = group_role_lookup["by_group_name"].get(group_name_key)
+            if mapped_roles is not None:
+                return mapped_roles
+
+    effective_group = (
+        get_organization_group_by_id(organization_id, group_id.strip())
+        if organization_id and isinstance(group_id, str) and group_id.strip()
+        else None
+    ) or group
+    return _mapped_roles_from_group(effective_group)
+
+
+def _normalized_member_roles(
+    organization_id: str,
+    member_id: str,
+    *,
+    group_role_lookup: dict[str, dict[str, list[str]]] | None = None,
+) -> list[str]:
+    effective_group_role_lookup = group_role_lookup or _organization_group_role_lookup(organization_id)
     roles: set[str] = set()
     for group in get_organization_member_groups(organization_id, member_id):
-        group_name = group.get("name")
-        if not isinstance(group_name, str):
+        if not isinstance(group, Mapping):
             continue
-        normalized_group_name = group_name.strip()
-        if normalized_group_name in VALID_TENANT_ROLE_NAMES:
-            roles.add(normalized_group_name)
+        roles.update(
+            _roles_for_group(
+                group,
+                organization_id=organization_id,
+                group_role_lookup=effective_group_role_lookup,
+            )
+        )
     return sorted(roles)
 
 
@@ -111,6 +197,186 @@ def _serialize_member(
         "display_name": display_name,
         "roles": roles,
     }
+
+
+def _serialize_group_member(member: Mapping[str, Any]) -> dict[str, Any]:
+    serialized_member = _serialize_member(member, roles=[])
+    serialized_member.pop("roles", None)
+    return serialized_member
+
+
+def _mapped_roles_for_group(
+    group: Mapping[str, Any],
+    *,
+    organization_id: str | None = None,
+    group_role_lookup: dict[str, dict[str, list[str]]] | None = None,
+) -> list[str]:
+    return _roles_for_group(
+        group,
+        organization_id=organization_id,
+        group_role_lookup=group_role_lookup,
+    )
+
+
+def _organization_group_name_for_role_name(role_name: str) -> str:
+    candidates = organization_group_name_candidates_for_tenant_role(role_name)
+    if not candidates:
+        raise ApiError(
+            error_code="invalid_role",
+            message=f"Role '{role_name}' is not a supported tenant role.",
+            status_code=400,
+        )
+    return candidates[0]
+
+
+def _organization_group_names_for_role_name(role_name: str) -> tuple[str, ...]:
+    candidates = organization_group_name_candidates_for_tenant_role(role_name)
+    if not candidates:
+        raise ApiError(
+            error_code="invalid_role",
+            message=f"Role '{role_name}' is not a supported tenant role.",
+            status_code=400,
+        )
+    return candidates
+
+
+def _normalize_group_name(group_name: str | None) -> str:
+    return str(group_name or "").strip().strip("/")
+
+
+def _organization_group_name_lookup(organization_id: str) -> dict[str, str]:
+    group_name_lookup: dict[str, str] = {}
+    for group in list_organization_groups(organization_id):
+        group_name = _normalize_group_name(group.get("name"))
+        if not group_name:
+            continue
+        group_name_lookup[group_name.casefold()] = group_name
+    return group_name_lookup
+
+
+def _validated_group_names(
+    organization_id: str,
+    group_names: list[str] | tuple[str, ...] | str | None,
+) -> list[str]:
+    if not group_names:
+        return []
+
+    if isinstance(group_names, str):
+        raw_group_names: list[str] = [group_names]
+    elif isinstance(group_names, (list, tuple)):
+        raw_group_names = list(group_names)
+    else:
+        raise ApiError(
+            error_code="invalid_group",
+            message="Group names must be a string or a list of strings.",
+            status_code=400,
+        )
+
+    available_group_names = _organization_group_name_lookup(organization_id)
+    normalized_group_names: list[str] = []
+    seen_group_names: set[str] = set()
+
+    for group_name in raw_group_names:
+        normalized_group_name = _normalize_group_name(group_name)
+        if not normalized_group_name:
+            continue
+        canonical_group_name = available_group_names.get(normalized_group_name.casefold())
+        if not canonical_group_name:
+            raise ApiError(
+                error_code="invalid_group",
+                message=f"Group '{group_name}' does not exist in the tenant organization.",
+                status_code=400,
+            )
+        if canonical_group_name.casefold() in seen_group_names:
+            continue
+        seen_group_names.add(canonical_group_name.casefold())
+        normalized_group_names.append(canonical_group_name)
+
+    return normalized_group_names
+
+
+def _organization_group_or_error(organization_id: str, group_name: str) -> dict[str, Any]:
+    validated_group_names = _validated_group_names(organization_id, [group_name])
+    if not validated_group_names:
+        raise ApiError(
+            error_code="invalid_group",
+            message=f"Group '{group_name}' does not exist in the tenant organization.",
+            status_code=400,
+        )
+
+    canonical_group_name = validated_group_names[0]
+    for group in list_organization_groups(organization_id):
+        candidate_name = _normalize_group_name(group.get("name"))
+        if candidate_name.casefold() == canonical_group_name.casefold():
+            return group
+
+    raise ApiError(
+        error_code="invalid_group",
+        message=f"Group '{canonical_group_name}' does not exist in the tenant organization.",
+        status_code=400,
+    )
+
+
+def _serialize_group(
+    organization_id: str,
+    group: Mapping[str, Any],
+    *,
+    group_role_lookup: dict[str, dict[str, list[str]]] | None = None,
+) -> dict[str, Any] | None:
+    group_id = group.get("id")
+    group_name = group.get("name")
+    if not isinstance(group_id, str) or not group_id.strip():
+        return None
+    if not isinstance(group_name, str) or not group_name.strip():
+        return None
+
+    members = [
+        _serialize_group_member(member)
+        for member in list_organization_group_members(organization_id, group_id.strip())
+        if isinstance(member, Mapping)
+    ]
+    members.sort(key=lambda item: str(item.get("username") or ""))
+
+    return {
+        "id": group_id.strip(),
+        "name": group_name.strip(),
+        "path": group.get("path"),
+        "mapped_roles": _mapped_roles_for_group(
+            group,
+            organization_id=organization_id,
+            group_role_lookup=group_role_lookup,
+        ),
+        "member_count": len(members),
+        "members": members,
+    }
+
+
+def _tenant_group_matches_search(group: Mapping[str, Any], search: str) -> bool:
+    normalized_search = str(search or "").strip().lower()
+    if not normalized_search:
+        return True
+
+    candidates: list[str] = []
+    for value in (
+        group.get("name"),
+        group.get("path"),
+        *(group.get("mapped_roles") or []),
+    ):
+        if isinstance(value, str) and value.strip():
+            candidates.append(value.strip().lower())
+
+    for member in group.get("members") or []:
+        if not isinstance(member, Mapping):
+            continue
+        for value in (
+            member.get("username"),
+            member.get("display_name"),
+            member.get("email"),
+        ):
+            if isinstance(value, str) and value.strip():
+                candidates.append(value.strip().lower())
+
+    return any(normalized_search in candidate for candidate in candidates)
 
 
 def _tenant_role_group(role_name: str, tenant_id: str) -> Any:
@@ -152,6 +418,89 @@ def _ensure_tenant_yaml_permissions_and_everybody_membership(user: Any, tenant_i
         AuthorizationService.import_permissions_from_yaml_file(user)
 
 
+def _sync_local_role_assignments(user: Any, tenant_id: str, roles: list[str]) -> None:
+    added_group_ids: set[int] = set()
+    removed_group_ids: set[int] = set()
+    desired_roles = {role_name for role_name in roles if role_name in VALID_TENANT_ROLE_NAMES}
+
+    for role_name in sorted(VALID_TENANT_ROLE_NAMES):
+        group = _tenant_role_group(role_name, tenant_id)
+        if role_name in desired_roles:
+            assignment_created = _ensure_local_assignment(user, group, tenant_id)
+            if assignment_created:
+                added_group_ids.add(group.id)
+            continue
+
+        assignment_deleted = _delete_local_assignment(user, group, tenant_id)
+        if assignment_deleted:
+            removed_group_ids.add(group.id)
+
+    if not added_group_ids and not removed_group_ids:
+        return
+
+    UserService.update_human_task_assignments_for_user(
+        user,
+        new_group_ids=added_group_ids,
+        old_group_ids=removed_group_ids,
+    )
+
+
+def _sync_local_member_from_keycloak_member(
+    tenant: Any,
+    organization_id: str,
+    member: Mapping[str, Any],
+    *,
+    group_role_lookup: dict[str, dict[str, list[str]]] | None = None,
+) -> tuple[Any, list[str]]:
+    username = str(member.get("username") or "").strip()
+    member_id = str(member.get("id") or "").strip()
+    if not username:
+        raise ApiError(
+            error_code="tenant_member_not_found",
+            message="Tenant member does not have a valid username.",
+            status_code=400,
+        )
+    if not member_id:
+        raise ApiError(
+            error_code="tenant_member_not_found",
+            message=f"User '{username}' does not have a valid Keycloak membership id.",
+            status_code=400,
+        )
+
+    local_user = _upsert_local_member_or_error(member, username)
+    roles = _normalized_member_roles(
+        organization_id,
+        member_id,
+        group_role_lookup=group_role_lookup,
+    )
+    _sync_local_role_assignments(local_user, tenant.id, roles)
+    _ensure_tenant_yaml_permissions_and_everybody_membership(local_user, tenant.id)
+    return local_user, roles
+
+
+def _sync_local_members_for_group(
+    tenant: Any,
+    organization_id: str,
+    group: Mapping[str, Any],
+    *,
+    group_role_lookup: dict[str, dict[str, list[str]]] | None = None,
+) -> None:
+    group_id = group.get("id")
+    if not isinstance(group_id, str) or not group_id.strip():
+        return
+
+    effective_group_role_lookup = group_role_lookup or _organization_group_role_lookup(organization_id)
+    for member in list_organization_group_members(organization_id, group_id.strip()):
+        if not isinstance(member, Mapping):
+            continue
+        _sync_local_member_from_keycloak_member(
+            tenant,
+            organization_id,
+            member,
+            group_role_lookup=effective_group_role_lookup,
+        )
+
+
 def _delete_local_assignment(user: Any, group: Any, tenant_id: str) -> bool:
     assignment = _local_assignment_query(user, group, tenant_id).first()
     if assignment is None:
@@ -159,6 +508,42 @@ def _delete_local_assignment(user: Any, group: Any, tenant_id: str) -> bool:
     db.session.delete(assignment)
     db.session.commit()
     return True
+
+
+def _tenant_member_or_error(organization_id: str, tenant_slug: str, username: str) -> dict[str, Any]:
+    member = get_organization_member_by_username(organization_id, username)
+    if isinstance(member, dict):
+        return member
+    raise ApiError(
+        error_code="tenant_member_not_found",
+        message=f"User '{username}' is not a member of organization '{tenant_slug}'.",
+        status_code=404,
+    )
+
+
+def _tenant_member_id_or_error(member: Mapping[str, Any], username: str) -> str:
+    member_id = member.get("id")
+    if isinstance(member_id, str) and member_id.strip():
+        return member_id.strip()
+    raise ApiError(
+        error_code="tenant_member_not_found",
+        message=f"User '{username}' does not have a valid Keycloak membership id.",
+        status_code=400,
+    )
+
+
+def _upsert_local_member_or_error(member: Mapping[str, Any], username: str) -> Any:
+    local_user = upsert_local_shared_realm_member(member)
+    if local_user is not None:
+        return local_user
+    raise ApiError(
+        error_code="local_user_sync_failed",
+        message=(
+            f"User '{username}' was updated in Keycloak, but the local M8Flow user row "
+            "could not be created or refreshed."
+        ),
+        status_code=409,
+    )
 
 
 def list_tenant_members_with_roles(
@@ -169,6 +554,7 @@ def list_tenant_members_with_roles(
 ) -> list[dict[str, Any]]:
     """Return organization members for one tenant with their org-local tenant roles."""
     _tenant, _organization, organization_id = _organization_for_tenant(tenant_id)
+    group_role_lookup = _organization_group_role_lookup(organization_id)
     members = search_organization_members(
         organization_id,
         search or "",
@@ -187,7 +573,11 @@ def list_tenant_members_with_roles(
         serialized_members.append(
             _serialize_member(
                 member,
-                roles=_normalized_member_roles(organization_id, member_id.strip()),
+                roles=_normalized_member_roles(
+                    organization_id,
+                    member_id.strip(),
+                    group_role_lookup=group_role_lookup,
+                ),
             )
         )
 
@@ -195,55 +585,285 @@ def list_tenant_members_with_roles(
     return serialized_members
 
 
+def list_available_tenant_users(
+    tenant_id: str,
+    *,
+    search: str | None = None,
+    max_results: int = 100,
+) -> list[dict[str, Any]]:
+    """Return existing realm users that are not yet members of the selected tenant."""
+    _tenant, _organization, organization_id = _organization_for_tenant(tenant_id)
+    normalized_search = str(search or "").strip()
+
+    tenant_members = search_organization_members(
+        organization_id,
+        normalized_search,
+        exact=False,
+        max_results=max_results,
+    )
+    existing_usernames = {
+        username.strip().casefold()
+        for member in tenant_members
+        if isinstance(member, Mapping)
+        for username in [member.get("username")]
+        if isinstance(username, str) and username.strip()
+    }
+
+    available_users: list[dict[str, Any]] = []
+    for user in search_realm_users(
+        shared_realm_name(),
+        normalized_search,
+        exact=False,
+        max_results=max_results,
+    ):
+        username = user.get("username")
+        if not isinstance(username, str) or not username.strip():
+            continue
+        if username.strip().casefold() in existing_usernames:
+            continue
+        available_users.append(_serialize_group_member(user))
+
+    available_users.sort(key=lambda item: str(item.get("username") or ""))
+    return available_users
+
+
+def list_tenant_groups_with_members(
+    tenant_id: str,
+    *,
+    search: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return Keycloak organization groups for one tenant with mapped tenant roles and members."""
+    _tenant, _organization, organization_id = _organization_for_tenant(tenant_id)
+    group_role_lookup = _organization_group_role_lookup(organization_id)
+    serialized_groups: list[dict[str, Any]] = []
+
+    for group in list_organization_groups(organization_id):
+        serialized_group = _serialize_group(
+            organization_id,
+            group,
+            group_role_lookup=group_role_lookup,
+        )
+        if serialized_group is None:
+            continue
+        if _tenant_group_matches_search(serialized_group, search or ""):
+            serialized_groups.append(serialized_group)
+
+    serialized_groups.sort(key=lambda item: str(item.get("name") or ""))
+    return serialized_groups
+
+
+def add_tenant_member(
+    tenant_id: str,
+    *,
+    username: str,
+    group_names: list[str] | tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    """Add one existing Keycloak user to one tenant organization and optionally assign organization groups."""
+    normalized_username = str(username or "").strip()
+    if not normalized_username:
+        raise ApiError(
+            error_code="invalid_member",
+            message="Username is required.",
+            status_code=400,
+        )
+
+    tenant, _organization, organization_id = _organization_for_tenant(tenant_id)
+    validated_group_names = _validated_group_names(organization_id, group_names)
+
+    member = get_organization_member_by_username(organization_id, normalized_username)
+    if not isinstance(member, dict):
+        realm_name = shared_realm_name()
+        realm_user = get_realm_user_by_username(realm_name, normalized_username)
+        if not isinstance(realm_user, dict):
+            raise ApiError(
+                error_code="tenant_member_not_found",
+                message=(
+                    f"Existing user '{normalized_username}' could not be found in Keycloak."
+                ),
+                status_code=404,
+            )
+
+        user_id = realm_user.get("id")
+
+        if not isinstance(user_id, str) or not user_id.strip():
+            raise ApiError(
+                error_code="invalid_member",
+                message=f"User '{normalized_username}' does not have a valid Keycloak user id.",
+                status_code=400,
+            )
+
+        add_organization_member(organization_id, user_id.strip())
+        member = _tenant_member_or_error(organization_id, tenant.slug, normalized_username)
+
+    member_id = _tenant_member_id_or_error(member, normalized_username)
+    for group_name in validated_group_names:
+        add_organization_group_member(organization_id, group_name, member_id)
+
+    _local_user, roles = _sync_local_member_from_keycloak_member(
+        tenant,
+        organization_id,
+        member,
+    )
+    return _serialize_member(member, roles=roles)
+
+
+def add_tenant_group_member(tenant_id: str, username: str, group_name: str) -> dict[str, Any]:
+    """Assign one tenant member to one existing organization group and mirror mapped roles locally."""
+    normalized_username = str(username or "").strip()
+    if not normalized_username:
+        raise ApiError(
+            error_code="invalid_member",
+            message="Username is required.",
+            status_code=400,
+        )
+
+    tenant, _organization, organization_id = _organization_for_tenant(tenant_id)
+    validated_group_names = _validated_group_names(organization_id, [group_name])
+    member = _tenant_member_or_error(organization_id, tenant.slug, normalized_username)
+    member_id = _tenant_member_id_or_error(member, normalized_username)
+
+    add_organization_group_member(organization_id, validated_group_names[0], member_id)
+
+    _local_user, roles = _sync_local_member_from_keycloak_member(
+        tenant,
+        organization_id,
+        member,
+    )
+    return _serialize_member(member, roles=roles)
+
+
+def remove_tenant_group_member(tenant_id: str, username: str, group_name: str) -> dict[str, Any]:
+    """Remove one tenant member from one existing organization group and mirror mapped roles locally."""
+    normalized_username = str(username or "").strip()
+    if not normalized_username:
+        raise ApiError(
+            error_code="invalid_member",
+            message="Username is required.",
+            status_code=400,
+        )
+
+    tenant, _organization, organization_id = _organization_for_tenant(tenant_id)
+    validated_group_names = _validated_group_names(organization_id, [group_name])
+    member = _tenant_member_or_error(organization_id, tenant.slug, normalized_username)
+    member_id = _tenant_member_id_or_error(member, normalized_username)
+
+    remove_organization_group_member(organization_id, validated_group_names[0], member_id)
+
+    _local_user, roles = _sync_local_member_from_keycloak_member(
+        tenant,
+        organization_id,
+        member,
+    )
+    return _serialize_member(member, roles=roles)
+
+
+def assign_tenant_group_role(tenant_id: str, group_name: str, role_name: str) -> dict[str, Any]:
+    """Grant one tenant-scoped role to one Keycloak organization group and mirror the result locally."""
+    normalized_role_name = _normalize_role_name(role_name)
+    tenant, _organization, organization_id = _organization_for_tenant(tenant_id)
+    group = _organization_group_or_error(organization_id, group_name)
+    group_id = group.get("id")
+    if not isinstance(group_id, str) or not group_id.strip():
+        raise ApiError(
+            error_code="invalid_group",
+            message=f"Group '{group_name}' does not have a valid Keycloak group id.",
+            status_code=400,
+        )
+
+    updated_group = set_organization_group_role_names(
+        organization_id,
+        group_id.strip(),
+        sorted(
+            {
+                *_mapped_roles_for_group(group, organization_id=organization_id),
+                normalized_role_name,
+            }
+        ),
+    )
+
+    group_role_lookup = _organization_group_role_lookup(organization_id)
+    _sync_local_members_for_group(
+        tenant,
+        organization_id,
+        updated_group if isinstance(updated_group, Mapping) else group,
+        group_role_lookup=group_role_lookup,
+    )
+    serialized_group = _serialize_group(
+        organization_id,
+        updated_group if isinstance(updated_group, Mapping) else group,
+        group_role_lookup=group_role_lookup,
+    )
+    if serialized_group is None:
+        raise ApiError(
+            error_code="invalid_group",
+            message=f"Group '{group_name}' could not be serialized after role assignment.",
+            status_code=500,
+        )
+    return serialized_group
+
+
+def remove_tenant_group_role(tenant_id: str, group_name: str, role_name: str) -> dict[str, Any]:
+    """Remove one tenant-scoped role from one Keycloak organization group and mirror the result locally."""
+    normalized_role_name = _normalize_role_name(role_name)
+    tenant, _organization, organization_id = _organization_for_tenant(tenant_id)
+    group = _organization_group_or_error(organization_id, group_name)
+    group_id = group.get("id")
+    if not isinstance(group_id, str) or not group_id.strip():
+        raise ApiError(
+            error_code="invalid_group",
+            message=f"Group '{group_name}' does not have a valid Keycloak group id.",
+            status_code=400,
+        )
+
+    updated_group = set_organization_group_role_names(
+        organization_id,
+        group_id.strip(),
+        [
+            mapped_role_name
+            for mapped_role_name in _mapped_roles_for_group(group, organization_id=organization_id)
+            if mapped_role_name != normalized_role_name
+        ],
+    )
+
+    group_role_lookup = _organization_group_role_lookup(organization_id)
+    _sync_local_members_for_group(
+        tenant,
+        organization_id,
+        updated_group if isinstance(updated_group, Mapping) else group,
+        group_role_lookup=group_role_lookup,
+    )
+    serialized_group = _serialize_group(
+        organization_id,
+        updated_group if isinstance(updated_group, Mapping) else group,
+        group_role_lookup=group_role_lookup,
+    )
+    if serialized_group is None:
+        raise ApiError(
+            error_code="invalid_group",
+            message=f"Group '{group_name}' could not be serialized after role removal.",
+            status_code=500,
+        )
+    return serialized_group
+
+
 def assign_tenant_role(tenant_id: str, username: str, role_name: str) -> dict[str, Any]:
     """Assign one tenant-scoped role to one organization member and mirror it locally."""
     normalized_role_name = _normalize_role_name(role_name)
     tenant, _organization, organization_id = _organization_for_tenant(tenant_id)
-    member = get_organization_member_by_username(organization_id, username)
-    if not isinstance(member, dict):
-        raise ApiError(
-            error_code="tenant_member_not_found",
-            message=f"User '{username}' is not a member of organization '{tenant.slug}'.",
-            status_code=404,
-        )
+    member = _tenant_member_or_error(organization_id, tenant.slug, username)
+    member_id = _tenant_member_id_or_error(member, username)
 
-    member_id = member.get("id")
-    if not isinstance(member_id, str) or not member_id.strip():
-        raise ApiError(
-            error_code="tenant_member_not_found",
-            message=f"User '{username}' does not have a valid Keycloak membership id.",
-            status_code=400,
-        )
+    add_organization_group_member(
+        organization_id,
+        _organization_group_name_for_role_name(normalized_role_name),
+        member_id,
+    )
 
-    add_organization_group_member(organization_id, normalized_role_name, member_id.strip())
-
-    local_user = upsert_local_shared_realm_member(member)
-    if local_user is None:
-        raise ApiError(
-            error_code="local_user_sync_failed",
-            message=(
-                f"User '{username}' was updated in Keycloak, but the local M8Flow user row "
-                "could not be created or refreshed."
-            ),
-            status_code=409,
-        )
-
-    group = _tenant_role_group(normalized_role_name, tenant.id)
-    assignment_created = _ensure_local_assignment(local_user, group, tenant.id)
-    if assignment_created:
-        UserService.update_human_task_assignments_for_user(
-            local_user,
-            new_group_ids={group.id},
-            old_group_ids=set(),
-        )
-
-    # Ensure the tenant's "everybody" group exists, has its YAML permissions, and
-    # the user is enrolled in it. Without this the user only gets the explicit
-    # role group and is denied basic SpiffWorkflow endpoints (/onboarding, etc.).
-    _ensure_tenant_yaml_permissions_and_everybody_membership(local_user, tenant.id)
-
-    current_roles = _normalized_member_roles(organization_id, member_id.strip())
-    updated_roles = sorted(set(current_roles).union({normalized_role_name}))
+    _local_user, updated_roles = _sync_local_member_from_keycloak_member(
+        tenant,
+        organization_id,
+        member,
+    )
     return _serialize_member(
         member,
         roles=updated_roles,
@@ -254,37 +874,21 @@ def remove_tenant_role(tenant_id: str, username: str, role_name: str) -> dict[st
     """Remove one tenant-scoped role from one organization member and mirror it locally."""
     normalized_role_name = _normalize_role_name(role_name)
     tenant, _organization, organization_id = _organization_for_tenant(tenant_id)
-    member = get_organization_member_by_username(organization_id, username)
-    if not isinstance(member, dict):
-        raise ApiError(
-            error_code="tenant_member_not_found",
-            message=f"User '{username}' is not a member of organization '{tenant.slug}'.",
-            status_code=404,
+    member = _tenant_member_or_error(organization_id, tenant.slug, username)
+    member_id = _tenant_member_id_or_error(member, username)
+
+    for organization_group_name in _organization_group_names_for_role_name(normalized_role_name):
+        remove_organization_group_member(
+            organization_id,
+            organization_group_name,
+            member_id,
         )
 
-    member_id = member.get("id")
-    if not isinstance(member_id, str) or not member_id.strip():
-        raise ApiError(
-            error_code="tenant_member_not_found",
-            message=f"User '{username}' does not have a valid Keycloak membership id.",
-            status_code=400,
-        )
-
-    remove_organization_group_member(organization_id, normalized_role_name, member_id.strip())
-
-    local_user = upsert_local_shared_realm_member(member)
-    if local_user is not None:
-        group = _tenant_role_group(normalized_role_name, tenant.id)
-        assignment_deleted = _delete_local_assignment(local_user, group, tenant.id)
-        if assignment_deleted:
-            UserService.update_human_task_assignments_for_user(
-                local_user,
-                new_group_ids=set(),
-                old_group_ids={group.id},
-            )
-
-    current_roles = _normalized_member_roles(organization_id, member_id.strip())
-    updated_roles = sorted(role for role in current_roles if role != normalized_role_name)
+    _local_user, updated_roles = _sync_local_member_from_keycloak_member(
+        tenant,
+        organization_id,
+        member,
+    )
     return _serialize_member(
         member,
         roles=updated_roles,

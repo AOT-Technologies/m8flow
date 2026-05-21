@@ -16,7 +16,7 @@ setup_traps
 set -o errtrace -o errexit -o nounset -o pipefail
 
 keycloak_version=26.6.1
-keycloak_base_url="${KEYCLOAK_HOSTNAME:-http://localhost:${KEYCLOAK_PROXY_PORT:-7002}}"
+keycloak_base_url="${KEYCLOAK_HOSTNAME:-http://localhost:${KEYCLOAK_PROXY_PORT:-6842}}"
 keycloak_admin_user="admin"
 keycloak_admin_password="admin"
 keycloak_super_admin_user="${KEYCLOAK_SUPER_ADMIN_USER:-super-admin}"
@@ -25,18 +25,20 @@ keycloak_master_realm_name="${M8FLOW_KEYCLOAK_MASTER_REALM:-master}"
 keycloak_shared_realm_name="${M8FLOW_KEYCLOAK_SHARED_REALM:-m8flow}"
 keycloak_default_organization_alias="${M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_ALIAS:-${keycloak_shared_realm_name}}"
 keycloak_default_organization_name="${M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_NAME:-${keycloak_default_organization_alias}}"
-keycloak_default_organization_seed_users="admin editor integrator reviewer viewer"
-keycloak_organization_role_groups="tenant-admin editor integrator reviewer viewer"
-keycloak_default_organization_seed_role_assignments="${M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_SEED_ROLE_ASSIGNMENTS:-admin:tenant-admin editor:editor integrator:integrator reviewer:reviewer viewer:viewer}"
+keycloak_default_organization_seed_users="admin editor integrator reviewer submitter viewer"
+keycloak_organization_role_groups="Approvers Designers Administrators Support Submitters Viewers"
+keycloak_legacy_organization_role_groups="tenant-admin editor integrator reviewer submitter viewer"
+keycloak_default_organization_seed_role_assignments="${M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_SEED_ROLE_ASSIGNMENTS:-reviewer:Approvers editor:Designers admin:Administrators integrator:Support submitter:Submitters viewer:Viewers}"
+keycloak_default_organization_seed_user_role_assignments="${M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_SEED_USER_ROLE_ASSIGNMENTS:-admin:tenant-admin editor:editor integrator:integrator reviewer:reviewer submitter:submitter viewer:viewer}"
+keycloak_organization_group_role_mappings="${M8FLOW_KEYCLOAK_ORGANIZATION_GROUP_ROLE_MAPPINGS:-Administrators:tenant-admin Approvers:reviewer Designers:editor Support:integrator Submitters:submitter Viewers:viewer}"
 keycloak_master_client_id="${M8FLOW_KEYCLOAK_SPOKE_CLIENT_ID:-m8flow-backend}"
 keycloak_master_client_secret="${M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET:-${M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET:-JXeQExm0JhQPLumgHtIIqf52bDalHz0q}}"
-backend_public_url="${M8FLOW_BACKEND_URL:-http://localhost:7000}"
-frontend_public_url="${M8FLOW_BACKEND_URL_FOR_FRONTEND:-http://localhost:7001}"
+backend_public_url="${M8FLOW_BACKEND_URL:-http://localhost:6840}"
+frontend_public_url="${M8FLOW_BACKEND_URL_FOR_FRONTEND:-http://localhost:6841}"
 backend_redirect_uri="${backend_public_url%/}/*"
 frontend_logout_redirect_uri="${frontend_public_url%/}/*"
 placeholder_client_id="__M8FLOW_SPOKE_CLIENT_ID__"
 JQ_FIRST_ID_EXPR='.[0].id // empty'
-normalized_group_mapper_provider_id="oidc-normalized-group-membership-mapper"
 
 # Get script directory
 script_dir="$(
@@ -113,7 +115,7 @@ function wait_for_keycloak_to_be_up() {
   local max_attempts=600
   echo ":: Waiting for Keycloak to be ready..."
   local attempts=0
-  local url="http://localhost:${KEYCLOAK_MGMT_PORT:-7009}/health/ready"
+  local url="http://localhost:${KEYCLOAK_MGMT_PORT:-6849}/health/ready"
   while [[ "$(curl -s -o /dev/null -w '%{http_code}' "$url" 2>/dev/null || echo "000")" != "200" ]]; do
     if [[ "$attempts" -gt "$max_attempts" ]]; then
       echo >&2 "ERROR: Keycloak health check failed after $max_attempts attempts. URL: $url"
@@ -335,34 +337,57 @@ function ensure_shared_realm_organization_scope() {
       "oidc-organization-group-membership-mapper"
   )"
   if [[ -z "${organization_group_membership_mapper_id}" ]]; then
-    echo ":: Adding Organization Group Membership mapper to client scope organization in realm ${realm_name}."
+    organization_group_membership_mapper_id="$(
+      resolve_resource_protocol_mapper_id_by_name \
+        "client-scopes/${scope_id}" \
+        "${realm_name}" \
+        "organization-groups"
+    )"
+  fi
+  if [[ -n "${organization_group_membership_mapper_id}" ]]; then
+    echo ":: Removing built-in Organization Group Membership mapper from client scope organization in realm ${realm_name}."
+    docker exec keycloak /opt/keycloak/bin/kcadm.sh delete \
+      "client-scopes/${scope_id}/protocol-mappers/models/${organization_group_membership_mapper_id}" \
+      -r "${realm_name}" >/dev/null
+  fi
+
+  normalized_organization_membership_mapper_id="$(
+    resolve_client_scope_protocol_mapper_internal_id \
+      "${realm_name}" \
+      "${scope_id}" \
+      "oidc-normalized-organization-membership-mapper"
+  )"
+  if [[ -z "${normalized_organization_membership_mapper_id}" ]]; then
+    echo ":: Adding Normalized Organization Membership mapper to client scope organization in realm ${realm_name}."
     docker exec keycloak /opt/keycloak/bin/kcadm.sh create "client-scopes/${scope_id}/protocol-mappers/models" -r "${realm_name}" \
-      -s name=organization-groups \
+      -s name=normalized-organization \
       -s protocol=openid-connect \
-      -s protocolMapper=oidc-organization-group-membership-mapper \
+      -s protocolMapper=oidc-normalized-organization-membership-mapper \
       -s consentRequired=false \
+      -s 'config."claim.name"=organization' \
       -s 'config."id.token.claim"=true' \
       -s 'config."access.token.claim"=true' \
       -s 'config."userinfo.token.claim"=true' \
       -s 'config."introspection.token.claim"=true' >/dev/null
-    organization_group_membership_mapper_id="$(
+    normalized_organization_membership_mapper_id="$(
       resolve_client_scope_protocol_mapper_internal_id \
         "${realm_name}" \
         "${scope_id}" \
-        "oidc-organization-group-membership-mapper"
+        "oidc-normalized-organization-membership-mapper"
     )"
   fi
-  if [[ -z "${organization_group_membership_mapper_id}" ]]; then
-    echo >&2 "ERROR: Failed to resolve organization group membership mapper in realm ${realm_name}"
+  if [[ -z "${normalized_organization_membership_mapper_id}" ]]; then
+    echo >&2 "ERROR: Failed to resolve normalized organization membership mapper in realm ${realm_name}"
     return 1
   fi
   docker exec keycloak /opt/keycloak/bin/kcadm.sh update \
-    "client-scopes/${scope_id}/protocol-mappers/models/${organization_group_membership_mapper_id}" \
+    "client-scopes/${scope_id}/protocol-mappers/models/${normalized_organization_membership_mapper_id}" \
     -r "${realm_name}" \
-    -s name=organization-groups \
+    -s name=normalized-organization \
     -s protocol=openid-connect \
-    -s protocolMapper=oidc-organization-group-membership-mapper \
+    -s protocolMapper=oidc-normalized-organization-membership-mapper \
     -s consentRequired=false \
+    -s 'config."claim.name"=organization' \
     -s 'config."id.token.claim"=true' \
     -s 'config."access.token.claim"=true' \
     -s 'config."userinfo.token.claim"=true' \
@@ -378,13 +403,6 @@ function resolve_user_internal_id() {
     | jq -r --arg username "${username}" 'map(select(.username == $username)) | .[0].id // empty'
 }
 
-function resolve_group_internal_id() {
-  local realm_name="$1"
-  local group_name="$2"
-  docker exec keycloak /opt/keycloak/bin/kcadm.sh get groups -r "${realm_name}" --fields id,name 2>/dev/null \
-    | jq -r --arg group_name "${group_name}" 'map(select(.name == $group_name)) | .[0].id // empty'
-}
-
 function resolve_protocol_mapper_id() {
   local realm_name="$1"
   local resource_path="$2"
@@ -393,109 +411,37 @@ function resolve_protocol_mapper_id() {
     | jq -r --arg mapper_name "${mapper_name}" 'map(select(.name == $mapper_name)) | .[0].id // empty'
 }
 
-function ensure_default_group_in_realm() {
-  local realm_name="$1"
-  local group_name="$2"
-  local group_internal_id
-
-  group_internal_id="$(resolve_group_internal_id "${realm_name}" "${group_name}")"
-  if [[ -z "${group_internal_id}" ]]; then
-    docker exec keycloak /opt/keycloak/bin/kcadm.sh create groups -r "${realm_name}" -s name="${group_name}" >/dev/null
-    group_internal_id="$(resolve_group_internal_id "${realm_name}" "${group_name}")"
-  fi
-
-  printf '%s\n' "${group_internal_id}"
-}
-
-function ensure_user_default_group_assignment() {
-  local realm_name="$1"
-  local username="$2"
-  local group_name="$3"
-  local user_internal_id
-  local group_internal_id
-
-  user_internal_id="$(resolve_user_internal_id "${realm_name}" "${username}")"
-  if [[ -z "${user_internal_id}" ]]; then
-    echo ":: User ${username} not present in realm ${realm_name}; skipping default group assignment."
-    return 0
-  fi
-
-  group_internal_id="$(resolve_group_internal_id "${realm_name}" "${group_name}")"
-  if [[ -z "${group_internal_id}" ]]; then
-    echo >&2 "ERROR: Failed to resolve group ${group_name} in realm ${realm_name}"
-    return 1
-  fi
-
-  local http_code
-  http_code=$(curl -s -o /dev/null -w '%{http_code}' -X PUT \
-    "${keycloak_base_url}/admin/realms/${realm_name}/users/${user_internal_id}/groups/${group_internal_id}" \
-    -H "Authorization: Bearer ${admin_token}")
-  if [[ "${http_code}" != "204" && "${http_code}" != "200" ]]; then
-    echo >&2 "ERROR: Failed to assign user ${username} to group ${group_name} in realm ${realm_name} (HTTP ${http_code})"
-    return 1
-  fi
-}
-
-function ensure_default_groups_and_memberships_in_realm() {
-  local realm_name="$1"
-
-  ensure_default_group_in_realm "${realm_name}" "Approvers" >/dev/null
-  ensure_default_group_in_realm "${realm_name}" "Designers" >/dev/null
-  ensure_default_group_in_realm "${realm_name}" "Administrators" >/dev/null
-  ensure_default_group_in_realm "${realm_name}" "Support" >/dev/null
-
-  ensure_user_default_group_assignment "${realm_name}" "reviewer" "Approvers"
-  ensure_user_default_group_assignment "${realm_name}" "editor" "Designers"
-  ensure_user_default_group_assignment "${realm_name}" "admin" "Administrators"
-  ensure_user_default_group_assignment "${realm_name}" "integrator" "Support"
-}
-
-function ensure_normalized_groups_mapper_on_resource() {
+function remove_legacy_groups_mapper_from_resource() {
   local realm_name="$1"
   local resource_path="$2"
   local mapper_id
+
   mapper_id="$(resolve_protocol_mapper_id "${realm_name}" "${resource_path}" "groups")"
-  if [[ -n "${mapper_id}" ]]; then
-    docker exec keycloak /opt/keycloak/bin/kcadm.sh update "${resource_path}/protocol-mappers/models/${mapper_id}" -r "${realm_name}" \
-      -s name=groups \
-      -s protocol=openid-connect \
-      -s protocolMapper="${normalized_group_mapper_provider_id}" \
-      -s consentRequired=false \
-      -s 'config."introspection.token.claim"=true' \
-      -s 'config."userinfo.token.claim"=true' \
-      -s 'config."id.token.claim"=true' \
-      -s 'config."access.token.claim"=true' \
-      -s 'config."claim.name"=groups' \
-      -s 'config.multivalued=true' \
-      -s 'config."jsonType.label"=String' >/dev/null
-  else
-    docker exec keycloak /opt/keycloak/bin/kcadm.sh create "${resource_path}/protocol-mappers/models" -r "${realm_name}" \
-      -s name=groups \
-      -s protocol=openid-connect \
-      -s protocolMapper="${normalized_group_mapper_provider_id}" \
-      -s consentRequired=false \
-      -s 'config."introspection.token.claim"=true' \
-      -s 'config."userinfo.token.claim"=true' \
-      -s 'config."id.token.claim"=true' \
-      -s 'config."access.token.claim"=true' \
-      -s 'config."claim.name"=groups' \
-      -s 'config.multivalued=true' \
-      -s 'config."jsonType.label"=String' >/dev/null
+  if [[ -z "${mapper_id}" ]]; then
+    return 0
   fi
+
+  if docker exec keycloak /opt/keycloak/bin/kcadm.sh delete "${resource_path}/protocol-mappers/models/${mapper_id}" -r "${realm_name}" >/dev/null 2>&1; then
+    echo ":: Realm ${realm_name}: removed legacy root groups mapper from ${resource_path}."
+    return 0
+  fi
+
+  echo >&2 "ERROR: Failed to remove legacy root groups mapper from ${resource_path} in realm ${realm_name}"
+  return 1
 }
 
-function ensure_group_membership_mapper() {
+function remove_legacy_root_group_mappers() {
   local realm_name="$1"
   local client_internal_id="$2"
-  ensure_normalized_groups_mapper_on_resource "${realm_name}" "clients/${client_internal_id}"
-}
-
-function ensure_profile_scope_group_membership_mapper() {
-  local realm_name="$1"
   local profile_scope_internal_id
+
+  if [[ -n "${client_internal_id}" ]]; then
+    remove_legacy_groups_mapper_from_resource "${realm_name}" "clients/${client_internal_id}" || return 1
+  fi
+
   profile_scope_internal_id="$(resolve_client_scope_internal_id "${realm_name}" "profile")"
   if [[ -n "${profile_scope_internal_id}" ]]; then
-    ensure_normalized_groups_mapper_on_resource "${realm_name}" "client-scopes/${profile_scope_internal_id}"
+    remove_legacy_groups_mapper_from_resource "${realm_name}" "client-scopes/${profile_scope_internal_id}" || return 1
   fi
 }
 
@@ -585,10 +531,8 @@ function ensure_spoke_client_in_realm() {
 
   docker exec keycloak /opt/keycloak/bin/kcadm.sh update "clients/${current_client_internal_id}/optional-client-scopes/${organization_scope_id}" -r "${realm_name}" -n >/dev/null
 
-  ensure_group_membership_mapper "${realm_name}" "${current_client_internal_id}"
   ensure_roles_mapper "${realm_name}" "${current_client_internal_id}"
-  ensure_profile_scope_group_membership_mapper "${realm_name}"
-  ensure_default_groups_and_memberships_in_realm "${realm_name}"
+  remove_legacy_root_group_mappers "${realm_name}" "${current_client_internal_id}"
   echo ":: Realm ${realm_name} client ${keycloak_master_client_id} ensured."
 }
 
@@ -720,6 +664,119 @@ function create_organization_group() {
     -s name="${group_name}" >/dev/null
 }
 
+function resolve_realm_role_id_by_name() {
+  local realm_name="$1"
+  local role_name="$2"
+
+  [[ -n "${role_name}" ]] || return 1
+
+  docker exec keycloak /opt/keycloak/bin/kcadm.sh get "roles/${role_name}" -r "${realm_name}" 2>/dev/null \
+    | jq -r '.id // empty'
+}
+
+function organization_group_has_realm_role() {
+  local realm_name="$1"
+  local organization_id="$2"
+  local group_id="$3"
+  local role_name="$4"
+
+  [[ -n "${organization_id}" ]] || return 1
+  [[ -n "${group_id}" ]] || return 1
+  [[ -n "${role_name}" ]] || return 1
+
+  docker exec keycloak /opt/keycloak/bin/kcadm.sh get "organizations/${organization_id}/groups/${group_id}/role-mappings/realm/composite" -r "${realm_name}" 2>/dev/null \
+    | jq -e --arg role_name "${role_name}" '.[] | select(.name == $role_name)' >/dev/null
+}
+
+function add_realm_role_to_organization_group() {
+  local realm_name="$1"
+  local organization_id="$2"
+  local group_id="$3"
+  local role_name="$4"
+  local payload_file
+
+  [[ -n "${organization_id}" ]] || return 1
+  [[ -n "${group_id}" ]] || return 1
+  [[ -n "${role_name}" ]] || return 1
+
+  if [[ -z "$(resolve_realm_role_id_by_name "${realm_name}" "${role_name}")" ]]; then
+    return 1
+  fi
+
+  payload_file="$(mktemp)"
+  if ! docker exec keycloak /opt/keycloak/bin/kcadm.sh get "roles/${role_name}" -r "${realm_name}" 2>/dev/null \
+    | jq -c '[.]' > "${payload_file}"; then
+    rm -f "${payload_file}"
+    return 1
+  fi
+
+  if docker cp "${payload_file}" keycloak:/tmp/m8flow-group-role.json >/dev/null 2>&1 \
+    && docker exec keycloak /opt/keycloak/bin/kcadm.sh create "organizations/${organization_id}/groups/${group_id}/role-mappings/realm" -r "${realm_name}" -f /tmp/m8flow-group-role.json >/dev/null 2>&1; then
+    rm -f "${payload_file}"
+    docker exec keycloak rm -f /tmp/m8flow-group-role.json >/dev/null 2>&1 || true
+    return 0
+  fi
+
+  rm -f "${payload_file}"
+  docker exec keycloak rm -f /tmp/m8flow-group-role.json >/dev/null 2>&1 || true
+  return 1
+}
+
+function list_organization_member_ids() {
+  local realm_name="$1"
+  local organization_id="$2"
+
+  [[ -n "${organization_id}" ]] || return 1
+
+  docker exec keycloak /opt/keycloak/bin/kcadm.sh get "organizations/${organization_id}/members" -r "${realm_name}" -q max=500 2>/dev/null \
+    | jq -r '.[]?.id // empty'
+}
+
+function remove_user_from_organization_group() {
+  local realm_name="$1"
+  local organization_id="$2"
+  local group_id="$3"
+  local member_id="$4"
+
+  [[ -n "${organization_id}" ]] || return 1
+  [[ -n "${group_id}" ]] || return 1
+  [[ -n "${member_id}" ]] || return 1
+
+  docker exec keycloak /opt/keycloak/bin/kcadm.sh delete "organizations/${organization_id}/groups/${group_id}/members/${member_id}" \
+    -r "${realm_name}" >/dev/null 2>&1
+}
+
+function remove_legacy_organization_role_memberships() {
+  local realm_name="$1"
+  local organization_id="$2"
+  local group_name
+  local group_id
+  local member_id
+
+  [[ -n "${organization_id}" ]] || return 1
+
+  for group_name in ${keycloak_legacy_organization_role_groups}; do
+    group_id="$(resolve_organization_group_id_by_name "${realm_name}" "${organization_id}" "${group_name}")"
+    if [[ -z "${group_id}" ]]; then
+      continue
+    fi
+
+    while IFS= read -r member_id; do
+      [[ -n "${member_id}" ]] || continue
+      if ! organization_member_has_group "${realm_name}" "${organization_id}" "${member_id}" "${group_name}"; then
+        continue
+      fi
+
+      if remove_user_from_organization_group "${realm_name}" "${organization_id}" "${group_id}" "${member_id}"; then
+        echo ":: Realm ${realm_name}: removed legacy organization group ${group_name} from member ${member_id} in organization ${organization_id}."
+      else
+        echo >&2 "ERROR: Realm ${realm_name}: failed to remove legacy organization group ${group_name} from member ${member_id} in organization ${organization_id}"
+        return 1
+      fi
+    done < <(list_organization_member_ids "${realm_name}" "${organization_id}")
+  done
+}
+
 function ensure_organization_role_groups() {
   local realm_name="$1"
   local organization_id="$2"
@@ -738,13 +795,52 @@ function ensure_organization_role_groups() {
   done
 }
 
+function ensure_organization_group_role_mappings() {
+  local realm_name="$1"
+  local organization_id="$2"
+  local assignment
+  local group_name
+  local role_name
+  local group_id
+
+  [[ -n "${organization_id}" ]] || return 1
+
+  for assignment in ${keycloak_organization_group_role_mappings}; do
+    group_name="${assignment%%:*}"
+    role_name="${assignment#*:}"
+    if [[ -z "${group_name}" || -z "${role_name}" ]]; then
+      continue
+    fi
+
+    group_id="$(resolve_organization_group_id_by_name "${realm_name}" "${organization_id}" "${group_name}")"
+    if [[ -z "${group_id}" ]]; then
+      echo >&2 "ERROR: Realm ${realm_name}: could not resolve organization group ${group_name} while mapping role ${role_name}"
+      return 1
+    fi
+
+    if organization_group_has_realm_role "${realm_name}" "${organization_id}" "${group_id}" "${role_name}"; then
+      echo ":: Realm ${realm_name}: organization group ${group_name} already grants role ${role_name}."
+      continue
+    fi
+
+    if add_realm_role_to_organization_group "${realm_name}" "${organization_id}" "${group_id}" "${role_name}"; then
+      echo ":: Realm ${realm_name}: mapped role ${role_name} to organization group ${group_name}."
+    else
+      echo >&2 "ERROR: Failed to map role ${role_name} to organization group ${group_name} in realm ${realm_name}"
+      return 1
+    fi
+  done
+}
+
 function ensure_all_organization_role_groups() {
   local realm_name="$1"
   local organization_id
 
   while IFS= read -r organization_id; do
     [[ -n "${organization_id}" ]] || continue
-    ensure_organization_role_groups "${realm_name}" "${organization_id}"
+    remove_legacy_organization_role_memberships "${realm_name}" "${organization_id}" || return 1
+    ensure_organization_role_groups "${realm_name}" "${organization_id}" || return 1
+    ensure_organization_group_role_mappings "${realm_name}" "${organization_id}" || return 1
   done < <(list_organization_ids "${realm_name}")
 }
 
@@ -883,6 +979,48 @@ function ensure_default_organization_seed_roles() {
   done
 }
 
+function user_has_realm_role() {
+  local realm_name="$1"
+  local user_id="$2"
+  local role_name="$3"
+
+  [[ -n "${user_id}" ]] || return 1
+  [[ -n "${role_name}" ]] || return 1
+
+  docker exec keycloak /opt/keycloak/bin/kcadm.sh get "users/${user_id}/role-mappings/realm/composite" -r "${realm_name}" 2>/dev/null \
+    | jq -e --arg role_name "${role_name}" '.[] | select(.name == $role_name)' >/dev/null
+}
+
+function remove_default_organization_seed_user_realm_roles() {
+  local realm_name="$1"
+  local assignment
+  local username
+  local role_name
+  local user_id
+
+  for assignment in ${keycloak_default_organization_seed_user_role_assignments}; do
+    username="${assignment%%:*}"
+    role_name="${assignment#*:}"
+    if [[ -z "${username}" || -z "${role_name}" ]]; then
+      continue
+    fi
+
+    user_id="$(resolve_user_id_by_username "${realm_name}" "${username}")"
+    if [[ -z "${user_id}" ]]; then
+      echo ":: Realm ${realm_name}: seed user ${username} not found; skipping direct realm-role cleanup for ${role_name}."
+      continue
+    fi
+
+    if ! user_has_realm_role "${realm_name}" "${user_id}" "${role_name}"; then
+      echo ":: Realm ${realm_name}: user ${username} does not hold direct realm role ${role_name}; nothing to remove."
+      continue
+    fi
+
+    docker exec keycloak /opt/keycloak/bin/kcadm.sh remove-roles -r "${realm_name}" --uid "${user_id}" --rolename "${role_name}" >/dev/null
+    echo ":: Realm ${realm_name}: removed direct realm role ${role_name} from user ${username}."
+  done
+}
+
 function resolve_browser_execution_id_by_name() {
   local realm_name="$1"
   local display_name="$2"
@@ -961,8 +1099,8 @@ function ensure_shared_realm_single_page_login() {
 
 # Start Keycloak container
 echo ":: Starting Keycloak container..."
-KEYCLOAK_PROXY_PORT="${KEYCLOAK_PROXY_PORT:-7002}"
-KEYCLOAK_MGMT_PORT="${KEYCLOAK_MGMT_PORT:-7009}"
+KEYCLOAK_PROXY_PORT="${KEYCLOAK_PROXY_PORT:-6842}"
+KEYCLOAK_MGMT_PORT="${KEYCLOAK_MGMT_PORT:-6849}"
 if ! docker run \
   -p "${KEYCLOAK_PROXY_PORT}:8080" \
   -p "${KEYCLOAK_MGMT_PORT}:9000" \
@@ -1063,8 +1201,8 @@ function ensure_master_super_admin() {
     -s "webOrigins=[\"${frontend_public_url%/}\"]" \
     -s "attributes.\"post.logout.redirect.uris\"=${frontend_logout_redirect_uri}" >/dev/null
 
-  ensure_group_membership_mapper "${admin_realm_name}" "${client_id}"
   ensure_roles_mapper "${admin_realm_name}" "${client_id}"
+  remove_legacy_root_group_mappers "${admin_realm_name}" "${client_id}"
 
   docker exec keycloak /opt/keycloak/bin/kcadm.sh get roles/super-admin -r "${admin_realm_name}" >/dev/null 2>&1 \
     || docker exec keycloak /opt/keycloak/bin/kcadm.sh create roles -r "${admin_realm_name}" -s name=super-admin >/dev/null
@@ -1265,6 +1403,11 @@ fi
 
 if ! ensure_default_organization_seed_roles "$keycloak_shared_realm_name"; then
   echo >&2 "ERROR: Failed to ensure default organization roles in realm ${keycloak_shared_realm_name}"
+  exit 1
+fi
+
+if ! remove_default_organization_seed_user_realm_roles "$keycloak_shared_realm_name"; then
+  echo >&2 "ERROR: Failed to remove direct default organization user roles in realm ${keycloak_shared_realm_name}"
   exit 1
 fi
 

@@ -91,6 +91,42 @@ def test_set_new_access_token_in_cookie_uses_named_host_domain_when_valid(
     assert any("Domain=app.example.com" in header for header in headers)
 
 
+def test_synchronize_selected_organization_claims_normalizes_group_names(monkeypatch) -> None:
+    import m8flow_backend.services.keycloak_service as keycloak_service
+
+    monkeypatch.setattr(
+        keycloak_service,
+        "get_organization_by_alias",
+        lambda alias: {"id": "org-id", "name": "m8flow"},
+    )
+    monkeypatch.setattr(
+        keycloak_service,
+        "get_organization_member_groups",
+        lambda organization_id, member_id: [
+            {"path": "/Administrators"},
+            {"name": "Approvers"},
+            {"path": " /Support/ "},
+            {"path": "/Administrators"},
+        ],
+    )
+
+    synchronized_token = auth_patch_module._synchronize_selected_organization_claims(
+        {
+            "sub": "member-1",
+            "preferred_username": "admin",
+        },
+        selected_tenant_alias="m8flow",
+        selected_tenant_id="org-id",
+    )
+
+    assert synchronized_token["organization"] == {
+        "m8flow": {
+            "id": "org-id",
+            "groups": ["Administrators", "Approvers", "Support"],
+        }
+    }
+
+
 def test_set_new_access_token_in_cookie_sets_persistent_realm_hint_on_login(
     cookie_domain_patch,
 ) -> None:
@@ -1365,12 +1401,12 @@ def test_tenant_finalization_redirects_directly_with_existing_shared_realm_sessi
         "iss": "http://localhost:7002/realms/shared-users",
         "sub": "user-1",
         "preferred_username": "admin",
-        "organization": {
-            "tenant-a": {
-                "id": "org-tenant-a",
-                "groups": ["/tenant-admin"],
-            }
-        },
+            "organization": {
+                "tenant-a": {
+                    "id": "org-tenant-a",
+                    "groups": ["tenant-admin"],
+                }
+            },
         "m8flow_tenant_id": "tenant-a-id",
         "m8flow_tenant_alias": "tenant-a",
         "m8flow_tenant_name": "Tenant A",

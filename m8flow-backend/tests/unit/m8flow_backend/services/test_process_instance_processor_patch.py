@@ -420,7 +420,37 @@ def test_get_potential_owners_from_task_resolves_bare_lane_to_existing_org_group
         ],
         "lane_assignment_id": 41,
     }
-    assert group_lookups == ["tenant-a:/Engineering"]
+    assert group_lookups == ["tenant-a:Engineering", "tenant-a:/Engineering"]
+    assert created_group_identifiers == []
+
+
+def test_get_potential_owners_from_task_resolves_swimlane_from_organization_group(monkeypatch) -> None:
+    FakeProcessor, group_lookups, created_group_identifiers = _setup_potential_owner_patch_fakes(
+        monkeypatch,
+        existing_groups={
+            "tenant-a:Approvers": SimpleNamespace(
+                id=61,
+                user_group_assignments=[SimpleNamespace(user_id=17)],
+            )
+        },
+    )
+    process_instance_processor_patch.apply()
+    app = Flask(__name__)
+
+    with app.app_context():
+        processor = FakeProcessor()
+        task = SimpleNamespace(
+            task_spec=SimpleNamespace(lane="Approvers", extensions={}),
+            data={},
+        )
+
+        result = processor.get_potential_owners_from_task(task)
+
+    assert result == {
+        "potential_owners": [{"added_by": "lane_assignment", "user_id": 17}],
+        "lane_assignment_id": 61,
+    }
+    assert group_lookups == ["tenant-a:Approvers"]
     assert created_group_identifiers == []
 
 
@@ -450,7 +480,7 @@ def test_get_potential_owners_from_task_resolves_full_path_lane_to_existing_org_
         "potential_owners": [{"added_by": "lane_assignment", "user_id": 12}],
         "lane_assignment_id": 52,
     }
-    assert group_lookups == ["tenant-a:/Engineering"]
+    assert group_lookups == ["tenant-a:Engineering", "tenant-a:/Engineering"]
     assert created_group_identifiers == []
 
 
@@ -480,7 +510,41 @@ def test_get_potential_owners_from_task_keeps_lane_assignment_for_existing_empty
         "potential_owners": [],
         "lane_assignment_id": 77,
     }
-    assert group_lookups == ["tenant-a:/Operations"]
+    assert group_lookups == ["tenant-a:Operations", "tenant-a:/Operations"]
+    assert created_group_identifiers == []
+
+
+def test_get_potential_owners_from_task_prefers_populated_bare_group_over_empty_legacy_path_group(monkeypatch) -> None:
+    FakeProcessor, group_lookups, created_group_identifiers = _setup_potential_owner_patch_fakes(
+        monkeypatch,
+        existing_groups={
+            "tenant-a:/Manager": SimpleNamespace(
+                id=77,
+                user_group_assignments=[],
+            ),
+            "tenant-a:Manager": SimpleNamespace(
+                id=88,
+                user_group_assignments=[SimpleNamespace(user_id=42)],
+            ),
+        },
+    )
+    process_instance_processor_patch.apply()
+    app = Flask(__name__)
+
+    with app.app_context():
+        processor = FakeProcessor()
+        task = SimpleNamespace(
+            task_spec=SimpleNamespace(lane="Manager", extensions={}),
+            data={},
+        )
+
+        result = processor.get_potential_owners_from_task(task)
+
+    assert result == {
+        "potential_owners": [{"added_by": "lane_assignment", "user_id": 42}],
+        "lane_assignment_id": 88,
+    }
+    assert group_lookups == ["tenant-a:Manager"]
     assert created_group_identifiers == []
 
 
@@ -510,7 +574,7 @@ def test_get_potential_owners_from_task_falls_back_to_existing_legacy_raw_group(
         "potential_owners": [{"added_by": "lane_assignment", "user_id": 23}],
         "lane_assignment_id": 61,
     }
-    assert group_lookups == ["tenant-a:/reviewer", "tenant-a:reviewer"]
+    assert group_lookups == ["tenant-a:reviewer"]
     assert created_group_identifiers == []
 
 
@@ -531,8 +595,8 @@ def test_get_potential_owners_from_task_creates_placeholder_group_when_no_matchi
 
         result = processor.get_potential_owners_from_task(task)
 
-    assert group_lookups == ["tenant-a:/Operations", "tenant-a:Operations"]
-    assert created_group_identifiers == ["tenant-a:/Operations"]
+    assert group_lookups == ["tenant-a:Operations", "tenant-a:/Operations"]
+    assert created_group_identifiers == ["tenant-a:Operations"]
     assert result == {
         "potential_owners": [],
         "lane_assignment_id": 1001,

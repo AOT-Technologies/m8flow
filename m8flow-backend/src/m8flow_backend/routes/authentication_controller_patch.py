@@ -14,6 +14,7 @@ from m8flow_backend.services.tenant_context_middleware import resolve_request_te
 from m8flow_backend.services.tenant_identity_helpers import authentication_identifier_from_payload
 from m8flow_backend.services.tenant_identity_helpers import extract_realm_from_issuer
 from m8flow_backend.services.tenant_identity_helpers import current_tenant_identifiers
+from m8flow_backend.services.tenant_identity_helpers import normalize_organizational_group_identifier
 from m8flow_backend.services.tenant_identity_helpers import organization_group_identifiers_from_payload
 from m8flow_backend.services.tenant_identity_helpers import organization_memberships_from_payload
 from m8flow_backend.services.tenant_identity_helpers import qualified_config_group_identifier
@@ -1031,7 +1032,7 @@ def _synchronize_selected_organization_claims(
                 group_path = f"/{group_name.strip()}"
             else:
                 continue
-        normalized_group_path = group_path.strip()
+        normalized_group_path = normalize_organizational_group_identifier(group_path.strip()).lstrip("/")
         if normalized_group_path and normalized_group_path not in seen_group_paths:
             seen_group_paths.add(normalized_group_path)
             normalized_group_paths.append(normalized_group_path)

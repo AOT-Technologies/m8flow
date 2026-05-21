@@ -69,6 +69,214 @@ def test_list_tenant_members_returns_service_payload(monkeypatch):
     }
 
 
+def test_list_available_tenant_users_returns_service_payload(monkeypatch):
+    tenant_role_controller = _load_tenant_role_controller(monkeypatch)
+    app = Flask(__name__)
+    monkeypatch.setattr(
+        tenant_role_controller,
+        "list_available_tenant_users",
+        lambda tenant_id, search=None: [{"username": "editor", "email": "editor@example.com"}],
+    )
+
+    with app.test_request_context("/m8flow/tenants/tenant-it-id/available-users?search=ed"):
+        g.user = _mock_user()
+        response = tenant_role_controller.list_available_tenant_users_for_tenant("tenant-it-id")
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "tenant_id": "tenant-it-id",
+        "search": "ed",
+        "users": [{"username": "editor", "email": "editor@example.com"}],
+    }
+
+
+def test_create_tenant_member_returns_created_member(monkeypatch):
+    tenant_role_controller = _load_tenant_role_controller(monkeypatch)
+    app = Flask(__name__)
+    monkeypatch.setattr(
+        tenant_role_controller,
+        "add_tenant_member",
+        lambda tenant_id, username, group_names=None: {
+            "username": username,
+            "email": "reviewer@example.com",
+            "roles": ["reviewer"],
+        },
+    )
+
+    with app.test_request_context(
+        "/m8flow/tenants/tenant-it-id/members",
+        method="POST",
+        json={
+            "username": "reviewer",
+            "group_names": ["Approvers"],
+        },
+    ):
+        g.user = _mock_user()
+        response = tenant_role_controller.create_tenant_member("tenant-it-id")
+
+    assert response.status_code == 201
+    assert response.get_json() == {
+        "tenant_id": "tenant-it-id",
+        "group_names": ["Approvers"],
+        "member": {
+            "username": "reviewer",
+            "email": "reviewer@example.com",
+            "roles": ["reviewer"],
+        },
+    }
+
+
+def test_list_tenant_groups_returns_service_payload(monkeypatch):
+    tenant_role_controller = _load_tenant_role_controller(monkeypatch)
+    app = Flask(__name__)
+    monkeypatch.setattr(
+        tenant_role_controller,
+        "list_tenant_groups_with_members",
+        lambda tenant_id, search=None: [
+            {
+                "name": "Administrators",
+                "mapped_roles": ["tenant-admin"],
+                "members": [{"username": "admin"}],
+            }
+        ],
+    )
+
+    with app.test_request_context("/m8flow/tenants/tenant-it-id/groups?search=admin"):
+        g.user = _mock_user()
+        response = tenant_role_controller.list_tenant_groups("tenant-it-id")
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "tenant_id": "tenant-it-id",
+        "search": "admin",
+        "groups": [
+            {
+                "name": "Administrators",
+                "mapped_roles": ["tenant-admin"],
+                "members": [{"username": "admin"}],
+            }
+        ],
+    }
+
+
+def test_assign_group_member_returns_updated_member(monkeypatch):
+    tenant_role_controller = _load_tenant_role_controller(monkeypatch)
+    app = Flask(__name__)
+    monkeypatch.setattr(
+        tenant_role_controller,
+        "add_tenant_group_member",
+        lambda tenant_id, username, group_name: {
+            "username": username,
+            "roles": ["reviewer"],
+        },
+    )
+
+    with app.test_request_context("/m8flow/tenants/tenant-it-id/groups/Approvers/members/reviewer"):
+        g.user = _mock_user()
+        response = tenant_role_controller.assign_group_member(
+            "tenant-it-id",
+            "Approvers",
+            "reviewer",
+        )
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "tenant_id": "tenant-it-id",
+        "group_name": "Approvers",
+        "username": "reviewer",
+        "member": {"username": "reviewer", "roles": ["reviewer"]},
+    }
+
+
+def test_remove_group_member_returns_updated_member(monkeypatch):
+    tenant_role_controller = _load_tenant_role_controller(monkeypatch)
+    app = Flask(__name__)
+    monkeypatch.setattr(
+        tenant_role_controller,
+        "remove_tenant_group_member",
+        lambda tenant_id, username, group_name: {
+            "username": username,
+            "roles": [],
+        },
+    )
+
+    with app.test_request_context("/m8flow/tenants/tenant-it-id/groups/Approvers/members/reviewer"):
+        g.user = _mock_user()
+        response = tenant_role_controller.remove_group_member(
+            "tenant-it-id",
+            "Approvers",
+            "reviewer",
+        )
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "tenant_id": "tenant-it-id",
+        "group_name": "Approvers",
+        "username": "reviewer",
+        "member": {"username": "reviewer", "roles": []},
+    }
+
+
+def test_assign_group_role_returns_updated_group(monkeypatch):
+    tenant_role_controller = _load_tenant_role_controller(monkeypatch)
+    app = Flask(__name__)
+    monkeypatch.setattr(
+        tenant_role_controller,
+        "assign_tenant_group_role",
+        lambda tenant_id, group_name, role_name: {
+            "name": group_name,
+            "mapped_roles": [role_name],
+            "members": [],
+        },
+    )
+
+    with app.test_request_context("/m8flow/tenants/tenant-it-id/groups/Approvers/roles/reviewer"):
+        g.user = _mock_user()
+        response = tenant_role_controller.assign_group_role(
+            "tenant-it-id",
+            "Approvers",
+            "reviewer",
+        )
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "tenant_id": "tenant-it-id",
+        "group_name": "Approvers",
+        "role_name": "reviewer",
+        "group": {"name": "Approvers", "mapped_roles": ["reviewer"], "members": []},
+    }
+
+
+def test_remove_group_role_returns_updated_group(monkeypatch):
+    tenant_role_controller = _load_tenant_role_controller(monkeypatch)
+    app = Flask(__name__)
+    monkeypatch.setattr(
+        tenant_role_controller,
+        "remove_tenant_group_role",
+        lambda tenant_id, group_name, role_name: {
+            "name": group_name,
+            "mapped_roles": [],
+            "members": [],
+        },
+    )
+
+    with app.test_request_context("/m8flow/tenants/tenant-it-id/groups/Approvers/roles/reviewer"):
+        g.user = _mock_user()
+        response = tenant_role_controller.remove_group_role(
+            "tenant-it-id",
+            "Approvers",
+            "reviewer",
+        )
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "tenant_id": "tenant-it-id",
+        "group_name": "Approvers",
+        "role_name": "reviewer",
+        "group": {"name": "Approvers", "mapped_roles": [], "members": []},
+    }
+
+
 def test_assign_member_role_returns_updated_member(monkeypatch):
     tenant_role_controller = _load_tenant_role_controller(monkeypatch)
     app = Flask(__name__)

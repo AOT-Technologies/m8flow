@@ -166,11 +166,11 @@ export default function TenantModal({
         type === TenantModalType.CREATE_TENANT
           ? translate(
               "organization_created_successfully",
-              "Organization created successfully.",
+              "Tenant created successfully.",
             )
           : translate(
               "organization_updated_successfully",
-              "Organization updated successfully.",
+              "Tenant updated successfully.",
             ),
       );
       onClose();
@@ -185,7 +185,7 @@ export default function TenantModal({
         setCreateTenantAliasError(
           translate(
             "organization_alias_already_exists",
-            "Organization alias already exists",
+            "Tenant alias already exists",
           ),
         );
         return;
@@ -200,7 +200,7 @@ export default function TenantModal({
         errorMessage ||
           translate(
             `failed_to_${action}_organization`,
-            `Failed to ${action} organization. Please try again.`,
+            `Failed to ${action} tenant. Please try again.`,
           ),
       );
     } finally {
@@ -211,10 +211,10 @@ export default function TenantModal({
   const isCreate = type === TenantModalType.CREATE_TENANT;
   const isDelete = type === TenantModalType.DELETE_TENANT;
   const title = isDelete
-    ? translate("delete_organization", "Delete Organization")
+    ? translate("delete_organization", "Delete Tenant")
     : isCreate
-      ? translate("add_organization", "Add Organization")
-      : translate("edit_organization", "Edit Organization");
+      ? translate("add_organization", "Add Tenant")
+      : translate("edit_organization", "Edit Tenant");
 
   return (
     <Dialog
@@ -250,7 +250,7 @@ export default function TenantModal({
             <DialogContentText>
               {translate(
                 "are_you_sure_you_want_to_delete_organization",
-                "Are you sure you want to delete the organization",
+                "Are you sure you want to delete the tenant",
               )}{" "}
               <strong>"{tenant?.name}"</strong>?
             </DialogContentText>
@@ -271,7 +271,7 @@ export default function TenantModal({
             {isCreate ? (
               <>
                 <TextField
-                  label={translate("organization_alias", "Organization Alias")}
+                  label={translate("organization_alias", "Tenant Alias")}
                   fullWidth
                   value={createTenantAlias}
                   onChange={(e) => {
@@ -290,7 +290,7 @@ export default function TenantModal({
                   data-testid="tenant-realm-id-input"
                 />
                 <TextField
-                  label={translate("organization_name", "Organization Name")}
+                  label={translate("organization_name", "Tenant Name")}
                   fullWidth
                   value={createTenantName}
                   onChange={(e) => {
@@ -311,7 +311,7 @@ export default function TenantModal({
               </>
             ) : (
               <TextField
-                label={translate("organization_name", "Organization Name")}
+                label={translate("organization_name", "Tenant Name")}
                 fullWidth
                 value={editName}
                 onChange={(e) => {

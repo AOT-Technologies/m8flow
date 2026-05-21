@@ -60,8 +60,8 @@ def _candidate_lane_group_identifiers(task_lane: str) -> list[str]:
     seen: set[str] = set()
 
     for raw_identifier in (
+        task_lane.strip().strip("/").split("/")[-1].strip(),
         normalize_organizational_group_identifier(task_lane),
-        task_lane.strip(),
     ):
         if not raw_identifier:
             continue
@@ -127,11 +127,22 @@ def apply() -> None:
                 )
             else:
                 group_model = None
+                fallback_group_model = None
                 candidate_group_identifiers = _candidate_lane_group_identifiers(task_lane)
                 for group_identifier in candidate_group_identifiers:
-                    group_model = GroupModel.query.filter_by(identifier=group_identifier).first()
-                    if group_model is not None:
+                    candidate_group_model = GroupModel.query.filter_by(identifier=group_identifier).first()
+                    if candidate_group_model is None:
+                        continue
+
+                    if fallback_group_model is None:
+                        fallback_group_model = candidate_group_model
+
+                    if getattr(candidate_group_model, "user_group_assignments", []):
+                        group_model = candidate_group_model
                         break
+
+                if group_model is None:
+                    group_model = fallback_group_model
 
                 if group_model is None:
                     if not candidate_group_identifiers:

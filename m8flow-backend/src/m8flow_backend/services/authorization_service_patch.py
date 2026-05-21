@@ -22,6 +22,7 @@ from m8flow_backend.services.tenant_identity_helpers import qualify_group_identi
 from m8flow_backend.services.tenant_identity_helpers import qualified_config_group_identifier
 from m8flow_backend.services.tenant_identity_helpers import realm_from_service
 from m8flow_backend.services.tenant_identity_helpers import tenant_id_from_payload
+from m8flow_backend.services.tenant_group_mapping import tenant_roles_for_organization_group
 from m8flow_backend.tenancy import is_concrete_tenant_id
 
 _PATCHED = False
@@ -443,8 +444,28 @@ def _normalized_open_id_organizational_group_identifiers(user_info: dict[str, An
     """
     Return organizational group identifiers from the token.
 
-    The ``groups`` claim is always treated as organizational membership.
+    Shared-realm tokens use the built-in ``organization`` claim as the sole
+    authority for swimlane / organizational groups. Legacy top-level ``groups``
+    remain supported only for non-shared-realm tokens.
     """
+    if authentication_identifier_from_payload(user_info) == _shared_realm_identifier():
+        normalized_group_identifiers: list[str] = []
+        seen_group_identifiers: set[str] = set()
+
+        for group_identifier in organization_group_identifiers_from_payload(user_info):
+            if not isinstance(group_identifier, str):
+                continue
+
+            normalized_group_identifier = _normalize_external_group_identifier(group_identifier)
+            if (
+                normalized_group_identifier
+                and normalized_group_identifier not in seen_group_identifiers
+            ):
+                seen_group_identifiers.add(normalized_group_identifier)
+                normalized_group_identifiers.append(normalized_group_identifier)
+
+        return normalized_group_identifiers
+
     return normalize_organizational_group_identifiers(_normalize_string_claim_values(user_info.get("groups")))
 
 
@@ -564,10 +585,10 @@ def _openid_group_identifiers_from_user_info(
     """
     Return the effective OpenID-managed groups for this sign-in payload.
 
-    In the shared realm, tenant-scoped role authority now comes from the active
-    organization's group memberships inside the ``organization`` claim. Legacy
-    top-level ``groups`` / ``realm_access.roles`` remain as a fallback for older
-    tokens and non-shared realms.
+    In the shared realm, swimlane / organizational authority comes exclusively
+    from the active organization's memberships inside the ``organization``
+    claim. Legacy top-level ``groups`` are ignored there and remain supported
+    only for non-shared realms.
     """
     normalized_groups = _normalize_keycloak_groups(user_info)
     derived_groups = _normalize_keycloak_roles(user_info)
@@ -617,19 +638,33 @@ def _openid_group_identifiers_from_user_info(
                 seen_organization_groups.add(normalized_group_identifier)
                 normalized_organization_group_identifiers.append(normalized_group_identifier)
 
-        if normalized_organization_group_identifiers:
-            raw_group_identifiers = [
-                group_identifier
-                for group_identifier in raw_group_identifiers
-                if is_global_permission_group_identifier(group_identifier)
-            ]
+        shared_realm_role_identifiers: list[str] = []
+        seen_shared_realm_roles: set[str] = set()
 
-            seen_groups = set(raw_group_identifiers)
+        for group_identifier in derived_groups:
+            normalized_group_identifier = _normalize_external_group_identifier(group_identifier)
+            if normalized_group_identifier and normalized_group_identifier not in seen_shared_realm_roles:
+                seen_shared_realm_roles.add(normalized_group_identifier)
+                shared_realm_role_identifiers.append(normalized_group_identifier)
 
-            for group_identifier in normalized_organization_group_identifiers:
-                if group_identifier not in seen_groups:
-                    seen_groups.add(group_identifier)
-                    raw_group_identifiers.append(group_identifier)
+        for group_identifier in normalized_organization_group_identifiers:
+            for role_identifier in tenant_roles_for_organization_group(group_identifier):
+                normalized_role_identifier = _normalize_external_group_identifier(role_identifier)
+                if (
+                    normalized_role_identifier
+                    and normalized_role_identifier not in seen_shared_realm_roles
+                ):
+                    seen_shared_realm_roles.add(normalized_role_identifier)
+                    shared_realm_role_identifiers.append(normalized_role_identifier)
+
+        raw_group_identifiers = shared_realm_role_identifiers
+
+        seen_groups = set(raw_group_identifiers)
+
+        for group_identifier in normalized_organization_group_identifiers:
+            if group_identifier not in seen_groups:
+                seen_groups.add(group_identifier)
+                raw_group_identifiers.append(group_identifier)
 
     return _normalize_openid_group_identifiers(raw_group_identifiers, tenant_id=tenant_id)
 

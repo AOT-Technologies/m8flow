@@ -358,7 +358,7 @@ def _patched_open_id_endpoint_for_name(
     # For internal calls, rewrite the discovery URL to use the internal host/port while
     # preserving the path/query/fragment from the discovery document. This ensures that
     # server-to-Keycloak requests from Docker containers do not attempt to call
-    # localhost:7002 (or other public hosts) when the internal URL is keycloak-proxy:7002.
+    # localhost:6842 (or other public hosts) when the internal URL is keycloak-proxy:6842.
     if internal and config:
         internal_parsed = urlparse(internal_server_url)
         parsed = urlparse(config)
@@ -452,9 +452,13 @@ def _refresh_token_scope_from_payload(payload: dict | None) -> str | None:
     authentication_identifier = authentication_identifier_from_payload(payload)
     if authentication_identifier == _master_realm_identifier():
         return authentication_identifier
+    if authentication_identifier == _shared_realm_identifier():
+        return authentication_identifier
 
     issuer_realm = extract_realm_from_issuer(payload.get("iss"))
     if issuer_realm == _master_realm_identifier():
+        return issuer_realm
+    if issuer_realm == _shared_realm_identifier():
         return issuer_realm
 
     return None
@@ -574,10 +578,12 @@ def _refresh_token_storage_tenant_id(tenant_id: str | None) -> str | None:
     Refresh tokens remain tenant-scoped in the database schema.
 
     Master realm users are global and do not have an m8flow_tenant row, so their
-    refresh tokens must be stored under a real tenant FK. We use the canonical
-    shared-realm tenant row as an internal storage namespace for that case.
+    refresh tokens must be stored under a real tenant FK. Shared-realm users also
+    reach the initial login callback before a tenant is finalized, so their first
+    refresh token needs the same canonical storage namespace until tenant
+    selection completes.
     """
-    if tenant_id == _master_realm_identifier():
+    if tenant_id in {_master_realm_identifier(), _shared_realm_identifier()}:
         from m8flow_backend.startup.shared_realm_bootstrap import resolve_default_shared_realm_tenant_id
 
         return resolve_default_shared_realm_tenant_id()

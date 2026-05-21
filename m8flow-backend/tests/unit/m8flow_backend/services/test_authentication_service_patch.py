@@ -366,6 +366,19 @@ def test_refresh_token_storage_tenant_maps_configured_master_to_shared_realm_ten
         assert _refresh_token_storage_tenant_id("ops-admin") == "shared-realm-tenant"
 
 
+def test_refresh_token_storage_tenant_maps_shared_realm_to_canonical_shared_realm_tenant(monkeypatch) -> None:
+    from m8flow_backend.services.authentication_service_patch import (
+        _refresh_token_storage_tenant_id,
+    )
+
+    monkeypatch.setenv("M8FLOW_KEYCLOAK_SHARED_REALM", "shared-users")
+    with patch(
+        "m8flow_backend.startup.shared_realm_bootstrap.resolve_default_shared_realm_tenant_id",
+        return_value="shared-realm-tenant",
+    ):
+        assert _refresh_token_storage_tenant_id("shared-users") == "shared-realm-tenant"
+
+
 def test_store_refresh_token_uses_shared_realm_storage_scope_for_master(monkeypatch) -> None:
     import sys
 
@@ -564,6 +577,89 @@ def test_store_refresh_token_uses_shared_realm_scope_for_master_login_return_wit
     ).decode("utf-8")
 
     with app.test_request_context(f"/v1.0/login_return?state={state}"):
+        _patched_store_refresh_token(user_id=7, refresh_token="refresh-token")
+
+        added = seen["added"]
+        assert getattr(added, "m8f_tenant_id") == "shared-realm-tenant"
+        assert seen["scoped_tenant"] == "shared-realm-tenant"
+        assert getattr(g, "m8flow_tenant_id", None) is None
+
+
+def test_store_refresh_token_uses_shared_realm_scope_for_initial_shared_login_return_without_selected_tenant(
+    monkeypatch,
+) -> None:
+    import base64
+    import sys
+
+    from flask import Flask, g
+
+    from m8flow_backend.services.authentication_service_patch import _patched_store_refresh_token
+
+    app = Flask(__name__)
+    seen: dict[str, object] = {}
+    monkeypatch.setenv("M8FLOW_KEYCLOAK_SHARED_REALM", "shared-users")
+
+    class DummyColumn:
+        def __init__(self, name: str):
+            self.name = name
+
+        def __eq__(self, other: object):
+            return (self.name, other)
+
+    class DummyQuery:
+        def filter(self, *args):
+            seen.setdefault("filters", []).extend(args)
+            seen["scoped_tenant"] = getattr(g, "m8flow_tenant_id", None)
+            return self
+
+        def first(self):
+            return None
+
+    class DummyRefreshTokenModel:
+        user_id = DummyColumn("user_id")
+        m8f_tenant_id = DummyColumn("m8f_tenant_id")
+        query = DummyQuery()
+
+        def __init__(self, user_id: int, token: str, m8f_tenant_id: str):
+            self.user_id = user_id
+            self.token = token
+            self.m8f_tenant_id = m8f_tenant_id
+
+    class DummySession:
+        def add(self, obj):
+            seen["added"] = obj
+
+        def commit(self):
+            seen["committed"] = True
+
+        def rollback(self):
+            seen["rolled_back"] = True
+
+    refresh_token_module = ModuleType("spiffworkflow_backend.models.refresh_token")
+    refresh_token_module.RefreshTokenModel = DummyRefreshTokenModel
+    db_module = ModuleType("spiffworkflow_backend.models.db")
+    db_module.db = SimpleNamespace(session=DummySession())
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.models.refresh_token", refresh_token_module)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.models.db", db_module)
+    monkeypatch.setattr(
+        "m8flow_backend.services.authentication_service_patch._jwt_payload_without_verification",
+        lambda _token: {
+            "iss": "http://localhost:7002/realms/shared-users",
+            "m8flow_authentication_identifier": "shared-users",
+            "sub": "user-123",
+        },
+    )
+    monkeypatch.setattr(
+        "m8flow_backend.startup.shared_realm_bootstrap.resolve_default_shared_realm_tenant_id",
+        lambda: "shared-realm-tenant",
+    )
+
+    state = base64.b64encode(
+        bytes(str({"authentication_identifier": "shared-users", "final_url": "http://localhost:7001/"}), "utf-8")
+    ).decode("utf-8")
+
+    with app.test_request_context(f"/v1.0/login_return?state={state}"):
+        g.token = "fresh-shared-id-token"
         _patched_store_refresh_token(user_id=7, refresh_token="refresh-token")
 
         added = seen["added"]

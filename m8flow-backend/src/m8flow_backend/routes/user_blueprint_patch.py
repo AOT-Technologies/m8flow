@@ -13,11 +13,14 @@ from spiffworkflow_backend.models.user_group_assignment import UserGroupAssignme
 from spiffworkflow_backend.services.user_service import UserService
 
 from m8flow_backend.config import shared_realm_name
-from m8flow_backend.services.keycloak_service import DEFAULT_ORGANIZATION_ROLE_GROUP_NAMES
 from m8flow_backend.services.keycloak_service import add_organization_group_member
 from m8flow_backend.services.keycloak_service import get_organization_by_alias
 from m8flow_backend.services.keycloak_service import get_organization_member_by_username
 from m8flow_backend.services.keycloak_service import remove_organization_group_member
+from m8flow_backend.services.tenant_group_mapping import (
+    VALID_TENANT_ROLE_NAMES,
+    organization_group_name_candidates_for_tenant_role,
+)
 from m8flow_backend.services.tenant_identity_helpers import current_tenant_id_or_none
 from m8flow_backend.services.tenant_identity_helpers import current_tenant_identifiers
 from m8flow_backend.services.tenant_identity_helpers import is_group_for_tenant
@@ -38,7 +41,7 @@ def _active_tenant_role_name(group_identifier: str, tenant_id: str) -> str | Non
         return None
 
     normalized_role_name = role_name.strip()
-    if normalized_role_name not in DEFAULT_ORGANIZATION_ROLE_GROUP_NAMES:
+    if normalized_role_name not in VALID_TENANT_ROLE_NAMES:
         return None
     return normalized_role_name
 
@@ -133,10 +136,16 @@ def _sync_shared_realm_role_membership(user: Any, role_name: str, tenant_id: str
             status_code=400,
         )
 
+    group_name_candidates = organization_group_name_candidates_for_tenant_role(role_name)
+    if not group_name_candidates:
+        return
+
     if present:
-        add_organization_group_member(organization_id, role_name, member_id.strip())
-    else:
-        remove_organization_group_member(organization_id, role_name, member_id.strip())
+        add_organization_group_member(organization_id, group_name_candidates[0], member_id.strip())
+        return
+
+    for group_name in group_name_candidates:
+        remove_organization_group_member(organization_id, group_name, member_id.strip())
 
 
 def _assign_user_to_group_impl(original_fn: Any | None = None) -> flask.wrappers.Response:

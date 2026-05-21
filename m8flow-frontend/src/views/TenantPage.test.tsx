@@ -5,9 +5,8 @@ import TenantPage from "./TenantPage";
 const mockUseTenants = vi.fn();
 const mockUsePermissionFetcher = vi.fn();
 const mockCreateTenant = vi.fn();
+const mockGetTenantGroups = vi.fn();
 const mockGetTenantMembers = vi.fn();
-const mockAssignTenantMemberRole = vi.fn();
-const mockRemoveTenantMemberRole = vi.fn();
 
 vi.mock("../hooks/useTenants", () => ({
   useTenants: () => mockUseTenants(),
@@ -18,13 +17,24 @@ vi.mock("@spiffworkflow-frontend/hooks/PermissionService", () => ({
 }));
 
 vi.mock("../services/TenantService", () => ({
+  TENANT_MEMBER_ROLES: [
+    "tenant-admin",
+    "editor",
+    "integrator",
+    "reviewer",
+    "submitter",
+    "viewer",
+  ],
   default: {
     createTenant: (...args: unknown[]) => mockCreateTenant(...args),
+    getTenantGroups: (...args: unknown[]) => mockGetTenantGroups(...args),
     getTenantMembers: (...args: unknown[]) => mockGetTenantMembers(...args),
-    assignTenantMemberRole: (...args: unknown[]) =>
-      mockAssignTenantMemberRole(...args),
-    removeTenantMemberRole: (...args: unknown[]) =>
-      mockRemoveTenantMemberRole(...args),
+    getAvailableTenantUsers: vi.fn(),
+    addTenantMember: vi.fn(),
+    addTenantMemberToGroup: vi.fn(),
+    removeTenantMemberFromGroup: vi.fn(),
+    assignTenantGroupRole: vi.fn(),
+    removeTenantGroupRole: vi.fn(),
     updateTenant: vi.fn(),
     deleteTenant: vi.fn(),
   },
@@ -34,18 +44,18 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, options?: Record<string, unknown>) => {
       const messages: Record<string, string> = {
-        organization_management: "Organization Management",
+        organization_management: "Tenant Management",
         organization_management_description:
-          "Manage the Keycloak organizations that back tenant access in the shared realm.",
-        add_organization: "Add Organization",
-        edit_organization: "Edit Organization",
-        manage_organization_roles: "Manage Organization Roles",
-        organization_role_management_description:
-          "Assign tenant-scoped roles to members of this Keycloak organization. Only organization members are listed here.",
-        delete_organization: "Delete Organization",
+          "Manage the Keycloak tenants that back access in Keycloak.",
+        add_organization: "Add Tenant",
+        edit_organization: "Edit Tenant",
+        manage_tenant_groups: "Manage Tenant Groups",
+        tenant_group_management_description:
+          "Review tenant users, add existing members, and manage the Keycloak groups and tenant-scoped roles associated with this tenant.",
+        delete_organization: "Delete Tenant",
         search_by: "Search By",
-        name: "Name",
-        organization_alias: "Organization Alias",
+        organization_alias: "Tenant Alias",
+        organization_name: "Tenant Name",
         filter_by_status: "Filter by Status",
         all: "All",
         active: "Active",
@@ -56,49 +66,48 @@ vi.mock("react-i18next", () => ({
         create: "Create",
         save: "Save",
         processing: "Processing...",
-        organization_name: "Organization Name",
-        organization_created_successfully:
-          "Organization created successfully.",
-        organization_updated_successfully:
-          "Organization updated successfully.",
-        organization_alias_already_exists:
-          "Organization alias already exists",
-        organization_alias_cannot_be_empty:
-          "Organization alias cannot be empty",
+        organization_created_successfully: "Tenant created successfully.",
+        organization_updated_successfully: "Tenant updated successfully.",
+        organization_alias_already_exists: "Tenant alias already exists",
+        organization_alias_cannot_be_empty: "Tenant alias cannot be empty",
         organization_alias_invalid_pattern:
-          "Organization alias can only contain letters, numbers, hyphens, and underscores",
-        organization_name_cannot_be_empty:
-          "Organization name cannot be empty",
-        failed_to_load_organization_members:
-          "Failed to load organization members.",
-        failed_to_update_organization_role:
-          "Failed to update organization role.",
-        search_organization_members: "Search organization members...",
-        refresh_members: "Refresh members",
-        no_organization_members_found: "No organization members found.",
+          "Tenant alias can only contain letters, numbers, hyphens, and underscores",
+        organization_name_cannot_be_empty: "Tenant name cannot be empty",
+        failed_to_create_organization:
+          "Failed to create tenant. Please try again.",
+        failed_to_update_organization:
+          "Failed to update tenant. Please try again.",
+        failed_to_delete_organization:
+          "Failed to delete tenant. Please try again.",
+        failed_to_load_tenant_groups: "Failed to load tenant groups.",
+        search_tenant_groups: "Search tenant groups or members...",
+        refresh_tenant_groups: "Refresh tenant groups",
+        no_tenant_groups_found: "No tenant groups found.",
+        no_organization_members_found: "No tenant members found.",
+        group: "Group",
+        groups: "Groups",
+        members: "Members",
+        granted_roles: "Granted Roles",
         username: "Username",
+        display_name: "Display Name",
         email: "Email",
+        add_tenant_user: "Add User",
         tenant_role_tenant_admin: "Tenant Admin",
         tenant_role_editor: "Editor",
         tenant_role_integrator: "Integrator",
         tenant_role_reviewer: "Reviewer",
+        tenant_role_submitter: "Submitter",
         tenant_role_viewer: "Viewer",
-        failed_to_create_organization:
-          "Failed to create organization. Please try again.",
-        failed_to_update_organization:
-          "Failed to update organization. Please try again.",
-        failed_to_delete_organization:
-          "Failed to delete organization. Please try again.",
       };
 
       if (key === "organization_alias_max_length") {
-        return `Organization alias must be ${options?.count ?? ""} characters or fewer`;
+        return `Tenant alias must be ${options?.count ?? ""} characters or fewer`;
       }
       if (key === "organization_name_max_length") {
-        return `Organization name must be ${options?.count ?? ""} characters or fewer`;
+        return `Tenant name must be ${options?.count ?? ""} characters or fewer`;
       }
       if (key === "showing_organizations_count") {
-        return `Showing ${options?.filtered ?? 0} of ${options?.total ?? 0} organization(s)`;
+        return `Showing ${options?.filtered ?? 0} of ${options?.total ?? 0} tenant(s)`;
       }
       if (key === "search_by_placeholder") {
         return `Search by ${options?.type ?? "name"}...`;
@@ -112,21 +121,8 @@ vi.mock("react-i18next", () => ({
 describe("TenantPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetTenantGroups.mockResolvedValue([]);
     mockGetTenantMembers.mockResolvedValue([]);
-    mockAssignTenantMemberRole.mockResolvedValue({
-      id: "member-1",
-      username: "editor",
-      email: "editor@example.com",
-      display_name: "Editor User",
-      roles: ["editor"],
-    });
-    mockRemoveTenantMemberRole.mockResolvedValue({
-      id: "member-1",
-      username: "editor",
-      email: "editor@example.com",
-      display_name: "Editor User",
-      roles: [],
-    });
   });
 
   it("creates a tenant from the add tenant modal", async () => {
@@ -152,10 +148,10 @@ describe("TenantPage", () => {
 
     fireEvent.click(screen.getByTestId("tenant-add-button"));
 
-    fireEvent.change(screen.getByLabelText("Organization Alias"), {
+    fireEvent.change(screen.getByLabelText("Tenant Alias"), {
       target: { value: "it-team_1" },
     });
-    fireEvent.change(screen.getByLabelText("Organization Name"), {
+    fireEvent.change(screen.getByLabelText("Tenant Name"), {
       target: { value: "Information Technology" },
     });
 
@@ -173,7 +169,7 @@ describe("TenantPage", () => {
     });
 
     expect(
-      await screen.findByText("Organization created successfully."),
+      await screen.findByText("Tenant created successfully."),
     ).toBeInTheDocument();
   });
 
@@ -195,10 +191,10 @@ describe("TenantPage", () => {
     fireEvent.click(screen.getByTestId("tenant-modal-submit-button"));
 
     expect(
-      await screen.findByText("Organization alias cannot be empty"),
+      await screen.findByText("Tenant alias cannot be empty"),
     ).toBeInTheDocument();
     expect(
-      await screen.findByText("Organization name cannot be empty"),
+      await screen.findByText("Tenant name cannot be empty"),
     ).toBeInTheDocument();
     expect(mockCreateTenant).not.toHaveBeenCalled();
   });
@@ -219,10 +215,10 @@ describe("TenantPage", () => {
 
     fireEvent.click(screen.getByTestId("tenant-add-button"));
 
-    fireEvent.change(screen.getByLabelText("Organization Alias"), {
+    fireEvent.change(screen.getByLabelText("Tenant Alias"), {
       target: { value: "it team" },
     });
-    fireEvent.change(screen.getByLabelText("Organization Name"), {
+    fireEvent.change(screen.getByLabelText("Tenant Name"), {
       target: { value: "A".repeat(51) },
     });
 
@@ -230,11 +226,11 @@ describe("TenantPage", () => {
 
     expect(
       await screen.findByText(
-        "Organization alias can only contain letters, numbers, hyphens, and underscores",
+        "Tenant alias can only contain letters, numbers, hyphens, and underscores",
       ),
     ).toBeInTheDocument();
     expect(
-      await screen.findByText("Organization name must be 50 characters or fewer"),
+      await screen.findByText("Tenant name must be 50 characters or fewer"),
     ).toBeInTheDocument();
     expect(mockCreateTenant).not.toHaveBeenCalled();
   });
@@ -257,21 +253,21 @@ describe("TenantPage", () => {
     render(<TenantPage />);
 
     fireEvent.click(screen.getByTestId("tenant-add-button"));
-    fireEvent.change(screen.getByLabelText("Organization Alias"), {
+    fireEvent.change(screen.getByLabelText("Tenant Alias"), {
       target: { value: "it-team_1" },
     });
-    fireEvent.change(screen.getByLabelText("Organization Name"), {
+    fireEvent.change(screen.getByLabelText("Tenant Name"), {
       target: { value: "Information Technology" },
     });
 
     fireEvent.click(screen.getByTestId("tenant-modal-submit-button"));
 
     expect(
-      await screen.findByText("Organization alias already exists"),
+      await screen.findByText("Tenant alias already exists"),
     ).toBeInTheDocument();
   });
 
-  it("opens organization role management and assigns a tenant role", async () => {
+  it("opens tenant group management and loads dynamic keycloak groups", async () => {
     mockUseTenants.mockReturnValue({
       data: [
         {
@@ -293,13 +289,52 @@ describe("TenantPage", () => {
       ability: { can: () => true },
       permissionsLoaded: true,
     });
+    mockGetTenantGroups.mockResolvedValue([
+      {
+        id: "group-admin",
+        name: "Administrators",
+        path: "/Administrators",
+        mapped_roles: ["tenant-admin"],
+        member_count: 1,
+        members: [
+          {
+            id: "member-1",
+            username: "admin",
+            email: "admin@example.com",
+            display_name: "Admin User",
+          },
+        ],
+      },
+      {
+        id: "group-approvers",
+        name: "Approvers",
+        path: "/Approvers",
+        mapped_roles: ["reviewer"],
+        member_count: 1,
+        members: [
+          {
+            id: "member-2",
+            username: "reviewer",
+            email: null,
+            display_name: "Reviewer User",
+          },
+        ],
+      },
+    ]);
     mockGetTenantMembers.mockResolvedValue([
       {
         id: "member-1",
-        username: "editor",
-        email: "editor@example.com",
-        display_name: "Editor User",
-        roles: [],
+        username: "admin",
+        email: "admin@example.com",
+        display_name: "Admin User",
+        roles: ["tenant-admin"],
+      },
+      {
+        id: "member-2",
+        username: "reviewer",
+        email: null,
+        display_name: "Reviewer User",
+        roles: ["reviewer"],
       },
     ]);
 
@@ -309,25 +344,20 @@ describe("TenantPage", () => {
 
     expect(
       await screen.findByText(
-        "Assign tenant-scoped roles to members of this Keycloak organization. Only organization members are listed here.",
+        "Review tenant users, add existing members, and manage the Keycloak groups and tenant-scoped roles associated with this tenant.",
       ),
     ).toBeInTheDocument();
+    expect(mockGetTenantGroups).toHaveBeenCalledWith("tenant-uuid");
     expect(mockGetTenantMembers).toHaveBeenCalledWith("tenant-uuid");
-
-    fireEvent.click(
-      await screen.findByRole("checkbox", { name: "editor-editor" }),
-    );
-
-    await waitFor(() => {
-      expect(mockAssignTenantMemberRole).toHaveBeenCalledWith(
-        "tenant-uuid",
-        "editor",
-        "editor",
-      );
-    });
+    expect(screen.getAllByText("Administrators").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Approvers").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Tenant Admin").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Reviewer").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("admin").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("reviewer").length).toBeGreaterThan(0);
   });
 
-  it("does not submit the same organization role toggle twice while pending", async () => {
+  it("filters tenant groups by member or group name inside the dialog", async () => {
     mockUseTenants.mockReturnValue({
       data: [
         {
@@ -349,49 +379,65 @@ describe("TenantPage", () => {
       ability: { can: () => true },
       permissionsLoaded: true,
     });
+    mockGetTenantGroups.mockResolvedValue([
+      {
+        id: "group-designers",
+        name: "Designers",
+        path: "/Designers",
+        mapped_roles: ["editor"],
+        member_count: 1,
+        members: [
+          {
+            id: "member-1",
+            username: "editor",
+            email: null,
+            display_name: "Editor User",
+          },
+        ],
+      },
+      {
+        id: "group-support",
+        name: "Support",
+        path: "/Support",
+        mapped_roles: ["integrator"],
+        member_count: 1,
+        members: [
+          {
+            id: "member-2",
+            username: "integrator",
+            email: null,
+            display_name: "Integrator User",
+          },
+        ],
+      },
+    ]);
     mockGetTenantMembers.mockResolvedValue([
       {
         id: "member-1",
-        username: "admin",
-        email: "admin@example.com",
-        display_name: "Admin User",
-        roles: [],
+        username: "editor",
+        email: null,
+        display_name: "Editor User",
+        roles: ["editor"],
+      },
+      {
+        id: "member-2",
+        username: "integrator",
+        email: null,
+        display_name: "Integrator User",
+        roles: ["integrator"],
       },
     ]);
-
-    let resolveAssign: ((value: unknown) => void) | null = null;
-    mockAssignTenantMemberRole.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          resolveAssign = resolve;
-        }),
-    );
 
     render(<TenantPage />);
 
     fireEvent.click(screen.getByTestId("tenant-roles-button-tenant-uuid"));
+    await screen.findAllByText("Designers");
 
-    const tenantAdminCheckbox = await screen.findByRole("checkbox", {
-      name: "admin-tenant-admin",
+    fireEvent.change(screen.getByPlaceholderText("Search tenant groups or members..."), {
+      target: { value: "integrator" },
     });
 
-    fireEvent.click(tenantAdminCheckbox);
-    fireEvent.click(tenantAdminCheckbox);
-
-    expect(mockAssignTenantMemberRole).toHaveBeenCalledTimes(1);
-
-    resolveAssign?.({
-      id: "member-1",
-      username: "admin",
-      email: "admin@example.com",
-      display_name: "Admin User",
-      roles: ["tenant-admin"],
-    });
-
-    await waitFor(() => {
-      expect(
-        screen.getByRole("checkbox", { name: "admin-tenant-admin" }),
-      ).toBeChecked();
-    });
+    expect(screen.getAllByText("Designers").length).toBe(1);
+    expect(screen.getAllByText("Support").length).toBeGreaterThan(0);
   });
 });

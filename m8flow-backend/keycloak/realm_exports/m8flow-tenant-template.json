@@ -483,44 +483,7 @@
       ]
     }
   },
-  "groups": [
-    {
-      "id": "0a3b64b7-d53a-40e7-8e84-7a43e113fd94",
-      "name": "Approvers",
-      "path": "/Approvers",
-      "attributes": {},
-      "realmRoles": [],
-      "clientRoles": {},
-      "subGroups": []
-    },
-    {
-      "id": "5dcc6ff8-b08b-4e01-bb6d-d3170d418743",
-      "name": "Designers",
-      "path": "/Designers",
-      "attributes": {},
-      "realmRoles": [],
-      "clientRoles": {},
-      "subGroups": []
-    },
-    {
-      "id": "51d95310-2496-4a79-b23f-3d122fd72545",
-      "name": "Administrators",
-      "path": "/Administrators",
-      "attributes": {},
-      "realmRoles": [],
-      "clientRoles": {},
-      "subGroups": []
-    },
-    {
-      "id": "1cfcfbdf-b0fc-44af-af24-3f86cf0804f4",
-      "name": "Support",
-      "path": "/Support",
-      "attributes": {},
-      "realmRoles": [],
-      "clientRoles": {},
-      "subGroups": []
-    }
-  ],
+  "groups": [],
   "defaultRole": {
     "id": "c9f0ff93-642d-402b-965a-04d70719886b",
     "name": "default-roles-m8flow",
@@ -589,8 +552,7 @@
         "UPDATE_PASSWORD"
       ],
       "realmRoles": [
-        "default-roles-m8flow",
-        "tenant-admin"
+        "default-roles-m8flow"
       ],
       "clientRoles": {
         "realm-management": [
@@ -598,9 +560,7 @@
         ]
       },
       "notBefore": 0,
-      "groups": [
-        "/Administrators"
-      ]
+      "groups": []
     },
     {
       "id": "24c7779e-f7d1-442f-8de1-9a5d61aaef0a",
@@ -636,9 +596,9 @@
       "requiredActions": [
         "UPDATE_PASSWORD"
       ],
-      "realmRoles": ["default-roles-m8flow", "editor"],
+      "realmRoles": ["default-roles-m8flow"],
       "notBefore": 0,
-      "groups": ["/Designers"],
+      "groups": [],
       "credentials": [
         {
           "type": "password",
@@ -659,9 +619,9 @@
       "requiredActions": [
         "UPDATE_PASSWORD"
       ],
-      "realmRoles": ["default-roles-m8flow", "integrator"],
+      "realmRoles": ["default-roles-m8flow"],
       "notBefore": 0,
-      "groups": ["/Support"],
+      "groups": [],
       "credentials": [
         {
           "type": "password",
@@ -682,9 +642,9 @@
       "requiredActions": [
         "UPDATE_PASSWORD"
       ],
-      "realmRoles": ["default-roles-m8flow", "reviewer"],
+      "realmRoles": ["default-roles-m8flow"],
       "notBefore": 0,
-      "groups": ["/Approvers"],
+      "groups": [],
       "credentials": [
         {
           "type": "password",
@@ -705,7 +665,7 @@
       "requiredActions": [
         "UPDATE_PASSWORD"
       ],
-      "realmRoles": ["default-roles-m8flow", "viewer"],
+      "realmRoles": ["default-roles-m8flow"],
       "notBefore": 0,
       "groups": [],
       "credentials": [
@@ -728,7 +688,7 @@
       "requiredActions": [
         "UPDATE_PASSWORD"
       ],
-      "realmRoles": ["default-roles-m8flow", "submitter"],
+      "realmRoles": ["default-roles-m8flow"],
       "notBefore": 0,
       "groups": [],
       "credentials": [
@@ -1621,22 +1581,6 @@
             "access.token.claim": "true",
             "claim.name": "updated_at",
             "jsonType.label": "long"
-          }
-        },
-        {
-          "id": "fe4a096a-cede-4775-affa-b0cc6d630b70",
-          "name": "groups",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-normalized-group-membership-mapper",
-          "consentRequired": false,
-          "config": {
-            "id.token.claim": "true",
-            "access.token.claim": "true",
-            "claim.name": "groups",
-            "userinfo.token.claim": "true",
-            "introspection.token.claim": "true",
-            "multivalued": "true",
-            "jsonType.label": "String"
           }
         },
         {

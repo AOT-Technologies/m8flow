@@ -4,7 +4,7 @@ import os
 
 DEFAULT_CLIENT_ID = "m8flow-backend"
 DEFAULT_CLIENT_SECRET = "JXeQExm0JhQPLumgHtIIqf52bDalHz0q"
-UPSTREAM_REALM_URI = "http://localhost:7002/realms/spiffworkflow-local"
+UPSTREAM_REALM_URI = "http://localhost:6842/realms/spiffworkflow-local"
 
 _PATCHED = False
 
@@ -36,7 +36,7 @@ def _public_keycloak_base() -> str:
         or os.environ.get("M8FLOW_KEYCLOAK_PUBLIC_ISSUER_BASE")
         or os.environ.get("KEYCLOAK_URL")
         or os.environ.get("M8FLOW_KEYCLOAK_URL")
-        or "http://localhost:7002"
+        or "http://localhost:6842"
     ).rstrip("/")
 
 

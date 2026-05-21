@@ -57,8 +57,8 @@ def test_apply_runtime_rewrites_upstream_defaults_on_flask_config() -> None:
         {
             "identifier": "default",
             "label": "Default",
-            "uri": "http://localhost:7002/realms/spiffworkflow-local",
-            "internal_uri": "http://localhost:7002/realms/spiffworkflow-local",
+            "uri": "http://localhost:6842/realms/spiffworkflow-local",
+            "internal_uri": "http://localhost:6842/realms/spiffworkflow-local",
             "client_id": "spiffworkflow-backend",
             "client_secret": "JXeQExm0JhQPLumgHtIIqf52bDalHz0q",
         }
@@ -69,8 +69,8 @@ def test_apply_runtime_rewrites_upstream_defaults_on_flask_config() -> None:
     assert app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_CLIENT_ID"] == "m8flow-backend"
     assert app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"][0]["identifier"] == "m8flow"
     assert app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"][0]["label"] == "M8Flow Realm"
-    assert app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"][0]["uri"] == "http://localhost:7002/realms/m8flow"
-    assert app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"][0]["internal_uri"] == "http://localhost:7002/realms/m8flow"
+    assert app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"][0]["uri"] == "http://localhost:6842/realms/m8flow"
+    assert app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"][0]["internal_uri"] == "http://localhost:6842/realms/m8flow"
     assert app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"][0]["client_id"] == "m8flow-backend"
 
 
@@ -79,12 +79,12 @@ def test_apply_runtime_uses_configured_realm_names_for_labels(monkeypatch) -> No
     app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"] = [
         {
             "identifier": "ops-admin",
-            "uri": "http://localhost:7002/realms/ops-admin",
+            "uri": "http://localhost:6842/realms/ops-admin",
             "client_id": "m8flow-backend",
         },
         {
             "identifier": "tenant-hub",
-            "uri": "http://localhost:7002/realms/tenant-hub",
+            "uri": "http://localhost:6842/realms/tenant-hub",
             "client_id": "m8flow-backend",
         },
     ]
@@ -102,16 +102,16 @@ def test_apply_runtime_fills_missing_auth_config_labels() -> None:
     app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"] = [
         {
             "identifier": "master",
-            "uri": "http://localhost:7002/realms/master",
+            "uri": "http://localhost:6842/realms/master",
             "client_id": "m8flow-backend",
         },
         {
             "identifier": "m8flow",
-            "uri": "http://localhost:7002/realms/m8flow",
+            "uri": "http://localhost:6842/realms/m8flow",
             "client_id": "m8flow-backend",
         },
         {
-            "uri": "http://localhost:7002/realms/unknown",
+            "uri": "http://localhost:6842/realms/unknown",
             "client_id": "m8flow-backend",
         },
     ]
@@ -150,8 +150,8 @@ def test_apply_runtime_normalizes_uppercase_auth_config_keys() -> None:
         {
             "IDENTIFIER": "m8flow",
             "LABEL": "M8Flow Realm",
-            "URI": "http://localhost:7002/realms/m8flow",
-            "INTERNAL_URI": "http://localhost:7002/realms/m8flow",
+            "URI": "http://localhost:6842/realms/m8flow",
+            "INTERNAL_URI": "http://localhost:6842/realms/m8flow",
             "CLIENT_ID": "m8flow-backend",
             "CLIENT_SECRET": "secret",
             "ADDITIONAL_VALID_CLIENT_IDS": "admin-cli",
@@ -163,8 +163,8 @@ def test_apply_runtime_normalizes_uppercase_auth_config_keys() -> None:
     auth_config = app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"][0]
     assert auth_config["identifier"] == "m8flow"
     assert auth_config["label"] == "M8Flow Realm"
-    assert auth_config["uri"] == "http://localhost:7002/realms/m8flow"
-    assert auth_config["internal_uri"] == "http://localhost:7002/realms/m8flow"
+    assert auth_config["uri"] == "http://localhost:6842/realms/m8flow"
+    assert auth_config["internal_uri"] == "http://localhost:6842/realms/m8flow"
     assert auth_config["client_id"] == "m8flow-backend"
     assert auth_config["client_secret"] == "secret"
     assert auth_config["additional_valid_client_ids"] == "admin-cli"

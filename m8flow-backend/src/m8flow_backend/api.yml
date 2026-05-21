@@ -395,6 +395,286 @@ paths:
           description: Tenant or organization not found
         "500":
           description: Internal server error
+    post:
+      summary: Add tenant organization member
+      description: Adds one existing Keycloak user to the selected tenant organization and optionally assigns organization groups.
+      operationId: m8flow_backend.routes.tenant_role_controller.create_tenant_member
+      tags:
+        - Tenant
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique tenant identifier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TenantMemberCreateRequest"
+      responses:
+        "201":
+          description: Tenant member created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantMemberCreateResponse"
+        "400":
+          description: Invalid request body
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Forbidden - insufficient permissions
+        "404":
+          description: Tenant, organization, or requested user not found
+        "409":
+          description: Local user synchronization conflict
+        "500":
+          description: Internal server error
+
+  /tenants/{tenant_id}/available-users:
+    get:
+      summary: List existing users available to add to a tenant
+      description: Lists existing Keycloak users that are not yet members of the selected tenant organization.
+      operationId: m8flow_backend.routes.tenant_role_controller.list_available_tenant_users_for_tenant
+      tags:
+        - Tenant
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique tenant identifier
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional filter by username, display name, or email
+      responses:
+        "200":
+          description: Available users retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantAvailableUserListResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Forbidden - insufficient permissions
+        "404":
+          description: Tenant or organization not found
+        "500":
+          description: Internal server error
+
+  /tenants/{tenant_id}/groups:
+    get:
+      summary: List tenant Keycloak groups
+      description: Lists the Keycloak organization groups for the selected tenant, including their members and mapped tenant-scoped roles.
+      operationId: m8flow_backend.routes.tenant_role_controller.list_tenant_groups
+      tags:
+        - Tenant
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique tenant identifier
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional filter by group name, mapped role, or member identity
+      responses:
+        "200":
+          description: Tenant groups retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantGroupListResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Forbidden - insufficient permissions
+        "404":
+          description: Tenant or organization not found
+        "500":
+          description: Internal server error
+
+  /tenants/{tenant_id}/groups/{group_name}/members/{username}:
+    put:
+      summary: Assign tenant member to organization group
+      description: Assigns one tenant member to one existing Keycloak organization group and mirrors any mapped tenant-scoped roles locally.
+      operationId: m8flow_backend.routes.tenant_role_controller.assign_group_member
+      tags:
+        - Tenant
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: group_name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: username
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Group membership assigned successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantGroupMembershipMutationResponse"
+        "400":
+          description: Invalid tenant member or group
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Forbidden - insufficient permissions
+        "404":
+          description: Tenant member not found
+        "409":
+          description: Local user synchronization conflict
+        "500":
+          description: Internal server error
+
+    delete:
+      summary: Remove tenant member from organization group
+      description: Removes one tenant member from one existing Keycloak organization group and mirrors any mapped tenant-scoped roles locally.
+      operationId: m8flow_backend.routes.tenant_role_controller.remove_group_member
+      tags:
+        - Tenant
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: group_name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: username
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Group membership removed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantGroupMembershipMutationResponse"
+        "400":
+          description: Invalid tenant member or group
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Forbidden - insufficient permissions
+        "404":
+          description: Tenant member not found
+        "409":
+          description: Local user synchronization conflict
+        "500":
+          description: Internal server error
+
+  /tenants/{tenant_id}/groups/{group_name}/roles/{role_name}:
+    put:
+      summary: Assign tenant role to organization group
+      description: Assigns one tenant-scoped role to one existing Keycloak organization group and mirrors the result locally for all members.
+      operationId: m8flow_backend.routes.tenant_role_controller.assign_group_role
+      tags:
+        - Tenant
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: group_name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: role_name
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [tenant-admin, editor, integrator, reviewer, viewer]
+      responses:
+        "200":
+          description: Group role assigned successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantGroupRoleMutationResponse"
+        "400":
+          description: Invalid group or role
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Forbidden - insufficient permissions
+        "404":
+          description: Tenant or organization group not found
+        "409":
+          description: Local role sync conflict
+        "500":
+          description: Internal server error
+
+    delete:
+      summary: Remove tenant role from organization group
+      description: Removes one tenant-scoped role from one existing Keycloak organization group and mirrors the result locally for all members.
+      operationId: m8flow_backend.routes.tenant_role_controller.remove_group_role
+      tags:
+        - Tenant
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: group_name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: role_name
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [tenant-admin, editor, integrator, reviewer, viewer]
+      responses:
+        "200":
+          description: Group role removed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantGroupRoleMutationResponse"
+        "400":
+          description: Invalid group or role
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Forbidden - insufficient permissions
+        "404":
+          description: Tenant or organization group not found
+        "500":
+          description: Internal server error
 
   /tenants/{tenant_id}/members/{username}/roles/{role_name}:
     put:
@@ -1360,6 +1640,42 @@ components:
           items:
             $ref: "#/components/schemas/TenantMember"
 
+    TenantAvailableUserListResponse:
+      type: object
+      properties:
+        tenant_id:
+          type: string
+        search:
+          type: string
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/TenantGroupMember"
+
+    TenantMemberCreateRequest:
+      type: object
+      required:
+        - username
+      properties:
+        username:
+          type: string
+        group_names:
+          type: array
+          items:
+            type: string
+
+    TenantMemberCreateResponse:
+      type: object
+      properties:
+        tenant_id:
+          type: string
+        group_names:
+          type: array
+          items:
+            type: string
+        member:
+          $ref: "#/components/schemas/TenantMember"
+
     TenantMemberRoleMutationResponse:
       type: object
       properties:
@@ -1371,6 +1687,78 @@ components:
           type: string
         member:
           $ref: "#/components/schemas/TenantMember"
+
+    TenantGroupRoleMutationResponse:
+      type: object
+      properties:
+        tenant_id:
+          type: string
+        group_name:
+          type: string
+        role_name:
+          type: string
+        group:
+          $ref: "#/components/schemas/TenantGroup"
+
+    TenantGroupMembershipMutationResponse:
+      type: object
+      properties:
+        tenant_id:
+          type: string
+        group_name:
+          type: string
+        username:
+          type: string
+        member:
+          $ref: "#/components/schemas/TenantMember"
+
+    TenantGroupMember:
+      type: object
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        email:
+          type: string
+          nullable: true
+        display_name:
+          type: string
+          nullable: true
+
+    TenantGroup:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        path:
+          type: string
+          nullable: true
+        mapped_roles:
+          type: array
+          items:
+            type: string
+            enum: [tenant-admin, editor, integrator, reviewer, viewer]
+        member_count:
+          type: integer
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/TenantGroupMember"
+
+    TenantGroupListResponse:
+      type: object
+      properties:
+        tenant_id:
+          type: string
+        search:
+          type: string
+        groups:
+          type: array
+          items:
+            $ref: "#/components/schemas/TenantGroup"
 
     TenantExistsResponse:
       type: object
