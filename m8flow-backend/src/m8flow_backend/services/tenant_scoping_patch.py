@@ -382,10 +382,18 @@ def _set_postgres_tenant_context(session: Session, transaction: Any, connection:
         tenant_id = _resolve_tenant_id_for_db()
     except RuntimeError:
         return
-    connection.exec_driver_sql(
-        "SET LOCAL app.current_tenant = %s",
-        (tenant_id,),
-    )
+
+    raw_connection = getattr(connection, "connection", None)
+    driver_connection = getattr(raw_connection, "driver_connection", raw_connection)
+    if driver_connection is None:
+        connection.exec_driver_sql("SET LOCAL app.current_tenant = %s", (tenant_id,))
+        return
+
+    cursor = driver_connection.cursor()
+    try:
+        cursor.execute("SET LOCAL app.current_tenant = %s", (tenant_id,))
+    finally:
+        cursor.close()
 
 
 _SCOPING_LISTENER_REGISTERED = False

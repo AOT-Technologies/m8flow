@@ -748,7 +748,13 @@ def test_apply_preflights_queued_form_submissions_before_returning(monkeypatch) 
     ]
 
 
-def _apply_patch_for_api_task_tests(monkeypatch, *, human_task, can_complete: bool = False):
+def _apply_patch_for_api_task_tests(
+    monkeypatch,
+    *,
+    human_task,
+    can_complete: bool = False,
+    upstream_raises_type_error: bool = False,
+):
     fake_service_module = ModuleType("spiffworkflow_backend.services.process_instance_service")
     fake_processor_module = ModuleType("spiffworkflow_backend.services.process_instance_processor")
     fake_queue_module = ModuleType("spiffworkflow_backend.services.process_instance_queue_service")
@@ -867,6 +873,12 @@ def _apply_patch_for_api_task_tests(monkeypatch, *, human_task, can_complete: bo
         def update_form_task_data(cls, process_instance, spiff_task, data, user):
             return None
 
+    if upstream_raises_type_error:
+        @staticmethod
+        def _upstream_spiff_task_to_api_task(_processor, _spiff_task):
+            raise TypeError("sequence item 0: expected str instance, NoneType found")
+
+        FakeProcessInstanceService.spiff_task_to_api_task = _upstream_spiff_task_to_api_task
     fake_service_module.ProcessInstanceService = FakeProcessInstanceService
     fake_processor_module.ProcessInstanceProcessor = FakeProcessInstanceProcessor
     fake_queue_module.ProcessInstanceQueueService = FakeProcessInstanceQueueService
@@ -916,6 +928,16 @@ def _apply_patch_for_api_task_tests(monkeypatch, *, human_task, can_complete: bo
     monkeypatch.setitem(sys.modules, "spiffworkflow_backend.models.task", fake_task_module)
     monkeypatch.setitem(sys.modules, "SpiffWorkflow.util.task", fake_spiff_task_state_module)
     monkeypatch.setattr(process_instance_service_patch, "_PATCHED", False)
+    monkeypatch.setattr(
+        process_instance_service_patch,
+        "current_app",
+        SimpleNamespace(
+            logger=SimpleNamespace(
+                info=lambda *args, **kwargs: None,
+                warning=lambda *args, **kwargs: None,
+            )
+        ),
+    )
 
     process_instance_service_patch.apply()
     return FakeProcessInstanceService
@@ -997,3 +1019,55 @@ def test_apply_ignores_null_and_duplicate_usernames_when_building_potential_owne
         task = fake_service.spiff_task_to_api_task(processor, spiff_task)
 
     assert task.potential_owner_usernames == "reviewer"
+
+
+def test_apply_spiff_task_to_api_task_falls_back_when_email_is_missing(monkeypatch) -> None:
+    fake_service = _apply_patch_for_api_task_tests(
+        monkeypatch,
+        human_task=SimpleNamespace(
+            lane_assignment_id=None,
+            potential_owners=[
+                SimpleNamespace(id=91, email=None, username="reviewer", display_name="Reviewer", service_id="svc-91"),
+                SimpleNamespace(
+                    id=92,
+                    email="approver@example.com",
+                    username="approver",
+                    display_name="Approver",
+                    service_id="svc-92",
+                ),
+            ],
+        ),
+        upstream_raises_type_error=True,
+    )
+
+    processor = SimpleNamespace(
+        process_instance_model=SimpleNamespace(id=17),
+        process_model_identifier="two-step-approval",
+        process_model_display_name="Two Step Approval",
+        serialize_task_spec=lambda _task_spec: {"event_definition": None},
+    )
+    spiff_task = SimpleNamespace(
+        id="task-guid-1",
+        state=8,
+        parent=None,
+        task_spec=SimpleNamespace(
+            description="User Task",
+            bpmn_id="Activity_Review",
+            bpmn_name="Review Request",
+            lane="Manager",
+            extensions={},
+            _wf_spec=SimpleNamespace(name="Process_1"),
+        ),
+    )
+
+    app = Flask(__name__)
+    with app.app_context():
+        from flask import g
+
+        g.user = SimpleNamespace(id=501)
+        result = fake_service.spiff_task_to_api_task(processor, spiff_task)
+
+    assert isinstance(result, object)
+    assert result.potential_owner_usernames == "reviewer,approver"
+    assert result.assigned_user_group_identifier is None
+    assert result.can_complete is False

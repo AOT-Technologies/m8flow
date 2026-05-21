@@ -11,13 +11,26 @@ class FakeDialect:
         self.name = name
 
 
+class FakeCursor:
+    def __init__(self, owner: "FakeConnection") -> None:
+        self.owner = owner
+
+    def execute(self, sql: str, params: tuple | None = None) -> None:
+        self.owner.calls.append((sql, params))
+
+    def close(self) -> None:
+        self.owner.close_calls += 1
+
+
 class FakeConnection:
     def __init__(self, dialect_name: str) -> None:
         self.dialect = FakeDialect(dialect_name)
         self.calls: list[tuple[str, tuple | None]] = []
+        self.connection = self
+        self.close_calls = 0
 
-    def exec_driver_sql(self, sql: str, params: tuple | None = None) -> None:
-        self.calls.append((sql, params))
+    def cursor(self) -> FakeCursor:
+        return FakeCursor(self)
 
 
 def test_postgres_sets_tenant_context_from_request() -> None:
@@ -29,6 +42,7 @@ def test_postgres_sets_tenant_context_from_request() -> None:
         tenant_scoping_patch._set_postgres_tenant_context(None, None, connection)
 
     assert connection.calls == [("SET LOCAL app.current_tenant = %s", ("tenant-a",))]
+    assert connection.close_calls == 1
 
 
 def test_postgres_sets_tenant_context_from_background() -> None:
@@ -40,14 +54,16 @@ def test_postgres_sets_tenant_context_from_background() -> None:
         reset_context_tenant_id(token)
 
     assert connection.calls == [("SET LOCAL app.current_tenant = %s", ("tenant-b",))]
+    assert connection.close_calls == 1
+
 
 def test_postgres_missing_tenant_does_nothing() -> None:
-    """When no request/context tenant exists, tenant-scoped SQL context is not set."""
     connection = FakeConnection("postgresql")
 
     tenant_scoping_patch._set_postgres_tenant_context(None, None, connection)
 
     assert connection.calls == []
+    assert connection.close_calls == 0
 
 
 def test_non_postgres_does_nothing() -> None:
@@ -56,3 +72,4 @@ def test_non_postgres_does_nothing() -> None:
     tenant_scoping_patch._set_postgres_tenant_context(None, None, connection)
 
     assert connection.calls == []
+    assert connection.close_calls == 0

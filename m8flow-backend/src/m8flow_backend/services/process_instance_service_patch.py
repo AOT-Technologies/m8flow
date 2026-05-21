@@ -4,6 +4,7 @@ import hashlib
 import time
 
 from flask import current_app
+from flask import g
 
 _PATCHED = False
 
@@ -121,6 +122,7 @@ def apply() -> None:
     from spiffworkflow_backend.services.workflow_execution_service import TaskRunnability
 
     original_create_process_instance = ProcessInstanceService.create_process_instance
+    original_spiff_task_to_api_task = getattr(ProcessInstanceService, "spiff_task_to_api_task", None)
     original_update_form_task_data = ProcessInstanceService.update_form_task_data
 
     @classmethod  # type: ignore[misc]
@@ -310,7 +312,6 @@ def apply() -> None:
 
     @staticmethod
     def patched_spiff_task_to_api_task(processor, spiff_task):
-        from flask import g
         from SpiffWorkflow.util.task import TaskState  # type: ignore
         from spiffworkflow_backend.exceptions.error import HumanTaskAlreadyCompletedError
         from spiffworkflow_backend.exceptions.error import HumanTaskNotFoundError
@@ -322,6 +323,12 @@ def apply() -> None:
         from spiffworkflow_backend.models.task import Task
         from spiffworkflow_backend.services.authorization_service import AuthorizationService
 
+        if callable(original_spiff_task_to_api_task):
+            try:
+                return original_spiff_task_to_api_task(processor, spiff_task)
+            except TypeError as exc:
+                if "expected str instance" not in str(exc) or "NoneType found" not in str(exc):
+                    raise
         task_type = spiff_task.task_spec.description
         task_guid = str(spiff_task.id)
 
