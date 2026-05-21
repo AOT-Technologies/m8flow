@@ -431,4 +431,5 @@ def apply() -> None:
     ProcessInstanceService.spiff_task_to_api_task = patched_spiff_task_to_api_task
     ProcessInstanceService.update_form_task_data = patched_update_form_task_data
     ProcessInstanceService.run_process_instance_with_processor = patched_run_process_instance_with_processor
+    ProcessInstanceService.spiff_task_to_api_task = patched_spiff_task_to_api_task  # type: ignore[assignment]
     _PATCHED = True
