@@ -42,6 +42,7 @@ export interface TemplateFilters {
   tag?: string;
   visibility?: TemplateVisibility;
   owner?: string;
+  tenantId?: string;
   latest_only?: boolean;
   page?: number;
   per_page?: number;

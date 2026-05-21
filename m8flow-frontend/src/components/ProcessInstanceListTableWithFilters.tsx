@@ -7,6 +7,8 @@ import React, {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import UserService from '../services/UserService';
+import { useTenants } from '../hooks/useTenants';
 
 import { Close, AddAlt } from '@carbon/icons-react';
 import {
@@ -232,6 +234,9 @@ export default function ProcessInstanceListTableWithFilters({
     string | null
   >(null);
   const [lastMilestones, setLastMilestones] = useState<string[]>([]);
+  const isSuperAdmin = UserService.isSuperAdmin();
+  const { data: tenants = [] } = useTenants(isSuperAdmin);
+  const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null);
   const systemReportOptions: string[] = useMemo(() => {
     return [
       'instances_with_tasks_waiting_for_me',
@@ -278,6 +283,7 @@ export default function ProcessInstanceListTableWithFilters({
     setProcessStatusSelection([]);
     setSelectedUserGroup(null);
     setSelectedLastMilestone(null);
+    setSelectedTenantId(null);
     setStartFromDate('');
     setStartFromTime('');
     setStartToDate('');
@@ -353,6 +359,8 @@ export default function ProcessInstanceListTableWithFilters({
             setSelectedLastMilestone(reportFilter.field_value);
           } else if (systemReportOptions.includes(reportFilter.field_name)) {
             setSystemReport(reportFilter.field_name);
+          } else if (reportFilter.field_name === 'tenant_id') {
+            setSelectedTenantId(reportFilter.field_value || null);
           } else if (reportFilter.field_name === 'process_model_identifier') {
             if (reportFilter.field_value) {
               processModelSelectionItemsForUseEffect.current.forEach(
@@ -1597,6 +1605,40 @@ export default function ProcessInstanceListTableWithFilters({
             </Can>
           </Column>
           <Column md={4}>{processStatusSearch()}</Column>
+          {isSuperAdmin && tenants.length > 0 && (
+            <Column md={4}>
+              <FormControl fullWidth size="small">
+                <InputLabel id="pi-tenant-filter-label">
+                  {t('tenant')}
+                </InputLabel>
+                <Select
+                  fullWidth
+                  labelId="pi-tenant-filter-label"
+                  label={t('tenant')}
+                  value={selectedTenantId || ''}
+                  data-testid="process-instance-tenant-filter"
+                  onChange={(event) => {
+                    const { value } = event.target;
+                    insertOrUpdateFieldInReportMetadata(
+                      reportMetadata!,
+                      'tenant_id',
+                      value,
+                    );
+                    setSelectedTenantId(value || null);
+                  }}
+                >
+                  <MenuItem value="">
+                    <em>{t('all_tenants', 'All Tenants')}</em>
+                  </MenuItem>
+                  {tenants.map((tenant) => (
+                    <MenuItem key={tenant.id} value={tenant.id}>
+                      {tenant.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Column>
+          )}
         </Grid>
         <Grid fullWidth className="with-bottom-margin">
           <Column md={4}>

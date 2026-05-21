@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import flask.wrappers
 from flask import current_app
+from flask import g
 from flask import jsonify
 from flask import make_response
 from sqlalchemy import desc
 from sqlalchemy import func
 
+from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
 from m8flow_backend.services.tenant_identity_helpers import display_group_identifier
 from m8flow_backend.tenancy import is_super_admin_request
 
@@ -98,6 +100,7 @@ def _apply_module_patches():
         if len(args) >= 3:
             per_page = args[2]
 
+        from flask import request as flask_request
         from spiffworkflow_backend.models.group import GroupModel
         from spiffworkflow_backend.models.human_task import HumanTaskModel
         from spiffworkflow_backend.models.human_task_user import HumanTaskUserModel
@@ -121,6 +124,13 @@ def _apply_module_patches():
             )
         )
 
+        # Super admin tenant filter
+        filter_tenant_id = flask_request.args.get("tenantId") or flask_request.args.get("tenant_id")
+        if filter_tenant_id:
+            human_tasks_query = human_tasks_query.filter(
+                ProcessInstanceModel.m8f_tenant_id == filter_tenant_id
+            )
+
         potential_owner_usernames = tasks_controller._get_potential_owner_usernames(assigned_user)
 
         process_model_identifier_column = ProcessInstanceModel.process_model_identifier
@@ -128,6 +138,7 @@ def _apply_module_patches():
         user_username_column = UserModel.username.label("process_initiator_username")  # type: ignore
         group_identifier_column = GroupModel.identifier.label("assigned_user_group_identifier")  # type: ignore
         lane_name_column = HumanTaskModel.lane_name
+        tenant_id_column = ProcessInstanceModel.m8f_tenant_id.label("tenant_id")  # type: ignore
         if current_app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] == "postgres":
             process_model_identifier_column = func.max(ProcessInstanceModel.process_model_identifier).label(
                 "process_model_identifier"
@@ -136,6 +147,7 @@ def _apply_module_patches():
             user_username_column = func.max(UserModel.username).label("process_initiator_username")
             group_identifier_column = func.max(GroupModel.identifier).label("assigned_user_group_identifier")
             lane_name_column = func.max(HumanTaskModel.lane_name).label("lane_name")
+            tenant_id_column = func.max(ProcessInstanceModel.m8f_tenant_id).label("tenant_id")
 
         human_tasks = (
             human_tasks_query.add_columns(
@@ -152,15 +164,38 @@ def _apply_module_patches():
                 HumanTaskModel.json_metadata,
                 lane_name_column,
                 potential_owner_usernames,
+                tenant_id_column,
             )
             .order_by(desc(HumanTaskModel.id))  # type: ignore
             .paginate(page=page, per_page=per_page, error_out=False)
         )
 
+        # Enrich with tenant names
+        items = human_tasks.items
+        tenant_ids = {getattr(item, "tenant_id", None) for item in items if getattr(item, "tenant_id", None)}
+        tenant_name_by_id: dict[str, str] = {}
+        if tenant_ids:
+            tenants = M8flowTenantModel.query.filter(M8flowTenantModel.id.in_(tenant_ids)).all()
+            tenant_name_by_id = {t.id: t.name for t in tenants}
+
+        items_with_tenant: list = []
+        for item in items:
+            if hasattr(item, "_asdict"):
+                item_dict = dict(item._asdict())
+            elif hasattr(item, "__dict__"):
+                item_dict = {k: v for k, v in item.__dict__.items() if not k.startswith("_")}
+            else:
+                item_dict = item  # type: ignore[assignment]
+            if isinstance(item_dict, dict):
+                tid = item_dict.get("tenant_id")
+                item_dict["tenantId"] = tid
+                item_dict["tenantName"] = tenant_name_by_id.get(tid) if tid else None
+            items_with_tenant.append(item_dict)
+
         response_json = {
-            "results": human_tasks.items,
+            "results": items_with_tenant,
             "pagination": {
-                "count": len(human_tasks.items),
+                "count": len(items_with_tenant),
                 "total": human_tasks.total,
                 "pages": human_tasks.pages,
             },

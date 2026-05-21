@@ -191,6 +191,7 @@ class TemplateService:
         cls,
         user: UserModel | None,
         tenant_id: str | None = None,
+        filter_tenant_id: str | None = None,
         latest_only: bool = True,
         category: str | None = None,
         tag: str | None = None,
@@ -207,16 +208,22 @@ class TemplateService:
         query = TemplateModel.query
         query = TemplateAuthorizationService.filter_query_by_visibility(query, user=user)
         query = query.filter(TemplateModel.is_deleted.is_(False))
-        
+
+        is_super_admin = TemplateAuthorizationService._is_super_admin_request(user=user)
+
         # Non-super-admin tenant scoping: current tenant plus PUBLIC from any tenant.
         tenant = tenant_id or getattr(g, "m8flow_tenant_id", None)
-        if tenant and not TemplateAuthorizationService._is_super_admin_request(user=user):
+        if tenant and not is_super_admin:
             query = query.filter(
                 or_(
                     TemplateModel.m8f_tenant_id == tenant,
                     TemplateModel.visibility == TemplateVisibility.public.value,
                 )
             )
+
+        # Super-admin tenant filter: narrow to a specific tenant when requested.
+        if is_super_admin and filter_tenant_id:
+            query = query.filter(TemplateModel.m8f_tenant_id == filter_tenant_id)
 
         # Apply filters
         if category:

@@ -179,6 +179,7 @@ export default function TemplateGalleryPage() {
             onFiltersChange={handleFiltersChange}
             availableCategories={availableCategories}
             availableTags={availableTags}
+            showTenantFilter={isSuperAdmin}
           />
 
           {/* Main Gallery */}

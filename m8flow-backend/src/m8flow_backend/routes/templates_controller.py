@@ -72,6 +72,8 @@ def template_list():
     order = request.args.get("order", "desc").lower()
     if order not in ("asc", "desc"):
         order = "desc"
+    # Super Admin tenant filter: only respected when the caller is super admin
+    filter_tenant_id = request.args.get("tenantId") or request.args.get("tenant_id")
 
     # Pagination params
     try:
@@ -87,6 +89,7 @@ def template_list():
     templates, pagination = TemplateService.list_templates(
         user=user,
         tenant_id=getattr(g, "m8flow_tenant_id", None),
+        filter_tenant_id=filter_tenant_id,
         latest_only=latest_only,
         category=category,
         tag=tag,
