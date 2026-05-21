@@ -16,6 +16,15 @@ declare module '../../../m8flow-backend/keycloak/themes/m8flow/login/resources/j
 }
 
 declare module '../../../m8flow-backend/keycloak/themes/m8flow/login/resources/js/restartHiddenUsernameLogin.js' {
+  export function handleManualHiddenUsernameRestart(
+    button?: Element | null,
+    locationObject?: { replace(url: string): void } | null,
+    storage?: {
+      getItem(key: string): string | null;
+      setItem(key: string, value: string): void;
+      removeItem(key: string): void;
+    } | null,
+  ): boolean;
   export function restartHiddenUsernameLogin(
     marker?: Element | null,
     locationObject?: { replace(url: string): void } | null,

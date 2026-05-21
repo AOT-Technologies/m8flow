@@ -3,7 +3,6 @@
     <#if section = "header">
         ${msg("loginAccountTitle")}
     <#elseif section = "form">
-        <#assign isMasterRealmLogin = url.loginAction?contains("/realms/master/")>
         <#assign isM8flowRealmLogin = url.loginAction?contains("/realms/m8flow/")>
         <div id="kc-form">
           <div id="kc-form-wrapper">
@@ -82,18 +81,7 @@
                           <input type="hidden" id="id-hidden-input" name="credentialId" <#if auth.selectedCredential?has_content>value="${auth.selectedCredential}"</#if>/>
                           <input tabindex="7" class="${properties.kcButtonClass!} ${properties.kcButtonPrimaryClass!} ${properties.kcButtonBlockClass!} ${properties.kcButtonLargeClass!}" name="login" id="kc-login" type="submit" value="${msg("doLogIn")}"/>
                       </div>
-                      <#if isMasterRealmLogin>
-                          <div class="m8f-master-login-action">
-                              <a
-                                  id="m8f-master-login-button"
-                                  class="${properties.kcButtonClass!} ${properties.kcButtonPrimaryClass!} ${properties.kcButtonBlockClass!} ${properties.kcButtonLargeClass!} m8f-master-login-link"
-                                  data-master-realm="m8flow"
-                                  data-platform-admin-path="/"
-                                  href="#"
-                                  aria-disabled="true"
-                              >${msg("m8flowRegularUserSignIn")}</a>
-                          </div>
-                      <#elseif isM8flowRealmLogin>
+                      <#if isM8flowRealmLogin>
                           <div class="m8f-master-login-action">
                               <a
                                   id="m8f-master-login-button"

@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { restartHiddenUsernameLogin } from '../../../m8flow-backend/keycloak/themes/m8flow/login/resources/js/restartHiddenUsernameLogin.js';
+import {
+  handleManualHiddenUsernameRestart,
+  restartHiddenUsernameLogin,
+} from '../../../m8flow-backend/keycloak/themes/m8flow/login/resources/js/restartHiddenUsernameLogin.js';
 
 const createStorage = (initialValues: Record<string, string> = {}) => {
   const values = new Map(Object.entries(initialValues));
@@ -109,5 +112,30 @@ describe('restartHiddenUsernameLogin theme helper', () => {
 
     expect(restartHiddenUsernameLogin(null, { replace: vi.fn() }, storage)).toBe(false);
     expect(storage.getItem('m8flow-hidden-username-login-restart-url')).toBeNull();
+  });
+
+  it('lets the manual fallback button clear the retry guard and restart the full sign-in flow', () => {
+    const restartUrl = 'http://localhost:7002/realms/m8flow/login-actions/restart';
+    const button = {
+      getAttribute: vi.fn((attribute: string) => {
+        if (attribute === 'data-login-restart-url') {
+          return restartUrl;
+        }
+        return null;
+      }),
+    };
+    const locationObject = { replace: vi.fn() };
+    const storage = createStorage({
+      'm8flow-hidden-username-login-restart-url': JSON.stringify({
+        restartUrl,
+        attempts: 2,
+      }),
+    });
+
+    expect(
+      handleManualHiddenUsernameRestart(button as unknown as Element, locationObject, storage),
+    ).toBe(true);
+    expect(storage.getItem('m8flow-hidden-username-login-restart-url')).toBeNull();
+    expect(locationObject.replace).toHaveBeenCalledWith(restartUrl);
   });
 });

@@ -18,6 +18,8 @@
                     <p class="instruction">${msg("hiddenUsernameLoginFallback")}</p>
                     <div class="${properties.kcFormGroupClass!}">
                         <a
+                            id="m8f-return-to-full-sign-in"
+                            data-login-restart-url="${url.loginRestartFlowUrl}"
                             class="${properties.kcButtonClass!} ${properties.kcButtonPrimaryClass!} ${properties.kcButtonBlockClass!} ${properties.kcButtonLargeClass!}"
                             href="${url.loginRestartFlowUrl}"
                         >${msg("returnToFullSignIn")}</a>
@@ -26,6 +28,7 @@
                 <noscript>
                     <div class="${properties.kcFormGroupClass!}">
                         <a
+                            id="m8f-return-to-full-sign-in-noscript"
                             class="${properties.kcButtonClass!} ${properties.kcButtonPrimaryClass!} ${properties.kcButtonBlockClass!} ${properties.kcButtonLargeClass!}"
                             href="${url.loginRestartFlowUrl}"
                         >${msg("returnToFullSignIn")}</a>

@@ -29,8 +29,8 @@ groups:
   # but does not have access to tenant management or most frontend features.
   "integrator":
     users: []
-  # The "reviewer" group has access to features that are relevant for reviewing and monitoring processes, such as viewing tasks and process instances,
-  # but does not have access to tenant management or most frontend features.
+  # The "reviewer" group has access to task review features only.
+  # It can work assigned tasks, but does not have access to process or process-instance pages.
   "reviewer":
     users: []
   # The "submitter" group can start processes and submit assigned tasks/forms, but cannot access admin or configuration features.
@@ -105,11 +105,11 @@ permissions:
     actions: [all]
     uri: PG:ALL
   read-process-group-list:
-    groups: ["tenant-admin", "editor", "viewer", "reviewer"]
+    groups: ["tenant-admin", "editor", "viewer"]
     actions: [read]
     uri: /process-groups
   read-all-process-models:
-    groups: ["viewer", "reviewer", "submitter"]
+    groups: ["viewer", "submitter"]
     actions: [read]
     uri: PM:ALL
   manage-all-process-models:
@@ -117,15 +117,15 @@ permissions:
     actions: [all]
     uri: PM:ALL
   read-process-model-list:
-    groups: ["tenant-admin", "editor", "viewer", "reviewer"]
+    groups: ["tenant-admin", "editor", "viewer"]
     actions: [read]
     uri: /process-models
   read-process-list:
-    groups: ["tenant-admin", "editor", "viewer", "reviewer"]
+    groups: ["tenant-admin", "editor", "viewer"]
     actions: [read]
     uri: /processes
   read-processes:
-    groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter"]
+    groups: ["tenant-admin", "editor", "viewer", "submitter"]
     actions: [read]
     uri: /processes/*
   run-all-process-models:
@@ -133,15 +133,15 @@ permissions:
     actions: [start]
     uri: PM:ALL
   read-process-instance-list:
-    groups: ["tenant-admin", "editor", "viewer", "reviewer"]
+    groups: ["tenant-admin", "editor", "viewer"]
     actions: [read]
     uri: /process-instances
   create-process-instance-list-for-me:
-    groups: ["tenant-admin", "editor", "reviewer"]
+    groups: ["tenant-admin", "editor"]
     actions: [create]
     uri: /process-instances/for-me
   read-process-instance-report-metadata:
-    groups: ["tenant-admin", "editor", "viewer", "reviewer"]
+    groups: ["tenant-admin", "editor", "viewer"]
     actions: [read]
     uri: /process-instances/report-metadata
   read-process-instances:

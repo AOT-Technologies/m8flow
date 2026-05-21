@@ -4,6 +4,7 @@ const LOGIN_RESTART_MARKER_IDS = [
 ];
 const RESTART_GUARD_STORAGE_KEY = 'm8flow-hidden-username-login-restart-url';
 const RESTART_FALLBACK_ID = 'm8f-hidden-username-login-fallback';
+const MANUAL_RESTART_LINK_ID = 'm8f-return-to-full-sign-in';
 const MAX_AUTO_RESTARTS_PER_URL = 2;
 
 const defaultMarker = () => {
@@ -82,13 +83,60 @@ const parseRestartGuard = (rawValue) => {
   return null;
 };
 
+const clearRestartGuard = (storage) => {
+  storage?.removeItem(RESTART_GUARD_STORAGE_KEY);
+};
+
+const manualRestartLink = () => {
+  if (typeof document === 'undefined') {
+    return null;
+  }
+
+  return document.getElementById(MANUAL_RESTART_LINK_ID);
+};
+
+export const handleManualHiddenUsernameRestart = (
+  button = manualRestartLink(),
+  locationObject = typeof window !== 'undefined' ? window.location : null,
+  storage = typeof window !== 'undefined' ? window.sessionStorage : null,
+) => {
+  if (!button) {
+    return false;
+  }
+
+  const restartUrl = restartUrlFromMarker(button);
+  if (!restartUrl || !locationObject || typeof locationObject.replace !== 'function') {
+    return false;
+  }
+
+  clearRestartGuard(storage);
+  locationObject.replace(restartUrl);
+  return true;
+};
+
+const wireManualHiddenUsernameRestart = (
+  button = manualRestartLink(),
+  locationObject = typeof window !== 'undefined' ? window.location : null,
+  storage = typeof window !== 'undefined' ? window.sessionStorage : null,
+) => {
+  if (!button || typeof button.addEventListener !== 'function') {
+    return;
+  }
+
+  button.addEventListener('click', (event) => {
+    if (handleManualHiddenUsernameRestart(button, locationObject, storage)) {
+      event.preventDefault();
+    }
+  });
+};
+
 export const restartHiddenUsernameLogin = (
   marker = defaultMarker(),
   locationObject = typeof window !== 'undefined' ? window.location : null,
   storage = typeof window !== 'undefined' ? window.sessionStorage : null,
 ) => {
   if (!marker) {
-    storage?.removeItem(RESTART_GUARD_STORAGE_KEY);
+    clearRestartGuard(storage);
     return false;
   }
 
@@ -119,10 +167,18 @@ export const restartHiddenUsernameLogin = (
 
 if (typeof window !== 'undefined') {
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => restartHiddenUsernameLogin(), {
-      once: true,
-    });
+    document.addEventListener(
+      'DOMContentLoaded',
+      () => {
+        wireManualHiddenUsernameRestart();
+        restartHiddenUsernameLogin();
+      },
+      {
+        once: true,
+      },
+    );
   } else {
+    wireManualHiddenUsernameRestart();
     restartHiddenUsernameLogin();
   }
 }
