@@ -746,3 +746,239 @@ def test_apply_preflights_queued_form_submissions_before_returning(monkeypatch) 
             "tasks_that_have_been_seen": set(),
         }
     ]
+
+
+def test_safe_potential_owner_usernames_falls_back_and_skips_invalid_users(monkeypatch) -> None:
+    warning_calls: list[tuple[object, ...]] = []
+    monkeypatch.setattr(
+        process_instance_service_patch,
+        "current_app",
+        SimpleNamespace(logger=SimpleNamespace(warning=lambda *args: warning_calls.append(args))),
+    )
+
+    human_task = SimpleNamespace(
+        id=77,
+        task_id="task-guid-77",
+        potential_owners=[
+            SimpleNamespace(id=10, email=None, username="manager", display_name="Manager", service_id="svc-10"),
+            SimpleNamespace(id=11, email="approver@example.com", username="approver", display_name=None, service_id="svc-11"),
+            SimpleNamespace(id=12, email="   ", username="manager", display_name="Duplicate", service_id="svc-12"),
+            SimpleNamespace(id=13, email=None, username=None, display_name=None, service_id=None),
+        ],
+    )
+
+    result = process_instance_service_patch._safe_potential_owner_usernames(human_task)
+
+    assert result == "manager,approver@example.com"
+    assert warning_calls == [
+        (
+            "Skipping potential owner with no usable identifier for human_task id=%s task_id=%s user_id=%s",
+            77,
+            "task-guid-77",
+            13,
+        )
+    ]
+
+
+def test_apply_spiff_task_to_api_task_falls_back_when_email_is_missing(monkeypatch) -> None:
+    fake_service_module = ModuleType("spiffworkflow_backend.services.process_instance_service")
+    fake_processor_module = ModuleType("spiffworkflow_backend.services.process_instance_processor")
+    fake_queue_module = ModuleType("spiffworkflow_backend.services.process_instance_queue_service")
+    fake_migrator_module = ModuleType("spiffworkflow_backend.data_migrations.process_instance_migrator")
+    fake_db_module = ModuleType("spiffworkflow_backend.models.db")
+    fake_workflow_execution_module = ModuleType("spiffworkflow_backend.services.workflow_execution_service")
+    fake_error_module = ModuleType("spiffworkflow_backend.exceptions.error")
+    fake_group_module = ModuleType("spiffworkflow_backend.models.group")
+    fake_human_task_module = ModuleType("spiffworkflow_backend.models.human_task")
+    fake_event_module = ModuleType("spiffworkflow_backend.models.process_instance_event")
+    fake_task_module = ModuleType("spiffworkflow_backend.models.task")
+    fake_authorization_module = ModuleType("spiffworkflow_backend.services.authorization_service")
+    fake_spec_file_service_module = ModuleType("spiffworkflow_backend.services.spec_file_service")
+    fake_task_state_module = ModuleType("SpiffWorkflow.util.task")
+
+    class FakeTaskRunnability:
+        unknown_if_ready_tasks = "unknown_if_ready_tasks"
+
+    class FakeTaskState:
+        @staticmethod
+        def get_name(_state) -> str:
+            return "READY"
+
+    class FakeHumanTaskAlreadyCompletedError(Exception):
+        pass
+
+    class FakeHumanTaskNotFoundError(Exception):
+        pass
+
+    class FakeUserDoesNotHaveAccessToTaskError(Exception):
+        pass
+
+    class FakeProcessInstanceProcessor:
+        @classmethod
+        def get_tasks_with_data(cls, _bpmn_process_instance):
+            return []
+
+    class FakeProcessInstanceQueueService:
+        @staticmethod
+        def dequeued(_process_instance):
+            raise AssertionError("dequeued should not be called in this test")
+
+    class FakeProcessInstanceMigrator:
+        @staticmethod
+        def run(_process_instance) -> None:
+            return None
+
+    class FakeDbSession:
+        def refresh(self, _process_instance) -> None:
+            return None
+
+    class FakeTask:
+        def __init__(self, *args, **kwargs) -> None:
+            self.args = args
+            self.kwargs = kwargs
+            self.potential_owner_usernames = kwargs.get("potential_owner_usernames")
+            self.assigned_user_group_identifier = kwargs.get("assigned_user_group_identifier")
+            self.can_complete = kwargs.get("can_complete")
+
+    class FakeAuthorizationService:
+        @staticmethod
+        def assert_user_can_complete_task(_process_instance_id, _task_guid, _user) -> None:
+            raise FakeUserDoesNotHaveAccessToTaskError()
+
+    fake_human_task = SimpleNamespace(
+        lane_assignment_id=None,
+        potential_owners=[
+            SimpleNamespace(id=91, email=None, username="reviewer", display_name="Reviewer", service_id="svc-91"),
+            SimpleNamespace(id=92, email="approver@example.com", username="approver", display_name="Approver", service_id="svc-92"),
+        ],
+    )
+
+    class FakeHumanTaskQuery:
+        def filter_by(self, **kwargs):
+            assert kwargs == {"task_id": "task-guid-1"}
+            return SimpleNamespace(first=lambda: fake_human_task)
+
+    class FakeHumanTaskModel:
+        query = FakeHumanTaskQuery()
+
+    class FakeGroupQuery:
+        def filter_by(self, **kwargs):
+            return SimpleNamespace(first=lambda: None)
+
+    class FakeGroupModel:
+        query = FakeGroupQuery()
+
+    class FakeEventQuery:
+        def filter_by(self, **kwargs):
+            assert kwargs == {"task_guid": "task-guid-1", "event_type": "task_failed"}
+            return SimpleNamespace(first=lambda: None)
+
+    class FakeProcessInstanceEventModel:
+        query = FakeEventQuery()
+
+    class FakeProcessInstanceEventType:
+        task_failed = SimpleNamespace(value="task_failed")
+
+    class FakeSpecFileService:
+        @staticmethod
+        def get_data(*_args, **_kwargs):
+            raise AssertionError("SpecFileService.get_data should not be called in this test")
+
+    class FakeProcessInstanceService:
+        @staticmethod
+        def create_process_instance(*_args, **_kwargs):
+            return (SimpleNamespace(id=0, m8f_tenant_id=None), None)
+
+        @staticmethod
+        def schedule_next_process_model_cycle(*_args, **_kwargs):
+            return None
+
+        @staticmethod
+        def can_optimistically_skip(_processor, _status_value):
+            return False
+
+        @classmethod
+        def update_form_task_data(cls, _process_instance, _spiff_task, _data, _user):
+            return None
+
+        @staticmethod
+        def spiff_task_to_api_task(_processor, _spiff_task):
+            raise TypeError("sequence item 0: expected str instance, NoneType found")
+
+    fake_service_module.ProcessInstanceService = FakeProcessInstanceService
+    fake_processor_module.ProcessInstanceProcessor = FakeProcessInstanceProcessor
+    fake_queue_module.ProcessInstanceQueueService = FakeProcessInstanceQueueService
+    fake_migrator_module.ProcessInstanceMigrator = FakeProcessInstanceMigrator
+    fake_db_module.db = SimpleNamespace(session=FakeDbSession())
+    fake_workflow_execution_module.TaskRunnability = FakeTaskRunnability
+    fake_error_module.HumanTaskAlreadyCompletedError = FakeHumanTaskAlreadyCompletedError
+    fake_error_module.HumanTaskNotFoundError = FakeHumanTaskNotFoundError
+    fake_error_module.UserDoesNotHaveAccessToTaskError = FakeUserDoesNotHaveAccessToTaskError
+    fake_group_module.GroupModel = FakeGroupModel
+    fake_human_task_module.HumanTaskModel = FakeHumanTaskModel
+    fake_event_module.ProcessInstanceEventModel = FakeProcessInstanceEventModel
+    fake_event_module.ProcessInstanceEventType = FakeProcessInstanceEventType
+    fake_task_module.Task = FakeTask
+    fake_authorization_module.AuthorizationService = FakeAuthorizationService
+    fake_spec_file_service_module.SpecFileService = FakeSpecFileService
+    fake_task_state_module.TaskState = FakeTaskState
+
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.services.process_instance_service", fake_service_module)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.services.process_instance_processor", fake_processor_module)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.services.process_instance_queue_service", fake_queue_module)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.data_migrations.process_instance_migrator", fake_migrator_module)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.models.db", fake_db_module)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.services.workflow_execution_service", fake_workflow_execution_module)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.exceptions.error", fake_error_module)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.models.group", fake_group_module)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.models.human_task", fake_human_task_module)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.models.process_instance_event", fake_event_module)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.models.task", fake_task_module)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.services.authorization_service", fake_authorization_module)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.services.spec_file_service", fake_spec_file_service_module)
+    monkeypatch.setitem(sys.modules, "SpiffWorkflow.util.task", fake_task_state_module)
+    monkeypatch.setattr(process_instance_service_patch, "_PATCHED", False)
+    monkeypatch.setattr(
+        process_instance_service_patch,
+        "current_app",
+        SimpleNamespace(
+            logger=SimpleNamespace(
+                info=lambda *args, **kwargs: None,
+                warning=lambda *args, **kwargs: None,
+            )
+        ),
+    )
+
+    process_instance_service_patch.apply()
+
+    processor = SimpleNamespace(
+        process_instance_model=SimpleNamespace(id=17),
+        process_model_identifier="two-step-approval",
+        process_model_display_name="Two Step Approval",
+        serialize_task_spec=lambda _task_spec: {"event_definition": None},
+    )
+    spiff_task = SimpleNamespace(
+        id="task-guid-1",
+        state=8,
+        parent=None,
+        task_spec=SimpleNamespace(
+            description="User Task",
+            bpmn_id="Activity_Review",
+            bpmn_name="Review Request",
+            lane="Manager",
+            extensions={},
+            _wf_spec=SimpleNamespace(name="Process_1"),
+        ),
+    )
+
+    app = Flask(__name__)
+    with app.app_context():
+        from flask import g
+
+        g.user = SimpleNamespace(id=501)
+        result = FakeProcessInstanceService.spiff_task_to_api_task(processor, spiff_task)
+
+    assert isinstance(result, FakeTask)
+    assert result.potential_owner_usernames == "reviewer,approver@example.com"
+    assert result.assigned_user_group_identifier is None
+    assert result.can_complete is False
