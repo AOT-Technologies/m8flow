@@ -125,6 +125,10 @@ POST_APP_CORE_PATCH_SPECS: tuple[PatchSpec, ...] = (
         minimum_phase=BootPhase.APP_CREATED,
     ),
     PatchSpec(
+        target="m8flow_backend.services.spiff_timer_refresh_patch:apply",
+        minimum_phase=BootPhase.APP_CREATED,
+    ),
+    PatchSpec(
         target="m8flow_backend.services.logging_service_patch:apply",
         minimum_phase=BootPhase.APP_CREATED,
     ),

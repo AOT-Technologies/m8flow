@@ -6,13 +6,15 @@ from contextvars import Token
 from typing import Any
 
 import celery
-from sqlalchemy import text
 
 from m8flow_backend.app import app as m8flow_app
 from m8flow_backend.background_processing import M8FLOW_CELERY_TASK_EVENT_NOTIFIER as CELERY_TASK_EVENT_NOTIFIER
 from m8flow_backend.background_processing import (
     M8FLOW_CELERY_TASK_PROCESS_INSTANCE_RUN as CELERY_TASK_PROCESS_INSTANCE_RUN,
 )
+from m8flow_backend.services.celery_worker_runtime import cleanup_scoped_session
+from m8flow_backend.services.celery_worker_runtime import reset_engine_for_worker_process
+from m8flow_backend.services.celery_worker_runtime import tenant_id_for_process_instance
 from m8flow_backend.services.celery_tenant_context_patch import TENANT_HEADER_NAME
 from m8flow_backend.tenancy import reset_context_tenant_id
 from m8flow_backend.tenancy import set_context_tenant_id
@@ -85,13 +87,7 @@ def _extract_process_instance_id(task_name: str, args: Any, kwargs: Any) -> int 
 
 
 def _tenant_id_for_process_instance(process_instance_id: int) -> str | None:
-    tenant_id = db.session.execute(
-        text("SELECT m8f_tenant_id FROM process_instance WHERE id = :process_instance_id"),
-        {"process_instance_id": process_instance_id},
-    ).scalar()
-    if isinstance(tenant_id, str) and tenant_id:
-        return tenant_id
-    return None
+    return tenant_id_for_process_instance(db.engine, process_instance_id)
 
 
 @celery.signals.task_prerun.connect  # type: ignore
@@ -100,6 +96,10 @@ def set_tenant_context_for_task(
 ) -> None:
     if task is None:
         return
+    if task.name in {CELERY_TASK_PROCESS_INSTANCE_RUN, CELERY_TASK_EVENT_NOTIFIER}:
+        return
+
+    cleanup_scoped_session(db.session)
 
     tenant_id: str | None = None
     request = getattr(task, "request", None)
@@ -119,7 +119,12 @@ def set_tenant_context_for_task(
 
 
 @celery.signals.task_postrun.connect  # type: ignore
-def clear_tenant_context_for_task(task_id: str | None = None, **_signal_kwargs: Any) -> None:
+def clear_tenant_context_for_task(task_id: str | None = None, task: Any | None = None, **_signal_kwargs: Any) -> None:
+    if task is not None and task.name in {CELERY_TASK_PROCESS_INSTANCE_RUN, CELERY_TASK_EVENT_NOTIFIER}:
+        return
+
+    cleanup_scoped_session(db.session)
+
     if task_id is None:
         return
     token = _TASK_TENANT_TOKENS.pop(task_id, None)
@@ -135,3 +140,9 @@ def setup_loggers(logger: Any, *args: Any, **kwargs: Any) -> None:
     stdout_handler.setFormatter(log_formatter)
     logger.addHandler(stdout_handler)
     setup_logger_for_app(the_flask_app, logger, force_run_with_celery=True)
+
+
+@celery.signals.worker_process_init.connect  # type: ignore
+def reset_db_connections_for_worker_process(**_signal_kwargs: Any) -> None:
+    with the_flask_app.app_context():
+        reset_engine_for_worker_process(db.engine, db.session)
