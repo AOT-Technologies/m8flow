@@ -886,6 +886,129 @@ def test_protected_requests_enrich_thin_shared_realm_token_from_selected_tenant_
         }
 
 
+def test_protected_requests_infer_tenant_from_local_shared_realm_user_for_thin_token(monkeypatch) -> None:
+    permissions_path = (
+        Path(__file__).resolve().parents[4] / "src" / "m8flow_backend" / "config" / "permissions" / "m8flow.yml"
+    )
+    org_tenant_id = "7338e743-e0cf-4161-83a4-3b3ff446609b"
+
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SQLALCHEMY_EXPIRE_ON_COMMIT"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"] = "/v1.0"
+    app.config["SPIFFWORKFLOW_BACKEND_URL"] = "http://localhost:7000"
+    app.config["SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND"] = "http://localhost:7001"
+    app.config["SPIFFWORKFLOW_BACKEND_USE_AUTH_FOR_METRICS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_IS_AUTHORITY_FOR_USER_GROUPS"] = True
+    app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_TENANT_SPECIFIC_FIELDS"] = []
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP"] = "spiff_public"
+    app.config["SPIFFWORKFLOW_BACKEND_PERMISSIONS_FILE_ABSOLUTE_PATH"] = str(permissions_path)
+    app.config["THREAD_LOCAL_DATA"] = SimpleNamespace()
+
+    db.init_app(app)
+    set_canonical_db(db)
+    set_phase(BootPhase.APP_CREATED)
+    register_request_active_hooks(app)
+    register_request_tenant_context_hooks(app)
+
+    app.add_url_rule("/v1.0/onboarding", "onboarding", lambda: ("ok", 200), methods=["GET"])
+    app.add_url_rule("/v1.0/tasks", "tasks", lambda: ("ok", 200), methods=["GET"])
+
+    thin_decoded_token = {
+        "iss": "http://localhost:7002/realms/m8flow",
+        "sub": "admin-subject",
+        "preferred_username": "admin",
+        "m8flow_authentication_identifier": "m8flow",
+    }
+    enriched_decoded_token = {
+        **thin_decoded_token,
+        "m8flow_tenant_id": org_tenant_id,
+        "m8flow_tenant_alias": "it",
+        "organization": {
+            "it": {"id": org_tenant_id, "groups": ["Administrators", "Manager"]},
+        },
+    }
+
+    monkeypatch.setattr(auth_patch_module, "_PATCHED", False)
+    monkeypatch.setattr(auth_patch_module, "_REFRESH_TOKEN_TENANT_PATCHED", False)
+    monkeypatch.setattr(auth_patch_module, "_COOKIE_DOMAIN_PATCHED", False)
+    monkeypatch.setattr(auth_patch_module, "_PUBLIC_GROUP_PATCHED", False)
+    monkeypatch.setattr(authorization_service_patch, "_PATCHED", False)
+    monkeypatch.setattr(authentication_controller, "_get_decoded_token", lambda _token: thin_decoded_token)
+    monkeypatch.setattr(
+        auth_patch_module,
+        "_synchronize_selected_organization_claims",
+        lambda decoded_token, *, selected_tenant_alias, selected_tenant_id: enriched_decoded_token,
+    )
+
+    from spiffworkflow_backend.models.user import UserModel
+    from spiffworkflow_backend.services.authentication_service import AuthenticationService
+    from spiffworkflow_backend.services.user_service import UserService
+
+    monkeypatch.setattr(
+        AuthenticationService,
+        "validate_decoded_token",
+        classmethod(
+            lambda cls, decoded, authentication_identifier=None: decoded is thin_decoded_token
+            or decoded is enriched_decoded_token
+        ),
+    )
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(
+            M8flowTenantModel(
+                id=org_tenant_id,
+                name="Information Technology",
+                slug="it",
+                created_by="test",
+                modified_by="test",
+                created_at_in_seconds=1,
+                updated_at_in_seconds=1,
+            )
+        )
+        db.session.commit()
+
+        apply_refresh_token_tenant_patch()
+        auth_patch_module.apply()
+        authorization_service_patch.apply()
+        app.before_request(authentication_controller.omni_auth)
+
+        existing_user = UserService.create_user(
+            username="admin",
+            service="http://localhost:7002/realms/m8flow",
+            service_id="admin-subject",
+        )
+        tenant_admin_group = UserService.find_or_create_group(f"{org_tenant_id}:tenant-admin", source_is_open_id=True)
+        everybody_group = UserService.find_or_create_group(f"{org_tenant_id}:everybody")
+        manager_group = UserService.find_or_create_group(f"{org_tenant_id}:Manager", source_is_open_id=True)
+        UserService.add_user_to_group(existing_user, tenant_admin_group)
+        UserService.add_user_to_group(existing_user, everybody_group)
+        UserService.add_user_to_group(existing_user, manager_group)
+
+    client = app.test_client()
+    client.set_cookie("authentication_identifier", "m8flow")
+
+    onboarding_response = client.get("/v1.0/onboarding", headers={"Authorization": "Bearer stale-admin-token"})
+    tasks_response = client.get("/v1.0/tasks", headers={"Authorization": "Bearer stale-admin-token"})
+
+    assert onboarding_response.status_code == 200
+    assert tasks_response.status_code == 200
+
+    with app.app_context():
+        refreshed_user = UserModel.query.filter_by(
+            service="http://localhost:7002/realms/m8flow",
+            service_id="admin-subject",
+        ).one()
+        assert {group.identifier for group in refreshed_user.groups} >= {
+            f"{org_tenant_id}:everybody",
+            f"{org_tenant_id}:tenant-admin",
+            f"{org_tenant_id}:Manager",
+        }
+
+
 def test_protected_requests_enrich_multi_org_shared_realm_token_without_active_org_groups(monkeypatch) -> None:
     permissions_path = (
         Path(__file__).resolve().parents[4] / "src" / "m8flow_backend" / "config" / "permissions" / "m8flow.yml"

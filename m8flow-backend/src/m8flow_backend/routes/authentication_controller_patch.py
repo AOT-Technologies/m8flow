@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 
 from m8flow_backend.services.tenant_context_middleware import resolve_request_tenant
 from m8flow_backend.services.tenant_identity_helpers import authentication_identifier_from_payload
+from m8flow_backend.services.tenant_identity_helpers import _canonical_tenant_id_from_identifiers
 from m8flow_backend.services.tenant_identity_helpers import extract_realm_from_issuer
 from m8flow_backend.services.tenant_identity_helpers import current_tenant_identifiers
 from m8flow_backend.services.tenant_identity_helpers import normalize_organizational_group_identifier
@@ -71,12 +72,20 @@ def apply() -> None:
         from flask import g
 
         decoded_token = authentication_controller.verify_token(*args, **kwargs)
-        g._m8flow_decoded_token = decoded_token
         token = getattr(g, "token", None)
         if isinstance(token, str) and token:
             g._m8flow_decoded_token_raw = token
-        resolve_request_tenant()
-        AuthorizationService.check_for_permission(decoded_token)
+        tenant_id = _tenant_for_refresh_tokens(decoded_token=decoded_token)
+        with _temporary_request_tenant(tenant_id, force=True):
+            decoded_token = _enrich_shared_realm_token_for_active_tenant(
+                decoded_token,
+                tenant_id=tenant_id,
+            )
+            g._m8flow_decoded_token = decoded_token
+            if isinstance(tenant_id, str) and tenant_id.strip():
+                g.m8flow_tenant_id = tenant_id.strip()
+            resolve_request_tenant()
+            AuthorizationService.check_for_permission(decoded_token)
 
     authentication_controller.omni_auth = patched_omni_auth  # type: ignore[assignment]
     _PATCHED = True
@@ -320,6 +329,9 @@ def _tenant_for_refresh_tokens(
 
     state_identifier = _decode_state_authentication_identifier(state)
     selected_tenant = _selected_tenant_from_request(state_identifier)
+    if not selected_tenant and has_request_context():
+        cookie_identifier = request.cookies.get("authentication_identifier")
+        selected_tenant = _selected_tenant_from_request(cookie_identifier)
     if isinstance(decoded_token, dict):
         if selected_tenant and _selected_tenant_overrides_shared_multi_org_token(decoded_token, selected_tenant):
             return selected_tenant
@@ -329,6 +341,11 @@ def _tenant_for_refresh_tokens(
 
     if selected_tenant:
         return selected_tenant
+
+    if isinstance(decoded_token, dict):
+        inferred_tenant = _infer_single_tenant_for_shared_realm_user(decoded_token)
+        if inferred_tenant:
+            return inferred_tenant
 
     if not has_request_context():
         return None
@@ -350,8 +367,96 @@ def _tenant_for_refresh_tokens(
     return None
 
 
+def _infer_single_tenant_for_shared_realm_user(decoded_token: dict[str, object] | None) -> str | None:
+    """
+    Infer the active tenant for thin shared-realm bearer tokens from the local user mirror.
+
+    Some shared-realm access tokens omit both ``m8flow_tenant_id`` and
+    organization-local groups. When the browser also lacks the selected-tenant
+    cookie, fall back to the already-provisioned local shared-realm user and
+    recover the single tenant implied by that user's tenant-qualified groups.
+    """
+    if not isinstance(decoded_token, dict):
+        return None
+
+    authentication_identifier = authentication_identifier_from_payload(decoded_token)
+    issuer = decoded_token.get("iss")
+    issuer_realm = extract_realm_from_issuer(issuer)
+    if (
+        authentication_identifier != _shared_realm_identifier()
+        and issuer_realm != _shared_realm_identifier()
+    ):
+        return None
+
+    subject = decoded_token.get("sub")
+    preferred_username = decoded_token.get("preferred_username")
+    if not isinstance(subject, str):
+        subject = ""
+    if not isinstance(preferred_username, str):
+        preferred_username = ""
+
+    if not subject.strip() and not preferred_username.strip():
+        return None
+
+    try:
+        from spiffworkflow_backend.models.user import UserModel
+    except Exception:
+        return None
+
+    candidate_users: list[object] = []
+    seen_user_ids: set[object] = set()
+
+    if isinstance(issuer, str) and issuer.strip() and subject.strip():
+        for user in UserModel.query.filter_by(service=issuer.strip(), service_id=subject.strip()).all():
+            user_id = getattr(user, "id", None)
+            if user_id in seen_user_ids:
+                continue
+            seen_user_ids.add(user_id)
+            candidate_users.append(user)
+
+    if preferred_username.strip():
+        for user in UserModel.query.filter_by(username=preferred_username.strip()).all():
+            user_id = getattr(user, "id", None)
+            if user_id in seen_user_ids:
+                continue
+
+            user_service_realm = extract_realm_from_issuer(getattr(user, "service", None))
+            if issuer_realm and user_service_realm and user_service_realm != issuer_realm:
+                continue
+
+            seen_user_ids.add(user_id)
+            candidate_users.append(user)
+
+    inferred_tenant_ids: set[str] = set()
+
+    for user in candidate_users:
+        groups = getattr(user, "groups", None) or []
+        for group in groups:
+            group_identifier = getattr(group, "identifier", None)
+            if not isinstance(group_identifier, str):
+                continue
+
+            tenant_prefix, separator, _group_suffix = group_identifier.partition(":")
+            normalized_tenant_prefix = tenant_prefix.strip()
+            if not separator or not normalized_tenant_prefix:
+                continue
+
+            canonical_tenant_id = (
+                _canonical_tenant_id_from_identifiers(normalized_tenant_prefix)
+                or normalized_tenant_prefix
+            )
+            inferred_tenant_ids.add(canonical_tenant_id)
+            if len(inferred_tenant_ids) > 1:
+                return None
+
+    if len(inferred_tenant_ids) != 1:
+        return None
+
+    return next(iter(inferred_tenant_ids))
+
+
 @contextmanager
-def _temporary_request_tenant(tenant_id: str | None):
+def _temporary_request_tenant(tenant_id: str | None, *, force: bool = False):
     """Temporarily bind ``g.m8flow_tenant_id`` for pre-resolution auth flows."""
     from flask import g, has_request_context
 
@@ -360,7 +465,7 @@ def _temporary_request_tenant(tenant_id: str | None):
         return
 
     previous = getattr(g, "m8flow_tenant_id", _MISSING)
-    if previous is _MISSING or previous is None:
+    if force or previous is _MISSING or previous is None:
         g.m8flow_tenant_id = tenant_id
     try:
         yield
@@ -531,14 +636,14 @@ def apply_refresh_token_tenant_patch() -> None:
                 ensure_backend_redirect_uri_in_keycloak_client(auth_identifier)
             except Exception:
                 pass
-        with _temporary_request_tenant(tenant_id):
+        with _temporary_request_tenant(tenant_id, force=True):
             return original_login_return(*args, **kwargs)
 
     @wraps(original_get_user_model_from_token)
     def patched_get_user_model_from_token(decoded_token: dict):
         """Resolve or auto-provision the user while refresh-token tenant context is temporarily bound."""
         tenant_id = _tenant_for_refresh_tokens(decoded_token=decoded_token)
-        with _temporary_request_tenant(tenant_id):
+        with _temporary_request_tenant(tenant_id, force=True):
             decoded_token = _enrich_shared_realm_token_for_active_tenant(
                 decoded_token,
                 tenant_id=tenant_id,

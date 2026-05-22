@@ -341,15 +341,44 @@ function ensure_shared_realm_organization_scope() {
       resolve_resource_protocol_mapper_id_by_name \
         "client-scopes/${scope_id}" \
         "${realm_name}" \
-        "organization-groups"
+      "organization-groups"
     )"
   fi
-  if [[ -n "${organization_group_membership_mapper_id}" ]]; then
-    echo ":: Removing built-in Organization Group Membership mapper from client scope organization in realm ${realm_name}."
-    docker exec keycloak /opt/keycloak/bin/kcadm.sh delete \
-      "client-scopes/${scope_id}/protocol-mappers/models/${organization_group_membership_mapper_id}" \
-      -r "${realm_name}" >/dev/null
+  if [[ -z "${organization_group_membership_mapper_id}" ]]; then
+    echo ":: Adding Organization Group Membership mapper to client scope organization in realm ${realm_name}."
+    docker exec keycloak /opt/keycloak/bin/kcadm.sh create "client-scopes/${scope_id}/protocol-mappers/models" -r "${realm_name}" \
+      -s name=organization-groups \
+      -s protocol=openid-connect \
+      -s protocolMapper=oidc-organization-group-membership-mapper \
+      -s consentRequired=false \
+      -s 'config."claim.name"=organization' \
+      -s 'config."id.token.claim"=true' \
+      -s 'config."access.token.claim"=true' \
+      -s 'config."userinfo.token.claim"=true' \
+      -s 'config."introspection.token.claim"=true' >/dev/null
+    organization_group_membership_mapper_id="$(
+      resolve_client_scope_protocol_mapper_internal_id \
+        "${realm_name}" \
+        "${scope_id}" \
+        "oidc-organization-group-membership-mapper"
+    )"
   fi
+  if [[ -z "${organization_group_membership_mapper_id}" ]]; then
+    echo >&2 "ERROR: Failed to resolve organization group membership mapper in realm ${realm_name}"
+    return 1
+  fi
+  docker exec keycloak /opt/keycloak/bin/kcadm.sh update \
+    "client-scopes/${scope_id}/protocol-mappers/models/${organization_group_membership_mapper_id}" \
+    -r "${realm_name}" \
+    -s name=organization-groups \
+    -s protocol=openid-connect \
+    -s protocolMapper=oidc-organization-group-membership-mapper \
+    -s consentRequired=false \
+    -s 'config."claim.name"=organization' \
+    -s 'config."id.token.claim"=true' \
+    -s 'config."access.token.claim"=true' \
+    -s 'config."userinfo.token.claim"=true' \
+    -s 'config."introspection.token.claim"=true' >/dev/null
 
   normalized_organization_membership_mapper_id="$(
     resolve_client_scope_protocol_mapper_internal_id \

@@ -194,15 +194,49 @@ ensure_shared_realm_organization_scope() {
     )"
   fi
 
-  if [ -n "${organization_group_membership_mapper_id}" ]; then
-    if /opt/keycloak/bin/kcadm.sh delete \
-      "client-scopes/${scope_id}/protocol-mappers/models/${organization_group_membership_mapper_id}" \
-      -r "${SHARED_REALM}" >/dev/null 2>&1; then
-      echo "[keycloak-init-realms] Realm ${SHARED_REALM}: removed built-in organization group membership mapper."
+  if [ -z "${organization_group_membership_mapper_id}" ]; then
+    if /opt/keycloak/bin/kcadm.sh create "client-scopes/${scope_id}/protocol-mappers/models" -r "${SHARED_REALM}" \
+      -s name=organization-groups \
+      -s protocol=openid-connect \
+      -s protocolMapper=oidc-organization-group-membership-mapper \
+      -s consentRequired=false \
+      -s 'config."claim.name"=organization' \
+      -s 'config."id.token.claim"=true' \
+      -s 'config."access.token.claim"=true' \
+      -s 'config."userinfo.token.claim"=true' \
+      -s 'config."introspection.token.claim"=true' >/dev/null 2>&1; then
+      echo "[keycloak-init-realms] Realm ${SHARED_REALM}: organization group membership mapper ensured."
+      organization_group_membership_mapper_id="$(
+        resolve_client_scope_protocol_mapper_internal_id \
+          "${SHARED_REALM}" \
+          "${scope_id}" \
+          "oidc-organization-group-membership-mapper"
+      )"
     else
-      echo "[keycloak-init-realms] Realm ${SHARED_REALM}: failed to remove built-in organization group membership mapper." >&2
+      echo "[keycloak-init-realms] Realm ${SHARED_REALM}: failed to create organization group membership mapper." >&2
       return 1
     fi
+  fi
+
+  if [ -z "${organization_group_membership_mapper_id}" ]; then
+    echo "[keycloak-init-realms] Realm ${SHARED_REALM}: could not resolve organization group membership mapper id." >&2
+    return 1
+  fi
+
+  if ! /opt/keycloak/bin/kcadm.sh update \
+    "client-scopes/${scope_id}/protocol-mappers/models/${organization_group_membership_mapper_id}" \
+    -r "${SHARED_REALM}" \
+    -s name=organization-groups \
+    -s protocol=openid-connect \
+    -s protocolMapper=oidc-organization-group-membership-mapper \
+    -s consentRequired=false \
+    -s 'config."claim.name"=organization' \
+    -s 'config."id.token.claim"=true' \
+    -s 'config."access.token.claim"=true' \
+    -s 'config."userinfo.token.claim"=true' \
+    -s 'config."introspection.token.claim"=true' >/dev/null 2>&1; then
+    echo "[keycloak-init-realms] Realm ${SHARED_REALM}: failed to update organization group membership mapper." >&2
+    return 1
   fi
 
   normalized_organization_membership_mapper_id="$(
@@ -571,14 +605,14 @@ ensure_organization_group_role_mappings() {
   # {gid}/role-mappings endpoint, and the org-group PUT endpoint only
   # accepts name/description/attributes. Upstream tracks adding this at
   # https://github.com/keycloak/keycloak/issues/30180. Until that ships,
-  # realm roles are granted directly to seed users by
-  # ensure_default_organization_seed_user_realm_roles().
+  # M8Flow stores organization-group role mappings in group attributes and
+  # derives tenant-local permissions from those groups at login time.
   local realm_name="$1"
   local organization_id="$2"
 
   [ -n "${organization_id}" ] || return 1
 
-  echo "[keycloak-init-realms] Realm ${realm_name}: skipping organization-group → realm-role mapping for organization ${organization_id} (Keycloak 26 limitation; realm roles are assigned directly to users instead)."
+  echo "[keycloak-init-realms] Realm ${realm_name}: skipping Keycloak realm-role mapping for organization group ${organization_id} (Keycloak 26 limitation; M8Flow derives tenant permissions from organization-group membership instead)."
   return 0
 }
 
@@ -744,12 +778,7 @@ user_has_realm_role() {
     | grep -q "\"name\" : \"${role_name}\""
 }
 
-ensure_default_organization_seed_user_realm_roles() {
-  # Grant realm roles directly to seed users. The original design granted
-  # these roles indirectly via organization-group membership, but Keycloak
-  # 26 does not support realm-role mappings on organization groups (see
-  # ensure_organization_group_role_mappings). Direct assignment is the
-  # working alternative until upstream ships the missing API.
+remove_default_organization_seed_user_realm_roles() {
   local realm_name="$1"
   local assignment
   local username
@@ -767,21 +796,21 @@ ensure_default_organization_seed_user_realm_roles() {
 
     user_id="$(resolve_user_id_by_username "${realm_name}" "${username}")"
     if [ -z "${user_id}" ]; then
-      echo "[keycloak-init-realms] Realm ${realm_name}: seed user ${username} not found; skipping direct realm-role assignment for ${role_name}."
+      echo "[keycloak-init-realms] Realm ${realm_name}: seed user ${username} not found; skipping direct realm-role cleanup for ${role_name}."
       continue
     fi
 
-    if user_has_realm_role "${realm_name}" "${user_id}" "${role_name}"; then
-      echo "[keycloak-init-realms] Realm ${realm_name}: user ${username} already holds realm role ${role_name}."
+    if ! user_has_realm_role "${realm_name}" "${user_id}" "${role_name}"; then
+      echo "[keycloak-init-realms] Realm ${realm_name}: user ${username} does not hold direct realm role ${role_name}; nothing to remove."
       continue
     fi
 
-    kcadm_output="$(/opt/keycloak/bin/kcadm.sh add-roles -r "${realm_name}" --uid "${user_id}" --rolename "${role_name}" 2>&1)"
+    kcadm_output="$(/opt/keycloak/bin/kcadm.sh remove-roles -r "${realm_name}" --uid "${user_id}" --rolename "${role_name}" 2>&1)"
     kcadm_rc=$?
     if [ "${kcadm_rc}" -eq 0 ]; then
-      echo "[keycloak-init-realms] Realm ${realm_name}: assigned realm role ${role_name} to user ${username}."
+      echo "[keycloak-init-realms] Realm ${realm_name}: removed direct realm role ${role_name} from user ${username}."
     else
-      echo "[keycloak-init-realms] Realm ${realm_name}: failed to assign realm role ${role_name} to user ${username} (exit ${kcadm_rc}): ${kcadm_output}" >&2
+      echo "[keycloak-init-realms] Realm ${realm_name}: failed to remove realm role ${role_name} from user ${username} (exit ${kcadm_rc}): ${kcadm_output}" >&2
       return 1
     fi
   done
@@ -898,7 +927,7 @@ ensure_default_organization
 ensure_all_organization_role_groups "${SHARED_REALM}"
 ensure_default_organization_seed_members
 ensure_default_organization_seed_roles
-ensure_default_organization_seed_user_realm_roles "${SHARED_REALM}"
+remove_default_organization_seed_user_realm_roles "${SHARED_REALM}"
 disable_shared_realm_identity_first_login
 ensure_shared_realm_single_page_login
 echo "[keycloak-init-realms] Realm configuration complete."
