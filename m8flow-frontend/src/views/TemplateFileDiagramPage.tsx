@@ -67,7 +67,7 @@ export default function TemplateFileDiagramPage() {
     setError(null);
 
     HttpService.makeCallToBackend({
-      path: `/v1.0/m8flow/templates/${id}`,
+      path: `/v1.0/m8flow/templates/${id}?include_deleted=true`,
       httpMethod: HttpService.HttpMethods.GET,
       successCallback: (result: Record<string, unknown>) => {
         setTemplate(normalizeTemplate(result));
@@ -303,6 +303,8 @@ export default function TemplateFileDiagramPage() {
             onLaunchJsonSchemaEditor={onLaunchJsonSchemaEditor}
             onServiceTasksRequested={onServiceTasksRequested}
             {...DIAGRAM_EDITOR_NOOP_PROPS}
+            hideDeleteButton
+            hideViewXmlButton
           />
         </Box>
         <div

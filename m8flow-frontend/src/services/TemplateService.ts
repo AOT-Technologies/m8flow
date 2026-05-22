@@ -274,7 +274,7 @@ const TemplateService = {
   },
 
   /**
-   * Soft-delete a template by ID. Uses auth headers. Template must not be published.
+   * Delete template by ID. Draft templates are hard-deleted; published templates are soft-deleted.
    */
   deleteTemplate(id: number): Promise<void> {
     const url = backendPath(`${BASE_PATH}/templates/${id}`);
@@ -285,6 +285,21 @@ const TemplateService = {
     }).then((r) => {
       if (!r.ok) throw new Error("Delete failed");
     });
+  },
+
+  /**
+   * Restore a soft-deleted template by ID.
+   */
+  restoreTemplate(id: number): Promise<Template> {
+    const url = backendPath(`${BASE_PATH}/templates/${id}/restore`);
+    return fetch(url, {
+      method: "POST",
+      credentials: "include",
+      headers: new Headers(HttpService.getBasicHeaders()),
+    }).then((r) => {
+      if (!r.ok) throw new Error("Restore failed");
+      return r.json();
+    }).then((data: Record<string, unknown>) => parseTemplateResponse(data));
   },
 
   /**

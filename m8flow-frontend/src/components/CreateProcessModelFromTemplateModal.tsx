@@ -129,6 +129,10 @@ export default function CreateProcessModelFromTemplateModal({
       setError("No template selected.");
       return;
     }
+    if (!template.isPublished) {
+      setError("Process models can only be created from a published template version.");
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -272,7 +276,7 @@ export default function CreateProcessModelFromTemplateModal({
           onClick={handleSubmit}
           variant="contained"
           color="primary"
-          disabled={loading || groupsLoading}
+          disabled={loading || groupsLoading || !template?.isPublished}
         >
           {loading ? "Creating..." : "Create Process Model"}
         </Button>
