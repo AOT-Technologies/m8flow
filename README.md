@@ -125,7 +125,7 @@ docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build
 docker compose -f docker/m8flow-docker-compose.yml up -d --build
 ```
 
-Once started, open [http://localhost:6841/](http://localhost:6841/) in your browser to access m8flow.
+### Once started, open [http://localhost:6841/](http://localhost:6841/) in your browser to access m8flow.
 ---
 
 ## Signing In — Application Usage
@@ -161,7 +161,13 @@ Once started, open [http://localhost:6841/](http://localhost:6841/) in your brow
    **Password:** the initial password for each user is the **same as the username** (for example `admin` / `admin`). Passwords are imported as **temporary** in Keycloak, so users are prompted for a **password change on first login**.
 
 
-You’re all set! Continue with [Tenant creation](#tenant-creation) to add your own tenants or explore the rich features of m8flow.
+You’re all set! Continue with [How to use m8flow](#how-to-use-m8flow) to create your first process group, or go to [Tenant creation](#tenant-creation) to add your own tenants.
+
+---
+
+## How to use m8flow
+
+After signing in, follow the [How to use m8flow](docs/how-to-use.md) guide to create your first process group and start organizing process models.
 
 ---
 
@@ -189,7 +195,7 @@ You’re all set! Continue with [Tenant creation](#tenant-creation) to add your 
         <img src="./docs/images/tenant-creation.png" alt="Tenant Creation Screen"/>
     </div>
 
-Once your tenant is created, it will automatically include the set of default test users described above in [Try the Default Test Users](#try-the-default-test-users).
+### Once your tenant is created, it will automatically include the set of default test users described above in [Try the Default Test Users](#try-the-default-test-users).
 ---
 
 ## Docker Compose services

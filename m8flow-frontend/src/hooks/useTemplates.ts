@@ -12,6 +12,8 @@ const FILTER_PARAM_KEYS: (keyof TemplateFilters)[] = [
   'owner',
   'tenantId',
   'latest_only',
+  'include_deleted',
+  'deleted_only',
   'page',
   'per_page',
 ];

@@ -41,6 +41,7 @@ def _serialize_template(
             for e in files_list
         ],
         "isPublished": template.is_published,
+        "isDeleted": template.is_deleted if hasattr(template, 'is_deleted') else False,
         "status": "published" if template.is_published else (template.status or "draft"),
         "createdBy": template.created_by,
         "modifiedBy": template.modified_by,
@@ -68,6 +69,8 @@ def template_list():
     search = request.args.get("search")  # Text search in name/description
     template_key = request.args.get("template_key")
     published_only = request.args.get("published_only", "false").lower() == "true"
+    include_deleted = request.args.get("include_deleted", "false").lower() == "true"
+    deleted_only = request.args.get("deleted_only", "false").lower() == "true"
     sort_by = request.args.get("sort_by")  # created, name
     order = request.args.get("order", "desc").lower()
     if order not in ("asc", "desc"):
@@ -98,6 +101,8 @@ def template_list():
         search=search,
         template_key=template_key,
         published_only=published_only,
+        include_deleted=include_deleted,
+        deleted_only=deleted_only,
         sort_by=sort_by,
         order=order,
         page=page,
@@ -204,7 +209,8 @@ def template_create():
 def template_get_by_id(id: int):
     user = getattr(g, "user", None)
     include_contents = request.args.get("include_contents", "true").lower() == "true"
-    template = TemplateService.get_template_by_id(id, user=user)
+    include_deleted = request.args.get("include_deleted", "false").lower() == "true"
+    template = TemplateService.get_template_by_id(id, user=user, include_deleted=include_deleted)
     if template is None:
         raise ApiError("not_found", "Template not found", status_code=404)
     return jsonify(_serialize_template(template, include_bpmn=include_contents))
@@ -280,7 +286,7 @@ def template_get_bpmn(id: int):
 def template_get_file(id: int, file_name: str):
     """Download a single file by name."""
     user = getattr(g, "user", None)
-    template = TemplateService.get_template_by_id(id, user=user)
+    template = TemplateService.get_template_by_id(id, user=user, include_deleted=True)
     if template is None:
         raise ApiError("not_found", "Template not found", status_code=404)
     found = None
@@ -370,6 +376,12 @@ def template_delete_by_id(id: int):
     user = getattr(g, "user", None)
     TemplateService.delete_template_by_id(id, user=user)
     return jsonify({"status": "success", "message": "Template deleted successfully"}), 200
+
+
+def template_restore_by_id(id: int):
+    user = getattr(g, "user", None)
+    template = TemplateService.restore_template_by_id(id, user=user)
+    return jsonify(_serialize_template(template)), 200
 
 
 def template_create_process_model(id: int):

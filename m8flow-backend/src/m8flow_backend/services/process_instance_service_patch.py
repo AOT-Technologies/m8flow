@@ -4,6 +4,7 @@ import hashlib
 import time
 
 from flask import current_app
+from flask import g
 
 _PATCHED = False
 
@@ -15,6 +16,59 @@ def _task_sort_ts(task: object) -> float:
     if hasattr(val, "timestamp"):
         return val.timestamp()
     return 0.0
+
+
+def _normalized_string_attr(obj: object, attr_name: str) -> str | None:
+    value = getattr(obj, attr_name, None)
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    if normalized:
+        return normalized
+    return None
+
+
+def _safe_potential_owner_label(user: object) -> str | None:
+    """Return the best available stable label for a potential owner."""
+    for attr_name in ("email", "username", "display_name", "service_id"):
+        normalized = _normalized_string_attr(user, attr_name)
+        if normalized:
+            return normalized
+
+    return None
+
+
+def _safe_potential_owner_usernames(human_task: object) -> str | None:
+    """Serialize potential owners without assuming email is always present."""
+    potential_owners = getattr(human_task, "potential_owners", None)
+    if not potential_owners:
+        return None
+
+    serialized_labels: list[str] = []
+    seen: set[str] = set()
+    human_task_id = getattr(human_task, "id", None)
+    human_task_task_id = getattr(human_task, "task_id", None)
+
+    for potential_owner in potential_owners:
+        label = _safe_potential_owner_label(potential_owner)
+        if label is None:
+            current_app.logger.warning(
+                "Skipping potential owner with no usable identifier for human_task id=%s task_id=%s user_id=%s",
+                human_task_id,
+                human_task_task_id,
+                getattr(potential_owner, "id", None),
+            )
+            continue
+
+        if label in seen:
+            continue
+        seen.add(label)
+        serialized_labels.append(label)
+
+    if not serialized_labels:
+        return None
+
+    return ",".join(serialized_labels)
 
 
 def _raise_lane_assignment_api_error(
@@ -95,6 +149,7 @@ def apply() -> None:
     from spiffworkflow_backend.services.workflow_execution_service import TaskRunnability
 
     original_create_process_instance = ProcessInstanceService.create_process_instance
+    original_spiff_task_to_api_task = getattr(ProcessInstanceService, "spiff_task_to_api_task", None)
     original_update_form_task_data = ProcessInstanceService.update_form_task_data
 
     @classmethod  # type: ignore[misc]
@@ -282,8 +337,99 @@ def apply() -> None:
 
         return (processor, task_runnability)
 
+    @staticmethod
+    def patched_spiff_task_to_api_task(processor, spiff_task):
+        from SpiffWorkflow.util.task import TaskState  # type: ignore
+        from spiffworkflow_backend.exceptions.error import HumanTaskAlreadyCompletedError
+        from spiffworkflow_backend.exceptions.error import HumanTaskNotFoundError
+        from spiffworkflow_backend.exceptions.error import UserDoesNotHaveAccessToTaskError
+        from spiffworkflow_backend.models.group import GroupModel
+        from spiffworkflow_backend.models.human_task import HumanTaskModel
+        from spiffworkflow_backend.models.process_instance_event import ProcessInstanceEventModel
+        from spiffworkflow_backend.models.process_instance_event import ProcessInstanceEventType
+        from spiffworkflow_backend.models.task import Task
+        from spiffworkflow_backend.services.authorization_service import AuthorizationService
+
+        if callable(original_spiff_task_to_api_task):
+            try:
+                return original_spiff_task_to_api_task(processor, spiff_task)
+            except TypeError as exc:
+                if "expected str instance" not in str(exc) or "NoneType found" not in str(exc):
+                    raise
+
+        task_type = spiff_task.task_spec.description
+        task_guid = str(spiff_task.id)
+
+        props = {}
+        if hasattr(spiff_task.task_spec, "extensions"):
+            for key, val in spiff_task.task_spec.extensions.items():
+                props[key] = val
+
+        if hasattr(spiff_task.task_spec, "lane"):
+            lane = spiff_task.task_spec.lane
+        else:
+            lane = None
+
+        can_complete = False
+        try:
+            AuthorizationService.assert_user_can_complete_task(processor.process_instance_model.id, task_guid, g.user)
+            can_complete = True
+        except HumanTaskAlreadyCompletedError:
+            can_complete = False
+        except HumanTaskNotFoundError:
+            can_complete = False
+        except UserDoesNotHaveAccessToTaskError:
+            can_complete = False
+
+        assigned_user_group_identifier = None
+        potential_owner_usernames = None
+        if can_complete is False:
+            human_task = HumanTaskModel.query.filter_by(task_id=task_guid).first()
+            if human_task is not None:
+                if human_task.lane_assignment_id is not None:
+                    group = GroupModel.query.filter_by(id=human_task.lane_assignment_id).first()
+                    if group is not None:
+                        assigned_user_group_identifier = group.identifier
+                elif len(human_task.potential_owners) > 0:
+                    potential_owner_usernames = _safe_potential_owner_usernames(human_task)
+
+        parent_id = None
+        if spiff_task.parent:
+            parent_id = spiff_task.parent.id
+
+        serialized_task_spec = processor.serialize_task_spec(spiff_task.task_spec)
+
+        error_message = None
+        error_event = ProcessInstanceEventModel.query.filter_by(
+            task_guid=task_guid, event_type=ProcessInstanceEventType.task_failed.value
+        ).first()
+        if error_event:
+            error_message = error_event.error_details[-1].message
+
+        return Task(
+            spiff_task.id,
+            spiff_task.task_spec.bpmn_id,
+            spiff_task.task_spec.bpmn_name,
+            task_type,
+            TaskState.get_name(spiff_task.state),
+            can_complete=can_complete,
+            lane=lane,
+            process_identifier=spiff_task.task_spec._wf_spec.name,
+            process_instance_id=processor.process_instance_model.id,
+            process_model_identifier=processor.process_model_identifier,
+            process_model_display_name=processor.process_model_display_name,
+            properties=props,
+            parent=parent_id,
+            event_definition=serialized_task_spec.get("event_definition"),
+            error_message=error_message,
+            assigned_user_group_identifier=assigned_user_group_identifier,
+            potential_owner_usernames=potential_owner_usernames,
+        )
+
     ProcessInstanceService.create_process_instance = patched_create_process_instance  # type: ignore[assignment]
     ProcessInstanceService.complete_form_task = patched_complete_form_task
+    ProcessInstanceService.spiff_task_to_api_task = patched_spiff_task_to_api_task
     ProcessInstanceService.update_form_task_data = patched_update_form_task_data
     ProcessInstanceService.run_process_instance_with_processor = patched_run_process_instance_with_processor
+    ProcessInstanceService.spiff_task_to_api_task = patched_spiff_task_to_api_task  # type: ignore[assignment]
     _PATCHED = True

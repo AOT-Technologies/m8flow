@@ -35,6 +35,7 @@ import {
   Flag,
   Description,
   Hub,
+  Business,
 } from "@mui/icons-material";
 import { Link, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -345,6 +346,30 @@ function SideNav({
                 <MuiLink component={Link} to="/" data-testid="nav-logo-link">
                   <SpiffLogo />
                 </MuiLink>
+                {tenantId && (
+                  <Box
+                    data-testid="nav-tenant-name"
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 0.5,
+                      mt: 0.5,
+                      paddingLeft: "8px",
+                      color: "text.secondary",
+                    }}
+                  >
+                    <Business sx={{ fontSize: "1rem" }} />
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        fontWeight: 600,
+                        textTransform: "capitalize",
+                      }}
+                    >
+                      {t("tenant")}: {tenantId}
+                    </Typography>
+                  </Box>
+                )}
               </Box>
             )}
             <IconButton

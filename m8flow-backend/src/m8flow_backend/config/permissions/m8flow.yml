@@ -198,6 +198,12 @@ permissions:
     groups: ["viewer", "super-admin"]
     actions: [read]
     uri: /m8flow/templates/*
+  # Admin-only template operations (delete published, restore soft-deleted).
+  # Editors can manage templates but only tenant-admin can perform these privileged operations.
+  admin-templates:
+    groups: ["tenant-admin"]
+    actions: [all]
+    uri: /m8flow/admin/templates
   read-template-process-model-template-info:
     groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter"]
     actions: [read]

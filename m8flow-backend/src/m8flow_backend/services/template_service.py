@@ -200,6 +200,8 @@ class TemplateService:
         search: str | None = None,
         template_key: str | None = None,
         published_only: bool = False,
+        include_deleted: bool = False,
+        deleted_only: bool = False,
         sort_by: str | None = None,
         order: str = "desc",
         page: int = 1,
@@ -207,7 +209,10 @@ class TemplateService:
     ) -> tuple[list[TemplateModel], dict]:
         query = TemplateModel.query
         query = TemplateAuthorizationService.filter_query_by_visibility(query, user=user)
-        query = query.filter(TemplateModel.is_deleted.is_(False))
+        if deleted_only:
+            query = query.filter(TemplateModel.is_deleted.is_(True))
+        elif not include_deleted:
+            query = query.filter(TemplateModel.is_deleted.is_(False))
 
         is_super_admin = TemplateAuthorizationService._is_super_admin_request(user=user)
 
@@ -306,6 +311,7 @@ class TemplateService:
         user: UserModel | None = None,
         suppress_visibility: bool = False,
         tenant_id: str | None = None,
+        include_deleted: bool = False,
     ) -> TemplateModel | None:
         """Get template by key, scoped to tenant."""
         query = TemplateModel.query.filter_by(template_key=template_key)
@@ -315,8 +321,9 @@ class TemplateService:
         if tenant:
             query = query.filter(TemplateModel.m8f_tenant_id == tenant)
 
-        # Exclude soft-deleted templates by default
-        query = query.filter(TemplateModel.is_deleted.is_(False))
+        if not include_deleted:
+            # Exclude soft-deleted templates by default
+            query = query.filter(TemplateModel.is_deleted.is_(False))
         
         if not suppress_visibility:
             query = TemplateAuthorizationService.filter_query_by_visibility(query, user=user)
@@ -335,9 +342,13 @@ class TemplateService:
         cls,
         template_id: int,
         user: UserModel | None = None,
+        include_deleted: bool = False,
     ) -> TemplateModel | None:
-        """Get template by database ID with visibility checks, excluding soft-deleted templates."""
-        template = TemplateModel.query.filter_by(id=template_id).filter(TemplateModel.is_deleted.is_(False)).first()
+        """Get template by database ID with visibility checks."""
+        query = TemplateModel.query.filter_by(id=template_id)
+        if not include_deleted:
+            query = query.filter(TemplateModel.is_deleted.is_(False))
+        template = query.first()
         if template is None:
             return None
         
@@ -590,23 +601,98 @@ class TemplateService:
         template_id: int,
         user: UserModel | None,
     ) -> None:
-        """Soft delete template by ID (mark as deleted without removing row)."""
+        """Delete template by ID with state-aware semantics.
+
+        - Draft templates: hard delete (creator or tenant-admin)
+        - Published templates: soft delete + rename (tenant-admin only)
+        """
         if is_super_admin_request():
             raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
-        template = cls.get_template_by_id(template_id, user=user)
+        template = cls.get_template_by_id(template_id, user=user, include_deleted=True)
         if template is None:
             raise ApiError("not_found", "Template not found", status_code=404)
-        
+
+        if template.is_deleted:
+            raise ApiError("not_found", "Template not found", status_code=404)
+
+        is_template_admin = TemplateAuthorizationService.has_admin_permission(user, "delete")
+        username = user.username if user and hasattr(user, "username") else None
+
         if template.is_published:
-            raise ApiError("immutable", "Published template versions cannot be deleted", status_code=400)
-        
-        if not TemplateAuthorizationService.can_edit(template, user):
+            if not is_template_admin:
+                raise ApiError("forbidden", "Insufficient permissions to delete published templates", status_code=403)
+
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+            original_name = template.name or "template"
+            template.name = f"{original_name}_deleted_{timestamp}"
+            template.is_deleted = True
+            if username:
+                template.modified_by = username
+            TemplateModel.commit_with_rollback_on_exception()
+            return
+
+        can_hard_delete_draft = bool(
+            (username is not None and template.created_by == username) or is_template_admin
+        )
+        if not can_hard_delete_draft:
             raise ApiError("forbidden", "You cannot delete this template", status_code=403)
 
-        # Mark as soft-deleted
-        template.is_deleted = True
+        # Remove storage files for this specific version, best-effort.
+        for entry in template.files or []:
+            file_name = entry.get("file_name")
+            if not file_name:
+                continue
+            try:
+                cls.storage.delete_file(
+                    template.m8f_tenant_id,
+                    template.template_key,
+                    template.version,
+                    file_name,
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to delete template file during hard delete: template_id=%s file=%s",
+                    template.id,
+                    file_name,
+                    exc_info=True,
+                )
 
+        # Remove provenance links per product decision.
+        ProcessModelTemplateModel.query.filter_by(source_template_id=template.id).delete(
+            synchronize_session=False
+        )
+        db.session.delete(template)
         TemplateModel.commit_with_rollback_on_exception()
+
+    @classmethod
+    def restore_template_by_id(
+        cls,
+        template_id: int,
+        user: UserModel | None,
+    ) -> TemplateModel:
+        """Restore a previously soft-deleted template (tenant-admin only)."""
+        template = cls.get_template_by_id(template_id, user=user, include_deleted=True)
+        if template is None:
+            raise ApiError("not_found", "Template not found", status_code=404)
+
+        if not template.is_deleted:
+            raise ApiError("invalid_state", "Template is not deleted", status_code=400)
+
+        if not TemplateAuthorizationService.has_admin_permission(user, "update"):
+            raise ApiError("forbidden", "Insufficient permissions to restore templates", status_code=403)
+
+        # Expected soft-delete format: <name>_deleted_YYYYMMDDHHMMSS
+        match = re.match(r"^(?P<base>.*)_deleted_\d{14}$", template.name or "")
+        if match:
+            restored_name = match.group("base").strip()
+            template.name = restored_name or template.name
+
+        template.is_deleted = False
+        username = user.username if user and hasattr(user, "username") else None
+        if username:
+            template.modified_by = username
+        TemplateModel.commit_with_rollback_on_exception()
+        return template
 
     @classmethod
     def get_file_content(
@@ -889,6 +975,13 @@ class TemplateService:
         template = cls.get_template_by_id(template_id, user=user)
         if template is None:
             raise ApiError("not_found", "Template not found", status_code=404)
+
+        if not template.is_published:
+            raise ApiError(
+                "invalid_template_state",
+                "Process models can only be created from a published template version",
+                status_code=400,
+            )
 
         # Validate template has files
         if not template.files:

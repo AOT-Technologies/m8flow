@@ -31,6 +31,10 @@ export type ReactDiagramEditorProps = {
   saveDiagram?: (..._args: any[]) => any;
   tasks?: BasicTask[] | null;
   url?: string;
+  /** When true, hides the Delete button in the toolbar (e.g. template file views). */
+  hideDeleteButton?: boolean;
+  /** When true, hides the View XML button in the toolbar (e.g. template file views). */
+  hideViewXmlButton?: boolean;
 };
 
 export const FIT_VIEWPORT = 'fit-viewport';

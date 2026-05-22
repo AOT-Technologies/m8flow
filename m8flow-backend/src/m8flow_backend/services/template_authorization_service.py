@@ -36,7 +36,34 @@ class TemplateAuthorizationService:
         return getattr(g, "m8flow_tenant_id", None)
 
     @classmethod
+    def has_admin_permission(cls, user: UserModel | None, permission: str) -> bool:
+        """Check if user has admin-level permission on templates via RBAC.
+
+        Delegates to AuthorizationService (backing /v1.0/permissions-check)
+        instead of inspecting group membership directly.
+        """
+        if user is None:
+            return False
+        try:
+            return AuthorizationService.user_has_permission(
+                user, permission, "/m8flow/admin/templates"
+            )
+        except Exception:
+            return False
+
+    @classmethod
     def can_view(cls, template: TemplateModel, user: UserModel | None = None) -> bool:
+        tenant_id = cls._tenant_id()
+
+        # Admin can view any template in their tenant.
+        if (
+            user is not None
+            and cls.has_admin_permission(user, "read")
+            and tenant_id is not None
+            and tenant_id == template.m8f_tenant_id
+        ):
+            return True
+
         if cls._is_super_admin_request(user=user):
             return True
 
@@ -46,15 +73,15 @@ class TemplateAuthorizationService:
 
         # TENANT: must match tenant
         if template.is_tenant_visible():
-            return cls._tenant_id() is not None and cls._tenant_id() == template.m8f_tenant_id
+            return tenant_id is not None and tenant_id == template.m8f_tenant_id
 
         # PRIVATE: must be creator and same tenant
         if template.is_private():
             return (
                 user is not None
                 and template.created_by == user.username
-                and cls._tenant_id() is not None
-                and cls._tenant_id() == template.m8f_tenant_id
+                and tenant_id is not None
+                and tenant_id == template.m8f_tenant_id
             )
         return False
 
@@ -72,10 +99,8 @@ class TemplateAuthorizationService:
             return True
 
         # Permission check (Spiff permissions are CRUD: create/read/update/delete).
-        # TODO(RBAC): once m8flow has role-based permissions (e.g. admin/editor), map roles -> CRUD
-        # for templates and/or add a dedicated role-aware check here.
         try:
-            if AuthorizationService.user_has_permission(user, "update",  "/templates"):
+            if AuthorizationService.user_has_permission(user, "update",  "/m8flow/templates"):
                 return True
         except Exception:
             # Fallback to owner-only if permission system is not configured for templates
@@ -103,11 +128,19 @@ class TemplateAuthorizationService:
             ),
         ]
         if user is not None:
-            conditions.append(
-                and_(
-                    TemplateModel.visibility == TemplateVisibility.private.value,
-                    TemplateModel.m8f_tenant_id == tenant_id,
-                    TemplateModel.created_by == user.username
+            if cls.has_admin_permission(user, "read"):
+                conditions.append(
+                    and_(
+                        TemplateModel.visibility == TemplateVisibility.private.value,
+                        TemplateModel.m8f_tenant_id == tenant_id,
+                    )
                 )
-            )
+            else:
+                conditions.append(
+                    and_(
+                        TemplateModel.visibility == TemplateVisibility.private.value,
+                        TemplateModel.m8f_tenant_id == tenant_id,
+                        TemplateModel.created_by == user.username
+                    )
+                )
         return query.filter(or_(*conditions))

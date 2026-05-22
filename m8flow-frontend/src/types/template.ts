@@ -27,6 +27,7 @@ export interface Template {
   files: TemplateFile[];
   bpmnContent?: string; // Included in GET when include_contents true
   isPublished: boolean;
+  isDeleted?: boolean;
   status: string | null;
   /** Epoch seconds for display (Spiff-style). */
   createdAtInSeconds: number;
@@ -44,6 +45,8 @@ export interface TemplateFilters {
   owner?: string;
   tenantId?: string;
   latest_only?: boolean;
+  include_deleted?: boolean;
+  deleted_only?: boolean;
   page?: number;
   per_page?: number;
 }
