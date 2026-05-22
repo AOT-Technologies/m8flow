@@ -27,6 +27,8 @@
   "deleted_templates": "Deleted",
   "templates": "Templates",
   "tenant": "Tenant",
+  "select_tenant_placeholder": "Select a tenant",
+  "tenant_required_for_super_admin": "Please select a tenant before creating this process model.",
   "tenants": "Tenants",
   "try_adjusting_filters_templates": "Try adjusting your filters to see more templates.",
   "version": "Version",
@@ -123,5 +125,6 @@
   "operations": "operations",
   "configure": "Configure",
   "no_connectors_available": "No connectors are available at this time.",
-  "connectors_load_failed": "Could not load connectors. Check that the connector proxy is running and configured."
+  "connectors_load_failed": "Could not load connectors. Check that the connector proxy is running and configured.",
+  "tasks": "Tasks"
 }

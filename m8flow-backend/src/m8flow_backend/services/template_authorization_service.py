@@ -13,6 +13,25 @@ class TemplateAuthorizationService:
     """Visibility and edit rules for templates."""
 
     @staticmethod
+    def _is_super_admin_request(user: UserModel | None = None) -> bool:
+        if bool(getattr(g, "_m8flow_super_admin_request", False)):
+            return True
+
+        candidate = user or getattr(g, "user", None)
+        groups = getattr(candidate, "groups", None)
+        if not isinstance(groups, list):
+            return False
+
+        for group in groups:
+            identifier = group if isinstance(group, str) else getattr(group, "identifier", None)
+            if not isinstance(identifier, str):
+                continue
+            normalized = identifier.strip().strip("/").split("/")[-1]
+            if normalized == "super-admin" or normalized.endswith(":super-admin"):
+                return True
+        return False
+
+    @staticmethod
     def _tenant_id() -> str | None:
         return getattr(g, "m8flow_tenant_id", None)
 
@@ -45,6 +64,9 @@ class TemplateAuthorizationService:
         ):
             return True
 
+        if cls._is_super_admin_request(user=user):
+            return True
+
         # PUBLIC: anyone with auth context
         if template.is_public():
             return True
@@ -65,6 +87,10 @@ class TemplateAuthorizationService:
 
     @classmethod
     def can_edit(cls, template: TemplateModel, user: UserModel | None = None) -> bool:
+        if cls._is_super_admin_request(user=user):
+            # Master-realm super-admin is intentionally read-only across tenants.
+            return False
+
         if user is None:
             return False
 
@@ -85,6 +111,9 @@ class TemplateAuthorizationService:
     @classmethod
     def filter_query_by_visibility(cls, query, user: UserModel | None = None):
         """Apply visibility filters for the current tenant/user."""
+        if cls._is_super_admin_request(user=user):
+            return query
+
         tenant_id = cls._tenant_id()
         if tenant_id is None:
             # No tenant context; default deny non-public

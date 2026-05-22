@@ -1,4 +1,4 @@
-{
+﻿{
   "all_categories": "Kaikki kategoriat",
   "all_tags": "Kaikki tunnisteet",
   "back_to_configuration": "Takaisin asetuksiin",
@@ -102,5 +102,6 @@
   "delete_failed": "Poistaminen epäonnistui",
   "download_failed": "Lataus epäonnistui",
   "new_draft_created_redirecting": "Uusi luonnosversio ({{version}}) luotiin, koska malli julkaistiin. Uudelleenohjataan...",
-  "updated": "Päivitetty"
+  "updated": "Päivitetty",
+  "tasks": "Tehtävät"
 }

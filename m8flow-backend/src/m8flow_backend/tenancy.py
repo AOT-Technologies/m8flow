@@ -157,6 +157,12 @@ def is_public_request() -> bool:
     return is_tenant_context_exempt_request()
 
 
+def is_super_admin_request() -> bool:
+    if not has_request_context():
+        return False
+    return bool(getattr(g, "_m8flow_super_admin_request", False))
+
+
 def _warn_default_once(message: str, **extra: object) -> None:
     """
     Warn once per Flask request (via g flag), otherwise once per execution context (ContextVar flag).

@@ -10,6 +10,7 @@ const FILTER_PARAM_KEYS: (keyof TemplateFilters)[] = [
   'tag',
   'visibility',
   'owner',
+  'tenantId',
   'latest_only',
   'include_deleted',
   'deleted_only',

@@ -16,6 +16,7 @@ import {
   TableHead,
   TableRow,
   IconButton,
+  Chip,
   Tooltip,
 } from '@mui/material';
 import { ViewModule, ViewList, Visibility, Delete, Restore } from '@mui/icons-material';
@@ -31,7 +32,6 @@ import { usePermissionFetcher } from "@spiffworkflow-frontend/hooks/PermissionSe
 import { useTranslation } from 'react-i18next';
 import TemplateService from '../services/TemplateService';
 import UserService from '../services/UserService';
-
 
 const DEFAULT_PER_PAGE = 10;
 
@@ -53,6 +53,7 @@ export default function TemplateGalleryPage() {
     "/m8flow/admin/templates": ["DELETE"],
   });
   const { t } = useTranslation();
+  const isSuperAdmin = UserService.isSuperAdmin();
 
   const canCreate = ability.can("POST", "/m8flow/templates");
   const canDelete = ability.can("DELETE", "/m8flow/templates");
@@ -218,9 +219,20 @@ export default function TemplateGalleryPage() {
   return (
     <Box sx={{ p: 3 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2, mb: 3 }}>
-        <Typography variant="h4" sx={{ fontWeight: 700 }}>
-          {t("template_gallery")}
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography variant="h4" sx={{ fontWeight: 700 }}>
+            {t("template_gallery")}
+          </Typography>
+          {isSuperAdmin && (
+            <Chip
+              size="small"
+              color="primary"
+              variant="outlined"
+              label="Super Admin View"
+              data-testid="template-gallery-super-admin-view"
+            />
+          )}
+        </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <ToggleButtonGroup
             value={templateMode}
@@ -294,6 +306,7 @@ export default function TemplateGalleryPage() {
             onFiltersChange={handleFiltersChange}
             availableCategories={availableCategories}
             availableTags={availableTags}
+            showTenantFilter={isSuperAdmin}
           />
 
           {/* Main Gallery */}
@@ -336,6 +349,8 @@ export default function TemplateGalleryPage() {
                         <TableCell>{t("name")}</TableCell>
                         <TableCell>{t("key")}</TableCell>
                         <TableCell>{t("version")}</TableCell>
+                        {isSuperAdmin && <TableCell>{t("tenant")}</TableCell>}
+                        {isSuperAdmin && <TableCell>Owner</TableCell>}
                         <TableCell>{t("category")}</TableCell>
                         <TableCell>{t("updated")}</TableCell>
                         <TableCell align="right">{t("actions")}</TableCell>
@@ -361,7 +376,13 @@ export default function TemplateGalleryPage() {
                           </TableCell>
                           <TableCell>{template.templateKey}</TableCell>
                           <TableCell>{template.version}</TableCell>
-                          <TableCell>{template.category || '—'}</TableCell>
+                          {isSuperAdmin && (
+                            <TableCell>
+                              {template.tenant?.name || template.tenant?.slug || template.tenantId || '--'}
+                            </TableCell>
+                          )}
+                          {isSuperAdmin && <TableCell>{template.createdBy || '--'}</TableCell>}
+                          <TableCell>{template.category || '--'}</TableCell>
                           <TableCell>
                             <Typography variant="caption" title={new Date(template.updatedAtInSeconds * 1000).toISOString()}>
                               {formatDistanceToNow(new Date(template.updatedAtInSeconds * 1000), { addSuffix: true })}
@@ -446,6 +467,7 @@ export default function TemplateGalleryPage() {
                         template={template}
                         onUseTemplate={() => handleUseTemplate(template)}
                         onViewTemplate={() => handleViewTemplate(template)}
+                        showTenantContext={isSuperAdmin}
                         onDeleteTemplate={templateMode === 'active' && canDelete ? () => handleDeleteTemplate(template) : undefined}
                         onRestoreTemplate={templateMode === 'deleted' ? () => handleRestoreTemplate(template) : undefined}
                         deleteDisabled={templateMode === 'active' ? !canDeleteTemplate(template) : false}
@@ -466,3 +488,4 @@ export default function TemplateGalleryPage() {
     </Box>
   );
 }
+

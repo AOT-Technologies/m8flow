@@ -12,7 +12,7 @@ users:
 
 # Groups should be managed in OIDC provider or user management system and mapped to these names.
 groups:
-  # The "super-admin" group has access to tenants management only.
+  # The "super-admin" group has platform-wide access, including tenant management and cross-tenant operations.
   "super-admin":
     users: []
   # The "tenant-admin" group has access to everything within a tenant, but does not have access to tenant management features. 
@@ -55,7 +55,7 @@ permissions:
     uri: /active-users/*
 
 
-  # Super Admins have access to tenants management only.
+  # Super Admins are global operators (master realm) and can manage all tenant resources.
   super-admin:
     groups: ["super-admin"]
     actions: [all]
@@ -65,7 +65,7 @@ permissions:
     actions: [all]
     uri: /m8flow/tenant-realms*
   read-all-process-groups:
-    groups: ["viewer", "submitter"]
+    groups: ["viewer", "super-admin","submitter"]
     actions: [read]
     uri: PG:ALL
   manage-all-process-groups:
@@ -73,7 +73,7 @@ permissions:
     actions: [all]
     uri: PG:ALL
   read-all-process-models:
-    groups: ["viewer", "reviewer", "submitter"]
+    groups: ["viewer", "reviewer", "super-admin","submitter"]
     actions: [read]
     uri: PM:ALL
   manage-all-process-models:
@@ -81,33 +81,49 @@ permissions:
     actions: [all]
     uri: PM:ALL
   read-processes:
-    groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter"]
+    groups: ["tenant-admin", "editor", "viewer", "reviewer", "super-admin","submitter"]
     actions: [read]
     uri: /processes/*
   run-all-process-models:
-    groups: ["tenant-admin", "editor", "submitter"]
+    groups: ["tenant-admin", "editor","submitter"]
     actions: [start]
     uri: PM:ALL
   read-process-instances:
-    groups: ["tenant-admin", "editor", "viewer", "submitter"]
+    groups: ["tenant-admin", "editor", "viewer", "super-admin","submitter"]
     actions: [read]
     uri: /process-instances/*
+  super-admin-process-instances-for-me-list:
+    groups: ["super-admin"]
+    actions: [create]
+    uri: /process-instances/for-me
+  super-admin-process-instances-list:
+    groups: ["super-admin"]
+    actions: [create]
+    uri: /process-instances
   read-user-groups-items:
-    groups: ["tenant-admin", "editor", "viewer", "submitter"]
+    groups: ["tenant-admin", "editor", "viewer", "super-admin","submitter"]
     actions: [read]
     uri: /user-groups/*
   read-script-assist-items:
-    groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter"]
+    groups: ["tenant-admin", "editor", "viewer", "reviewer", "super-admin","submitter"]
     actions: [read]
     uri: /script-assist/*
   read-service-tasks:
-    groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter", "integrator"]
+    groups: ["tenant-admin", "editor", "viewer", "super-admin","submitter", "integrator"]
     actions: [read]
     uri: /service-tasks/*
   read-service-tasks-root:
     groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter", "integrator"]
     actions: [read]
     uri: /service-tasks
+  read-data-stores:
+    groups: ["viewer", "super-admin"]
+    actions: [read]
+    uri: /data-stores/*
+  read-data-stores-types:
+    groups: ["viewer", "super-admin"]
+    actions: [read]
+    uri: /data-stores/types/
   manage-data-stores:
     groups: ["tenant-admin", "editor"]
     actions: [all]
@@ -116,10 +132,22 @@ permissions:
     groups: ["tenant-admin", "editor"]
     actions: [all]
     uri: /data-stores/types/
+  read-messages:
+    groups: ["viewer", "super-admin"]
+    actions: [read]
+    uri: /messages/*
   manage-messages:
     groups: ["tenant-admin", "editor"]
     actions: [all]
     uri: /messages/*
+  read-secrets:
+    groups: ["integrator", "viewer", "super-admin"]
+    actions: [read]
+    uri: /secrets
+  read-secret-items:
+    groups: ["integrator", "viewer", "super-admin"]
+    actions: [read]
+    uri: /secrets/*
   manage-secrets:
     groups: ["tenant-admin", "integrator"]
     actions: [all]
@@ -129,11 +157,23 @@ permissions:
     actions: [all]
     uri: /secrets/*
   # authentication (singular)
+  read-authentication-items:
+    groups: ["integrator", "viewer", "super-admin"]
+    actions: [read]
+    uri: /authentication/*
   manage-authentication-items:
     groups: ["tenant-admin", "integrator"]
     actions: [all]
     uri: /authentication/*
   # authentications (plural)
+  read-authentications:
+    groups: ["integrator", "viewer", "super-admin"]
+    actions: [read]
+    uri: /authentications
+  read-authentications-items:
+    groups: ["integrator", "viewer", "super-admin"]
+    actions: [read]
+    uri: /authentications/*
   manage-authentications:
     groups: ["tenant-admin", "integrator"]
     actions: [all]
@@ -151,11 +191,11 @@ permissions:
     actions: [all]
     uri: /m8flow/templates/*
   read-templates:
-    groups: ["viewer"]
+    groups: ["viewer", "super-admin"]
     actions: [read]
     uri: /m8flow/templates
   viewer-template-items:
-    groups: ["viewer"]
+    groups: ["viewer", "super-admin"]
     actions: [read]
     uri: /m8flow/templates/*
   # Admin-only template operations (delete published, restore soft-deleted).
@@ -169,13 +209,17 @@ permissions:
     actions: [read]
     uri: /m8flow/templates/process-models/*
   manage-tasks:
-    groups: ["tenant-admin", "editor", "reviewer", "submitter"]
+    groups: ["tenant-admin", "editor", "reviewer","submitter"]
     actions: [all]
     uri: /tasks/*
   read-tasks:
-    groups: ["viewer"]
+    groups: ["viewer", "super-admin"]
     actions: [read]
     uri: /tasks/*
+  read-nats-tokens:
+    groups: ["integrator", "viewer", "super-admin"]
+    actions: [read]
+    uri: /m8flow/nats-tokens
   manage-nats-tokens:
     groups: ["tenant-admin", "integrator"]
     actions: [all]

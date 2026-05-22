@@ -1,4 +1,4 @@
-{
+﻿{
   "all_categories": "Všechny kategorie",
   "all_tags": "Všechny štítky",
   "back_to_configuration": "Zpět na Konfiguraci",
@@ -102,5 +102,6 @@
   "delete_failed": "Smazání se nezdařilo",
   "download_failed": "Stahování se nezdařilo",
   "new_draft_created_redirecting": "Byla vytvořena nová verze konceptu ({{version}}), protože šablona byla publikována. Přesměrování...",
-  "updated": "Aktualizováno"
+  "updated": "Aktualizováno",
+  "tasks": "Úkoly"
 }

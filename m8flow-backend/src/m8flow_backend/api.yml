@@ -1071,7 +1071,7 @@ paths:
   /nats-tokens:
     post:
       summary: Generate a NATS event token
-      description: Generates a new unique token for a tenant to use when publishing NATS events. Restricted to tenant-admin and integrator.
+      description: Generates a new unique token for a tenant to use when publishing NATS events. Restricted to tenant-admin, integrator, and super-admin.
       operationId: m8flow_backend.routes.nats_token_controller.generate_token
       tags:
         - NATS

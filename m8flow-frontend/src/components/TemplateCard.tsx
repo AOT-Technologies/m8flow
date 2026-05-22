@@ -21,6 +21,7 @@ interface TemplateCardProps {
   template: Template;
   onUseTemplate?: () => void;
   onViewTemplate?: () => void;
+  showTenantContext?: boolean;
   onDeleteTemplate?: () => void;
   onRestoreTemplate?: () => void;
   deleteDisabled?: boolean;
@@ -57,6 +58,7 @@ export default function TemplateCard({
   template,
   onUseTemplate,
   onViewTemplate,
+  showTenantContext = false,
   onDeleteTemplate,
   onRestoreTemplate,
   deleteDisabled = false,
@@ -88,6 +90,9 @@ export default function TemplateCard({
     }
     navigate(`/templates/${template.id}`);
   };
+
+  const tenantDisplayValue =
+    template.tenant?.name || template.tenant?.slug || template.tenantId || '--';
 
   const handleDeleteTemplate = (e: PointerEvent) => {
     stopEventBubble(e);
@@ -175,6 +180,16 @@ export default function TemplateCard({
             <Typography variant="caption" sx={{ color: 'text.secondary', mt: 'auto' }}>
               {t("version")}: {template.version}
             </Typography>
+            {showTenantContext && (
+              <>
+                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                  {t('tenant')}: {tenantDisplayValue}
+                </Typography>
+                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                  Owner: {template.createdBy || '--'}
+                </Typography>
+              </>
+            )}
             <Typography
               variant="caption"
               sx={{ color: 'text.secondary' }}

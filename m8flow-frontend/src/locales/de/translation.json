@@ -1,4 +1,4 @@
-{
+﻿{
   "all_categories": "Alle Kategorien",
   "all_tags": "Alle Tags",
   "back_to_configuration": "Zurück zur Konfiguration",
@@ -102,5 +102,6 @@
   "delete_failed": "Das Löschen ist fehlgeschlagen",
   "download_failed": "Der Download ist fehlgeschlagen",
   "new_draft_created_redirecting": "Da die Vorlage veröffentlicht wurde, wurde eine neue Entwurfsversion ({{version}}) erstellt. Weiterleitung...",
-  "updated": "Aktualisiert"
+  "updated": "Aktualisiert",
+  "tasks": "Aufgaben"
 }
