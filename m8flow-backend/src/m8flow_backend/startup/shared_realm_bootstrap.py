@@ -36,6 +36,15 @@ def _tenant_scoped_table_names(engine: Any) -> list[str]:
     return table_names
 
 
+def _m8flow_tenant_table_exists(engine: Any) -> bool:
+    try:
+        inspector = sa.inspect(engine)
+        table_names = inspector.get_table_names()
+    except Exception:
+        return False
+    return "m8flow_tenant" in table_names
+
+
 def _update_tenant_scoped_rows(db_session: Any, engine: Any, old_tenant_id: str, new_tenant_id: str) -> list[str]:
     updated_tables: list[str] = []
     for table_name in _tenant_scoped_table_names(engine):
@@ -138,6 +147,14 @@ def reconcile_default_shared_realm_tenant(flask_app: Any) -> None:
     organization_alias = organization_alias.strip()
 
     with flask_app.app_context():
+        from spiffworkflow_backend.models.db import db
+
+        if not _m8flow_tenant_table_exists(db.engine):
+            logger.info(
+                "shared_realm_bootstrap: skipping reconciliation because m8flow_tenant does not exist yet"
+            )
+            return
+
         try:
             organization = get_organization_by_alias(organization_alias)
         except Exception:
@@ -170,7 +187,6 @@ def reconcile_default_shared_realm_tenant(flask_app: Any) -> None:
         organization_name = organization_name.strip()
 
         from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
-        from spiffworkflow_backend.models.db import db
 
         canonical_tenant = db.session.get(M8flowTenantModel, organization_id)
         legacy_tenant = None if canonical_tenant is not None else M8flowTenantModel.query.filter_by(slug=organization_alias).first()

@@ -369,7 +369,7 @@ def test_reconcile_default_shared_realm_tenant_creates_canonical_row_when_missin
         shared_realm_bootstrap.sa,
         "inspect",
         lambda _engine: SimpleNamespace(
-            get_table_names=lambda: [],
+            get_table_names=lambda: ["m8flow_tenant"],
             get_columns=lambda _table_name: [],
         ),
     )
@@ -380,3 +380,35 @@ def test_reconcile_default_shared_realm_tenant_creates_canonical_row_when_missin
     assert organization_id in tenant_rows_by_id
     assert tenant_rows_by_id[organization_id].slug == alias
     assert tenant_rows_by_id[organization_id].name == organization_name
+
+
+def test_reconcile_default_shared_realm_tenant_skips_when_table_missing(monkeypatch) -> None:
+    from m8flow_backend.startup import shared_realm_bootstrap
+
+    fake_session = FakeSession({}, [], {})
+    fake_db = FakeDb(fake_session)
+    fake_app = FakeApp()
+
+    get_organization_calls: list[str] = []
+
+    _install_fake_modules(monkeypatch, fake_db)
+    monkeypatch.setenv("SPIFFWORKFLOW_BACKEND_ENV", "local_development")
+    monkeypatch.setattr(shared_realm_bootstrap, "default_organization_alias", lambda: "m8flow")
+    monkeypatch.setattr(
+        shared_realm_bootstrap,
+        "get_organization_by_alias",
+        lambda requested_alias: get_organization_calls.append(requested_alias),
+    )
+    monkeypatch.setattr(
+        shared_realm_bootstrap.sa,
+        "inspect",
+        lambda _engine: SimpleNamespace(
+            get_table_names=lambda: ["process_instance", "group"],
+            get_columns=lambda _table_name: [],
+        ),
+    )
+
+    shared_realm_bootstrap.reconcile_default_shared_realm_tenant(fake_app)
+
+    assert get_organization_calls == []
+    assert fake_session.commits == 0
