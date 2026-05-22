@@ -39,11 +39,10 @@ export default function TemplateFileFormPage() {
   } | null>(null);
 
   const { ability, permissionsLoaded } = usePermissionFetcher({
-    "/m8flow/templates": ["PUT", "DELETE"],
+    "/m8flow/templates": ["PUT"],
   });
 
   const canEdit = ability.can("PUT", "/m8flow/templates");
-  const canDelete = ability.can("DELETE", "/m8flow/templates");
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -71,7 +70,7 @@ export default function TemplateFileFormPage() {
     setError(null);
 
     HttpService.makeCallToBackend({
-      path: `/v1.0/m8flow/templates/${id}`,
+      path: `/v1.0/m8flow/templates/${id}?include_deleted=true`,
       httpMethod: HttpService.HttpMethods.GET,
       successCallback: (result: Record<string, unknown>) => {
         setTemplate(normalizeTemplate(result));
@@ -127,22 +126,6 @@ export default function TemplateFileFormPage() {
         const message = err instanceof Error ? err.message : "Save failed";
         setError(message);
       });
-  };
-
-  const handleDelete = () => {
-    if (isNaN(id)) return;
-    const confirmMsg = template?.isPublished
-      ? `Delete file "${decodedFileName}"? A new draft version will be created.`
-      : `Delete file "${decodedFileName}"? This cannot be undone.`;
-    if (!globalThis.confirm(confirmMsg)) return;
-    setError(null);
-    TemplateService.deleteTemplateFile(id, decodedFileName)
-      .then(() => {
-        navigate(`/templates/${id}`);
-      })
-      .catch((err) =>
-        setError(err instanceof Error ? err.message : "Delete failed"),
-      );
   };
 
   const handleDownload = () => {
@@ -217,11 +200,6 @@ export default function TemplateFileFormPage() {
         {canEdit && (
           <Button data-testid="template-file-save-button" variant="contained" color="primary" onClick={handleSave}>
             {t("save")}
-          </Button>
-        )}
-        {canDelete && (
-          <Button data-testid="template-file-delete-button" variant="contained" color="error" onClick={handleDelete}>
-            {t("delete")}
           </Button>
         )}
         <Button data-testid="template-file-download-button" variant="outlined" onClick={handleDownload}>

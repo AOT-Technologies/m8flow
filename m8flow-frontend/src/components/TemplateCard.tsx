@@ -8,6 +8,7 @@ import {
   CardActions,
   Chip,
   Box,
+  Tooltip,
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { PointerEvent } from 'react';
@@ -20,6 +21,12 @@ interface TemplateCardProps {
   template: Template;
   onUseTemplate?: () => void;
   onViewTemplate?: () => void;
+  onDeleteTemplate?: () => void;
+  onRestoreTemplate?: () => void;
+  deleteDisabled?: boolean;
+  deleteDisabledReason?: string;
+  restoreDisabled?: boolean;
+  restoreDisabledReason?: string;
 }
 
 const getVisibilityColor = (visibility: TemplateVisibility): 'default' | 'primary' | 'secondary' => {
@@ -50,6 +57,12 @@ export default function TemplateCard({
   template,
   onUseTemplate,
   onViewTemplate,
+  onDeleteTemplate,
+  onRestoreTemplate,
+  deleteDisabled = false,
+  deleteDisabledReason,
+  restoreDisabled = false,
+  restoreDisabledReason,
 }: TemplateCardProps) {
   const navigate = useNavigate();
   const { t } = useTranslation();
@@ -74,6 +87,16 @@ export default function TemplateCard({
       onViewTemplate();
     }
     navigate(`/templates/${template.id}`);
+  };
+
+  const handleDeleteTemplate = (e: PointerEvent) => {
+    stopEventBubble(e);
+    onDeleteTemplate?.();
+  };
+
+  const handleRestoreTemplate = (e: PointerEvent) => {
+    stopEventBubble(e);
+    onRestoreTemplate?.();
   };
 
   return (
@@ -164,15 +187,44 @@ export default function TemplateCard({
           </Stack>
         </CardContent>
       </CardActionArea>
-      <CardActions sx={{ mt: 'auto', p: 2 }}>
-        {/* <Button
-          variant="contained"
-          color="primary"
+      <CardActions sx={{ mt: 'auto', p: 2, gap: 1 }}>
+        <Button
+          variant="outlined"
           size="small"
-          onClick={(e) => handleUseTemplate(e as unknown as PointerEvent)}
+          onClick={(e) => handleViewTemplate(e as unknown as PointerEvent)}
         >
-          Use Template
-        </Button> */}
+          {t("view", { defaultValue: "View" })}
+        </Button>
+        {onRestoreTemplate && (
+          <Tooltip title={restoreDisabled ? (restoreDisabledReason || "") : ""}>
+            <span>
+              <Button
+                variant="contained"
+                color="primary"
+                size="small"
+                onClick={(e) => handleRestoreTemplate(e as unknown as PointerEvent)}
+                disabled={restoreDisabled}
+              >
+                {t("restore", { defaultValue: "Restore" })}
+              </Button>
+            </span>
+          </Tooltip>
+        )}
+        {onDeleteTemplate && (
+          <Tooltip title={deleteDisabled ? (deleteDisabledReason || "") : ""}>
+            <span>
+              <Button
+                variant="contained"
+                color="error"
+                size="small"
+                onClick={(e) => handleDeleteTemplate(e as unknown as PointerEvent)}
+                disabled={deleteDisabled}
+              >
+                {t("delete")}
+              </Button>
+            </span>
+          </Tooltip>
+        )}
       </CardActions>
     </Card>
   );

@@ -126,6 +126,49 @@ describe("TemplateService", () => {
     });
   });
 
+  describe("restoreTemplate", () => {
+    const fetchMock = vi.fn();
+
+    beforeEach(() => {
+      fetchMock.mockClear();
+      vi.stubGlobal("fetch", fetchMock);
+    });
+
+    it("sends POST to restore endpoint and returns parsed template", async () => {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            id: 7,
+            templateKey: "restore-key",
+            name: "Restored",
+            version: "V1",
+            visibility: "PRIVATE",
+            files: [],
+            createdAtInSeconds: 1700000000,
+            updatedAtInSeconds: 1700000010,
+          }),
+      });
+
+      const result = await TemplateService.restoreTemplate(7);
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/templates/7/restore"),
+        expect.objectContaining({
+          method: "POST",
+          credentials: "include",
+        })
+      );
+      expect(result.id).toBe(7);
+      expect(result.name).toBe("Restored");
+    });
+
+    it("rejects when restore response is not ok", async () => {
+      fetchMock.mockResolvedValue({ ok: false });
+      await expect(TemplateService.restoreTemplate(7)).rejects.toThrow("Restore failed");
+    });
+  });
+
   describe("updateTemplateFile", () => {
     const fetchMock = vi.fn();
 

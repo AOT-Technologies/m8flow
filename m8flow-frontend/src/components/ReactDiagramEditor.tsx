@@ -45,6 +45,8 @@ export default function ReactDiagramEditor(props: ReactDiagramEditorProps) {
     saveDiagram,
     tasks,
     url,
+    hideDeleteButton,
+    hideViewXmlButton,
   } = props;
 
   const [performingXmlUpdates, setPerformingXmlUpdates] = useState(false);
@@ -167,6 +169,8 @@ export default function ReactDiagramEditor(props: ReactDiagramEditorProps) {
         referencesButton={referencesButton}
         activeUserElement={activeUserElement}
         onSetPrimaryFileAvailable={!!onSetPrimaryFile}
+        onDeleteAvailable={!hideDeleteButton}
+        onViewXmlAvailable={!hideViewXmlButton}
       />
       <ReferencesModal
         open={showingReferences}
