@@ -75,6 +75,7 @@ describe("normalizeTemplate", () => {
       tags: ["tag1", "tag2"],
       category: "workflow",
       tenantId: "tenant-a",
+      tenant: { id: "tenant-a", name: "Tenant A", slug: "tenant-a" },
       visibility: "PRIVATE",
       isPublished: false,
       status: "draft",
@@ -93,6 +94,7 @@ describe("normalizeTemplate", () => {
     expect(result.tags).toEqual(["tag1", "tag2"]);
     expect(result.category).toBe("workflow");
     expect(result.tenantId).toBe("tenant-a");
+    expect(result.tenant).toEqual({ id: "tenant-a", name: "Tenant A", slug: "tenant-a" });
     expect(result.visibility).toBe("PRIVATE");
     expect(result.isPublished).toBe(false);
     expect(result.status).toBe("draft");

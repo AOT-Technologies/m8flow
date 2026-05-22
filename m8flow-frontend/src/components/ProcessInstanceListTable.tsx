@@ -118,18 +118,37 @@ export default function ProcessInstanceListTable({
     }
   }, []);
 
+  const isSuperAdmin = UserService.isSuperAdmin();
+
   const setProcessInstancesFromResult = useCallback(
     (result: any) => {
       const processInstancesFromApi = result.results;
       setProcessInstances(processInstancesFromApi);
       setPagination(result.pagination);
-      setReportMetadataFromProcessInstances(result.report_metadata);
+
+      // Inject tenantName column for super admin if not already present
+      let reportMeta = result.report_metadata;
+      if (isSuperAdmin && reportMeta && Array.isArray(reportMeta.columns)) {
+        const hasTenantCol = reportMeta.columns.some(
+          (c: ReportColumn) => c.accessor === 'tenantName',
+        );
+        if (!hasTenantCol) {
+          reportMeta = {
+            ...reportMeta,
+            columns: [
+              { Header: 'Tenant', accessor: 'tenantName', filterable: false },
+              ...reportMeta.columns,
+            ],
+          };
+        }
+      }
+      setReportMetadataFromProcessInstances(reportMeta);
       setReportHash(result.report_hash);
       if (onProcessInstanceTableListUpdate) {
         onProcessInstanceTableListUpdate(result);
       }
     },
-    [onProcessInstanceTableListUpdate],
+    [isSuperAdmin, onProcessInstanceTableListUpdate],
   );
 
   const getProcessInstances = useCallback(

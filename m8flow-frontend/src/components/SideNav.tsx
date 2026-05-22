@@ -105,7 +105,7 @@ function SideNav({
     [targetUris.processInstanceListForMePath]: ["POST"],
     [targetUris.secretListPath]: ["GET"],
     [targetUris.serviceTaskListPath]: ["GET"],
-    "/tasks/*": ["PUT"],
+    "/tasks/*": ["GET", "PUT"],
     "/m8flow/tenants": ["GET"],
     "/m8flow/templates": ["GET"],
   };
@@ -294,6 +294,13 @@ function SideNav({
   const checkUserHasAccessToNavItem = (item: NavItem) => {
     if (!("permissionRoutes" in item)) {
       return true;
+    }
+
+    if (item.id === routeIdentifiers.HOME) {
+      return (
+        ability.can("PUT", "/tasks/*") ||
+        (UserService.isSuperAdmin() && ability.can("GET", "/tasks/*"))
+      );
     }
 
     let hasPermission = false;

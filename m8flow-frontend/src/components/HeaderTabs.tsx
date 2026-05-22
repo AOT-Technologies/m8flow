@@ -3,6 +3,7 @@ import { Box, Tabs, Tab } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import { useM8flowUriListForPermissions as useUriListForPermissions } from "../hooks/M8flowUriListForPermissions";
 import { usePermissionFetcher } from "@spiffworkflow-frontend/hooks/PermissionService";
+import UserService from "../services/UserService";
 
 type HeaderTabsProps = {
   value: number;
@@ -21,7 +22,14 @@ export default function HeaderTabs({
     [targetUris.processInstanceListForMePath]: ["POST"],
   });
 
+  const superAdmin = UserService.isSuperAdmin();
+
   if (!permissionsLoaded) return null;
+
+  // Determine the label for the first tab based on user role
+  const tasksTabLabel = superAdmin
+    ? t("tasks")
+    : t("tasks_assigned_to_me");
 
   return (
     <Box
@@ -43,9 +51,9 @@ export default function HeaderTabs({
         onChange={onChange}
         sx={{ flexGrow: 1 }} // Make the Tabs container flexible
       >
-        <Tab label={t("tasks_assigned_to_me")} sx={{ textTransform: "none" }} data-testid="tab-tasks-assigned-to-me" />
-        {/* Hide Workflows created by me if user cannot start process instances for me */}
-        {ability.can("POST", targetUris.processInstanceListForMePath) && (
+        <Tab label={tasksTabLabel} sx={{ textTransform: "none" }} data-testid="tab-tasks-assigned-to-me" />
+        {/* Hide Workflows created by me for super-admin and for users who cannot start process instances */}
+        {!superAdmin && ability.can("POST", targetUris.processInstanceListForMePath) && (
           <Tab
             label={t("workflows_created_by_me")}
             sx={{ textTransform: "none" }}

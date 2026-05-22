@@ -25,6 +25,7 @@ from spiffworkflow_backend.services.spec_file_service import SpecFileService
 from m8flow_backend.models.process_model_template import ProcessModelTemplateModel
 from m8flow_backend.models.template import TemplateModel, TemplateVisibility
 from m8flow_backend.services.template_authorization_service import TemplateAuthorizationService
+from m8flow_backend.tenancy import is_super_admin_request
 from m8flow_backend.services.template_storage_service import (
     FilesystemTemplateStorageService,
     NoopTemplateStorageService,
@@ -42,6 +43,7 @@ MAX_ZIP_ENTRIES = 100
 UNIQUE_TEMPLATE_CONSTRAINT = "uq_template_key_version_tenant"  # keep in sync with TemplateModel __table_args__
 
 TENANT_REQUIRED_MESSAGE = "Tenant context required"
+SUPER_ADMIN_READ_ONLY_MESSAGE = "Super-admin is read-only across tenants."
 
 
 class TemplateService:
@@ -112,6 +114,8 @@ class TemplateService:
         """Create a template with multiple files. At least one must be BPMN."""
         if user is None:
             raise ApiError("unauthorized", "User must be authenticated to create templates", status_code=403)
+        if is_super_admin_request():
+            raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
 
         tenant = tenant_id or getattr(g, "m8flow_tenant_id", None)
         if tenant is None:
@@ -187,6 +191,7 @@ class TemplateService:
         cls,
         user: UserModel | None,
         tenant_id: str | None = None,
+        filter_tenant_id: str | None = None,
         latest_only: bool = True,
         category: str | None = None,
         tag: str | None = None,
@@ -208,16 +213,22 @@ class TemplateService:
             query = query.filter(TemplateModel.is_deleted.is_(True))
         elif not include_deleted:
             query = query.filter(TemplateModel.is_deleted.is_(False))
-        
-        # Filter by tenant: show current tenant's templates + PUBLIC templates from any tenant
+
+        is_super_admin = TemplateAuthorizationService._is_super_admin_request(user=user)
+
+        # Non-super-admin tenant scoping: current tenant plus PUBLIC from any tenant.
         tenant = tenant_id or getattr(g, "m8flow_tenant_id", None)
-        if tenant:
+        if tenant and not is_super_admin:
             query = query.filter(
                 or_(
                     TemplateModel.m8f_tenant_id == tenant,
                     TemplateModel.visibility == TemplateVisibility.public.value,
                 )
             )
+
+        # Super-admin tenant filter: narrow to a specific tenant when requested.
+        if is_super_admin and filter_tenant_id:
+            query = query.filter(TemplateModel.m8f_tenant_id == filter_tenant_id)
 
         # Apply filters
         if category:
@@ -355,6 +366,8 @@ class TemplateService:
         updates: dict[str, Any],
         user: UserModel | None,
     ) -> TemplateModel:
+        if is_super_admin_request():
+            raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
         template = cls.get_template(template_key, version, user=user)
         if template is None:
             raise ApiError("not_found", "Template version not found", status_code=404)
@@ -459,6 +472,8 @@ class TemplateService:
         user: UserModel | None = None,
     ) -> TemplateModel:
         """Update template by ID - updates in place if not published, creates new version if published."""
+        if is_super_admin_request():
+            raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
         # Get the existing template
         existing_template = cls.get_template_by_id(template_id, user=user)
         if existing_template is None:
@@ -591,6 +606,8 @@ class TemplateService:
         - Draft templates: hard delete (creator or tenant-admin)
         - Published templates: soft delete + rename (tenant-admin only)
         """
+        if is_super_admin_request():
+            raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
         template = cls.get_template_by_id(template_id, user=user, include_deleted=True)
         if template is None:
             raise ApiError("not_found", "Template not found", status_code=404)
@@ -717,6 +734,8 @@ class TemplateService:
         If template is published, finds or creates a draft version and updates there.
         Returns the template that was actually updated (may be different from input if published).
         """
+        if is_super_admin_request():
+            raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
         # Find the file in the template
         found = None
         for e in template.files or []:
@@ -766,6 +785,8 @@ class TemplateService:
         If template is published, finds or creates a draft version and deletes from there.
         Returns the template that was actually modified (may be different from input if published).
         """
+        if is_super_admin_request():
+            raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
         # Validate the file exists in the template
         files_list = list(template.files or [])
         if not files_list:
@@ -853,6 +874,8 @@ class TemplateService:
         """Create a template from a zip file. Zip must contain at least one .bpmn file."""
         if user is None:
             raise ApiError("unauthorized", "User must be authenticated", status_code=403)
+        if is_super_admin_request():
+            raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
         tenant = tenant_id or getattr(g, "m8flow_tenant_id", None)
         if tenant is None:
             raise ApiError("tenant_required", TENANT_REQUIRED_MESSAGE, status_code=400)
@@ -941,6 +964,8 @@ class TemplateService:
         """
         if user is None:
             raise ApiError("unauthorized", "User must be authenticated", status_code=403)
+        if is_super_admin_request():
+            raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
 
         tenant = tenant_id or getattr(g, "m8flow_tenant_id", None)
         if tenant is None:

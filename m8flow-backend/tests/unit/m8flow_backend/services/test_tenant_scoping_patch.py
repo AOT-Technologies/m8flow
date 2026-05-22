@@ -5,6 +5,7 @@ from flask import Flask, g
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
 from m8flow_backend.models.message_model import MessageModel
 from m8flow_backend.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
+from m8flow_backend.models.reference_cache import ReferenceCacheModel
 from m8flow_backend.services import tenant_scoping_patch
 from spiffworkflow_backend.models.configuration import ConfigurationModel
 from spiffworkflow_backend.models.db import SpiffworkflowBaseDBModel
@@ -254,3 +255,20 @@ def test_tenant_scopes_configuration_pkce_refresh_token_and_typeahead() -> None:
 
             assert TypeaheadModel.query.count() == 1
             assert TypeaheadModel.query.first().result["source"] == "tenant-b"  # type: ignore[index]
+
+
+def test_reference_cache_basic_query_works_for_exempt_requests() -> None:
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+
+    spiff_db.init_app(app)
+    tenant_scoping_patch.apply()
+
+    with app.app_context():
+        spiff_db.create_all()
+        with app.test_request_context("/"):
+            g._m8flow_tenant_context_exempt_request = True
+            query = ReferenceCacheModel.basic_query()
+            assert query is not None
