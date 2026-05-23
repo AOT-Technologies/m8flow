@@ -116,7 +116,12 @@ def _bind_status_tenant_context(decoded_token: dict[str, Any] | None) -> None:
     if existing_ctx_token is not None:
         reset_context_tenant_id(existing_ctx_token)
 
+    # Clear any "exempt/public" flags set by resolve_request_tenant's early return for
+    # path-exempt requests (e.g. /v1.0/status). current_tenant_id_or_none() short-circuits
+    # to None when _m8flow_public_request is True, so permission checks would always fail.
     g._m8flow_global_request = False
+    g._m8flow_public_request = False
+    g._m8flow_tenant_context_exempt_request = False
     g.m8flow_tenant_id = canonical_tenant_id
     g._m8flow_ctx_token = set_context_tenant_id(canonical_tenant_id)
 
