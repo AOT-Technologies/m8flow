@@ -18,6 +18,7 @@ from m8flow_backend.services.tenant_identity_helpers import current_tenant_ident
 from m8flow_backend.services.tenant_identity_helpers import normalize_organizational_group_identifier
 from m8flow_backend.services.tenant_identity_helpers import organization_group_identifiers_from_payload
 from m8flow_backend.services.tenant_identity_helpers import organization_memberships_from_payload
+from m8flow_backend.services.tenant_identity_helpers import payload_user_belongs_to_tenant
 from m8flow_backend.services.tenant_identity_helpers import qualified_config_group_identifier
 from m8flow_backend.services.tenant_identity_helpers import TENANT_ALIAS_CLAIM
 from m8flow_backend.services.tenant_identity_helpers import TENANT_NAME_CLAIM
@@ -30,6 +31,7 @@ logger = logging.getLogger(__name__)
 _PATCHED = False
 _COOKIE_DOMAIN_PATCHED = False
 _DECODE_TOKEN_PATCHED = False
+_INTERNAL_TOKEN_SUBJECT_PATCHED = False
 _MASTER_REALM_PATCHED = False
 _PUBLIC_GROUP_PATCHED = False
 _REFRESH_TOKEN_TENANT_PATCHED = False
@@ -59,6 +61,7 @@ def _shared_realm_identifier() -> str:
 def apply() -> None:
     """Patch the authentication controller with m8flow auth behavior."""
     apply_cookie_domain_patch()
+    apply_internal_token_subject_patch()
     apply_public_group_patch()
 
     global _PATCHED
@@ -89,6 +92,60 @@ def apply() -> None:
 
     authentication_controller.omni_auth = patched_omni_auth  # type: ignore[assignment]
     _PATCHED = True
+
+
+def _parse_internal_token_subject(subject: object) -> tuple[str, str] | None:
+    """Parse ``service:<issuer>::service_id:<subject>`` without truncating URL values."""
+    if not isinstance(subject, str):
+        return None
+
+    parts = subject.split("::", 1)
+    if len(parts) != 2:
+        return None
+
+    service_part, service_id_part = parts
+    if not service_part.startswith("service:") or not service_id_part.startswith("service_id:"):
+        return None
+
+    service = service_part.removeprefix("service:").strip()
+    service_id = service_id_part.removeprefix("service_id:").strip()
+    if not service or not service_id:
+        return None
+
+    return service, service_id
+
+
+def apply_internal_token_subject_patch() -> None:
+    """Patch internal JWT user resolution so URL-shaped issuers survive subject parsing."""
+    global _INTERNAL_TOKEN_SUBJECT_PATCHED
+    if _INTERNAL_TOKEN_SUBJECT_PATCHED:
+        return
+
+    original = authentication_controller._get_user_from_decoded_internal_token
+
+    @wraps(original)
+    def patched_get_user_from_decoded_internal_token(decoded_token: dict):
+        parsed_subject = _parse_internal_token_subject(decoded_token.get("sub"))
+        if parsed_subject is None:
+            return original(decoded_token)
+
+        service, service_id = parsed_subject
+
+        from spiffworkflow_backend.models.user import UserModel
+        from spiffworkflow_backend.services.user_service import UserService
+
+        user = UserModel.query.filter(UserModel.service == service).filter(UserModel.service_id == service_id).first()
+        if user is not None:
+            return user
+
+        preferred_username = decoded_token.get("preferred_username")
+        username = preferred_username if isinstance(preferred_username, str) and preferred_username.strip() else service_id
+        email = decoded_token.get("email")
+        email_value = email if isinstance(email, str) and email.strip() else None
+        return UserService.create_user(username, service, service_id, email=email_value)
+
+    authentication_controller._get_user_from_decoded_internal_token = patched_get_user_from_decoded_internal_token
+    _INTERNAL_TOKEN_SUBJECT_PATCHED = True
 
 
 def apply_public_group_patch() -> None:
@@ -293,7 +350,7 @@ def _selected_tenant_overrides_shared_multi_org_token(
     decoded_token: dict[str, Any] | None,
     selected_tenant: str | None,
 ) -> bool:
-    """Return whether the selected tenant should override token tenant claims for shared-realm multi-org sessions."""
+    """Return whether the selected tenant should override token tenant claims for shared-realm sessions."""
     if not isinstance(decoded_token, dict):
         return False
     if not isinstance(selected_tenant, str) or not selected_tenant.strip():
@@ -304,11 +361,8 @@ def _selected_tenant_overrides_shared_multi_org_token(
     if authentication_identifier != _shared_realm_identifier() and issuer_realm != _shared_realm_identifier():
         return False
 
-    memberships = organization_memberships_from_payload(decoded_token)
-    if len(memberships) <= 1:
-        return False
-
     selected_identifiers = current_tenant_identifiers(selected_tenant) or {selected_tenant}
+    memberships = organization_memberships_from_payload(decoded_token)
     for organization_alias, organization_details in memberships:
         organization_identifiers = {organization_alias}
         organization_id = organization_details.get("id")
@@ -317,7 +371,11 @@ def _selected_tenant_overrides_shared_multi_org_token(
         if organization_identifiers.intersection(selected_identifiers):
             return True
 
-    return False
+    return payload_user_belongs_to_tenant(
+        decoded_token,
+        tenant_id=selected_tenant,
+        tenant_identifiers=selected_identifiers,
+    )
 
 
 def _tenant_for_refresh_tokens(
@@ -977,7 +1035,7 @@ def _finalize_tenant_from_existing_shared_realm_session(
     against the shared realm. It also lets us synchronize tenant-scoped local
     groups from the selected organization without asking for the password again.
     """
-    from flask import jsonify, redirect, request
+    from flask import current_app, jsonify, redirect, request
     from spiffworkflow_backend.services.authentication_service import AuthenticationService
     from spiffworkflow_backend.services.authorization_service import AuthorizationService
 
@@ -1007,9 +1065,10 @@ def _finalize_tenant_from_existing_shared_realm_session(
         )
         return None
 
+    organization_memberships = organization_memberships_from_payload(decoded_token)
     organization_aliases = {
         organization_alias
-        for organization_alias, _organization_details in organization_memberships_from_payload(decoded_token)
+        for organization_alias, _organization_details in organization_memberships
     }
     if not organization_aliases:
         logger.warning(
@@ -1027,13 +1086,17 @@ def _finalize_tenant_from_existing_shared_realm_session(
     )
 
     with _temporary_request_tenant(selected_tenant_id):
-        AuthorizationService.create_user_from_sign_in(synchronized_token)
+        user_model = AuthorizationService.create_user_from_sign_in(synchronized_token)
+
+    tld = current_app.config["THREAD_LOCAL_DATA"]
+    tld.new_access_token = user_model.encode_auth_token(_tenant_scoped_session_claims(synchronized_token))
+    tld.new_authentication_identifier = _shared_realm_identifier()
 
     from m8flow_backend.tenancy import SELECTED_TENANT_COOKIE_NAME
 
     response = redirect(redirect_url)
     response.set_cookie(SELECTED_TENANT_COOKIE_NAME, selected_tenant_id, path="/")
-    return response
+    return authentication_controller._set_new_access_token_in_cookie(response)
 
 
 def _synchronize_selected_organization_claims(
@@ -1156,6 +1219,38 @@ def _synchronize_selected_organization_claims(
         synchronized_token[TENANT_NAME_CLAIM] = organization_name.strip()
 
     return synchronized_token
+
+
+def _tenant_scoped_session_claims(synchronized_token: dict) -> dict:
+    """Create a backend-signed tenant-scoped session payload from the selected org claims."""
+    if not isinstance(synchronized_token, dict):
+        return {}
+
+    allowed_claim_keys = (
+        "organization",
+        "roles",
+        "name",
+        "given_name",
+        "family_name",
+        "email_verified",
+        "m8flow_authentication_identifier",
+        "m8flow_realm_name",
+        "m8flow_realm_id",
+        TENANT_ALIAS_CLAIM,
+        TENANT_NAME_CLAIM,
+        "m8flow_tenant_id",
+    )
+
+    claims: dict[str, object] = {}
+    for key in allowed_claim_keys:
+        value = synchronized_token.get(key)
+        if value is not None:
+            claims[key] = value
+
+    if "m8flow_authentication_identifier" not in claims:
+        claims["m8flow_authentication_identifier"] = _shared_realm_identifier()
+
+    return claims
 
 
 def apply_login_tenant_patch(flask_app) -> None:

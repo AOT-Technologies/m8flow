@@ -129,6 +129,48 @@ def test_get_organization_by_alias_filters_exact_alias(
 @patch("m8flow_backend.services.keycloak_service.shared_realm_name")
 @patch("m8flow_backend.services.keycloak_service.keycloak_url")
 @patch("m8flow_backend.services.keycloak_service.requests.get")
+def test_get_organization_by_alias_falls_back_when_exact_search_returns_empty(
+    mock_get,
+    mock_keycloak_url,
+    mock_shared_realm_name,
+    mock_get_master_admin_token,
+):
+    mock_get_master_admin_token.return_value = "master-token"
+    mock_shared_realm_name.return_value = "shared-users"
+    mock_keycloak_url.return_value = "http://keycloak"
+    mock_get.side_effect = [
+        MagicMock(status_code=200, json=lambda: []),
+        MagicMock(
+            status_code=200,
+            json=lambda: [
+                {"id": "exact-match", "alias": "tenant-a", "name": "Tenant A"},
+                {"id": "partial-match", "alias": "tenant-a-extra", "name": "Partial Match"},
+            ],
+        ),
+    ]
+
+    result = get_organization_by_alias("tenant-a")
+
+    assert result == {"id": "exact-match", "alias": "tenant-a", "name": "Tenant A"}
+    assert mock_get.call_count == 2
+    assert mock_get.call_args_list[0][1]["params"] == {
+        "search": "tenant-a",
+        "exact": "true",
+        "briefRepresentation": "false",
+        "max": 100,
+    }
+    assert mock_get.call_args_list[1][1]["params"] == {
+        "search": "tenant-a",
+        "exact": "false",
+        "briefRepresentation": "false",
+        "max": 100,
+    }
+
+
+@patch("m8flow_backend.services.keycloak_service.get_master_admin_token")
+@patch("m8flow_backend.services.keycloak_service.shared_realm_name")
+@patch("m8flow_backend.services.keycloak_service.keycloak_url")
+@patch("m8flow_backend.services.keycloak_service.requests.get")
 def test_get_organization_member_by_username_filters_exact_username(
     mock_get,
     mock_keycloak_url,
@@ -153,6 +195,46 @@ def test_get_organization_member_by_username_filters_exact_username(
     assert mock_get.call_args[1]["params"] == {
         "search": "editor",
         "exact": "true",
+        "max": 100,
+    }
+
+
+@patch("m8flow_backend.services.keycloak_service.get_master_admin_token")
+@patch("m8flow_backend.services.keycloak_service.shared_realm_name")
+@patch("m8flow_backend.services.keycloak_service.keycloak_url")
+@patch("m8flow_backend.services.keycloak_service.requests.get")
+def test_get_organization_member_by_username_falls_back_when_exact_search_returns_empty(
+    mock_get,
+    mock_keycloak_url,
+    mock_shared_realm_name,
+    mock_get_master_admin_token,
+):
+    mock_get_master_admin_token.return_value = "master-token"
+    mock_shared_realm_name.return_value = "shared-users"
+    mock_keycloak_url.return_value = "http://keycloak"
+    mock_get.side_effect = [
+        MagicMock(status_code=200, json=lambda: []),
+        MagicMock(
+            status_code=200,
+            json=lambda: [
+                {"id": "user-1", "username": "editor"},
+                {"id": "user-2", "username": "editorial"},
+            ],
+        ),
+    ]
+
+    result = get_organization_member_by_username("org-uuid-123", "editor")
+
+    assert result == {"id": "user-1", "username": "editor"}
+    assert mock_get.call_count == 2
+    assert mock_get.call_args_list[0][1]["params"] == {
+        "search": "editor",
+        "exact": "true",
+        "max": 100,
+    }
+    assert mock_get.call_args_list[1][1]["params"] == {
+        "search": "editor",
+        "exact": "false",
         "max": 100,
     }
 

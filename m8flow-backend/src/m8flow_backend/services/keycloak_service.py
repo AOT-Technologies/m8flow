@@ -652,25 +652,33 @@ def get_organization_by_alias(
     alias = str(alias).strip()
     token = admin_token or get_master_admin_token()
 
-    r = requests.get(
-        _shared_realm_organizations_url(),
-        params={
-            "search": alias,
-            "exact": "true",
-            "briefRepresentation": "false",
-            "max": 100,
-        },
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-        timeout=30,
-    )
-    r.raise_for_status()
+    def _search_organizations(*, exact: bool) -> list[dict[str, Any]]:
+        r = requests.get(
+            _shared_realm_organizations_url(),
+            params={
+                "search": alias,
+                "exact": "true" if exact else "false",
+                "briefRepresentation": "false",
+                "max": 100,
+            },
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            timeout=30,
+        )
+        r.raise_for_status()
 
-    organizations = r.json()
-    if not isinstance(organizations, list):
-        return None
+        organizations = r.json()
+        if not isinstance(organizations, list):
+            return []
+        return [organization for organization in organizations if isinstance(organization, dict)]
+
+    organizations = _search_organizations(exact=True)
+    if not organizations:
+        # Some Keycloak organization endpoints ignore or mishandle exact=true.
+        # Fall back to a broader search and filter locally.
+        organizations = _search_organizations(exact=False)
 
     for organization in organizations:
-        if isinstance(organization, dict) and organization.get("alias") == alias:
+        if organization.get("alias") == alias:
             return organization
     return None
 
@@ -690,27 +698,30 @@ def get_organization_member_by_username(
     normalized_username = str(username).strip()
     token = admin_token or get_master_admin_token()
 
-    r = requests.get(
-        _shared_realm_organizations_url(organization_id, "members"),
-        params={
-            "search": normalized_username,
-            "exact": "true",
-            "max": 100,
-        },
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-        timeout=30,
-    )
-    r.raise_for_status()
+    def _search_members(*, exact: bool) -> list[dict[str, Any]]:
+        r = requests.get(
+            _shared_realm_organizations_url(organization_id, "members"),
+            params={
+                "search": normalized_username,
+                "exact": "true" if exact else "false",
+                "max": 100,
+            },
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            timeout=30,
+        )
+        r.raise_for_status()
 
-    members = r.json()
-    if not isinstance(members, list):
-        return None
+        members = r.json()
+        if not isinstance(members, list):
+            return []
+        return [member for member in members if isinstance(member, dict)]
 
-    exact_matches = [
-        member
-        for member in members
-        if isinstance(member, dict) and member.get("username") == normalized_username
-    ]
+    members = _search_members(exact=True)
+    if not members:
+        # Some Keycloak organization member searches return no rows when exact=true.
+        members = _search_members(exact=False)
+
+    exact_matches = [member for member in members if member.get("username") == normalized_username]
     if len(exact_matches) != 1:
         return None
     return exact_matches[0]

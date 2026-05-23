@@ -15,6 +15,7 @@ from m8flow_backend.services.tenant_identity_helpers import authentication_ident
 from m8flow_backend.services.tenant_identity_helpers import current_tenant_identifiers
 from m8flow_backend.services.tenant_identity_helpers import extract_realm_from_issuer
 from m8flow_backend.services.tenant_identity_helpers import organization_memberships_from_payload
+from m8flow_backend.services.tenant_identity_helpers import payload_user_belongs_to_tenant
 from m8flow_backend.services.tenant_identity_helpers import tenant_id_from_payload
 from m8flow_backend.services.tenant_identity_helpers import user_belongs_to_current_tenant
 from spiffworkflow_backend.exceptions.api_error import ApiError
@@ -528,7 +529,7 @@ def _selected_tenant_from_request() -> Optional[str]:
 
 
 def _selected_tenant_override_for_shared_multi_org_token(payload: dict[str, Any] | None) -> Optional[str]:
-    """Prefer the selected-tenant cookie over token tenant claims for shared-realm multi-org sessions."""
+    """Prefer the selected-tenant cookie over token tenant claims for shared-realm sessions."""
     if not isinstance(payload, dict):
         return None
 
@@ -541,11 +542,8 @@ def _selected_tenant_override_for_shared_multi_org_token(payload: dict[str, Any]
     if authentication_identifier != _shared_realm_identifier() and issuer_realm != _shared_realm_identifier():
         return None
 
-    memberships = organization_memberships_from_payload(payload)
-    if len(memberships) <= 1:
-        return None
-
     selected_identifiers = current_tenant_identifiers(selected_tenant) or {selected_tenant}
+    memberships = organization_memberships_from_payload(payload)
     for organization_alias, organization_details in memberships:
         organization_identifiers = {organization_alias}
         organization_id = organization_details.get("id")
@@ -553,6 +551,13 @@ def _selected_tenant_override_for_shared_multi_org_token(payload: dict[str, Any]
             organization_identifiers.add(organization_id.strip())
         if organization_identifiers.intersection(selected_identifiers):
             return selected_tenant
+
+    if payload_user_belongs_to_tenant(
+        payload,
+        tenant_id=selected_tenant,
+        tenant_identifiers=selected_identifiers,
+    ):
+        return selected_tenant
 
     return None
 

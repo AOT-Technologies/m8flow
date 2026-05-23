@@ -20,12 +20,21 @@ import { useConfig } from '../utils/useConfig';
 export const M8FLOW_TENANT_STORAGE_KEY = 'm8flow_tenant';
 
 const GLOBAL_ADMIN_LANDING_PATH = '/tenants';
+const TENANT_FINALIZATION_REDIRECT_EXEMPT_PATHS = new Set(['/login', '/tenant']);
 
 const getRootRedirectUrl = () => encodeURIComponent(`${globalThis.location.origin}/`);
 const getGlobalAdminLandingUrl = () =>
   `${globalThis.location.origin}${GLOBAL_ADMIN_LANDING_PATH}`;
 const getCurrentAbsoluteUrl = () =>
   `${globalThis.location.origin}${globalThis.location.pathname}${globalThis.location.search || ''}`;
+
+const getTenantFinalizationRedirectUrl = () => {
+  const pathname = globalThis.location.pathname || '/';
+  if (TENANT_FINALIZATION_REDIRECT_EXEMPT_PATHS.has(pathname)) {
+    return `${globalThis.location.origin}/`;
+  }
+  return getCurrentAbsoluteUrl();
+};
 
 const clearSelectedTenantState = () => {
   localStorage.removeItem(M8FLOW_TENANT_STORAGE_KEY);
@@ -53,7 +62,7 @@ export default function TenantSelectPage() {
 
   const finalizeTenantLogin = (organization: OrganizationMembership) => {
     rememberSelectedTenant(organization);
-    const redirectUrl = encodeURIComponent(getCurrentAbsoluteUrl());
+    const redirectUrl = encodeURIComponent(getTenantFinalizationRedirectUrl());
     globalThis.location.assign(
       `${BACKEND_BASE_URL}/login?redirect_url=${redirectUrl}&authentication_identifier=${encodeURIComponent(SHARED_REALM_IDENTIFIER)}&tenant=${encodeURIComponent(organization.alias)}&tenant_finalization=1`,
     );
@@ -102,7 +111,7 @@ export default function TenantSelectPage() {
           </Typography>
           <Typography color="text.secondary" sx={{ mb: 3 }}>
             Sign in with your shared realm account first. If your account belongs
-            to more than one organization, you will choose the tenant after your
+            to more than one tenant, you will choose the tenant after your
             credentials are accepted.
           </Typography>
           <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
@@ -132,11 +141,11 @@ export default function TenantSelectPage() {
       <Container maxWidth="sm">
         <Box sx={{ padding: 3 }}>
           <Typography variant="h4" component="h1" sx={{ mb: 2 }}>
-            No organizations available
+            No tenants available
           </Typography>
           <Alert severity="warning" sx={{ mb: 3 }}>
             Your account authenticated successfully, but it is not a member of any
-            organization in the shared realm.
+            tenant in the shared realm.
           </Alert>
           <Button
             variant="text"
@@ -169,10 +178,10 @@ export default function TenantSelectPage() {
     <Container maxWidth="sm">
       <Box sx={{ padding: 3 }}>
         <Typography variant="h4" component="h1" sx={{ mb: 2 }}>
-          Select organization
+          Select a Tenant
         </Typography>
         <Typography color="text.secondary" sx={{ mb: 3 }}>
-          Your account has access to more than one organization. Choose the tenant
+          Your account has access to more than one tenant. Choose the tenant
           you want to enter for this session.
         </Typography>
         <Stack spacing={2}>

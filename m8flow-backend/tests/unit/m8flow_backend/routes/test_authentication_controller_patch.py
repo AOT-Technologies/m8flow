@@ -180,6 +180,15 @@ def test_set_new_access_token_in_cookie_preserves_realm_hint_on_token_expiry(
     assert not any("m8flow_auth_realm" in h and "Max-Age=0" in h for h in headers)
 
 
+def test_parse_internal_token_subject_preserves_url_issuer() -> None:
+    assert auth_patch_module._parse_internal_token_subject(
+        "service:http://localhost:6842/realms/m8flow::service_id:26b0e310-ea33-4cea-8bfd-a32dc6bc11d4"
+    ) == (
+        "http://localhost:6842/realms/m8flow",
+        "26b0e310-ea33-4cea-8bfd-a32dc6bc11d4",
+    )
+
+
 def test_handle_tenant_login_request_redirects_to_master_when_realm_hint_present(
     monkeypatch,
 ) -> None:
@@ -1143,6 +1152,149 @@ def test_protected_requests_enrich_multi_org_shared_realm_token_without_active_o
             f"{org_tenant_id}:everybody",
             f"{org_tenant_id}:editor",
         }
+
+
+def test_selected_tenant_cookie_overrides_narrowed_shared_realm_token_for_multi_tenant_user(monkeypatch) -> None:
+    permissions_path = (
+        Path(__file__).resolve().parents[4] / "src" / "m8flow_backend" / "config" / "permissions" / "m8flow.yml"
+    )
+    home_tenant_id = "1ca82290-ffa0-4fa5-b89f-8e0b969e2c48"
+    selected_tenant_id = "7f97071c-e1e8-4e0a-b44b-b389b87d1ee5"
+
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SQLALCHEMY_EXPIRE_ON_COMMIT"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"] = "/v1.0"
+    app.config["SPIFFWORKFLOW_BACKEND_URL"] = "http://localhost:7000"
+    app.config["SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND"] = "http://localhost:7001"
+    app.config["SPIFFWORKFLOW_BACKEND_USE_AUTH_FOR_METRICS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_IS_AUTHORITY_FOR_USER_GROUPS"] = True
+    app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_TENANT_SPECIFIC_FIELDS"] = []
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP"] = "spiff_public"
+    app.config["SPIFFWORKFLOW_BACKEND_PERMISSIONS_FILE_ABSOLUTE_PATH"] = str(permissions_path)
+    app.config["THREAD_LOCAL_DATA"] = SimpleNamespace()
+
+    db.init_app(app)
+    set_canonical_db(db)
+    set_phase(BootPhase.APP_CREATED)
+    register_request_active_hooks(app)
+    register_request_tenant_context_hooks(app)
+
+    app.add_url_rule("/v1.0/onboarding", "onboarding", lambda: ("ok", 200), methods=["GET"])
+    app.add_url_rule("/v1.0/tasks", "tasks", lambda: ("ok", 200), methods=["GET"])
+
+    narrowed_token = {
+        "iss": "http://localhost:7002/realms/m8flow",
+        "sub": "admin-multi-tenant-subject",
+        "preferred_username": "admin",
+        "m8flow_authentication_identifier": "m8flow",
+        "m8flow_tenant_id": home_tenant_id,
+        "m8flow_tenant_alias": "home",
+        "organization": {
+            "home": {"id": home_tenant_id},
+        },
+    }
+    selected_tenant_token = {
+        **narrowed_token,
+        "m8flow_tenant_id": selected_tenant_id,
+        "m8flow_tenant_alias": "it",
+        "organization": {
+            "it": {"id": selected_tenant_id, "groups": ["Administrators"]},
+        },
+    }
+
+    monkeypatch.setattr(auth_patch_module, "_PATCHED", False)
+    monkeypatch.setattr(auth_patch_module, "_REFRESH_TOKEN_TENANT_PATCHED", False)
+    monkeypatch.setattr(auth_patch_module, "_COOKIE_DOMAIN_PATCHED", False)
+    monkeypatch.setattr(auth_patch_module, "_PUBLIC_GROUP_PATCHED", False)
+    monkeypatch.setattr(authorization_service_patch, "_PATCHED", False)
+    monkeypatch.setattr(authentication_controller, "_get_decoded_token", lambda _token: narrowed_token)
+    monkeypatch.setattr(
+        auth_patch_module,
+        "_synchronize_selected_organization_claims",
+        lambda decoded_token, *, selected_tenant_alias, selected_tenant_id: selected_tenant_token,
+    )
+
+    from spiffworkflow_backend.models.user import UserModel
+    from spiffworkflow_backend.services.authentication_service import AuthenticationService
+    from spiffworkflow_backend.services.user_service import UserService
+
+    monkeypatch.setattr(
+        AuthenticationService,
+        "validate_decoded_token",
+        classmethod(
+            lambda cls, decoded, authentication_identifier=None: decoded is narrowed_token
+            or decoded is selected_tenant_token
+        ),
+    )
+
+    with app.app_context():
+        db.create_all()
+        db.session.add_all(
+            [
+                M8flowTenantModel(
+                    id=home_tenant_id,
+                    name="Home",
+                    slug="home",
+                    created_by="test",
+                    modified_by="test",
+                    created_at_in_seconds=1,
+                    updated_at_in_seconds=1,
+                ),
+                M8flowTenantModel(
+                    id=selected_tenant_id,
+                    name="Information Technology",
+                    slug="it",
+                    created_by="test",
+                    modified_by="test",
+                    created_at_in_seconds=2,
+                    updated_at_in_seconds=2,
+                ),
+            ]
+        )
+        db.session.commit()
+
+        apply_refresh_token_tenant_patch()
+        auth_patch_module.apply()
+        authorization_service_patch.apply()
+        app.before_request(authentication_controller.omni_auth)
+
+        existing_user = UserService.create_user(
+            username="admin",
+            service="http://localhost:7002/realms/m8flow",
+            service_id="admin-multi-tenant-subject",
+        )
+        selected_tenant_admin_group = UserService.find_or_create_group(
+            f"{selected_tenant_id}:tenant-admin",
+            source_is_open_id=True,
+        )
+        selected_tenant_everybody_group = UserService.find_or_create_group(
+            f"{selected_tenant_id}:everybody",
+        )
+        UserService.add_user_to_group(existing_user, selected_tenant_admin_group)
+        UserService.add_user_to_group(existing_user, selected_tenant_everybody_group)
+
+    client = app.test_client()
+    client.set_cookie("authentication_identifier", "m8flow")
+    client.set_cookie(SELECTED_TENANT_COOKIE_NAME, selected_tenant_id)
+
+    onboarding_response = client.get("/v1.0/onboarding", headers={"Authorization": "Bearer narrowed-admin-token"})
+    tasks_response = client.get("/v1.0/tasks", headers={"Authorization": "Bearer narrowed-admin-token"})
+
+    assert onboarding_response.status_code == 200
+    assert tasks_response.status_code == 200
+
+    with app.app_context():
+        refreshed_user = UserModel.query.filter_by(
+            service="http://localhost:7002/realms/m8flow",
+            service_id="admin-multi-tenant-subject",
+        ).one()
+        assert {group.identifier for group in refreshed_user.groups} >= {
+            f"{selected_tenant_id}:everybody",
+            f"{selected_tenant_id}:tenant-admin",
+        }
 def test_refresh_token_tenant_patch_auto_provisions_missing_user_with_separate_roles_and_groups(
     monkeypatch,
 ) -> None:
@@ -1463,6 +1615,7 @@ def test_tenant_finalization_redirects_directly_with_existing_shared_realm_sessi
     app = Flask(__name__)
     app.config["SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"] = "/v1.0"
     app.config["SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND"] = "https://app.example.com"
+    app.config["THREAD_LOCAL_DATA"] = SimpleNamespace()
     monkeypatch.setenv("M8FLOW_KEYCLOAK_SHARED_REALM", "shared-users")
 
     captured: dict[str, object] = {}
@@ -1479,7 +1632,14 @@ def test_tenant_finalization_redirects_directly_with_existing_shared_realm_sessi
 
     def fake_create_user_from_sign_in(decoded_token):
         captured["decoded_token"] = decoded_token
-        return object()
+
+        def fake_encode_auth_token(extra_payload):
+            captured["session_claims"] = extra_payload
+            return "tenant-a-session-token"
+
+        return SimpleNamespace(
+            encode_auth_token=fake_encode_auth_token
+        )
 
     with (
         app.test_request_context(
@@ -1534,11 +1694,130 @@ def test_tenant_finalization_redirects_directly_with_existing_shared_realm_sessi
         "m8flow_tenant_alias": "tenant-a",
         "m8flow_tenant_name": "Tenant A",
     }
+    assert captured["session_claims"] == {
+        "organization": {
+            "tenant-a": {
+                "id": "org-tenant-a",
+                "groups": ["tenant-admin"],
+            }
+        },
+        "m8flow_tenant_id": "tenant-a-id",
+        "m8flow_tenant_alias": "tenant-a",
+        "m8flow_tenant_name": "Tenant A",
+        "m8flow_authentication_identifier": "shared-users",
+    }
     cookie_headers = result.headers.getlist("Set-Cookie")
     assert any(
         f"{SELECTED_TENANT_COOKIE_NAME}=tenant-a-id" in header and "Path=/" in header
         for header in cookie_headers
     )
+    assert any("access_token=tenant-a-session-token" in header for header in cookie_headers)
+
+
+def test_tenant_finalization_redirects_directly_for_multi_org_shared_realm_session(monkeypatch) -> None:
+    app = Flask(__name__)
+    app.config["SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"] = "/v1.0"
+    app.config["SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND"] = "https://app.example.com"
+    app.config["THREAD_LOCAL_DATA"] = SimpleNamespace()
+    monkeypatch.setenv("M8FLOW_KEYCLOAK_SHARED_REALM", "shared-users")
+
+    captured: dict[str, object] = {}
+
+    def fake_parse_jwt_token(authentication_identifier, token):
+        captured["auth_identifier"] = authentication_identifier
+        captured["token"] = token
+        return {
+            "iss": "http://localhost:7002/realms/shared-users",
+            "sub": "user-1",
+            "preferred_username": "admin",
+            "organization": {
+                "tenant-a": {"id": "tenant-a-id"},
+                "tenant-b": {"id": "tenant-b-id"},
+            },
+        }
+
+    def fake_create_user_from_sign_in(decoded_token):
+        captured["decoded_token"] = decoded_token
+
+        def fake_encode_auth_token(extra_payload):
+            captured["session_claims"] = extra_payload
+            return "tenant-a-session-token"
+
+        return SimpleNamespace(
+            encode_auth_token=fake_encode_auth_token
+        )
+
+    with (
+        app.test_request_context(
+            path="/v1.0/login?tenant=tenant-a&tenant_finalization=1&authentication_identifier=shared-users",
+            method="GET",
+            environ_overrides={
+                "HTTP_COOKIE": (
+                    "authentication_identifier=shared-users; "
+                    "access_token=existing-access-token"
+                )
+            },
+        ),
+        patch(
+            "m8flow_backend.services.tenant_service.TenantService.check_tenant_exists",
+            return_value={"exists": True, "tenant_id": "tenant-a-id"},
+        ),
+        patch(
+            "spiffworkflow_backend.services.authentication_service.AuthenticationService.parse_jwt_token",
+            fake_parse_jwt_token,
+        ),
+        patch(
+            "m8flow_backend.services.keycloak_service.get_organization_by_alias",
+            return_value={"id": "org-tenant-a", "alias": "tenant-a", "name": "Tenant A"},
+        ),
+        patch(
+            "m8flow_backend.services.keycloak_service.get_organization_member_groups",
+            return_value=[{"name": "tenant-admin", "path": "/tenant-admin"}],
+        ),
+        patch(
+            "spiffworkflow_backend.services.authorization_service.AuthorizationService.create_user_from_sign_in",
+            fake_create_user_from_sign_in,
+        ),
+    ):
+        result = _handle_tenant_login_request(app)
+
+    assert result is not None
+    assert result.status_code == 302
+    assert result.headers["Location"] == "https://app.example.com"
+    assert captured["auth_identifier"] == "shared-users"
+    assert captured["token"] == "existing-access-token"
+    assert captured["decoded_token"] == {
+        "iss": "http://localhost:7002/realms/shared-users",
+        "sub": "user-1",
+        "preferred_username": "admin",
+        "organization": {
+            "tenant-a": {
+                "id": "org-tenant-a",
+                "groups": ["tenant-admin"],
+            }
+        },
+        "m8flow_tenant_id": "tenant-a-id",
+        "m8flow_tenant_alias": "tenant-a",
+        "m8flow_tenant_name": "Tenant A",
+    }
+    assert captured["session_claims"] == {
+        "organization": {
+            "tenant-a": {
+                "id": "org-tenant-a",
+                "groups": ["tenant-admin"],
+            }
+        },
+        "m8flow_tenant_id": "tenant-a-id",
+        "m8flow_tenant_alias": "tenant-a",
+        "m8flow_tenant_name": "Tenant A",
+        "m8flow_authentication_identifier": "shared-users",
+    }
+    cookie_headers = result.headers.getlist("Set-Cookie")
+    assert any(
+        f"{SELECTED_TENANT_COOKIE_NAME}=tenant-a-id" in header and "Path=/" in header
+        for header in cookie_headers
+    )
+    assert any("access_token=tenant-a-session-token" in header for header in cookie_headers)
 
 
 def test_tenant_finalization_falls_back_to_standard_login_when_session_cannot_be_parsed(monkeypatch) -> None:
@@ -1655,3 +1934,154 @@ def test_tenant_finalization_falls_back_to_standard_login_when_session_lacks_org
         f"{SELECTED_TENANT_COOKIE_NAME}=tenant-a-id" in header and "Path=/" in header
         for header in cookie_headers
     )
+
+
+def test_finalized_shared_realm_token_reuses_existing_user_for_follow_up_requests(monkeypatch) -> None:
+    permissions_path = (
+        Path(__file__).resolve().parents[4] / "src" / "m8flow_backend" / "config" / "permissions" / "m8flow.yml"
+    )
+    home_tenant_id = "1ca82290-ffa0-4fa5-b89f-8e0b969e2c48"
+    selected_tenant_id = "7f97071c-e1e8-4e0a-b44b-b389b87d1ee5"
+
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SQLALCHEMY_EXPIRE_ON_COMMIT"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"] = "/v1.0"
+    app.config["SPIFFWORKFLOW_BACKEND_URL"] = "http://localhost:7000"
+    app.config["SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND"] = "http://localhost:7001"
+    app.config["SPIFFWORKFLOW_BACKEND_USE_AUTH_FOR_METRICS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_IS_AUTHORITY_FOR_USER_GROUPS"] = True
+    app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_TENANT_SPECIFIC_FIELDS"] = []
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP"] = "spiff_public"
+    app.config["SPIFFWORKFLOW_BACKEND_PERMISSIONS_FILE_ABSOLUTE_PATH"] = str(permissions_path)
+    app.config["THREAD_LOCAL_DATA"] = SimpleNamespace()
+
+    db.init_app(app)
+    set_canonical_db(db)
+    set_phase(BootPhase.APP_CREATED)
+    register_request_active_hooks(app)
+    register_request_tenant_context_hooks(app)
+
+    app.add_url_rule("/v1.0/onboarding", "onboarding", lambda: ("ok", 200), methods=["GET"])
+    app.add_url_rule("/v1.0/tasks", "tasks", lambda: ("ok", 200), methods=["GET"])
+    app.add_url_rule("/v1.0/extensions", "extensions", lambda: ("ok", 200), methods=["GET"])
+
+    shared_realm_token = {
+        "iss": "http://localhost:7002/realms/m8flow",
+        "sub": "admin-multi-tenant-subject",
+        "preferred_username": "admin",
+        "roles": ["default-roles-m8flow"],
+        "m8flow_authentication_identifier": "m8flow",
+        "organization": {
+            "home": {"id": home_tenant_id},
+            "it": {"id": selected_tenant_id},
+        },
+    }
+
+    monkeypatch.setattr(auth_patch_module, "_PATCHED", False)
+    monkeypatch.setattr(auth_patch_module, "_REFRESH_TOKEN_TENANT_PATCHED", False)
+    monkeypatch.setattr(auth_patch_module, "_COOKIE_DOMAIN_PATCHED", False)
+    monkeypatch.setattr(auth_patch_module, "_PUBLIC_GROUP_PATCHED", False)
+    monkeypatch.setattr(auth_patch_module, "_INTERNAL_TOKEN_SUBJECT_PATCHED", False)
+    monkeypatch.setattr(authorization_service_patch, "_PATCHED", False)
+
+    from spiffworkflow_backend.services.authentication_service import AuthenticationService
+    from spiffworkflow_backend.services.user_service import UserService
+
+    original_parse_jwt_token = AuthenticationService.parse_jwt_token
+
+    def fake_parse_jwt_token(cls, authentication_identifier, token):
+        if token == "existing-access-token":
+            return shared_realm_token
+        return original_parse_jwt_token(authentication_identifier, token)
+
+    monkeypatch.setattr(AuthenticationService, "parse_jwt_token", classmethod(fake_parse_jwt_token))
+
+    with app.app_context():
+        db.create_all()
+        db.session.add_all(
+            [
+                M8flowTenantModel(
+                    id=home_tenant_id,
+                    name="Home",
+                    slug="home",
+                    created_by="test",
+                    modified_by="test",
+                    created_at_in_seconds=1,
+                    updated_at_in_seconds=1,
+                ),
+                M8flowTenantModel(
+                    id=selected_tenant_id,
+                    name="Information Technology",
+                    slug="it",
+                    created_by="test",
+                    modified_by="test",
+                    created_at_in_seconds=2,
+                    updated_at_in_seconds=2,
+                ),
+            ]
+        )
+        db.session.commit()
+
+        apply_refresh_token_tenant_patch()
+        auth_patch_module.apply()
+        authorization_service_patch.apply()
+        app.before_request(authentication_controller.omni_auth)
+
+        UserService.create_user(
+            username="admin",
+            service="http://localhost:7002/realms/m8flow",
+            service_id="admin-multi-tenant-subject",
+            email="admin@example.com",
+        )
+
+        with (
+            app.test_request_context(
+                path="/v1.0/login?tenant=it&tenant_finalization=1&authentication_identifier=m8flow",
+                method="GET",
+                environ_overrides={
+                    "HTTP_COOKIE": (
+                        "authentication_identifier=m8flow; "
+                        "access_token=existing-access-token"
+                    )
+                },
+            ),
+            patch(
+                "m8flow_backend.services.tenant_service.TenantService.check_tenant_exists",
+                return_value={"exists": True, "tenant_id": selected_tenant_id},
+            ),
+            patch(
+                "m8flow_backend.services.keycloak_service.get_organization_by_alias",
+                return_value={"id": selected_tenant_id, "alias": "it", "name": "Information Technology"},
+            ),
+            patch(
+                "m8flow_backend.services.keycloak_service.get_organization_member_groups",
+                return_value=[{"name": "Administrators", "path": "/Administrators"}],
+            ),
+        ):
+            finalization_response = _handle_tenant_login_request(app)
+
+        issued_headers = finalization_response.headers.getlist("Set-Cookie")
+        access_token_cookie = next(header for header in issued_headers if header.startswith("access_token="))
+        selected_tenant_cookie = next(
+            header for header in issued_headers if header.startswith(f"{SELECTED_TENANT_COOKIE_NAME}=")
+        )
+        authentication_identifier_cookie = next(
+            header for header in issued_headers if header.startswith("authentication_identifier=")
+        )
+
+    client = app.test_client()
+    issued_access_token = access_token_cookie.split(";", 1)[0].split("=", 1)[1]
+    client.set_cookie(SELECTED_TENANT_COOKIE_NAME, selected_tenant_cookie.split(";", 1)[0].split("=", 1)[1])
+    client.set_cookie(
+        "authentication_identifier",
+        authentication_identifier_cookie.split(";", 1)[0].split("=", 1)[1],
+    )
+
+    auth_headers = {"Authorization": f"Bearer {issued_access_token}"}
+
+    assert client.get("/v1.0/tasks", headers=auth_headers).status_code == 200
+    assert client.get("/v1.0/onboarding", headers=auth_headers).status_code == 200
+    assert client.get("/v1.0/extensions", headers=auth_headers).status_code == 200

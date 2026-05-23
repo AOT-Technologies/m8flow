@@ -391,6 +391,46 @@ def user_belongs_to_current_tenant(
     return False
 
 
+def local_user_from_payload(payload: Mapping[str, Any] | None) -> Any | None:
+    """Resolve the local mirrored user row for an external token payload."""
+    if payload is None:
+        return None
+
+    issuer = payload.get("iss")
+    subject = payload.get("sub")
+    if not isinstance(issuer, str) or not issuer.strip():
+        return None
+    if not isinstance(subject, str) or not subject.strip():
+        return None
+
+    try:
+        from spiffworkflow_backend.models.user import UserModel
+
+        return (
+            UserModel.query.filter(UserModel.service == issuer.strip())
+            .filter(UserModel.service_id == subject.strip())
+            .first()
+        )
+    except Exception:
+        return None
+
+
+def payload_user_belongs_to_tenant(
+    payload: Mapping[str, Any] | None,
+    tenant_id: str | None = None,
+    tenant_identifiers: set[str] | None = None,
+) -> bool:
+    """Return whether the local mirrored user for a token belongs to the given tenant."""
+    user = local_user_from_payload(payload)
+    if user is None:
+        return False
+    return user_belongs_to_current_tenant(
+        user,
+        tenant_id=tenant_id,
+        tenant_identifiers=tenant_identifiers,
+    )
+
+
 def _shared_realm_service_issuer() -> str | None:
     """Return the configured shared-realm issuer URL used for local user rows."""
     try:

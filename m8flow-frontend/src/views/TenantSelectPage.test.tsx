@@ -164,6 +164,41 @@ describe('TenantSelectPage', () => {
     expect(document.cookie).toContain('m8flow_selected_tenant=tenant-b-id');
   });
 
+  it('does not redirect tenant finalization back to auth or tenant-selection routes', () => {
+    mockUseConfig.mockReturnValue({
+      ENABLE_MULTITENANT: true,
+      BACKEND_BASE_URL: '/v1.0',
+      MASTER_REALM_IDENTIFIER: 'ops-admin',
+      SHARED_REALM_IDENTIFIER: 'shared-users',
+    });
+    mockIsLoggedIn.mockReturnValue(true);
+    mockGetOrganizationMemberships.mockReturnValue([
+      { alias: 'tenant-b', id: 'tenant-b-id', name: 'Tenant B' },
+      { alias: 'tenant-c', id: 'tenant-c-id', name: 'Tenant C' },
+    ]);
+
+    const assignMock = vi.fn();
+    vi.stubGlobal('location', {
+      origin: 'http://localhost',
+      pathname: '/tenant',
+      search: '',
+      assign: assignMock,
+      replace: vi.fn(),
+      href: 'http://localhost/tenant',
+    });
+
+    render(<TenantSelectPage />);
+
+    fireEvent.click(screen.getByTestId('organization-option-tenant-b'));
+
+    expect(assignMock).toHaveBeenCalledWith(
+      expect.stringContaining(`redirect_url=${encodeURIComponent('http://localhost/')}`),
+    );
+    expect(assignMock).not.toHaveBeenCalledWith(
+      expect.stringContaining(`redirect_url=${encodeURIComponent('http://localhost/tenant')}`),
+    );
+  });
+
   it('routes platform admin sign-in through the configured master realm', () => {
     mockUseConfig.mockReturnValue({
       ENABLE_MULTITENANT: true,
