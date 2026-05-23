@@ -7,6 +7,7 @@ from flask import Response, jsonify, request, g
 
 from spiffworkflow_backend.exceptions.api_error import ApiError
 
+from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
 from m8flow_backend.models.template import TemplateModel
 from m8flow_backend.services.template_service import TemplateService
 
@@ -17,9 +18,14 @@ def _safe_content_disposition(filename: str) -> dict[str, str]:
     return {"Content-Disposition": f"attachment; filename*=UTF-8''{safe}"}
 
 
-def _serialize_template(template: TemplateModel, include_bpmn: bool = True) -> dict:
+def _serialize_template(
+    template: TemplateModel,
+    include_bpmn: bool = True,
+    tenant_details_by_id: dict[str, dict[str, str]] | None = None,
+) -> dict:
     """Serialize template with optional BPMN content. Includes files list from template.files."""
     files_list = template.files or []
+    tenant_id = template.m8f_tenant_id
     result = {
         "id": template.id,
         "templateKey": template.template_key,
@@ -28,19 +34,22 @@ def _serialize_template(template: TemplateModel, include_bpmn: bool = True) -> d
         "description": template.description,
         "tags": template.tags,
         "category": template.category,
-        "tenantId": template.m8f_tenant_id,
+        "tenantId": tenant_id,
         "visibility": template.visibility,
         "files": [
             {"fileType": e.get("file_type", "bpmn"), "fileName": e.get("file_name", "")}
             for e in files_list
         ],
         "isPublished": template.is_published,
+        "isDeleted": template.is_deleted if hasattr(template, 'is_deleted') else False,
         "status": "published" if template.is_published else (template.status or "draft"),
         "createdBy": template.created_by,
         "modifiedBy": template.modified_by,
         "createdAtInSeconds": template.created_at_in_seconds,
         "updatedAtInSeconds": template.updated_at_in_seconds,
     }
+    if tenant_details_by_id and tenant_id in tenant_details_by_id:
+        result["tenant"] = tenant_details_by_id[tenant_id]
 
     if include_bpmn:
         try:
@@ -60,10 +69,14 @@ def template_list():
     search = request.args.get("search")  # Text search in name/description
     template_key = request.args.get("template_key")
     published_only = request.args.get("published_only", "false").lower() == "true"
+    include_deleted = request.args.get("include_deleted", "false").lower() == "true"
+    deleted_only = request.args.get("deleted_only", "false").lower() == "true"
     sort_by = request.args.get("sort_by")  # created, name
     order = request.args.get("order", "desc").lower()
     if order not in ("asc", "desc"):
         order = "desc"
+    # Super Admin tenant filter: only respected when the caller is super admin
+    filter_tenant_id = request.args.get("tenantId") or request.args.get("tenant_id")
 
     # Pagination params
     try:
@@ -79,6 +92,7 @@ def template_list():
     templates, pagination = TemplateService.list_templates(
         user=user,
         tenant_id=getattr(g, "m8flow_tenant_id", None),
+        filter_tenant_id=filter_tenant_id,
         latest_only=latest_only,
         category=category,
         tag=tag,
@@ -87,14 +101,31 @@ def template_list():
         search=search,
         template_key=template_key,
         published_only=published_only,
+        include_deleted=include_deleted,
+        deleted_only=deleted_only,
         sort_by=sort_by,
         order=order,
         page=page,
         per_page=per_page,
     )
+    tenant_ids = sorted({t.m8f_tenant_id for t in templates if t.m8f_tenant_id})
+    tenant_details_by_id: dict[str, dict[str, str]] = {}
+    if tenant_ids:
+        tenants = (
+            M8flowTenantModel.query.filter(M8flowTenantModel.id.in_(tenant_ids))
+            .all()
+        )
+        tenant_details_by_id = {
+            tenant.id: {"id": tenant.id, "name": tenant.name, "slug": tenant.slug}
+            for tenant in tenants
+        }
+
     # For list responses, omit BPMN content for performance
     return jsonify({
-        "results": [_serialize_template(t, include_bpmn=False) for t in templates],
+        "results": [
+            _serialize_template(t, include_bpmn=False, tenant_details_by_id=tenant_details_by_id)
+            for t in templates
+        ],
         "pagination": pagination,
     })
 
@@ -178,7 +209,8 @@ def template_create():
 def template_get_by_id(id: int):
     user = getattr(g, "user", None)
     include_contents = request.args.get("include_contents", "true").lower() == "true"
-    template = TemplateService.get_template_by_id(id, user=user)
+    include_deleted = request.args.get("include_deleted", "false").lower() == "true"
+    template = TemplateService.get_template_by_id(id, user=user, include_deleted=include_deleted)
     if template is None:
         raise ApiError("not_found", "Template not found", status_code=404)
     return jsonify(_serialize_template(template, include_bpmn=include_contents))
@@ -254,7 +286,7 @@ def template_get_bpmn(id: int):
 def template_get_file(id: int, file_name: str):
     """Download a single file by name."""
     user = getattr(g, "user", None)
-    template = TemplateService.get_template_by_id(id, user=user)
+    template = TemplateService.get_template_by_id(id, user=user, include_deleted=True)
     if template is None:
         raise ApiError("not_found", "Template not found", status_code=404)
     found = None
@@ -344,6 +376,12 @@ def template_delete_by_id(id: int):
     user = getattr(g, "user", None)
     TemplateService.delete_template_by_id(id, user=user)
     return jsonify({"status": "success", "message": "Template deleted successfully"}), 200
+
+
+def template_restore_by_id(id: int):
+    user = getattr(g, "user", None)
+    template = TemplateService.restore_template_by_id(id, user=user)
+    return jsonify(_serialize_template(template)), 200
 
 
 def template_create_process_model(id: int):

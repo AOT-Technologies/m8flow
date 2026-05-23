@@ -1,7 +1,7 @@
 """Remove the legacy default tenant row after canonical shared-realm migration.
 
-Revision ID: i2b3c4d5e6f7
-Revises: h1a2b3c4d5e6
+Revision ID: j2b3c4d5e6f8
+Revises: i2b3c4d5e6f7
 Create Date: 2026-05-08
 """
 
@@ -14,8 +14,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "i2b3c4d5e6f7"
-down_revision = "h1a2b3c4d5e6"
+revision = "j2b3c4d5e6f8"
+down_revision = "i2b3c4d5e6f7"
 branch_labels = None
 depends_on = None
 

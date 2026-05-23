@@ -73,3 +73,28 @@ def test_non_postgres_does_nothing() -> None:
 
     assert connection.calls == []
     assert connection.close_calls == 0
+
+
+def test_postgres_super_admin_request_sets_bypass_rls_flag() -> None:
+    os.environ.pop("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", None)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
+    connection = FakeConnection("postgresql")
+
+    with app.test_request_context("/"):
+        g._m8flow_super_admin_request = True
+        g._m8flow_tenant_context_exempt_request = True
+        tenant_scoping_patch._set_postgres_tenant_context(None, None, connection)
+
+    assert connection.calls == [("SET LOCAL app.bypass_rls = 'on'", None)]
+
+
+def test_postgres_exempt_non_super_admin_request_skips_all_session_flags() -> None:
+    os.environ.pop("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", None)
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
+    connection = FakeConnection("postgresql")
+
+    with app.test_request_context("/"):
+        g._m8flow_tenant_context_exempt_request = True
+        tenant_scoping_patch._set_postgres_tenant_context(None, None, connection)
+
+    assert connection.calls == []

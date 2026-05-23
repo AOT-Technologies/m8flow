@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import {
   Button,
   TextField,
@@ -15,6 +16,8 @@ import Grid from '@mui/material/Grid';
 import { Add as AddAlt, Delete as TrashCan } from '@mui/icons-material';
 import { modifyProcessIdentifierForPathParam, slugifyString } from '../helpers';
 import HttpService from '../services/HttpService';
+import TenantService from '../services/TenantService';
+import UserService from '../services/UserService';
 import SpiffTooltip from '@spiffworkflow-frontend/components/SpiffTooltip';
 
 type OwnProps = {
@@ -34,8 +37,18 @@ export default function ProcessModelForm({
   const [idHasBeenUpdatedByUser, setIdHasBeenUpdatedByUser] =
     useState<boolean>(false);
   const [displayNameInvalid, setDisplayNameInvalid] = useState<boolean>(false);
+  const [superAdminTenantId, setSuperAdminTenantId] = useState<string>('');
+  const [superAdminTenantInvalid, setSuperAdminTenantInvalid] =
+    useState<boolean>(false);
   const { t } = useTranslation();
   const navigate = useNavigate();
+
+  const isSuperAdminCreate = mode === 'new' && UserService.isSuperAdmin();
+  const { data: tenants = [], isLoading: tenantsLoading } = useQuery({
+    queryKey: ['tenants'],
+    queryFn: () => TenantService.getAllTenants(),
+    enabled: isSuperAdminCreate,
+  });
 
   const navigateToProcessModel = (result: ProcessModel) => {
     if ('id' in result) {
@@ -58,6 +71,10 @@ export default function ProcessModelForm({
     }
     if (processModel.display_name === '') {
       setDisplayNameInvalid(true);
+      hasErrors = true;
+    }
+    if (isSuperAdminCreate && !superAdminTenantId.trim()) {
+      setSuperAdminTenantInvalid(true);
       hasErrors = true;
     }
     if (hasErrors) {
@@ -85,6 +102,9 @@ export default function ProcessModelForm({
       Object.assign(postBody, {
         id: `${processGroupId}/${processModel.id}`,
       });
+    }
+    if (isSuperAdminCreate && superAdminTenantId.trim()) {
+      Object.assign(postBody, { m8f_tenant_id: superAdminTenantId.trim() });
     }
 
     HttpService.makeCallToBackend({
@@ -278,6 +298,47 @@ export default function ProcessModelForm({
         sx={{ mb: 2 }}
       />,
     ];
+
+    if (isSuperAdminCreate) {
+      textInputs.push(
+        <FormControl
+          key="super-admin-tenant-select"
+          fullWidth
+          error={superAdminTenantInvalid}
+          sx={{ mb: 2 }}
+          disabled={tenantsLoading}
+        >
+          <InputLabel id="super-admin-tenant-label">{t('tenant')}</InputLabel>
+          <Select
+            labelId="super-admin-tenant-label"
+            id="super-admin-tenant-id"
+            data-testid="super-admin-tenant-select"
+            value={superAdminTenantId}
+            label={t('tenant')}
+            onChange={(e) => {
+              setSuperAdminTenantId(e.target.value as string);
+              if (superAdminTenantInvalid && (e.target.value as string).trim()) {
+                setSuperAdminTenantInvalid(false);
+              }
+            }}
+          >
+            <MenuItem value="">
+              <em>{t('select_tenant_placeholder')}</em>
+            </MenuItem>
+            {tenants.map((tenant) => (
+              <MenuItem key={tenant.id} value={tenant.id}>
+                {tenant.name} ({tenant.slug})
+              </MenuItem>
+            ))}
+          </Select>
+          {superAdminTenantInvalid ? (
+            <Typography variant="caption" color="error" sx={{ mt: 0.5, ml: 1.5 }}>
+              {t('tenant_required_for_super_admin')}
+            </Typography>
+          ) : null}
+        </FormControl>,
+      );
+    }
 
     if (mode === 'new') {
       textInputs.push(

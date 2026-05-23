@@ -811,6 +811,16 @@ paths:
           schema:
             type: boolean
           description: When true, return only published templates
+        - name: include_deleted
+          in: query
+          schema:
+            type: boolean
+          description: When true, include soft-deleted templates in results
+        - name: deleted_only
+          in: query
+          schema:
+            type: boolean
+          description: When true, return only soft-deleted templates
         - name: sort_by
           in: query
           schema:
@@ -989,6 +999,13 @@ paths:
             type: boolean
             default: true
           description: Whether to include BPMN content in the response. Set to false for better performance when only metadata is needed.
+        - name: include_deleted
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Whether to include soft-deleted templates. Set to true to fetch a deleted template's details.
       responses:
         "200":
           description: Template retrieved successfully
@@ -1071,8 +1088,12 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
     delete:
-      summary: Soft delete template
-      description: Marks a template as deleted by setting is_deleted flag to true without removing from database
+      summary: Delete template
+      description: >
+        State-aware delete behavior:
+        draft templates are hard-deleted (creator or tenant-admin);
+        published templates are soft-deleted with a renamed name suffix
+        (tenant-admin only).
       operationId: m8flow_backend.routes.templates_controller.template_delete_by_id
       tags:
         - Template
@@ -1085,13 +1106,13 @@ paths:
           description: Unique identifier of the template to delete
       responses:
         "200":
-          description: Template soft deleted successfully
+          description: Template deleted successfully
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/MessageResponse"
         "400":
-          description: Bad request - published template cannot be deleted (immutable)
+          description: Bad request - invalid state
           content:
             application/json:
               schema:
@@ -1116,6 +1137,52 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "500":
           description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /templates/{id}/restore:
+    post:
+      summary: Restore deleted template
+      description: Restores a soft-deleted template (tenant-admin only)
+      operationId: m8flow_backend.routes.templates_controller.template_restore_by_id
+      tags:
+        - Template
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Unique identifier of the template to restore
+      responses:
+        "200":
+          description: Template restored successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Template"
+        "400":
+          description: Bad request - template is not deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - tenant-admin role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Template not found
           content:
             application/json:
               schema:
@@ -1148,7 +1215,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/CreateProcessModelFromTemplateResponse"
         "400":
-          description: Bad request - missing required fields
+          description: Bad request - missing required fields or template version is not published
         "401":
           description: Unauthorized
         "404":
@@ -1422,7 +1489,7 @@ paths:
   /nats-tokens:
     post:
       summary: Generate a NATS event token
-      description: Generates a new unique token for a tenant to use when publishing NATS events. Restricted to tenant-admin and integrator.
+      description: Generates a new unique token for a tenant to use when publishing NATS events. Restricted to tenant-admin, integrator, and super-admin.
       operationId: m8flow_backend.routes.nats_token_controller.generate_token
       tags:
         - NATS

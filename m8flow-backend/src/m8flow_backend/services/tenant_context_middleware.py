@@ -29,6 +29,7 @@ except ImportError:
 
 from m8flow_backend.canonical_db import get_canonical_db
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
+from m8flow_backend.services.tenant_identity_helpers import extract_realm_from_issuer
 from m8flow_backend.tenancy import (
     SELECTED_TENANT_COOKIE_NAME,
     TENANT_CLAIM,
@@ -43,6 +44,8 @@ from m8flow_backend.tenancy import (
 
 LOGGER = logging.getLogger(__name__)
 TENANT_SELECTION_HEADER_NAME = "x-m8flow-tenant-id"
+MASTER_REALM_IDENTIFIER = "master"
+SUPER_ADMIN_ROLE = "super-admin"
 
 
 def _shared_realm_identifier() -> str:
@@ -131,6 +134,18 @@ def resolve_request_tenant() -> None:
         raise RuntimeError(
             "Canonical db not set; ensure app has been initialized (set_canonical_db must be called during startup)."
         )
+
+    if _is_tenant_context_exempt_request():
+        g._m8flow_tenant_context_exempt_request = True
+        g._m8flow_public_request = True
+        return
+
+    # Master realm super-admin is global by design and must bypass tenant scoping.
+    if _is_master_super_admin_request():
+        g._m8flow_tenant_context_exempt_request = True
+        g._m8flow_public_request = False
+        g._m8flow_super_admin_request = True
+        return
 
     # NOTE: We do NOT return early when auth is disabled.
     # Auth-disabled should only mean "skip authorization checks",
@@ -484,6 +499,88 @@ def _tenant_from_jwt_claim_cached(*, allow_decode: bool) -> Optional[str]:
     g._m8flow_decoded_token = decoded
     g._m8flow_decoded_token_raw = token
     return _authenticated_tenant_id_from_payload(decoded)
+
+
+def _decoded_token_cached(*, allow_decode: bool) -> Optional[dict[str, Any]]:
+    token = _token_from_request()
+    if not token:
+        return None
+
+    cached_decoded = getattr(g, "_m8flow_decoded_token", None)
+    cached_raw = getattr(g, "_m8flow_decoded_token_raw", None)
+    if isinstance(cached_decoded, dict) and cached_raw == token:
+        return cached_decoded
+
+    if not allow_decode:
+        return None
+
+    try:
+        authentication_identifier = _authentication_identifier()
+        if not authentication_identifier:
+            return None
+        decoded = AuthenticationService.parse_jwt_token(authentication_identifier, token)
+    except Exception as exc:
+        if not getattr(g, "_m8flow_warned_decode_token", False):
+            g._m8flow_warned_decode_token = True
+            LOGGER.warning("Failed to decode token for tenant resolution: %s", exc)
+        return None
+
+    if isinstance(decoded, dict):
+        g._m8flow_decoded_token = decoded
+        g._m8flow_decoded_token_raw = token
+        return decoded
+    return None
+
+
+def _is_master_super_admin_request() -> bool:
+    user = getattr(g, "user", None)
+    user_groups = getattr(user, "groups", None)
+    if isinstance(user_groups, list):
+        for group in user_groups:
+            identifier = getattr(group, "identifier", None)
+            if not isinstance(identifier, str):
+                continue
+            normalized = identifier.strip()
+            if not normalized:
+                continue
+            if normalized == SUPER_ADMIN_ROLE or normalized.endswith(f":{SUPER_ADMIN_ROLE}"):
+                return True
+
+    decoded = _decoded_token_cached(allow_decode=True)
+    if not isinstance(decoded, dict):
+        return False
+
+    realm = extract_realm_from_issuer(decoded.get("iss"))
+    if realm != MASTER_REALM_IDENTIFIER:
+        return False
+
+    realm_access = decoded.get("realm_access")
+    if isinstance(realm_access, dict):
+        roles = realm_access.get("roles")
+        if isinstance(roles, list) and SUPER_ADMIN_ROLE in roles:
+            return True
+
+    # Some Keycloak master-realm browser tokens may expose role/group data only
+    # via the "groups" claim (for example "/super-admin").
+    groups = decoded.get("groups")
+    if isinstance(groups, list):
+        for group in groups:
+            if not isinstance(group, str):
+                continue
+            normalized = group.strip("/").split("/")[-1]
+            if normalized == SUPER_ADMIN_ROLE:
+                return True
+    return False
+
+
+def _get_str_claims(decoded: Any, claims: tuple[str, ...]) -> Optional[str]:
+    if not isinstance(decoded, dict):
+        return None
+    for claim in claims:
+        value = decoded.get(claim)
+        if isinstance(value, str) and value.strip():
+            return value
+    return None
 
 
 def _token_from_request() -> Optional[str]:

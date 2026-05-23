@@ -54,6 +54,16 @@ set for that transaction. Protected request handling still remains fail-closed:
 tenant-scoped routes and jobs must resolve an explicit tenant context before
 tenant-scoped reads or writes can proceed.
 
+Master realm super-admin (global operator)
+- M8Flow supports a Keycloak `master` realm `super-admin` user for cross-tenant visibility.
+- For this principal, request-level tenant scoping is bypassed intentionally so the user can
+  query/view tenant-scoped data across tenants.
+- PostgreSQL RLS uses `SET LOCAL app.bypass_rls = 'on'` for these sessions, but **bypass is SELECT-only**.
+  INSERT/UPDATE/DELETE still require `app.current_tenant` to match `m8f_tenant_id`, so super-admin
+  remains read-only across tenant data even if an application-layer guard is missed.
+- Keep this role tightly controlled; it is equivalent to platform-level read access.
+- Normal tenant users remain tenant-scoped and continue to require tenant context.
+
 Non-PostgreSQL databases
 MySQL/SQLite rely on ORM filtering only (no DB-level RLS enforcement).
 

@@ -57,7 +57,7 @@ export default function TenantPage() {
     isLoading: loading,
     error: queryError,
     refetch,
-  } = useTenants();
+  } = useTenants(true);
   const canCreateTenant =
     permissionsLoaded && ability.can("POST", "/m8flow/tenant-realms");
   const { t } = useTranslation();

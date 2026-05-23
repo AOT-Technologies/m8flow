@@ -27,6 +27,14 @@ vi.mock("../services/TemplateService", () => ({
     exportTemplate: vi.fn(),
     updateTemplate: vi.fn(),
     getAllVersions: vi.fn(() => Promise.resolve([])),
+    deleteTemplate: vi.fn(() => Promise.resolve()),
+  },
+}));
+
+vi.mock("../services/UserService", () => ({
+  default: {
+    getUserName: vi.fn(() => "tester"),
+    getPreferredUsername: vi.fn(() => "tester"),
   },
 }));
 
@@ -69,6 +77,7 @@ function templatePayload(overrides: Record<string, unknown> = {}) {
     name: overrides.name ?? "Test Template",
     version: "V1",
     visibility: overrides.visibility ?? "TENANT",
+    createdBy: overrides.createdBy ?? "tester",
     files: [],
     isPublished: overrides.isPublished ?? false,
     createdAt: "2024-01-01T00:00:00.000Z",
@@ -98,7 +107,7 @@ describe("TemplateModelerPage", () => {
     });
   });
 
-  it("renders template name and does not show Delete button", async () => {
+  it("renders template name and shows Delete button for draft owned by current user", async () => {
     vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
       opts.successCallback?.(templatePayload({ isPublished: false }) as any);
     });
@@ -106,10 +115,11 @@ describe("TemplateModelerPage", () => {
     renderWithRouter(<TemplateModelerPage />);
 
     await waitFor(() => {
-      expect(screen.getByText(/Template: Test Template/i)).toBeInTheDocument();
+      expect(screen.getByText("Test Template")).toBeInTheDocument();
     });
 
-    expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete" })).toBeEnabled();
   });
 
   it("shows Publish button when template is not published", async () => {
@@ -132,10 +142,69 @@ describe("TemplateModelerPage", () => {
     renderWithRouter(<TemplateModelerPage />);
 
     await waitFor(() => {
-      expect(screen.getByText(/Template: Test Template/i)).toBeInTheDocument();
+      expect(screen.getByText("Test Template")).toBeInTheDocument();
     });
 
     expect(screen.queryByRole("button", { name: "Publish" })).not.toBeInTheDocument();
+  });
+
+  it("disables Create Process Model button when template version is draft", async () => {
+    vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
+      opts.successCallback?.(templatePayload({ isPublished: false }) as any);
+    });
+
+    renderWithRouter(<TemplateModelerPage />);
+
+    const createButton = await screen.findByRole("button", { name: "Create Process Model" });
+    expect(createButton).toBeDisabled();
+  });
+
+  it("enables Create Process Model button when template version is published", async () => {
+    vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
+      opts.successCallback?.(templatePayload({ isPublished: true }) as any);
+    });
+
+    renderWithRouter(<TemplateModelerPage />);
+
+    const createButton = await screen.findByRole("button", { name: "Create Process Model" });
+    expect(createButton).toBeEnabled();
+  });
+
+  it("disables Delete for published template when user lacks admin permission", async () => {
+    // No admin permission (ability.can returns false for /m8flow/admin/templates)
+    vi.mocked(usePermissionFetcher).mockReturnValue({
+      ability: {
+        can: (method: string, uri: string) => {
+          if (uri === "/m8flow/admin/templates") return false;
+          return true; // general template permissions
+        },
+      } as any,
+      permissionsLoaded: true,
+    });
+    vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
+      opts.successCallback?.(templatePayload({ isPublished: true }) as any);
+    });
+
+    renderWithRouter(<TemplateModelerPage />);
+
+    const deleteButton = await screen.findByRole("button", { name: "Delete" });
+    expect(deleteButton).toBeDisabled();
+  });
+
+  it("enables Delete for published template when user has admin permission", async () => {
+    // Has admin permission (ability.can returns true for /m8flow/admin/templates)
+    vi.mocked(usePermissionFetcher).mockReturnValue({
+      ability: { can: () => true } as any,
+      permissionsLoaded: true,
+    });
+    vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
+      opts.successCallback?.(templatePayload({ isPublished: true }) as any);
+    });
+
+    renderWithRouter(<TemplateModelerPage />);
+
+    const deleteButton = await screen.findByRole("button", { name: "Delete" });
+    expect(deleteButton).toBeEnabled();
   });
 
   it("shows visibility dropdown for draft template when user has edit permission", async () => {

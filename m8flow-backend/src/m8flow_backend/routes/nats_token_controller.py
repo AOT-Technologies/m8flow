@@ -32,7 +32,7 @@ def generate_token():
     """
     Generate or regenerate a NATS token for the current tenant.
     
-    Restricted to users with 'manage-nats-tokens' permission (tenant-admin, integrator).
+    Restricted to users with 'manage-nats-tokens' permission (tenant-admin, integrator, super-admin).
     The permission check is performed by SpiffWorkflow's API security layer based on the
     operationId and URI defined in api.yml/m8flow.yml.
     """

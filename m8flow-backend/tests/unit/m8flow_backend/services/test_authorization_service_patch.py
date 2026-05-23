@@ -797,6 +797,19 @@ def test_parse_permissions_yaml_into_group_info_preserves_global_super_admin_gro
     super_admin_permission_uris = {p["uri"] for p in super_admin_group["permissions"]}
     assert "/frontend-access" in super_admin_permission_uris
     assert "/m8flow/tenants*" in super_admin_permission_uris
+    assert "/m8flow/templates/*" in super_admin_permission_uris
+    assert "/authentications/*" in super_admin_permission_uris
+    assert "/secrets/*" in super_admin_permission_uris
+    assert "/process-instances/for-me" in super_admin_permission_uris
+    assert "/process-instances" in super_admin_permission_uris
+
+    super_admin_actions_by_uri: dict[str, set[str]] = {}
+    for permission in super_admin_group["permissions"]:
+        super_admin_actions_by_uri.setdefault(permission["uri"], set()).update(permission["actions"])
+
+    assert "create" in super_admin_actions_by_uri["/process-instances/for-me"]
+    assert "create" in super_admin_actions_by_uri["/process-instances"]
+    assert "update" not in super_admin_actions_by_uri["/tasks/*"]
 
 
 def test_parse_permissions_yaml_submitter_includes_process_model_read_dependencies(monkeypatch) -> None:

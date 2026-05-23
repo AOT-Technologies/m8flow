@@ -406,3 +406,55 @@ def test_create_process_model_from_template_raises_not_found_for_missing_templat
             )
 
         assert exc_info.value.error_code == "not_found"
+
+
+def test_create_process_model_from_template_requires_published_template() -> None:
+    """Process model creation is blocked when template version is draft."""
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        g.m8flow_tenant_id = "tenant-1"
+
+        tenant = M8flowTenantModel(
+            id="tenant-1",
+            name="Test Tenant",
+            slug="test-tenant",
+            created_by="test",
+            modified_by="test",
+        )
+        db.session.add(tenant)
+        db.session.commit()
+
+        template = TemplateModel(
+            template_key="draft-template",
+            version="V2",
+            name="Draft Template",
+            m8f_tenant_id="tenant-1",
+            visibility=TemplateVisibility.private.value,
+            files=[{"file_type": "bpmn", "file_name": "diagram.bpmn"}],
+            is_published=False,
+            created_by="testuser",
+            modified_by="testuser",
+        )
+        db.session.add(template)
+        db.session.commit()
+
+        user = MagicMock()
+        user.username = "testuser"
+
+        with pytest.raises(ApiError) as exc_info:
+            TemplateService.create_process_model_from_template(
+                template_id=template.id,
+                process_group_id="test-group",
+                process_model_id="test-model",
+                display_name="Test Model",
+                description=None,
+                user=user,
+            )
+
+        assert exc_info.value.error_code == "invalid_template_state"
+        assert exc_info.value.status_code == 400

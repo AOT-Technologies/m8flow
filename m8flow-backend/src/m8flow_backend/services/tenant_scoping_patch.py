@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from flask import g, has_request_context
-from sqlalchemy import event
+from sqlalchemy import event, tuple_
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import with_loader_criteria
 
@@ -15,6 +15,8 @@ from m8flow_backend.models.tenant_scoped import TenantScoped
 from m8flow_backend.services.tenant_identity_helpers import current_tenant_id_or_none
 from m8flow_backend.tenancy import (
     LOGGER,
+    get_context_tenant_id,
+    is_super_admin_request,
     is_tenant_context_exempt_request,
 )
 
@@ -43,6 +45,18 @@ def _values_need_tenant_scope(values: Mapping[str, Any] | Sequence[Mapping[str, 
     return False
 
 
+def _locked_tenant_id_for_writes() -> str | None:
+    """Tenant explicitly set for this request (super-admin cross-tenant lock-in)."""
+    if has_request_context():
+        tid = getattr(g, "m8flow_tenant_id", None)
+        if isinstance(tid, str) and tid.strip():
+            return tid.strip()
+    ctx = get_context_tenant_id()
+    if isinstance(ctx, str) and ctx.strip():
+        return ctx.strip()
+    return None
+
+
 def _with_tenant(values: Mapping[str, Any] | Sequence[Mapping[str, Any]], tenant_id: str) -> Any:
     """Add tenant id to values if missing."""
     if isinstance(values, Mapping):
@@ -60,7 +74,7 @@ def _with_tenant(values: Mapping[str, Any] | Sequence[Mapping[str, Any]], tenant
 
 def _set_tenant_on_objects(objects: Sequence[Any]) -> None:
     """Set tenant id on objects if missing."""
-    if is_tenant_context_exempt_request():
+    if is_tenant_context_exempt_request() and not _locked_tenant_id_for_writes():
         return
     missing_tenant_objects = [obj for obj in objects if hasattr(obj, "m8f_tenant_id") and not getattr(obj, "m8f_tenant_id")]
     if not missing_tenant_objects:
@@ -101,7 +115,7 @@ def _patch_insert_or_ignore_duplicate() -> None:
     ) -> Any:
         """Insert record(s), ignoring duplicates, with tenant scoping."""
         if isinstance(model_class, type) and issubclass(model_class, TenantScoped):
-            if is_tenant_context_exempt_request():
+            if is_tenant_context_exempt_request() and not _locked_tenant_id_for_writes():
                 return _ORIGINALS["insert_or_ignore_duplicate"](
                     model_class, values, postgres_conflict_index_elements
                 )
@@ -291,9 +305,26 @@ def _patch_reference_cache_basic_query() -> None:
     if "reference_cache_basic_query" in _ORIGINALS:
         return
 
-    _ORIGINALS["reference_cache_basic_query"] = ReferenceCacheModel.basic_query
+    _ORIGINALS["reference_cache_basic_query"] = ReferenceCacheModel.basic_query.__func__
 
     def patched_basic_query(cls: type) -> Any:
+        if is_super_admin_request():
+            latest_generation_per_tenant = (
+                db.session.query(
+                    ReferenceCacheModel.m8f_tenant_id.label("tenant_id"),  # type: ignore[attr-defined]
+                    db.func.max(ReferenceCacheModel.generation_id).label("max_generation_id"),
+                )
+                .group_by(ReferenceCacheModel.m8f_tenant_id)  # type: ignore[attr-defined]
+                .subquery()
+            )
+            return cls.query.filter(
+                tuple_(cls.m8f_tenant_id, cls.generation_id).in_(  # type: ignore[attr-defined]
+                    db.session.query(
+                        latest_generation_per_tenant.c.tenant_id,
+                        latest_generation_per_tenant.c.max_generation_id,
+                    )
+                )
+            )
         if is_tenant_context_exempt_request():
             return _ORIGINALS["reference_cache_basic_query"]()
         tenant_id = _require_tenant_scope_id()
@@ -313,7 +344,7 @@ def _patch_reference_cache_basic_query() -> None:
 @event.listens_for(Session, "before_flush")  # type: ignore[misc]
 def _set_tenant_on_flush(session: Session, _flush_context: Any, _instances: Any) -> None:
     """Set tenant id on objects if missing."""
-    if is_tenant_context_exempt_request():
+    if is_tenant_context_exempt_request() and not _locked_tenant_id_for_writes():
         return
     missing_tenant_objects = [obj for obj in session.new if hasattr(obj, "m8f_tenant_id") and not getattr(obj, "m8f_tenant_id")]
     if not missing_tenant_objects:
@@ -370,9 +401,12 @@ def _resolve_tenant_id_for_db() -> str:
 
 @event.listens_for(Session, "after_begin")  # type: ignore[misc]
 def _set_postgres_tenant_context(session: Session, transaction: Any, connection: Any) -> None:
-    if is_tenant_context_exempt_request():
-        return
     if connection.dialect.name != "postgresql":
+        return
+    if is_super_admin_request():
+        connection.exec_driver_sql("SET LOCAL app.bypass_rls = 'on'")
+        return
+    if is_tenant_context_exempt_request():
         return
 
     # During early request handling (e.g. omni_auth token verification), DB access can happen

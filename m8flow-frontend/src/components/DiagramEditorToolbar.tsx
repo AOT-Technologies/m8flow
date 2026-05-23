@@ -26,6 +26,10 @@ export type DiagramEditorToolbarProps = {
   referencesButton: React.ReactNode;
   activeUserElement?: React.ReactElement;
   onSetPrimaryFileAvailable?: boolean;
+  /** When false, hides the Delete button even if CASL allows it (e.g. template file views). */
+  onDeleteAvailable?: boolean;
+  /** When false, hides the View XML button (e.g. template file views). */
+  onViewXmlAvailable?: boolean;
 };
 
 export default function DiagramEditorToolbar({
@@ -47,6 +51,8 @@ export default function DiagramEditorToolbar({
   referencesButton,
   activeUserElement,
   onSetPrimaryFileAvailable,
+  onDeleteAvailable = true,
+  onViewXmlAvailable = true,
 }: DiagramEditorToolbarProps) {
   const { t } = useTranslation();
 
@@ -71,20 +77,22 @@ export default function DiagramEditorToolbar({
         </Button>
       </Can>
       {processModel && <ProcessInstanceRun processModel={processModel} />}
-      <Can
-        I="DELETE"
-        a={targetUris.processModelFileShowPath}
-        ability={ability}
-      >
-        {fileName && !isPrimaryFile && (
-          <ConfirmButton
-            data-testid="process-model-file-delete-button"
-            description={t('delete_file_description', { file: fileName })}
-            onConfirmation={onDelete}
-            buttonLabel={t('delete')}
-          />
-        )}
-      </Can>
+      {onDeleteAvailable && (
+        <Can
+          I="DELETE"
+          a={targetUris.processModelFileShowPath}
+          ability={ability}
+        >
+          {fileName && !isPrimaryFile && (
+            <ConfirmButton
+              data-testid="process-model-file-delete-button"
+              description={t('delete_file_description', { file: fileName })}
+              onConfirmation={onDelete}
+              buttonLabel={t('delete')}
+            />
+          )}
+        </Can>
+      )}
       <Can I="PUT" a={targetUris.processModelShowPath} ability={ability}>
         {onSetPrimaryFileAvailable && (
           <Button data-testid="diagram-set-primary-file-button" onClick={onSetPrimaryFile} variant="contained">
@@ -101,14 +109,16 @@ export default function DiagramEditorToolbar({
           {t('diagram_download')}
         </Button>
       </Can>
-      <Can I="GET" a={targetUris.processModelFileShowPath} ability={ability}>
-        {ability.can("PUT", targetUris.processModelFileShowPath) &&
-          canViewXml && (
-            <Button data-testid="diagram-view-xml-button" variant="contained" onClick={onViewXml}>
-              {t("diagram_view_xml")}
-            </Button>
-          )}
-      </Can>
+      {onViewXmlAvailable && (
+        <Can I="GET" a={targetUris.processModelFileShowPath} ability={ability}>
+          {ability.can("PUT", targetUris.processModelFileShowPath) &&
+            canViewXml && (
+              <Button data-testid="diagram-view-xml-button" variant="contained" onClick={onViewXml}>
+                {t("diagram_view_xml")}
+              </Button>
+            )}
+        </Can>
+      )}
       {/* Save as Template moved to Process Model page (not in diagram editor) */}
       {referencesButton}
       <Can

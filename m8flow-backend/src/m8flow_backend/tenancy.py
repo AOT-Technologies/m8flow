@@ -223,6 +223,12 @@ def is_public_request() -> bool:
     return is_tenant_context_exempt_request()
 
 
+def is_super_admin_request() -> bool:
+    if not has_request_context():
+        return False
+    return bool(getattr(g, "_m8flow_super_admin_request", False))
+
+
 def get_tenant_id(*, warn_on_default: bool = True) -> str:
     """
     Return the tenant id for the current execution.
