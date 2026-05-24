@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import HttpService from '@spiffworkflow-frontend/services/HttpService';
 import {
   convertSvgElementToHtmlString,
@@ -36,11 +36,22 @@ export function useDiagramImport(options: UseDiagramImportOptions) {
     setDiagramXMLString,
   } = options;
 
+  // ── Stable refs for all mutable option values ──────────────────────────────
+  // Storing these in refs means the useEffect never re-runs just because
+  // a parent component re-rendered and passed a new function reference.
+  const optsRef = useRef(options);
   useEffect(() => {
-    const taskSpecsThatCannotBeHighlighted = ['Root', 'Start', 'End'];
+    optsRef.current = options;
+  });
 
+  // Track which "source" we last loaded so we never re-import the same diagram.
+  const lastLoadedSourceRef = useRef<string | null | undefined>(null);
+
+  useEffect(() => {
     if (!diagramModelerState) return undefined;
-    if (performingXmlUpdates) return undefined;
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+    const taskSpecsThatCannotBeHighlighted = ['Root', 'Start', 'End'];
 
     function handleError(err: any) {
       console.error('ERROR:', err);
@@ -92,10 +103,12 @@ export function useDiagramImport(options: UseDiagramImportOptions) {
       task: BasicTask,
       bpmnProcessIdentifiers: string[],
     ) {
+      // Read from ref so this closure is always up-to-date without being in the dep array
+      const { onCallActivityOverlayClick: onOverlayClick, diagramType: dt } = optsRef.current;
       if (
         taskIsMultiInstanceChild(task) ||
-        !onCallActivityOverlayClick ||
-        diagramType !== 'readonly' ||
+        !onOverlayClick ||
+        dt !== 'readonly' ||
         !diagramModelerState
       ) {
         return;
@@ -114,10 +127,10 @@ export function useDiagramImport(options: UseDiagramImportOptions) {
           `<button class="bjs-drilldown">${icon}</button>`,
         );
         button.addEventListener('click', (newEvent: any) => {
-          onCallActivityOverlayClick(task, newEvent);
+          onOverlayClick(task, newEvent);
         });
         button.addEventListener('auxclick', (newEvent: any) => {
-          onCallActivityOverlayClick(task, newEvent);
+          onOverlayClick(task, newEvent);
         });
         overlays.add(task.bpmn_identifier, 'drilldown', {
           position: { bottom: -10, right: -8 },
@@ -148,16 +161,19 @@ export function useDiagramImport(options: UseDiagramImportOptions) {
         handleError(error);
         return;
       }
-      if (diagramType === 'dmn') return;
+
+      // Read latest values from ref at the time this event fires
+      const { diagramType: dt, tasks: currentTasks } = optsRef.current;
+      if (dt === 'dmn') return;
 
       const canvas = diagramModelerState.get('canvas');
       canvas.zoom(FIT_VIEWPORT, 'auto');
 
-      if (tasks) {
+      if (currentTasks) {
         const bpmnProcessIdentifiers = getBpmnProcessIdentifiers(
           canvas.getRootElement(),
         );
-        tasks.forEach((task: BasicTask) => {
+        currentTasks.forEach((task: BasicTask) => {
           let className = '';
           if (task.state === 'COMPLETED') {
             className = 'completed-task-highlight';
@@ -189,13 +205,13 @@ export function useDiagramImport(options: UseDiagramImportOptions) {
     function dmnTextHandler(text: string) {
       const decisionId = `decision_${makeid(7)}`;
       const newText = text.replaceAll('{{DECISION_ID}}', decisionId);
-      setDiagramXMLString(newText);
+      optsRef.current.setDiagramXMLString(newText);
     }
 
     function bpmnTextHandler(text: string) {
       const processId = `Process_${makeid(7)}`;
       const newText = text.replaceAll('{{PROCESS_ID}}', processId);
-      setDiagramXMLString(newText);
+      optsRef.current.setDiagramXMLString(newText);
     }
 
     function fetchDiagramFromURL(
@@ -209,50 +225,58 @@ export function useDiagramImport(options: UseDiagramImportOptions) {
     }
 
     function setDiagramXMLStringFromResponseJson(result: any) {
-      setDiagramXMLString(result.file_contents);
+      optsRef.current.setDiagramXMLString(result.file_contents);
     }
 
     function fetchDiagramFromJsonAPI() {
+      const { processModelId: pmId, fileName: fn } = optsRef.current;
       HttpService.makeCallToBackend({
-        path: `/process-models/${processModelId}/files/${fileName}`,
+        path: `/process-models/${pmId}/files/${fn}`,
         successCallback: setDiagramXMLStringFromResponseJson,
       });
     }
 
+    // Register the import.done listener once for this modeler instance
     (diagramModelerState as any).on('import.done', onImportDone);
 
-    if (diagramXML) {
-      setDiagramXMLString(diagramXML);
-    } else if (url) {
-      fetchDiagramFromURL(url);
-    } else if (fileName) {
-      fetchDiagramFromJsonAPI();
-    } else {
-      let newDiagramFileName = 'new_bpmn_diagram.bpmn';
-      let textHandler = bpmnTextHandler;
-      if (diagramType === 'dmn') {
-        newDiagramFileName = 'new_dmn_diagram.dmn';
-        textHandler = dmnTextHandler;
-      }
-      fetchDiagramFromURL(`/${newDiagramFileName}`, textHandler);
+    // ── Load the diagram (only if the source actually changed) ────────────────
+    // Read the current source values from the ref so we always use the latest
+    // values without needing them in the dependency array.
+    const { diagramXML: xml, url: urlVal, fileName: fn, diagramType: dt, performingXmlUpdates: performing } = optsRef.current;
+
+    if (performing) {
+      // Don't load while an XML update is in progress
+      return () => {
+        (diagramModelerState as any).off('import.done', onImportDone);
+      };
     }
 
-    // Cleanup: destroy the modeler when effect re-runs or component unmounts
-    return () => {
-      if (diagramModelerState) {
-        (diagramModelerState as any).destroy();
+    const currentSource = xml || urlVal || fn || dt;
+    if (lastLoadedSourceRef.current !== currentSource) {
+      lastLoadedSourceRef.current = currentSource;
+      if (xml) {
+        optsRef.current.setDiagramXMLString(xml);
+      } else if (urlVal) {
+        fetchDiagramFromURL(urlVal);
+      } else if (fn) {
+        fetchDiagramFromJsonAPI();
+      } else {
+        let newDiagramFileName = 'new_bpmn_diagram.bpmn';
+        let textHandler = bpmnTextHandler;
+        if (dt === 'dmn') {
+          newDiagramFileName = 'new_dmn_diagram.dmn';
+          textHandler = dmnTextHandler;
+        }
+        fetchDiagramFromURL(`/${newDiagramFileName}`, textHandler);
       }
+    }
+
+    return () => {
+      (diagramModelerState as any).off('import.done', onImportDone);
     };
-  }, [
-    diagramModelerState,
-    diagramType,
-    diagramXML,
-    fileName,
-    onCallActivityOverlayClick,
-    performingXmlUpdates,
-    processModelId,
-    setDiagramXMLString,
-    tasks,
-    url,
-  ]);
+    // ── Only re-run when the modeler instance itself changes ─────────────────
+    // All other values (diagramXML, fileName, tasks, callbacks, etc.) are read
+    // from optsRef at runtime, so they never need to be in this array.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [diagramModelerState]);
 }

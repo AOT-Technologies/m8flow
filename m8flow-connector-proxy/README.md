@@ -17,6 +17,33 @@ Connectors are isolated Python packages that conform to a pre-defined protocol i
 | [**Salesforce**](#salesforce-connector)| Integrating with the Salesforce CRM platform. |
 | [**Stripe**](#stripe-connector) | Payment processing and billing with Stripe. |
 
+## Connector version pinning (release safety)
+
+This service installs connectors from the [`AOT-Technologies/m8flow-connectors`](https://github.com/AOT-Technologies/m8flow-connectors) repository.
+
+- **Rule**: connectors must be pinned to a **release tag** (not a branch like `main`) so rebuilding an older m8flow release cannot silently pick up newer connector code.
+- **Where it’s pinned**:
+  - `pyproject.toml`: pins the dependency source to an `m8flow-connectors` tag (for example `tag = "1.0.0"`).
+  - `poetry.lock`: records the exact resolved git SHA for reproducibility.
+
+### m8flow → m8flow-connectors version mapping
+
+Maintain this table so you can reproduce any historical release:
+
+| m8flow release tag | m8flow-connectors tag |
+|-------------------|-----------------------|
+| `main` (unreleased) | `1.0.0` |
+
+When you cut a new m8flow release tag, add a new row for it here (and update the pinned connector tag in `pyproject.toml` + `poetry.lock` in the same PR).
+
+### How to bump connectors
+
+1. Pick the `m8flow-connectors` release tag you want to consume (for example `1.0.1`).
+2. Update the connector dependencies in `pyproject.toml` to that tag.
+3. Regenerate `poetry.lock` (do **not** rebuild from a floating branch).
+4. Update the **m8flow → m8flow-connectors** mapping table above.
+5. Ship those changes together with your m8flow release PR so the release is reproducible later.
+
 ## How to Access Connectors
 
 Connectors are directly integrated into the M8Flow process modeler and are configured using **Service Tasks**. 

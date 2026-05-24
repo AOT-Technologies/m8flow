@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { Box, Button, CircularProgress, Alert, Snackbar } from "@mui/material";
 import ProcessBreadcrumb from "@spiffworkflow-frontend/components/ProcessBreadcrumb";
 import ReactDiagramEditor from "@spiffworkflow-frontend/components/ReactDiagramEditor";
@@ -27,6 +28,7 @@ function getFirstBpmnFileName(template: Template | null): string | null {
 }
 
 export default function TemplateFileDiagramPage() {
+  const { t } = useTranslation();
   const { templateId, fileName } = useParams<{ templateId: string; fileName: string }>();
   const navigate = useNavigate();
   const [template, setTemplate] = useState<Template | null>(null);
@@ -232,7 +234,7 @@ export default function TemplateFileDiagramPage() {
   const lower = decodedFileName.toLowerCase();
   const diagramType = lower.endsWith(".dmn") ? "dmn" : "bpmn";
   const hotCrumbs: [string, string?][] = [
-    ["Templates", "/templates"],
+    [t("templates"), "/templates"],
     [template?.name ?? "Template", `/templates/${id}`],
     [decodedFileName],
   ];

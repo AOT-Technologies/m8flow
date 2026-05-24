@@ -179,6 +179,7 @@ if [[ -n "$resolved_bpmn_spec_dir" ]]; then
   export M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR="$resolved_bpmn_spec_dir"
 fi
 
+# Bridge: upstream spiffworkflow-backend reads SPIFFWORKFLOW_BACKEND_* env vars — map from M8FLOW_ names.
 export SPIFFWORKFLOW_BACKEND_DATABASE_URI="${M8FLOW_BACKEND_DATABASE_URI}"
 export SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR="${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR}"
 

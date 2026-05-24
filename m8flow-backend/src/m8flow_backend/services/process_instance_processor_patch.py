@@ -9,6 +9,15 @@ from m8flow_backend.services.tenant_identity_helpers import find_users_for_curre
 _PATCHED = False
 
 
+def _task_sort_ts(task: object) -> float:
+    val = getattr(task, "last_state_change", None)
+    if isinstance(val, (int, float)):
+        return float(val)
+    if hasattr(val, "timestamp"):
+        return val.timestamp()
+    return 0.0
+
+
 def apply() -> None:
     """Patch lane-owner resolution so task potential owners stay tenant-aware."""
     global _PATCHED
@@ -18,6 +27,7 @@ def apply() -> None:
     from SpiffWorkflow.task import Task as SpiffTask  # type: ignore
     from spiffworkflow_backend.interfaces import PotentialOwnerIdList
     from spiffworkflow_backend.models.human_task_user import HumanTaskUserAddedBy
+    from spiffworkflow_backend.services.process_instance_processor import CustomBpmnScriptEngine
     from spiffworkflow_backend.services.process_instance_processor import ProcessInstanceProcessor
     from spiffworkflow_backend.services.user_service import UserService
 
@@ -71,5 +81,39 @@ def apply() -> None:
             "lane_assignment_id": lane_assignment_id,
         }
 
+    original_evaluate = CustomBpmnScriptEngine.evaluate
+
+    def patched_evaluate(self, task, expression: str, external_context: dict | None = None):  # noqa: ANN001
+        """Expose workflow-level and completed-task data to script and DMN evaluation."""
+        merged_external_context = {}
+        task_workflow = getattr(task, "workflow", None)
+
+        workflow_data = getattr(task_workflow, "data", None)
+        if isinstance(workflow_data, dict) and workflow_data:
+            workflow_data_objects_from_data = workflow_data.get("data_objects")
+            if isinstance(workflow_data_objects_from_data, dict) and workflow_data_objects_from_data:
+                merged_external_context.update(workflow_data_objects_from_data)
+            merged_external_context.update({k: v for k, v in workflow_data.items() if k != "data_objects"})
+
+        workflow_data_objects = getattr(task_workflow, "data_objects", None)
+        if isinstance(workflow_data_objects, dict) and workflow_data_objects:
+            merged_external_context.update(workflow_data_objects)
+
+        if task_workflow is not None and hasattr(ProcessInstanceProcessor, "get_tasks_with_data"):
+            completed_tasks_with_data = ProcessInstanceProcessor.get_tasks_with_data(task_workflow)
+            for completed_task in sorted(
+                completed_tasks_with_data,
+                key=_task_sort_ts,
+            ):
+                completed_task_data = getattr(completed_task, "data", None)
+                if isinstance(completed_task_data, dict) and completed_task_data:
+                    merged_external_context.update(completed_task_data)
+
+        if isinstance(external_context, dict) and external_context:
+            merged_external_context.update(external_context)
+
+        return original_evaluate(self, task, expression, external_context=merged_external_context)
+
+    CustomBpmnScriptEngine.evaluate = patched_evaluate
     ProcessInstanceProcessor.get_potential_owners_from_task = patched_get_potential_owners_from_task
     _PATCHED = True

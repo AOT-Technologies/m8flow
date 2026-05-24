@@ -7,7 +7,7 @@ import App from './App';
 // Note: These imports use the @spiffworkflow-frontend alias configured in vite.config.ts
 import '@spiffworkflow-frontend/index.scss';
 import '@spiffworkflow-frontend/index.css';
-import '@spiffworkflow-frontend/i18n';
+import './i18n';
 
 // @ts-expect-error TS(2345) FIXME: Argument of type 'HTMLElement | null' is not assignable
 const root = ReactDOMClient.createRoot(document.getElementById('root'));

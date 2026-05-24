@@ -93,6 +93,7 @@ if ($resolvedBpmnSpecDir) {
   $env:M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR = $resolvedBpmnSpecDir
 }
 
+# Bridge: upstream spiffworkflow-backend reads SPIFFWORKFLOW_BACKEND_* env vars — map from M8FLOW_ names.
 $env:SPIFFWORKFLOW_BACKEND_DATABASE_URI = $env:M8FLOW_BACKEND_DATABASE_URI
 $env:SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR = $env:M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR
 

@@ -230,7 +230,7 @@ function SideNav({
       ],
     },
     {
-      text: "Templates",
+      text: t("templates"),
       icon: <Description />,
       route: "/templates",
       id: routeIdentifiers.TEMPLATES,

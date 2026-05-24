@@ -12,6 +12,7 @@ import {
 import { Routes, Route, useLocation, Navigate } from 'react-router-dom';
 import MenuIcon from '@mui/icons-material/Menu';
 import { ReactElement, Suspense, lazy, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ErrorBoundary } from 'react-error-boundary';
 import { ErrorBoundaryFallback } from '@spiffworkflow-frontend/ErrorBoundaryFallack';
 import SideNav from './components/SideNav';
@@ -195,6 +196,7 @@ const fadeIn = 'fadeIn';
 const fadeOutImmediate = 'fadeOutImmediate';
 
 export default function ContainerForExtensions() {
+  const { t } = useTranslation();
   const { ENABLE_MULTITENANT } = useConfig();
   const [backendIsUp, setBackendIsUp] = useState<boolean | null>(null);
   const [canAccessFrontend, setCanAccessFrontend] = useState<boolean>(true);
@@ -589,7 +591,7 @@ export default function ContainerForExtensions() {
                       ? [
                           {
                             page: "/../tenants",
-                            label: "Tenants",
+                            label: t("tenants"),
                             display_location:
                               UiSchemaDisplayLocation.primary_nav_item,
                           } as UiSchemaUxElement,

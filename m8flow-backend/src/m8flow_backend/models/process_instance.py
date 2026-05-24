@@ -17,6 +17,7 @@ from spiffworkflow_backend.models.db import SpiffworkflowBaseDBModel
 from spiffworkflow_backend.models.db import db
 from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScoped
 from m8flow_backend.models.future_task import FutureTaskModel
+from m8flow_backend.models.process_model_bpmn_version import ProcessModelBpmnVersionModel  # noqa: F401
 from m8flow_backend.models.task import TaskModel  # noqa: F401
 from spiffworkflow_backend.models.user import UserModel
 
@@ -112,6 +113,13 @@ class ProcessInstanceModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBase
     # this could also be a blank string for older instances since we were putting blank strings in here as well
     bpmn_version_control_identifier: str | None = db.Column(db.String(255))
     last_milestone_bpmn_name: str | None = db.Column(db.String(255), index=True)
+
+    bpmn_version_id: int | None = db.Column(
+        db.Integer,
+        db.ForeignKey("process_model_bpmn_version.id"),
+        nullable=True,
+        index=True,
+    )
 
     bpmn_xml_file_contents: str | None = None
     bpmn_xml_file_contents_retrieval_error: str | None = None

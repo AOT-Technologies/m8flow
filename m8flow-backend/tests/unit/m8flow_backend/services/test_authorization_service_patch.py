@@ -1,18 +1,38 @@
 """Unit tests for authorization_service_patch helper behavior."""
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
 
 from flask import Flask
 
 from m8flow_backend.services import authorization_service_patch
+from m8flow_backend.services.authorization_service_patch import _find_existing_user_for_sign_in
+from m8flow_backend.services.authorization_service_patch import _find_existing_user_in_same_realm
 from m8flow_backend.services.authorization_service_patch import _keycloak_realm_roles_as_groups
 from m8flow_backend.services.authorization_service_patch import _normalize_keycloak_groups
 from m8flow_backend.services.authorization_service_patch import _normalize_permissions_yaml_config
 from m8flow_backend.services.authorization_service_patch import _tenant_id_for_user_info
 from m8flow_backend.services.authorization_service_patch import extract_realm_from_issuer
 from m8flow_backend.tenancy import TENANT_CLAIM
+
+
+MIGRATION_PATH = (
+    Path(__file__).resolve().parents[4]
+    / "migrations"
+    / "versions"
+    / "h1a2b3c4d5e6_add_user_username_realm_uniqueness.py"
+)
+
+
+def _load_user_realm_migration_module():
+    spec = importlib.util.spec_from_file_location("user_realm_uniqueness_migration", MIGRATION_PATH)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_tenant_id_for_user_info_prefers_token_claim(monkeypatch) -> None:
@@ -79,6 +99,103 @@ def test_normalize_keycloak_groups_uses_leaf_for_path_values() -> None:
     user_info = {"groups": ["/super-admin", "/a/b/reviewer", "viewer", "/viewer", "", None]}
 
     assert _normalize_keycloak_groups(user_info) == ["super-admin", "reviewer", "viewer"]
+
+
+def test_find_existing_user_in_same_realm_prefers_most_recent_match() -> None:
+    users = [
+        SimpleNamespace(
+            id=1,
+            username="editor",
+            service="http://localhost:7002/realms/m8flow",
+            created_at_in_seconds=100,
+            updated_at_in_seconds=100,
+        ),
+        SimpleNamespace(
+            id=6,
+            username="editor",
+            service="http://localhost:7002/realms/m8flow",
+            created_at_in_seconds=200,
+            updated_at_in_seconds=250,
+        ),
+        SimpleNamespace(
+            id=7,
+            username="editor",
+            service="http://localhost:7002/realms/other",
+            created_at_in_seconds=300,
+            updated_at_in_seconds=300,
+        ),
+    ]
+
+    match = _find_existing_user_in_same_realm("editor", "http://localhost:7002/realms/m8flow", users=users)
+
+    assert match is users[1]
+
+
+def test_find_existing_user_for_sign_in_resolves_exact_subject_only() -> None:
+    users = [
+        SimpleNamespace(
+            id=6,
+            username="editor",
+            service="http://localhost:7002/realms/m8flow",
+            service_id="old-subject",
+            created_at_in_seconds=200,
+            updated_at_in_seconds=250,
+        ),
+        SimpleNamespace(
+            id=7,
+            username="editor",
+            service="http://localhost:7002/realms/other",
+            service_id="other-subject",
+            created_at_in_seconds=300,
+            updated_at_in_seconds=300,
+        ),
+    ]
+
+    match = _find_existing_user_for_sign_in(
+        username="editor",
+        service="http://localhost:7002/realms/m8flow",
+        service_id="new-subject",
+        users=users,
+    )
+
+    assert match is None
+
+
+def test_user_realm_migration_picks_most_recent_duplicate() -> None:
+    migration = _load_user_realm_migration_module()
+
+    rows = [
+        {
+            "id": 1,
+            "username": "editor",
+            "service": "http://localhost:7002/realms/m8flow",
+            "created_at_in_seconds": 100,
+            "updated_at_in_seconds": 100,
+        },
+        {
+            "id": 6,
+            "username": "editor",
+            "service": "http://localhost:7002/realms/m8flow",
+            "created_at_in_seconds": 200,
+            "updated_at_in_seconds": 250,
+        },
+    ]
+
+    survivor, losers = migration._pick_survivor_and_losers(rows)
+
+    assert survivor["id"] == 6
+    assert [loser["id"] for loser in losers] == [1]
+
+
+def test_user_realm_migration_picks_next_available_username_suffix() -> None:
+    migration = _load_user_realm_migration_module()
+
+    used_usernames = {"editor", "editor2", "editor4"}
+
+    renamed_username = migration._next_available_username("editor", used_usernames, 255)
+
+    assert renamed_username == "editor3"
+    assert "editor3" in used_usernames
 
 
 def test_normalize_permissions_yaml_config_qualifies_group_keys_and_references() -> None:

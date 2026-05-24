@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import {
   Box,
   Button,
@@ -20,6 +21,7 @@ import { normalizeTemplate } from "../utils/templateHelpers";
 import { usePermissionFetcher } from "@spiffworkflow-frontend/hooks/PermissionService";
 
 export default function TemplateFileFormPage() {
+  const { t } = useTranslation();
   const { templateId, fileName } = useParams<{
     templateId: string;
     fileName: string;
@@ -172,7 +174,7 @@ export default function TemplateFileFormPage() {
   }
 
   const hotCrumbs: [string, string?][] = [
-    ["Templates", "/templates"],
+    [t("templates"), "/templates"],
     [template?.name ?? "Template", `/templates/${id}`],
     [decodedFileName],
   ];
@@ -186,16 +188,15 @@ export default function TemplateFileFormPage() {
       </Box>
       <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 1 }}>
         <Typography variant="h5" component="h1">
-          Template File: {decodedFileName}
+          {t("template_file")}: {decodedFileName}
         </Typography>
         {template?.isPublished && (
-          <Chip label="Published" color="success" size="small" />
+          <Chip label={t("published")} color="success" size="small" />
         )}
       </Box>
       {template?.isPublished && (
         <Alert severity="warning" sx={{ mb: 1 }}>
-          This template is published. Saving changes will create a new draft
-          version.
+          {t("template_published_warning")}
         </Alert>
       )}
       {error && (
@@ -209,22 +210,22 @@ export default function TemplateFileFormPage() {
           sx={{ mb: 1 }}
           onClose={() => setSaveSuccess(false)}
         >
-          File saved successfully.
+          {t("file_saved_successfully")}
         </Alert>
       )}
       <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
         {canEdit && (
           <Button data-testid="template-file-save-button" variant="contained" color="primary" onClick={handleSave}>
-            Save
+            {t("save")}
           </Button>
         )}
         {canDelete && (
           <Button data-testid="template-file-delete-button" variant="contained" color="error" onClick={handleDelete}>
-            Delete
+            {t("delete")}
           </Button>
         )}
         <Button data-testid="template-file-download-button" variant="outlined" onClick={handleDownload}>
-          Download
+          {t("download")}
         </Button>
       </Stack>
       <Snackbar

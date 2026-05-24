@@ -1,5 +1,5 @@
 server {
-    listen {{SPIFFWORKFLOW_FRONTEND_INTERNAL_PORT}};
+    listen {{M8FLOW_FRONTEND_INTERNAL_PORT}};
     server_name localhost;
 
     # The default is 4 8k, which isn't quite enough for all openid tokens

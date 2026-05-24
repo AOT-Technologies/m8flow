@@ -27,6 +27,7 @@ import TemplateFilters from '../components/TemplateFilters';
 import ImportTemplateModal from '../components/ImportTemplateModal';
 import PaginationForTable from '@spiffworkflow-frontend/components/PaginationForTable';
 import { usePermissionFetcher } from "@spiffworkflow-frontend/hooks/PermissionService";
+import { useTranslation } from 'react-i18next';
 
 const DEFAULT_PER_PAGE = 10;
 
@@ -42,6 +43,7 @@ export default function TemplateGalleryPage() {
   const { ability, permissionsLoaded } = usePermissionFetcher({
     "/m8flow/templates": ["POST"],
   });
+  const { t } = useTranslation();
 
   const canCreate = ability.can("POST", "/m8flow/templates");
 
@@ -112,7 +114,7 @@ export default function TemplateGalleryPage() {
     <Box sx={{ p: 3 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2, mb: 3 }}>
         <Typography variant="h4" sx={{ fontWeight: 700 }}>
-          Template Gallery
+          {t("template_gallery")}
         </Typography>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <ToggleButtonGroup
@@ -120,19 +122,19 @@ export default function TemplateGalleryPage() {
             exclusive
             onChange={(_, value) => value != null && setViewMode(value)}
             size="small"
-            aria-label="View mode"
+            aria-label={t("view_mode")}
             data-testid="template-gallery-view-mode-toggle"
           >
-            <ToggleButton value="card" aria-label="Card view" data-testid="template-gallery-view-card">
+            <ToggleButton value="card" aria-label={t("card_view")} data-testid="template-gallery-view-card">
               <ViewModule />
             </ToggleButton>
-            <ToggleButton value="table" aria-label="Table view" data-testid="template-gallery-view-table">
+            <ToggleButton value="table" aria-label={t("table_view")} data-testid="template-gallery-view-table">
               <ViewList />
             </ToggleButton>
           </ToggleButtonGroup>
           {canCreate && (
             <Button variant="outlined" onClick={() => setImportOpen(true)} data-testid="template-gallery-import-button">
-              Import template (zip)
+              {t("import_template_zip")}
             </Button>
           )}
         </Box>
@@ -182,12 +184,12 @@ export default function TemplateGalleryPage() {
               }}
             >
               <Typography variant="h6" sx={{ mb: 1 }}>
-                No templates found
+                {t("no_templates_found")}
               </Typography>
               <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                 {Object.keys(filters).length > 1
-                  ? 'Try adjusting your filters to see more templates.'
-                  : 'No templates are available at this time.'}
+                  ? t("try_adjusting_filters_templates")
+                  : t("no_templates_available")}
               </Typography>
             </Paper>
           ) : viewMode === 'table' ? (
@@ -202,12 +204,12 @@ export default function TemplateGalleryPage() {
                     <Table size="medium" className="process-model-file-table" data-testid="template-gallery-table">
                     <TableHead>
                       <TableRow>
-                        <TableCell>Name</TableCell>
-                        <TableCell>Key</TableCell>
-                        <TableCell>Version</TableCell>
-                        <TableCell>Category</TableCell>
-                        <TableCell>Updated</TableCell>
-                        <TableCell align="right">Actions</TableCell>
+                        <TableCell>{t("name")}</TableCell>
+                        <TableCell>{t("key")}</TableCell>
+                        <TableCell>{t("version")}</TableCell>
+                        <TableCell>{t("category")}</TableCell>
+                        <TableCell>{t("updated")}</TableCell>
+                        <TableCell align="right">{t("actions")}</TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>

@@ -85,16 +85,29 @@ export default defineConfig({
     port,
   },
   resolve: {
-    alias: {
-      inferno:
-        process.env.NODE_ENV !== 'production'
-          ? 'inferno/dist/index.dev.esm.js'
-          : 'inferno/dist/index.esm.js',
-      // Alias to spiffworkflow-frontend source (repo root sibling)
-      '@spiffworkflow-frontend': path.resolve(__dirname, '../spiffworkflow-frontend/src'),
-      // Alias to spiffworkflow-frontend assets
-      '@spiffworkflow-frontend-assets': path.resolve(__dirname, '../spiffworkflow-frontend/src/assets'),
-    },
+    alias: [
+      // ── m8flow component overrides (must come BEFORE generic @spiffworkflow-frontend alias) ──
+      {
+        find: '@spiffworkflow-frontend/components/ReactDiagramEditor',
+        replacement: path.resolve(__dirname, './src/components/ReactDiagramEditor'),
+      },
+      // ── Generic fallbacks ──────────────────────────────────────────────────
+      {
+        find: /^inferno$/,
+        replacement:
+          process.env.NODE_ENV !== 'production'
+            ? 'inferno/dist/index.dev.esm.js'
+            : 'inferno/dist/index.esm.js',
+      },
+      {
+        find: '@spiffworkflow-frontend-assets',
+        replacement: path.resolve(__dirname, '../spiffworkflow-frontend/src/assets'),
+      },
+      {
+        find: '@spiffworkflow-frontend',
+        replacement: path.resolve(__dirname, '../spiffworkflow-frontend/src'),
+      },
+    ],
     preserveSymlinks: true,
   },
   css: {

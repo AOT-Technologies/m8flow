@@ -100,9 +100,31 @@ jobs:
             -H "Content-Type: application/json" \
             -d @payload.json > response.json
 
-          REVIEW_TEXT=$(jq -r '.output_text // empty' response.json)
+          # Surface API errors directly when available.
+          API_ERROR=$(jq -r '.error.message // empty' response.json)
+          if [ -n "$API_ERROR" ] && [ "$API_ERROR" != "null" ]; then
+            REVIEW_TEXT="## PR Agent Review\n\nOpenAI API error: $API_ERROR"
+          else
+            # Handle multiple valid Responses API shapes.
+            REVIEW_TEXT=$(jq -r '
+              .output_text // empty,
+              (
+                .output[]?
+                | select(.type == "message")
+                | .content[]?
+                | select((.type == "output_text") or (.type == "text"))
+                | .text
+              ),
+              (
+                .output[]?
+                | select(.type == "output_text")
+                | .text
+              )
+            ' response.json | awk 'NF { print; found=1 } END { if (!found) print "" }')
+          fi
+
           if [ -z "$REVIEW_TEXT" ] || [ "$REVIEW_TEXT" = "null" ]; then
-            REVIEW_TEXT="## PR Agent Review\n\nModel did not return structured review text. Check workflow logs."
+            REVIEW_TEXT="## PR Agent Review\n\nModel returned no review text. Check workflow logs for response.json payload."
           fi
 
           {

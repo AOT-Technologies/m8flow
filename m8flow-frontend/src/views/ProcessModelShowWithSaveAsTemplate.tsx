@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { Box, Button, Chip, Paper, Typography, CircularProgress } from "@mui/material";
 import ProcessModelShow from "./ProcessModelShow";
 import DateAndTimeService from "@spiffworkflow-frontend/services/DateAndTimeService";
@@ -26,6 +27,7 @@ function isSupportedFileName(name: string): boolean {
  */
 export default function ProcessModelShowWithSaveAsTemplate() {
   const params = useParams<{ process_model_id: string }>();
+  const { t } = useTranslation();
   const [saveAsTemplateOpen, setSaveAsTemplateOpen] = useState(false);
   const [templateInfo, setTemplateInfo] = useState<ProcessModelTemplateInfo | null>(null);
   const [templateInfoLoading, setTemplateInfoLoading] = useState(false);
@@ -136,7 +138,7 @@ export default function ProcessModelShowWithSaveAsTemplate() {
             onClick={() => setSaveAsTemplateOpen(true)}
             data-testid="save-as-template-button"
           >
-            Save as Template
+            {t("save_as_template")}
           </Button>
         </Box>
       )}
@@ -146,7 +148,7 @@ export default function ProcessModelShowWithSaveAsTemplate() {
         <Box sx={{ mt: 2, display: "flex", alignItems: "center", gap: 1 }}>
           <CircularProgress size={16} />
           <Typography variant="caption" color="text.secondary">
-            Loading template info...
+            {t("loading_template_info")}
           </Typography>
         </Box>
       )}
@@ -163,7 +165,7 @@ export default function ProcessModelShowWithSaveAsTemplate() {
           }}
         >
           <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
-            Created from Template
+            {t("created_from_template")}
           </Typography>
           <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1.5, alignItems: "center" }}>
             <Link
@@ -179,20 +181,20 @@ export default function ProcessModelShowWithSaveAsTemplate() {
               />
             </Link>
             <Chip
-              label={`Version: ${templateInfo.source_template_version}`}
+              label={`${t("version")}: ${templateInfo.source_template_version}`}
               variant="outlined"
               size="small"
             />
             <Chip
-              label={`Key: ${templateInfo.source_template_key}`}
+              label={`${t("key")}: ${templateInfo.source_template_key}`}
               variant="outlined"
               size="small"
             />
             <Typography variant="caption" color="text.secondary">
-              Created by: {templateInfo.created_by}
+              {t("created_by")}: {templateInfo.created_by}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              Created: {DateAndTimeService.convertSecondsToFormattedDateTime(templateInfo.created_at_in_seconds) ?? "—"}
+              {t("created")}: {DateAndTimeService.convertSecondsToFormattedDateTime(templateInfo.created_at_in_seconds) ?? "—"}
             </Typography>
           </Box>
         </Paper>
