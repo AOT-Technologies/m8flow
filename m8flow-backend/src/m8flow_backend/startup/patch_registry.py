@@ -108,6 +108,10 @@ PRE_APP_PATCH_SPECS: tuple[PatchSpec, ...] = (
         target="m8flow_backend.routes.users_controller_patch:apply",
         minimum_phase=BootPhase.PRE_BOOTSTRAP,
     ),
+    PatchSpec(
+        target="m8flow_backend.services.workflow_exception_notes_patch:apply",
+        minimum_phase=BootPhase.PRE_BOOTSTRAP,
+    ),
 )
 
 
@@ -122,6 +126,10 @@ POST_APP_CORE_PATCH_SPECS: tuple[PatchSpec, ...] = (
     ),
     PatchSpec(
         target="m8flow_backend.services.tenant_scoping_patch:apply",
+        minimum_phase=BootPhase.APP_CREATED,
+    ),
+    PatchSpec(
+        target="m8flow_backend.services.spiff_timer_refresh_patch:apply",
         minimum_phase=BootPhase.APP_CREATED,
     ),
     PatchSpec(
@@ -215,11 +223,23 @@ POST_APP_EXTENSION_PATCH_SPECS: tuple[PatchSpec, ...] = (
         minimum_phase=BootPhase.APP_CREATED,
     ),
     PatchSpec(
+        target="m8flow_backend.services.process_api_blueprint_patch:apply",
+        minimum_phase=BootPhase.APP_CREATED,
+    ),
+    PatchSpec(
         target="m8flow_backend.services.process_instance_report_service_patch:apply",
         minimum_phase=BootPhase.APP_CREATED,
     ),
     PatchSpec(
         target="m8flow_backend.services.process_instance_service_patch:apply",
+        minimum_phase=BootPhase.APP_CREATED,
+    ),
+    PatchSpec(
+        target="m8flow_backend.services.process_model_service_patch:apply",
+        minimum_phase=BootPhase.APP_CREATED,
+    ),
+    PatchSpec(
+        target="m8flow_backend.routes.process_models_controller_patch:apply",
         minimum_phase=BootPhase.APP_CREATED,
     ),
     PatchSpec(
@@ -233,6 +253,14 @@ POST_APP_EXTENSION_PATCH_SPECS: tuple[PatchSpec, ...] = (
     ),
     PatchSpec(
         target="m8flow_backend.services.secret_service_patch:apply",
+        minimum_phase=BootPhase.APP_CREATED,
+    ),
+    PatchSpec(
+        target="m8flow_backend.routes.messages_controller_patch:apply",
+        minimum_phase=BootPhase.APP_CREATED,
+    ),
+    PatchSpec(
+        target="m8flow_backend.routes.secrets_controller_patch:apply",
         minimum_phase=BootPhase.APP_CREATED,
     ),
 )

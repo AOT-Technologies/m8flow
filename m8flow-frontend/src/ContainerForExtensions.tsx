@@ -55,6 +55,7 @@ const TemplateFileFormPage = lazy(() => import('./views/TemplateFileFormPage'));
 const ProcessModelShowWithSaveAsTemplate = lazy(
   () => import('./views/ProcessModelShowWithSaveAsTemplate'),
 );
+const ConnectorsPage = lazy(() => import('./views/Connectors'));
 
 // M8Flow Extension: clear tenant from localStorage on logout so next visit shows tenant selection
 const originalDoLogout = UserService.doLogout;
@@ -130,13 +131,12 @@ function RoleBasedRootGate({
 }) {
   if (!permissionsLoaded) return null;
 
-  // Super-admin: always go to tenant management
-  if (ability.can("GET", targetUris.m8flowTenantListPath)) {
-    return <Navigate to="/tenants" replace />;
-  }
-
-  // User has Home access (anyone with task management: reviewer, editor, tenant-admin - excludes viewer)
-  if (ability.can("PUT", "/tasks/*")) {
+  // Users with task update permission can land on Home.
+  // Master super-admin can also land on Home with read-only task access.
+  if (
+    ability.can("PUT", "/tasks/*") ||
+    (UserService.isSuperAdmin() && ability.can("GET", "/tasks/*"))
+  ) {
     return (
       <BaseRoutes
         extensionUxElements={extensionUxElements}
@@ -146,7 +146,8 @@ function RoleBasedRootGate({
     );
   }
 
-  // No Home access: find the first available nav route in sidebar order
+  // No Home access: find the first available nav route in sidebar order.
+  // Keep tenant management available, but do not force global operators into it.
   const fallbackRoutes: Array<{ route: string; method: string; uri: string }> =
     [
       {
@@ -165,6 +166,11 @@ function RoleBasedRootGate({
         uri: targetUris.messageInstanceListPath,
       },
       {
+        route: "/connectors",
+        method: "GET",
+        uri: targetUris.serviceTaskListPath,
+      },
+      {
         route: "/configuration",
         method: "GET",
         uri: targetUris.secretListPath,
@@ -173,6 +179,11 @@ function RoleBasedRootGate({
         route: "/templates",
         method: "GET",
         uri: targetUris.m8flowTemplateListPath,
+      },
+      {
+        route: "/tenants",
+        method: "GET",
+        uri: targetUris.m8flowTenantListPath,
       },
     ];
   const firstAvailable = fallbackRoutes.find(({ method, uri }) =>
@@ -219,6 +230,7 @@ export default function ContainerForExtensions() {
     "/tasks/*": ["GET", "PUT"],
     [targetUris.m8flowTenantListPath]: ["GET"],
     [targetUris.m8flowTemplateListPath]: ["GET"],
+    [targetUris.serviceTaskListPath]: ["GET"],
   };
   const { ability, permissionsLoaded } = usePermissionFetcher(
     permissionRequestData,
@@ -305,6 +317,45 @@ export default function ContainerForExtensions() {
       setIsSideNavVisible(true);
     }
   }, [isMobile]);
+
+  useEffect(() => {
+    if (!UserService.isSuperAdmin()) {
+      return;
+    }
+    if (typeof window === 'undefined') {
+      return;
+    }
+    localStorage.removeItem(M8FLOW_TENANT_STORAGE_KEY);
+    localStorage.removeItem('m8f_tenant_id');
+  }, []);
+
+  useEffect(() => {
+    const onTaskCellClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) {
+        return;
+      }
+      if (target.closest('a,button,[role="button"]')) {
+        return;
+      }
+      const taskCell = target.closest('td[title^="task id:"]') as HTMLTableCellElement | null;
+      if (!taskCell) {
+        return;
+      }
+      const row = taskCell.closest('tr');
+      if (!row) {
+        return;
+      }
+      const taskLink = row.querySelector('a[href*="/tasks/"]') as HTMLAnchorElement | null;
+      if (!taskLink || !taskLink.href) {
+        return;
+      }
+      window.location.assign(taskLink.href);
+    };
+
+    document.addEventListener('click', onTaskCellClick);
+    return () => document.removeEventListener('click', onTaskCellClick);
+  }, []);
 
   useEffect(() => {
     const processExtensionResult = (processModels: ProcessModel[]) => {
@@ -462,6 +513,7 @@ export default function ContainerForExtensions() {
           />
           <Route path="templates/:templateId" element={<TemplateModelerPage />} />
           <Route path="templates" element={<TemplateGalleryPage />} />
+          <Route path="connectors" element={<ConnectorsPage />} />
           <Route
             path="process-models/:process_model_id"
             element={<ProcessModelShowWithSaveAsTemplate />}
@@ -470,7 +522,8 @@ export default function ContainerForExtensions() {
           <Route path="login" element={<TenantAwareLogin />} />
           {/* Route guard: redirect users without process instance read access to home */}
           {permissionsLoaded &&
-            !ability.can('GET', targetUris.processInstanceListForMePath) && (
+            !ability.can('GET', targetUris.processInstanceListForMePath) &&
+            !ability.can('GET', targetUris.processInstanceListPath) && (
               <Route
                 path="process-instances/*"
                 element={<Navigate to="/" replace />}
@@ -541,6 +594,25 @@ export default function ContainerForExtensions() {
               color: ${globalTheme.palette.primary.main} !important;
             }
             a[href$="/tenants"] .MuiTypography-root {
+              font-weight: bold !important;
+            }
+          `}
+        </style>
+      )}
+      {location.pathname.startsWith("/connectors") && (
+        <style>
+          {`
+            a[href$="/connectors"] {
+              background-color: ${(globalTheme.palette as any).background?.light || "#e3f2fd"} !important;
+              color: ${globalTheme.palette.primary.main} !important;
+              border-left-width: 4px !important;
+              border-style: solid !important;
+              border-color: ${globalTheme.palette.primary.main} !important;
+            }
+            a[href$="/connectors"] .MuiListItemIcon-root {
+              color: ${globalTheme.palette.primary.main} !important;
+            }
+            a[href$="/connectors"] .MuiTypography-root {
               font-weight: bold !important;
             }
           `}

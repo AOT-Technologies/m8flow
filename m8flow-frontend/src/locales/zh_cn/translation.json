@@ -1,6 +1,7 @@
-{
+﻿{
   "all_categories": "所有类别",
   "all_tags": "所有标签",
+  "back_to_configuration": "返回配置",
   "back_to_templates": "返回模板",
   "card_view": "卡片视图",
   "category": "类别",
@@ -101,5 +102,6 @@
   "delete_failed": "删除失败",
   "download_failed": "下载失败",
   "new_draft_created_redirecting": "由于模板已发布，已创建一个新的草稿版本 ({{version}})。正在重定向...",
-  "updated": "已更新"
+  "updated": "已更新",
+  "tasks": "任务"
 }

@@ -1,6 +1,7 @@
-{
+﻿{
   "all_categories": "Toutes les catégories",
   "all_tags": "Toutes les balises",
+  "back_to_configuration": "Retour à la Configuration",
   "back_to_templates": "Retour aux Modèles",
   "card_view": "Vue carte",
   "category": "Catégorie",
@@ -101,5 +102,6 @@
   "delete_failed": "Échec de la suppression",
   "download_failed": "Le téléchargement a échoué",
   "new_draft_created_redirecting": "Une nouvelle version brouillon ({{version}}) a été créée car le modèle a été publié. Redirection...",
-  "updated": "Mis à jour"
+  "updated": "Mis à jour",
+  "tasks": "Tâches"
 }

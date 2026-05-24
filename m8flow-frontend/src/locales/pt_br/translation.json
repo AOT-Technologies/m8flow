@@ -1,6 +1,7 @@
-{
+﻿{
   "all_categories": "Todas as Categorias",
   "all_tags": "Todas as Tags",
+  "back_to_configuration": "Voltar para Configuração",
   "back_to_templates": "Voltar para Modelos",
   "card_view": "Visualização em cartões",
   "category": "Categoria",
@@ -101,5 +102,6 @@
   "delete_failed": "Falha na exclusão",
   "download_failed": "Falha no download",
   "new_draft_created_redirecting": "Uma nova versão de rascunho ({{version}}) foi criada porque o modelo foi publicado. Redirecionando...",
-  "updated": "Atualizado"
+  "updated": "Atualizado",
+  "tasks": "Tarefas"
 }

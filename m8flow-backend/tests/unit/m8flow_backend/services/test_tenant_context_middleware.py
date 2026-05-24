@@ -350,7 +350,7 @@ def test_login_return_resolves_tenant_from_state_when_auth_is_excluded() -> None
         _seed_tenants()
 
         state_payload = {
-            "final_url": "http://localhost:7000/",
+            "final_url": "http://localhost:6840/",
             "authentication_identifier": "it",
         }
         state = base64.b64encode(bytes(str(state_payload), "utf-8")).decode("utf-8")
@@ -369,7 +369,7 @@ def test_login_return_skips_tenant_validation_for_master_auth_identifier() -> No
         _seed_tenants()
 
         state_payload = {
-            "final_url": "http://localhost:7000/tenants",
+            "final_url": "http://localhost:6840/tenants",
             "authentication_identifier": "master",
         }
         state = base64.b64encode(bytes(str(state_payload), "utf-8")).decode("utf-8")
@@ -377,3 +377,87 @@ def test_login_return_skips_tenant_validation_for_master_auth_identifier() -> No
         with app.test_request_context(f"/v1.0/login_return?state={state}"):
             resolve_request_tenant()
             assert getattr(g, "m8flow_tenant_id", None) is None
+
+
+def test_master_super_admin_request_is_tenant_context_exempt(monkeypatch) -> None:
+    app = _make_app()
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+
+        decoded = {
+            "iss": "http://localhost:7002/realms/master",
+            "realm_access": {"roles": ["super-admin"]},
+        }
+        monkeypatch.setattr(
+            "m8flow_backend.services.tenant_context_middleware.AuthenticationService.parse_jwt_token",
+            lambda _identifier, _token: decoded,
+        )
+
+        with app.test_request_context("/v1.0/process-instances", headers={"Authorization": "Bearer fake"}):
+            resolve_request_tenant()
+            assert getattr(g, "m8flow_tenant_id", None) is None
+            assert getattr(g, "_m8flow_tenant_context_exempt_request", False) is True
+
+
+def test_master_super_admin_groups_request_is_tenant_context_exempt(monkeypatch) -> None:
+    app = _make_app()
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+
+        decoded = {
+            "iss": "http://localhost:7002/realms/master",
+            "groups": ["/super-admin"],
+        }
+        monkeypatch.setattr(
+            "m8flow_backend.services.tenant_context_middleware.AuthenticationService.parse_jwt_token",
+            lambda _identifier, _token: decoded,
+        )
+
+        with app.test_request_context("/v1.0/process-instances", headers={"Authorization": "Bearer fake"}):
+            resolve_request_tenant()
+            assert getattr(g, "m8flow_tenant_id", None) is None
+            assert getattr(g, "_m8flow_tenant_context_exempt_request", False) is True
+
+
+def test_non_master_super_admin_request_is_not_tenant_context_exempt(monkeypatch) -> None:
+    app = _make_app()
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+
+        decoded = {
+            "iss": "http://localhost:7002/realms/tenant-a",
+            "realm_access": {"roles": ["super-admin"]},
+        }
+        monkeypatch.setattr(
+            "m8flow_backend.services.tenant_context_middleware.AuthenticationService.parse_jwt_token",
+            lambda _identifier, _token: decoded,
+        )
+
+        with app.test_request_context("/v1.0/process-instances", headers={"Authorization": "Bearer fake"}):
+            with pytest.raises(ApiError) as exc:
+                resolve_request_tenant()
+            assert exc.value.error_code == "tenant_required"
+
+
+def test_user_group_super_admin_request_is_tenant_context_exempt_without_token_decode() -> None:
+    app = _make_app()
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+
+        class _Group:
+            def __init__(self, identifier: str) -> None:
+                self.identifier = identifier
+
+        class _User:
+            def __init__(self) -> None:
+                self.groups = [_Group("master:super-admin")]
+
+        with app.test_request_context("/v1.0/process-instances"):
+            g.user = _User()
+            resolve_request_tenant()
+            assert getattr(g, "m8flow_tenant_id", None) is None
+            assert getattr(g, "_m8flow_tenant_context_exempt_request", False) is True

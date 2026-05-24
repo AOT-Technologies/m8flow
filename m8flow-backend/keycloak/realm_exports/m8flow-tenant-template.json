@@ -28,7 +28,7 @@
   "oauth2DevicePollingInterval": 5,
   "enabled": true,
   "sslRequired": "none",
-  "registrationAllowed": false,
+  "registrationAllowed": true,
   "registrationEmailAsUsername": false,
   "rememberMe": false,
   "verifyEmail": false,
@@ -120,6 +120,15 @@
       {
         "id": "a4e63382-1fb0-4f7f-a485-8e162aaf8c16",
         "name": "viewer",
+        "description": "",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "m8flow",
+        "attributes": {}
+      },
+      {
+        "id": "f5c0e6a1-7b2d-4e8f-9c3a-1d4e5f6a7b8c",
+        "name": "submitter",
         "description": "",
         "composite": false,
         "clientRole": false,
@@ -475,9 +484,36 @@
   },
   "groups": [
     {
-      "id": "a14e6081-ffd4-4925-9364-4916bcf74931",
-      "name": "group_keycloak",
-      "path": "/group_keycloak",
+      "id": "0a3b64b7-d53a-40e7-8e84-7a43e113fd94",
+      "name": "Approvers",
+      "path": "/Approvers",
+      "attributes": {},
+      "realmRoles": [],
+      "clientRoles": {},
+      "subGroups": []
+    },
+    {
+      "id": "5dcc6ff8-b08b-4e01-bb6d-d3170d418743",
+      "name": "Designers",
+      "path": "/Designers",
+      "attributes": {},
+      "realmRoles": [],
+      "clientRoles": {},
+      "subGroups": []
+    },
+    {
+      "id": "51d95310-2496-4a79-b23f-3d122fd72545",
+      "name": "Administrators",
+      "path": "/Administrators",
+      "attributes": {},
+      "realmRoles": [],
+      "clientRoles": {},
+      "subGroups": []
+    },
+    {
+      "id": "1cfcfbdf-b0fc-44af-af24-3f86cf0804f4",
+      "name": "Support",
+      "path": "/Support",
       "attributes": {},
       "realmRoles": [],
       "clientRoles": {},
@@ -562,7 +598,7 @@
       },
       "notBefore": 0,
       "groups": [
-        "/group_keycloak"
+        "/Administrators"
       ]
     },
     {
@@ -601,7 +637,7 @@
       ],
       "realmRoles": ["default-roles-m8flow", "editor"],
       "notBefore": 0,
-      "groups": [],
+      "groups": ["/Designers"],
       "credentials": [
         {
           "type": "password",
@@ -624,7 +660,7 @@
       ],
       "realmRoles": ["default-roles-m8flow", "integrator"],
       "notBefore": 0,
-      "groups": [],
+      "groups": ["/Support"],
       "credentials": [
         {
           "type": "password",
@@ -647,7 +683,7 @@
       ],
       "realmRoles": ["default-roles-m8flow", "reviewer"],
       "notBefore": 0,
-      "groups": [],
+      "groups": ["/Approvers"],
       "credentials": [
         {
           "type": "password",
@@ -675,6 +711,29 @@
         {
           "type": "password",
           "value": "viewer",
+          "temporary": true
+        }
+      ]
+    },
+    {
+      "username": "submitter",
+      "firstName": "Submitter",
+      "lastName": "M8Flow",
+      "email": "",
+      "emailVerified": true,
+      "enabled": true,
+      "totp": false,
+      "disableableCredentialTypes": [],
+      "requiredActions": [
+        "UPDATE_PASSWORD"
+      ],
+      "realmRoles": ["default-roles-m8flow", "submitter"],
+      "notBefore": 0,
+      "groups": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "submitter",
           "temporary": true
         }
       ]
@@ -1065,7 +1124,7 @@
       "clientAuthenticatorType": "client-secret",
       "secret": "JXeQExm0JhQPLumgHtIIqf52bDalHz0q",
       "redirectUris": [
-        "http://localhost:7000/*",
+        "http://localhost:6840/*",
         "https://replace-me-with-m8flow-backend-host-and-path/*"
       ],
       "webOrigins": [],
@@ -1084,7 +1143,7 @@
         "saml.force.post.binding": "false",
         "saml.multivalued.roles": "false",
         "frontchannel.logout.session.required": "false",
-        "post.logout.redirect.uris": "https://replace-me-with-m8flow-frontend-host-and-path/*##http://localhost:7001/*",
+        "post.logout.redirect.uris": "https://replace-me-with-m8flow-frontend-host-and-path/*##http://localhost:6841/*",
         "oauth2.device.authorization.grant.enabled": "false",
         "backchannel.logout.revoke.offline.tokens": "false",
         "saml.server.signature.keyinfo.ext": "false",
@@ -1188,7 +1247,7 @@
         },
         {
           "id": "144579f3-168a-4dc3-a8ff-a9ac89dd7658",
-          "name": "groups",
+          "name": "roles",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-usermodel-realm-role-mapper",
           "consentRequired": false,
@@ -1199,7 +1258,7 @@
             "user.attribute": "foo",
             "id.token.claim": "true",
             "access.token.claim": "true",
-            "claim.name": "groups",
+            "claim.name": "roles",
             "jsonType.label": "String"
           }
         }
@@ -1566,14 +1625,16 @@
           "id": "fe4a096a-cede-4775-affa-b0cc6d630b70",
           "name": "groups",
           "protocol": "openid-connect",
-          "protocolMapper": "oidc-group-membership-mapper",
+          "protocolMapper": "oidc-normalized-group-membership-mapper",
           "consentRequired": false,
           "config": {
-            "full.path": "true",
             "id.token.claim": "true",
             "access.token.claim": "true",
             "claim.name": "groups",
-            "userinfo.token.claim": "true"
+            "userinfo.token.claim": "true",
+            "introspection.token.claim": "true",
+            "multivalued": "true",
+            "jsonType.label": "String"
           }
         },
         {
@@ -1736,7 +1797,7 @@
       "protocolMappers": [
         {
           "id": "252fdd9f-cc91-4ca3-aaab-cdf053360e94",
-          "name": "groups",
+          "name": "roles",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-usermodel-realm-role-mapper",
           "consentRequired": false,
@@ -1746,7 +1807,7 @@
             "user.attribute": "foo",
             "id.token.claim": "true",
             "access.token.claim": "true",
-            "claim.name": "groups",
+            "claim.name": "roles",
             "jsonType.label": "String"
           }
         },

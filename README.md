@@ -39,75 +39,38 @@ It is built on the proven foundation of SpiffWorkflow, with a vision shaped by *
 
 _A complete list of the latest features is available in our [release notes](https://github.com/AOT-Technologies/m8flow/releases)._
 
----
-
-## Repository Structure
-
-```
-m8flow/
-├── bin/                          # Developer helper scripts
-│   ├── fetch-upstream.sh         # Fetch upstream source folders on demand (Bash)
-│   ├── fetch-upstream.ps1        # Fetch upstream source folders on demand (PowerShell)
-│   └── diff-from-upstream.sh     # Report local vs upstream divergence
-│
-├── docker/                       # All Docker and Compose files
-│   ├── m8flow-docker-compose.yml         # Primary local dev stack
-│   ├── m8flow-docker-compose.prod.yml    # Production overrides
-│   ├── m8flow.backend.Dockerfile
-│   ├── m8flow.frontend.Dockerfile
-│   ├── m8flow.keycloak.Dockerfile
-│   ├── minio.local-dev.docker-compose.yml
-│   └── minio.production.docker-compose.yml
-│
-├── docs/                         # Documentation and images
-│   └── env-reference.md          # Canonical environment variable reference
-│
-├── m8flow-backend/               # m8flow backend layer (Apache 2.0)
-│   ├── bin/                      # Backend run/migration scripts
-│   ├── keycloak/                 # Realm exports and Keycloak setup scripts
-│   ├── migrations/               # Alembic migrations for m8flow-owned tables
-│   ├── src/m8flow_backend/       # Backend source code (incl. startup + ASGI entry)
-│   │   ├── app.py                # ASGI entry point (uvicorn target)
-│   │   ├── bootstrap.py          # Pre/post-app patch bootstrap helpers
-│   │   └── startup/              # Backend startup wiring (env mapping, patches, hooks)
-│   └── tests/
-│
-├── m8flow-frontend/              # m8flow frontend layer (Apache 2.0)
-│   └── src/
-│
-├── keycloak-extensions/          # Keycloak realm-info-mapper provider (JAR)
-│
-├── m8flow-connector-proxy/       # m8flow connector proxy service (Apache 2.0)
-│
-├── m8flow-nats-consumer/         # NATS event consumer service
-│
-├── upstream.sources.json         # Canonical upstream repo/ref/folder config
-├── sample.env                    # Environment variable template
-└── LICENSE                       # Apache License 2.0
-
-# ── Gitignored — fetched via bin/fetch-upstream.sh / bin/fetch-upstream.ps1 ─
-# spiffworkflow-backend/          Upstream LGPL-2.1 workflow engine
-# spiffworkflow-frontend/         Upstream LGPL-2.1 BPMN modeler UI
-# spiff-arena-common/             Upstream LGPL-2.1 shared utilities
-```
-
-> **Why are those directories missing?**
-> `spiffworkflow-backend`, `spiffworkflow-frontend`, and `spiff-arena-common` come from [AOT-Technologies/m8flow-core](https://github.com/AOT-Technologies/m8flow-core) (LGPL-2.1). They are not stored here to keep m8flow's Apache 2.0 licence boundary clean. Run `./bin/fetch-upstream.sh` or `.\bin\fetch-upstream.ps1` once after cloning to populate them. See the [License note](#license-note) for details.
 
 ---
 
-## Pre-requisites
+## Prerequisites (Docker setup)
 
-Ensure the following tools are installed:
+Install the following tools:
 
-- Git
-- Docker and Docker Compose
-- Python 3.12.1 and [uv](https://docs.astral.sh/uv/) _(for local backend development only)_
-- Node.js 18+ and npm _(for local frontend development only)_
+- **Git** — [Downloads](https://git-scm.com/downloads)
+- **Docker Desktop** (includes Docker Compose v2) — [Product page](https://www.docker.com/products/docker-desktop/) — install guides: [Windows](https://docs.docker.com/desktop/install/windows-install/), [macOS](https://docs.docker.com/desktop/install/mac-install/)
+
+### Default host ports
+
+By default, the stack publishes **6840–6852** on your machine (configured in [sample.env](sample.env)).
+
+| Port(s) | Service |
+|---------|---------|
+| 6840 | `m8flow-backend` (API) |
+| 6841 | `m8flow-frontend` (UI) |
+| 6842 | `keycloak-proxy` (Keycloak URL for browsers) |
+| 6843 | `m8flow-db` (PostgreSQL) |
+| 6844 | `m8flow-connector-proxy` |
+| 6846 / 6847 | `minio` (API / console) |
+| 6848 | `redis` |
+| 6849 | `keycloak` management/health port on host |
+| 6850 | `m8flow-celery-flower` |
+| 6845 / 6851 / 6852 | NATS client / monitoring / UI (optional; see [docker/m8flow-nats-docker-compose.yml](docker/m8flow-nats-docker-compose.yml)) |
+
+Environment variable reference: [docs/env-reference.md](docs/env-reference.md).
 
 ---
 
-## Clone and Set Up
+## Quick start (Docker)
 
 ### 1. Clone the repository
 
@@ -116,71 +79,142 @@ git clone https://github.com/AOT-Technologies/m8flow.git
 cd m8flow
 ```
 
-### 2. Fetch the upstream SpiffWorkflow code
+### 2. Create your `.env`
 
-The upstream LGPL-2.1 engine is not stored in this repo.
+Copy [sample.env](sample.env) to `.env` (repo root). Use the command for your OS/shell:
 
-**Docker builds are self-contained** — the Dockerfiles automatically fetch upstream from GitHub during the build, so no local pre-fetch is needed for `docker compose up --build`.
+**Windows (Command Prompt)**
 
-
-This clones configured folders from [AOT-Technologies/m8flow-core](https://github.com/AOT-Technologies/m8flow-core) into your working tree. Folder lists are defined in `upstream.sources.json` under `backend`, `frontend`, and `others`. These directories are gitignored and must be re-fetched after every fresh clone.
-
-To pin a specific upstream tag (Docker):
-
-# Docker build (set in .env or inline)
-UPSTREAM_TAG=0.0.1 docker compose -f docker/m8flow-docker-compose.yml up -d --build
-```
-# Docker build (set in .env or inline)
-$env:UPSTREAM_TAG = "0.0.1"
-docker compose -f docker/m8flow-docker-compose.yml up -d --build
+```bat
+copy sample.env .env
 ```
 
-### 3. Configure environment
+**Windows (PowerShell)**
 
-Copy the sample environment file and edit it for your setup:
+```powershell
+Copy-Item sample.env .env
+```
+
+**macOS / Linux**
 
 ```bash
 cp sample.env .env
 ```
 
-Full environment variable documentation: [docs/env-reference.md](docs/env-reference.md).
+### 3. Port conflicts (read this first)
 
----
+- **Detect a busy port** (example: backend **6840**):
+  - macOS/Linux: `lsof -i :6840` (or `sudo lsof -nP -iTCP:6840 -sTCP:LISTEN`)
+  - Windows PowerShell: `Get-NetTCPConnection -LocalPort 6840`
+  - Windows CMD: `netstat -ano | findstr :6840`
+- **Change a port**: edit `.env` (for example `M8FLOW_BACKEND_PORT=16840`) and re-run docker compose.
+- **See what docker published** (after `up`):
+  - `docker compose -f docker/m8flow-docker-compose.yml port m8flow-backend 6840`
 
-## Running with Docker
+### 4. Start m8flow
 
-### Start the full stack
-
-Start all infrastructure services (database, Keycloak, MinIO, Redis, NATS) and init containers (run once on first setup):
+First-time start (includes one-time init jobs):
 
 ```bash
 docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build
 ```
 
-On subsequent starts, skip the init profile:
+> **Note:** Run the above command only the first time to perform initialization. For future starts, skip the init profile:
 
 ```bash
 docker compose -f docker/m8flow-docker-compose.yml up -d --build
 ```
 
-### Docker Compose services
+### Once started, open [http://localhost:6841/](http://localhost:6841/) in your browser to access m8flow.
+---
 
-The Keycloak image is built with the **m8flow realm-info-mapper** provider, so tokens include `m8flow_tenant_id` and `m8flow_tenant_name`. No separate build of the keycloak-extensions JAR is required. Realm import can be done manually in the Keycloak Admin Console (see Keycloak Setup below) or by running `./m8flow-backend/keycloak/start_keycloak.sh` once after Keycloak is up; the script imports the `m8flow` realm only (expects Keycloak on ports 7002 and 7009, e.g. when using Docker Compose).
+## Signing In — Application Usage
 
-| Service | Description | Port |
-|---------|-------------|------|
-| `m8flow-db` | PostgreSQL — m8flow application database | 1111 |
+1. **Tenant Selection:**  
+   When you visit the application, you'll be prompted to select or enter your tenant slug. By default, the tenant `m8flow` will be available for you to use.
+
+   <div align="center">
+       <img src="./docs/images/access-m8flow-tenant-selection.png" />
+   </div>
+
+2. **Log In:**  
+   After choosing your tenant, you'll be redirected to the login page.
+
+   <div align="center">
+       <img src="./docs/images/access-m8flow-1.png" />
+   </div>
+
+
+<a id="try-the-default-test-users"></a>
+3. **Try the Default Test Users:**  
+   Each tenant (including tenants you add later) is provisioned with these default test users.
+
+   | Username     | Role                                  |
+   |--------------|---------------------------------------|
+   | `admin`      | Tenant administrator                  |
+   | `editor`     | Create and edit process models        |
+   | `viewer`     | Read-only access                      |
+   | `integrator` | Service task / connector access       |
+   | `reviewer`   | Review and approve tasks              |
+   | `submitter`  | Submit work                           |
+
+   **Password:** the initial password for each user is the **same as the username** (for example `admin` / `admin`). Passwords are imported as **temporary** in Keycloak, so users are prompted for a **password change on first login**.
+
+
+You’re all set! Continue with [How to use m8flow](#how-to-use-m8flow) to create your first process group, or go to [Tenant creation](#tenant-creation) to add your own tenants.
+
+---
+
+## How to use m8flow
+
+After signing in, follow the [How to use m8flow](docs/how-to-use.md) guide to create your first process group and start organizing process models.
+
+---
+
+## Tenant creation
+
+1. **Open the Application:**  
+   Go to [http://localhost:6841/](http://localhost:6841/) in your web browser.
+
+2. **Sign in as Global Admin:**  
+   Click on **"Global admin sign in"**.  
+   <div align="center">
+      <img src="./docs/images/access-m8flow-tenant-selection.png" alt="Tenant Selection Screen"/>
+   </div>
+
+   Log in using the following credentials:
+   ```
+   Username: super-admin
+   Password: super-admin
+   ```
+
+3. **Add a Tenant:**  
+   After signing in, click the **"Add tenant"** button to create a new tenant.
+
+    <div align="center">
+        <img src="./docs/images/tenant-creation.png" alt="Tenant Creation Screen"/>
+    </div>
+
+### Once your tenant is created, it will automatically include the set of default test users described above in [Try the Default Test Users](#try-the-default-test-users).
+---
+
+## Docker Compose services
+
+The Keycloak image is built with the **m8flow realm-info-mapper** provider, so tokens include `m8flow_tenant_id` and `m8flow_tenant_name`. No separate build of the keycloak-extensions JAR is required.
+
+| Service | Description | Host port (default) |
+|---------|-------------|----------------------|
+| `m8flow-db` | PostgreSQL — m8flow application database | 6843 |
 | `keycloak-db` | PostgreSQL — Keycloak database | — |
-| `keycloak` | Keycloak identity provider (with m8flow realm mapper) | 7002, 7009 |
-| `keycloak-proxy` | Nginx proxy in front of Keycloak | 7002 |
-| `redis` | Redis — Celery broker and cache | 6379 |
-| `nats` | NATS messaging server _(optional profile)_ | 4222 |
-| `minio` | MinIO object storage (process models, templates) | 9000, 9001 |
-| `m8flow-backend` | SpiffWorkflow backend + m8flow extensions | 7000 |
-| `m8flow-frontend` | SpiffWorkflow frontend + m8flow extensions | 7001 |
-| `m8flow-connector-proxy` | m8flow connector proxy (SMTP, Slack, HTTP, etc.) | 8004 |
+| `keycloak` | Keycloak identity provider (with m8flow realm mapper) | 6849 (mgmt/health) |
+| `keycloak-proxy` | Nginx proxy in front of Keycloak | 6842 |
+| `redis` | Redis — Celery broker and cache | 6848 |
+| `minio` | MinIO object storage (process models, templates) | 6846, 6847 |
+| `m8flow-backend` | SpiffWorkflow backend + m8flow extensions | 6840 |
+| `m8flow-frontend` | SpiffWorkflow frontend + m8flow extensions | 6841 |
+| `m8flow-connector-proxy` | m8flow connector proxy (SMTP, Slack, HTTP, etc.) | 6844 |
 | `m8flow-celery-worker` | Celery background task worker | — |
-| `m8flow-celery-flower` | Celery monitoring UI | 5555 |
+| `m8flow-celery-flower` | Celery monitoring UI | 6850 |
 | `m8flow-nats-consumer` | NATS event consumer | — |
 | `otel-lgtm` | Grafana + OTLP (LGTM bundle) | `GRAFANA_HTTP_PORT` (default 3000), 4317, 4318 |
 | `promtail` | Ships Docker logs to Loki (Keycloak, Flower, etc.) | — |
@@ -210,302 +244,9 @@ docker compose -f docker/m8flow-docker-compose.yml down -v
 ```
 
 ---
+## Additional Documentation & Developer Resources
 
-## Running Locally (without Docker for backend/frontend)
-
-Use this mode for active development of m8flow extensions.
-
-### 1. Start infrastructure services
-
-Start only the infrastructure (database, Keycloak, MinIO, Redis) as containers:
-
-```bash
-docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build \
-  m8flow-db keycloak-db keycloak keycloak-proxy redis minio minio-mc-init
-```
-
-### 2. Start backend and frontend
-
-Start the backend in one terminal:
-
-```bash
-./m8flow-backend/bin/run_m8flow_backend.sh 7000 --reload
-```
-
-```powershell
-.\m8flow-backend\bin\run_m8flow_backend.ps1 7000 --Reload
-```
-
-When `uv` is available locally, the backend launcher syncs backend dependencies automatically before starting and runs the backend through `uv`. Set `M8FLOW_BACKEND_SYNC_DEPS=false` to skip sync, or `M8FLOW_BACKEND_USE_UV=false` to use the current Python environment directly.
-
-Start the frontend in a second terminal:
-
-Install frontend dependencies first if you have not already done so for this checkout:
-
-```bash
-cd m8flow-frontend
-npm install
-```
-
-```bash
-cd m8flow-frontend
-export PORT=7001
-export BACKEND_PORT=7000
-export VITE_VERSION_INFO='{"version":"local"}'
-export VITE_BACKEND_BASE_URL=/v1.0
-export VITE_MULTI_TENANT_ON="${MULTI_TENANT_ON:-false}"
-npm exec -- vite --host 0.0.0.0 --port 7001
-```
-
-```powershell
-Set-Location .\m8flow-frontend
-$env:PORT = '7001'
-$env:BACKEND_PORT = '7000'
-$env:VITE_VERSION_INFO = '{"version":"local"}'
-$env:VITE_BACKEND_BASE_URL = '/v1.0'
-$env:VITE_MULTI_TENANT_ON = if ($env:MULTI_TENANT_ON) { $env:MULTI_TENANT_ON } else { 'false' }
-npm exec -- vite --host 0.0.0.0 --port 7001
-```
-
-This flow expects the Docker dependencies to be running, but not the Docker `m8flow-backend` or `m8flow-frontend` services on the same ports. If those containers are still up, stop them before launching the local dev servers.
-
-Docker bind-mounts the repo `process_models/` directory into the backend and Celery containers, so a locally started backend and a containerized worker read the same process-model files by default.
-
-If the frontend fails with a missing Rollup native package such as `@rollup/rollup-win32-x64-msvc`, reinstall `m8flow-frontend` dependencies on that machine with `npm install`.
-
-> **macOS note:** Port 7000 may be claimed by AirPlay Receiver. Disable it in
-> System Settings → General → AirDrop & Handoff → AirPlay Receiver.
-
-### 3. Verify the backend
-
-```bash
-curl http://localhost:7000/v1.0/status
-```
-
-Expected response:
-```json
-{ "ok": true, "can_access_frontend": true }
-```
-
-### Running backend only
-
-```bash
-./m8flow-backend/bin/run_m8flow_backend.sh
-```
-
-```powershell
-.\m8flow-backend\bin\run_m8flow_backend.ps1
-```
-
-### Running a Celery worker
-
-```bash
-./m8flow-backend/bin/run_m8flow_celery_worker.sh
-```
-
----
-
-## Keycloak Setup
-
-### Automatic import 
-
-On starting the application with [Running with Docker](#running-with-docker) will import default realm "m8flow". Tenant realms are created later via the tenant realm API when needed.
-
-For tenant-aware setup this realm includes token claims `m8flow_tenant_id` and `m8flow_tenant_name`.
-<div align="center">
-    <img src="./docs/images/keycloak-realm-settings-2.png" />
-</div>
-
-### Configure the client redirect URIs
-
-With the realm "m8flow" selected, click on "Clients" and then on the client ID **m8flow-backend**.
-<div align="center">
-    <img src="./docs/images/keycloak-realm-settings-3.png" />
-</div>
-
-Set the following:
-
-**Valid redirect URIs**
-```
-http://localhost:7000/*
-http://localhost:7001/*
-```
-
-**Valid post logout redirect URIs**
-```
-http://localhost:7001/*
-```
-
-**Web origins**
-```
-http://localhost:7001/*
-http://localhost:7000/*
-```
-
-<div align="center">
-    <img src="./docs/images/keycloak-realm-settings-4.png" />
-</div>
-
-
-For full Keycloak configuration reference: [m8flow-backend/keycloak/KEYCLOAK_SETUP.md](m8flow-backend/keycloak/KEYCLOAK_SETUP.md).
-
----
-
-## Access the Application with no multitenancy
-
-Open `http://localhost:7001/` in your browser. You will be redirected to Keycloak login.
-
-<div align="center">
-    <img src="./docs/images/access-m8flow-1.png" />
-</div>
-
-<div align="center">
-    <img src="./docs/images/access-m8flow-2.png" />
-</div>
-
-Default test users (password = username):
-
-| Username | Role |
-|----------|------|
-| `admin` | Administrator |
-| `editor` | Create and edit process models |
-| `viewer` | Read-only access |
-| `integrator` | Service task / connector access |
-| `reviewer` | Review and approve tasks |
-
----
-
-## Access the Application with multitenancy
-
-Open `http://localhost:7001/` in your browser. You will be redirected to Tenant selector. Type the tenant slug, e.g.: "m8flow" (installed by default) and then you will be redirected to the tenant login.
-
-<div align="center">
-    <img src="./docs/images/access-m8flow-tenant-selection.png" />
-</div>
-
-<div align="center">
-    <img src="./docs/images/access-m8flow-1.png" />
-</div>
-
-<div align="center">
-    <img src="./docs/images/access-m8flow-2.png" />
-</div>
-
-
-Every tenant has default test users (password = username):
-
-| Username | Role |
-|----------|------|
-| `admin` | Tenant administrator |
-| `editor` | Create and edit process models |
-| `viewer` | Read-only access |
-| `integrator` | Service task / connector access |
-| `reviewer` | Review and approve tasks |
-
----
-
-
-### Tenant Management
-
-Open `http://localhost:7001/` in your browser. You will be redirected to Tenant selector. Click on "Global admin sign in"
-
-<div align="center">
-    <img src="./docs/images/access-m8flow-tenant-selection.png" />
-</div>
-
-There's only one user (password = username):
-
-| Username | Role |
-|----------|------|
-| `super-admin` | Tenants management |
-
-## Tenant creation
-
-Currently, tenant creation can be done using the `http://localhost:7000/v1.0/m8flow/tenant-realms` API. This request requires a `Bearer` token for the `super-admin` user.
-
-Example request payload:
-
-```json
-{
-  "realm_id": "myapp",
-  "display_name": "My application"
-}
-```
-
-On success, the tenant will be listed on the tenant management page and will be ready to use through the multitenant access flow described in [Access the Application with multitenancy](#access-the-application-with-multitenancy).
-
-<div align="center">
-    <img src="./docs/images/access-m8flow-tenant-management.png" />
-</div>
-
----
-
-## Running Backend Tests
-
-Requires `./bin/fetch-upstream.sh` or `.\bin\fetch-upstream.ps1` to have been run first — tests use `spiffworkflow-backend/pyproject.toml` for pytest config.
-
-Run all tests:
-
-```bash
-pytest -c spiffworkflow-backend/pyproject.toml ./m8flow-backend/tests/ -q
-```
-
-Run a specific test file:
-
-```bash
-pytest -c spiffworkflow-backend/pyproject.toml \
-  ./m8flow-backend/tests/unit/m8flow_backend/services/test_tenant_context_middleware.py -q
-```
-
----
-
-## Sample Templates
-
-m8flow includes sample workflow templates that can help teams get started quickly with common approval, notification, escalation, and integration scenarios.
-
-The sample templates package includes pre-built workflows and guidance for:
-
-- automatically loading templates during startup
-- using integration-focused templates such as Salesforce, Slack, SMTP, and PostgreSQL examples
-
-For the full template catalog and setup instructions, refer to [m8flow-backend/sample_templates/README.md](m8flow-backend/sample_templates/README.md).
-
----
-
-## Integration Services
-
-m8flow includes supporting services for connector execution and event-driven workflow processing. These components can be run alongside the core platform depending on your deployment needs.
-
-For service-specific setup, configuration, and usage details, refer to:
-
-- [m8flow-connector-proxy/README.md](m8flow-connector-proxy/README.md) for connector proxy support such as SMTP, Slack, HTTP, and related integrations
-- [m8flow-nats-consumer/README.md](m8flow-nats-consumer/README.md) for NATS-based event consumption and event-driven workflow execution
-
----
-
-## Production Deployment
-
-See [docker/DEPLOYMENT.md](docker/DEPLOYMENT.md) for production compose and hardening guidance.
-
-### Production MinIO
-
-A dedicated MinIO compose file with pinned image, restart policy, and resource limits:
-
-```bash
-# MinIO only
-docker compose -f docker/minio.production.docker-compose.yml up -d
-
-# MinIO with the full stack
-docker compose -f docker/m8flow-docker-compose.yml \
-               -f docker/minio.production.docker-compose.yml up -d
-
-# With bucket init
-docker compose --profile init \
-               -f docker/m8flow-docker-compose.yml \
-               -f docker/minio.production.docker-compose.yml up -d
-```
-
-Set `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` in `.env` (no defaults in the production file).
+For details on active development of backend/frontend workflows without docker,  and other development topics, refer to [docs/README.md](docs/README.md). More guides and references are available in the `docs/` folder as the documentation expands.
 
 ---
 

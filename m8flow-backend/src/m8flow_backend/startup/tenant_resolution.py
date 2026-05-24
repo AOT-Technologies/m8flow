@@ -1,9 +1,34 @@
 # extensions/startup/tenant_resolution.py
+from __future__ import annotations
+
+from typing import Any
+
+
+def _view_function_sets_tenant_context(view_function: Any) -> bool:
+    visited: set[int] = set()
+    while view_function is not None and id(view_function) not in visited:
+        visited.add(id(view_function))
+        if getattr(view_function, "_m8flow_sets_tenant_context", False):
+            return True
+        view_function = getattr(view_function, "__wrapped__", None)
+    return False
+
+
+def _request_controller_sets_tenant_context(flask_app) -> bool:
+    from flask import request
+
+    endpoint = getattr(request, "endpoint", None)
+    if not endpoint:
+        return False
+    return _view_function_sets_tenant_context(flask_app.view_functions.get(endpoint))
+
 
 def register_tenant_resolution_after_auth(flask_app) -> None:
     from m8flow_backend.services.tenant_context_middleware import resolve_request_tenant
 
     def _resolve_tenant_after_auth():
+        if _request_controller_sets_tenant_context(flask_app):
+            return None
         return resolve_request_tenant()
 
     def _is_auth_before_request(func) -> bool:

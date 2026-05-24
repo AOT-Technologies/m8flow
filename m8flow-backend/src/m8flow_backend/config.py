@@ -17,7 +17,7 @@ def _get(key: str, default: str | None = None) -> str | None:
 
 def keycloak_url() -> str:
     """Keycloak base URL (no trailing slash)."""
-    url = _get("KEYCLOAK_URL") or _get("M8FLOW_KEYCLOAK_URL") or "http://localhost:7002"
+    url = _get("KEYCLOAK_URL") or _get("M8FLOW_KEYCLOAK_URL") or "http://localhost:6842"
     return url.rstrip("/")
 
 
@@ -51,6 +51,20 @@ def realm_template_path() -> str:
     _pkg = Path(__file__).resolve().parent  # .../m8flow_backend
     _root = _pkg.parent.parent  # .../m8flow-backend (keycloak/ lives here)
     default = _root / "keycloak" / "realm_exports" / "m8flow-tenant-template.json"
+    return str(default)
+
+
+def keycloak_default_groups_path() -> str:
+    """Path to the repo-owned default Keycloak organizational groups config."""
+    raw = _get("M8FLOW_KEYCLOAK_DEFAULT_GROUPS_PATH")
+    if raw:
+        p = Path(raw)
+        if not p.is_absolute():
+            p = Path.cwd() / raw
+        return str(p)
+
+    package_root = Path(__file__).resolve().parent
+    default = package_root / "config" / "keycloak" / "default_groups.json"
     return str(default)
 
 
@@ -134,3 +148,8 @@ def redirect_uri_frontend_host() -> str | None:
 def nats_token_salt() -> str:
     """Get the NATS token salt from environment variables."""
     return _get("M8FLOW_NATS_TOKEN_SALT") or "m8flow_default_salt"
+
+
+def nats_url() -> str:
+    """Get the NATS URL from environment variables."""
+    return _get("M8FLOW_NATS_URL")

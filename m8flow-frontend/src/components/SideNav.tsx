@@ -34,6 +34,8 @@ import {
   Extension,
   Flag,
   Description,
+  Hub,
+  Business,
 } from "@mui/icons-material";
 import { Link, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -76,6 +78,7 @@ const routeIdentifiers = {
   PROCESS_INSTANCES: "processInstances",
   MESSAGES: "messages",
   CONFIGURATION: "configuration",
+  CONNECTORS: "connectors",
   TEMPLATES: "templates",
 };
 
@@ -101,7 +104,8 @@ function SideNav({
     [targetUris.processInstanceListPath]: ["GET"],
     [targetUris.processInstanceListForMePath]: ["POST"],
     [targetUris.secretListPath]: ["GET"],
-    "/tasks/*": ["PUT"],
+    [targetUris.serviceTaskListPath]: ["GET"],
+    "/tasks/*": ["GET", "PUT"],
     "/m8flow/tenants": ["GET"],
     "/m8flow/templates": ["GET"],
   };
@@ -121,6 +125,8 @@ function SideNav({
     selectedTab = routeIdentifiers.MESSAGES;
   } else if (location.pathname.startsWith("/configuration")) {
     selectedTab = routeIdentifiers.CONFIGURATION;
+  } else if (location.pathname.startsWith("/connectors")) {
+    selectedTab = routeIdentifiers.CONNECTORS;
   } else if (location.pathname.startsWith("/templates")) {
     selectedTab = routeIdentifiers.TEMPLATES;
   }
@@ -230,6 +236,13 @@ function SideNav({
       ],
     },
     {
+      text: t("connectors"),
+      icon: <Hub />,
+      route: "/connectors",
+      id: routeIdentifiers.CONNECTORS,
+      permissionRoutes: [targetUris.serviceTaskListPath],
+    },
+    {
       text: t("templates"),
       icon: <Description />,
       route: "/templates",
@@ -283,6 +296,13 @@ function SideNav({
       return true;
     }
 
+    if (item.id === routeIdentifiers.HOME) {
+      return (
+        ability.can("PUT", "/tasks/*") ||
+        (UserService.isSuperAdmin() && ability.can("GET", "/tasks/*"))
+      );
+    }
+
     let hasPermission = false;
     item.permissionRoutes?.forEach((targetUri: string) => {
       let method = "GET";
@@ -326,6 +346,30 @@ function SideNav({
                 <MuiLink component={Link} to="/" data-testid="nav-logo-link">
                   <SpiffLogo />
                 </MuiLink>
+                {tenantId && (
+                  <Box
+                    data-testid="nav-tenant-name"
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 0.5,
+                      mt: 0.5,
+                      paddingLeft: "8px",
+                      color: "text.secondary",
+                    }}
+                  >
+                    <Business sx={{ fontSize: "1rem" }} />
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        fontWeight: 600,
+                        textTransform: "capitalize",
+                      }}
+                    >
+                      {t("tenant")}: {tenantId}
+                    </Typography>
+                  </Box>
+                )}
               </Box>
             )}
             <IconButton

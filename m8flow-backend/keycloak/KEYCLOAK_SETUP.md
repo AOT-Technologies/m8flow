@@ -59,8 +59,8 @@ cd m8flow-backend/bin
 2. **Sets up Docker network**: Creates or verifies the `m8flow` network exists
 3. **Manages container**: Stops and removes any existing `keycloak` container, then starts a new one
 4. **Starts Keycloak**: Runs Keycloak 26.0.7 in Docker with:
-   - Port 7002 (HTTP API)
-   - Port 7009 (Health check)
+   - Port 6842 (HTTP API)
+   - Port 6849 (Health check)
    - Admin credentials: `admin` / `admin`
 5. **Waits for readiness**: Polls health endpoint until Keycloak is ready
 6. **Bootstraps realms**:
@@ -69,10 +69,10 @@ cd m8flow-backend/bin
 
 ## Keycloak Access
 
-- **Admin Console**: http://localhost:7002
+- **Admin Console**: http://localhost:6842
 - **Admin Username**: `admin`
 - **Admin Password**: `admin`
-- **API Base URL**: http://localhost:7002
+- **API Base URL**: http://localhost:6842
 
 ## Realm Import Behavior
 
@@ -98,11 +98,11 @@ Defaults are `KEYCLOAK_SUPER_ADMIN_USER=super-admin` and `KEYCLOAK_SUPER_ADMIN_P
 
 Use the master auth option with `client_id=m8flow-backend` for browser sign-in. If you also need API-style `admin-cli` tokens to pass backend validation, add `additional_valid_client_ids=admin-cli` to that auth config.
 
-**Permissions and role alignment:** For the backend to grant API and UI permissions, Keycloak realm role names must match the group names defined in `m8flow.yml`: `super-admin`, `tenant-admin`, `editor`, `viewer`, `integrator`, `reviewer`. Tenant realm templates still expose the tenant-scoped roles through the **m8flow-backend** client `groups` mapper. For master-realm admin tokens that do not include a top-level `groups` claim (for example `admin-cli` tokens), the backend falls back to `realm_access.roles` and maps the matching M8Flow role names automatically.
+**Permissions and role alignment:** For the backend to grant API and UI permissions, Keycloak realm role names must match the group names defined in `m8flow.yml`: `super-admin`, `tenant-admin`, `editor`, `viewer`, `integrator`, `reviewer`. Tenant realm tokens now separate organizational and authorization membership: organizational groups are emitted in the `groups` claim as normalized paths without a leading slash (for example `Engineering` or `Business/Finance`), and realm roles are emitted in a separate top-level `roles` claim for the **m8flow-backend** client. The backend no longer derives M8Flow permission roles from the `groups` claim. For master-realm admin tokens that do not include a top-level `roles` claim (for example `admin-cli` tokens), the backend still falls back to `realm_access.roles` and maps the matching M8Flow role names automatically.
 
 ## Troubleshooting
 
-- **Port conflicts**: Ensure ports 7002 and 7009 are not in use
+- **Port conflicts**: Ensure ports 6842 and 6849 are not in use
 - **Docker issues**: Verify Docker is running and you have permissions
 - **Import failures**: Check that realm export JSON files are valid and accessible
 - **Network issues**: The script creates the `m8flow` network if it doesn't exist
