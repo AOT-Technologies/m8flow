@@ -1,0 +1,20 @@
+[project]
+name = "m8flow-browser-tests"
+version = "0.1.0"
+description = "Playwright E2E tests for m8flow extension frontend"
+requires-python = ">=3.8"
+dependencies = [
+    "pytest-playwright",
+    "pytest-timeout",
+    "pytest-rerunfailures",
+    "faker",
+]
+
+[project.optional-dependencies]
+pdf = [
+    "fpdf2>=2.7.0",
+    "matplotlib>=3.7",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["."]

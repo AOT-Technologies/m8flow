@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>M8Flow · QA Automation Report</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400..700;1,400&family=JetBrains+Mono:wght@400;500&family=Outfit:wght@500..800&display=swap" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg:#eef1f6; --panel:#fafbfd; --card:#fff; --text:#161b22; --muted:#5c6675; --border:#dfe4ec;
+      --shadow: 0 1px 2px rgba(15,23,42,.06), 0 8px 24px rgba(15,23,42,.06);
+      --pass:#0d7d4d; --fail:#c91835; --skip:#ca7a06; --err:#6639a8; --brand:#0747dc; --brand2:#2897ff;
+      --rail: 274px;
+    }
+    [data-theme="dark"] {
+      --bg:#0d1117; --panel:#121820; --card:#161d27; --text:#eef2f8; --muted:#9babbf; --border:#2e3a48;
+      --shadow: 0 1px 3px rgba(0,0,0,.35);
+      --fail-bg:rgba(214,54,71,.09);
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: "DM Sans", system-ui, sans-serif; background:var(--bg); color:var(--text); font-size:14px;}
+    code, pre, .mono { font-family:"JetBrains Mono", ui-monospace, monospace;}
+    .shell { display:flex; min-height:100vh; }
+    aside {
+      width: var(--rail); flex-shrink:0; background: var(--panel);
+      border-right:1px solid var(--border); padding:18px 16px;
+      display:flex; flex-direction:column; gap:14px;
+      position:sticky; top:0; align-self:flex-start; max-height:100vh; overflow:auto;
+    }
+    .brand { font-family:"Outfit", sans-serif; font-weight:780; letter-spacing:.04em;
+      font-size:1rem; background:linear-gradient(120deg,var(--brand),var(--brand2)); -webkit-background-clip:text; background-clip:text; color:transparent;}
+    aside .muted { font-size:.78rem; line-height:1.45;}
+    .pw-foot {
+      margin-top:auto; padding-top:12px; border-top:1px solid var(--border);
+      font-size:.68rem; color:var(--muted); line-height:1.35;
+    }
+    .pw-foot strong { color:var(--brand2); font-weight:700;}
+    .nav-pane { margin-top:4px;}
+    .nav-pane a, .pill {
+      display:block; font-size:.8rem; padding:8px 10px; border-radius:10px; color:inherit; cursor:pointer;
+      border:1px solid transparent;
+    }
+    .nav-pane a:hover, .pill:hover { background:rgba(11,101,251,.06);}
+    .nav-pane a.active, .pill.on { border-color:rgba(11,101,251,.35); background:rgba(11,101,251,.09); font-weight:600;}
+    .cat-list { margin:4px 0 12px;}
+    .cat-item { cursor:pointer; display:flex; justify-content:space-between; gap:8px;
+      padding:7px 8px; margin:4px 0; border-radius:8px; font-size:.8rem;}
+    .cat-item:hover { background: rgba(120,134,157,.07);}
+    .cat-item span.b { font-variant-numeric: tabular-nums; color:var(--muted); font-size:.73rem;}
+
+    main { flex:1; padding:22px clamp(14px,3vw,32px) 72px;}
+    main h2 { font-family:"Outfit",sans-serif; font-size:1.35rem; margin:0 0 16px; font-weight:720;}
+    .top-tools { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:18px;}
+    .top-tools input[type="search"] {
+      flex:1; min-width:200px; max-width:420px; padding:10px 14px; border-radius:12px; border:1px solid var(--border);
+      background:var(--card); color:inherit; font-size:.9rem;
+    }
+    .btn {
+      padding:9px 15px; border-radius:12px; border:1px solid var(--border); background:var(--card);
+      font-size:.8rem; font-weight:600; cursor:pointer; color:inherit;
+    }
+    .btn:hover { border-color: var(--brand); color: var(--brand);}
+    .btn-ghost { background:transparent;}
+    .theme-toggle { margin-left:auto;}
+
+    .kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(132px,1fr)); gap:12px; margin-bottom:18px;}
+    .kpi {
+      background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px 16px; box-shadow:var(--shadow);
+    }
+    .kpi .l { font-size:.68rem; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; font-weight:600;}
+    .kpi .v { font-size:1.6rem; font-weight:800; margin-top:6px; font-family:"Outfit",sans-serif;}
+    .kpi.pass .v { color:var(--pass);} .kpi.fail .v { color:var(--fail);} .kpi.warn .v { color:var(--skip);}
+    .kpi.errk .v { color:var(--err);}
+
+    .chart-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:18px; margin-bottom:22px;}
+    .chart-card {
+      background:var(--card); border:1px solid var(--border); border-radius:16px; padding:16px 18px 12px; box-shadow:var(--shadow);
+    }
+    .chart-card h3 { margin:0 0 12px; font-size:.88rem; font-weight:700; font-family:"Outfit",sans-serif;}
+
+    .status-chips { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:18px;}
+    .chip { padding:7px 13px; border-radius:999px; border:1px solid var(--border); background:var(--card); cursor:pointer; font-size:.76rem; font-weight:600;}
+    .chip.on { border-color:var(--brand); color:var(--brand); background:rgba(7,71,220,.07);}
+
+    section.panel { margin-bottom:36px; scroll-margin-top:72px;}
+    .hidden { display:none !important;}
+
+    .tree-section { margin-bottom:22px;}
+    .tree-section > h3 {
+      font-size:.88rem; font-family:"Outfit",sans-serif; margin:0 0 10px; padding-bottom:8px; border-bottom:2px solid var(--border);
+      display:flex; align-items:center; gap:10px;
+    }
+    .tree-section > h3 .count { font-size:.78rem; color:var(--muted); font-weight:600;}
+
+    .test {
+      background:var(--card); border:1px solid var(--border); border-radius:14px; margin-bottom:10px; overflow:hidden;
+      box-shadow:var(--shadow);
+    }
+    .test.failed { border-color:var(--fail);}
+    [data-theme="light"] .test.failed { background:#fff8f8;}
+    [data-theme="dark"] .test.failed { background:var(--fail-bg); border-color:#9b2b3b;}
+
+    .test-head {
+      display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:12px 14px; cursor:pointer;
+    }
+    .test-head::after { content:"\203A"; margin-left:auto; color:var(--muted); font-weight:700; transform:rotate(0deg); transition:.15s;}
+    .test-head.open::after { transform:rotate(90deg);}
+
+    .badge { font-size:.65rem; font-weight:800; padding:4px 10px; border-radius:999px; color:#fff; text-transform:uppercase; letter-spacing:.04em;}
+    .badge.pass { background:var(--pass);} .badge.fail { background:var(--fail);}
+    .badge.skip { background:var(--skip);} .badge.error { background:var(--err);}
+
+    .title { flex:1; font-weight:650; font-size:.9rem; min-width:140px;}
+    .meta { font-size:.78rem; color:var(--muted);}
+
+    .body { display:none; padding:14px 16px 18px; border-top:1px solid var(--border); background:rgba(120,134,157,.025);}
+    [data-theme="dark"] .body { background:rgba(255,255,255,.02);}
+    .body.open { display:block;}
+    .body h4 { margin:14px 0 8px; font-size:.74rem; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); font-weight:700;}
+    pre.log { background:#0d1117; color:#c9d1d9; padding:12px; border-radius:10px; overflow:auto; max-height:280px; font-size:.72rem;}
+    [data-theme="dark"] pre.log { background:#010409;}
+    .steps li { margin:4px 0; font-size:.82rem;} .steps .bad { color:var(--fail);}
+    img.shot { max-width:100%; border-radius:10px; border:1px solid var(--border); margin-top:8px; cursor:zoom-in;}
+    .links a { display:inline-block; margin:6px 14px 0 0; color:var(--brand); font-weight:600; font-size:.82rem;}
+    .err { background:rgba(201,24,53,.1); border-left:4px solid var(--fail); padding:10px 12px; border-radius:0 10px 10px 0; font-size:.82rem; white-space:pre-wrap;}
+
+    .gallery-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:12px;}
+    .gallery-item { position:relative; border-radius:12px; overflow:hidden; border:1px solid var(--border); cursor:pointer; background:var(--card);}
+    .gallery-item img { width:100%; height:120px; object-fit:cover; display:block;}
+    .gallery-cap { font-size:.7rem; padding:6px 8px; color:var(--muted); line-height:1.25; max-height:3.2em; overflow:hidden;}
+
+    .top-strip {
+      background: linear-gradient(105deg, #0636a8 0%, #0b5fff 45%, #1e6efd 100%);
+      color:#fff; padding:12px clamp(16px,4vw,36px); box-shadow:0 4px 20px rgba(7,71,160,.25);
+      position:sticky; top:0; z-index:40;
+    }
+    .strip-inner { max-width:1420px; margin:0 auto; display:flex; flex-wrap:wrap; align-items:baseline; gap:10px 18px;}
+    .strip-logo { font-family:"Outfit",sans-serif; font-weight:850; font-size:1.15rem; letter-spacing:.06em;}
+    .strip-sub { font-size:.82rem; opacity:.92;}
+    .strip-meta { font-size:.75rem; opacity:.85; margin-left:auto; font-family:"JetBrains Mono",monospace;}
+
+    .insights-row {
+      display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; margin-bottom:22px;
+    }
+    .insight-card {
+      background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px 16px;
+      border-left:4px solid var(--brand); box-shadow:var(--shadow);
+    }
+    .insight-card.warn { border-left-color:var(--skip);}
+    .insight-card.bad { border-left-color:var(--fail);}
+    .insight-card h4 { margin:0 0 6px; font-size:.72rem; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); font-weight:700;}
+    .insight-card p { margin:0; font-size:.86rem; line-height:1.45;}
+
+    details.trace-box { margin:10px 0; border:1px solid var(--border); border-radius:10px; overflow:hidden; background:rgba(120,134,157,.04);}
+    details.trace-box summary {
+      padding:10px 12px; cursor:pointer; font-weight:700; font-size:.82rem; list-style:none;
+    }
+    details.trace-box summary::-webkit-details-marker { display:none;}
+    details.trace-box[open] summary { border-bottom:1px solid var(--border);}
+    details.trace-box pre { margin:0; border-radius:0; max-height:420px;}
+
+    .section-head { display:flex; align-items:flex-end; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:14px;}
+    .section-head h2 { margin-bottom:0;}
+    .section-head .tag { font-size:.74rem; color:var(--muted); font-weight:600;}
+
+    #lightbox { display:none; position:fixed; inset:0; z-index:50; background:rgba(5,8,14,.88); align-items:center; justify-content:center; padding:24px;}
+    #lightbox.open { display:flex;}
+    #lightbox img { max-width:96vw; max-height:90vh; border-radius:12px; box-shadow:0 20px 80px rgba(0,0,0,.5);}
+    #lightbox .cap { position:absolute; bottom:20px; left:50%; transform:translateX(-50%); color:#fff; font-size:.85rem; text-align:center; max-width:90vw;}
+    #lightbox .close { position:absolute; top:18px; right:22px; color:#fff; font-size:1.6rem; cursor:pointer; font-weight:300;}
+
+    @media (max-width: 980px) {
+      .shell { flex-direction:column;}
+      aside { width:100%; position:relative; max-height:none; border-right:none; border-bottom:1px solid var(--border);}
+    }
+  </style>
+</head>
+<body>
+  <header class="top-strip" role="banner">
+    <div class="strip-inner">
+      <span class="strip-logo">M8FLOW</span>
+      <span class="strip-sub">pytest · Playwright Test · automation report</span>
+      <span class="strip-meta" id="stripMeta"></span>
+    </div>
+  </header>
+  <div class="shell">
+    <aside>
+      <div>
+        <div class="brand">M8FLOW</div>
+        <div class="muted" id="envBlurb"></div>
+      </div>
+      <div class="nav-pane">
+        <a href="#panel-overview" class="active">Overview</a>
+        <a href="#panel-insights">Insights</a>
+        <a href="#panel-tests">Test catalogue</a>
+        <a href="#panel-gallery">Screenshot gallery</a>
+      </div>
+      <div>
+        <div class="muted" style="margin-bottom:6px;">Areas</div>
+        <div class="cat-list" id="sidebarCats"></div>
+      </div>
+      <div class="pw-foot"><strong>Playwright Test</strong> drives browsers here. Trace/video links use <span class="mono">file://</span>; open zips in Trace Viewer.</div>
+    </aside>
+    <main>
+      <div class="top-tools">
+        <input type="search" id="q" placeholder="Filter by title, logs, paths, browser…"/>
+        <button type="button" class="btn" id="expandAll">Expand all</button>
+        <button type="button" class="btn btn-ghost" id="collapseAll">Collapse all</button>
+        <button type="button" class="btn theme-toggle" id="themeBtn" title="Toggle light/dark">Theme</button>
+      </div>
+
+      <section class="panel" id="panel-overview">
+        <div class="section-head">
+          <h2>Executive overview</h2>
+          <span class="tag">M8Flow frontend · E2E</span>
+        </div>
+        <div class="kpi-grid" id="kpis"></div>
+        <div id="panel-insights" style="margin-bottom:22px;">
+          <h3 style="font-family:Outfit,sans-serif;font-size:1rem;margin:0 0 12px;font-weight:720;">Insights</h3>
+          <div class="insights-row" id="insights"></div>
+        </div>
+        <div class="chart-grid">
+          <div class="chart-card"><h3>Outcomes</h3><canvas id="cOut"></canvas></div>
+          <div class="chart-card"><h3>Suite timeline (cumulative)</h3><canvas id="cTime"></canvas></div>
+          <div class="chart-card"><h3>Slowest cases (s)</h3><canvas id="cSlow"></canvas></div>
+          <div class="chart-card"><h3>Cases by area</h3><canvas id="cCat"></canvas></div>
+          <div class="chart-card"><h3>Time by area (sum)</h3><canvas id="cCatDur"></canvas></div>
+          <div class="chart-card"><h3>Time by module (sum)</h3><canvas id="cMod"></canvas></div>
+        </div>
+      </section>
+
+      <section class="panel" id="panel-tests">
+        <h2>Test catalogue</h2>
+        <div class="status-chips" id="chips"></div>
+        <div id="suites"></div>
+      </section>
+
+      <section class="panel" id="panel-gallery">
+        <h2>Failure screenshot gallery</h2>
+        <p class="muted" style="margin-top:-8px;margin-bottom:16px;font-size:.86rem;">
+          Only <strong>failed</strong> and <strong>error</strong> outcomes appear here (not skipped or passed).
+          Thumbnails come from the failure screenshot hook and matching PNGs under <span class="mono">test-results/</span> — click an image for a larger preview.</p>
+        <div id="galleryHint" class="muted" style="display:none;font-size:.82rem;margin-bottom:10px;"></div>
+        <div class="gallery-grid" id="gallery"></div>
+      </section>
+    </main>
+  </div>
+
+  <div id="lightbox" role="dialog" aria-modal="true">
+    <span class="close" id="lbClose">&times;</span>
+    <img alt="" src="" id="lbImg"/>
+    <div class="cap" id="lbCap"></div>
+  </div>
+
+  <script id="suite-data" type="application/json">{"meta": {"counts": {"passed": 102, "failed": 0, "skipped": 4, "error": 0}, "total_tests": 106, "session_started_iso": "2026-05-18T11:21:04.002729+00:00", "session_finished_iso": "2026-05-18T11:26:20.764385+00:00", "environment": {"platform": "Windows-11-10.0.26200-SP0", "python": "3.12.1", "pytest": "9.0.2", "playwright": "1.58.0", "browsers_cli": "chromium (default)", "e2e_url": "http://localhost:6841", "tracing_opt": "retain-on-failure", "video_opt": "off", "screenshot_opt": "only-on-failure", "results_dir": "C:\\Users\\ravee\\Downloads\\Automation M8F\\m8flow\\extensions\\m8flow-frontend\\test\\browser\\test-results", "git_revision": "cc77645ee", "ci_workflow": ""}, "exit_status": 0}, "tests": [{"nodeid": "auth/test_login_basic.py::test_login[chromium]", "outcome": "passed", "duration": 0.007597099989652634, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:51:11,826 [INFO] auth.test_login_basic:  User has been successfully logged in."], "steps": [], "started_iso": "2026-05-18T11:21:04.478119+00:00", "finished_iso": "2026-05-18T11:21:04.485716+00:00", "browser": "chromium", "rerun": 0, "module": "auth/test_login_basic.py", "category": "auth", "test_name": "test_login[chromium]", "display_name": "test_login_basic › test_login", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "auth/test_login_basic.py::test_logout[chromium]", "outcome": "passed", "duration": 3.7957016000291333, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:51:16,238 [INFO] auth.test_login_basic: User has been successfully logged out."], "steps": [], "started_iso": "2026-05-18T11:21:11.842360+00:00", "finished_iso": "2026-05-18T11:21:15.638062+00:00", "browser": "chromium", "rerun": 0, "module": "auth/test_login_basic.py", "category": "auth", "test_name": "test_logout[chromium]", "display_name": "test_login_basic › test_logout", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "auth/test_login_basic.py::test_login_and_see_sidenav[chromium]", "outcome": "passed", "duration": 0.012495399976614863, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:51:16,285 [INFO] auth.test_login_basic: SideNav is visible after login."], "steps": [], "started_iso": "2026-05-18T11:21:16.273521+00:00", "finished_iso": "2026-05-18T11:21:16.286016+00:00", "browser": "chromium", "rerun": 0, "module": "auth/test_login_basic.py", "category": "auth", "test_name": "test_login_and_see_sidenav[chromium]", "display_name": "test_login_basic › test_login_and_see_sidenav", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "auth/test_login_failures.py::test_login_with_wrong_password_shows_error[chromium]", "outcome": "passed", "duration": 1.4913569999625906, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:51:18,442 [INFO] auth.test_login_failures: Login with wrong password shows error."], "steps": [], "started_iso": "2026-05-18T11:21:16.288769+00:00", "finished_iso": "2026-05-18T11:21:17.780126+00:00", "browser": "chromium", "rerun": 0, "module": "auth/test_login_failures.py", "category": "auth", "test_name": "test_login_with_wrong_password_shows_error[chromium]", "display_name": "test_login_failures › test_login_with_wrong_password_shows_error", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "auth/test_login_failures.py::test_login_with_non_existing_user_shows_error[chromium]", "outcome": "passed", "duration": 1.8253371000173502, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:51:20,989 [INFO] auth.test_login_failures: Login with non-existing user shows error."], "steps": [], "started_iso": "2026-05-18T11:21:18.472417+00:00", "finished_iso": "2026-05-18T11:21:20.297754+00:00", "browser": "chromium", "rerun": 0, "module": "auth/test_login_failures.py", "category": "auth", "test_name": "test_login_with_non_existing_user_shows_error[chromium]", "display_name": "test_login_failures › test_login_with_non_existing_user_shows_error", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "auth/test_login_failures.py::test_user_with_no_role_cannot_login[chromium]", "outcome": "passed", "duration": 1.750647300039418, "longrepr_text": "", "error_summary": "", "logs": [], "steps": [], "started_iso": "2026-05-18T11:21:21.011910+00:00", "finished_iso": "2026-05-18T11:21:22.762557+00:00", "browser": "chromium", "rerun": 0, "module": "auth/test_login_failures.py", "category": "auth", "test_name": "test_user_with_no_role_cannot_login[chromium]", "display_name": "test_login_failures › test_user_with_no_role_cannot_login", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "auth/test_login_failures.py::test_tenant_user_cannot_login_to_other_tenant[chromium]", "outcome": "skipped", "duration": 1.8195666000247002, "longrepr_text": "('C:\\\\Users\\\\ravee\\\\Downloads\\\\Automation M8F\\\\m8flow\\\\extensions\\\\m8flow-frontend\\\\test\\\\browser\\\\auth\\\\test_login_failures.py', 66, \"Skipped: Cross-tenant test requires an additional seeded tenant (BROWSER_TEST_CROSS_TENANT_LOGIN_TENANT='acme'). Tenant rejected: Tenant 'acme' was rejected by the tenant-select page.\")", "error_summary": "('C:\\\\Users\\\\ravee\\\\Downloads\\\\Automation M8F\\\\m8flow\\\\extensions\\\\m8flow-frontend\\\\test\\\\browser\\\\auth\\\\test_login_failures.py', 66, \"Skipped: Cross-tenant test requires an additional seeded tenant (BROWSER_TEST_CROSS_TENANT_LOGIN_TENANT='acme'). Tenant rejected: Tenant 'acme' was rejected by the tenant-select page.\")", "logs": [], "steps": [], "started_iso": "2026-05-18T11:21:23.488140+00:00", "finished_iso": "2026-05-18T11:21:25.307707+00:00", "browser": "chromium", "rerun": 0, "module": "auth/test_login_failures.py", "category": "auth", "test_name": "test_tenant_user_cannot_login_to_other_tenant[chromium]", "display_name": "test_login_failures › test_tenant_user_cannot_login_to_other_tenant", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "auth/test_login_failures.py::test_super_admin_cannot_login_in_tenant_flow[chromium]", "outcome": "passed", "duration": 1.7844995000050403, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:51:28,854 [INFO] auth.test_login_failures: Super admin cannot login in tenant flow."], "steps": [], "started_iso": "2026-05-18T11:21:26.178376+00:00", "finished_iso": "2026-05-18T11:21:27.962876+00:00", "browser": "chromium", "rerun": 0, "module": "auth/test_login_failures.py", "category": "auth", "test_name": "test_super_admin_cannot_login_in_tenant_flow[chromium]", "display_name": "test_login_failures › test_super_admin_cannot_login_in_tenant_flow", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "auth/test_login_tenant_modes.py::test_single_tenant_login_skips_tenant_selection[chromium]", "outcome": "skipped", "duration": 1.125440600037109, "longrepr_text": "('C:\\\\Users\\\\ravee\\\\Downloads\\\\Automation M8F\\\\m8flow\\\\extensions\\\\m8flow-frontend\\\\test\\\\browser\\\\auth\\\\test_login_tenant_modes.py', 16, 'Skipped: Single-tenant flow not applicable when multi-tenant mode is enabled.')", "error_summary": "('C:\\\\Users\\\\ravee\\\\Downloads\\\\Automation M8F\\\\m8flow\\\\extensions\\\\m8flow-frontend\\\\test\\\\browser\\\\auth\\\\test_login_tenant_modes.py', 16, 'Skipped: Single-tenant flow not applicable when multi-tenant mode is enabled.')", "logs": [], "steps": [], "started_iso": "2026-05-18T11:21:28.880390+00:00", "finished_iso": "2026-05-18T11:21:30.005831+00:00", "browser": "chromium", "rerun": 0, "module": "auth/test_login_tenant_modes.py", "category": "auth", "test_name": "test_single_tenant_login_skips_tenant_selection[chromium]", "display_name": "test_login_tenant_modes › test_single_tenant_login_skips_tenant_selection", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "auth/test_tenant_select.py::test_tenant_select_page_renders[chromium]", "outcome": "passed", "duration": 1.0476209000335075, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:51:32,795 [INFO] auth.test_tenant_select: Tenant select page renders."], "steps": [], "started_iso": "2026-05-18T11:21:30.847260+00:00", "finished_iso": "2026-05-18T11:21:31.894881+00:00", "browser": "chromium", "rerun": 0, "module": "auth/test_tenant_select.py", "category": "auth", "test_name": "test_tenant_select_page_renders[chromium]", "display_name": "test_tenant_select › test_tenant_select_page_renders", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "auth/test_tenant_select.py::test_tenant_select_validation[chromium]", "outcome": "passed", "duration": 1.1781190000474453, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:51:34,718 [INFO] auth.test_tenant_select: Submitting an empty tenant name shows error."], "steps": [], "started_iso": "2026-05-18T11:21:32.814112+00:00", "finished_iso": "2026-05-18T11:21:33.992231+00:00", "browser": "chromium", "rerun": 0, "module": "auth/test_tenant_select.py", "category": "auth", "test_name": "test_tenant_select_validation[chromium]", "display_name": "test_tenant_select › test_tenant_select_validation", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "auth/test_tenant_select.py::test_tenant_select_invalid_tenant[chromium]", "outcome": "passed", "duration": 1.1836620000540279, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:51:36,649 [INFO] auth.test_tenant_select: Submitting a non-existent tenant name shows error."], "steps": [], "started_iso": "2026-05-18T11:21:34.738683+00:00", "finished_iso": "2026-05-18T11:21:35.922345+00:00", "browser": "chromium", "rerun": 0, "module": "auth/test_tenant_select.py", "category": "auth", "test_name": "test_tenant_select_invalid_tenant[chromium]", "display_name": "test_tenant_select › test_tenant_select_invalid_tenant", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "configuration/test_configuration_navigation.py::test_configuration_page_loads[chromium]", "outcome": "passed", "duration": 0.12742810003692284, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:51:41,019 [INFO] configuration.test_configuration_navigation: Opening Configuration from side nav.", "2026-05-18 16:51:41,133 [INFO] configuration.test_configuration_navigation: Configuration page loaded successfully (url matches)."], "steps": [], "started_iso": "2026-05-18T11:21:36.668431+00:00", "finished_iso": "2026-05-18T11:21:36.795859+00:00", "browser": "chromium", "rerun": 0, "module": "configuration/test_configuration_navigation.py", "category": "configuration", "test_name": "test_configuration_page_loads[chromium]", "display_name": "test_configuration_navigation › test_configuration_page_loads", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "configuration/test_configuration_secrets_create.py::test_configuration_secrets_add_when_empty[chromium]", "outcome": "skipped", "duration": 15.161490399972536, "longrepr_text": "('C:\\\\Users\\\\ravee\\\\Downloads\\\\Automation M8F\\\\m8flow\\\\extensions\\\\m8flow-frontend\\\\test\\\\browser\\\\configuration\\\\test_configuration_secrets_create.py', 38, 'Skipped: Secrets already listed or empty state not shown')", "error_summary": "('C:\\\\Users\\\\ravee\\\\Downloads\\\\Automation M8F\\\\m8flow\\\\extensions\\\\m8flow-frontend\\\\test\\\\browser\\\\configuration\\\\test_configuration_secrets_create.py', 38, 'Skipped: Secrets already listed or empty state not shown')", "logs": [], "steps": [], "started_iso": "2026-05-18T11:21:42.701941+00:00", "finished_iso": "2026-05-18T11:21:57.863431+00:00", "browser": "chromium", "rerun": 0, "module": "configuration/test_configuration_secrets_create.py", "category": "configuration", "test_name": "test_configuration_secrets_add_when_empty[chromium]", "display_name": "test_configuration_secrets_create › test_configuration_secrets_add_when_empty", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "configuration/test_configuration_secrets_tab.py::test_configuration_secrets_tab_visible[chromium]", "outcome": "passed", "duration": 0.1380071999737993, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:52:07,139 [INFO] configuration.test_configuration_secrets_tab: Opening Configuration from side nav.", "2026-05-18 16:52:07,266 [INFO] configuration.test_configuration_secrets_tab: Secrets tab is visible."], "steps": [], "started_iso": "2026-05-18T11:22:03.319070+00:00", "finished_iso": "2026-05-18T11:22:03.457077+00:00", "browser": "chromium", "rerun": 0, "module": "configuration/test_configuration_secrets_tab.py", "category": "configuration", "test_name": "test_configuration_secrets_tab_visible[chromium]", "display_name": "test_configuration_secrets_tab › test_configuration_secrets_tab_visible", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "navigation/test_sidenav_core.py::test_sidenav_logo_visible[chromium]", "outcome": "passed", "duration": 0.012243800039868802, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:52:13,330 [INFO] navigation.test_sidenav_core: M8Flow Logo is visible."], "steps": [], "started_iso": "2026-05-18T11:22:09.366918+00:00", "finished_iso": "2026-05-18T11:22:09.379162+00:00", "browser": "chromium", "rerun": 0, "module": "navigation/test_sidenav_core.py", "category": "navigation", "test_name": "test_sidenav_logo_visible[chromium]", "display_name": "test_sidenav_core › test_sidenav_logo_visible", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "navigation/test_sidenav_core.py::test_sidenav_collapse_and_expand[chromium]", "outcome": "passed", "duration": 0.23840460000792518, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:52:13,570 [INFO] navigation.test_sidenav_core: SideNav collapsed and expanded."], "steps": [], "started_iso": "2026-05-18T11:22:13.333257+00:00", "finished_iso": "2026-05-18T11:22:13.571662+00:00", "browser": "chromium", "rerun": 0, "module": "navigation/test_sidenav_core.py", "category": "navigation", "test_name": "test_sidenav_collapse_and_expand[chromium]", "display_name": "test_sidenav_core › test_sidenav_collapse_and_expand", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "navigation/test_sidenav_routes.py::test_sidenav_nav_home[chromium]", "outcome": "passed", "duration": 0.10934849997283891, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:52:19,574 [INFO] navigation.test_sidenav_routes: Home nav is visible."], "steps": [], "started_iso": "2026-05-18T11:22:15.531578+00:00", "finished_iso": "2026-05-18T11:22:15.640926+00:00", "browser": "chromium", "rerun": 0, "module": "navigation/test_sidenav_routes.py", "category": "navigation", "test_name": "test_sidenav_nav_home[chromium]", "display_name": "test_sidenav_routes › test_sidenav_nav_home", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "navigation/test_sidenav_routes.py::test_sidenav_nav_templates[chromium]", "outcome": "passed", "duration": 0.22373520000837743, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:52:19,800 [INFO] navigation.test_sidenav_routes: Templates nav is visible."], "steps": [], "started_iso": "2026-05-18T11:22:19.578623+00:00", "finished_iso": "2026-05-18T11:22:19.802358+00:00", "browser": "chromium", "rerun": 0, "module": "navigation/test_sidenav_routes.py", "category": "navigation", "test_name": "test_sidenav_nav_templates[chromium]", "display_name": "test_sidenav_routes › test_sidenav_nav_templates", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "navigation/test_sidenav_routes.py::test_sidenav_nav_processes[chromium]", "outcome": "passed", "duration": 0.12955200002761558, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:52:19,932 [INFO] navigation.test_sidenav_routes: Processes nav is visible."], "steps": [], "started_iso": "2026-05-18T11:22:19.802782+00:00", "finished_iso": "2026-05-18T11:22:19.932334+00:00", "browser": "chromium", "rerun": 0, "module": "navigation/test_sidenav_routes.py", "category": "navigation", "test_name": "test_sidenav_nav_processes[chromium]", "display_name": "test_sidenav_routes › test_sidenav_nav_processes", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "navigation/test_sidenav_routes.py::test_sidenav_nav_process_instances[chromium]", "outcome": "passed", "duration": 0.10964660003082827, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:52:20,045 [INFO] navigation.test_sidenav_routes: Process Instances nav is visible."], "steps": [], "started_iso": "2026-05-18T11:22:19.936717+00:00", "finished_iso": "2026-05-18T11:22:20.046364+00:00", "browser": "chromium", "rerun": 0, "module": "navigation/test_sidenav_routes.py", "category": "navigation", "test_name": "test_sidenav_nav_process_instances[chromium]", "display_name": "test_sidenav_routes › test_sidenav_nav_process_instances", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "navigation/test_sidenav_sign_out.py::test_sidenav_sign_out[chromium]", "outcome": "passed", "duration": 0.7590465000248514, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:52:27,130 [INFO] navigation.test_sidenav_sign_out: User has been successfully logged out.", "2026-05-18 16:52:32,649 [WARNING] helpers.login: Unable to use the UI sign-out button (Locator.wait_for: Timeout 5000ms exceeded.\nCall log:\n  - waiting for get_by_test_id(\"nav-user-actions-button\") to be visible\n). Reloading app root."], "steps": [], "started_iso": "2026-05-18T11:22:22.303948+00:00", "finished_iso": "2026-05-18T11:22:23.062995+00:00", "browser": "chromium", "rerun": 0, "module": "navigation/test_sidenav_sign_out.py", "category": "navigation", "test_name": "test_sidenav_sign_out[chromium]", "display_name": "test_sidenav_sign_out › test_sidenav_sign_out", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "process_models/test_process_breadcrumbs.py::test_process_tab_breadcrumbs_from_process_group[chromium]", "outcome": "passed", "duration": 0.5562293999828398, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:52:37,699 [INFO] process_models.test_process_breadcrumbs: Verifying breadcrumbs from process group view.", "2026-05-18 16:52:38,127 [INFO] helpers.process_group_setup: Opening existing process group 'Test Process Group' from the tree.", "2026-05-18 16:52:38,254 [INFO] process_models.test_process_breadcrumbs: Process group breadcrumbs are visible."], "steps": [], "started_iso": "2026-05-18T11:22:33.041316+00:00", "finished_iso": "2026-05-18T11:22:33.597545+00:00", "browser": "chromium", "rerun": 0, "module": "process_models/test_process_breadcrumbs.py", "category": "process_models", "test_name": "test_process_tab_breadcrumbs_from_process_group[chromium]", "display_name": "test_process_breadcrumbs › test_process_tab_breadcrumbs_from_process_group", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "process_models/test_process_breadcrumbs.py::test_process_tab_breadcrumbs_from_process_model[chromium]", "outcome": "passed", "duration": 1.036138600029517, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:52:39,144 [INFO] process_models.test_process_breadcrumbs: Verifying breadcrumbs from process model view.", "2026-05-18 16:52:40,176 [INFO] process_models.test_process_breadcrumbs: Process model breadcrumb context is visible."], "steps": [], "started_iso": "2026-05-18T11:22:38.256147+00:00", "finished_iso": "2026-05-18T11:22:39.292286+00:00", "browser": "chromium", "rerun": 0, "module": "process_models/test_process_breadcrumbs.py", "category": "process_models", "test_name": "test_process_tab_breadcrumbs_from_process_model[chromium]", "display_name": "test_process_breadcrumbs › test_process_tab_breadcrumbs_from_process_model", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "process_models/test_process_breadcrumbs.py::test_process_tab_breadcrumbs_from_bpmn_file[chromium]", "outcome": "passed", "duration": 1.0710116000263952, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:52:41,008 [INFO] process_models.test_process_breadcrumbs: Verifying breadcrumbs from BPMN file view.", "2026-05-18 16:52:42,077 [INFO] process_models.test_process_breadcrumbs: BPMN file route shows process breadcrumb context."], "steps": [], "started_iso": "2026-05-18T11:22:40.184905+00:00", "finished_iso": "2026-05-18T11:22:41.255917+00:00", "browser": "chromium", "rerun": 0, "module": "process_models/test_process_breadcrumbs.py", "category": "process_models", "test_name": "test_process_tab_breadcrumbs_from_bpmn_file[chromium]", "display_name": "test_process_breadcrumbs › test_process_tab_breadcrumbs_from_bpmn_file", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "process_models/test_process_group_edit.py::test_process_group_edit_icon_opens_edit_form[chromium]", "outcome": "passed", "duration": 1.6491080000414513, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:52:45,496 [INFO] process_models.test_process_group_edit: Verifying process group edit icon opens edit form.", "2026-05-18 16:52:45,853 [INFO] helpers.process_group_setup: Opening existing process group 'Test Process Group' from the tree.", "2026-05-18 16:52:47,144 [INFO] process_models.test_process_group_edit: Process group edit form opened successfully."], "steps": [], "started_iso": "2026-05-18T11:22:42.082905+00:00", "finished_iso": "2026-05-18T11:22:43.732013+00:00", "browser": "chromium", "rerun": 0, "module": "process_models/test_process_group_edit.py", "category": "process_models", "test_name": "test_process_group_edit_icon_opens_edit_form[chromium]", "display_name": "test_process_group_edit › test_process_group_edit_icon_opens_edit_form", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "process_models/test_process_group_list_visibility.py::test_process_group_list_displays_many_mocked_groups[chromium]", "outcome": "passed", "duration": 0.489990999980364, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:52:48,253 [INFO] process_models.test_process_group_list_visibility: Verifying process group list visibility with many mocked groups.", "2026-05-18 16:52:48,741 [INFO] process_models.test_process_group_list_visibility: Mocked process group list renders first and last groups."], "steps": [], "started_iso": "2026-05-18T11:22:47.150328+00:00", "finished_iso": "2026-05-18T11:22:47.640319+00:00", "browser": "chromium", "rerun": 0, "module": "process_models/test_process_group_list_visibility.py", "category": "process_models", "test_name": "test_process_group_list_displays_many_mocked_groups[chromium]", "display_name": "test_process_group_list_visibility ›…", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "process_models/test_process_model_create_default_bpmn.py::test_new_process_model_creates_default_bpmn_flow[chromium]", "outcome": "passed", "duration": 2.869090899999719, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:52:50,098 [INFO] helpers.process_group_setup: Opening existing process group 'Test Process Group' from the tree.", "2026-05-18 16:52:52,525 [INFO] process_models.test_process_model_create_default_bpmn: Default BPMN start event visible in diagram for test-group:e2e-bpmn-c89df7ea"], "steps": [], "started_iso": "2026-05-18T11:22:48.746305+00:00", "finished_iso": "2026-05-18T11:22:51.615396+00:00", "browser": "chromium", "rerun": 0, "module": "process_models/test_process_model_create_default_bpmn.py", "category": "process_models", "test_name": "test_new_process_model_creates_default_bpmn_flow[chromium]", "display_name": "test_process_model_create_default_bpmn ›…", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "process_models/test_process_model_create_form.py::test_new_process_model_form_visible[chromium]", "outcome": "passed", "duration": 1.6890116999857128, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:52:53,754 [INFO] process_models.test_process_model_create_form: New process model form: starting from mocked home (URL: http://localhost:6841/).", "2026-05-18 16:52:54,112 [INFO] helpers.process_group_setup: Opening existing process group 'Test Process Group' from the tree.", "2026-05-18 16:52:55,442 [INFO] process_models.test_process_model_create_form: New process model form fields are visible."], "steps": [], "started_iso": "2026-05-18T11:22:52.529627+00:00", "finished_iso": "2026-05-18T11:22:54.218639+00:00", "browser": "chromium", "rerun": 0, "module": "process_models/test_process_model_create_form.py", "category": "process_models", "test_name": "test_new_process_model_form_visible[chromium]", "display_name": "test_process_model_create_form › test_new_process_model_form_visible", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "process_models/test_process_model_create_open.py::test_process_model_create_dialog_opens[chromium]", "outcome": "passed", "duration": 1.7708835999947041, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:52:56,198 [INFO] process_models.test_process_model_create_open: Process model create: starting from mocked home (URL: http://localhost:6841/).", "2026-05-18 16:52:56,579 [INFO] helpers.process_group_setup: Opening existing process group 'Test Process Group' from the tree.", "2026-05-18 16:52:57,961 [INFO] process_models.test_process_model_create_open: Process model create: opened flow (URL: http://localhost:6841/process-models/test-group/new)."], "steps": [], "started_iso": "2026-05-18T11:22:55.442245+00:00", "finished_iso": "2026-05-18T11:22:57.213129+00:00", "browser": "chromium", "rerun": 0, "module": "process_models/test_process_model_create_open.py", "category": "process_models", "test_name": "test_process_model_create_dialog_opens[chromium]", "display_name": "test_process_model_create_open › test_process_model_create_dialog_opens", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "process_models/test_process_model_from_template.py::test_create_process_model_modal_opens[chromium]", "outcome": "passed", "duration": 1.3249160000123084, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:53:00,316 [INFO] process_models.test_process_model_from_template: Create-process-model modal opens with all required fields and closes on cancel."], "steps": [], "started_iso": "2026-05-18T11:22:57.970878+00:00", "finished_iso": "2026-05-18T11:22:59.295794+00:00", "browser": "chromium", "rerun": 0, "module": "process_models/test_process_model_from_template.py", "category": "process_models", "test_name": "test_create_process_model_modal_opens[chromium]", "display_name": "test_process_model_from_template › test_create_process_model_modal_opens", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "process_models/test_process_model_from_template.py::test_create_process_model_validation[chromium]", "outcome": "passed", "duration": 0.916468600044027, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:53:02,099 [INFO] process_models.test_process_model_from_template: Submitting create-process-model form without required fields shows validation errors."], "steps": [], "started_iso": "2026-05-18T11:23:00.319743+00:00", "finished_iso": "2026-05-18T11:23:01.236212+00:00", "browser": "chromium", "rerun": 0, "module": "process_models/test_process_model_from_template.py", "category": "process_models", "test_name": "test_create_process_model_validation[chromium]", "display_name": "test_process_model_from_template › test_create_process_model_validation", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "process_models/test_process_model_from_template.py::test_create_process_model_full_flow[chromium]", "outcome": "passed", "duration": 2.92295620002551, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:53:05,851 [INFO] process_models.test_process_model_from_template: Full create-from-template flow submits and navigates to the new process model."], "steps": [], "started_iso": "2026-05-18T11:23:02.102184+00:00", "finished_iso": "2026-05-18T11:23:05.025140+00:00", "browser": "chromium", "rerun": 0, "module": "process_models/test_process_model_from_template.py", "category": "process_models", "test_name": "test_create_process_model_full_flow[chromium]", "display_name": "test_process_model_from_template › test_create_process_model_full_flow", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "process_models/test_process_model_from_template.py::test_create_process_model_auto_fills_from_template[chromium]", "outcome": "passed", "duration": 0.7824832000187598, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:53:07,449 [INFO] process_models.test_process_model_from_template: Create-process-model modal pre-fills display name and model ID from the template."], "steps": [], "started_iso": "2026-05-18T11:23:05.859171+00:00", "finished_iso": "2026-05-18T11:23:06.641654+00:00", "browser": "chromium", "rerun": 0, "module": "process_models/test_process_model_from_template.py", "category": "process_models", "test_name": "test_create_process_model_auto_fills_from_template[chromium]", "display_name": "test_process_model_from_template ›…", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "process_models/test_process_model_from_template.py::test_create_process_model_manual_id_is_not_overwritten[chromium]", "outcome": "passed", "duration": 0.7961562999989837, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:53:09,281 [INFO] process_models.test_process_model_from_template: Manually edited process model ID is preserved after a later display-name change."], "steps": [], "started_iso": "2026-05-18T11:23:07.452767+00:00", "finished_iso": "2026-05-18T11:23:08.248923+00:00", "browser": "chromium", "rerun": 0, "module": "process_models/test_process_model_from_template.py", "category": "process_models", "test_name": "test_create_process_model_manual_id_is_not_overwritten[chromium]", "display_name": "test_process_model_from_template ›…", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "process_models/test_process_model_from_template_process_tab.py::test_create_process_model_with_faker_name_appears_on_process_tab[chromium]", "outcome": "passed", "duration": 3.996633600036148, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:53:14,163 [INFO] process_models.test_process_model_from_template_process_tab: Automation process model 'sample-process-per-e92c4609-automation' (display: 'Sample Process per-e92c4609 Automation') is listed under the first available group 'Test Process Group' (id: test-group) on the Processes tab."], "steps": [], "started_iso": "2026-05-18T11:23:09.287769+00:00", "finished_iso": "2026-05-18T11:23:13.284403+00:00", "browser": "chromium", "rerun": 0, "module": "process_models/test_process_model_from_template_process_tab.py", "category": "process_models", "test_name": "test_create_process_model_with_faker_name_appears_on_process_tab[chromium]", "display_name": "test_process_model_from_template_process_tab ›…", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "process_models/test_process_model_search.py::test_process_model_search_filters_results[chromium]", "outcome": "passed", "duration": 0.8803529000142589, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:53:14,946 [INFO] process_models.test_process_model_search: Verifying process model search filtering.", "2026-05-18 16:53:15,826 [INFO] process_models.test_process_model_search: Process model search filter assertions passed."], "steps": [], "started_iso": "2026-05-18T11:23:14.166535+00:00", "finished_iso": "2026-05-18T11:23:15.046888+00:00", "browser": "chromium", "rerun": 0, "module": "process_models/test_process_model_search.py", "category": "process_models", "test_name": "test_process_model_search_filters_results[chromium]", "display_name": "test_process_model_search › test_process_model_search_filters_results", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "roles/test_editor_navigation.py::test_editor_sees_home_nav[chromium]", "outcome": "passed", "duration": 0.013767299999017268, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:53:20,465 [INFO] roles.test_editor_navigation: Editor can see Home tab."], "steps": [], "started_iso": "2026-05-18T11:23:15.829163+00:00", "finished_iso": "2026-05-18T11:23:15.842930+00:00", "browser": "chromium", "rerun": 0, "module": "roles/test_editor_navigation.py", "category": "roles", "test_name": "test_editor_sees_home_nav[chromium]", "display_name": "test_editor_navigation › test_editor_sees_home_nav", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "roles/test_editor_navigation.py::test_editor_sees_processes_nav[chromium]", "outcome": "passed", "duration": 0.017959800024982542, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:53:21,357 [INFO] roles.test_editor_navigation: Editor can see Processes tab."], "steps": [], "started_iso": "2026-05-18T11:23:20.470628+00:00", "finished_iso": "2026-05-18T11:23:20.488588+00:00", "browser": "chromium", "rerun": 0, "module": "roles/test_editor_navigation.py", "category": "roles", "test_name": "test_editor_sees_processes_nav[chromium]", "display_name": "test_editor_navigation › test_editor_sees_processes_nav", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "roles/test_editor_navigation.py::test_editor_sees_process_instances_nav[chromium]", "outcome": "passed", "duration": 0.013733900035731494, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:53:22,208 [INFO] roles.test_editor_navigation: Editor can see Process Instances tab."], "steps": [], "started_iso": "2026-05-18T11:23:21.364373+00:00", "finished_iso": "2026-05-18T11:23:21.378107+00:00", "browser": "chromium", "rerun": 0, "module": "roles/test_editor_navigation.py", "category": "roles", "test_name": "test_editor_sees_process_instances_nav[chromium]", "display_name": "test_editor_navigation › test_editor_sees_process_instances_nav", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "roles/test_editor_navigation.py::test_editor_sees_templates_nav[chromium]", "outcome": "passed", "duration": 0.02841740002622828, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:53:23,271 [INFO] roles.test_editor_navigation: Editor can see Templates tab."], "steps": [], "started_iso": "2026-05-18T11:23:22.213465+00:00", "finished_iso": "2026-05-18T11:23:22.241882+00:00", "browser": "chromium", "rerun": 0, "module": "roles/test_editor_navigation.py", "category": "roles", "test_name": "test_editor_sees_templates_nav[chromium]", "display_name": "test_editor_navigation › test_editor_sees_templates_nav", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "roles/test_editor_permissions.py::test_editor_can_import_template[chromium]", "outcome": "passed", "duration": 0.3408968999865465, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:53:24,730 [INFO] roles.test_editor_permissions: Editor can import template."], "steps": [], "started_iso": "2026-05-18T11:23:23.278735+00:00", "finished_iso": "2026-05-18T11:23:23.619632+00:00", "browser": "chromium", "rerun": 0, "module": "roles/test_editor_permissions.py", "category": "roles", "test_name": "test_editor_can_import_template[chromium]", "display_name": "test_editor_permissions › test_editor_can_import_template", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "roles/test_editor_permissions.py::test_editor_no_tenants_nav[chromium]", "outcome": "passed", "duration": 0.01110910001443699, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:53:25,549 [INFO] roles.test_editor_permissions: Editor cannot see Tenants tab."], "steps": [], "started_iso": "2026-05-18T11:23:24.734286+00:00", "finished_iso": "2026-05-18T11:23:24.745395+00:00", "browser": "chromium", "rerun": 0, "module": "roles/test_editor_permissions.py", "category": "roles", "test_name": "test_editor_no_tenants_nav[chromium]", "display_name": "test_editor_permissions › test_editor_no_tenants_nav", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "roles/test_editor_permissions.py::test_editor_no_configuration_nav[chromium]", "outcome": "passed", "duration": 0.01600279996637255, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:53:26,395 [INFO] roles.test_editor_permissions: Editor cannot see Configuration tab."], "steps": [], "started_iso": "2026-05-18T11:23:25.554731+00:00", "finished_iso": "2026-05-18T11:23:25.570734+00:00", "browser": "chromium", "rerun": 0, "module": "roles/test_editor_permissions.py", "category": "roles", "test_name": "test_editor_no_configuration_nav[chromium]", "display_name": "test_editor_permissions › test_editor_no_configuration_nav", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "roles/test_reviewer_navigation.py::test_reviewer_sees_home_nav[chromium]", "outcome": "passed", "duration": 0.00546280003618449, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:53:31,102 [INFO] roles.test_reviewer_navigation: Reviewer can see Home tab."], "steps": [], "started_iso": "2026-05-18T11:23:26.401389+00:00", "finished_iso": "2026-05-18T11:23:26.406852+00:00", "browser": "chromium", "rerun": 0, "module": "roles/test_reviewer_navigation.py", "category": "roles", "test_name": "test_reviewer_sees_home_nav[chromium]", "display_name": "test_reviewer_navigation › test_reviewer_sees_home_nav", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "roles/test_reviewer_restrictions.py::test_reviewer_cannot_see_other_nav_tabs[chromium-nav-processes]", "outcome": "passed", "duration": 0.02110089996131137, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:53:31,949 [INFO] roles.test_reviewer_restrictions: Reviewer cannot see nav-processes."], "steps": [], "started_iso": "2026-05-18T11:23:31.105656+00:00", "finished_iso": "2026-05-18T11:23:31.126757+00:00", "browser": "chromium-nav-processes", "rerun": 0, "module": "roles/test_reviewer_restrictions.py", "category": "roles", "test_name": "test_reviewer_cannot_see_other_nav_tabs[chromium-nav-processes]", "display_name": "test_reviewer_restrictions › test_reviewer_cannot_see_other_nav_tabs", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "roles/test_reviewer_restrictions.py::test_reviewer_has_no_extra_primary_nav_tabs[chromium]", "outcome": "passed", "duration": 0.07029619999229908, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:53:32,859 [INFO] roles.test_reviewer_restrictions: Reviewer has access only to Home among primary side-nav tabs."], "steps": [], "started_iso": "2026-05-18T11:23:31.954775+00:00", "finished_iso": "2026-05-18T11:23:32.025071+00:00", "browser": "chromium", "rerun": 0, "module": "roles/test_reviewer_restrictions.py", "category": "roles", "test_name": "test_reviewer_has_no_extra_primary_nav_tabs[chromium]", "display_name": "test_reviewer_restrictions › test_reviewer_has_no_extra_primary_nav_tabs", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "roles/test_super_admin_restrictions.py::test_super_admin_no_home_nav[chromium]", "outcome": "passed", "duration": 0.020928699988871813, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:53:37,567 [INFO] roles.test_super_admin_restrictions: Super-admin cannot see Home tab."], "steps": [], "started_iso": "2026-05-18T11:23:32.866485+00:00", "finished_iso": "2026-05-18T11:23:32.887414+00:00", "browser": "chromium", "rerun": 0, "module": "roles/test_super_admin_restrictions.py", "category": "roles", "test_name": "test_super_admin_no_home_nav[chromium]", "display_name": "test_super_admin_restrictions › test_super_admin_no_home_nav", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "roles/test_super_admin_restrictions.py::test_super_admin_no_templates_nav[chromium]", "outcome": "passed", "duration": 0.035128000017721206, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:53:38,413 [INFO] roles.test_super_admin_restrictions: Super-admin cannot see Templates tab."], "steps": [], "started_iso": "2026-05-18T11:23:37.570405+00:00", "finished_iso": "2026-05-18T11:23:37.605533+00:00", "browser": "chromium", "rerun": 0, "module": "roles/test_super_admin_restrictions.py", "category": "roles", "test_name": "test_super_admin_no_templates_nav[chromium]", "display_name": "test_super_admin_restrictions › test_super_admin_no_templates_nav", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "roles/test_super_admin_visibility.py::test_super_admin_lands_on_tenants_page[chromium]", "outcome": "passed", "duration": 0.028344999998807907, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:53:39,028 [INFO] roles.test_super_admin_visibility: Super-admin lands on the Tenants page after login."], "steps": [], "started_iso": "2026-05-18T11:23:38.419926+00:00", "finished_iso": "2026-05-18T11:23:38.448271+00:00", "browser": "chromium", "rerun": 0, "module": "roles/test_super_admin_visibility.py", "category": "roles", "test_name": "test_super_admin_lands_on_tenants_page[chromium]", "display_name": "test_super_admin_visibility › test_super_admin_lands_on_tenants_page", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "roles/test_super_admin_visibility.py::test_super_admin_tenant_page_visible[chromium]", "outcome": "passed", "duration": 0.031064099981449544, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:53:39,974 [INFO] roles.test_super_admin_visibility: Super-admin can see the Tenant management page."], "steps": [], "started_iso": "2026-05-18T11:23:39.031723+00:00", "finished_iso": "2026-05-18T11:23:39.062787+00:00", "browser": "chromium", "rerun": 0, "module": "roles/test_super_admin_visibility.py", "category": "roles", "test_name": "test_super_admin_tenant_page_visible[chromium]", "display_name": "test_super_admin_visibility › test_super_admin_tenant_page_visible", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "roles/test_super_admin_visibility.py::test_super_admin_sees_tenants_nav[chromium]", "outcome": "passed", "duration": 0.028155900014098734, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:53:40,678 [INFO] roles.test_super_admin_visibility: Super-admin can see Tenants tab."], "steps": [], "started_iso": "2026-05-18T11:23:39.981116+00:00", "finished_iso": "2026-05-18T11:23:40.009272+00:00", "browser": "chromium", "rerun": 0, "module": "roles/test_super_admin_visibility.py", "category": "roles", "test_name": "test_super_admin_sees_tenants_nav[chromium]", "display_name": "test_super_admin_visibility › test_super_admin_sees_tenants_nav", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "roles/test_viewer_navigation.py::test_viewer_sees_processes_nav[chromium]", "outcome": "passed", "duration": 0.01314769999589771, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:53:45,222 [INFO] roles.test_viewer_navigation: Viewer can see Processes tab."], "steps": [], "started_iso": "2026-05-18T11:23:40.686720+00:00", "finished_iso": "2026-05-18T11:23:40.699868+00:00", "browser": "chromium", "rerun": 0, "module": "roles/test_viewer_navigation.py", "category": "roles", "test_name": "test_viewer_sees_processes_nav[chromium]", "display_name": "test_viewer_navigation › test_viewer_sees_processes_nav", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "roles/test_viewer_navigation.py::test_viewer_sees_process_instances_nav[chromium]", "outcome": "passed", "duration": 0.06293160002678633, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:53:46,234 [INFO] roles.test_viewer_navigation: Viewer can see Process Instances tab."], "steps": [], "started_iso": "2026-05-18T11:23:45.226141+00:00", "finished_iso": "2026-05-18T11:23:45.289073+00:00", "browser": "chromium", "rerun": 0, "module": "roles/test_viewer_navigation.py", "category": "roles", "test_name": "test_viewer_sees_process_instances_nav[chromium]", "display_name": "test_viewer_navigation › test_viewer_sees_process_instances_nav", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "roles/test_viewer_navigation.py::test_viewer_sees_templates_nav[chromium]", "outcome": "passed", "duration": 0.03804610000224784, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:53:47,672 [INFO] roles.test_viewer_navigation: Viewer can see Templates tab."], "steps": [], "started_iso": "2026-05-18T11:23:46.238749+00:00", "finished_iso": "2026-05-18T11:23:46.276795+00:00", "browser": "chromium", "rerun": 0, "module": "roles/test_viewer_navigation.py", "category": "roles", "test_name": "test_viewer_sees_templates_nav[chromium]", "display_name": "test_viewer_navigation › test_viewer_sees_templates_nav", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "roles/test_viewer_restrictions.py::test_viewer_no_home_nav[chromium]", "outcome": "passed", "duration": 0.03343409998342395, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:53:48,681 [INFO] roles.test_viewer_restrictions: Viewer cannot see Home tab."], "steps": [], "started_iso": "2026-05-18T11:23:47.680124+00:00", "finished_iso": "2026-05-18T11:23:47.713558+00:00", "browser": "chromium", "rerun": 0, "module": "roles/test_viewer_restrictions.py", "category": "roles", "test_name": "test_viewer_no_home_nav[chromium]", "display_name": "test_viewer_restrictions › test_viewer_no_home_nav", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "roles/test_viewer_restrictions.py::test_viewer_no_import_template_button[chromium]", "outcome": "passed", "duration": 0.3651221000473015, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:53:50,068 [INFO] roles.test_viewer_restrictions: Viewer cannot see Import Template button on Templates page."], "steps": [], "started_iso": "2026-05-18T11:23:48.688512+00:00", "finished_iso": "2026-05-18T11:23:49.053634+00:00", "browser": "chromium", "rerun": 0, "module": "roles/test_viewer_restrictions.py", "category": "roles", "test_name": "test_viewer_no_import_template_button[chromium]", "display_name": "test_viewer_restrictions › test_viewer_no_import_template_button", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "roles/test_viewer_restrictions.py::test_viewer_no_tenants_nav[chromium]", "outcome": "passed", "duration": 0.014601600007154047, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:53:51,039 [INFO] roles.test_viewer_restrictions: Viewer cannot see Tenants tab."], "steps": [], "started_iso": "2026-05-18T11:23:50.071164+00:00", "finished_iso": "2026-05-18T11:23:50.085766+00:00", "browser": "chromium", "rerun": 0, "module": "roles/test_viewer_restrictions.py", "category": "roles", "test_name": "test_viewer_no_tenants_nav[chromium]", "display_name": "test_viewer_restrictions › test_viewer_no_tenants_nav", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "roles/test_viewer_restrictions.py::test_viewer_no_configuration_nav[chromium]", "outcome": "passed", "duration": 0.04478389996802434, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:53:51,955 [INFO] roles.test_viewer_restrictions: Viewer cannot see Configuration tab."], "steps": [], "started_iso": "2026-05-18T11:23:51.044949+00:00", "finished_iso": "2026-05-18T11:23:51.089733+00:00", "browser": "chromium", "rerun": 0, "module": "roles/test_viewer_restrictions.py", "category": "roles", "test_name": "test_viewer_no_configuration_nav[chromium]", "display_name": "test_viewer_restrictions › test_viewer_no_configuration_nav", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "templates/test_sample_templates_readme_in_gallery.py::test_sample_templates_gallery_not_empty[chromium]", "outcome": "passed", "duration": 0.006879399996250868, "longrepr_text": "", "error_summary": "", "logs": [], "steps": [], "started_iso": "2026-05-18T11:23:51.961227+00:00", "finished_iso": "2026-05-18T11:23:51.968106+00:00", "browser": "chromium", "rerun": 0, "module": "templates/test_sample_templates_readme_in_gallery.py", "category": "templates", "test_name": "test_sample_templates_gallery_not_empty[chromium]", "display_name": "test_sample_templates_readme_in_gallery › test_sample_templates_gallery_not_empty", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "templates/test_sample_templates_readme_in_gallery.py::test_readme_sample_template_visible_in_gallery[chromium-single-approval-wfh-timeout]", "outcome": "passed", "duration": 2.0196349999750964, "longrepr_text": "", "error_summary": "", "logs": [], "steps": [], "started_iso": "2026-05-18T11:23:56.829626+00:00", "finished_iso": "2026-05-18T11:23:58.849261+00:00", "browser": "chromium-single-approval-wfh-timeout", "rerun": 0, "module": "templates/test_sample_templates_readme_in_gallery.py", "category": "templates", "test_name": "test_readme_sample_template_visible_in_gallery[chromium-single-approval-wfh-timeout]", "display_name": "test_sample_templates_readme_in_gallery ›…", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "templates/test_template_breadcrumbs_navigation.py::test_breadcrumb_back_to_gallery[chromium]", "outcome": "passed", "duration": 0.8564848999958485, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:54:00,646 [INFO] templates._template_breadcrumb_helpers: Template detail opened successfully.", "2026-05-18 16:54:00,856 [INFO] templates.test_template_breadcrumbs_navigation: Breadcrumb back to gallery is visible."], "steps": [], "started_iso": "2026-05-18T11:23:58.853045+00:00", "finished_iso": "2026-05-18T11:23:59.709530+00:00", "browser": "chromium", "rerun": 0, "module": "templates/test_template_breadcrumbs_navigation.py", "category": "templates", "test_name": "test_breadcrumb_back_to_gallery[chromium]", "display_name": "test_template_breadcrumbs_navigation › test_breadcrumb_back_to_gallery", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "templates/test_template_breadcrumbs_navigation.py::test_breadcrumb_back_to_details_from_template_files[chromium]", "outcome": "passed", "duration": 1.050619799993001, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:54:02,292 [INFO] templates._template_breadcrumb_helpers: Template detail opened successfully.", "2026-05-18 16:54:02,708 [INFO] templates.test_template_breadcrumbs_navigation: Breadcrumb back to details from template files is visible."], "steps": [], "started_iso": "2026-05-18T11:24:00.859781+00:00", "finished_iso": "2026-05-18T11:24:01.910401+00:00", "browser": "chromium", "rerun": 0, "module": "templates/test_template_breadcrumbs_navigation.py", "category": "templates", "test_name": "test_breadcrumb_back_to_details_from_template_files[chromium]", "display_name": "test_template_breadcrumbs_navigation ›…", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "templates/test_template_breadcrumbs_visibility.py::test_breadcrumb_visible_on_template_detail[chromium]", "outcome": "passed", "duration": 0.7273724999977276, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:54:04,208 [INFO] templates._template_breadcrumb_helpers: Template detail opened successfully.", "2026-05-18 16:54:04,222 [INFO] templates.test_template_breadcrumbs_visibility: Breadcrumb is visible on template detail."], "steps": [], "started_iso": "2026-05-18T11:24:02.711028+00:00", "finished_iso": "2026-05-18T11:24:03.438400+00:00", "browser": "chromium", "rerun": 0, "module": "templates/test_template_breadcrumbs_visibility.py", "category": "templates", "test_name": "test_breadcrumb_visible_on_template_detail[chromium]", "display_name": "test_template_breadcrumbs_visibility › test_breadcrumb_visible_on_template_detail", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "templates/test_template_detail.py::test_template_detail_page_loads[chromium]", "outcome": "passed", "duration": 0.5272990000084974, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:54:05,028 [INFO] templates.test_template_detail: test_template_detail_page_loads: open template 1 from gallery", "2026-05-18 16:54:05,554 [INFO] templates.test_template_detail: Template Details route and title verified"], "steps": [], "started_iso": "2026-05-18T11:24:04.226221+00:00", "finished_iso": "2026-05-18T11:24:04.753520+00:00", "browser": "chromium", "rerun": 0, "module": "templates/test_template_detail.py", "category": "templates", "test_name": "test_template_detail_page_loads[chromium]", "display_name": "test_template_detail › test_template_detail_page_loads", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "templates/test_template_detail.py::test_template_files_section_and_view[chromium]", "outcome": "passed", "duration": 1.155319299956318, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:54:06,339 [INFO] templates.test_template_detail: open template 1, assert files, open BPMN viewer", "2026-05-18 16:54:07,493 [INFO] templates.test_template_detail: Navigated to BPMN file route"], "steps": [], "started_iso": "2026-05-18T11:24:05.558403+00:00", "finished_iso": "2026-05-18T11:24:06.713722+00:00", "browser": "chromium", "rerun": 0, "module": "templates/test_template_detail.py", "category": "templates", "test_name": "test_template_files_section_and_view[chromium]", "display_name": "test_template_detail › test_template_files_section_and_view", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "templates/test_template_detail.py::test_template_file_form_view[chromium]", "outcome": "passed", "duration": 1.229791700025089, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:54:08,374 [INFO] templates.test_template_detail: Open form.json editor for template 1", "2026-05-18 16:54:09,602 [INFO] templates.test_template_detail: Form editor visible"], "steps": [], "started_iso": "2026-05-18T11:24:07.498481+00:00", "finished_iso": "2026-05-18T11:24:08.728273+00:00", "browser": "chromium", "rerun": 0, "module": "templates/test_template_detail.py", "category": "templates", "test_name": "test_template_file_form_view[chromium]", "display_name": "test_template_detail › test_template_file_form_view", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "templates/test_template_detail.py::test_template_export_download[chromium]", "outcome": "passed", "duration": 1.3948257999727502, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:54:10,611 [INFO] templates.test_template_detail: Expect ZIP download from export button", "2026-05-18 16:54:12,005 [INFO] templates.test_template_detail: Download filename 'template-test-template-private-V1.zip'"], "steps": [], "started_iso": "2026-05-18T11:24:09.609077+00:00", "finished_iso": "2026-05-18T11:24:11.003903+00:00", "browser": "chromium", "rerun": 0, "module": "templates/test_template_detail.py", "category": "templates", "test_name": "test_template_export_download[chromium]", "display_name": "test_template_detail › test_template_export_download", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "templates/test_template_detail.py::test_template_publish_success[chromium]", "outcome": "passed", "duration": 1.3287272999878041, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:54:13,012 [INFO] templates.test_template_detail: Publish draft template 1", "2026-05-18 16:54:14,339 [INFO] templates.test_template_detail: Success alert shown, publish hidden"], "steps": [], "started_iso": "2026-05-18T11:24:12.011948+00:00", "finished_iso": "2026-05-18T11:24:13.340675+00:00", "browser": "chromium", "rerun": 0, "module": "templates/test_template_detail.py", "category": "templates", "test_name": "test_template_publish_success[chromium]", "display_name": "test_template_detail › test_template_publish_success", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "templates/test_template_detail.py::test_template_version_selector_navigates[chromium]", "outcome": "passed", "duration": 1.440874400024768, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:54:15,146 [INFO] templates.test_template_detail: Open template id=5, switch to V1 (id=4)"], "steps": [], "started_iso": "2026-05-18T11:24:14.343786+00:00", "finished_iso": "2026-05-18T11:24:15.784660+00:00", "browser": "chromium", "rerun": 0, "module": "templates/test_template_detail.py", "category": "templates", "test_name": "test_template_version_selector_navigates[chromium]", "display_name": "test_template_detail › test_template_version_selector_navigates", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "templates/test_template_detail.py::test_template_visibility_save[chromium-TENANT]", "outcome": "passed", "duration": 1.61916540004313, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:54:17,445 [INFO] templates.test_template_detail: Set visibility to TENANT", "2026-05-18 16:54:19,064 [INFO] templates.test_template_detail: Saved TENANT"], "steps": [], "started_iso": "2026-05-18T11:24:16.591180+00:00", "finished_iso": "2026-05-18T11:24:18.210345+00:00", "browser": "chromium-TENANT", "rerun": 0, "module": "templates/test_template_detail.py", "category": "templates", "test_name": "test_template_visibility_save[chromium-TENANT]", "display_name": "test_template_detail › test_template_visibility_save", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "templates/test_template_detail.py::test_template_visibility_can_save_private[chromium]", "outcome": "passed", "duration": 2.5525578999659047, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:54:19,976 [INFO] templates.test_template_detail: Template visibility can be saved as PUBLIC then PRIVATE", "2026-05-18 16:54:22,527 [INFO] templates.test_template_detail: Completed visibility save test"], "steps": [], "started_iso": "2026-05-18T11:24:19.066577+00:00", "finished_iso": "2026-05-18T11:24:21.619135+00:00", "browser": "chromium", "rerun": 0, "module": "templates/test_template_detail.py", "category": "templates", "test_name": "test_template_visibility_can_save_private[chromium]", "display_name": "test_template_detail › test_template_visibility_can_save_private", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "templates/test_template_detail.py::test_template_import_from_zip[chromium]", "outcome": "passed", "duration": 0.8898626999580301, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:54:23,598 [INFO] templates.test_template_detail: test_template_import_from_zip: build zip under C:\\Users\\ravee\\AppData\\Local\\Temp\\pytest-of-ravee\\pytest-22\\test_template_import_from_zip_0", "2026-05-18 16:54:24,485 [INFO] templates.test_template_detail: Landed on imported template detail"], "steps": [], "started_iso": "2026-05-18T11:24:22.532014+00:00", "finished_iso": "2026-05-18T11:24:23.421877+00:00", "browser": "chromium", "rerun": 0, "module": "templates/test_template_detail.py", "category": "templates", "test_name": "test_template_import_from_zip[chromium]", "display_name": "test_template_detail › test_template_import_from_zip", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "templates/test_template_detail.py::test_template_file_download_row_action[chromium]", "outcome": "passed", "duration": 1.2776009000372142, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:54:25,872 [INFO] templates.test_template_detail: Download process.bpmn row action", "2026-05-18 16:54:27,148 [INFO] templates.test_template_detail: Suggested filename 'process.bpmn'"], "steps": [], "started_iso": "2026-05-18T11:24:24.494688+00:00", "finished_iso": "2026-05-18T11:24:25.772289+00:00", "browser": "chromium", "rerun": 0, "module": "templates/test_template_detail.py", "category": "templates", "test_name": "test_template_file_download_row_action[chromium]", "display_name": "test_template_detail › test_template_file_download_row_action", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "templates/test_template_form_driven_approval_e2e.py::test_form_driven_approval_dynamic_assignee_e2e[chromium-Hardware]", "outcome": "passed", "duration": 18.080664600012824, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:54:34,945 [WARNING] templates.test_template_form_driven_approval_e2e: Prerequisite: Keycloak users 'emma' and 'john' must exist for this tenant with permissions to complete their lanes' tasks (reviewer-style access is typical). Passwords default to username unless BROWSER_TEST_EMMA_* / BROWSER_TEST_JOHN_* are set.", "2026-05-18 16:54:35,249 [INFO] helpers.process_group_setup: Opening existing process group 'Test Process Group' from the tree.", "2026-05-18 16:54:43,850 [INFO] templates.test_template_form_driven_approval_e2e: Created process instance id: unavailable", "2026-05-18 16:54:52,331 [WARNING] templates.test_template_form_driven_approval_e2e: Initiator session does not expose 'Workflows created by me' tab; skipping initiator completion assertion for this role.", "2026-05-18 16:54:52,332 [INFO] templates.test_template_form_driven_approval_e2e: End to end test completed successfully with Form Driven Approval Dynamic Assignee."], "steps": [], "started_iso": "2026-05-18T11:24:27.153903+00:00", "finished_iso": "2026-05-18T11:24:45.234568+00:00", "browser": "chromium-Hardware", "rerun": 0, "module": "templates/test_template_form_driven_approval_e2e.py", "category": "templates", "test_name": "test_form_driven_approval_dynamic_assignee_e2e[chromium-Hardware]", "display_name": "test_template_form_driven_approval_e2e ›…", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "templates/test_template_gallery.py::test_template_gallery_layout_card_and_list[chromium-card]", "outcome": "passed", "duration": 1.1293810000061058, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:54:52,335 [INFO] templates.test_template_gallery: Gallery view mode=card", "2026-05-18 16:54:53,463 [INFO] templates.test_template_gallery: Assertions passed for card"], "steps": [], "started_iso": "2026-05-18T11:24:52.334096+00:00", "finished_iso": "2026-05-18T11:24:53.463477+00:00", "browser": "chromium-card", "rerun": 0, "module": "templates/test_template_gallery.py", "category": "templates", "test_name": "test_template_gallery_layout_card_and_list[chromium-card]", "display_name": "test_template_gallery › test_template_gallery_layout_card_and_list", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "templates/test_template_gallery.py::test_template_gallery_search[chromium]", "outcome": "passed", "duration": 1.54866289999336, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:54:54,559 [INFO] templates.test_template_gallery: Filter by search text derived from first card: 'Private Test Template'", "2026-05-18 16:54:55,014 [INFO] templates.test_template_gallery: Search narrowed gallery (before=4 after=1)"], "steps": [], "started_iso": "2026-05-18T11:24:53.465974+00:00", "finished_iso": "2026-05-18T11:24:55.014637+00:00", "browser": "chromium", "rerun": 0, "module": "templates/test_template_gallery.py", "category": "templates", "test_name": "test_template_gallery_search[chromium]", "display_name": "test_template_gallery › test_template_gallery_search", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "templates/test_template_gallery.py::test_template_gallery_filter_category[chromium]", "outcome": "passed", "duration": 1.4865376999950968, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:54:56,502 [INFO] templates.test_template_gallery: Category filter applied: 'Production'"], "steps": [], "started_iso": "2026-05-18T11:24:55.017340+00:00", "finished_iso": "2026-05-18T11:24:56.503878+00:00", "browser": "chromium", "rerun": 0, "module": "templates/test_template_gallery.py", "category": "templates", "test_name": "test_template_gallery_filter_category[chromium]", "display_name": "test_template_gallery › test_template_gallery_filter_category", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "templates/test_template_gallery.py::test_template_gallery_filter_visibility[chromium]", "outcome": "passed", "duration": 1.9518548999913037, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:54:58,456 [INFO] templates.test_template_gallery: Visibility=Public filter applied; 1 card(s) visible."], "steps": [], "started_iso": "2026-05-18T11:24:56.505648+00:00", "finished_iso": "2026-05-18T11:24:58.457503+00:00", "browser": "chromium", "rerun": 0, "module": "templates/test_template_gallery.py", "category": "templates", "test_name": "test_template_gallery_filter_visibility[chromium]", "display_name": "test_template_gallery › test_template_gallery_filter_visibility", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "templates/test_template_gallery.py::test_template_gallery_pagination_next_page[chromium]", "outcome": "passed", "duration": 2.2346147999633104, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:54:58,460 [INFO] templates.test_template_gallery: pagination: per_page=2, next page", "2026-05-18 16:55:00,694 [INFO] templates.test_template_gallery: Page 2 loaded."], "steps": [], "started_iso": "2026-05-18T11:24:58.459802+00:00", "finished_iso": "2026-05-18T11:25:00.694417+00:00", "browser": "chromium", "rerun": 0, "module": "templates/test_template_gallery.py", "category": "templates", "test_name": "test_template_gallery_pagination_next_page[chromium]", "display_name": "test_template_gallery › test_template_gallery_pagination_next_page", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "templates/test_template_gallery.py::test_template_gallery_per_page_selection[chromium]", "outcome": "passed", "duration": 1.6947841999935918, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:55:00,697 [INFO] templates.test_template_gallery: Setting rows per page to 25", "2026-05-18 16:55:02,391 [INFO] templates.test_template_gallery: URL contains per_page=25"], "steps": [], "started_iso": "2026-05-18T11:25:00.697311+00:00", "finished_iso": "2026-05-18T11:25:02.392095+00:00", "browser": "chromium", "rerun": 0, "module": "templates/test_template_gallery.py", "category": "templates", "test_name": "test_template_gallery_per_page_selection[chromium]", "display_name": "test_template_gallery › test_template_gallery_per_page_selection", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "tenants/test_tenant_create_modal.py::test_tenant_add_modal_shows_realm_slug_and_display_name_fields[chromium]", "outcome": "skipped", "duration": 0.8542080000042915, "longrepr_text": "('C:\\\\Users\\\\ravee\\\\Downloads\\\\Automation M8F\\\\m8flow\\\\extensions\\\\m8flow-frontend\\\\test\\\\browser\\\\tenants\\\\test_tenant_create_modal.py', 17, 'Skipped: Add Tenant button not available (missing POST tenant-realms permission)')", "error_summary": "('C:\\\\Users\\\\ravee\\\\Downloads\\\\Automation M8F\\\\m8flow\\\\extensions\\\\m8flow-frontend\\\\test\\\\browser\\\\tenants\\\\test_tenant_create_modal.py', 17, 'Skipped: Add Tenant button not available (missing POST tenant-realms permission)')", "logs": [], "steps": [], "started_iso": "2026-05-18T11:25:02.394195+00:00", "finished_iso": "2026-05-18T11:25:03.248403+00:00", "browser": "chromium", "rerun": 0, "module": "tenants/test_tenant_create_modal.py", "category": "tenants", "test_name": "test_tenant_add_modal_shows_realm_slug_and_display_name_fields[chromium]", "display_name": "test_tenant_create_modal ›…", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "tenants/test_tenant_create_modal.py::test_tenant_add_modal_cancel_and_create_buttons[chromium]", "outcome": "passed", "duration": 1.3755612000240944, "longrepr_text": "", "error_summary": "", "logs": [], "steps": [], "started_iso": "2026-05-18T11:25:03.374923+00:00", "finished_iso": "2026-05-18T11:25:04.750484+00:00", "browser": "chromium", "rerun": 0, "module": "tenants/test_tenant_create_modal.py", "category": "tenants", "test_name": "test_tenant_add_modal_cancel_and_create_buttons[chromium]", "display_name": "test_tenant_create_modal › test_tenant_add_modal_cancel_and_create_buttons", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "tenants/test_tenant_create_modal.py::test_tenant_add_modal_realm_slug_validation[chromium]", "outcome": "passed", "duration": 1.7797094999696128, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:55:06,069 [INFO] tenants.test_tenant_create_modal: Realm slug validation error message shown", "2026-05-18 16:55:06,532 [INFO] tenants.test_tenant_create_modal: Tenant add modal closed"], "steps": [], "started_iso": "2026-05-18T11:25:04.747600+00:00", "finished_iso": "2026-05-18T11:25:06.527309+00:00", "browser": "chromium", "rerun": 0, "module": "tenants/test_tenant_create_modal.py", "category": "tenants", "test_name": "test_tenant_add_modal_realm_slug_validation[chromium]", "display_name": "test_tenant_create_modal › test_tenant_add_modal_realm_slug_validation", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "tenants/test_tenant_edit.py::test_tenant_edit_modal_opens[chromium]", "outcome": "passed", "duration": 1.4733225000090897, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:55:07,527 [INFO] tenants.test_tenant_edit: Tenant edit button clicked", "2026-05-18 16:55:08,009 [INFO] tenants.test_tenant_edit: Tenant edit modal closed"], "steps": [], "started_iso": "2026-05-18T11:25:06.532063+00:00", "finished_iso": "2026-05-18T11:25:08.005386+00:00", "browser": "chromium", "rerun": 0, "module": "tenants/test_tenant_edit.py", "category": "tenants", "test_name": "test_tenant_edit_modal_opens[chromium]", "display_name": "test_tenant_edit › test_tenant_edit_modal_opens", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "tenants/test_tenant_filter.py::test_tenant_filter_status_active_table_shows_active[chromium]", "outcome": "passed", "duration": 1.2392529999488033, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:55:09,252 [INFO] tenants.test_tenant_filter: Status filter ACTIVE: 2 row(s), all ACTIVE"], "steps": [], "started_iso": "2026-05-18T11:25:08.009851+00:00", "finished_iso": "2026-05-18T11:25:09.249104+00:00", "browser": "chromium", "rerun": 0, "module": "tenants/test_tenant_filter.py", "category": "tenants", "test_name": "test_tenant_filter_status_active_table_shows_active[chromium]", "display_name": "test_tenant_filter › test_tenant_filter_status_active_table_shows_active", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "tenants/test_tenant_filter.py::test_tenant_filter_status_inactive_rows_or_empty_message[chromium]", "outcome": "passed", "duration": 11.634660899988376, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:55:20,575 [INFO] tenants.test_tenant_filter: No tenants are inactive"], "steps": [], "started_iso": "2026-05-18T11:25:09.257003+00:00", "finished_iso": "2026-05-18T11:25:20.891664+00:00", "browser": "chromium", "rerun": 0, "module": "tenants/test_tenant_filter.py", "category": "tenants", "test_name": "test_tenant_filter_status_inactive_rows_or_empty_message[chromium]", "display_name": "test_tenant_filter › test_tenant_filter_status_inactive_rows_or_empty_message", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "tenants/test_tenant_page.py::test_tenant_page_loads[chromium]", "outcome": "passed", "duration": 0.7403147000004537, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:55:21,631 [INFO] tenants.test_tenant_page: Tenant page loaded"], "steps": [], "started_iso": "2026-05-18T11:25:20.894317+00:00", "finished_iso": "2026-05-18T11:25:21.634632+00:00", "browser": "chromium", "rerun": 0, "module": "tenants/test_tenant_page.py", "category": "tenants", "test_name": "test_tenant_page_loads[chromium]", "display_name": "test_tenant_page › test_tenant_page_loads", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "tenants/test_tenant_page.py::test_tenant_list_displays_rows[chromium]", "outcome": "passed", "duration": 0.783683400019072, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:55:22,420 [INFO] tenants.test_tenant_page: Tenants on page (2 rows): M8Flow Realm, QA Tenant"], "steps": [], "started_iso": "2026-05-18T11:25:21.634768+00:00", "finished_iso": "2026-05-18T11:25:22.418451+00:00", "browser": "chromium", "rerun": 0, "module": "tenants/test_tenant_page.py", "category": "tenants", "test_name": "test_tenant_list_displays_rows[chromium]", "display_name": "test_tenant_page › test_tenant_list_displays_rows", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "tenants/test_tenant_search.py::test_tenant_search_by_name_no_results[chromium]", "outcome": "passed", "duration": 1.4733128999941982, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:55:23,896 [INFO] tenants.test_tenant_search: Search by name returned no rows for nonexistent tenant"], "steps": [], "started_iso": "2026-05-18T11:25:22.423935+00:00", "finished_iso": "2026-05-18T11:25:23.897248+00:00", "browser": "chromium", "rerun": 0, "module": "tenants/test_tenant_search.py", "category": "tenants", "test_name": "test_tenant_search_by_name_no_results[chromium]", "display_name": "test_tenant_search › test_tenant_search_by_name_no_results", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "tenants/test_tenant_search.py::test_tenant_search_by_name_shows_matching_row[chromium]", "outcome": "passed", "duration": 2.2214753000298515, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:55:25,296 [INFO] tenants.test_tenant_search: Search by name for second-row tenant: 'tenant-row-1c8e4e3c-bbbe-4674-a5b4-d73ccea1dc5a' via term: 'QA Tenant'"], "steps": [], "started_iso": "2026-05-18T11:25:23.900569+00:00", "finished_iso": "2026-05-18T11:25:26.122044+00:00", "browser": "chromium", "rerun": 0, "module": "tenants/test_tenant_search.py", "category": "tenants", "test_name": "test_tenant_search_by_name_shows_matching_row[chromium]", "display_name": "test_tenant_search › test_tenant_search_by_name_shows_matching_row", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "tenants/test_tenant_search.py::test_tenant_search_by_slug_no_results[chromium]", "outcome": "passed", "duration": 1.7625865999725647, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:55:27,887 [INFO] tenants.test_tenant_search: Search by slug returned no rows for nonexistent slug"], "steps": [], "started_iso": "2026-05-18T11:25:26.120140+00:00", "finished_iso": "2026-05-18T11:25:27.882727+00:00", "browser": "chromium", "rerun": 0, "module": "tenants/test_tenant_search.py", "category": "tenants", "test_name": "test_tenant_search_by_slug_no_results[chromium]", "display_name": "test_tenant_search › test_tenant_search_by_slug_no_results", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "tenants/test_tenant_search.py::test_tenant_search_by_slug_shows_matching_row[chromium]", "outcome": "passed", "duration": 2.06610619998537, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:55:29,105 [INFO] tenants.test_tenant_search: Search by slug for row 'tenant-row-1c8e4e3c-bbbe-4674-a5b4-d73ccea1dc5a' via term: 'qa-test'"], "steps": [], "started_iso": "2026-05-18T11:25:27.889192+00:00", "finished_iso": "2026-05-18T11:25:29.955298+00:00", "browser": "chromium", "rerun": 0, "module": "tenants/test_tenant_search.py", "category": "tenants", "test_name": "test_tenant_search_by_slug_shows_matching_row[chromium]", "display_name": "test_tenant_search › test_tenant_search_by_slug_shows_matching_row", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "roles/test_reviewer_restrictions.py::test_reviewer_cannot_see_other_nav_tabs[chromium-nav-process-instances]", "outcome": "passed", "duration": 0.02684969996334985, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:55:30,813 [INFO] roles.test_reviewer_restrictions: Reviewer cannot see nav-process-instances."], "steps": [], "started_iso": "2026-05-18T11:25:29.954365+00:00", "finished_iso": "2026-05-18T11:25:29.981215+00:00", "browser": "chromium-nav-process-instances", "rerun": 0, "module": "roles/test_reviewer_restrictions.py", "category": "roles", "test_name": "test_reviewer_cannot_see_other_nav_tabs[chromium-nav-process-instances]", "display_name": "test_reviewer_restrictions › test_reviewer_cannot_see_other_nav_tabs", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "templates/test_sample_templates_readme_in_gallery.py::test_readme_sample_template_visible_in_gallery[chromium-two-step-leave-email]", "outcome": "passed", "duration": 1.4073034999892116, "longrepr_text": "", "error_summary": "", "logs": [], "steps": [], "started_iso": "2026-05-18T11:25:30.819993+00:00", "finished_iso": "2026-05-18T11:25:32.227296+00:00", "browser": "chromium-two-step-leave-email", "rerun": 0, "module": "templates/test_sample_templates_readme_in_gallery.py", "category": "templates", "test_name": "test_readme_sample_template_visible_in_gallery[chromium-two-step-leave-email]", "display_name": "test_sample_templates_readme_in_gallery ›…", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "templates/test_template_detail.py::test_template_visibility_save[chromium-PUBLIC]", "outcome": "passed", "duration": 1.5444997000158764, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:55:34,029 [INFO] templates.test_template_detail: Set visibility to PUBLIC", "2026-05-18 16:55:35,572 [INFO] templates.test_template_detail: Saved PUBLIC"], "steps": [], "started_iso": "2026-05-18T11:25:33.303076+00:00", "finished_iso": "2026-05-18T11:25:34.847576+00:00", "browser": "chromium-PUBLIC", "rerun": 0, "module": "templates/test_template_detail.py", "category": "templates", "test_name": "test_template_visibility_save[chromium-PUBLIC]", "display_name": "test_template_detail › test_template_visibility_save", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "templates/test_template_form_driven_approval_e2e.py::test_form_driven_approval_dynamic_assignee_e2e[chromium-Software]", "outcome": "passed", "duration": 18.60911739995936, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:55:36,624 [WARNING] templates.test_template_form_driven_approval_e2e: Prerequisite: Keycloak users 'emma' and 'john' must exist for this tenant with permissions to complete their lanes' tasks (reviewer-style access is typical). Passwords default to username unless BROWSER_TEST_EMMA_* / BROWSER_TEST_JOHN_* are set.", "2026-05-18 16:55:36,977 [INFO] helpers.process_group_setup: Opening existing process group 'Test Process Group' from the tree.", "2026-05-18 16:55:45,678 [INFO] templates.test_template_form_driven_approval_e2e: Created process instance id: unavailable", "2026-05-18 16:55:54,185 [WARNING] templates.test_template_form_driven_approval_e2e: Initiator session does not expose 'Workflows created by me' tab; skipping initiator completion assertion for this role.", "2026-05-18 16:55:54,185 [INFO] templates.test_template_form_driven_approval_e2e: End to end test completed successfully with Form Driven Approval Dynamic Assignee."], "steps": [], "started_iso": "2026-05-18T11:25:35.576852+00:00", "finished_iso": "2026-05-18T11:25:54.185969+00:00", "browser": "chromium-Software", "rerun": 0, "module": "templates/test_template_form_driven_approval_e2e.py", "category": "templates", "test_name": "test_form_driven_approval_dynamic_assignee_e2e[chromium-Software]", "display_name": "test_template_form_driven_approval_e2e ›…", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "templates/test_template_gallery.py::test_template_gallery_layout_card_and_list[chromium-table]", "outcome": "passed", "duration": 1.2000288999988697, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:55:54,194 [INFO] templates.test_template_gallery: Gallery view mode=table", "2026-05-18 16:55:55,393 [INFO] templates.test_template_gallery: Assertions passed for table"], "steps": [], "started_iso": "2026-05-18T11:25:54.192028+00:00", "finished_iso": "2026-05-18T11:25:55.392057+00:00", "browser": "chromium-table", "rerun": 0, "module": "templates/test_template_gallery.py", "category": "templates", "test_name": "test_template_gallery_layout_card_and_list[chromium-table]", "display_name": "test_template_gallery › test_template_gallery_layout_card_and_list", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "roles/test_reviewer_restrictions.py::test_reviewer_cannot_see_other_nav_tabs[chromium-nav-templates]", "outcome": "passed", "duration": 0.008839000016450882, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:55:56,166 [INFO] roles.test_reviewer_restrictions: Reviewer cannot see nav-templates."], "steps": [], "started_iso": "2026-05-18T11:25:55.395577+00:00", "finished_iso": "2026-05-18T11:25:55.404416+00:00", "browser": "chromium-nav-templates", "rerun": 0, "module": "roles/test_reviewer_restrictions.py", "category": "roles", "test_name": "test_reviewer_cannot_see_other_nav_tabs[chromium-nav-templates]", "display_name": "test_reviewer_restrictions › test_reviewer_cannot_see_other_nav_tabs", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "templates/test_sample_templates_readme_in_gallery.py::test_readme_sample_template_visible_in_gallery[chromium-sequential-approval-rework]", "outcome": "passed", "duration": 1.5860525000025518, "longrepr_text": "", "error_summary": "", "logs": [], "steps": [], "started_iso": "2026-05-18T11:25:56.171952+00:00", "finished_iso": "2026-05-18T11:25:57.758005+00:00", "browser": "chromium-sequential-approval-rework", "rerun": 0, "module": "templates/test_sample_templates_readme_in_gallery.py", "category": "templates", "test_name": "test_readme_sample_template_visible_in_gallery[chromium-sequential-approval-rework]", "display_name": "test_sample_templates_readme_in_gallery ›…", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "roles/test_reviewer_restrictions.py::test_reviewer_cannot_see_other_nav_tabs[chromium-nav-tenants]", "outcome": "passed", "duration": 0.00962010002695024, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:55:59,673 [INFO] roles.test_reviewer_restrictions: Reviewer cannot see nav-tenants."], "steps": [], "started_iso": "2026-05-18T11:25:58.810146+00:00", "finished_iso": "2026-05-18T11:25:58.819766+00:00", "browser": "chromium-nav-tenants", "rerun": 0, "module": "roles/test_reviewer_restrictions.py", "category": "roles", "test_name": "test_reviewer_cannot_see_other_nav_tabs[chromium-nav-tenants]", "display_name": "test_reviewer_restrictions › test_reviewer_cannot_see_other_nav_tabs", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "templates/test_sample_templates_readme_in_gallery.py::test_readme_sample_template_visible_in_gallery[chromium-approval-expense-dmn]", "outcome": "passed", "duration": 1.4844379000132903, "longrepr_text": "", "error_summary": "", "logs": [], "steps": [], "started_iso": "2026-05-18T11:25:59.678339+00:00", "finished_iso": "2026-05-18T11:26:01.162777+00:00", "browser": "chromium-approval-expense-dmn", "rerun": 0, "module": "templates/test_sample_templates_readme_in_gallery.py", "category": "templates", "test_name": "test_readme_sample_template_visible_in_gallery[chromium-approval-expense-dmn]", "display_name": "test_sample_templates_readme_in_gallery ›…", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "roles/test_reviewer_restrictions.py::test_reviewer_cannot_see_other_nav_tabs[chromium-nav-configuration]", "outcome": "passed", "duration": 0.014104500005487353, "longrepr_text": "", "error_summary": "", "logs": ["2026-05-18 16:56:03,323 [INFO] roles.test_reviewer_restrictions: Reviewer cannot see nav-configuration."], "steps": [], "started_iso": "2026-05-18T11:26:02.563102+00:00", "finished_iso": "2026-05-18T11:26:02.577207+00:00", "browser": "chromium-nav-configuration", "rerun": 0, "module": "roles/test_reviewer_restrictions.py", "category": "roles", "test_name": "test_reviewer_cannot_see_other_nav_tabs[chromium-nav-configuration]", "display_name": "test_reviewer_restrictions › test_reviewer_cannot_see_other_nav_tabs", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "templates/test_sample_templates_readme_in_gallery.py::test_readme_sample_template_visible_in_gallery[chromium-form-driven-it-support]", "outcome": "passed", "duration": 1.4075740999542177, "longrepr_text": "", "error_summary": "", "logs": [], "steps": [], "started_iso": "2026-05-18T11:26:03.326962+00:00", "finished_iso": "2026-05-18T11:26:04.734536+00:00", "browser": "chromium-form-driven-it-support", "rerun": 0, "module": "templates/test_sample_templates_readme_in_gallery.py", "category": "templates", "test_name": "test_readme_sample_template_visible_in_gallery[chromium-form-driven-it-support]", "display_name": "test_sample_templates_readme_in_gallery ›…", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "templates/test_sample_templates_readme_in_gallery.py::test_readme_sample_template_visible_in_gallery[chromium-salesforce-slack-lead]", "outcome": "passed", "duration": 1.5706189000047743, "longrepr_text": "", "error_summary": "", "logs": [], "steps": [], "started_iso": "2026-05-18T11:26:05.680399+00:00", "finished_iso": "2026-05-18T11:26:07.251018+00:00", "browser": "chromium-salesforce-slack-lead", "rerun": 0, "module": "templates/test_sample_templates_readme_in_gallery.py", "category": "templates", "test_name": "test_readme_sample_template_visible_in_gallery[chromium-salesforce-slack-lead]", "display_name": "test_sample_templates_readme_in_gallery ›…", "screenshot_urls": [], "artifact_uris": {}}, {"nodeid": "templates/test_sample_templates_readme_in_gallery.py::test_readme_sample_template_visible_in_gallery[chromium-postgresql-lifecycle]", "outcome": "passed", "duration": 1.5878493000054732, "longrepr_text": "", "error_summary": "", "logs": [], "steps": [], "started_iso": "2026-05-18T11:26:07.253652+00:00", "finished_iso": "2026-05-18T11:26:08.841501+00:00", "browser": "chromium-postgresql-lifecycle", "rerun": 0, "module": "templates/test_sample_templates_readme_in_gallery.py", "category": "templates", "test_name": "test_readme_sample_template_visible_in_gallery[chromium-postgresql-lifecycle]", "display_name": "test_sample_templates_readme_in_gallery ›…", "screenshot_urls": [], "artifact_uris": {}}]}</script>
+  <script>
+(function() {
+  try {
+    var th = localStorage.getItem('m8flow-qa-theme');
+    if (th === 'dark' || th === 'light') document.documentElement.setAttribute('data-theme', th);
+  } catch (e) {}
+
+  function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  var DATA = JSON.parse(document.getElementById('suite-data').textContent);
+  var meta = DATA.meta;
+  var tests = DATA.tests;
+
+  var filterStatus = 'all';
+  var filterCat = 'all';
+
+  var co = meta.counts;
+
+  document.getElementById('envBlurb').textContent =
+    (meta.environment && meta.environment.e2e_url ? meta.environment.e2e_url + ' · ' : '')
+    + (meta.session_finished_iso || '').substring(0,19).replace('T',' ')
+    + (meta.environment && meta.environment.git_revision ? "\nGIT " + meta.environment.git_revision : '');
+
+  document.getElementById('stripMeta').textContent =
+    (meta.session_finished_iso || '').substring(0, 19).replace('T', ' ')
+      + (meta.environment && meta.environment.playwright
+        ? ' · Playwright ' + meta.environment.playwright : '')
+      + (meta.environment && meta.environment.browsers_cli ? ' · ' + meta.environment.browsers_cli : '');
+
+  var totalDur = tests.reduce(function(a,t){ return a + (t.duration||0); }, 0);
+  function fmtDur(s){ return s >= 60 ? (s/60).toFixed(1)+'m' : ((s||0).toFixed(2)+'s'); }
+
+  var kp = document.getElementById('kpis');
+  [
+    ['Total',tests.length,''],
+    ['Passed',meta.counts.passed,'pass'],
+    ['Failed',meta.counts.failed,'fail'],
+    ['Errors',meta.counts.error||0,'errk'],
+    ['Skipped',meta.counts.skipped,'warn'],
+    ['Duration',fmtDur(totalDur),''],
+    ['Browser',meta.environment && meta.environment.browsers_cli||'chromium',''],
+  ].forEach(function(kv){
+    var el = document.createElement('div');
+    var extra = kv[2] ? ' kpi '+kv[2] : ' kpi';
+    el.className = extra.trim();
+    el.innerHTML = '<div class="l">'+ kv[0] +'</div><div class="v">'+ esc(String(kv[1])) +'</div>';
+    kp.appendChild(el);
+  });
+
+  Chart.defaults.font.family = "'DM Sans', system-ui, sans-serif";
+  Chart.defaults.color = '#5c6570';
+
+  function cumSeries(rows) {
+    var s = 0; return rows.map(function(t){ s += +(t.duration||0); return +s.toFixed(3); });
+  }
+  var xLabels = tests.map(function(_,i){ return String(i+1); });
+
+  var dataOut = [co.passed, co.failed, co.skipped, co.error||0];
+  var sumZ = dataOut.reduce(function(a,b){ return a+b; },0);
+  if (sumZ === 0) dataOut = [1,0,0,0];
+
+  new Chart(document.getElementById('cOut'), {
+    type: 'doughnut',
+    data: {
+      labels: ['Passed','Failed','Skipped','Errors'],
+      datasets: [{ data: dataOut,
+        backgroundColor: ['#0d7d4d','#c91835','#e09b12','#6639a8'], borderWidth: 0 }] },
+    options: { plugins: { legend: { position: 'bottom', labels:{boxWidth:10} } }, cutout: '58%' }
+  });
+
+  new Chart(document.getElementById('cTime'), {
+    type: 'line',
+    data: {
+      labels: xLabels,
+      datasets: [{
+        label: 'Cumulative s',
+        data: cumSeries(tests),
+        tension: .25,
+        fill: true,
+        borderWidth: 2,
+        pointRadius: 0,
+        borderColor: '#0747dc',
+        backgroundColor: 'rgba(7,71,220,.12)',
+      }]
+    },
+    options: {
+      scales: { x: { ticks:{ maxTicksLimit:12} }, y: { beginAtZero: true } },
+      plugins: { legend: { display: false } }
+    }
+  });
+
+  var slow = tests.slice().sort(function(a,b){ return (b.duration||0)-(a.duration||0); }).slice(0,12);
+  new Chart(document.getElementById('cSlow'), {
+    type: 'bar',
+    data: {
+      labels: slow.map(function(t){ return (t.display_name || t.test_name||'').substring(0,36); }),
+      datasets: [{ label: 's', data: slow.map(function(t){ return +(t.duration||0).toFixed(2); }),
+        backgroundColor: slow.map(function(t){ return (t.outcome==='failed'||t.outcome==='error') ? '#c91835' : '#0747dc'; }) }]
+    },
+    options: { indexAxis:'y', plugins:{legend:{display:false}}, scales:{ x:{beginAtZero:true} } }
+  });
+
+  var catMap = {};
+  tests.forEach(function(t){ catMap[t.category] = (catMap[t.category]||0)+1; });
+  new Chart(document.getElementById('cCat'), {
+    type: 'bar',
+    data: { labels: Object.keys(catMap), datasets: [{ data: Object.values(catMap), backgroundColor: '#2897ff' }] },
+    options: { plugins:{ legend:{display:false} }, scales:{ y:{ beginAtZero:true } } }
+  });
+
+  var catDur = {};
+  tests.forEach(function(t){
+    catDur[t.category] = (catDur[t.category]||0) + (t.duration||0);
+  });
+  var cdSorted = Object.keys(catDur).sort(function(a,b){ return catDur[b]-catDur[a]; });
+  new Chart(document.getElementById('cCatDur'), {
+    type: 'bar',
+    data: {
+      labels: cdSorted,
+      datasets: [{
+        data: cdSorted.map(function(k){ return +catDur[k].toFixed(2); }),
+        backgroundColor: '#6366f1'
+      }]
+    },
+    options: { indexAxis:'y', plugins:{legend:{display:false}}, scales:{ x:{beginAtZero:true} } }
+  });
+
+  function stemMod(nid) {
+    var f = (nid||'').split('::')[0].replace(/\\/g,'/');
+    var base = f.split('/').pop() || f || '';
+    return base.replace(/\.py$/i,'') || base;
+  }
+  var modDur = {};
+  tests.forEach(function(t){
+    var sm = stemMod(t.nodeid);
+    if (!sm) return;
+    modDur[sm] = (modDur[sm]||0) + (t.duration||0);
+  });
+  var modItems = Object.keys(modDur).map(function(k){ return [k, modDur[k]]; })
+    .sort(function(a,b){ return b[1]-a[1]; }).slice(0,12);
+  new Chart(document.getElementById('cMod'), {
+    type: 'bar',
+    data: {
+      labels: modItems.map(function(x){ return x[0].substring(0, 34); }),
+      datasets: [{ data: modItems.map(function(x){ return +x[1].toFixed(2); }),
+        backgroundColor: '#059669' }]
+    },
+    options: { indexAxis:'y', plugins:{legend:{display:false}}, scales:{ x:{beginAtZero:true} } }
+  });
+
+  function fillInsights() {
+    var ins = document.getElementById('insights');
+    if (!ins) return;
+    ins.innerHTML = '';
+    var cards = [];
+    var fl = (co.failed||0)+(co.error||0);
+    if (fl > 0) cards.push({ cls:'bad', title:'Failures', text: fl+' case(s) require triage — expand rows for logs, traces, and screenshots.'});
+    if (tests.length > 2 && (co.skipped||0) >= tests.length * 0.2) cards.push({ cls:'warn', title:'Skips', text: 'Skip rate is high — check fixtures, sample data, and E2E_URL.'});
+    if (!fl && tests.length) cards.push({ title:'Health', text: 'No failed or error outcomes in this run.'});
+    cards.push({ title:'Traces', text: 'Use Trace Viewer for zip artifacts; links use file:// and open from the same machine as the run.'});
+    cards.slice(0,4).forEach(function(c){
+      var d = document.createElement('div');
+      d.className = 'insight-card' + (c.cls ? ' '+c.cls : '');
+      d.innerHTML = '<h4>'+esc(c.title)+'</h4><p>'+esc(c.text)+'</p>';
+      ins.appendChild(d);
+    });
+  }
+  fillInsights();
+
+  var cats = Object.keys(catMap).sort();
+  var side = document.getElementById('sidebarCats');
+  function mkCatRow(label, count, val) {
+    var d = document.createElement('div');
+    d.className = 'cat-item' + (filterCat === val ? ' pill on' : '');
+    d.dataset.cat = val;
+    d.innerHTML = '<span>'+ esc(label) +'</span><span class="b">'+ count +'</span>';
+    d.onclick = function(){
+      filterCat = val;
+      [].slice.call(side.querySelectorAll('.cat-item')).forEach(function(x){
+        x.classList.toggle('pill', x.dataset.cat === val);
+        x.classList.toggle('on', x.dataset.cat === val);
+      });
+      renderTests(); renderGallery();
+    };
+    return d;
+  }
+  side.appendChild(mkCatRow('All areas', tests.length, 'all'));
+  cats.forEach(function(c){ side.appendChild(mkCatRow(c, catMap[c], c)); });
+
+  var chipsEl = document.getElementById('chips');
+  ['all','passed','failed','skipped','error'].forEach(function(st){
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip' + (st==='all'?' on':'');
+    b.textContent = st;
+    b.dataset.st = st;
+    b.onclick = function(){
+      filterStatus = st;
+      [].slice.call(chipsEl.querySelectorAll('.chip')).forEach(function(x){
+        x.classList.toggle('on', x.dataset.st === st); });
+      renderTests(); renderGallery();
+    };
+    chipsEl.appendChild(b);
+  });
+
+  document.querySelectorAll('.nav-pane a').forEach(function(a){
+    a.addEventListener('click', function(e){
+      var href = a.getAttribute('href');
+      if (!href || href.charAt(0) !== '#') return;
+      e.preventDefault();
+      var el = document.querySelector(href);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      document.querySelectorAll('.nav-pane a').forEach(function(x){
+        x.classList.toggle('active', x === a);
+      });
+    });
+  });
+
+  function match(t,q){
+    if (!q) return true;
+    var blob = [t.nodeid, t.category, t.display_name||'', t.test_name||'', t.browser||'', (t.logs||[]).join(' ') ];
+    if (t.longrepr_text) blob.push(String(t.longrepr_text).substring(0, 12000));
+    if (t.steps) t.steps.forEach(function(s){ blob.push(s.title||''); });
+    return blob.join(' ').toLowerCase().indexOf(q) >= 0;
+  }
+
+  function rowFilter(t) {
+    if (filterStatus !== 'all' && t.outcome !== filterStatus) return false;
+    if (filterCat !== 'all' && t.category !== filterCat) return false;
+    return true;
+  }
+
+  var suitesEl = document.getElementById('suites');
+  function renderTests(){
+    var q = document.getElementById('q').value.trim().toLowerCase();
+    suitesEl.innerHTML = '';
+    var grouped = {};
+    tests.forEach(function(t){
+      if (!rowFilter(t)) return;
+      if (!match(t,q)) return;
+      (grouped[t.category] = grouped[t.category]||[]).push(t);
+    });
+    Object.keys(grouped).sort().forEach(function(cat){
+      var sec = document.createElement('section');
+      sec.className = 'tree-section';
+      sec.innerHTML = '<h3><span>'+ esc(cat) +'</span><span class="count">'+ grouped[cat].length +' cases</span></h3>';
+      grouped[cat].forEach(function(t, idx){
+        var id = 'b-'+ cat +'-'+ idx;
+        var bad = (t.outcome === 'failed' || t.outcome === 'error');
+        var badgeClass = 'pass';
+        if (t.outcome === 'failed') badgeClass = 'fail';
+        else if (t.outcome === 'skipped') badgeClass = 'skip';
+        else if (t.outcome === 'error') badgeClass = 'error';
+
+        var div = document.createElement('div');
+        div.className = 'test' + (bad ? ' failed':'');
+        var headLine = (t.display_name || t.test_name || '');
+        div.innerHTML =
+          '<div class="test-head"><span class="badge '+ badgeClass +'">'+ esc((t.outcome||'').toUpperCase())
+          +'</span><span class="title">'+ esc(headLine) +'</span><span class="meta">'
+          + (t.duration||0).toFixed(2)+'s · '+ esc(t.browser||'') +' · '
+          + (typeof t.rerun === 'number' ? 'rerun '+(t.rerun+1)+' · ' : '')
+          + esc(t.module||'') +'</span></div>'
+          + '<div class="body" id="'+ esc(id) +'"></div>';
+        var body = div.querySelector('.body');
+        var head = div.querySelector('.test-head');
+
+        var inner = '';
+        inner += '<p class="meta mono">'+ esc(t.nodeid) +'</p>';
+        inner += '<p class="meta">'+ esc(t.started_iso||'') +' \u2192 '+ esc(t.finished_iso||'') +'</p>';
+
+        if (t.steps && t.steps.length) {
+          inner += '<h4>Steps</h4><ol class="steps">';
+          t.steps.forEach(function(s){
+            inner += '<li class="'+ (s.ok===false?'bad':'') +'">'+ esc(s.title)+' <span class="meta">('+ s.duration_sec +'s)</span>'
+              +(s.error ? '<div class="err">'+ esc(s.error) +'</div>':'') +'</li>';
+          });
+          inner += '</ol>';
+        }
+        if (bad && t.error_summary)
+          inner += '<h4>Summary</h4><div class="err">'+ esc(t.error_summary) +'</div>';
+        if (bad && t.longrepr_text) {
+          inner += '<details class="trace-box"><summary>Full stack trace</summary><pre class="log mono">'
+            + esc(String(t.longrepr_text).substring(0, 200000)) +'</pre></details>';
+        }
+        if (t.logs && t.logs.length) {
+          inner += '<details class="trace-box"><summary>Execution logs ('+ t.logs.length +' lines)</summary>';
+          inner += '<pre class="log mono">'+ esc((t.logs||[]).join('\n')) +'</pre></details>';
+        }
+
+        if (t.screenshot_urls && t.screenshot_urls.length) {
+          inner += '<h4>Screenshots</h4>';
+          t.screenshot_urls.forEach(function(u){
+            inner += '<img class="shot" src="'+ u.replace(/"/g,'') +'" data-full="'+ u.replace(/"/g,'') +'" alt="screenshot"/>';
+          });
+        }
+        if (t.artifact_uris && Object.keys(t.artifact_uris).length) {
+          inner += '<h4>Trace &amp; video</h4><div class="links">';
+          for (var k in t.artifact_uris)
+            inner += '<a href="'+ esc(t.artifact_uris[k]) +'">'+ esc(k) +'</a>';
+          inner += '</div>';
+        }
+        inner += '<p class="muted" style="margin-top:10px;font-size:.78rem;">Open trace zips in <a href="https://trace.playwright.dev/" target="_blank" rel="noopener">Playwright Trace Viewer</a>.</p>';
+
+        body.innerHTML = inner;
+        head.onclick = function(){ head.classList.toggle('open'); body.classList.toggle('open'); };
+        body.querySelectorAll('details').forEach(function(dt){
+          dt.addEventListener('click', function(e){ e.stopPropagation(); });
+        });
+        body.querySelectorAll('img.shot').forEach(function(im){
+          im.addEventListener('click', function(){ openLb(im.getAttribute('data-full')||im.src, headLine); });
+        });
+        sec.appendChild(div);
+      });
+      suitesEl.appendChild(sec);
+    });
+    if (!suitesEl.children.length)
+      suitesEl.innerHTML = '<p class="muted">No tests match the current filters.</p>';
+  }
+
+  var gal = document.getElementById('gallery');
+  var galHint = document.getElementById('galleryHint');
+
+  function renderGallery(){
+    gal.innerHTML = '';
+    galHint.style.display = 'none';
+    galHint.textContent = '';
+
+    var q = document.getElementById('q').value.trim().toLowerCase();
+
+    var anyFail = tests.some(function(t){
+      return t.outcome === 'failed' || t.outcome === 'error';
+    });
+
+    if (!anyFail) {
+      gal.innerHTML =
+        '<p class="muted">' +
+        '<strong>Empty by design.</strong> This run has no <code>failed</code> or <code>error</code> tests. ' +
+        'A <strong>skipped</strong> test (e.g. missing template data) is not a failure, so no failure screenshot is taken and nothing is listed here. ' +
+        'Expand the skipped case in the catalogue below for the skip reason.</p>';
+      return;
+    }
+
+    var matchedFail = 0;
+    var withShots = 0;
+    tests.forEach(function(t){
+      if (t.outcome !== 'failed' && t.outcome !== 'error') return;
+      if (!rowFilter(t)) return;
+      if (!match(t,q)) return;
+      matchedFail++;
+      var urls = t.screenshot_urls || [];
+      if (urls.length) withShots++;
+      urls.forEach(function(u){
+        var cell = document.createElement('div');
+        cell.className = 'gallery-item';
+        var cap = t.display_name || t.test_name || t.nodeid;
+        cell.innerHTML = '<img src="'+ u.replace(/"/g,'') +'" alt=""/><div class="gallery-cap">'+ esc(cap) +'</div>';
+        cell.querySelector('img').addEventListener('click', function(){
+          openLb(u, cap);
+        });
+        gal.appendChild(cell);
+      });
+    });
+
+    if (!gal.children.length) {
+      if (matchedFail === 0) {
+        var hidden = tests.filter(function(t){ return t.outcome==='failed'||t.outcome==='error'; }).length;
+        gal.innerHTML =
+          '<p class="muted">No failures match the current <strong>area</strong>, <strong>status</strong>, or <strong>search</strong> filters. '
+          + (hidden ? ('(' + hidden + ' failed/error test(s) hidden — reset filters.)') : '') + '</p>';
+      } else {
+        gal.innerHTML =
+          '<p class="muted">' + matchedFail + ' failed/error test(s) matched, but <strong>no screenshot paths</strong> were attached. '
+          + 'Confirm <span class="mono">conftest</span> captures on failure, <span class="mono">--screenshot</span> / Playwright output under <span class="mono">test-results/</span>, '
+          + 'and that PNGs exist next to the HTML report.</p>';
+      }
+      return;
+    }
+
+    if (matchedFail > withShots) {
+      galHint.textContent = matchedFail - withShots + ' matching failure(s) have no linked images (only cases with paths are shown).';
+      galHint.style.display = 'block';
+    }
+  }
+
+  function openLb(src, cap) {
+    var lb = document.getElementById('lightbox');
+    document.getElementById('lbImg').src = src;
+    document.getElementById('lbCap').textContent = cap || '';
+    lb.classList.add('open');
+  }
+  document.getElementById('lbClose').onclick = function(){
+    document.getElementById('lightbox').classList.remove('open');
+  };
+  document.getElementById('lightbox').onclick = function(e){
+    if (e.target.id === 'lightbox') document.getElementById('lightbox').classList.remove('open');
+  };
+
+  document.getElementById('expandAll').onclick = function(){
+    document.querySelectorAll('#suites .test .body').forEach(function(b){ b.classList.add('open'); });
+    document.querySelectorAll('#suites .test-head').forEach(function(h){ h.classList.add('open'); });
+  };
+  document.getElementById('collapseAll').onclick = function(){
+    document.querySelectorAll('#suites .test .body').forEach(function(b){ b.classList.remove('open'); });
+    document.querySelectorAll('#suites .test-head').forEach(function(h){ h.classList.remove('open'); });
+  };
+
+  document.getElementById('q').addEventListener('input', function(){ renderTests(); renderGallery(); });
+
+  document.getElementById('themeBtn').onclick = function(){
+    var html = document.documentElement;
+    var next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    html.setAttribute('data-theme', next);
+    try { localStorage.setItem('m8flow-qa-theme', next); } catch (e) {}
+  };
+
+  renderTests();
+  renderGallery();
+})();
+  </script>
+</body>
+</html>
