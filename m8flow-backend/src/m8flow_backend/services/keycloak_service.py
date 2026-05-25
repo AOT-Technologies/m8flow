@@ -652,15 +652,10 @@ def get_organization_by_alias(
     alias = str(alias).strip()
     token = admin_token or get_master_admin_token()
 
-    def _search_organizations(*, exact: bool) -> list[dict[str, Any]]:
+    def _load_organizations(**params: str) -> list[dict[str, Any]]:
         r = requests.get(
             _shared_realm_organizations_url(),
-            params={
-                "search": alias,
-                "exact": "true" if exact else "false",
-                "briefRepresentation": "false",
-                "max": 100,
-            },
+            params=params,
             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
             timeout=30,
         )
@@ -671,11 +666,26 @@ def get_organization_by_alias(
             return []
         return [organization for organization in organizations if isinstance(organization, dict)]
 
+    def _search_organizations(*, exact: bool) -> list[dict[str, Any]]:
+        return _load_organizations(
+            search=alias,
+            exact="true" if exact else "false",
+            briefRepresentation="false",
+            max="100",
+        )
+
     organizations = _search_organizations(exact=True)
     if not organizations:
         # Some Keycloak organization endpoints ignore or mishandle exact=true.
         # Fall back to a broader search and filter locally.
         organizations = _search_organizations(exact=False)
+    if not organizations:
+        # Some Keycloak builds also fail alias searches entirely for later-created
+        # organizations. Fall back to a bounded list and filter locally.
+        organizations = _load_organizations(
+            briefRepresentation="false",
+            max="100",
+        )
 
     for organization in organizations:
         if organization.get("alias") == alias:

@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
+from collections.abc import Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any
 
+from m8flow_backend.services.tenant_identity_helpers import active_organization_from_payload
 from m8flow_backend.services.tenant_identity_helpers import authentication_identifier_from_payload
 from m8flow_backend.services.tenant_identity_helpers import current_tenant_identifiers
 from m8flow_backend.services.tenant_identity_helpers import current_tenant_id_or_none
@@ -486,6 +488,82 @@ def _normalized_open_id_local_group_identifiers(
     )
 
 
+def _shared_realm_role_identifiers_from_organization_groups(
+    user_info: dict[str, Any],
+    *,
+    tenant_id: str | None,
+    organization_group_identifiers: list[str],
+) -> list[str]:
+    """
+    Resolve tenant roles from shared-realm organization-group membership.
+
+    Default organization groups have a built-in mapping, while custom groups
+    can define tenant roles dynamically through Keycloak organization-group
+    attributes. Read those attributes when available, then fall back to the
+    default static mapping for compatibility.
+    """
+    normalized_role_identifiers: list[str] = []
+    seen_role_identifiers: set[str] = set()
+
+    organization = active_organization_from_payload(user_info, tenant_id=tenant_id)
+    organization_id = None
+    if organization is not None:
+        _organization_alias, organization_details = organization
+        raw_organization_id = organization_details.get("id")
+        if isinstance(raw_organization_id, str):
+            normalized_organization_id = raw_organization_id.strip()
+            if normalized_organization_id:
+                organization_id = normalized_organization_id
+
+    for group_identifier in organization_group_identifiers:
+        normalized_group_identifier = _normalize_external_group_identifier(group_identifier)
+        if not normalized_group_identifier:
+            continue
+
+        resolved_role_identifiers: list[str] = []
+        if organization_id:
+            try:
+                from m8flow_backend.services.keycloak_service import get_organization_group_by_id
+                from m8flow_backend.services.keycloak_service import get_organization_group_by_name
+                from m8flow_backend.services.keycloak_service import organization_group_role_names
+
+                organization_group = get_organization_group_by_name(
+                    organization_id,
+                    normalized_group_identifier,
+                )
+                if isinstance(organization_group, Mapping):
+                    full_organization_group = organization_group
+                    organization_group_id = organization_group.get("id")
+                    if isinstance(organization_group_id, str) and organization_group_id.strip():
+                        full_organization_group = (
+                            get_organization_group_by_id(
+                                organization_id,
+                                organization_group_id.strip(),
+                            )
+                            or organization_group
+                        )
+                    resolved_role_identifiers = list(organization_group_role_names(full_organization_group))
+            except Exception:
+                logger.warning(
+                    "auth_group_role_mapping_lookup_failed: tenant_id=%s organization_id=%s group=%s",
+                    tenant_id,
+                    organization_id,
+                    normalized_group_identifier,
+                    exc_info=True,
+                )
+
+        if not resolved_role_identifiers:
+            resolved_role_identifiers = list(tenant_roles_for_organization_group(normalized_group_identifier))
+
+        for role_identifier in resolved_role_identifiers:
+            normalized_role_identifier = _normalize_external_group_identifier(role_identifier)
+            if normalized_role_identifier and normalized_role_identifier not in seen_role_identifiers:
+                seen_role_identifiers.add(normalized_role_identifier)
+                normalized_role_identifiers.append(normalized_role_identifier)
+
+    return normalized_role_identifiers
+
+
 def _tenant_group_identifier_for_external_role(
     group_identifier: str,
     tenant_id: str | None,
@@ -647,15 +725,18 @@ def _openid_group_identifiers_from_user_info(
                 seen_shared_realm_roles.add(normalized_group_identifier)
                 shared_realm_role_identifiers.append(normalized_group_identifier)
 
-        for group_identifier in normalized_organization_group_identifiers:
-            for role_identifier in tenant_roles_for_organization_group(group_identifier):
-                normalized_role_identifier = _normalize_external_group_identifier(role_identifier)
-                if (
-                    normalized_role_identifier
-                    and normalized_role_identifier not in seen_shared_realm_roles
-                ):
-                    seen_shared_realm_roles.add(normalized_role_identifier)
-                    shared_realm_role_identifiers.append(normalized_role_identifier)
+        for role_identifier in _shared_realm_role_identifiers_from_organization_groups(
+            user_info,
+            tenant_id=tenant_id,
+            organization_group_identifiers=normalized_organization_group_identifiers,
+        ):
+            normalized_role_identifier = _normalize_external_group_identifier(role_identifier)
+            if (
+                normalized_role_identifier
+                and normalized_role_identifier not in seen_shared_realm_roles
+            ):
+                seen_shared_realm_roles.add(normalized_role_identifier)
+                shared_realm_role_identifiers.append(normalized_role_identifier)
 
         raw_group_identifiers = shared_realm_role_identifiers
 

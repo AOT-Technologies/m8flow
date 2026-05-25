@@ -121,7 +121,7 @@ def test_get_organization_by_alias_filters_exact_alias(
         "search": "tenant-a",
         "exact": "true",
         "briefRepresentation": "false",
-        "max": 100,
+        "max": "100",
     }
 
 
@@ -157,13 +157,48 @@ def test_get_organization_by_alias_falls_back_when_exact_search_returns_empty(
         "search": "tenant-a",
         "exact": "true",
         "briefRepresentation": "false",
-        "max": 100,
+        "max": "100",
     }
     assert mock_get.call_args_list[1][1]["params"] == {
         "search": "tenant-a",
         "exact": "false",
         "briefRepresentation": "false",
-        "max": 100,
+        "max": "100",
+    }
+
+
+@patch("m8flow_backend.services.keycloak_service.get_master_admin_token")
+@patch("m8flow_backend.services.keycloak_service.shared_realm_name")
+@patch("m8flow_backend.services.keycloak_service.keycloak_url")
+@patch("m8flow_backend.services.keycloak_service.requests.get")
+def test_get_organization_by_alias_falls_back_to_listing_all_when_search_returns_empty(
+    mock_get,
+    mock_keycloak_url,
+    mock_shared_realm_name,
+    mock_get_master_admin_token,
+):
+    mock_get_master_admin_token.return_value = "master-token"
+    mock_shared_realm_name.return_value = "shared-users"
+    mock_keycloak_url.return_value = "http://keycloak"
+    mock_get.side_effect = [
+        MagicMock(status_code=200, json=lambda: []),
+        MagicMock(status_code=200, json=lambda: []),
+        MagicMock(
+            status_code=200,
+            json=lambda: [
+                {"id": "tenant-b", "alias": "tenant-b", "name": "Tenant B"},
+                {"id": "tenant-a", "alias": "tenant-a", "name": "Tenant A"},
+            ],
+        ),
+    ]
+
+    result = get_organization_by_alias("tenant-a")
+
+    assert result == {"id": "tenant-a", "alias": "tenant-a", "name": "Tenant A"}
+    assert mock_get.call_count == 3
+    assert mock_get.call_args_list[2][1]["params"] == {
+        "briefRepresentation": "false",
+        "max": "100",
     }
 
 

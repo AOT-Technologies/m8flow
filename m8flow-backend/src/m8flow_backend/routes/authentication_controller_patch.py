@@ -1121,6 +1121,7 @@ def _synchronize_selected_organization_claims(
 
     try:
         from m8flow_backend.services.keycloak_service import get_organization_by_alias
+        from m8flow_backend.services.keycloak_service import get_organization_by_id
         from m8flow_backend.services.keycloak_service import get_organization_member_by_username
         from m8flow_backend.services.keycloak_service import get_organization_member_groups
     except Exception:
@@ -1133,6 +1134,16 @@ def _synchronize_selected_organization_claims(
         return synchronized_token
 
     organization = get_organization_by_alias(selected_tenant_alias)
+    if not isinstance(organization, dict):
+        try:
+            organization = get_organization_by_id(selected_tenant_id)
+        except Exception:
+            organization = None
+            logger.warning(
+                "tenant_finalization: unable to resolve organization by selected tenant id",
+                extra={"selected_tenant_id": selected_tenant_id, "selected_tenant_alias": selected_tenant_alias},
+                exc_info=True,
+            )
     if not isinstance(organization, dict):
         synchronized_token["organization"] = {
             selected_tenant_alias: {"id": selected_tenant_id, "groups": []}

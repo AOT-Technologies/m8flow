@@ -347,6 +347,47 @@ def test_openid_group_identifiers_from_user_info_derives_tenant_admin_from_org_g
     assert normalized == ["tenant-a-id:tenant-admin", "tenant-a-id:Administrators"]
 
 
+def test_openid_group_identifiers_from_user_info_derives_roles_from_custom_org_group_attributes(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("M8FLOW_KEYCLOAK_SHARED_REALM", "shared-users")
+    monkeypatch.setattr(
+        "m8flow_backend.services.authorization_service_patch.current_tenant_identifiers",
+        lambda tenant_id=None: {"tenant-a-id", "tenant-a"},
+    )
+    monkeypatch.setattr(
+        "m8flow_backend.services.keycloak_service.get_organization_group_by_name",
+        lambda organization_id, group_name, admin_token=None: {
+            "id": "group-manager",
+            "name": "Manager",
+        },
+    )
+    monkeypatch.setattr(
+        "m8flow_backend.services.keycloak_service.get_organization_group_by_id",
+        lambda organization_id, group_id, admin_token=None: {
+            "id": "group-manager",
+            "name": "Manager",
+            "attributes": {
+                "m8flow_role_mapping_configured": ["true"],
+                "m8flow_role_names": ["editor"],
+            },
+        },
+    )
+    user_info = {
+        "m8flow_authentication_identifier": "shared-users",
+        "organization": {
+            "tenant-a": {
+                "id": "tenant-a-id",
+                "groups": ["Manager"],
+            }
+        },
+    }
+
+    normalized = _openid_group_identifiers_from_user_info(user_info, tenant_id="tenant-a-id")
+
+    assert normalized == ["tenant-a-id:editor", "tenant-a-id:Manager"]
+
+
 def test_openid_group_identifiers_from_user_info_ignores_legacy_root_groups_without_org_groups(
     monkeypatch,
 ) -> None:

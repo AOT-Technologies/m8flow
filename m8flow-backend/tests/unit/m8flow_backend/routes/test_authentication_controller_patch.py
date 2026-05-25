@@ -1820,6 +1820,105 @@ def test_tenant_finalization_redirects_directly_for_multi_org_shared_realm_sessi
     assert any("access_token=tenant-a-session-token" in header for header in cookie_headers)
 
 
+def test_tenant_finalization_uses_selected_tenant_id_when_alias_lookup_fails(monkeypatch) -> None:
+    app = Flask(__name__)
+    app.config["SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"] = "/v1.0"
+    app.config["SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND"] = "https://app.example.com"
+    app.config["THREAD_LOCAL_DATA"] = SimpleNamespace()
+    monkeypatch.setenv("M8FLOW_KEYCLOAK_SHARED_REALM", "shared-users")
+
+    captured: dict[str, object] = {}
+
+    def fake_parse_jwt_token(authentication_identifier, token):
+        captured["auth_identifier"] = authentication_identifier
+        captured["token"] = token
+        return {
+            "iss": "http://localhost:7002/realms/shared-users",
+            "sub": "user-1",
+            "preferred_username": "auslin",
+            "organization": {
+                "test3": {"id": "tenant-3-id"},
+            },
+        }
+
+    def fake_create_user_from_sign_in(decoded_token):
+        captured["decoded_token"] = decoded_token
+
+        def fake_encode_auth_token(extra_payload):
+            captured["session_claims"] = extra_payload
+            return "tenant-3-session-token"
+
+        return SimpleNamespace(encode_auth_token=fake_encode_auth_token)
+
+    with (
+        app.test_request_context(
+            path="/v1.0/login?tenant=test3&tenant_finalization=1&authentication_identifier=shared-users",
+            method="GET",
+            environ_overrides={
+                "HTTP_COOKIE": (
+                    "authentication_identifier=shared-users; "
+                    "access_token=existing-access-token"
+                )
+            },
+        ),
+        patch(
+            "m8flow_backend.services.tenant_service.TenantService.check_tenant_exists",
+            return_value={"exists": True, "tenant_id": "tenant-3-id"},
+        ),
+        patch(
+            "spiffworkflow_backend.services.authentication_service.AuthenticationService.parse_jwt_token",
+            fake_parse_jwt_token,
+        ),
+        patch(
+            "m8flow_backend.services.keycloak_service.get_organization_by_alias",
+            return_value=None,
+        ),
+        patch(
+            "m8flow_backend.services.keycloak_service.get_organization_by_id",
+            return_value={"id": "tenant-3-id", "alias": "test3", "name": "Tenant 3"},
+        ),
+        patch(
+            "m8flow_backend.services.keycloak_service.get_organization_member_groups",
+            return_value=[{"name": "Administrators", "path": "/Administrators"}],
+        ),
+        patch(
+            "spiffworkflow_backend.services.authorization_service.AuthorizationService.create_user_from_sign_in",
+            fake_create_user_from_sign_in,
+        ),
+    ):
+        result = _handle_tenant_login_request(app)
+
+    assert result is not None
+    assert result.status_code == 302
+    assert result.headers["Location"] == "https://app.example.com"
+    assert captured["decoded_token"] == {
+        "iss": "http://localhost:7002/realms/shared-users",
+        "sub": "user-1",
+        "preferred_username": "auslin",
+        "organization": {
+            "test3": {
+                "id": "tenant-3-id",
+                "groups": ["Administrators"],
+            }
+        },
+        "m8flow_tenant_id": "tenant-3-id",
+        "m8flow_tenant_alias": "test3",
+        "m8flow_tenant_name": "Tenant 3",
+    }
+    assert captured["session_claims"] == {
+        "organization": {
+            "test3": {
+                "id": "tenant-3-id",
+                "groups": ["Administrators"],
+            }
+        },
+        "m8flow_tenant_id": "tenant-3-id",
+        "m8flow_tenant_alias": "test3",
+        "m8flow_tenant_name": "Tenant 3",
+        "m8flow_authentication_identifier": "shared-users",
+    }
+
+
 def test_tenant_finalization_falls_back_to_standard_login_when_session_cannot_be_parsed(monkeypatch) -> None:
     app = Flask(__name__)
     app.config["SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"] = "/v1.0"
