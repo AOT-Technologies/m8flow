@@ -67,9 +67,10 @@ jobs:
           uv run pytest ../m8flow-backend/tests
 
   # -------------------------
-  # Frontend CI
+  # Frontend Build + Unit
   # -------------------------
-  frontend:
+  frontend-build-unit:
+    name: Frontend Build and Unit
     needs: changes
     if: ${{ github.event_name == 'push' || needs.changes.outputs.frontend == 'true' }}
     runs-on: ubuntu-latest
@@ -87,24 +88,37 @@ jobs:
       - name: Install M8Flow frontend dependencies
         working-directory: m8flow-frontend
         run: npm ci
-      - name: Build M8Flow frontend
+      - name: Build M8Flow frontend bundle
         working-directory: m8flow-frontend
         run: npm run build
-      - name: Test M8Flow frontend
+      - name: Run M8Flow frontend unit tests
         working-directory: m8flow-frontend
         run: npm test
+
+  # -------------------------
+  # Frontend Browser E2E
+  # -------------------------
+  frontend-browser-e2e:
+    name: Frontend Browser E2E
+    needs: changes
+    if: ${{ github.event_name == 'push' || needs.changes.outputs.frontend == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install browser E2E prerequisites
+        run: sudo apt-get update && sudo apt-get install -y jq
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12.1'
       - name: Install uv
         run: pip install uv
-      - name: Install browser test dependencies
+      - name: Install browser E2E test dependencies
         working-directory: extensions/m8flow-frontend/test/browser
         run: uv sync --locked
       - name: Install Playwright Chromium
         working-directory: extensions/m8flow-frontend/test/browser
         run: uv run playwright install --with-deps chromium
-      - name: Start m8flow stack for browser tests
+      - name: Start m8flow stack for browser E2E tests
         run: |
           docker compose -f docker/m8flow-docker-compose.yml up -d --build \
             keycloak-db m8flow-db redis minio keycloak keycloak-proxy \
@@ -130,14 +144,14 @@ jobs:
             sleep 5
           done
           curl -fsS http://localhost:6841/ > /dev/null
-      - name: Run browser tests
+      - name: Run M8Flow browser E2E tests
         working-directory: extensions/m8flow-frontend/test/browser
         run: uv run python -m pytest -v
-      - name: Upload browser test artifacts
+      - name: Upload browser E2E test artifacts
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: browser-test-results
+          name: browser-e2e-test-results
           path: extensions/m8flow-frontend/test/browser/test-results
           if-no-files-found: ignore
       - name: Dump stack logs on failure
@@ -249,3 +263,50 @@ jobs:
             --tag connector-proxy:pr-test \
             --load \
             m8flow-connector-proxy
+
+  # -------------------------
+  # Required Merge Gate
+  # -------------------------
+  required-ci:
+    name: Required CI
+    needs:
+      - changes
+      - backend
+      - frontend-build-unit
+      - frontend-browser-e2e
+      - migration-check
+    if: ${{ always() && (github.event_name == 'push' || github.event_name == 'pull_request') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate required CI results
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "backend result: ${{ needs.backend.result }}"
+          echo "frontend-build-unit result: ${{ needs.frontend-build-unit.result }}"
+          echo "frontend-browser-e2e result: ${{ needs.frontend-browser-e2e.result }}"
+          echo "migration-check result: ${{ needs.migration-check.result }}"
+
+          if [[ "${{ github.event_name }}" == "push" || "${{ needs.changes.outputs.backend }}" == "true" ]]; then
+            [[ "${{ needs.backend.result }}" == "success" ]] || {
+              echo "::error::Backend CI did not succeed."
+              exit 1
+            }
+          fi
+
+          if [[ "${{ github.event_name }}" == "push" || "${{ needs.changes.outputs.frontend }}" == "true" ]]; then
+            [[ "${{ needs.frontend-build-unit.result }}" == "success" ]] || {
+              echo "::error::Frontend build/unit CI did not succeed."
+              exit 1
+            }
+            [[ "${{ needs.frontend-browser-e2e.result }}" == "success" ]] || {
+              echo "::error::Frontend browser E2E CI did not succeed."
+              exit 1
+            }
+          fi
+
+          [[ "${{ needs.migration-check.result }}" == "success" ]] || {
+            echo "::error::Migration compatibility check did not succeed."
+            exit 1
+          }
