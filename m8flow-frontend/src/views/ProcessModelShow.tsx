@@ -61,9 +61,9 @@ export default function ProcessModelShow() {
 
   // Functions that need to be available before hook declarations
   const navigateToProcessModels = (_result: any) => {
-    navigate(
-      `/process-groups/${getGroupFromModifiedModelId(modifiedProcessModelId)}`,
-    );
+    const groupPath = `/process-groups/${getGroupFromModifiedModelId(modifiedProcessModelId)}`;
+    navigate(groupPath);
+    window.location.reload();
   };
 
   const deleteProcessModel = () => {
@@ -81,8 +81,9 @@ export default function ProcessModelShow() {
   } = useConfirmationDialog(deleteProcessModel, {
     title: t('are_you_sure'),
     description: processModel
-      ? t('delete_process_model_confirm', {
+      ? t('delete_process_model_confirm_soft', {
           processModelName: processModel.display_name,
+          defaultValue: `Are you sure you want to delete "${processModel.display_name}"? If this model has process instances, it will be soft-deleted and can be restored by an admin.`,
         })
       : '',
     confirmText: t('delete'),

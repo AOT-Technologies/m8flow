@@ -1199,6 +1199,147 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /admin/process-models/deleted:
+    get:
+      summary: List soft-deleted process models
+      description: Returns paginated list of soft-deleted process models for the current tenant (tenant-admin only).
+      operationId: m8flow_backend.routes.process_soft_delete_controller.list_deleted_process_models
+      tags:
+        - Admin
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: List of soft-deleted process models
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                  pagination:
+                    type: object
+
+  /admin/process-models/deleted/{deletion_id}/restore:
+    post:
+      summary: Restore a soft-deleted process model
+      description: Restores a soft-deleted process model. If original name is taken, supply new_identifier in body.
+      operationId: m8flow_backend.routes.process_soft_delete_controller.restore_process_model
+      tags:
+        - Admin
+      parameters:
+        - name: deletion_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Process model restored
+          content:
+            application/json:
+              schema:
+                type: object
+        "409":
+          description: Original identifier is already in use
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /admin/process-models/deleted/{deletion_id}/purge:
+    post:
+      summary: Permanently purge a soft-deleted process model
+      description: Permanently removes a soft-deleted process model (tenant-admin only).
+      operationId: m8flow_backend.routes.process_soft_delete_controller.purge_process_model
+      tags:
+        - Admin
+      parameters:
+        - name: deletion_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Process model purged
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /admin/process-groups/deleted:
+    get:
+      summary: List soft-deleted process groups
+      description: Returns paginated list of soft-deleted process groups for the current tenant (tenant-admin only).
+      operationId: m8flow_backend.routes.process_soft_delete_controller.list_deleted_process_groups
+      tags:
+        - Admin
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: List of soft-deleted process groups
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                  pagination:
+                    type: object
+
+  /admin/process-groups/deleted/{deletion_id}/restore:
+    post:
+      summary: Restore a soft-deleted process group
+      description: Restores a soft-deleted process group. If original name is taken, supply new_identifier in body.
+      operationId: m8flow_backend.routes.process_soft_delete_controller.restore_process_group
+      tags:
+        - Admin
+      parameters:
+        - name: deletion_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Process group restored
+          content:
+            application/json:
+              schema:
+                type: object
+        "409":
+          description: Original identifier is already in use
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthResponse:
