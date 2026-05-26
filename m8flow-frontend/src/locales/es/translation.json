@@ -80,6 +80,8 @@
   "delete_tenant": "Eliminar inquilino",
   "are_you_sure_you_want_to_delete_tenant": "¿Está seguro de que desea eliminar el inquilino?",
   "action_cannot_be_undone": "Esta acción no se puede deshacer.",
+  "delete_secret_title": "¿Eliminar secreto?",
+  "delete_secret_confirm": "¿Está seguro de que desea eliminar el secreto \"{{name}}\"?",
   "realm_slug": "Babosa del reino",
   "display_name": "Nombre para mostrar",
   "cancel": "Cancelar",

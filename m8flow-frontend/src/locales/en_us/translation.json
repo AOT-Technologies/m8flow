@@ -85,6 +85,8 @@
   "delete_tenant": "Delete Tenant",
   "are_you_sure_you_want_to_delete_tenant": "Are you sure you want to delete the tenant",
   "action_cannot_be_undone": "This action cannot be undone.",
+  "delete_secret_title": "Delete secret?",
+  "delete_secret_confirm": "Are you sure you want to delete the secret \"{{name}}\"?",
   "realm_slug": "Realm Slug",
   "display_name": "Display Name",
   "cancel": "Cancel",
