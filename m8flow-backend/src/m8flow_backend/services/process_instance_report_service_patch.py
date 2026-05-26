@@ -26,7 +26,16 @@ def apply() -> None:
     from m8flow_backend.tenancy import is_super_admin_request
 
     original_add_human_task_fields = ProcessInstanceReportService.add_human_task_fields.__func__
-    original_add_metadata_columns = ProcessInstanceReportService.add_metadata_columns_to_process_instance.__func__
+    original_add_metadata_columns_method = getattr(
+        ProcessInstanceReportService,
+        "add_metadata_columns_to_process_instance",
+        None,
+    )
+    original_add_metadata_columns = (
+        original_add_metadata_columns_method.__func__
+        if original_add_metadata_columns_method is not None
+        else None
+    )
 
     @classmethod
     def patched_get_basic_query(cls, filters: list[FilterValue]) -> Query:
@@ -96,34 +105,35 @@ def apply() -> None:
 
         return process_instance_query
 
-    @classmethod
-    def patched_add_metadata_columns_to_process_instance(cls, process_instance_sqlalchemy_rows, metadata_columns):
-        """Add metadata columns and inject tenantId/tenantName for super admin."""
-        results = original_add_metadata_columns(cls, process_instance_sqlalchemy_rows, metadata_columns)
+    if original_add_metadata_columns is not None:
+        @classmethod
+        def patched_add_metadata_columns_to_process_instance(cls, process_instance_sqlalchemy_rows, metadata_columns):
+            """Add metadata columns and inject tenantId/tenantName for super admin."""
+            results = original_add_metadata_columns(cls, process_instance_sqlalchemy_rows, metadata_columns)
 
-        if not is_super_admin_request():
+            if not is_super_admin_request():
+                return results
+
+            # Collect tenant ids from the raw PI models
+            tenant_ids: set[str] = set()
+            for row in process_instance_sqlalchemy_rows:
+                pi = row[0] if hasattr(row, "__getitem__") else row
+                tid = getattr(pi, "m8f_tenant_id", None)
+                if isinstance(tid, str) and tid:
+                    tenant_ids.add(tid)
+
+            tenant_name_by_id: dict[str, str] = {}
+            if tenant_ids:
+                tenants = M8flowTenantModel.query.filter(M8flowTenantModel.id.in_(tenant_ids)).all()
+                tenant_name_by_id = {t.id: t.name for t in tenants}
+
+            for i, (result_dict, row) in enumerate(zip(results, process_instance_sqlalchemy_rows)):
+                pi = row[0] if hasattr(row, "__getitem__") else row
+                tid = getattr(pi, "m8f_tenant_id", None)
+                result_dict["tenantId"] = tid
+                result_dict["tenantName"] = tenant_name_by_id.get(tid) if isinstance(tid, str) else None
+
             return results
-
-        # Collect tenant ids from the raw PI models
-        tenant_ids: set[str] = set()
-        for row in process_instance_sqlalchemy_rows:
-            pi = row[0] if hasattr(row, "__getitem__") else row
-            tid = getattr(pi, "m8f_tenant_id", None)
-            if isinstance(tid, str) and tid:
-                tenant_ids.add(tid)
-
-        tenant_name_by_id: dict[str, str] = {}
-        if tenant_ids:
-            tenants = M8flowTenantModel.query.filter(M8flowTenantModel.id.in_(tenant_ids)).all()
-            tenant_name_by_id = {t.id: t.name for t in tenants}
-
-        for i, (result_dict, row) in enumerate(zip(results, process_instance_sqlalchemy_rows)):
-            pi = row[0] if hasattr(row, "__getitem__") else row
-            tid = getattr(pi, "m8f_tenant_id", None)
-            result_dict["tenantId"] = tid
-            result_dict["tenantName"] = tenant_name_by_id.get(tid) if isinstance(tid, str) else None
-
-        return results
 
     @classmethod
     def patched_add_human_task_fields(cls, process_instance_dicts: list[dict], restrict_human_tasks_to_user=None) -> list[dict]:
@@ -142,6 +152,7 @@ def apply() -> None:
         return results
 
     ProcessInstanceReportService.get_basic_query = patched_get_basic_query
-    ProcessInstanceReportService.add_metadata_columns_to_process_instance = patched_add_metadata_columns_to_process_instance
+    if original_add_metadata_columns is not None:
+        ProcessInstanceReportService.add_metadata_columns_to_process_instance = patched_add_metadata_columns_to_process_instance
     ProcessInstanceReportService.add_human_task_fields = patched_add_human_task_fields
     _PATCHED = True

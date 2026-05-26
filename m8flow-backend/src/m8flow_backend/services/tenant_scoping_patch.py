@@ -391,7 +391,21 @@ def _set_postgres_tenant_context(session: Session, transaction: Any, connection:
     if connection.dialect.name != "postgresql":
         return
     if is_super_admin_request():
-        connection.exec_driver_sql("SET LOCAL app.bypass_rls = 'on'")
+        exec_driver_sql = getattr(connection, "exec_driver_sql", None)
+        if callable(exec_driver_sql):
+            exec_driver_sql("SET LOCAL app.bypass_rls = 'on'")
+            return
+
+        raw_connection = getattr(connection, "connection", None)
+        driver_connection = getattr(raw_connection, "driver_connection", raw_connection)
+        if driver_connection is None:
+            return
+
+        cursor = driver_connection.cursor()
+        try:
+            cursor.execute("SET LOCAL app.bypass_rls = 'on'")
+        finally:
+            cursor.close()
         return
     if is_tenant_context_exempt_request():
         return
