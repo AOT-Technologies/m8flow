@@ -199,7 +199,7 @@ jobs:
   migration-check:
     name: Migration Compatibility Check
     needs: changes
-    if: ${{ github.event_name == 'push' || (needs.changes.outputs.migrations == 'true' && github.event_name == 'pull_request') }}
+    if: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
     uses: ./.github/workflows/check-migrations.yml
     with:
       migrations_changed: ${{ github.event_name == 'push' || needs.changes.outputs.migrations == 'true' }}

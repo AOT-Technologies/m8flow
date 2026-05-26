@@ -20,24 +20,34 @@ permissions:
 jobs:
   migration-check:
     name: Validate Migration Compatibility
-    if: ${{ inputs.migrations_changed == true }}
     runs-on: ubuntu-latest
 
     steps:
+      - name: No migration files changed
+        if: ${{ inputs.migrations_changed != true }}
+        run: |
+          echo "No migration files changed; skipping detailed migration validation."
+          echo "## Migration Compatibility Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "No migration files changed for this run." >> $GITHUB_STEP_SUMMARY
+
       - name: Checkout repository
+        if: ${{ inputs.migrations_changed == true }}
         uses: actions/checkout@v4
 
       - name: Install jq (required by fetch-upstream)
+        if: ${{ inputs.migrations_changed == true }}
         run: sudo apt-get update && sudo apt-get install -y jq
 
       - name: Fetch upstream folders (for migrations inspection)
+        if: ${{ inputs.migrations_changed == true }}
         run: ./bin/fetch-upstream.sh
 
       # -------------------------
       # PR Description Validation
       # -------------------------
       - name: Validate Migration Plan section exists
-        if: ${{ inputs.require_pr_metadata == true }}
+        if: ${{ inputs.migrations_changed == true && inputs.require_pr_metadata == true }}
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
@@ -52,7 +62,7 @@ jobs:
           }
 
       - name: Validate required migration plan content
-        if: ${{ inputs.require_pr_metadata == true }}
+        if: ${{ inputs.migrations_changed == true && inputs.require_pr_metadata == true }}
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
@@ -73,6 +83,7 @@ jobs:
       # Migration File Inspection
       # -------------------------
       - name: Detect destructive migration patterns
+        if: ${{ inputs.migrations_changed == true }}
         run: |
           echo "Scanning migrations for destructive operations..."
 
@@ -102,6 +113,7 @@ jobs:
       # Optional: Alembic Sanity Check
       # -------------------------
       - name: Validate Alembic revision files load
+        if: ${{ inputs.migrations_changed == true }}
         run: |
           python - <<'EOF'
           import pathlib, sys
@@ -124,6 +136,7 @@ jobs:
           EOF
 
       - name: Migration compatibility check passed
+        if: ${{ inputs.migrations_changed == true }}
         run: |
           echo "Migration checks passed"
 
