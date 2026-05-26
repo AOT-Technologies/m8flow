@@ -18,8 +18,6 @@ jobs:
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
-      extensions_backend: ${{ steps.filter.outputs.extensions_backend }}
-      extensions_frontend: ${{ steps.filter.outputs.extensions_frontend }}
       migrations: ${{ steps.filter.outputs.migrations }}
       docker_m8flow: ${{ steps.filter.outputs.docker_m8flow }}
     steps:
@@ -29,14 +27,12 @@ jobs:
         with:
           filters: |
             backend:
-              - 'spiffworkflow-backend/**'
-            frontend:
-              - 'spiffworkflow-frontend/**'
-            extensions_backend:
               - 'm8flow-backend/**'
-              - 'spiffworkflow-backend/**'
-            extensions_frontend:
+            frontend:
               - 'm8flow-frontend/**'
+              - 'extensions/m8flow-frontend/**'
+              - 'm8flow-backend/**'
+              - 'docker/**'
             migrations:
               - 'spiffworkflow-backend/migrations/versions/*.py'
             docker_m8flow:
@@ -74,6 +70,12 @@ jobs:
         working-directory: spiffworkflow-backend
         run: uv run pytest
 
+      - name: Test M8Flow backend extensions
+        working-directory: spiffworkflow-backend
+        run: |
+          export PYTHONPATH=$PYTHONPATH:$(pwd):$(pwd)/src:$(pwd)/../m8flow-backend/src
+          uv run pytest ../m8flow-backend/tests
+
   # -------------------------
   # Frontend CI
   # -------------------------
@@ -91,71 +93,80 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-          cache-dependency-path: spiffworkflow-frontend/package-lock.json
-      - name: Install dependencies
+          cache-dependency-path: |
+            spiffworkflow-frontend/package-lock.json
+            m8flow-frontend/package-lock.json
+      - name: Install upstream frontend dependencies
         working-directory: spiffworkflow-frontend
         run: npm ci
-      - name: Lint
+      - name: Lint upstream frontend
         working-directory: spiffworkflow-frontend
         run: npm run lint
-      - name: Test
+      - name: Test upstream frontend
         working-directory: spiffworkflow-frontend
         run: npm test
-
-  # -------------------------
-  # Extensions Backend CI
-  # -------------------------
-  extensions-backend:
-    needs: changes
-    if: ${{ github.event_name == 'push' || needs.changes.outputs.extensions_backend == 'true' }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install jq (required by fetch-upstream)
-        run: sudo apt-get update && sudo apt-get install -y jq
-      - name: Fetch upstream folders
-        run: ./bin/fetch-upstream.sh
+      - name: Install M8Flow frontend dependencies
+        working-directory: m8flow-frontend
+        run: npm ci
+      - name: Typecheck M8Flow frontend
+        working-directory: m8flow-frontend
+        run: npm run typecheck
+      - name: Test M8Flow frontend
+        working-directory: m8flow-frontend
+        run: npm test
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12.1'
       - name: Install uv
         run: pip install uv
-      - name: Install dependencies
-        working-directory: spiffworkflow-backend
-        run: uv sync --group dev
-      - name: Run Extension Tests
-        working-directory: spiffworkflow-backend
+      - name: Install browser test dependencies
+        working-directory: extensions/m8flow-frontend/test/browser
+        run: uv sync --locked
+      - name: Install Playwright Chromium
+        working-directory: extensions/m8flow-frontend/test/browser
+        run: uv run playwright install --with-deps chromium
+      - name: Start m8flow stack for browser tests
         run: |
-          export PYTHONPATH=$PYTHONPATH:$(pwd):$(pwd)/src:$(pwd)/../m8flow-backend/src
-          uv run pytest ../m8flow-backend/tests
+          docker compose -f docker/m8flow-docker-compose.yml up -d --build \
+            keycloak-db m8flow-db redis minio keycloak keycloak-proxy \
+            keycloak-master-admin-init m8flow-connector-proxy \
+            m8flow-backend m8flow-celery-worker m8flow-frontend
+      - name: Wait for backend and frontend
+        shell: bash
+        run: |
+          set -euo pipefail
 
-  # -------------------------
-  # Extensions Frontend CI
-  # -------------------------
-  extensions-frontend:
-    needs: changes
-    if: ${{ github.event_name == 'push' || needs.changes.outputs.extensions_frontend == 'true' }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install jq (required by fetch-upstream)
-        run: sudo apt-get update && sudo apt-get install -y jq
-      - name: Fetch upstream folders
-        run: ./bin/fetch-upstream.sh
-      - uses: actions/setup-node@v4
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://localhost:6840/v1.0/status > /dev/null; then
+              break
+            fi
+            sleep 5
+          done
+          curl -fsS http://localhost:6840/v1.0/status > /dev/null
+
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://localhost:6841/ > /dev/null; then
+              break
+            fi
+            sleep 5
+          done
+          curl -fsS http://localhost:6841/ > /dev/null
+      - name: Run browser tests
+        working-directory: extensions/m8flow-frontend/test/browser
+        run: uv run python -m pytest -v
+      - name: Upload browser test artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
         with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: m8flow-frontend/package-lock.json
-      - name: Install dependencies
-        working-directory: m8flow-frontend
-        run: npm ci
-      - name: Typecheck
-        working-directory: m8flow-frontend
-        run: npm run typecheck
-      - name: Test
-        working-directory: m8flow-frontend
-        run: npm test
+          name: browser-test-results
+          path: extensions/m8flow-frontend/test/browser/test-results
+          if-no-files-found: ignore
+      - name: Dump stack logs on failure
+        if: ${{ failure() }}
+        run: docker compose -f docker/m8flow-docker-compose.yml logs --no-color
+      - name: Stop m8flow stack
+        if: ${{ always() }}
+        run: docker compose -f docker/m8flow-docker-compose.yml down -v
 
   # -------------------------
   # Security: CodeQL
@@ -212,7 +223,7 @@ jobs:
     name: Docker Build Dry Run
     needs: changes
     runs-on: ubuntu-latest
-    if: ${{ (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true' || needs.changes.outputs.extensions_backend == 'true' || needs.changes.outputs.docker_m8flow == 'true') && github.event_name == 'pull_request' }}
+    if: ${{ (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true' || needs.changes.outputs.docker_m8flow == 'true') && github.event_name == 'pull_request' }}
     steps:
       - uses: actions/checkout@v4
       - name: Guard against floating connector refs
