@@ -5,7 +5,12 @@ on:
     inputs:
       migrations_changed:
         description: "Whether migration files were modified"
-        required: true 
+        required: true
+        type: boolean
+      require_pr_metadata:
+        description: "Whether PR-description migration-plan checks should run"
+        required: false
+        default: false
         type: boolean
 
 permissions:
@@ -32,6 +37,7 @@ jobs:
       # PR Description Validation
       # -------------------------
       - name: Validate Migration Plan section exists
+        if: ${{ inputs.require_pr_metadata == true }}
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
@@ -46,6 +52,7 @@ jobs:
           }
 
       - name: Validate required migration plan content
+        if: ${{ inputs.require_pr_metadata == true }}
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
@@ -80,11 +87,15 @@ jobs:
             echo "::warning::Potential destructive migration detected in:"
             echo "$MATCHES"
 
-            echo "${{ github.event.pull_request.body }}" | grep -qi "Destructive Migration Approved" || {
-              echo "::error::Destructive migration detected without explicit approval."
-              echo "Add 'Destructive Migration Approved' to the Migration Plan."
-              exit 1
-            }
+            if [[ "${{ inputs.require_pr_metadata }}" == "true" ]]; then
+              echo "${{ github.event.pull_request.body }}" | grep -qi "Destructive Migration Approved" || {
+                echo "::error::Destructive migration detected without explicit approval."
+                echo "Add 'Destructive Migration Approved' to the Migration Plan."
+                exit 1
+              }
+            else
+              echo "::warning::Potential destructive migration detected on push. PR approval text check skipped outside PR context."
+            fi
           fi
 
       # -------------------------
@@ -97,31 +108,35 @@ jobs:
 
           path = pathlib.Path("spiffworkflow-backend/migrations/versions")
           if not path.exists():
-            print("Migration directory not found; skipping compile check.")
-            raise SystemExit(0)
+              print("Migration directory not found; skipping compile check.")
+              raise SystemExit(0)
           bad = False
 
           for file in path.glob("*.py"):
-            try:
-              compile(file.read_text(), file.name, "exec")
-            except Exception as e:
-              print(f"Invalid migration file: {file}: {e}")
-              bad = True
+              try:
+                  compile(file.read_text(), file.name, "exec")
+              except Exception as e:
+                  print(f"Invalid migration file: {file}: {e}")
+                  bad = True
 
           if bad:
-            sys.exit(1)
+              sys.exit(1)
           EOF
 
       - name: Migration compatibility check passed
         run: |
-          echo "Migration checks passed ✅"
+          echo "Migration checks passed"
 
-          echo "## Migration Compatibility Check Passed ✅" >> $GITHUB_STEP_SUMMARY
+          echo "## Migration Compatibility Check Passed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "All required sections found in PR description:" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Migration Plan" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Backward Compatibility" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Rollback strategy" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Expand/Contract classification" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ inputs.require_pr_metadata }}" == "true" ]]; then
+            echo "All required sections found in PR description:" >> $GITHUB_STEP_SUMMARY
+            echo "- Migration Plan" >> $GITHUB_STEP_SUMMARY
+            echo "- Backward Compatibility" >> $GITHUB_STEP_SUMMARY
+            echo "- Rollback strategy" >> $GITHUB_STEP_SUMMARY
+            echo "- Expand/Contract classification" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "PR-specific migration-plan validation was skipped for this push run." >> $GITHUB_STEP_SUMMARY
+          fi
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Migration files validated successfully." >> $GITHUB_STEP_SUMMARY

@@ -79,7 +79,7 @@ jobs:
   # -------------------------
   frontend:
     needs: changes
-    if: ${{ needs.changes.outputs.frontend == 'true' }}
+    if: ${{ github.event_name == 'push' || needs.changes.outputs.frontend == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -134,7 +134,7 @@ jobs:
   # -------------------------
   extensions-frontend:
     needs: changes
-    if: ${{ needs.changes.outputs.extensions_frontend == 'true' }}
+    if: ${{ github.event_name == 'push' || needs.changes.outputs.extensions_frontend == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -199,10 +199,11 @@ jobs:
   migration-check:
     name: Migration Compatibility Check
     needs: changes
-    if: ${{ needs.changes.outputs.migrations == 'true' && github.event_name == 'pull_request' }}
+    if: ${{ github.event_name == 'push' || (needs.changes.outputs.migrations == 'true' && github.event_name == 'pull_request') }}
     uses: ./.github/workflows/check-migrations.yml
     with:
-      migrations_changed: true
+      migrations_changed: ${{ github.event_name == 'push' || needs.changes.outputs.migrations == 'true' }}
+      require_pr_metadata: ${{ github.event_name == 'pull_request' }}
 
   # -------------------------
   # Optional Docker Build Dry Run
