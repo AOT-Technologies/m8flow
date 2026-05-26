@@ -87,9 +87,9 @@ jobs:
       - name: Install M8Flow frontend dependencies
         working-directory: m8flow-frontend
         run: npm ci
-      - name: Typecheck M8Flow frontend
+      - name: Build M8Flow frontend
         working-directory: m8flow-frontend
-        run: npm run typecheck
+        run: npm run build
       - name: Test M8Flow frontend
         working-directory: m8flow-frontend
         run: npm test
