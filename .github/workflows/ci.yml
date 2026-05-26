@@ -2,7 +2,6 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -49,7 +48,7 @@ jobs:
   # -------------------------
   backend:
     needs: changes
-    if: ${{ needs.changes.outputs.backend == 'true' }}
+    if: ${{ github.event_name == 'push' || needs.changes.outputs.backend == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -108,7 +107,7 @@ jobs:
   # -------------------------
   extensions-backend:
     needs: changes
-    if: ${{ needs.changes.outputs.extensions_backend == 'true' }}
+    if: ${{ github.event_name == 'push' || needs.changes.outputs.extensions_backend == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
