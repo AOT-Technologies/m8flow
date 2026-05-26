@@ -200,7 +200,7 @@ The Salesforce Connector integrates your M8Flow workflows with the Salesforce CR
 
 The Stripe Connector allows your workflows to connect to Stripe, a popular system for handling payments. With this connector, your automated workflow can take payments or manage recurring subscriptions without needing to know any complex code.
 
-![stripe-create-pament-intent](../docs/images/stripe-create-pament-intent.png)
+![stripe-create-payment-intent](../docs/images/stripe-create-payment-intent.png)
 
 **Supported Actions:**
 We currently support the following actions in the connector:
@@ -227,7 +227,7 @@ You will never type real credit card numbers into your M8Flow workflows. Instead
 #### 2. Configuring the Service Task
 When you select a Stripe operation in your workflow, you will need to fill in some details:
 
-- **api_key (Required for all):** Your Stripe Secret Key. *Always keep this safe by using M8Flow Secrets. Just type `"M8FLOW_SECRET:stripe_api_key"` as the value.*
+- **api_key (Required for all):** Your Stripe Secret Key. *Always keep this safe by using M8Flow Secrets. Just type `"M8FLOW_SECRET:STRIPE_API_KEY"` as the value.*
 
 **When creating a Payment Intent or Charge:**
 - **amount:** The amount you want to charge. *Warning:* Stripe counts money in the smallest unit (like pennies). So, if you want to charge $10.00 USD, entering `"10"` will only charge 10 cents! You must enter `"1000"` for $10.00.
