@@ -1199,6 +1199,22 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /connectors-grouped:
+    get:
+      operationId: m8flow_backend.routes.connectors_controller.connectors_grouped
+      summary: Returns service-task operations grouped by connector with metadata
+      tags:
+        - Connectors
+      responses:
+        "200":
+          description: Grouped connector list with metadata
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
 components:
   schemas:
     HealthResponse:

@@ -116,6 +116,10 @@ permissions:
     groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter", "integrator"]
     actions: [read]
     uri: /service-tasks
+  read-connectors-grouped:
+    groups: ["tenant-admin", "editor", "viewer", "super-admin", "submitter", "integrator"]
+    actions: [read]
+    uri: /m8flow/connectors-grouped
   read-data-stores:
     groups: ["viewer", "super-admin"]
     actions: [read]
