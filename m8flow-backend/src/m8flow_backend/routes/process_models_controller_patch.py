@@ -6,6 +6,7 @@ from typing import Any, Callable
 
 from m8flow_backend.tenancy import is_super_admin_request
 from spiffworkflow_backend.exceptions.api_error import ApiError
+from spiffworkflow_backend.models.db import db  # noqa: F401
 
 _PATCHED = False
 _ORIGINAL_PROCESS_MODEL_CREATE: Callable[..., Any] | None = None
