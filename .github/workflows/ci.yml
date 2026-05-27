@@ -32,6 +32,7 @@ jobs:
             frontend:
               - 'm8flow-frontend/**'
             migrations:
+              - 'm8flow-backend/migrations/versions/*.py'
               - 'spiffworkflow-backend/migrations/versions/*.py'
             docker_m8flow:
               - 'docker/**'

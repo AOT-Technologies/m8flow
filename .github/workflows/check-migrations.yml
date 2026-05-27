@@ -87,12 +87,20 @@ jobs:
         run: |
           echo "Scanning migrations for destructive operations..."
 
-          if [ ! -d "spiffworkflow-backend/migrations/versions" ]; then
-            echo "::warning::Migration directory not found"
+          MIGRATION_DIRS=()
+          if [ -d "m8flow-backend/migrations/versions" ]; then
+            MIGRATION_DIRS+=("m8flow-backend/migrations/versions")
+          fi
+          if [ -d "spiffworkflow-backend/migrations/versions" ]; then
+            MIGRATION_DIRS+=("spiffworkflow-backend/migrations/versions")
+          fi
+
+          if [ ${#MIGRATION_DIRS[@]} -eq 0 ]; then
+            echo "::warning::No migration directories found"
             exit 0
           fi
 
-          MATCHES=$(find spiffworkflow-backend/migrations/versions -type f -name "*.py" -exec grep -lE "op\.drop_|DROP TABLE|DROP COLUMN|ALTER TABLE .* DROP" {} \; || true)
+          MATCHES=$(find "${MIGRATION_DIRS[@]}" -type f -name "*.py" -exec grep -lE "op\.drop_|DROP TABLE|DROP COLUMN|ALTER TABLE .* DROP" {} \; || true)
 
           if [[ -n "$MATCHES" ]]; then
             echo "::warning::Potential destructive migration detected in:"
@@ -118,18 +126,23 @@ jobs:
           python - <<'EOF'
           import pathlib, sys
 
-          path = pathlib.Path("spiffworkflow-backend/migrations/versions")
-          if not path.exists():
-              print("Migration directory not found; skipping compile check.")
+          paths = [
+              pathlib.Path("m8flow-backend/migrations/versions"),
+              pathlib.Path("spiffworkflow-backend/migrations/versions"),
+          ]
+          existing_paths = [path for path in paths if path.exists()]
+          if not existing_paths:
+              print("No migration directories found; skipping compile check.")
               raise SystemExit(0)
           bad = False
 
-          for file in path.glob("*.py"):
-              try:
-                  compile(file.read_text(), file.name, "exec")
-              except Exception as e:
-                  print(f"Invalid migration file: {file}: {e}")
-                  bad = True
+          for path in existing_paths:
+              for file in path.glob("*.py"):
+                  try:
+                      compile(file.read_text(), file.name, "exec")
+                  except Exception as e:
+                      print(f"Invalid migration file: {file}: {e}")
+                      bad = True
 
           if bad:
               sys.exit(1)
