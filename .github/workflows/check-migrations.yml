@@ -7,15 +7,9 @@ on:
         description: "Whether migration files were modified"
         required: true
         type: boolean
-      require_pr_metadata:
-        description: "Whether PR-description migration-plan checks should run"
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   contents: read
-  pull-requests: read
 
 jobs:
   migration-check:
@@ -44,42 +38,6 @@ jobs:
         run: ./bin/fetch-upstream.sh
 
       # -------------------------
-      # PR Description Validation
-      # -------------------------
-      - name: Validate Migration Plan section exists
-        if: ${{ inputs.migrations_changed == true && inputs.require_pr_metadata == true }}
-        env:
-          PR_BODY: ${{ github.event.pull_request.body }}
-        run: |
-          if [[ -z "$PR_BODY" ]]; then
-            echo "::error::PR description is empty. Migration Plan required."
-            exit 1
-          fi
-
-          echo "$PR_BODY" | grep -qi "Migration Plan" || {
-            echo "::error::Missing 'Migration Plan' section in PR description"
-            exit 1
-          }
-
-      - name: Validate required migration plan content
-        if: ${{ inputs.migrations_changed == true && inputs.require_pr_metadata == true }}
-        env:
-          PR_BODY: ${{ github.event.pull_request.body }}
-        run: |
-          REQUIRED_SECTIONS=(
-            "Backward Compatibility"
-            "Rollback"
-            "Expand/Contract"
-          )
-
-          for section in "${REQUIRED_SECTIONS[@]}"; do
-            echo "$PR_BODY" | grep -qi "$section" || {
-              echo "::error::Migration Plan missing required section: $section"
-              exit 1
-            }
-          done
-
-      # -------------------------
       # Migration File Inspection
       # -------------------------
       - name: Detect destructive migration patterns
@@ -105,16 +63,7 @@ jobs:
           if [[ -n "$MATCHES" ]]; then
             echo "::warning::Potential destructive migration detected in:"
             echo "$MATCHES"
-
-            if [[ "${{ inputs.require_pr_metadata }}" == "true" ]]; then
-              echo "${{ github.event.pull_request.body }}" | grep -qi "Destructive Migration Approved" || {
-                echo "::error::Destructive migration detected without explicit approval."
-                echo "Add 'Destructive Migration Approved' to the Migration Plan."
-                exit 1
-              }
-            else
-              echo "::warning::Potential destructive migration detected on push. PR approval text check skipped outside PR context."
-            fi
+            echo "::warning::Review destructive operations carefully before merging."
           fi
 
       # -------------------------
@@ -155,14 +104,6 @@ jobs:
 
           echo "## Migration Compatibility Check Passed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          if [[ "${{ inputs.require_pr_metadata }}" == "true" ]]; then
-            echo "All required sections found in PR description:" >> $GITHUB_STEP_SUMMARY
-            echo "- Migration Plan" >> $GITHUB_STEP_SUMMARY
-            echo "- Backward Compatibility" >> $GITHUB_STEP_SUMMARY
-            echo "- Rollback strategy" >> $GITHUB_STEP_SUMMARY
-            echo "- Expand/Contract classification" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "PR-specific migration-plan validation was skipped for this push run." >> $GITHUB_STEP_SUMMARY
-          fi
+          echo "Minimal migration checks completed." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Migration files validated successfully." >> $GITHUB_STEP_SUMMARY

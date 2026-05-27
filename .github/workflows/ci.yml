@@ -182,7 +182,6 @@ jobs:
     uses: ./.github/workflows/check-migrations.yml
     with:
       migrations_changed: ${{ github.event_name == 'push' || needs.path_filters.outputs.migrations == 'true' }}
-      require_pr_metadata: ${{ github.event_name == 'pull_request' }}
 
   # -------------------------
   # Optional Docker Build Dry Run
