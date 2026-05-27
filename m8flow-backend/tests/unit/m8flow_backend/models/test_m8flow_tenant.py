@@ -11,7 +11,6 @@ Tests cover:
 import sys
 import time
 from pathlib import Path
-from datetime import datetime
 
 import pytest
 from flask import Flask

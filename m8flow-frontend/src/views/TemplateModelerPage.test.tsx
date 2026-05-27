@@ -5,6 +5,12 @@ import { ThemeProvider, createTheme } from "@mui/material/styles";
 import type React from "react";
 import TemplateModelerPage from "./TemplateModelerPage";
 
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key,
+  }),
+}));
+
 vi.mock("react-router-dom", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("react-router-dom")>();
@@ -94,22 +100,26 @@ function renderWithRouter(ui: React.ReactElement) {
   );
 }
 
+function visibilityCombobox() {
+  return screen.getByRole("combobox");
+}
+
 describe("TemplateModelerPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(useParams).mockReturnValue({ templateId: "5" });
     vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
-      opts.successCallback?.(templatePayload() as any);
+      opts.successCallback?.(templatePayload() as never);
     });
     vi.mocked(usePermissionFetcher).mockReturnValue({
-      ability: { can: () => true } as any,
+      ability: { can: () => true } as never,
       permissionsLoaded: true,
     });
   });
 
   it("renders template name and shows Delete button for draft owned by current user", async () => {
     vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
-      opts.successCallback?.(templatePayload({ isPublished: false }) as any);
+      opts.successCallback?.(templatePayload({ isPublished: false }) as never);
     });
 
     renderWithRouter(<TemplateModelerPage />);
@@ -118,25 +128,25 @@ describe("TemplateModelerPage", () => {
       expect(screen.getByText("Test Template")).toBeInTheDocument();
     });
 
-    expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Delete" })).toBeEnabled();
+    expect(screen.getByTestId("template-delete-button")).toBeInTheDocument();
+    expect(screen.getByTestId("template-delete-button")).toBeEnabled();
   });
 
   it("shows Publish button when template is not published", async () => {
     vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
-      opts.successCallback?.(templatePayload({ isPublished: false }) as any);
+      opts.successCallback?.(templatePayload({ isPublished: false }) as never);
     });
 
     renderWithRouter(<TemplateModelerPage />);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Publish" })).toBeInTheDocument();
+      expect(screen.getByTestId("template-publish-button")).toBeInTheDocument();
     });
   });
 
   it("does not show Publish button when template is published", async () => {
     vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
-      opts.successCallback?.(templatePayload({ isPublished: true }) as any);
+      opts.successCallback?.(templatePayload({ isPublished: true }) as never);
     });
 
     renderWithRouter(<TemplateModelerPage />);
@@ -145,133 +155,128 @@ describe("TemplateModelerPage", () => {
       expect(screen.getByText("Test Template")).toBeInTheDocument();
     });
 
-    expect(screen.queryByRole("button", { name: "Publish" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("template-publish-button")).not.toBeInTheDocument();
   });
 
   it("disables Create Process Model button when template version is draft", async () => {
     vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
-      opts.successCallback?.(templatePayload({ isPublished: false }) as any);
+      opts.successCallback?.(templatePayload({ isPublished: false }) as never);
     });
 
     renderWithRouter(<TemplateModelerPage />);
 
-    const createButton = await screen.findByRole("button", { name: "Create Process Model" });
+    const createButton = await screen.findByTestId("template-create-process-model-button");
     expect(createButton).toBeDisabled();
   });
 
   it("enables Create Process Model button when template version is published", async () => {
     vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
-      opts.successCallback?.(templatePayload({ isPublished: true }) as any);
+      opts.successCallback?.(templatePayload({ isPublished: true }) as never);
     });
 
     renderWithRouter(<TemplateModelerPage />);
 
-    const createButton = await screen.findByRole("button", { name: "Create Process Model" });
+    const createButton = await screen.findByTestId("template-create-process-model-button");
     expect(createButton).toBeEnabled();
   });
 
   it("disables Delete for published template when user lacks admin permission", async () => {
-    // No admin permission (ability.can returns false for /m8flow/admin/templates)
     vi.mocked(usePermissionFetcher).mockReturnValue({
       ability: {
-        can: (method: string, uri: string) => {
+        can: (_method: string, uri: string) => {
           if (uri === "/m8flow/admin/templates") return false;
-          return true; // general template permissions
+          return true;
         },
-      } as any,
+      } as never,
       permissionsLoaded: true,
     });
     vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
-      opts.successCallback?.(templatePayload({ isPublished: true }) as any);
+      opts.successCallback?.(templatePayload({ isPublished: true }) as never);
     });
 
     renderWithRouter(<TemplateModelerPage />);
 
-    const deleteButton = await screen.findByRole("button", { name: "Delete" });
+    const deleteButton = await screen.findByTestId("template-delete-button");
     expect(deleteButton).toBeDisabled();
   });
 
   it("enables Delete for published template when user has admin permission", async () => {
-    // Has admin permission (ability.can returns true for /m8flow/admin/templates)
     vi.mocked(usePermissionFetcher).mockReturnValue({
-      ability: { can: () => true } as any,
+      ability: { can: () => true } as never,
       permissionsLoaded: true,
     });
     vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
-      opts.successCallback?.(templatePayload({ isPublished: true }) as any);
+      opts.successCallback?.(templatePayload({ isPublished: true }) as never);
     });
 
     renderWithRouter(<TemplateModelerPage />);
 
-    const deleteButton = await screen.findByRole("button", { name: "Delete" });
+    const deleteButton = await screen.findByTestId("template-delete-button");
     expect(deleteButton).toBeEnabled();
   });
 
   it("shows visibility dropdown for draft template when user has edit permission", async () => {
     vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
-      opts.successCallback?.(templatePayload({ isPublished: false, visibility: "TENANT" }) as any);
+      opts.successCallback?.(templatePayload({ isPublished: false, visibility: "TENANT" }) as never);
     });
 
     renderWithRouter(<TemplateModelerPage />);
 
     await waitFor(() => {
-      expect(screen.getByRole("combobox")).toBeInTheDocument();
+      expect(screen.getByTestId("template-visibility-select")).toBeInTheDocument();
     });
 
-    expect(screen.queryByText("Visibility: TENANT")).not.toBeInTheDocument();
+    expect(screen.queryByText("visibility: TENANT")).not.toBeInTheDocument();
   });
 
   it("shows read-only visibility chip for published template", async () => {
     vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
-      opts.successCallback?.(templatePayload({ isPublished: true, visibility: "TENANT" }) as any);
+      opts.successCallback?.(templatePayload({ isPublished: true, visibility: "TENANT" }) as never);
     });
 
     renderWithRouter(<TemplateModelerPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Visibility: TENANT")).toBeInTheDocument();
+      expect(screen.getByText("visibility: TENANT")).toBeInTheDocument();
     });
 
-    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("template-visibility-select")).not.toBeInTheDocument();
   });
 
   it("shows read-only visibility chip when user lacks edit permission", async () => {
     vi.mocked(usePermissionFetcher).mockReturnValue({
-      ability: { can: () => false } as any,
+      ability: { can: () => false } as never,
       permissionsLoaded: true,
     });
     vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
-      opts.successCallback?.(templatePayload({ isPublished: false, visibility: "PRIVATE" }) as any);
+      opts.successCallback?.(templatePayload({ isPublished: false, visibility: "PRIVATE" }) as never);
     });
 
     renderWithRouter(<TemplateModelerPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Visibility: PRIVATE")).toBeInTheDocument();
+      expect(screen.getByText("visibility: PRIVATE")).toBeInTheDocument();
     });
 
-    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("template-visibility-select")).not.toBeInTheDocument();
   });
 
   it("shows Save button when visibility is changed", async () => {
     vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
-      opts.successCallback?.(templatePayload({ isPublished: false, visibility: "PRIVATE" }) as any);
+      opts.successCallback?.(templatePayload({ isPublished: false, visibility: "PRIVATE" }) as never);
     });
 
     renderWithRouter(<TemplateModelerPage />);
 
-    await waitFor(() => {
-      expect(screen.getByRole("combobox")).toBeInTheDocument();
-    });
+    await screen.findByTestId("template-visibility-select");
+    expect(screen.queryByTestId("template-save-visibility-button")).not.toBeInTheDocument();
 
-    expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
-
-    fireEvent.mouseDown(screen.getByRole("combobox"));
-    const publicOption = await screen.findByRole("option", { name: /Public/i });
+    fireEvent.mouseDown(visibilityCombobox());
+    const publicOption = await screen.findByRole("option", { name: "public_authenticated_users" });
     fireEvent.click(publicOption);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
+      expect(screen.getByTestId("template-save-visibility-button")).toBeInTheDocument();
     });
 
     expect(TemplateService.updateTemplate).not.toHaveBeenCalled();
@@ -279,27 +284,25 @@ describe("TemplateModelerPage", () => {
 
   it("calls updateTemplate when Save button is clicked", async () => {
     const updatedPayload = templatePayload({ visibility: "PUBLIC" });
-    vi.mocked(TemplateService.updateTemplate).mockResolvedValue(updatedPayload as any);
+    vi.mocked(TemplateService.updateTemplate).mockResolvedValue(updatedPayload as never);
 
     vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
-      opts.successCallback?.(templatePayload({ isPublished: false, visibility: "PRIVATE" }) as any);
+      opts.successCallback?.(templatePayload({ isPublished: false, visibility: "PRIVATE" }) as never);
     });
 
     renderWithRouter(<TemplateModelerPage />);
 
-    await waitFor(() => {
-      expect(screen.getByRole("combobox")).toBeInTheDocument();
-    });
+    await screen.findByTestId("template-visibility-select");
 
-    fireEvent.mouseDown(screen.getByRole("combobox"));
-    const publicOption = await screen.findByRole("option", { name: /Public/i });
+    fireEvent.mouseDown(visibilityCombobox());
+    const publicOption = await screen.findByRole("option", { name: "public_authenticated_users" });
     fireEvent.click(publicOption);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
+      expect(screen.getByTestId("template-save-visibility-button")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByTestId("template-save-visibility-button"));
 
     await waitFor(() => {
       expect(TemplateService.updateTemplate).toHaveBeenCalledWith(5, { visibility: "PUBLIC" });
@@ -314,24 +317,22 @@ describe("TemplateModelerPage", () => {
     vi.mocked(TemplateService.updateTemplate).mockRejectedValue(new Error("Permission denied"));
 
     vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
-      opts.successCallback?.(templatePayload({ isPublished: false, visibility: "PRIVATE" }) as any);
+      opts.successCallback?.(templatePayload({ isPublished: false, visibility: "PRIVATE" }) as never);
     });
 
     renderWithRouter(<TemplateModelerPage />);
 
-    await waitFor(() => {
-      expect(screen.getByRole("combobox")).toBeInTheDocument();
-    });
+    await screen.findByTestId("template-visibility-select");
 
-    fireEvent.mouseDown(screen.getByRole("combobox"));
-    const tenantOption = await screen.findByRole("option", { name: /Tenant-wide/i });
+    fireEvent.mouseDown(visibilityCombobox());
+    const tenantOption = await screen.findByRole("option", { name: "tenant_wide" });
     fireEvent.click(tenantOption);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
+      expect(screen.getByTestId("template-save-visibility-button")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByTestId("template-save-visibility-button"));
 
     await waitFor(() => {
       expect(screen.getByText("Permission denied")).toBeInTheDocument();
@@ -340,29 +341,27 @@ describe("TemplateModelerPage", () => {
 
   it("hides Save button when visibility is changed back to original", async () => {
     vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
-      opts.successCallback?.(templatePayload({ isPublished: false, visibility: "PRIVATE" }) as any);
+      opts.successCallback?.(templatePayload({ isPublished: false, visibility: "PRIVATE" }) as never);
     });
 
     renderWithRouter(<TemplateModelerPage />);
 
-    await waitFor(() => {
-      expect(screen.getByRole("combobox")).toBeInTheDocument();
-    });
+    await screen.findByTestId("template-visibility-select");
 
-    fireEvent.mouseDown(screen.getByRole("combobox"));
-    const publicOption = await screen.findByRole("option", { name: /Public/i });
+    fireEvent.mouseDown(visibilityCombobox());
+    const publicOption = await screen.findByRole("option", { name: "public_authenticated_users" });
     fireEvent.click(publicOption);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
+      expect(screen.getByTestId("template-save-visibility-button")).toBeInTheDocument();
     });
 
-    fireEvent.mouseDown(screen.getByRole("combobox"));
-    const privateOption = await screen.findByRole("option", { name: /Private/i });
+    fireEvent.mouseDown(visibilityCombobox());
+    const privateOption = await screen.findByRole("option", { name: "private_only_you" });
     fireEvent.click(privateOption);
 
     await waitFor(() => {
-      expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
+      expect(screen.queryByTestId("template-save-visibility-button")).not.toBeInTheDocument();
     });
   });
 });

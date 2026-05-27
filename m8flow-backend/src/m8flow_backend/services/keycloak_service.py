@@ -14,8 +14,6 @@ from urllib.parse import urlsplit
 
 import requests
 
-logger = logging.getLogger(__name__)
-
 from m8flow_backend.config import (
     keycloak_admin_password,
     keycloak_admin_user,
@@ -31,6 +29,8 @@ from m8flow_backend.config import (
 )
 from m8flow_backend.services.tenant_identity_helpers import normalize_organizational_group_identifier
 from m8flow_backend.services.tenant_identity_helpers import normalize_organizational_group_identifiers
+
+logger = logging.getLogger(__name__)
 
 # Template source: m8flow-backend/keycloak/realm_exports/m8flow-tenant-template.json
 # Only necessary values are changed for a new tenant; roles, groups, users, and clients are preserved.

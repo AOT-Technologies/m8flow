@@ -4,7 +4,6 @@ from __future__ import annotations
 import ast
 import base64
 import logging
-import os
 from typing import Any, Optional
 from urllib.parse import unquote
 

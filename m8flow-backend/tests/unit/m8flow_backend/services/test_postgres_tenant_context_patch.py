@@ -1,6 +1,5 @@
 import os
 
-import pytest
 from flask import Flask
 from flask import g
 

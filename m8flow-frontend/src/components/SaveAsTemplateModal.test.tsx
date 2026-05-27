@@ -44,13 +44,12 @@ describe("SaveAsTemplateModal", () => {
       name: "Test Template",
       version: "V1",
       visibility: "PRIVATE",
-    } as any);
+    } as never);
   });
 
-  it("renders dialog with title and form fields when open", () => {
+  it("renders dialog with title and current form fields when open", () => {
     renderWithTheme(<SaveAsTemplateModal {...defaultProps} />);
     expect(screen.getByText("Save as Template")).toBeInTheDocument();
-    expect(screen.getByLabelText(/Template key/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Name/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Description/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Category/i)).toBeInTheDocument();
@@ -58,6 +57,7 @@ describe("SaveAsTemplateModal", () => {
     expect(screen.getByRole("combobox")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Cancel/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Create Template/i })).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Template key/i)).not.toBeInTheDocument();
   });
 
   it("does not render dialog content when open is false", () => {
@@ -65,19 +65,8 @@ describe("SaveAsTemplateModal", () => {
     expect(screen.queryByText("Save as Template")).not.toBeInTheDocument();
   });
 
-  it("shows validation error when template key is empty on submit", async () => {
-    renderWithTheme(<SaveAsTemplateModal {...defaultProps} />);
-    typeInField(/Name/i, "My Template");
-    fireEvent.click(screen.getByRole("button", { name: /Create Template/i }));
-    await waitFor(() => {
-      expect(screen.getByText("Template key is required.")).toBeInTheDocument();
-    });
-    expect(TemplateService.createTemplateWithFiles).not.toHaveBeenCalled();
-  });
-
   it("shows validation error when name is empty on submit", async () => {
     renderWithTheme(<SaveAsTemplateModal {...defaultProps} />);
-    typeInField(/Template key/i, "my-key");
     fireEvent.click(screen.getByRole("button", { name: /Create Template/i }));
     await waitFor(() => {
       expect(screen.getByText("Name is required.")).toBeInTheDocument();
@@ -85,9 +74,18 @@ describe("SaveAsTemplateModal", () => {
     expect(TemplateService.createTemplateWithFiles).not.toHaveBeenCalled();
   });
 
-  it("calls getFiles and createTemplateWithFiles with trimmed key and name on submit", async () => {
+  it("shows validation error when name cannot produce a template key", async () => {
     renderWithTheme(<SaveAsTemplateModal {...defaultProps} />);
-    typeInField(/Template key/i, "  my-key  ");
+    typeInField(/Name/i, "!!!");
+    fireEvent.click(screen.getByRole("button", { name: /Create Template/i }));
+    await waitFor(() => {
+      expect(screen.getByText("Name must contain at least one letter or number.")).toBeInTheDocument();
+    });
+    expect(TemplateService.createTemplateWithFiles).not.toHaveBeenCalled();
+  });
+
+  it("calls getFiles and createTemplateWithFiles with derived key and trimmed name on submit", async () => {
+    renderWithTheme(<SaveAsTemplateModal {...defaultProps} />);
     typeInField(/Name/i, "  My Template  ");
     fireEvent.click(screen.getByRole("button", { name: /Create Template/i }));
     await waitFor(() => {
@@ -96,7 +94,7 @@ describe("SaveAsTemplateModal", () => {
     await waitFor(() => {
       expect(TemplateService.createTemplateWithFiles).toHaveBeenCalledWith(
         expect.objectContaining({
-          template_key: "my-key",
+          template_key: "my-template",
           name: "My Template",
           visibility: "PRIVATE",
         }),
@@ -107,7 +105,6 @@ describe("SaveAsTemplateModal", () => {
 
   it("includes optional description, category, and tags in metadata when provided", async () => {
     renderWithTheme(<SaveAsTemplateModal {...defaultProps} />);
-    typeInField(/Template key/i, "my-key");
     typeInField(/Name/i, "My Template");
     typeInField(/Description/i, "A description");
     typeInField(/Category/i, "Approval");
@@ -116,7 +113,7 @@ describe("SaveAsTemplateModal", () => {
     await waitFor(() => {
       expect(TemplateService.createTemplateWithFiles).toHaveBeenCalledWith(
         expect.objectContaining({
-          template_key: "my-key",
+          template_key: "my-template",
           name: "My Template",
           description: "A description",
           category: "Approval",
@@ -132,7 +129,6 @@ describe("SaveAsTemplateModal", () => {
       { name: "data.json", content: new Blob(["{}"], { type: "application/json" }) },
     ]);
     renderWithTheme(<SaveAsTemplateModal {...defaultProps} />);
-    typeInField(/Template key/i, "my-key");
     typeInField(/Name/i, "My Template");
     fireEvent.click(screen.getByRole("button", { name: /Create Template/i }));
     await waitFor(() => {
@@ -144,7 +140,6 @@ describe("SaveAsTemplateModal", () => {
   it("shows error when getFiles returns empty array", async () => {
     vi.mocked(defaultProps.getFiles).mockResolvedValue([]);
     renderWithTheme(<SaveAsTemplateModal {...defaultProps} />);
-    typeInField(/Template key/i, "my-key");
     typeInField(/Name/i, "My Template");
     fireEvent.click(screen.getByRole("button", { name: /Create Template/i }));
     await waitFor(() => {
@@ -156,7 +151,6 @@ describe("SaveAsTemplateModal", () => {
   it("shows error when createTemplateWithFiles rejects", async () => {
     vi.mocked(TemplateService.createTemplateWithFiles).mockRejectedValue(new Error("Server error"));
     renderWithTheme(<SaveAsTemplateModal {...defaultProps} />);
-    typeInField(/Template key/i, "my-key");
     typeInField(/Name/i, "My Template");
     fireEvent.click(screen.getByRole("button", { name: /Create Template/i }));
     await waitFor(() => {
@@ -167,7 +161,6 @@ describe("SaveAsTemplateModal", () => {
   it("calls onClose and onSuccess with template when create succeeds", async () => {
     const onSuccess = vi.fn();
     renderWithTheme(<SaveAsTemplateModal {...defaultProps} onSuccess={onSuccess} />);
-    typeInField(/Template key/i, "my-key");
     typeInField(/Name/i, "My Template");
     fireEvent.click(screen.getByRole("button", { name: /Create Template/i }));
     await waitFor(() => {
@@ -181,7 +174,6 @@ describe("SaveAsTemplateModal", () => {
   it("shows error when getFiles rejects", async () => {
     vi.mocked(defaultProps.getFiles).mockRejectedValue(new Error("Could not load files"));
     renderWithTheme(<SaveAsTemplateModal {...defaultProps} />);
-    typeInField(/Template key/i, "my-key");
     typeInField(/Name/i, "My Template");
     fireEvent.click(screen.getByRole("button", { name: /Create Template/i }));
     await waitFor(() => {
@@ -198,11 +190,12 @@ describe("SaveAsTemplateModal", () => {
 
   it("sends selected visibility in metadata", async () => {
     renderWithTheme(<SaveAsTemplateModal {...defaultProps} />);
-    typeInField(/Template key/i, "my-key");
     typeInField(/Name/i, "My Template");
     const visibilityTrigger = screen.getByRole("combobox");
     fireEvent.mouseDown(visibilityTrigger);
-    const tenantOption = await screen.findByRole("option", { name: /Tenant-wide/i });
+    const tenantOption = await screen.findByRole("option", {
+      name: "Tenant-wide (all users in your tenant)",
+    });
     fireEvent.click(tenantOption);
     fireEvent.click(screen.getByRole("button", { name: /Create Template/i }));
     await waitFor(() => {

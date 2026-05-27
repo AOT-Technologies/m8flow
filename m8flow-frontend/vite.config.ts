@@ -25,6 +25,7 @@ const backendUrl =
 
 const multiTenantOn =
   rootEnv.MULTI_TENANT_ON ?? process.env.VITE_MULTI_TENANT_ON ?? 'false';
+const isWindows = process.platform === 'win32';
 
 export default defineConfig({
   base: '/',
@@ -37,6 +38,8 @@ export default defineConfig({
     setupFiles: ['src/test/vitest.setup.ts'],
     globals: true,
     environment: 'jsdom',
+    fileParallelism: !isWindows,
+    maxWorkers: isWindows ? 1 : undefined,
   },
   plugins: [
     // Override resolver - must be first to check overrides before core

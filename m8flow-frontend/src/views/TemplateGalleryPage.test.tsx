@@ -5,6 +5,20 @@ import { ThemeProvider, createTheme } from "@mui/material/styles";
 import type React from "react";
 import TemplateGalleryPage from "./TemplateGalleryPage";
 
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key,
+  }),
+}));
+
+vi.mock("@mui/icons-material", () => ({
+  ViewModule: () => <svg data-testid="icon-view-module" />,
+  ViewList: () => <svg data-testid="icon-view-list" />,
+  Visibility: () => <svg data-testid="icon-visibility" />,
+  Delete: () => <svg data-testid="icon-delete" />,
+  Restore: () => <svg data-testid="icon-restore" />,
+}));
+
 vi.mock("react-router-dom", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("react-router-dom")>();
@@ -29,6 +43,7 @@ vi.mock("../services/UserService", () => ({
   default: {
     getUserName: vi.fn(() => "tester"),
     getPreferredUsername: vi.fn(() => "tester"),
+    isSuperAdmin: vi.fn(() => false),
   },
 }));
 

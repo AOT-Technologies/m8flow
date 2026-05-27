@@ -1,6 +1,5 @@
 # m8flow-backend/tests/unit/m8flow_backend/services/test_file_system_service_patch.py
 import os
-from pathlib import Path
 
 import pytest
 from flask import Flask, g
@@ -54,8 +53,6 @@ def test_apply_scopes_root_path_for_request_tenant(monkeypatch, tmp_path) -> Non
     base_dir = tmp_path / "process_models"
     app.config["SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR"] = str(base_dir)
     print("config BPMN dir:", app.config.get("SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR"))
-
-    original_root_path = FileSystemService.root_path
 
     with app.test_request_context("/"):
         g.m8flow_tenant_id = "tenant-a"

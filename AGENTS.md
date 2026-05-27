@@ -74,6 +74,24 @@ When changing backend code, consider running or updating relevant tests.
 
 When changing frontend code, consider lint/build impact.
 
+After applying code changes, run the relevant repo-owned checks for the area you touched whenever feasible:
+
+- Backend changes:
+  - Run the Python lint target for repo-owned backend code (`ruff` in `m8flow-backend`) when backend Python files change.
+  - Run the most relevant `pytest` target for the touched backend files.
+  - Prefer focused tests first, then widen only if the change is broad or cross-cutting.
+- Frontend changes:
+  - Run `npm run lint` in `m8flow-frontend`.
+  - Run `npm test` in `m8flow-frontend`.
+  - Run `npm run build` in `m8flow-frontend` when UI, routing, bundling, or shared frontend infrastructure changed.
+- CI or workflow changes:
+  - Sanity-check the modified workflow file and, when practical, run the same local commands the workflow is intended to execute.
+- Docker, Keycloak, or startup-script changes:
+  - Run the relevant shell syntax checks and/or `docker compose ... config` validation when applicable.
+- E2E/browser tests:
+  - These are not part of the default required verification for now.
+  - Only run them when the user explicitly asks, when the task specifically targets browser automation, or when unit/build checks are insufficient for the risk.
+
 Before finalizing work, summarize:
 
 - What changed

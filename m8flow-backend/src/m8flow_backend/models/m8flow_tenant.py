@@ -3,7 +3,6 @@ from __future__ import annotations
 import enum
 from dataclasses import dataclass
 
-from sqlalchemy import func
 from spiffworkflow_backend.models.db import SpiffworkflowBaseDBModel
 from spiffworkflow_backend.models.db import db
 from m8flow_backend.models.audit_mixin import AuditDateTimeMixin

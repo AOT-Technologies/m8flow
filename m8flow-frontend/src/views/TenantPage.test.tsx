@@ -2,6 +2,24 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import TenantPage from "./TenantPage";
 
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, unknown>) => {
+      if (options && "defaultValue" in options && typeof options.defaultValue === "string") {
+        return options.defaultValue;
+      }
+      return key;
+    },
+  }),
+}));
+
+vi.mock("@mui/icons-material", () => ({
+  Search: () => <svg data-testid="icon-search" />,
+  Edit: () => <svg data-testid="icon-edit" />,
+  Clear: () => <svg data-testid="icon-clear" />,
+  Add: () => <svg data-testid="icon-add" />,
+}));
+
 const mockUseTenants = vi.fn();
 const mockUsePermissionFetcher = vi.fn();
 const mockCreateTenant = vi.fn();
@@ -49,11 +67,12 @@ describe("TenantPage", () => {
     render(<TenantPage />);
 
     fireEvent.click(screen.getByTestId("tenant-add-button"));
+    await screen.findByTestId("tenant-modal-dialog");
 
-    fireEvent.change(screen.getByLabelText("Realm Slug"), {
+    fireEvent.change(screen.getByTestId("tenant-realm-id-input").querySelector("input")!, {
       target: { value: "it-team_1" },
     });
-    fireEvent.change(screen.getByLabelText("Display Name"), {
+    fireEvent.change(screen.getByTestId("tenant-display-name-input").querySelector("input")!, {
       target: { value: "Information Technology" },
     });
 
@@ -70,7 +89,7 @@ describe("TenantPage", () => {
       expect(refetch).toHaveBeenCalled();
     });
 
-    expect(await screen.findByText("Tenant created successfully.")).toBeInTheDocument();
+    expect(await screen.findByText("tenant_created_successfully")).toBeInTheDocument();
   });
 
   it("shows inline validation errors instead of submitting an empty tenant form", async () => {
@@ -88,10 +107,11 @@ describe("TenantPage", () => {
     render(<TenantPage />);
 
     fireEvent.click(screen.getByTestId("tenant-add-button"));
+    await screen.findByTestId("tenant-modal-dialog");
     fireEvent.click(screen.getByTestId("tenant-modal-submit-button"));
 
-    expect(await screen.findByText("Tenant slug cannot be empty")).toBeInTheDocument();
-    expect(await screen.findByText("Tenant display name cannot be empty")).toBeInTheDocument();
+    expect(await screen.findByText("tenant_slug_cannot_be_empty")).toBeInTheDocument();
+    expect(await screen.findByText("tenant_display_name_cannot_be_empty")).toBeInTheDocument();
     expect(mockCreateTenant).not.toHaveBeenCalled();
   });
 
@@ -110,11 +130,12 @@ describe("TenantPage", () => {
     render(<TenantPage />);
 
     fireEvent.click(screen.getByTestId("tenant-add-button"));
+    await screen.findByTestId("tenant-modal-dialog");
 
-    fireEvent.change(screen.getByLabelText("Realm Slug"), {
+    fireEvent.change(screen.getByTestId("tenant-realm-id-input").querySelector("input")!, {
       target: { value: "it team" },
     });
-    fireEvent.change(screen.getByLabelText("Display Name"), {
+    fireEvent.change(screen.getByTestId("tenant-display-name-input").querySelector("input")!, {
       target: { value: "A".repeat(51) },
     });
 
@@ -122,11 +143,11 @@ describe("TenantPage", () => {
 
     expect(
       await screen.findByText(
-        "Tenant slug can only contain letters, numbers, hyphens, and underscores",
+        "tenant_slug_invalid_pattern",
       ),
     ).toBeInTheDocument();
     expect(
-      await screen.findByText("Tenant display name must be 50 characters or fewer"),
+      await screen.findByText("tenant_display_name_max_length"),
     ).toBeInTheDocument();
     expect(mockCreateTenant).not.toHaveBeenCalled();
   });
@@ -149,15 +170,16 @@ describe("TenantPage", () => {
     render(<TenantPage />);
 
     fireEvent.click(screen.getByTestId("tenant-add-button"));
-    fireEvent.change(screen.getByLabelText("Realm Slug"), {
+    await screen.findByTestId("tenant-modal-dialog");
+    fireEvent.change(screen.getByTestId("tenant-realm-id-input").querySelector("input")!, {
       target: { value: "it-team_1" },
     });
-    fireEvent.change(screen.getByLabelText("Display Name"), {
+    fireEvent.change(screen.getByTestId("tenant-display-name-input").querySelector("input")!, {
       target: { value: "Information Technology" },
     });
 
     fireEvent.click(screen.getByTestId("tenant-modal-submit-button"));
 
-    expect(await screen.findByText("Tenant slug already exists")).toBeInTheDocument();
+    expect(await screen.findByText("tenant_slug_already_exists")).toBeInTheDocument();
   });
 });

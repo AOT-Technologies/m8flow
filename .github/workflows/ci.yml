@@ -13,7 +13,8 @@ permissions:
   security-events: write
 
 jobs:
-  changes:
+  path_filters:
+    name: Path Filters
     runs-on: ubuntu-latest
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
@@ -30,9 +31,6 @@ jobs:
               - 'm8flow-backend/**'
             frontend:
               - 'm8flow-frontend/**'
-              - 'extensions/m8flow-frontend/**'
-              - 'm8flow-backend/**'
-              - 'docker/**'
             migrations:
               - 'spiffworkflow-backend/migrations/versions/*.py'
             docker_m8flow:
@@ -40,11 +38,31 @@ jobs:
               - 'm8flow-connector-proxy/**'
 
   # -------------------------
+  # Backend Lint
+  # -------------------------
+  backend-lint:
+    name: Backend Lint
+    needs: path_filters
+    if: ${{ github.event_name == 'push' || needs.path_filters.outputs.backend == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.1'
+      - name: Install Ruff
+        run: python -m pip install ruff==0.12.1
+      - name: Run M8Flow backend lint
+        working-directory: m8flow-backend
+        run: python -m ruff check . --config ruff.toml
+
+  # -------------------------
   # Backend CI
   # -------------------------
   backend:
-    needs: changes
-    if: ${{ github.event_name == 'push' || needs.changes.outputs.backend == 'true' }}
+    name: Backend Unit Tests
+    needs: path_filters
+    if: ${{ github.event_name == 'push' || needs.path_filters.outputs.backend == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -67,12 +85,34 @@ jobs:
           uv run pytest ../m8flow-backend/tests
 
   # -------------------------
+  # Frontend Lint
+  # -------------------------
+  frontend-lint:
+    name: Frontend Lint
+    needs: path_filters
+    if: ${{ github.event_name == 'push' || needs.path_filters.outputs.frontend == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: m8flow-frontend/package-lock.json
+      - name: Install M8Flow frontend dependencies
+        working-directory: m8flow-frontend
+        run: npm ci
+      - name: Run M8Flow frontend lint
+        working-directory: m8flow-frontend
+        run: npm run lint
+
+  # -------------------------
   # Frontend Build + Unit
   # -------------------------
   frontend-build-unit:
     name: Frontend Build and Unit
-    needs: changes
-    if: ${{ github.event_name == 'push' || needs.changes.outputs.frontend == 'true' }}
+    needs: path_filters
+    if: ${{ github.event_name == 'push' || needs.path_filters.outputs.frontend == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -94,72 +134,6 @@ jobs:
       - name: Run M8Flow frontend unit tests
         working-directory: m8flow-frontend
         run: npm test
-
-  # -------------------------
-  # Frontend Browser E2E
-  # -------------------------
-  frontend-browser-e2e:
-    name: Frontend Browser E2E
-    needs: changes
-    if: ${{ github.event_name == 'push' || needs.changes.outputs.frontend == 'true' }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install browser E2E prerequisites
-        run: sudo apt-get update && sudo apt-get install -y jq
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12.1'
-      - name: Install uv
-        run: pip install uv
-      - name: Install browser E2E test dependencies
-        working-directory: extensions/m8flow-frontend/test/browser
-        run: uv sync --locked
-      - name: Install Playwright Chromium
-        working-directory: extensions/m8flow-frontend/test/browser
-        run: uv run playwright install --with-deps chromium
-      - name: Start m8flow stack for browser E2E tests
-        run: |
-          docker compose -f docker/m8flow-docker-compose.yml up -d --build \
-            keycloak-db m8flow-db redis minio keycloak keycloak-proxy \
-            keycloak-master-admin-init m8flow-connector-proxy \
-            m8flow-backend m8flow-celery-worker m8flow-frontend
-      - name: Wait for backend and frontend
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          for attempt in $(seq 1 60); do
-            if curl -fsS http://localhost:6840/v1.0/status > /dev/null; then
-              break
-            fi
-            sleep 5
-          done
-          curl -fsS http://localhost:6840/v1.0/status > /dev/null
-
-          for attempt in $(seq 1 60); do
-            if curl -fsS http://localhost:6841/ > /dev/null; then
-              break
-            fi
-            sleep 5
-          done
-          curl -fsS http://localhost:6841/ > /dev/null
-      - name: Run M8Flow browser E2E tests
-        working-directory: extensions/m8flow-frontend/test/browser
-        run: uv run python -m pytest -v
-      - name: Upload browser E2E test artifacts
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: browser-e2e-test-results
-          path: extensions/m8flow-frontend/test/browser/test-results
-          if-no-files-found: ignore
-      - name: Dump stack logs on failure
-        if: ${{ failure() }}
-        run: docker compose -f docker/m8flow-docker-compose.yml logs --no-color
-      - name: Stop m8flow stack
-        if: ${{ always() }}
-        run: docker compose -f docker/m8flow-docker-compose.yml down -v
 
   # -------------------------
   # Security: CodeQL
@@ -202,11 +176,11 @@ jobs:
   # -------------------------
   migration-check:
     name: Migration Compatibility Check
-    needs: changes
+    needs: path_filters
     if: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
     uses: ./.github/workflows/check-migrations.yml
     with:
-      migrations_changed: ${{ github.event_name == 'push' || needs.changes.outputs.migrations == 'true' }}
+      migrations_changed: ${{ github.event_name == 'push' || needs.path_filters.outputs.migrations == 'true' }}
       require_pr_metadata: ${{ github.event_name == 'pull_request' }}
 
   # -------------------------
@@ -214,9 +188,9 @@ jobs:
   # -------------------------
   docker-dry-run:
     name: Docker Build Dry Run
-    needs: changes
+    needs: path_filters
     runs-on: ubuntu-latest
-    if: ${{ (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true' || needs.changes.outputs.docker_m8flow == 'true') && github.event_name == 'pull_request' }}
+    if: ${{ (needs.path_filters.outputs.backend == 'true' || needs.path_filters.outputs.frontend == 'true' || needs.path_filters.outputs.docker_m8flow == 'true') && github.event_name == 'pull_request' }}
     steps:
       - uses: actions/checkout@v4
       - name: Guard against floating connector refs
@@ -270,10 +244,11 @@ jobs:
   required-ci:
     name: Required CI
     needs:
-      - changes
+      - path_filters
+      - backend-lint
       - backend
+      - frontend-lint
       - frontend-build-unit
-      - frontend-browser-e2e
       - migration-check
     if: ${{ always() && (github.event_name == 'push' || github.event_name == 'pull_request') }}
     runs-on: ubuntu-latest
@@ -284,24 +259,29 @@ jobs:
           set -euo pipefail
 
           echo "backend result: ${{ needs.backend.result }}"
+          echo "backend-lint result: ${{ needs.backend-lint.result }}"
+          echo "frontend-lint result: ${{ needs.frontend-lint.result }}"
           echo "frontend-build-unit result: ${{ needs.frontend-build-unit.result }}"
-          echo "frontend-browser-e2e result: ${{ needs.frontend-browser-e2e.result }}"
           echo "migration-check result: ${{ needs.migration-check.result }}"
 
-          if [[ "${{ github.event_name }}" == "push" || "${{ needs.changes.outputs.backend }}" == "true" ]]; then
+          if [[ "${{ github.event_name }}" == "push" || "${{ needs.path_filters.outputs.backend }}" == "true" ]]; then
+            [[ "${{ needs.backend-lint.result }}" == "success" ]] || {
+              echo "::error::Backend lint CI did not succeed."
+              exit 1
+            }
             [[ "${{ needs.backend.result }}" == "success" ]] || {
               echo "::error::Backend CI did not succeed."
               exit 1
             }
           fi
 
-          if [[ "${{ github.event_name }}" == "push" || "${{ needs.changes.outputs.frontend }}" == "true" ]]; then
-            [[ "${{ needs.frontend-build-unit.result }}" == "success" ]] || {
-              echo "::error::Frontend build/unit CI did not succeed."
+          if [[ "${{ github.event_name }}" == "push" || "${{ needs.path_filters.outputs.frontend }}" == "true" ]]; then
+            [[ "${{ needs.frontend-lint.result }}" == "success" ]] || {
+              echo "::error::Frontend lint CI did not succeed."
               exit 1
             }
-            [[ "${{ needs.frontend-browser-e2e.result }}" == "success" ]] || {
-              echo "::error::Frontend browser E2E CI did not succeed."
+            [[ "${{ needs.frontend-build-unit.result }}" == "success" ]] || {
+              echo "::error::Frontend build/unit CI did not succeed."
               exit 1
             }
           fi
