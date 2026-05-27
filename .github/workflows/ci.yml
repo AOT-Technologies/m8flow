@@ -249,7 +249,10 @@ jobs:
       - backend
       - frontend-lint
       - frontend-build-unit
+      - codeql
+      - trivy
       - migration-check
+      - docker-dry-run
     if: ${{ always() && (github.event_name == 'push' || github.event_name == 'pull_request') }}
     runs-on: ubuntu-latest
     steps:
@@ -262,7 +265,10 @@ jobs:
           echo "backend-lint result: ${{ needs.backend-lint.result }}"
           echo "frontend-lint result: ${{ needs.frontend-lint.result }}"
           echo "frontend-build-unit result: ${{ needs.frontend-build-unit.result }}"
+          echo "codeql result: ${{ needs.codeql.result }}"
+          echo "trivy result: ${{ needs.trivy.result }}"
           echo "migration-check result: ${{ needs.migration-check.result }}"
+          echo "docker-dry-run result: ${{ needs.docker-dry-run.result }}"
 
           if [[ "${{ github.event_name }}" == "push" || "${{ needs.path_filters.outputs.backend }}" == "true" ]]; then
             [[ "${{ needs.backend-lint.result }}" == "success" ]] || {
@@ -286,7 +292,25 @@ jobs:
             }
           fi
 
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            [[ "${{ needs.codeql.result }}" == "success" ]] || {
+              echo "::error::CodeQL scan did not succeed."
+              exit 1
+            }
+            [[ "${{ needs.trivy.result }}" == "success" ]] || {
+              echo "::error::Trivy security scan did not succeed."
+              exit 1
+            }
+          fi
+
           [[ "${{ needs.migration-check.result }}" == "success" ]] || {
             echo "::error::Migration compatibility check did not succeed."
             exit 1
           }
+
+          if [[ "${{ github.event_name }}" == "pull_request" && ( "${{ needs.path_filters.outputs.backend }}" == "true" || "${{ needs.path_filters.outputs.frontend }}" == "true" || "${{ needs.path_filters.outputs.docker_m8flow }}" == "true" ) ]]; then
+            [[ "${{ needs.docker-dry-run.result }}" == "success" ]] || {
+              echo "::error::Docker build dry run did not succeed."
+              exit 1
+            }
+          fi
