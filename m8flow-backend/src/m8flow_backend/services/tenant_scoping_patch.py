@@ -12,18 +12,37 @@ from sqlalchemy.orm import with_loader_criteria
 
 from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin
 from m8flow_backend.models.tenant_scoped import TenantScoped
+from m8flow_backend.services.tenant_identity_helpers import current_tenant_id_or_none
 from m8flow_backend.tenancy import (
-    DEFAULT_TENANT_ID,
     LOGGER,
-    allow_missing_tenant_context,
     get_context_tenant_id,
-    get_tenant_id,
     is_super_admin_request,
     is_tenant_context_exempt_request,
 )
 
 _ORIGINALS: dict[str, Any] = {}
 _PATCHED = False
+
+
+def _require_tenant_scope_id() -> str:
+    tenant_id = current_tenant_id_or_none()
+    if isinstance(tenant_id, str) and tenant_id.strip():
+        return tenant_id.strip()
+    raise RuntimeError("Missing tenant context for tenant-scoped operation.")
+
+
+def _is_missing_tenant_scoped_value(value: Mapping[str, Any]) -> bool:
+    return "m8f_tenant_id" not in value or not value.get("m8f_tenant_id")
+
+
+def _values_need_tenant_scope(values: Mapping[str, Any] | Sequence[Mapping[str, Any]]) -> bool:
+    if isinstance(values, Mapping):
+        return _is_missing_tenant_scoped_value(values)
+
+    if isinstance(values, Sequence) and not isinstance(values, str | bytes):
+        return any(_is_missing_tenant_scoped_value(value) for value in values if isinstance(value, Mapping))
+
+    return False
 
 
 def _locked_tenant_id_for_writes() -> str | None:
@@ -57,10 +76,13 @@ def _set_tenant_on_objects(objects: Sequence[Any]) -> None:
     """Set tenant id on objects if missing."""
     if is_tenant_context_exempt_request() and not _locked_tenant_id_for_writes():
         return
-    tenant_id = get_tenant_id()
-    for obj in objects:
-        if hasattr(obj, "m8f_tenant_id") and not getattr(obj, "m8f_tenant_id"):
-            setattr(obj, "m8f_tenant_id", tenant_id)
+    missing_tenant_objects = [obj for obj in objects if hasattr(obj, "m8f_tenant_id") and not getattr(obj, "m8f_tenant_id")]
+    if not missing_tenant_objects:
+        return
+
+    tenant_id = _require_tenant_scope_id()
+    for obj in missing_tenant_objects:
+        setattr(obj, "m8f_tenant_id", tenant_id)
 
 
 def _patch_bulk_save_objects() -> None:
@@ -97,8 +119,10 @@ def _patch_insert_or_ignore_duplicate() -> None:
                 return _ORIGINALS["insert_or_ignore_duplicate"](
                     model_class, values, postgres_conflict_index_elements
                 )
-            tenant_id = get_tenant_id()
-            values_with_tenant = _with_tenant(values, tenant_id)
+            values_with_tenant = values
+            if _values_need_tenant_scope(values):
+                tenant_id = _require_tenant_scope_id()
+                values_with_tenant = _with_tenant(values, tenant_id)
             conflict_elements = list(postgres_conflict_index_elements)
             if "m8f_tenant_id" not in conflict_elements:
                 conflict_elements.insert(0, "m8f_tenant_id")
@@ -122,7 +146,7 @@ def _patch_task_draft_data() -> None:
         if is_tenant_context_exempt_request():
             return _ORIGINALS["task_draft_data_insert"](task_draft_data_dict)
         if not task_draft_data_dict.get("m8f_tenant_id"):
-            task_draft_data_dict["m8f_tenant_id"] = get_tenant_id()
+            task_draft_data_dict["m8f_tenant_id"] = _require_tenant_scope_id()
         return _ORIGINALS["task_draft_data_insert"](task_draft_data_dict)
 
     TaskDraftDataModel.insert_or_update_task_draft_data_dict = staticmethod(patched_insert_or_update_task_draft_data_dict)
@@ -146,7 +170,7 @@ def _patch_task_instructions() -> None:
 
         if is_tenant_context_exempt_request():
             return _ORIGINALS["task_instructions_insert"](task_guid, process_instance_id, instruction)
-        tenant_id = get_tenant_id()
+        tenant_id = _require_tenant_scope_id()
         record = [
             {
                 "task_guid": task_guid,
@@ -196,7 +220,7 @@ def _patch_future_task() -> None:
 
         if is_tenant_context_exempt_request():
             return _ORIGINALS["future_task_insert"](guid, run_at_in_seconds, queued_to_run_at_in_seconds)
-        tenant_id = get_tenant_id()
+        tenant_id = _require_tenant_scope_id()
         task_info: dict[str, int | str | None] = {
             "guid": guid,
             "run_at_in_seconds": run_at_in_seconds,
@@ -246,7 +270,7 @@ def _patch_process_caller_relationship() -> None:
             return _ORIGINALS["process_caller_relationship_insert"](
                 called_reference_cache_process_id, calling_reference_cache_process_id
             )
-        tenant_id = get_tenant_id()
+        tenant_id = _require_tenant_scope_id()
         caller_info = {
             "called_reference_cache_process_id": called_reference_cache_process_id,
             "calling_reference_cache_process_id": calling_reference_cache_process_id,
@@ -302,8 +326,8 @@ def _patch_reference_cache_basic_query() -> None:
                 )
             )
         if is_tenant_context_exempt_request():
-            return _ORIGINALS["reference_cache_basic_query"](cls)
-        tenant_id = get_tenant_id()
+            return _ORIGINALS["reference_cache_basic_query"]()
+        tenant_id = _require_tenant_scope_id()
         max_generation_id = (
             db.session.query(db.func.max(ReferenceCacheModel.generation_id))
             .filter(ReferenceCacheModel.m8f_tenant_id == tenant_id)  # type: ignore[attr-defined]
@@ -322,9 +346,13 @@ def _set_tenant_on_flush(session: Session, _flush_context: Any, _instances: Any)
     """Set tenant id on objects if missing."""
     if is_tenant_context_exempt_request() and not _locked_tenant_id_for_writes():
         return
-    for obj in session.new:
-        if hasattr(obj, "m8f_tenant_id") and not getattr(obj, "m8f_tenant_id"):
-            setattr(obj, "m8f_tenant_id", get_tenant_id())
+    missing_tenant_objects = [obj for obj in session.new if hasattr(obj, "m8f_tenant_id") and not getattr(obj, "m8f_tenant_id")]
+    if not missing_tenant_objects:
+        return
+
+    tenant_id = _require_tenant_scope_id()
+    for obj in missing_tenant_objects:
+        setattr(obj, "m8f_tenant_id", tenant_id)
 
 
 def _tenant_scope_queries(execute_state: Any) -> None:
@@ -346,12 +374,9 @@ def _tenant_scope_queries(execute_state: Any) -> None:
         # if statement shape is unexpected, fail open (don't break the query)
         pass
 
-    # Background/scheduled jobs may run outside a request context. In that case, we either:
-    # - use a context tenant if one was set, or
-    # - fall back to DEFAULT_TENANT_ID (see _resolve_tenant_id_for_db()).
-    #
-    # If we still can't resolve (e.g. request context missing and strict mode), fail open
-    # so background processing doesn't crash the whole scheduler loop.
+    # Background/scheduled jobs must now carry an explicit tenant context when
+    # they need tenant scoping. If no concrete tenant is available, fail open so
+    # startup/global code can continue without silently borrowing `default`.
     try:
         tenant_id = _resolve_tenant_id_for_db()
     except RuntimeError:
@@ -368,22 +393,10 @@ def _tenant_scope_queries(execute_state: Any) -> None:
 
 
 def _resolve_tenant_id_for_db() -> str:
-    if has_request_context():
-        if getattr(g, "m8flow_tenant_id", None):
-            return get_tenant_id()
-        if allow_missing_tenant_context():
-            return DEFAULT_TENANT_ID
+    tenant_id = _require_tenant_scope_id()
+    if not tenant_id:
         raise RuntimeError("Missing tenant context for database session.")
-
-    context_tid = get_context_tenant_id()
-    if context_tid:
-        return context_tid
-
-    if allow_missing_tenant_context():
-        return DEFAULT_TENANT_ID
-
-    # Background jobs have no request/context tenant; use default tenant (matches get_tenant_id()).
-    return DEFAULT_TENANT_ID
+    return tenant_id
 
 
 @event.listens_for(Session, "after_begin")  # type: ignore[misc]

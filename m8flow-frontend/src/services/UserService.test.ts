@@ -39,6 +39,8 @@ describe('UserService.doLogin', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.resetModules();
+    localStorage.clear();
+    document.cookie = 'm8flow_auth_realm=; Max-Age=0; Path=/';
   });
 
   it('uses the current absolute location without double encoding when redirectUrl is omitted', async () => {
@@ -60,6 +62,85 @@ describe('UserService.doLogin', () => {
     expect(globalThis.location.href).toBe(
       `http://localhost:8000/v1.0/login?redirect_url=${encodeURIComponent(`http://localhost:8001/tasks/24/${TASK_GUID}?tab=details`)}&process_instance_id=24&task_guid=${TASK_GUID}`,
     );
+  });
+
+  it('persists the selected authentication realm when building the login URL', async () => {
+    const UserService = await loadUserService('http://localhost:8001/login');
+
+    UserService.doLogin({ identifier: 'ops-admin', label: 'Master', uri: '' }, '/tenants');
+
+    expect(localStorage.getItem('m8flow_auth_realm')).toBe('ops-admin');
+    expect(document.cookie).toContain('m8flow_auth_realm=ops-admin');
+  });
+
+  it('returns all organization memberships from the id token', async () => {
+    const UserService = await loadUserService('http://localhost:8001/');
+    document.cookie = [
+      'id_token=',
+      [
+        btoa(JSON.stringify({ alg: 'none', typ: 'JWT' })),
+        btoa(
+          JSON.stringify({
+            organization: {
+              'tenant-a': { id: 'tenant-a-id', name: 'Tenant A' },
+              'tenant-b': { id: 'tenant-b-id' },
+            },
+          }),
+        ),
+        '',
+      ].join('.'),
+      '; Path=/',
+    ].join('');
+
+    expect(UserService.getOrganizationMemberships()).toEqual([
+      { alias: 'tenant-a', id: 'tenant-a-id', name: 'Tenant A' },
+      { alias: 'tenant-b', id: 'tenant-b-id', name: null },
+    ]);
+  });
+
+  it('returns organization memberships when Keycloak serializes the claim as an alias list', async () => {
+    const UserService = await loadUserService('http://localhost:8001/');
+    document.cookie = [
+      'id_token=',
+      [
+        btoa(JSON.stringify({ alg: 'none', typ: 'JWT' })),
+        btoa(
+          JSON.stringify({
+            organization: ['tenant-a', 'tenant-b'],
+          }),
+        ),
+        '',
+      ].join('.'),
+      '; Path=/',
+    ].join('');
+
+    expect(UserService.getOrganizationMemberships()).toEqual([
+      { alias: 'tenant-a', id: null, name: null },
+      { alias: 'tenant-b', id: null, name: null },
+    ]);
+  });
+
+  it('falls back to the stored tenant name when the token is multi-organization', async () => {
+    const UserService = await loadUserService('http://localhost:8001/');
+    localStorage.setItem('m8flow_tenant', 'tenant-b');
+    document.cookie = [
+      'id_token=',
+      [
+        btoa(JSON.stringify({ alg: 'none', typ: 'JWT' })),
+        btoa(
+          JSON.stringify({
+            organization: {
+              'tenant-a': { id: 'tenant-a-id' },
+              'tenant-b': { id: 'tenant-b-id' },
+            },
+          }),
+        ),
+        '',
+      ].join('.'),
+      '; Path=/',
+    ].join('');
+
+    expect(UserService.getTenantName()).toBe('tenant-b');
   });
 });
 

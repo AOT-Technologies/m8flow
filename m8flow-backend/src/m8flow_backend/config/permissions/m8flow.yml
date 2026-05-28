@@ -29,8 +29,8 @@ groups:
   # but does not have access to tenant management or most frontend features.
   "integrator":
     users: []
-  # The "reviewer" group has access to features that are relevant for reviewing and monitoring processes, such as viewing tasks and process instances,
-  # but does not have access to tenant management or most frontend features.
+  # The "reviewer" group has access to task review features only.
+  # It can work assigned tasks, but does not have access to process or process-instance pages.
   "reviewer":
     users: []
   # The "submitter" group can start processes and submit assigned tasks/forms, but cannot access admin or configuration features.
@@ -53,9 +53,41 @@ permissions:
     groups: ["everybody"]
     actions: [create]
     uri: /active-users/*
+  read-extensions:
+    groups: ["everybody"]
+    actions: [read]
+    uri: /extensions
+  read-current-user-groups:
+    groups: ["everybody"]
+    actions: [read]
+    uri: /user-groups/for-current-user
+  read-user-existence:
+    groups: ["everybody"]
+    actions: [create]
+    uri: /users/exists/by-username
+  read-version-info:
+    groups: ["everybody"]
+    actions: [read]
+    uri: /debug/version-info
+  read-onboarding-locations:
+    groups: ["everybody"]
+    actions: [read]
+    uri: /upsearch-locations
+  read-connector-typeahead:
+    groups: ["everybody"]
+    actions: [read]
+    uri: /connector-proxy/typeahead/*
+  read-script-assist-enabled:
+    groups: ["everybody"]
+    actions: [read]
+    uri: /script-assist/enabled
 
 
   # Super Admins are global operators (master realm) and can manage all tenant resources.
+  super-admin-frontend-access:
+    groups: ["super-admin"]
+    actions: [read]
+    uri: /frontend-access
   super-admin:
     groups: ["super-admin"]
     actions: [all]
@@ -72,26 +104,54 @@ permissions:
     groups: ["tenant-admin", "editor"]
     actions: [all]
     uri: PG:ALL
+  read-process-group-list:
+    groups: ["tenant-admin", "editor", "viewer"]
+    actions: [read]
+    uri: /process-groups
   read-all-process-models:
-    groups: ["viewer", "reviewer", "super-admin","submitter"]
+    groups: ["viewer", "reviewer", "super-admin", "submitter"]
     actions: [read]
     uri: PM:ALL
   manage-all-process-models:
     groups: ["tenant-admin", "editor"]
     actions: [all]
     uri: PM:ALL
+  read-process-model-list:
+    groups: ["tenant-admin", "editor", "viewer"]
+    actions: [read]
+    uri: /process-models
+  read-process-list:
+    groups: ["tenant-admin", "editor", "viewer"]
+    actions: [read]
+    uri: /processes
   read-processes:
-    groups: ["tenant-admin", "editor", "viewer", "reviewer", "super-admin","submitter"]
+    groups: ["tenant-admin", "editor", "viewer", "reviewer", "super-admin", "submitter"]
     actions: [read]
     uri: /processes/*
   run-all-process-models:
     groups: ["tenant-admin", "editor","submitter"]
     actions: [start]
     uri: PM:ALL
+  read-process-instance-list:
+    groups: ["tenant-admin", "editor", "viewer"]
+    actions: [read]
+    uri: /process-instances
+  create-process-instance-list-for-me:
+    groups: ["tenant-admin", "editor"]
+    actions: [create]
+    uri: /process-instances/for-me
+  read-process-instance-report-metadata:
+    groups: ["tenant-admin", "editor", "viewer"]
+    actions: [read]
+    uri: /process-instances/report-metadata
   read-process-instances:
     groups: ["tenant-admin", "editor", "viewer", "super-admin","submitter"]
     actions: [read]
     uri: /process-instances/*
+  read-user-search:
+    groups: ["tenant-admin", "editor", "viewer", "reviewer", "integrator"]
+    actions: [read]
+    uri: /users/search
   super-admin-process-instances-for-me-list:
     groups: ["super-admin"]
     actions: [create]
@@ -104,6 +164,10 @@ permissions:
     groups: ["tenant-admin", "editor", "viewer", "super-admin","submitter"]
     actions: [read]
     uri: /user-groups/*
+  read-service-task-list:
+    groups: ["tenant-admin", "editor", "viewer"]
+    actions: [read]
+    uri: /service-tasks
   read-script-assist-items:
     groups: ["tenant-admin", "editor", "viewer", "reviewer", "super-admin","submitter"]
     actions: [read]
@@ -128,6 +192,10 @@ permissions:
     groups: ["tenant-admin", "editor"]
     actions: [all]
     uri: /data-stores/*
+  read-data-store-list:
+    groups: ["tenant-admin", "editor"]
+    actions: [read]
+    uri: /data-stores
   manage-data-stores-types:
     groups: ["tenant-admin", "editor"]
     actions: [all]
@@ -140,6 +208,10 @@ permissions:
     groups: ["tenant-admin", "editor"]
     actions: [all]
     uri: /messages/*
+  read-message-list:
+    groups: ["tenant-admin", "editor"]
+    actions: [read]
+    uri: /messages
   read-secrets:
     groups: ["integrator", "viewer", "super-admin"]
     actions: [read]
@@ -212,6 +284,10 @@ permissions:
     groups: ["tenant-admin", "editor", "reviewer","submitter"]
     actions: [all]
     uri: /tasks/*
+  read-task-list:
+    groups: ["tenant-admin", "editor", "viewer", "reviewer"]
+    actions: [read]
+    uri: /tasks
   read-tasks:
     groups: ["viewer", "super-admin"]
     actions: [read]

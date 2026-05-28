@@ -6,11 +6,15 @@ from contextlib import contextmanager
 import json
 import logging
 import time
+from urllib.parse import parse_qsl, urlencode
 from urllib.parse import urlparse, urlunparse
 
 import requests
 from security import safe_requests  # type: ignore
 
+from m8flow_backend.services.tenant_identity_helpers import authentication_identifier_from_payload
+from m8flow_backend.services.tenant_identity_helpers import extract_realm_from_issuer
+from m8flow_backend.services.tenant_identity_helpers import organization_scope_for_tenant
 from m8flow_backend.services.tenant_identity_helpers import tenant_id_from_payload
 from spiffworkflow_backend.config import HTTP_REQUEST_TIMEOUT_SECONDS
 from spiffworkflow_backend.exceptions.api_error import ApiError
@@ -31,15 +35,28 @@ _OPENID_PATCHED = False
 _REFRESH_TOKEN_TENANT_PATCHED = False
 _JWKS_TTL_PATCHED = False
 _REDIRECT_URI_SCHEME_PATCHED = False
+_LOGIN_SCOPE_PATCHED = False
 _ORIGINAL_STORE_REFRESH_TOKEN = None
 _ORIGINAL_GET_REFRESH_TOKEN = None
 _ORIGINAL_GET_REDIRECT_URI_FOR_LOGIN_TO_SERVER = None
+_ORIGINAL_GET_LOGIN_REDIRECT_URL = None
 _MISSING = object()
-MASTER_REALM_IDENTIFIER = "master"
 
 CACHE_TTL_SECONDS = 300
 _ENDPOINT_CACHE_TIMESTAMPS: dict[str, float] = {}
 _JWKS_CACHE_TIMESTAMPS: dict[str, float] = {}
+
+
+def _master_realm_identifier() -> str:
+    from m8flow_backend.config import master_realm_name
+
+    return master_realm_name()
+
+
+def _shared_realm_identifier() -> str:
+    from m8flow_backend.config import shared_realm_name
+
+    return shared_realm_name()
 
 
 def _call_original_auth_option_for_identifier(cls, authentication_identifier: str):
@@ -59,7 +76,7 @@ def _current_app_or_none():
 
 
 def _attempt_master_auth_config_retry(cls, authentication_identifier: str):
-    if authentication_identifier != MASTER_REALM_IDENTIFIER:
+    if authentication_identifier != _master_realm_identifier():
         return _MISSING
 
     try:
@@ -208,6 +225,102 @@ def reset_redirect_uri_scheme_patch() -> None:
     _REDIRECT_URI_SCHEME_PATCHED = False
 
 
+def _selected_tenant_for_login_scope(authentication_identifier: str) -> str | None:
+    from flask import g, has_request_context, request
+
+    if authentication_identifier != _shared_realm_identifier():
+        return None
+
+    if has_request_context():
+        requested_tenant = request.args.get("tenant")
+        if isinstance(requested_tenant, str) and requested_tenant.strip():
+            return requested_tenant.strip()
+
+        from m8flow_backend.tenancy import SELECTED_TENANT_COOKIE_NAME
+
+        selected_tenant = request.cookies.get(SELECTED_TENANT_COOKIE_NAME)
+        if isinstance(selected_tenant, str) and selected_tenant.strip():
+            return selected_tenant.strip()
+
+        context_tenant = getattr(g, "m8flow_tenant_id", None)
+        if isinstance(context_tenant, str) and context_tenant.strip():
+            return context_tenant.strip()
+
+    return None
+
+
+def _organization_scope_for_login(authentication_identifier: str) -> str | None:
+    if authentication_identifier != _shared_realm_identifier():
+        return None
+    return organization_scope_for_tenant(_selected_tenant_for_login_scope(authentication_identifier))
+
+
+def _login_redirect_url_with_scope(login_redirect_url: str, requested_scope: str | None) -> str:
+    if not requested_scope:
+        return login_redirect_url
+
+    parsed = urlparse(login_redirect_url)
+    query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
+
+    normalized_scope = requested_scope.strip()
+    organization_scope_prefix = "organization:"
+    updated_pairs: list[tuple[str, str]] = []
+    scope_updated = False
+
+    for key, value in query_pairs:
+        if key != "scope":
+            updated_pairs.append((key, value))
+            continue
+
+        scope_values = [
+            scope
+            for scope in value.split(" ")
+            if scope
+            and scope != "organization"
+            and not scope.startswith(organization_scope_prefix)
+        ]
+        if normalized_scope not in scope_values:
+            scope_values.append(normalized_scope)
+        updated_pairs.append((key, " ".join(scope_values)))
+        scope_updated = True
+
+    if not scope_updated:
+        updated_pairs.append(("scope", normalized_scope))
+
+    return urlunparse(parsed._replace(query=urlencode(updated_pairs)))
+
+
+def _patched_get_login_redirect_url(self, authentication_identifier: str, final_url: str | None = None) -> str:
+    if _ORIGINAL_GET_LOGIN_REDIRECT_URL is None:
+        raise RuntimeError("Original AuthenticationService.get_login_redirect_url was not captured.")
+
+    login_redirect_url = _ORIGINAL_GET_LOGIN_REDIRECT_URL(self, authentication_identifier, final_url)
+    organization_scope = _organization_scope_for_login(authentication_identifier)
+    return _login_redirect_url_with_scope(login_redirect_url, organization_scope)
+
+
+def apply_login_scope_patch() -> None:
+    """Ensure shared-realm logins request Keycloak's built-in organization scope."""
+    global _LOGIN_SCOPE_PATCHED, _ORIGINAL_GET_LOGIN_REDIRECT_URL
+    if _LOGIN_SCOPE_PATCHED:
+        return
+
+    if _ORIGINAL_GET_LOGIN_REDIRECT_URL is None:
+        _ORIGINAL_GET_LOGIN_REDIRECT_URL = AuthenticationService.get_login_redirect_url
+
+    AuthenticationService.get_login_redirect_url = _patched_get_login_redirect_url
+    _LOGIN_SCOPE_PATCHED = True
+
+
+def reset_login_scope_patch() -> None:
+    """Test helper: restore original AuthenticationService.get_login_redirect_url."""
+    global _LOGIN_SCOPE_PATCHED, _ORIGINAL_GET_LOGIN_REDIRECT_URL
+    if _ORIGINAL_GET_LOGIN_REDIRECT_URL is not None:
+        AuthenticationService.get_login_redirect_url = _ORIGINAL_GET_LOGIN_REDIRECT_URL
+    _ORIGINAL_GET_LOGIN_REDIRECT_URL = None
+    _LOGIN_SCOPE_PATCHED = False
+
+
 def _patched_open_id_endpoint_for_name(
     cls, name: str, authentication_identifier: str, internal: bool = False
 ) -> str:
@@ -328,28 +441,106 @@ def _tenant_from_request_token() -> str | None:
     return tenant_id_from_payload(payload)
 
 
-def _authentication_identifier_from_request() -> str | None:
-    from flask import has_request_context, request
+def _refresh_token_scope_from_payload(payload: dict | None) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+
+    tenant_id = tenant_id_from_payload(payload)
+    if tenant_id:
+        return tenant_id
+
+    authentication_identifier = authentication_identifier_from_payload(payload)
+    if authentication_identifier == _master_realm_identifier():
+        return authentication_identifier
+    if authentication_identifier == _shared_realm_identifier():
+        return authentication_identifier
+
+    issuer_realm = extract_realm_from_issuer(payload.get("iss"))
+    if issuer_realm == _master_realm_identifier():
+        return issuer_realm
+    if issuer_realm == _shared_realm_identifier():
+        return issuer_realm
+
+    return None
+
+
+def _refresh_token_scope_from_request_token() -> str | None:
+    from flask import g, has_request_context, request
 
     if not has_request_context():
         return None
+
+    auth_header = (request.headers.get("Authorization") or "").strip()
+    token: str | None = None
+    if auth_header.startswith("Bearer ") and len(auth_header) > 7:
+        token = auth_header[7:].strip() or None
+    if not token:
+        token = request.cookies.get("access_token")
+    # During /login_return the auth code has just been exchanged for tokens.
+    # The new id_token is set on g.token by login_return immediately before it
+    # calls store_refresh_token, but is not yet in cookies — so fall back to it
+    # here so refresh-token storage can resolve a tenant from the fresh JWT.
+    if not token:
+        g_token = getattr(g, "token", None)
+        if isinstance(g_token, str) and g_token.strip():
+            token = g_token.strip()
+    if not token:
+        return None
+
+    payload = _jwt_payload_without_verification(token)
+    return _refresh_token_scope_from_payload(payload)
+
+
+def _authentication_identifier_from_request() -> str | None:
+    from flask import current_app, has_request_context, request
+
+    if not has_request_context():
+        return None
+
+    cookie_identifier = request.cookies.get("authentication_identifier")
+    header_identifier = request.headers.get("SpiffWorkflow-Authentication-Identifier")
+    state_identifier = _decode_state_authentication_identifier(request.args.get("state"))
+    realm_hint = request.cookies.get("m8flow_auth_realm")
+    if isinstance(realm_hint, str):
+        realm_hint = realm_hint.strip() or None
+    auth_config_identifiers = {
+        str(config.get("identifier")).strip()
+        for config in (current_app.config.get("SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS") or [])
+        if isinstance(config, dict) and isinstance(config.get("identifier"), str) and str(config.get("identifier")).strip()
+    }
 
     try:
         from spiffworkflow_backend.routes.authentication_controller import _get_authentication_identifier_from_request
 
         identifier = _get_authentication_identifier_from_request()
-        if isinstance(identifier, str) and identifier.strip():
-            return identifier
+        if isinstance(identifier, str):
+            normalized_identifier = identifier.strip()
+            if normalized_identifier and normalized_identifier in auth_config_identifiers:
+                return normalized_identifier
     except Exception:
         pass
 
-    identifier = request.cookies.get("authentication_identifier")
-    if identifier:
-        return identifier
-    identifier = request.headers.get("SpiffWorkflow-Authentication-Identifier")
-    if identifier:
-        return identifier
-    return _decode_state_authentication_identifier(request.args.get("state"))
+    if realm_hint:
+        return realm_hint
+    if cookie_identifier:
+        return cookie_identifier
+    if header_identifier:
+        return header_identifier
+    return state_identifier
+
+
+def _selected_tenant_from_request(authentication_identifier: str | None = None) -> str | None:
+    from flask import has_request_context, request
+    from m8flow_backend.tenancy import SELECTED_TENANT_COOKIE_NAME
+
+    if authentication_identifier != _shared_realm_identifier():
+        return None
+    if not has_request_context():
+        return None
+    selected_tenant = request.cookies.get(SELECTED_TENANT_COOKIE_NAME)
+    if isinstance(selected_tenant, str) and selected_tenant.strip():
+        return selected_tenant.strip()
+    return None
 
 
 def _resolve_refresh_token_tenant_id(
@@ -362,9 +553,9 @@ def _resolve_refresh_token_tenant_id(
         return tenant_id
 
     if isinstance(decoded_token, dict):
-        claim_tenant = tenant_id_from_payload(decoded_token)
-        if claim_tenant:
-            return claim_tenant
+        refresh_scope = _refresh_token_scope_from_payload(decoded_token)
+        if refresh_scope:
+            return refresh_scope
 
     if has_request_context():
         tenant_from_g = getattr(g, "m8flow_tenant_id", None)
@@ -372,10 +563,14 @@ def _resolve_refresh_token_tenant_id(
             return tenant_from_g
 
     identifier = _authentication_identifier_from_request()
-    if identifier:
+    if identifier == _master_realm_identifier():
         return identifier
 
-    return _tenant_from_request_token()
+    selected_tenant = _selected_tenant_from_request(identifier)
+    if selected_tenant:
+        return selected_tenant
+
+    return _refresh_token_scope_from_request_token()
 
 
 def _refresh_token_storage_tenant_id(tenant_id: str | None) -> str | None:
@@ -383,13 +578,15 @@ def _refresh_token_storage_tenant_id(tenant_id: str | None) -> str | None:
     Refresh tokens remain tenant-scoped in the database schema.
 
     Master realm users are global and do not have an m8flow_tenant row, so their
-    refresh tokens must be stored under a real tenant FK. We use the default
-    tenant row only as an internal storage namespace for that case.
+    refresh tokens must be stored under a real tenant FK. Shared-realm users also
+    reach the initial login callback before a tenant is finalized, so their first
+    refresh token needs the same canonical storage namespace until tenant
+    selection completes.
     """
-    if tenant_id == MASTER_REALM_IDENTIFIER:
-        from m8flow_backend.tenancy import DEFAULT_TENANT_ID
+    if tenant_id in {_master_realm_identifier(), _shared_realm_identifier()}:
+        from m8flow_backend.startup.shared_realm_bootstrap import resolve_default_shared_realm_tenant_id
 
-        return DEFAULT_TENANT_ID
+        return resolve_default_shared_realm_tenant_id()
     return tenant_id
 
 
@@ -461,6 +658,10 @@ def _patched_store_refresh_token(
     if not effective_tenant_id:
         raise RefreshTokenStorageError("We could not store the refresh token: missing tenant context.")
     storage_tenant_id = _refresh_token_storage_tenant_id(effective_tenant_id)
+    if not storage_tenant_id:
+        raise RefreshTokenStorageError(
+            "We could not store the refresh token: canonical shared-realm tenant storage is unavailable."
+        )
 
     with _temporary_refresh_token_tenant_scope(storage_tenant_id):
         refresh_token_model = (
@@ -501,6 +702,8 @@ def _patched_get_refresh_token(
     if not effective_tenant_id:
         return None
     storage_tenant_id = _refresh_token_storage_tenant_id(effective_tenant_id)
+    if not storage_tenant_id:
+        return None
 
     with _temporary_refresh_token_tenant_scope(storage_tenant_id):
         refresh_token_object = (
