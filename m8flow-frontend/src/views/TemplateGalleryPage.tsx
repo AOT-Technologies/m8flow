@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, MouseEvent } from 'react';
 import {
   Box,
   Typography,
@@ -18,8 +18,21 @@ import {
   IconButton,
   Chip,
   Tooltip,
+  Menu,
+  MenuItem,
+  ListItemIcon,
+  ListItemText,
 } from '@mui/material';
-import { ViewModule, ViewList, Visibility, Delete, Restore } from '@mui/icons-material';
+import {
+  ViewModule,
+  ViewList,
+  Visibility,
+  MoreVert,
+  Edit,
+  FileDownload,
+  Delete,
+  Restore,
+} from '@mui/icons-material';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 import { useTemplates } from '../hooks/useTemplates';
@@ -27,6 +40,7 @@ import { TemplateFilters as TemplateFiltersType, Template } from '../types/templ
 import TemplateCard from '../components/TemplateCard';
 import TemplateFilters from '../components/TemplateFilters';
 import ImportTemplateModal from '../components/ImportTemplateModal';
+import TemplateDeleteConfirmDialog, { TemplateRestoreConfirmDialog } from '../components/TemplateDeleteConfirmDialog';
 import PaginationForTable from '@spiffworkflow-frontend/components/PaginationForTable';
 import { usePermissionFetcher } from "@spiffworkflow-frontend/hooks/PermissionService";
 import { useTranslation } from 'react-i18next';
@@ -60,6 +74,15 @@ export default function TemplateGalleryPage() {
   // RBAC: admin-level template permission (delete published, restore)
   const hasAdminPermission = permissionsLoaded && ability.can("DELETE", "/m8flow/admin/templates");
   const currentUsername = UserService.getUserName() || UserService.getPreferredUsername() || "";
+
+  // Delete confirmation dialog state
+  const [deleteTarget, setDeleteTarget] = useState<Template | null>(null);
+  // Restore confirmation dialog state
+  const [restoreTarget, setRestoreTarget] = useState<Template | null>(null);
+
+  // Table row overflow menu state
+  const [rowMenuAnchor, setRowMenuAnchor] = useState<null | HTMLElement>(null);
+  const [rowMenuTemplate, setRowMenuTemplate] = useState<Template | null>(null);
 
   // Read page/per_page from URL search params (PaginationForTable manages them)
   const page = Number.parseInt(searchParams.get('page') || '1', 10) || 1;
@@ -159,17 +182,16 @@ export default function TemplateGalleryPage() {
 
   const canRestoreTemplate = canDelete && hasAdminPermission;
 
+  // Open delete confirmation dialog instead of window.confirm
   const handleDeleteTemplate = (template: Template) => {
-    const confirmMessage = template.isPublished
-      ? t("delete_template_published_confirm", {
-          name: template.name,
-          defaultValue: `Delete published template "${template.name}"? It will be soft-deleted and can be restored later.`,
-        })
-      : t("delete_template_draft_confirm", {
-          name: template.name,
-          defaultValue: `Delete draft template "${template.name}"? This will permanently remove it.`,
-        });
-    if (!globalThis.confirm(confirmMessage)) return;
+    setDeleteTarget(template);
+  };
+
+  // Actually perform the delete after user confirms via dialog
+  const confirmDeleteTemplate = () => {
+    if (!deleteTarget) return;
+    const template = deleteTarget;
+    setDeleteTarget(null);
     TemplateService.deleteTemplate(template.id)
       .then(() => {
         setActionMessage({
@@ -186,12 +208,16 @@ export default function TemplateGalleryPage() {
       });
   };
 
+  // Open restore confirmation dialog instead of window.confirm
   const handleRestoreTemplate = (template: Template) => {
-    const confirmMessage = t("restore_template_confirm", {
-      name: template.name,
-      defaultValue: `Restore template "${template.name}"?`,
-    });
-    if (!globalThis.confirm(confirmMessage)) return;
+    setRestoreTarget(template);
+  };
+
+  // Actually perform the restore after user confirms via dialog
+  const confirmRestoreTemplate = () => {
+    if (!restoreTarget) return;
+    const template = restoreTarget;
+    setRestoreTarget(null);
     TemplateService.restoreTemplate(template.id)
       .then(() => {
         setActionMessage({
@@ -206,6 +232,41 @@ export default function TemplateGalleryPage() {
           text: err instanceof Error ? err.message : t("restore_failed", { defaultValue: "Restore failed" }),
         });
       });
+  };
+
+  const handleEditTemplate = (template: Template) => {
+    navigate(`/templates/${template.id}`);
+  };
+
+  const handleExportTemplate = (template: Template) => {
+    TemplateService.exportTemplate(template.id)
+      .then((blob) => {
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `${template.templateKey || template.name}.zip`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(a.href);
+      })
+      .catch((err) => {
+        setActionMessage({
+          type: 'error',
+          text: err instanceof Error ? err.message : t("export_failed", { defaultValue: "Export failed" }),
+        });
+      });
+  };
+
+  // Table row overflow menu handlers
+  const handleRowMenuOpen = (event: MouseEvent<HTMLElement>, template: Template) => {
+    event.stopPropagation();
+    setRowMenuAnchor(event.currentTarget);
+    setRowMenuTemplate(template);
+  };
+
+  const handleRowMenuClose = () => {
+    setRowMenuAnchor(null);
+    setRowMenuTemplate(null);
   };
 
   if (!permissionsLoaded) {
@@ -399,51 +460,14 @@ export default function TemplateGalleryPage() {
                             >
                               <Visibility />
                             </IconButton>
-                            {templateMode === 'deleted' ? (
-                              <Tooltip
-                                title={
-                                  canRestoreTemplate
-                                    ? ""
-                                    : t("restore_admin_only", {
-                                        defaultValue: "Insufficient permissions to restore deleted templates.",
-                                      })
-                                }
-                              >
-                                <span>
-                                  <IconButton
-                                    size="small"
-                                    aria-label={t("restore", { defaultValue: "Restore" })}
-                                    data-testid={`template-gallery-restore-button-${template.id}`}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      if (!canRestoreTemplate) return;
-                                      handleRestoreTemplate(template);
-                                    }}
-                                    disabled={!canRestoreTemplate}
-                                  >
-                                    <Restore />
-                                  </IconButton>
-                                </span>
-                              </Tooltip>
-                            ) : canDelete ? (
-                              <Tooltip title={canDeleteTemplate(template) ? "" : deleteDisabledReason(template)}>
-                                <span>
-                                  <IconButton
-                                    size="small"
-                                    aria-label={t("delete", { defaultValue: "Delete" })}
-                                    data-testid={`template-gallery-delete-button-${template.id}`}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      if (!canDeleteTemplate(template)) return;
-                                      handleDeleteTemplate(template);
-                                    }}
-                                    disabled={!canDeleteTemplate(template)}
-                                  >
-                                    <Delete />
-                                  </IconButton>
-                                </span>
-                              </Tooltip>
-                            ) : null}
+                            <IconButton
+                              size="small"
+                              aria-label={t("more_actions", { defaultValue: "More actions" })}
+                              data-testid={`template-gallery-more-actions-${template.id}`}
+                              onClick={(e) => handleRowMenuOpen(e, template)}
+                            >
+                              <MoreVert />
+                            </IconButton>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -468,6 +492,8 @@ export default function TemplateGalleryPage() {
                         onUseTemplate={() => handleUseTemplate(template)}
                         onViewTemplate={() => handleViewTemplate(template)}
                         showTenantContext={isSuperAdmin}
+                        onEditTemplate={templateMode === 'active' ? () => handleEditTemplate(template) : undefined}
+                        onExportTemplate={templateMode === 'active' ? () => handleExportTemplate(template) : undefined}
                         onDeleteTemplate={templateMode === 'active' && canDelete ? () => handleDeleteTemplate(template) : undefined}
                         onRestoreTemplate={templateMode === 'deleted' ? () => handleRestoreTemplate(template) : undefined}
                         deleteDisabled={templateMode === 'active' ? !canDeleteTemplate(template) : false}
@@ -485,7 +511,121 @@ export default function TemplateGalleryPage() {
           )}
         </>
       )}
+
+      {/* Shared table-row overflow menu (rendered once, positioned via anchorEl) */}
+      <Menu
+        anchorEl={rowMenuAnchor}
+        open={Boolean(rowMenuAnchor)}
+        onClose={handleRowMenuClose}
+        onClick={(e) => e.stopPropagation()}
+        anchorOrigin={{
+          vertical: 'bottom',
+          horizontal: 'right',
+        }}
+        transformOrigin={{
+          vertical: 'top',
+          horizontal: 'right',
+        }}
+        data-testid="template-gallery-row-actions-menu"
+      >
+        {templateMode === 'active' && (
+          <>
+            <MenuItem
+              onClick={() => {
+                if (rowMenuTemplate) handleEditTemplate(rowMenuTemplate);
+                handleRowMenuClose();
+              }}
+              data-testid="template-row-edit-action"
+            >
+              <ListItemIcon>
+                <Edit fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>{t("edit", { defaultValue: "Edit" })}</ListItemText>
+            </MenuItem>
+            <MenuItem
+              onClick={() => {
+                if (rowMenuTemplate) handleExportTemplate(rowMenuTemplate);
+                handleRowMenuClose();
+              }}
+              data-testid="template-row-export-action"
+            >
+              <ListItemIcon>
+                <FileDownload fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>{t("export", { defaultValue: "Export" })}</ListItemText>
+            </MenuItem>
+          </>
+        )}
+        {templateMode === 'deleted' ? (
+          <Tooltip
+            title={
+              canRestoreTemplate
+                ? ""
+                : t("restore_admin_only", {
+                    defaultValue: "Insufficient permissions to restore deleted templates.",
+                  })
+            }
+          >
+            <span>
+              <MenuItem
+                onClick={() => {
+                  if (rowMenuTemplate && canRestoreTemplate) handleRestoreTemplate(rowMenuTemplate);
+                  handleRowMenuClose();
+                }}
+                disabled={!canRestoreTemplate}
+                data-testid="template-row-restore-action"
+              >
+                <ListItemIcon>
+                  <Restore fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>{t("restore", { defaultValue: "Restore" })}</ListItemText>
+              </MenuItem>
+            </span>
+          </Tooltip>
+        ) : canDelete ? (
+          <Tooltip
+            title={
+              rowMenuTemplate && !canDeleteTemplate(rowMenuTemplate)
+                ? deleteDisabledReason(rowMenuTemplate)
+                : ""
+            }
+          >
+            <span>
+              <MenuItem
+                onClick={() => {
+                  if (rowMenuTemplate && canDeleteTemplate(rowMenuTemplate)) handleDeleteTemplate(rowMenuTemplate);
+                  handleRowMenuClose();
+                }}
+                disabled={rowMenuTemplate ? !canDeleteTemplate(rowMenuTemplate) : true}
+                data-testid="template-row-delete-action"
+                sx={{ color: 'error.main' }}
+              >
+                <ListItemIcon>
+                  <Delete fontSize="small" color="error" />
+                </ListItemIcon>
+                <ListItemText>{t("delete")}</ListItemText>
+              </MenuItem>
+            </span>
+          </Tooltip>
+        ) : null}
+      </Menu>
+
+      {/* Delete confirmation dialog */}
+      <TemplateDeleteConfirmDialog
+        open={Boolean(deleteTarget)}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={confirmDeleteTemplate}
+        templateName={deleteTarget?.name || ""}
+        isPublished={deleteTarget?.isPublished || false}
+      />
+
+      {/* Restore confirmation dialog */}
+      <TemplateRestoreConfirmDialog
+        open={Boolean(restoreTarget)}
+        onClose={() => setRestoreTarget(null)}
+        onConfirm={confirmRestoreTemplate}
+        templateName={restoreTarget?.name || ""}
+      />
     </Box>
   );
 }
-

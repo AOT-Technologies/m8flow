@@ -14,6 +14,12 @@ vi.mock("react-router-dom", async (importOriginal) => {
   };
 });
 
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string, opts?: { defaultValue?: string }) => opts?.defaultValue ?? key,
+  }),
+}));
+
 vi.mock("../hooks/useTemplates", () => ({
   useTemplates: vi.fn(),
 }));
@@ -29,6 +35,7 @@ vi.mock("../services/UserService", () => ({
   default: {
     getUserName: vi.fn(() => "tester"),
     getPreferredUsername: vi.fn(() => "tester"),
+    isSuperAdmin: vi.fn(() => false),
   },
 }));
 
@@ -93,6 +100,44 @@ vi.mock("../components/TemplateCard", () => ({
   ),
 }));
 
+// Mock TemplateDeleteConfirmDialog to auto-confirm
+vi.mock("../components/TemplateDeleteConfirmDialog", () => ({
+  default: ({ open, onConfirm, onClose }: any) => {
+    if (!open) return null;
+    return (
+      <div data-testid="delete-confirm-dialog">
+        <button
+          data-testid="delete-template-confirm-button"
+          onClick={() => {
+            onConfirm();
+            onClose();
+          }}
+          type="button"
+        >
+          Confirm Delete
+        </button>
+      </div>
+    );
+  },
+  TemplateRestoreConfirmDialog: ({ open, onConfirm, onClose }: any) => {
+    if (!open) return null;
+    return (
+      <div data-testid="restore-confirm-dialog">
+        <button
+          data-testid="restore-template-confirm-button"
+          onClick={() => {
+            onConfirm();
+            onClose();
+          }}
+          type="button"
+        >
+          Confirm Restore
+        </button>
+      </div>
+    );
+  },
+}));
+
 import { useTemplates } from "../hooks/useTemplates";
 import HttpService from "../services/HttpService";
 import TemplateService from "../services/TemplateService";
@@ -136,7 +181,6 @@ function renderPage() {
 describe("TemplateGalleryPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.stubGlobal("confirm", vi.fn(() => true));
     vi.mocked(HttpService.makeCallToBackend).mockImplementation(() => {});
     vi.mocked(usePermissionFetcher).mockReturnValue({
       ability: { can: () => true } as any,
@@ -157,8 +201,14 @@ describe("TemplateGalleryPage", () => {
 
   it("calls delete API from table action and refreshes list", async () => {
     renderPage();
+    // Switch to table view
     fireEvent.click(screen.getByTestId("template-gallery-view-table"));
-    fireEvent.click(screen.getByTestId("template-gallery-delete-button-1"));
+    // Open overflow menu for the row
+    fireEvent.click(screen.getByTestId("template-gallery-more-actions-1"));
+    // Click delete in overflow menu
+    fireEvent.click(screen.getByTestId("template-row-delete-action"));
+    // The confirmation dialog opens – click confirm
+    fireEvent.click(screen.getByTestId("delete-template-confirm-button"));
 
     await waitFor(() => {
       expect(TemplateService.deleteTemplate).toHaveBeenCalledWith(1);
@@ -192,13 +242,20 @@ describe("TemplateGalleryPage", () => {
     renderPage();
     fireEvent.click(screen.getByTestId("template-gallery-view-table"));
 
-    const deleteButton = await screen.findByTestId("template-gallery-delete-button-1");
-    expect(deleteButton).toBeDisabled();
+    // Open overflow menu for the row
+    fireEvent.click(screen.getByTestId("template-gallery-more-actions-1"));
+
+    // The delete action in the menu should be disabled
+    const deleteAction = screen.getByTestId("template-row-delete-action");
+    expect(deleteAction).toHaveAttribute("aria-disabled", "true");
   });
 
   it("calls delete API from card action in active mode", async () => {
     renderPage();
+    // Click delete on the card (opens confirmation dialog)
     fireEvent.click(screen.getByTestId("template-card-delete-1"));
+    // Confirm the delete
+    fireEvent.click(screen.getByTestId("delete-template-confirm-button"));
 
     await waitFor(() => {
       expect(TemplateService.deleteTemplate).toHaveBeenCalledWith(1);
@@ -225,7 +282,10 @@ describe("TemplateGalleryPage", () => {
 
     renderPage();
     fireEvent.click(screen.getByTestId("template-gallery-mode-deleted"));
+    // Click restore on the card (opens confirmation dialog)
     fireEvent.click(screen.getByTestId("template-card-restore-1"));
+    // Confirm the restore
+    fireEvent.click(screen.getByTestId("restore-template-confirm-button"));
 
     await waitFor(() => {
       expect(TemplateService.restoreTemplate).toHaveBeenCalledWith(1);

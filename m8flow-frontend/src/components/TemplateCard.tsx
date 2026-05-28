@@ -9,9 +9,22 @@ import {
   Chip,
   Box,
   Tooltip,
+  IconButton,
+  Menu,
+  MenuItem,
+  ListItemIcon,
+  ListItemText,
 } from '@mui/material';
+import {
+  MoreVert,
+  Edit,
+  ContentCopy,
+  FileDownload,
+  Delete,
+  Restore,
+} from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
-import { PointerEvent } from 'react';
+import { useState, PointerEvent, MouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { TimeAgo } from '@spiffworkflow-frontend/helpers/timeago';
 import DateAndTimeService from '@spiffworkflow-frontend/services/DateAndTimeService';
@@ -24,6 +37,9 @@ interface TemplateCardProps {
   showTenantContext?: boolean;
   onDeleteTemplate?: () => void;
   onRestoreTemplate?: () => void;
+  onEditTemplate?: () => void;
+  onDuplicateTemplate?: () => void;
+  onExportTemplate?: () => void;
   deleteDisabled?: boolean;
   deleteDisabledReason?: string;
   restoreDisabled?: boolean;
@@ -61,6 +77,9 @@ export default function TemplateCard({
   showTenantContext = false,
   onDeleteTemplate,
   onRestoreTemplate,
+  onEditTemplate,
+  onDuplicateTemplate,
+  onExportTemplate,
   deleteDisabled = false,
   deleteDisabledReason,
   restoreDisabled = false,
@@ -68,8 +87,10 @@ export default function TemplateCard({
 }: TemplateCardProps) {
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
+  const menuOpen = Boolean(menuAnchor);
 
-  const stopEventBubble = (e: PointerEvent) => {
+  const stopEventBubble = (e: PointerEvent | MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
   };
@@ -94,15 +115,19 @@ export default function TemplateCard({
   const tenantDisplayValue =
     template.tenant?.name || template.tenant?.slug || template.tenantId || '--';
 
-  const handleDeleteTemplate = (e: PointerEvent) => {
-    stopEventBubble(e);
-    onDeleteTemplate?.();
+  const handleMenuOpen = (e: MouseEvent<HTMLElement>) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setMenuAnchor(e.currentTarget);
   };
 
-  const handleRestoreTemplate = (e: PointerEvent) => {
-    stopEventBubble(e);
-    onRestoreTemplate?.();
+  const handleMenuClose = () => {
+    setMenuAnchor(null);
   };
+
+  // Determine whether to show the overflow menu at all
+  const hasOverflowActions =
+    onDeleteTemplate || onRestoreTemplate || onEditTemplate || onDuplicateTemplate || onExportTemplate;
 
   return (
     <Card
@@ -202,43 +227,120 @@ export default function TemplateCard({
           </Stack>
         </CardContent>
       </CardActionArea>
-      <CardActions sx={{ mt: 'auto', p: 2, gap: 1 }}>
-        <Button
-          variant="outlined"
-          size="small"
-          onClick={(e) => handleViewTemplate(e as unknown as PointerEvent)}
-        >
-          {t("view", { defaultValue: "View" })}
-        </Button>
-        {onRestoreTemplate && (
-          <Tooltip title={restoreDisabled ? (restoreDisabledReason || "") : ""}>
-            <span>
-              <Button
-                variant="contained"
-                color="primary"
-                size="small"
-                onClick={(e) => handleRestoreTemplate(e as unknown as PointerEvent)}
-                disabled={restoreDisabled}
-              >
-                {t("restore", { defaultValue: "Restore" })}
-              </Button>
-            </span>
-          </Tooltip>
-        )}
-        {onDeleteTemplate && (
-          <Tooltip title={deleteDisabled ? (deleteDisabledReason || "") : ""}>
-            <span>
-              <Button
-                variant="contained"
-                color="error"
-                size="small"
-                onClick={(e) => handleDeleteTemplate(e as unknown as PointerEvent)}
-                disabled={deleteDisabled}
-              >
-                {t("delete")}
-              </Button>
-            </span>
-          </Tooltip>
+      <CardActions sx={{ mt: 'auto', p: 2, gap: 1, justifyContent: 'flex-end' }}>
+        {hasOverflowActions && (
+          <>
+            <IconButton
+              size="small"
+              onClick={handleMenuOpen}
+              aria-label={t("more_actions", { defaultValue: "More actions" })}
+              data-testid={`template-card-more-actions-${template.id}`}
+              sx={{
+                border: '1px solid',
+                borderColor: 'borders.primary',
+                borderRadius: 1,
+              }}
+            >
+              <MoreVert fontSize="small" />
+            </IconButton>
+            <Menu
+              anchorEl={menuAnchor}
+              open={menuOpen}
+              onClose={handleMenuClose}
+              onClick={(e) => e.stopPropagation()}
+              anchorOrigin={{
+                vertical: 'bottom',
+                horizontal: 'right',
+              }}
+              transformOrigin={{
+                vertical: 'top',
+                horizontal: 'right',
+              }}
+              data-testid={`template-card-actions-menu-${template.id}`}
+            >
+              {onEditTemplate && (
+                <MenuItem
+                  onClick={() => {
+                    handleMenuClose();
+                    onEditTemplate();
+                  }}
+                  data-testid={`template-card-edit-${template.id}`}
+                >
+                  <ListItemIcon>
+                    <Edit fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>{t("edit", { defaultValue: "Edit" })}</ListItemText>
+                </MenuItem>
+              )}
+              {onDuplicateTemplate && (
+                <MenuItem
+                  onClick={() => {
+                    handleMenuClose();
+                    onDuplicateTemplate();
+                  }}
+                  data-testid={`template-card-duplicate-${template.id}`}
+                >
+                  <ListItemIcon>
+                    <ContentCopy fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>{t("duplicate", { defaultValue: "Duplicate" })}</ListItemText>
+                </MenuItem>
+              )}
+              {onExportTemplate && (
+                <MenuItem
+                  onClick={() => {
+                    handleMenuClose();
+                    onExportTemplate();
+                  }}
+                  data-testid={`template-card-export-${template.id}`}
+                >
+                  <ListItemIcon>
+                    <FileDownload fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>{t("export", { defaultValue: "Export" })}</ListItemText>
+                </MenuItem>
+              )}
+              {onRestoreTemplate && (
+                <Tooltip title={restoreDisabled ? (restoreDisabledReason || "") : ""}>
+                  <span>
+                    <MenuItem
+                      onClick={() => {
+                        handleMenuClose();
+                        onRestoreTemplate();
+                      }}
+                      disabled={restoreDisabled}
+                      data-testid={`template-card-restore-${template.id}`}
+                    >
+                      <ListItemIcon>
+                        <Restore fontSize="small" />
+                      </ListItemIcon>
+                      <ListItemText>{t("restore", { defaultValue: "Restore" })}</ListItemText>
+                    </MenuItem>
+                  </span>
+                </Tooltip>
+              )}
+              {onDeleteTemplate && (
+                <Tooltip title={deleteDisabled ? (deleteDisabledReason || "") : ""}>
+                  <span>
+                    <MenuItem
+                      onClick={() => {
+                        handleMenuClose();
+                        onDeleteTemplate();
+                      }}
+                      disabled={deleteDisabled}
+                      data-testid={`template-card-delete-${template.id}`}
+                      sx={{ color: 'error.main' }}
+                    >
+                      <ListItemIcon>
+                        <Delete fontSize="small" color="error" />
+                      </ListItemIcon>
+                      <ListItemText>{t("delete")}</ListItemText>
+                    </MenuItem>
+                  </span>
+                </Tooltip>
+              )}
+            </Menu>
+          </>
         )}
       </CardActions>
     </Card>

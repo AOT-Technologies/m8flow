@@ -15,6 +15,38 @@ vi.mock("react-router-dom", async (importOriginal) => {
   };
 });
 
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string, opts?: { defaultValue?: string }) => {
+      const map: Record<string, string> = {
+        publish: "Publish",
+        save: "Save",
+        saving: "Saving...",
+        create_process_model: "Create Process Model",
+        version: "Version",
+        visibility: "Visibility",
+        category: "Category",
+        status: "Status",
+        created_by: "Created By",
+        created: "Created",
+        updated: "Updated",
+        templates: "Templates",
+        back_to_templates: "Back to Templates",
+        draft: "Draft",
+        published: "Published",
+        current: "Current",
+        all_versions: "All Versions",
+        private_only_you: "Private (only you)",
+        tenant_wide: "Tenant-wide (all users in your tenant)",
+        public_authenticated_users: "Public (all authenticated users)",
+        create_process_model_published_only_tooltip:
+          "Process models can only be created from a published template version.",
+      };
+      return map[key] ?? opts?.defaultValue ?? key;
+    },
+  }),
+}));
+
 vi.mock("../services/HttpService", () => ({
   default: {
     HttpMethods: { GET: "GET", PUT: "PUT" },
@@ -24,19 +56,11 @@ vi.mock("../services/HttpService", () => ({
 
 vi.mock("../services/TemplateService", () => ({
   default: {
-    exportTemplate: vi.fn(),
     updateTemplate: vi.fn(),
     getAllVersions: vi.fn(() => Promise.resolve([])),
-    deleteTemplate: vi.fn(() => Promise.resolve()),
   },
 }));
 
-vi.mock("../services/UserService", () => ({
-  default: {
-    getUserName: vi.fn(() => "tester"),
-    getPreferredUsername: vi.fn(() => "tester"),
-  },
-}));
 
 vi.mock("@spiffworkflow-frontend/hooks/PermissionService", () => ({
   usePermissionFetcher: vi.fn(() => ({
@@ -107,7 +131,7 @@ describe("TemplateModelerPage", () => {
     });
   });
 
-  it("renders template name and shows Delete button for draft owned by current user", async () => {
+  it("renders template name — Delete button is not shown on detail page", async () => {
     vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
       opts.successCallback?.(templatePayload({ isPublished: false }) as any);
     });
@@ -118,8 +142,8 @@ describe("TemplateModelerPage", () => {
       expect(screen.getByText("Test Template")).toBeInTheDocument();
     });
 
-    expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Delete" })).toBeEnabled();
+    // Delete button was removed from detail page — it's only on the gallery page now
+    expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
   });
 
   it("shows Publish button when template is not published", async () => {
@@ -170,41 +194,18 @@ describe("TemplateModelerPage", () => {
     expect(createButton).toBeEnabled();
   });
 
-  it("disables Delete for published template when user lacks admin permission", async () => {
-    // No admin permission (ability.can returns false for /m8flow/admin/templates)
-    vi.mocked(usePermissionFetcher).mockReturnValue({
-      ability: {
-        can: (method: string, uri: string) => {
-          if (uri === "/m8flow/admin/templates") return false;
-          return true; // general template permissions
-        },
-      } as any,
-      permissionsLoaded: true,
-    });
+  it("does not show Delete button for published template (moved to gallery page)", async () => {
     vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
       opts.successCallback?.(templatePayload({ isPublished: true }) as any);
     });
 
     renderWithRouter(<TemplateModelerPage />);
 
-    const deleteButton = await screen.findByRole("button", { name: "Delete" });
-    expect(deleteButton).toBeDisabled();
-  });
-
-  it("enables Delete for published template when user has admin permission", async () => {
-    // Has admin permission (ability.can returns true for /m8flow/admin/templates)
-    vi.mocked(usePermissionFetcher).mockReturnValue({
-      ability: { can: () => true } as any,
-      permissionsLoaded: true,
-    });
-    vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
-      opts.successCallback?.(templatePayload({ isPublished: true }) as any);
+    await waitFor(() => {
+      expect(screen.getByText("Test Template")).toBeInTheDocument();
     });
 
-    renderWithRouter(<TemplateModelerPage />);
-
-    const deleteButton = await screen.findByRole("button", { name: "Delete" });
-    expect(deleteButton).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
   });
 
   it("shows visibility dropdown for draft template when user has edit permission", async () => {
