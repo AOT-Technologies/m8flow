@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 
 from flask import current_app
 
@@ -25,23 +26,23 @@ def _lane_owner_identifiers_for_task(task: object, task_lane: str) -> list[str] 
     candidate_lane_owner_maps: list[object] = []
 
     task_data = getattr(task, "data", None)
-    if isinstance(task_data, dict):
+    if isinstance(task_data, Mapping):
         candidate_lane_owner_maps.append(task_data.get("lane_owners"))
 
     task_workflow = getattr(task, "workflow", None)
     workflow_data = getattr(task_workflow, "data", None)
-    if isinstance(workflow_data, dict):
+    if isinstance(workflow_data, Mapping):
         candidate_lane_owner_maps.append(workflow_data.get("lane_owners"))
         workflow_data_objects = workflow_data.get("data_objects")
-        if isinstance(workflow_data_objects, dict):
+        if isinstance(workflow_data_objects, Mapping):
             candidate_lane_owner_maps.append(workflow_data_objects.get("lane_owners"))
 
     workflow_data_objects_attr = getattr(task_workflow, "data_objects", None)
-    if isinstance(workflow_data_objects_attr, dict):
+    if isinstance(workflow_data_objects_attr, Mapping):
         candidate_lane_owner_maps.append(workflow_data_objects_attr.get("lane_owners"))
 
     for lane_owners in candidate_lane_owner_maps:
-        if not isinstance(lane_owners, dict):
+        if not isinstance(lane_owners, Mapping):
             continue
 
         lane_owner_values = lane_owners.get(task_lane)
@@ -59,8 +60,8 @@ def _candidate_lane_group_identifiers(task_lane: str) -> list[str]:
     seen: set[str] = set()
 
     for raw_identifier in (
+        task_lane.strip().strip("/").split("/")[-1].strip(),
         normalize_organizational_group_identifier(task_lane),
-        task_lane.strip(),
     ):
         if not raw_identifier:
             continue
@@ -126,11 +127,22 @@ def apply() -> None:
                 )
             else:
                 group_model = None
+                fallback_group_model = None
                 candidate_group_identifiers = _candidate_lane_group_identifiers(task_lane)
                 for group_identifier in candidate_group_identifiers:
-                    group_model = GroupModel.query.filter_by(identifier=group_identifier).first()
-                    if group_model is not None:
+                    candidate_group_model = GroupModel.query.filter_by(identifier=group_identifier).first()
+                    if candidate_group_model is None:
+                        continue
+
+                    if fallback_group_model is None:
+                        fallback_group_model = candidate_group_model
+
+                    if getattr(candidate_group_model, "user_group_assignments", []):
+                        group_model = candidate_group_model
                         break
+
+                if group_model is None:
+                    group_model = fallback_group_model
 
                 if group_model is None:
                     if not candidate_group_identifiers:

@@ -2,12 +2,15 @@ from alembic import op
 import sqlalchemy as sa
 import time
 
-from m8flow_backend.tenancy import DEFAULT_TENANT_ID
-
 revision = "f6a7b8c9d0e1"
 down_revision = "c3d4e5f6a7b8"
 branch_labels = None
 depends_on = None
+
+# Historical backfill target used when tenant scoping expanded to additional
+# tables. Keep this revision self-contained so Alembic can still import it even
+# after runtime cleanup removes legacy compatibility symbols.
+LEGACY_TENANT_ID = "default"
 
 TENANT_TABLES = [
     "pkce_code_verifier",
@@ -85,9 +88,9 @@ def _get_backfill_tenant_id() -> str:
             "VALUES (:tenant_id, :tenant_name, :tenant_slug, :created_by, :modified_by, :created_at, :updated_at) "
             "ON CONFLICT (id) DO NOTHING"
         ).bindparams(
-            tenant_id=DEFAULT_TENANT_ID,
-            tenant_name=DEFAULT_TENANT_ID,
-            tenant_slug=DEFAULT_TENANT_ID,
+            tenant_id=LEGACY_TENANT_ID,
+            tenant_name=LEGACY_TENANT_ID,
+            tenant_slug=LEGACY_TENANT_ID,
             created_by="system",
             modified_by="system",
             created_at=now,
@@ -96,10 +99,10 @@ def _get_backfill_tenant_id() -> str:
     )
     tenant_id = conn.execute(
         sa.text("SELECT id FROM m8flow_tenant WHERE id = :tenant_id").bindparams(
-            tenant_id=DEFAULT_TENANT_ID
+            tenant_id=LEGACY_TENANT_ID
         )
     ).scalar()
-    if tenant_id != DEFAULT_TENANT_ID:
+    if tenant_id != LEGACY_TENANT_ID:
         raise RuntimeError(
             "Missing default tenant. Insert id='default' into m8flow_tenant before applying this migration."
         )

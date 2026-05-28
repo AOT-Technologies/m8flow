@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from flask import Flask
+from flask import Flask, g
 
 extension_root = Path(__file__).resolve().parents[3]
 repo_root = extension_root.parent
@@ -16,7 +16,10 @@ for path in (extension_src, backend_src):
         sys.path.insert(0, path_str)
 
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel  # noqa: E402
+from m8flow_backend.models.reference_cache import ReferenceCacheModel  # noqa: E402
+from m8flow_backend.services import tenant_scoping_patch  # noqa: E402
 from m8flow_backend.tenancy import create_tenant_if_not_exists  # noqa: E402
+from m8flow_backend.tenancy import get_tenant_id  # noqa: E402
 from m8flow_backend.tenancy import path_matches_any_prefix  # noqa: E402
 from spiffworkflow_backend.models.db import db  # noqa: E402
 
@@ -95,3 +98,64 @@ def test_path_matches_any_prefix_requires_boundary():
 
     # Regression: `/v1.0/login_return` must not match `/v1.0/login`.
     assert not path_matches_any_prefix("/v1.0/login_return", prefixes)
+
+
+def test_get_tenant_id_raises_on_protected_request_without_tenant_context():
+    app = Flask(__name__)
+    with app.test_request_context("/v1.0/tasks"):
+        with pytest.raises(RuntimeError, match="Missing tenant id in request context"):
+            get_tenant_id(warn_on_default=False)
+
+
+def test_get_tenant_id_raises_on_exempt_request_without_tenant_context():
+    app = Flask(__name__)
+    with app.test_request_context("/v1.0/status"):
+        with pytest.raises(RuntimeError, match="Missing tenant id in request context"):
+            get_tenant_id(warn_on_default=False)
+
+
+def test_is_tenant_context_exempt_request_recognizes_global_request_flag():
+    """
+    Master-realm sign-ins, /login_return callbacks, and other intentionally
+    tenant-less requests are tagged with ``g._m8flow_global_request = True`` by
+    the tenant resolver.  ``is_tenant_context_exempt_request()`` must report
+    True for these requests so tenant-scoped DB query patches (e.g.
+    ReferenceCacheModel.basic_query) skip the tenant filter instead of raising
+    "missing tenant context for tenant-scoped operation".
+    """
+    from flask import g
+
+    from m8flow_backend.tenancy import is_tenant_context_exempt_request
+
+    app = Flask(__name__)
+    with app.test_request_context("/v1.0/extensions"):
+        # Default state: not exempt.
+        assert is_tenant_context_exempt_request() is False
+
+        # Marked global by the resolver: now exempt.
+        g._m8flow_global_request = True
+        assert is_tenant_context_exempt_request() is True
+
+        # Cleared again: not exempt.
+        g._m8flow_global_request = False
+        assert is_tenant_context_exempt_request() is False
+
+
+def test_reference_cache_basic_query_skips_tenant_requirement_for_master_realm_request(app):
+    """
+    Regression: /extensions can hit ReferenceCacheModel.basic_query() before the
+    tenant resolver tags a master-realm request as global. The fallback
+    detection must treat the cached master-realm token as intentionally
+    tenant-less instead of raising "Missing tenant context for tenant-scoped
+    operation."
+    """
+    tenant_scoping_patch.apply()
+
+    with app.test_request_context("/v1.0/extensions", headers={"Authorization": "Bearer master-token"}):
+        g._m8flow_decoded_token = {
+            "iss": "http://localhost:7002/realms/master",
+            "preferred_username": "super-admin",
+            "groups": ["super-admin"],
+        }
+
+        assert ReferenceCacheModel.basic_query().all() == []

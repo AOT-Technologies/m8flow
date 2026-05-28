@@ -4,19 +4,7 @@ from spiffworkflow_backend.exceptions.api_error import ApiError
 
 class TenantService:
     @staticmethod
-    def _check_not_default_tenant(identifier: str):
-        """Check that the given identifier is not 'default' to prevent operations on default tenant."""
-        if identifier and identifier.lower() == "default":
-            raise ApiError(
-                error_code="forbidden_tenant",
-                message="Cannot perform operations on default tenant.",
-                status_code=403
-            )
-
-    @staticmethod
     def get_tenant_by_id(tenant_id: str):
-        TenantService._check_not_default_tenant(tenant_id)
-        
         tenant = M8flowTenantModel.query.filter_by(id=tenant_id).first()
         
         if not tenant:
@@ -52,8 +40,6 @@ class TenantService:
 
     @staticmethod
     def get_tenant_by_slug(slug: str):
-        TenantService._check_not_default_tenant(slug)
-        
         tenant = M8flowTenantModel.query.filter_by(slug=slug).first()
         if not tenant:
             raise ApiError(
@@ -66,14 +52,10 @@ class TenantService:
     @staticmethod
     def get_all_tenants():
         try:
-            return M8flowTenantModel.query.filter(
-                M8flowTenantModel.id != "default",
-                M8flowTenantModel.slug != "default"
-            ).all()
+            return M8flowTenantModel.query.all()
         except Exception as e:
             raise ApiError(
                 error_code="database_error",
                 message=f"Error fetching tenants: {str(e)}",
                 status_code=500
             )
-

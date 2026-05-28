@@ -1,12 +1,15 @@
 from alembic import op
 import sqlalchemy as sa
 
-from m8flow_backend.tenancy import DEFAULT_TENANT_ID
-
 revision = "ce8f052197c2"
 down_revision = "1518b05122bc"
 branch_labels = None
 depends_on = None
+
+# Historical backfill target used when tenant scoping was first introduced.
+# Keep this revision self-contained so Alembic can still import it even if
+# current runtime code removes legacy compatibility symbols.
+LEGACY_TENANT_ID = "default"
 
 # List of tables to add tenant scoping to
 TENANT_TABLES = [
@@ -93,14 +96,14 @@ def _get_backfill_tenant_id() -> str:
         sa.text(
             "INSERT INTO m8flow_tenant (id, name) VALUES (:tenant_id, :tenant_name) "
             "ON CONFLICT (id) DO NOTHING"
-        ).bindparams(tenant_id=DEFAULT_TENANT_ID, tenant_name=DEFAULT_TENANT_ID)
+        ).bindparams(tenant_id=LEGACY_TENANT_ID, tenant_name=LEGACY_TENANT_ID)
     )
     tenant_id = conn.execute(
         sa.text("SELECT id FROM m8flow_tenant WHERE id = :tenant_id").bindparams(
-            tenant_id=DEFAULT_TENANT_ID
+            tenant_id=LEGACY_TENANT_ID
         )
     ).scalar()
-    if tenant_id != DEFAULT_TENANT_ID:
+    if tenant_id != LEGACY_TENANT_ID:
         raise RuntimeError(
             "Missing default tenant. Insert id='default' into m8flow_tenant before applying 0002_add_tenant_scoping."
         )

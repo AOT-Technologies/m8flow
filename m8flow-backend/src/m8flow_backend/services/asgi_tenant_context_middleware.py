@@ -6,9 +6,9 @@ import json
 from http.cookies import SimpleCookie
 from typing import Callable, Optional
 
+from m8flow_backend.services.tenant_identity_helpers import tenant_id_from_payload
 from m8flow_backend.tenancy import (
     TENANT_CONTEXT_EXEMPT_PATH_PREFIXES,
-    TENANT_CLAIM,
     path_matches_any_prefix,
     reset_context_tenant_id,
     set_context_tenant_id,
@@ -42,10 +42,7 @@ def _tenant_from_token(token: str) -> Optional[str]:
     payload = _jwt_payload(token)
     if not payload:
         return None
-    tenant = payload.get(TENANT_CLAIM)
-    if isinstance(tenant, str) and tenant:
-        return tenant
-    return None
+    return tenant_id_from_payload(payload)
 
 
 def _extract_access_token_from_cookie(scope) -> Optional[str]:

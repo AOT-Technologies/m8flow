@@ -21,20 +21,40 @@ import {
   TIME_FORMAT_HOURS_MINUTES,
 } from '@spiffworkflow-frontend/config';
 
-function getEnableMultitenant(): boolean {
+function getRuntimeOrBuildConfig(name: string): string | undefined {
   const runtime =
-    typeof window !== 'undefined' &&
-    (window as Window & { spiffworkflowFrontendJsenv?: { MULTI_TENANT_ON?: string } })
-      ?.spiffworkflowFrontendJsenv?.MULTI_TENANT_ON;
+    typeof window !== 'undefined'
+      ? (
+          window as Window & {
+            spiffworkflowFrontendJsenv?: Record<string, string | undefined>;
+          }
+        )?.spiffworkflowFrontendJsenv?.[name]
+      : undefined;
   const build =
     typeof import.meta !== 'undefined' && import.meta.env
-      ? (import.meta.env.VITE_MULTI_TENANT_ON as string | undefined)
+      ? ((import.meta.env as Record<string, string | undefined>)[`VITE_${name}`] as
+          | string
+          | undefined)
       : undefined;
-  const raw = runtime ?? build ?? '';
+  return runtime ?? build ?? undefined;
+}
+
+function getEnableMultitenant(): boolean {
+  const raw = getRuntimeOrBuildConfig('MULTI_TENANT_ON') ?? '';
   return String(raw).toLowerCase() === 'true';
 }
 
+function getSharedRealmIdentifier(): string {
+  return getRuntimeOrBuildConfig('M8FLOW_KEYCLOAK_SHARED_REALM') || 'm8flow';
+}
+
+function getMasterRealmIdentifier(): string {
+  return getRuntimeOrBuildConfig('M8FLOW_KEYCLOAK_MASTER_REALM') || 'master';
+}
+
 const ENABLE_MULTITENANT = getEnableMultitenant();
+const SHARED_REALM_IDENTIFIER = getSharedRealmIdentifier();
+const MASTER_REALM_IDENTIFIER = getMasterRealmIdentifier();
 
 /**
  * useConfig - Hook to access configuration values
@@ -52,7 +72,9 @@ export function useConfig() {
     DATE_TIME_FORMAT,
     DOCUMENTATION_URL,
     ENABLE_MULTITENANT,
+    MASTER_REALM_IDENTIFIER,
     PROCESS_STATUSES,
+    SHARED_REALM_IDENTIFIER,
     SPIFF_ENVIRONMENT,
     TASK_METADATA,
     TIME_FORMAT_HOURS_MINUTES,

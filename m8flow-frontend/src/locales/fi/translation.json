@@ -80,7 +80,7 @@
   "delete_tenant": "Poista vuokralainen",
   "are_you_sure_you_want_to_delete_tenant": "Haluatko varmasti poistaa vuokralaisen",
   "action_cannot_be_undone": "Tätä toimintoa ei voi kumota.",
-  "realm_slug": "Realm Slug",
+  "realm_slug": "Vuokralaisen alias",
   "display_name": "Näyttönimi",
   "cancel": "Peruuttaa",
   "delete": "Poistaa",

@@ -1,6 +1,9 @@
 import pytest
 from flask import Flask
 from pathlib import Path
+from types import SimpleNamespace
+from types import ModuleType
+import sys
 
 def test_startup_contract_app_created(m8flow_app):
     app = m8flow_app
@@ -73,6 +76,62 @@ def test_create_application_pipeline_order(monkeypatch):
     wrapped = sequence.create_application()
     assert wrapped == "wrapped"
     assert calls == ["prepare", "create", "configure", "wrap"]
+
+
+def test_configure_created_app_runs_shared_realm_reconciliation_before_permissions(monkeypatch):
+    from m8flow_backend.startup import sequence
+
+    calls: list[str] = []
+    fake_db = object()
+    fake_app = SimpleNamespace(before_request_funcs={}, config={})
+    fake_cnx_app = SimpleNamespace(app=fake_app)
+
+    monkeypatch.setattr(sequence, "bootstrap_after_app", lambda flask_app: calls.append("bootstrap_after_app"))
+    monkeypatch.setattr(
+        "m8flow_backend.background_processing.rebrand_celery_tasks",
+        lambda flask_app: calls.append("rebrand_celery_tasks"),
+    )
+    monkeypatch.setattr("m8flow_backend.canonical_db.set_canonical_db", lambda db: calls.append("set_canonical_db"))
+    monkeypatch.setattr(sequence, "register_request_active_hooks", lambda flask_app: calls.append("register_request_active_hooks"))
+    monkeypatch.setattr(
+        sequence,
+        "register_request_tenant_context_hooks",
+        lambda flask_app: calls.append("register_request_tenant_context_hooks"),
+    )
+    monkeypatch.setattr(
+        sequence,
+        "register_template_file_fallback_routes",
+        lambda flask_app: calls.append("register_template_file_fallback_routes"),
+    )
+    monkeypatch.setattr(sequence, "assert_model_identity", lambda: calls.append("assert_model_identity"))
+    monkeypatch.setattr(sequence, "assert_db_engine_bound", lambda flask_app: calls.append("assert_db_engine_bound"))
+    monkeypatch.setattr(sequence, "run_migrations_if_enabled", lambda flask_app, upgrade: calls.append("run_migrations_if_enabled"))
+    monkeypatch.setattr(
+        "m8flow_backend.startup.shared_realm_bootstrap.reconcile_default_shared_realm_tenant",
+        lambda flask_app: calls.append("reconcile_default_shared_realm_tenant"),
+    )
+    monkeypatch.setattr(sequence, "configure_permissions_yml", lambda flask_app: calls.append("configure_permissions_yml"))
+    monkeypatch.setattr(sequence, "configure_templates_dir", lambda flask_app: calls.append("configure_templates_dir"))
+    monkeypatch.setattr(sequence, "configure_sql_echo", lambda flask_app, db: calls.append("configure_sql_echo"))
+    monkeypatch.setattr(
+        sequence,
+        "register_tenant_resolution_after_auth",
+        lambda flask_app: calls.append("register_tenant_resolution_after_auth"),
+    )
+    monkeypatch.setattr(
+        sequence,
+        "apply_extension_patches_after_app",
+        lambda flask_app: calls.append("apply_extension_patches_after_app"),
+    )
+    monkeypatch.setattr(sequence, "ensure_m8flow_audit_timestamps", lambda: calls.append("ensure_m8flow_audit_timestamps"))
+    fake_sample_template_loader = ModuleType("m8flow_backend.services.sample_template_loader")
+    fake_sample_template_loader.load_sample_templates = lambda flask_app: calls.append("load_sample_templates")
+    monkeypatch.setitem(sys.modules, "m8flow_backend.services.sample_template_loader", fake_sample_template_loader)
+
+    sequence._configure_created_app(fake_cnx_app, fake_db, lambda: None)
+
+    assert calls.index("reconcile_default_shared_realm_tenant") < calls.index("configure_permissions_yml")
+    assert calls.index("reconcile_default_shared_realm_tenant") < calls.index("configure_templates_dir")
 
 
 def test_wrap_asgi_if_needed_skips_for_testing_env(monkeypatch):

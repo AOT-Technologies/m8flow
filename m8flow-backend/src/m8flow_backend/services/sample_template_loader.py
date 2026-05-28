@@ -21,7 +21,7 @@ from m8flow_backend.services.template_storage_service import (
     FilesystemTemplateStorageService,
     file_type_from_filename,
 )
-from m8flow_backend.tenancy import DEFAULT_TENANT_ID
+from m8flow_backend.startup.shared_realm_bootstrap import resolve_default_shared_realm_tenant_id
 
 logger = logging.getLogger(__name__)
 
@@ -115,12 +115,16 @@ def load_sample_templates(flask_app) -> None:  # noqa: ANN001
 
     logger.info("Loading sample templates from %s (%d ZIP files) ...", sample_dir, len(zip_files))
 
-    storage = FilesystemTemplateStorageService()
-    tenant_id = DEFAULT_TENANT_ID
-    loaded = 0
-    skipped = 0
-
     with flask_app.app_context():
+        tenant_id = resolve_default_shared_realm_tenant_id()
+        if not tenant_id:
+            logger.warning("Skipping sample template load; no canonical shared-realm tenant row is available.")
+            return
+
+        storage = FilesystemTemplateStorageService()
+        loaded = 0
+        skipped = 0
+
         for zip_filename in zip_files:
             try:
                 template_key = _derive_template_key(zip_filename)
@@ -201,4 +205,4 @@ def load_sample_templates(flask_app) -> None:  # noqa: ANN001
                 skipped += 1
                 continue
 
-    logger.info("Sample templates loading complete: %d loaded, %d skipped", loaded, skipped)
+        logger.info("Sample templates loading complete: %d loaded, %d skipped", loaded, skipped)

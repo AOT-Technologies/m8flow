@@ -33,6 +33,10 @@ Also align URL-style settings with the above (e.g. `M8FLOW_BACKEND_URL`, `KEYCLO
 - `KEYCLOAK_HOSTNAME_HOST` (optional): Hostname segment passed to Keycloak as `KC_HOSTNAME` in [docker/m8flow-docker-compose.yml](../docker/m8flow-docker-compose.yml) (default `localhost`). Adjust if your deployment needs a different hostname for Keycloak’s own hostname configuration.
 - `KEYCLOAK_URL` / `M8FLOW_KEYCLOAK_URL`: Backend URL for Keycloak Admin/API calls. **Docker Compose:** set by compose to `http://keycloak-proxy:6842` for `m8flow-backend` (internal network). **Local dev:** often `http://localhost:6842` to match the proxy port on the host.
 - `M8FLOW_APP_PUBLIC_BASE_URL` (optional): Set when the app and Keycloak are exposed on different public hosts. If unset, `KEYCLOAK_HOSTNAME` is used for generated app-facing URLs where applicable.
+- `M8FLOW_KEYCLOAK_SHARED_REALM` (optional): Shared tenant-user realm name used by M8Flow auth defaults and local Keycloak bootstrap. Default: `m8flow`.
+- `M8FLOW_KEYCLOAK_MASTER_REALM` (optional): Platform/bootstrap admin realm name used by M8Flow auth defaults and local Keycloak bootstrap. Default: `master`.
+- `M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_ALIAS` (optional): Organization alias the Keycloak bootstrap ensures exists inside the shared realm. Default: the shared realm name, usually `m8flow`.
+- `M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_NAME` (optional): Display name used when the bootstrap creates the default shared-realm organization. Default: the default organization alias.
 
 ## Connector attachment paths
 

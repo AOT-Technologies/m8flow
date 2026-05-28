@@ -55,7 +55,6 @@ def get_tenant_by_slug(slug):
 
 @handle_api_errors
 def get_all_tenants():
-    """Fetch all tenants, excluding the default tenant."""
+    """Fetch all tenants."""
     tenants = TenantService.get_all_tenants()
     return success_response([_serialize_tenant(t) for t in tenants], 200)
-

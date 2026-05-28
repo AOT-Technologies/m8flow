@@ -24,6 +24,7 @@ from m8flow_backend.routes.keycloak_controller import (  # noqa: E402
     delete_tenant_realm,
     get_tenant_login_url,
     tenant_login,
+    update_tenant_name,
 )
 from spiffworkflow_backend.exceptions.api_error import ApiError
 
@@ -50,13 +51,14 @@ class TestCreateRealm:
 
     @patch("m8flow_backend.routes.keycloak_controller.AuthorizationService.user_has_permission")
     @patch("m8flow_backend.routes.keycloak_controller.create_tenant_if_not_exists")
-    @patch("m8flow_backend.routes.keycloak_controller.create_realm_from_template")
-    def test_create_realm_success(self, mock_create_realm, mock_create_tenant, mock_auth, app, mock_user):
+    @patch("m8flow_backend.routes.keycloak_controller.create_organization")
+    def test_create_realm_success(self, mock_create_organization, mock_create_tenant, mock_auth, app, mock_user):
         mock_auth.return_value = True
-        mock_create_realm.return_value = {
-            "realm": "tenant-b",
-            "displayName": "Tenant B",
-            "keycloak_realm_id": "uuid-tenant-b-123",
+        mock_create_organization.return_value = {
+            "id": "org-uuid-tenant-b-123",
+            "alias": "tenant-b",
+            "name": "Tenant B",
+            "enabled": True,
         }
         body = {"realm_id": "tenant-b", "display_name": "Tenant B"}
         with app.test_request_context():
@@ -65,38 +67,49 @@ class TestCreateRealm:
             assert status == 201
             assert result["realm"] == "tenant-b"
             assert result["displayName"] == "Tenant B"
-            assert result["id"] == "uuid-tenant-b-123"
-            assert result["keycloak_realm_id"] == "uuid-tenant-b-123"
-            mock_create_realm.assert_called_once_with(
-                realm_id="tenant-b",
-                display_name="Tenant B",
+            assert result["alias"] == "tenant-b"
+            assert result["name"] == "Tenant B"
+            assert result["id"] == "org-uuid-tenant-b-123"
+            assert result["organization_id"] == "org-uuid-tenant-b-123"
+            assert result["keycloak_realm_id"] == "org-uuid-tenant-b-123"
+            mock_create_organization.assert_called_once_with(
+                alias="tenant-b",
+                name="Tenant B",
             )
             mock_create_tenant.assert_called_once_with(
-                "uuid-tenant-b-123",
+                "org-uuid-tenant-b-123",
                 name="Tenant B",
                 slug="tenant-b",
             )
 
     @patch("m8flow_backend.routes.keycloak_controller.AuthorizationService.user_has_permission")
     @patch("m8flow_backend.routes.keycloak_controller.create_tenant_if_not_exists")
-    @patch("m8flow_backend.routes.keycloak_controller.create_realm_from_template")
-    def test_create_realm_success_no_display_name(self, mock_create_realm, mock_create_tenant, mock_auth, app, mock_user):
+    @patch("m8flow_backend.routes.keycloak_controller.create_organization")
+    def test_create_realm_accepts_slug_and_name_fields(
+        self,
+        mock_create_organization,
+        mock_create_tenant,
+        mock_auth,
+        app,
+        mock_user,
+    ):
         mock_auth.return_value = True
-        mock_create_realm.return_value = {
-            "realm": "tenant-c",
-            "displayName": "tenant-c",
-            "keycloak_realm_id": "uuid-tenant-c-456",
+        mock_create_organization.return_value = {
+            "id": "org-uuid-tenant-c-456",
+            "alias": "tenant-c",
+            "name": "Tenant C",
+            "enabled": True,
         }
-        body = {"realm_id": "tenant-c"}
+        body = {"slug": "tenant-c", "name": "Tenant C"}
         with app.test_request_context():
             g.user = mock_user
             result, status = create_realm(body)
             assert status == 201
-            assert result["id"] == "uuid-tenant-c-456"
-            mock_create_realm.assert_called_once_with(realm_id="tenant-c", display_name=None)
+            assert result["id"] == "org-uuid-tenant-c-456"
+            mock_create_organization.assert_called_once_with(alias="tenant-c", name="Tenant C")
             mock_create_tenant.assert_called_once_with(
-                "uuid-tenant-c-456",
-                name="tenant-c",
+                "org-uuid-tenant-c-456",
+                name="Tenant C",
                 slug="tenant-c",
             )
 
@@ -107,7 +120,7 @@ class TestCreateRealm:
             g.user = mock_user
             result, status = create_realm({})
             assert status == 400
-            assert "realm_id" in result["detail"]
+            assert "realm_id or slug" in result["detail"]
 
     @patch("m8flow_backend.routes.keycloak_controller.AuthorizationService.user_has_permission")
     def test_create_realm_empty_realm_id(self, mock_auth, app, mock_user):
@@ -116,16 +129,16 @@ class TestCreateRealm:
             g.user = mock_user
             result, status = create_realm({"realm_id": "   "})
             assert status == 400
-            assert "realm_id" in result["detail"]
+            assert "realm_id or slug" in result["detail"]
 
     @patch("m8flow_backend.routes.keycloak_controller.AuthorizationService.user_has_permission")
-    @patch("m8flow_backend.routes.keycloak_controller.create_realm_from_template")
-    def test_create_realm_http_409(self, mock_create_realm, mock_auth, app, mock_user):
+    @patch("m8flow_backend.routes.keycloak_controller.create_organization")
+    def test_create_realm_http_409(self, mock_create_organization, mock_auth, app, mock_user):
         mock_auth.return_value = True
         resp = MagicMock()
         resp.status_code = 409
-        resp.text = "Realm already exists"
-        mock_create_realm.side_effect = requests.exceptions.HTTPError(response=resp)
+        resp.text = "Organization already exists"
+        mock_create_organization.side_effect = requests.exceptions.HTTPError(response=resp)
         with app.test_request_context():
             g.user = mock_user
             result, status = create_realm({"realm_id": "tenant-b"})
@@ -133,13 +146,13 @@ class TestCreateRealm:
             assert "already exists" in result["detail"]
 
     @patch("m8flow_backend.routes.keycloak_controller.AuthorizationService.user_has_permission")
-    @patch("m8flow_backend.routes.keycloak_controller.create_realm_from_template")
-    def test_create_realm_http_500(self, mock_create_realm, mock_auth, app, mock_user):
+    @patch("m8flow_backend.routes.keycloak_controller.create_organization")
+    def test_create_realm_http_500(self, mock_create_organization, mock_auth, app, mock_user):
         mock_auth.return_value = True
         resp = MagicMock()
         resp.status_code = 500
         resp.text = "Internal error"
-        mock_create_realm.side_effect = requests.exceptions.HTTPError(response=resp)
+        mock_create_organization.side_effect = requests.exceptions.HTTPError(response=resp)
         with app.test_request_context():
             g.user = mock_user
             result, status = create_realm({"realm_id": "tenant-b"})
@@ -147,26 +160,15 @@ class TestCreateRealm:
             assert "Internal error" in result["detail"]
 
     @patch("m8flow_backend.routes.keycloak_controller.AuthorizationService.user_has_permission")
-    @patch("m8flow_backend.routes.keycloak_controller.create_realm_from_template")
-    def test_create_realm_value_error(self, mock_create_realm, mock_auth, app, mock_user):
+    @patch("m8flow_backend.routes.keycloak_controller.create_organization")
+    def test_create_realm_value_error(self, mock_create_organization, mock_auth, app, mock_user):
         mock_auth.return_value = True
-        mock_create_realm.side_effect = ValueError("Invalid realm_id")
+        mock_create_organization.side_effect = ValueError("Invalid alias")
         with app.test_request_context():
             g.user = mock_user
             result, status = create_realm({"realm_id": "tenant-b"})
             assert status == 400
-            assert "Invalid realm_id" in result["detail"]
-
-    @patch("m8flow_backend.routes.keycloak_controller.AuthorizationService.user_has_permission")
-    @patch("m8flow_backend.routes.keycloak_controller.create_realm_from_template")
-    def test_create_realm_file_not_found(self, mock_create_realm, mock_auth, app, mock_user):
-        mock_auth.return_value = True
-        mock_create_realm.side_effect = FileNotFoundError("Template not found")
-        with app.test_request_context():
-            g.user = mock_user
-            result, status = create_realm({"realm_id": "tenant-b"})
-            assert status == 400
-            assert "Template" in result["detail"]
+            assert "Invalid alias" in result["detail"]
 
 
 class TestTenantLogin:
@@ -289,23 +291,26 @@ class TestGetTenantLoginUrl:
     """Tests for get_tenant_login_url (GET /tenant-login-url)."""
 
     @patch("m8flow_backend.routes.keycloak_controller.tenant_login_authorization_url")
-    @patch("m8flow_backend.routes.keycloak_controller.realm_exists")
-    def test_get_tenant_login_url_success(self, mock_realm_exists, mock_auth_url):
-        mock_realm_exists.return_value = True
-        mock_auth_url.return_value = "http://keycloak/realms/tenant-a/protocol/openid-connect/auth"
+    @patch("m8flow_backend.routes.keycloak_controller.TenantService.check_tenant_exists")
+    def test_get_tenant_login_url_success(self, mock_check_tenant_exists, mock_auth_url, monkeypatch):
+        monkeypatch.setenv("M8FLOW_KEYCLOAK_SHARED_REALM", "shared-users")
+        mock_check_tenant_exists.return_value = {"exists": True, "tenant_id": "tenant-a-id"}
+        mock_auth_url.return_value = "http://keycloak/realms/shared-users/protocol/openid-connect/auth"
         result, status = get_tenant_login_url("tenant-a")
         assert status == 200
-        assert result["login_url"] == "http://keycloak/realms/tenant-a/protocol/openid-connect/auth"
-        assert result["realm"] == "tenant-a"
-        mock_realm_exists.assert_called_once_with("tenant-a")
-        mock_auth_url.assert_called_once_with("tenant-a")
+        assert result["login_url"] == "http://keycloak/realms/shared-users/protocol/openid-connect/auth"
+        assert result["realm"] == "shared-users"
+        assert result["authentication_identifier"] == "shared-users"
+        assert result["tenant_id"] == "tenant-a-id"
+        mock_check_tenant_exists.assert_called_once_with("tenant-a")
+        mock_auth_url.assert_called_once_with("shared-users")
 
-    @patch("m8flow_backend.routes.keycloak_controller.realm_exists")
-    def test_get_tenant_login_url_realm_not_found(self, mock_realm_exists):
-        mock_realm_exists.return_value = False
+    @patch("m8flow_backend.routes.keycloak_controller.TenantService.check_tenant_exists")
+    def test_get_tenant_login_url_realm_not_found(self, mock_check_tenant_exists):
+        mock_check_tenant_exists.return_value = {"exists": False}
         result, status = get_tenant_login_url("missing-tenant")
         assert status == 404
-        assert "Tenant realm not found" in result["detail"]
+        assert "Tenant not found" in result["detail"]
 
     def test_get_tenant_login_url_missing_tenant(self):
         result, status = get_tenant_login_url("")
@@ -320,12 +325,12 @@ class TestDeleteTenantRealm:
 
     @patch("m8flow_backend.routes.keycloak_controller.get_master_admin_token")
     @patch("m8flow_backend.routes.keycloak_controller.AuthorizationService.user_has_permission")
-    @patch("m8flow_backend.routes.keycloak_controller.delete_realm")
-    def test_delete_tenant_realm_success(self, mock_delete_realm, mock_auth, mock_get_token, app, mock_user):
+    @patch("m8flow_backend.routes.keycloak_controller.delete_organization")
+    def test_delete_tenant_realm_success(self, mock_delete_organization, mock_auth, mock_get_token, app, mock_user):
         mock_auth.return_value = True
         mock_get_token.return_value = "master-token"
         tenant_mock = MagicMock()
-        tenant_mock.id = "keycloak-uuid-123"
+        tenant_mock.id = "organization-uuid-123"
         tenant_mock.slug = "tenant-a"
         with app.test_request_context():
             g.user = mock_user
@@ -338,18 +343,33 @@ class TestDeleteTenantRealm:
                 result, status = delete_tenant_realm("tenant-a")
             assert status == 200
             assert "deleted successfully" in result["message"]
-            mock_delete_realm.assert_called_once_with("tenant-a", admin_token="master-token")
+            mock_delete_organization.assert_called_once_with(
+                "organization-uuid-123",
+                admin_token="master-token",
+            )
             mock_db.session.delete.assert_called_once_with(tenant_mock)
             mock_db.session.commit.assert_called_once()
 
     @patch("m8flow_backend.routes.keycloak_controller.get_master_admin_token")
     @patch("m8flow_backend.routes.keycloak_controller.AuthorizationService.user_has_permission")
-    @patch("m8flow_backend.routes.keycloak_controller.delete_realm")
+    @patch("m8flow_backend.routes.keycloak_controller.get_organization_by_alias")
+    @patch("m8flow_backend.routes.keycloak_controller.delete_organization")
     def test_delete_tenant_realm_no_tenant_row_still_deletes_keycloak(
-        self, mock_delete_realm, mock_auth, mock_get_token, app, mock_user
+        self,
+        mock_delete_organization,
+        mock_get_organization_by_alias,
+        mock_auth,
+        mock_get_token,
+        app,
+        mock_user,
     ):
         mock_auth.return_value = True
         mock_get_token.return_value = "master-token"
+        mock_get_organization_by_alias.return_value = {
+            "id": "organization-uuid-456",
+            "alias": "missing-slug",
+            "name": "Missing Slug",
+        }
         with app.test_request_context():
             g.user = mock_user
             with patch(
@@ -358,7 +378,14 @@ class TestDeleteTenantRealm:
                 mock_db.session.query.return_value.filter.return_value.one_or_none.return_value = None
                 result, status = delete_tenant_realm("missing-slug")
             assert status == 200
-            mock_delete_realm.assert_called_once_with("missing-slug", admin_token="master-token")
+            mock_get_organization_by_alias.assert_called_once_with(
+                "missing-slug",
+                admin_token="master-token",
+            )
+            mock_delete_organization.assert_called_once_with(
+                "organization-uuid-456",
+                admin_token="master-token",
+            )
             mock_db.session.delete.assert_not_called()
             mock_db.session.commit.assert_not_called()
 
@@ -382,20 +409,72 @@ class TestDeleteTenantRealm:
 
     @patch("m8flow_backend.routes.keycloak_controller.get_master_admin_token")
     @patch("m8flow_backend.routes.keycloak_controller.AuthorizationService.user_has_permission")
-    @patch("m8flow_backend.routes.keycloak_controller.delete_realm")
+    @patch("m8flow_backend.routes.keycloak_controller.delete_organization")
     def test_delete_tenant_realm_keycloak_failure_does_not_touch_postgres(
-        self, mock_delete_realm, mock_auth, mock_get_token, app, mock_user
+        self, mock_delete_organization, mock_auth, mock_get_token, app, mock_user
     ):
-        """When Keycloak delete_realm raises, we do not delete from Postgres (inverted order)."""
+        """When Keycloak delete_organization raises, we do not delete from Postgres (inverted order)."""
         mock_auth.return_value = True
         mock_get_token.return_value = "master-token"
+        tenant_mock = MagicMock()
+        tenant_mock.id = "organization-uuid-123"
+        tenant_mock.slug = "tenant-a"
         err = requests.HTTPError("502 Bad Gateway")
         err.response = MagicMock(status_code=502, text="Bad Gateway")
-        mock_delete_realm.side_effect = err
+        mock_delete_organization.side_effect = err
         with app.test_request_context():
             g.user = mock_user
             with patch("m8flow_backend.routes.keycloak_controller.db") as mock_db:
+                mock_db.session.query.return_value.filter.return_value.one_or_none.return_value = tenant_mock
                 result, status = delete_tenant_realm("tenant-a")
         assert status == 502
         mock_db.session.delete.assert_not_called()
         mock_db.session.commit.assert_not_called()
+
+
+class TestUpdateTenantName:
+    """Tests for update_tenant_name (PUT /tenants/{tenant_id})."""
+
+    @patch("m8flow_backend.routes.keycloak_controller.get_master_admin_token")
+    @patch("m8flow_backend.routes.keycloak_controller.AuthorizationService.user_has_permission")
+    @patch("m8flow_backend.routes.keycloak_controller.update_organization")
+    def test_update_tenant_name_success(
+        self,
+        mock_update_organization,
+        mock_auth,
+        mock_get_token,
+        app,
+        mock_user,
+    ):
+        mock_auth.return_value = True
+        mock_get_token.return_value = "master-token"
+        tenant_mock = MagicMock()
+        tenant_mock.id = "organization-uuid-123"
+        tenant_mock.slug = "tenant-a"
+        tenant_mock.name = "Tenant A"
+
+        with app.test_request_context():
+            g.user = mock_user
+            with patch("m8flow_backend.routes.keycloak_controller.db") as mock_db:
+                mock_db.session.query.return_value.filter.return_value.one_or_none.return_value = tenant_mock
+                result, status = update_tenant_name("organization-uuid-123", {"name": "Tenant A+"})
+
+        assert status == 200
+        assert result["message"] == "Tenant name updated successfully"
+        assert result["name"] == "Tenant A+"
+        mock_update_organization.assert_called_once_with(
+            "organization-uuid-123",
+            alias="tenant-a",
+            name="Tenant A+",
+            admin_token="master-token",
+        )
+        assert tenant_mock.name == "Tenant A+"
+
+    @patch("m8flow_backend.routes.keycloak_controller.AuthorizationService.user_has_permission")
+    def test_update_tenant_name_missing_name(self, mock_auth, app, mock_user):
+        mock_auth.return_value = True
+        with app.test_request_context():
+            g.user = mock_user
+            result, status = update_tenant_name("organization-uuid-123", {"name": "   "})
+        assert status == 400
+        assert "name is required" in result["detail"]

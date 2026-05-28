@@ -2,33 +2,65 @@
 from __future__ import annotations
 
 import logging
+
 from flask import g, has_request_context
 
-from m8flow_backend.tenancy import DEFAULT_TENANT_ID, get_context_tenant_id, is_request_active
+from m8flow_backend.tenancy import (
+    get_context_tenant_id,
+    is_concrete_tenant_id,
+    is_legacy_placeholder_tenant_id,
+    is_request_active,
+)
 
 _PATCHED = False
 _ORIGINAL_SETUP = None
 
 
+def _normalize_tenant_id_for_logging(tenant_id: object) -> str | None:
+    if not isinstance(tenant_id, str):
+        return None
+
+    normalized_tenant_id = tenant_id.strip()
+    if not normalized_tenant_id or is_legacy_placeholder_tenant_id(normalized_tenant_id):
+        return None
+    if normalized_tenant_id == "public":
+        return "public"
+    if not is_concrete_tenant_id(normalized_tenant_id):
+        return None
+    return normalized_tenant_id
+
+
 def _resolve_tenant_id_for_logging(record: logging.LogRecord) -> str:
     """Resolve tenant id for logging purposes."""
-    # 1) Normal Flask request logs
     if has_request_context():
-        tid = getattr(g, "m8flow_tenant_id", None)
-        if tid:
-            return tid
-        return get_context_tenant_id() or DEFAULT_TENANT_ID
+        if getattr(g, "_m8flow_public_request", False):
+            return "public"
+        if getattr(g, "_m8flow_global_request", False):
+            return "global"
 
-    # 2) Uvicorn access logs: these are emitted by uvicorn, outside Flask context.
+        request_tenant_id = _normalize_tenant_id_for_logging(getattr(g, "m8flow_tenant_id", None))
+        if request_tenant_id:
+            return request_tenant_id
+
+        context_tenant_id = _normalize_tenant_id_for_logging(get_context_tenant_id())
+        if context_tenant_id:
+            return context_tenant_id
+
+        if getattr(g, "_m8flow_tenant_context_exempt_request", False):
+            return "global"
+        return "global"
+
+    context_tenant_id = _normalize_tenant_id_for_logging(get_context_tenant_id())
+    if context_tenant_id:
+        return context_tenant_id
+
     if record.name == "uvicorn.access":
-        return get_context_tenant_id() or DEFAULT_TENANT_ID
+        return "global"
 
-    # 3) Any other “request-ish” background where we may still want default
     if is_request_active():
-        return get_context_tenant_id() or DEFAULT_TENANT_ID
+        return "global"
 
-    # 4) Startup / background / truly non-request
-    return get_context_tenant_id() or "system"
+    return "system"
 
 
 class TenantContextFilter(logging.Filter):

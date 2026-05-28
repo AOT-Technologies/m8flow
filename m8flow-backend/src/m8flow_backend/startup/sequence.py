@@ -91,6 +91,11 @@ def _configure_created_app(cnx_app: Any, db: Any, upgrade_m8flow_db: Callable[[]
     # Run migrations at startup (after db bound).
     run_migrations_if_enabled(flask_app, upgrade_m8flow_db)
 
+    # Reconcile the canonical shared-realm tenant row before any permission or sample-data import runs.
+    from m8flow_backend.startup.shared_realm_bootstrap import reconcile_default_shared_realm_tenant
+
+    reconcile_default_shared_realm_tenant(flask_app)
+
     # Permissions + templates configuration.
     configure_permissions_yml(flask_app)
     configure_templates_dir(flask_app)
@@ -128,7 +133,6 @@ def _wrap_asgi_if_needed(cnx_app: Any) -> Any:
     if proxy_count > 0:
         # Import lazily to ensure model override bootstrap has run first.
         from spiffworkflow_backend.middleware.asgi_proxy_fix import ASGIProxyFix
-
         app = ASGIProxyFix(
             app,
             x_for=proxy_count,
