@@ -1,15 +1,15 @@
 import { defineAbility } from '@casl/ability';
 import {
-  BrowserRouter,
   createBrowserRouter,
   Outlet,
   RouterProvider,
 } from 'react-router-dom';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Suspense, lazy, useState } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
+import Typography from '@mui/material/Typography';
 import { AbilityContext } from '@spiffworkflow-frontend/contexts/Can';
 import APIErrorProvider from '@spiffworkflow-frontend/contexts/APIErrorContext';
 import { createSpiffTheme } from '@spiffworkflow-frontend/assets/theme/SpiffTheme';
@@ -22,16 +22,15 @@ import { CONFIGURATION_ERRORS } from '@spiffworkflow-frontend/config';
 import { CustomGroupingProvider } from './contexts/CustomGroupingContext';
 import TenantGateContext from './contexts/TenantGateContext';
 import { useConfig } from './utils/useConfig';
-import { M8FLOW_TENANT_STORAGE_KEY } from './views/TenantSelectPage';
 import UserService from './services/UserService';
 
 const queryClient = new QueryClient();
 
 const TenantSelectPage = lazy(() => import('./views/TenantSelectPage'));
 
-function getStoredTenant(): boolean {
+function hasFinalizedTenantSelection(): boolean {
   if (typeof globalThis === 'undefined') return false;
-  return !!localStorage.getItem(M8FLOW_TENANT_STORAGE_KEY);
+  return UserService.hasSelectedTenantCookie();
 }
 
 function getCurrentPathname(): string {
@@ -39,6 +38,13 @@ function getCurrentPathname(): string {
     return '/';
   }
   return globalThis.location.pathname;
+}
+
+function getCurrentLocation(): string {
+  if (typeof globalThis === 'undefined' || !globalThis.location) {
+    return '/';
+  }
+  return `${globalThis.location.origin}${globalThis.location.pathname}${globalThis.location.search || ''}`;
 }
 
 function isTenantSelectionExemptPath(pathname: string): boolean {
@@ -49,17 +55,59 @@ function isTenantSelectionExemptPath(pathname: string): boolean {
   );
 }
 
+function shouldShowTenantSelectionGate(
+  pathname: string,
+  masterRealmIdentifier: string,
+): boolean {
+  if (isTenantSelectionExemptPath(pathname)) {
+    return false;
+  }
+
+  if (!UserService.isLoggedIn()) {
+    return true;
+  }
+
+  if (UserService.getAuthenticationIdentifier() === masterRealmIdentifier) {
+    return false;
+  }
+
+  return !hasFinalizedTenantSelection();
+}
+
+function AutoLoginRedirect({
+  sharedRealmIdentifier,
+}: {
+  sharedRealmIdentifier: string;
+}) {
+  useEffect(() => {
+    UserService.doLogin(
+      {
+        identifier: sharedRealmIdentifier,
+        label: sharedRealmIdentifier,
+        uri: '',
+      },
+      getCurrentLocation(),
+    );
+  }, [sharedRealmIdentifier]);
+
+  return <Typography align="center">Redirecting to sign in...</Typography>;
+}
+
 export default function App() {
   const ability = defineAbility(() => {});
-  const { ENABLE_MULTITENANT } = useConfig();
-  const [hasTenant, setHasTenant] = useState(getStoredTenant);
+  const { ENABLE_MULTITENANT, MASTER_REALM_IDENTIFIER, SHARED_REALM_IDENTIFIER } = useConfig();
+  const [hasTenant, setHasTenant] = useState(hasFinalizedTenantSelection);
   const currentPathname = getCurrentPathname();
-  const bypassTenantSelectionGate =
-    UserService.isLoggedIn() || isTenantSelectionExemptPath(currentPathname);
+  const showTenantSelectionGate = shouldShowTenantSelectionGate(
+    currentPathname,
+    MASTER_REALM_IDENTIFIER,
+  );
 
-  // When multitenant is on and no tenant is stored, show only the tenant page.
+  // When multitenant is on and no tenant is stored, avoid mounting the main app.
+  // Unauthenticated users go straight into the shared-realm login flow; authenticated
+  // shared-realm users without a finalized tenant still see the tenant-selection page.
   // This avoids mounting ContainerForExtensions (and its permission check), which would 401 and redirect to login.
-  if (ENABLE_MULTITENANT && !hasTenant && !bypassTenantSelectionGate) {
+  if (ENABLE_MULTITENANT && !hasTenant && showTenantSelectionGate) {
     const minimalTheme = createTheme(
       createSpiffTheme(
         (typeof globalThis !== 'undefined' &&
@@ -68,26 +116,30 @@ export default function App() {
       )
     );
     return (
-      <BrowserRouter>
-        <div className="cds--white">
-          <ThemeProvider theme={minimalTheme}>
-            <CssBaseline />
-            <QueryClientProvider client={queryClient}>
-              <APIErrorProvider>
-                <AbilityContext.Provider value={ability}>
-                  <TenantGateContext.Provider
-                    value={{ onTenantSelected: () => setHasTenant(true) }}
-                  >
-                    <Suspense fallback={<RouteLoadingFallback />}>
+      <div className="cds--white">
+        <ThemeProvider theme={minimalTheme}>
+          <CssBaseline />
+          <QueryClientProvider client={queryClient}>
+            <APIErrorProvider>
+              <AbilityContext.Provider value={ability}>
+                <TenantGateContext.Provider
+                  value={{ onTenantSelected: () => setHasTenant(true) }}
+                >
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    {UserService.isLoggedIn() ? (
                       <TenantSelectPage />
-                    </Suspense>
-                  </TenantGateContext.Provider>
-                </AbilityContext.Provider>
-              </APIErrorProvider>
-            </QueryClientProvider>
-          </ThemeProvider>
-        </div>
-      </BrowserRouter>
+                    ) : (
+                      <AutoLoginRedirect
+                        sharedRealmIdentifier={SHARED_REALM_IDENTIFIER}
+                      />
+                    )}
+                  </Suspense>
+                </TenantGateContext.Provider>
+              </AbilityContext.Provider>
+            </APIErrorProvider>
+          </QueryClientProvider>
+        </ThemeProvider>
+      </div>
     );
   }
 

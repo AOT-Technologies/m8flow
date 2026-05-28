@@ -1,10 +1,12 @@
 package com.m8flow.keycloak.mapper;
 
 import org.keycloak.models.ClientSessionContext;
+import org.keycloak.models.OrganizationModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.ProtocolMapperModel;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserSessionModel;
+import org.keycloak.organization.utils.Organizations;
 import org.keycloak.protocol.oidc.mappers.AbstractOIDCProtocolMapper;
 import org.keycloak.protocol.oidc.mappers.OIDCAccessTokenMapper;
 import org.keycloak.protocol.oidc.mappers.OIDCIDTokenMapper;
@@ -37,7 +39,7 @@ public class RealmInfoMapper extends AbstractOIDCProtocolMapper implements OIDCA
 
     @Override
     public String getHelpText() {
-        return "Adds m8flow_tenant_id and m8flow_tenant_name to the token claims.";
+        return "Adds explicit realm/auth claims and active-organization tenant claims to the token.";
     }
 
     @Override
@@ -54,11 +56,38 @@ public class RealmInfoMapper extends AbstractOIDCProtocolMapper implements OIDCA
     protected void setClaim(IDToken token, ProtocolMapperModel mappingModel,
                           UserSessionModel userSession, KeycloakSession keycloakSession,
                           ClientSessionContext clientSessionCtx) {
-
-        // This dynamically fetches the current realm's name and ID (m8flow claim names)
         RealmModel realm = keycloakSession.getContext().getRealm();
+        putIfNotBlank(token, "m8flow_authentication_identifier", realm.getName());
+        putIfNotBlank(token, "m8flow_realm_name", realm.getName());
+        putIfNotBlank(token, "m8flow_realm_id", realm.getId());
 
-        token.getOtherClaims().put("m8flow_tenant_name", realm.getName());
-        token.getOtherClaims().put("m8flow_tenant_id", realm.getId());
+        OrganizationModel organization = resolveOrganization(userSession, keycloakSession);
+        if (organization == null) {
+            return;
+        }
+
+        putIfNotBlank(token, "m8flow_tenant_id", organization.getId());
+        putIfNotBlank(token, "m8flow_tenant_alias", organization.getAlias());
+        putIfNotBlank(token, "m8flow_tenant_name", organization.getName() != null ? organization.getName() : organization.getAlias());
+    }
+
+    private static OrganizationModel resolveOrganization(UserSessionModel userSession, KeycloakSession keycloakSession) {
+        if (userSession == null || userSession.getUser() == null) {
+            return null;
+        }
+        return Organizations.resolveOrganization(keycloakSession, userSession.getUser());
+    }
+
+    private static void putIfNotBlank(IDToken token, String claimName, String value) {
+        if (value == null) {
+            return;
+        }
+
+        String normalized = value.trim();
+        if (normalized.isEmpty()) {
+            return;
+        }
+
+        token.getOtherClaims().put(claimName, normalized);
     }
 }

@@ -8,8 +8,10 @@ import os
 import time
 import uuid
 import warnings
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 from urllib.parse import urlsplit
 
 import requests
@@ -22,10 +24,17 @@ from m8flow_backend.config import (
     realm_template_path,
     redirect_uri_backend_host_and_path,
     redirect_uri_frontend_host,
+    shared_realm_name,
     spoke_client_id,
     spoke_keystore_password,
     spoke_keystore_p12_path,
     template_realm_name,
+)
+from m8flow_backend.services.tenant_group_mapping import (
+    ORGANIZATION_GROUP_ROLE_MAPPING_CONFIGURED_ATTRIBUTE,
+    ORGANIZATION_GROUP_ROLE_NAMES_ATTRIBUTE,
+    normalize_tenant_role_names,
+    tenant_roles_for_organization_group,
 )
 from m8flow_backend.services.tenant_identity_helpers import normalize_organizational_group_identifier
 from m8flow_backend.services.tenant_identity_helpers import normalize_organizational_group_identifiers
@@ -51,8 +60,6 @@ NORMALIZED_GROUP_MAPPER_PROVIDER_ID = "oidc-normalized-group-membership-mapper"
 # Names reserved for global (non-tenant) administration; never cloned into tenant realms.
 GLOBAL_ONLY_REALM_ROLE_NAMES = frozenset({"super-admin"})
 GLOBAL_ONLY_USERNAMES = frozenset({"super-admin"})
-
-
 def _substitute_spoke_client_id(obj: Any, client_id: str) -> Any:
     """Recursively replace SPOKE_CLIENT_ID_PLACEHOLDER with client_id in dict keys and string values."""
     if isinstance(obj, dict):
@@ -113,6 +120,37 @@ def load_default_organizational_group_paths() -> list[str]:
     return normalize_organizational_group_identifiers(
         [group_path for group_path in raw_group_paths if isinstance(group_path, str)]
     )
+
+
+def default_organizational_group_names() -> tuple[str, ...]:
+    """Return the canonical top-level organization group names for workflow membership."""
+    group_names: list[str] = []
+    seen: set[str] = set()
+
+    for group_path in load_default_organizational_group_paths():
+        normalized_path = normalize_organizational_group_identifier(group_path)
+        group_name = normalized_path.strip("/").split("/")[-1].strip() if normalized_path else ""
+        if not group_name or group_name in seen:
+            continue
+        seen.add(group_name)
+        group_names.append(group_name)
+
+    return tuple(group_names)
+
+
+def _load_default_organization_role_group_names() -> tuple[str, ...]:
+    """Return a stable exported tuple for modules that import role-group names at import time."""
+    try:
+        group_names = default_organizational_group_names()
+        if group_names:
+            return group_names
+    except Exception as exc:  # pragma: no cover - defensive startup fallback
+        logger.warning("Falling back to built-in organization role groups: %s", exc)
+    return ("Approvers", "Designers", "Administrators", "Support", "Submitters", "Viewers")
+
+
+# Backward-compatible export consumed by route/service patches at import time.
+DEFAULT_ORGANIZATION_ROLE_GROUP_NAMES = _load_default_organization_role_group_names()
 
 
 def _normalized_keycloak_group_path(group: dict[str, Any], parent_path: str = "") -> str:
@@ -539,6 +577,1120 @@ def tenant_login_authorization_url(realm: str) -> str:
     return f"{keycloak_url()}/realms/{realm}/protocol/openid-connect/auth"
 
 
+def _shared_realm_organizations_url(*segments: str) -> str:
+    """Return the Organizations Admin API URL inside the configured shared realm."""
+    base_url = keycloak_url()
+    realm = shared_realm_name()
+    base = f"{base_url}/admin/realms/{realm}/organizations"
+    normalized_segments = [segment.strip("/") for segment in segments if segment and segment.strip("/")]
+    if not normalized_segments:
+        return base
+    return f"{base}/{'/'.join(normalized_segments)}"
+
+
+def _shared_realm_organization_groups_url(
+    organization_id: str,
+    *segments: str,
+) -> str:
+    """Return the organization-groups Admin API URL inside the configured shared realm."""
+    base = _shared_realm_organizations_url(str(organization_id).strip(), "groups")
+    normalized_segments = [segment.strip("/") for segment in segments if segment and segment.strip("/")]
+    if not normalized_segments:
+        return base
+    return f"{base}/{'/'.join(normalized_segments)}"
+
+
+def _shared_realm_organization_group_role_mappings_url(
+    organization_id: str,
+    group_id: str,
+    *segments: str,
+) -> str:
+    """Return the organization-group role-mappings Admin API URL inside the shared realm."""
+    base = _shared_realm_organization_groups_url(
+        str(organization_id).strip(),
+        quote(str(group_id).strip(), safe=""),
+        "role-mappings",
+        "realm",
+    )
+    normalized_segments = [segment.strip("/") for segment in segments if segment and segment.strip("/")]
+    if not normalized_segments:
+        return base
+    return f"{base}/{'/'.join(normalized_segments)}"
+
+
+def get_organization_by_id(
+    organization_id: str,
+    admin_token: str | None = None,
+) -> dict[str, Any] | None:
+    """Return the organization representation by id from the shared realm, or None when missing."""
+    if not organization_id or not str(organization_id).strip():
+        raise ValueError("organization_id is required")
+
+    organization_id = str(organization_id).strip()
+    token = admin_token or get_master_admin_token()
+
+    r = requests.get(
+        _shared_realm_organizations_url(organization_id),
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    if r.status_code == 404:
+        return None
+    r.raise_for_status()
+    organization = r.json()
+    return organization if isinstance(organization, dict) else None
+
+
+def get_organization_by_alias(
+    alias: str,
+    admin_token: str | None = None,
+) -> dict[str, Any] | None:
+    """Return the organization representation by exact alias from the shared realm, or None when missing."""
+    if not alias or not str(alias).strip():
+        raise ValueError("alias is required")
+
+    alias = str(alias).strip()
+    token = admin_token or get_master_admin_token()
+
+    def _load_organizations(**params: str) -> list[dict[str, Any]]:
+        r = requests.get(
+            _shared_realm_organizations_url(),
+            params=params,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            timeout=30,
+        )
+        r.raise_for_status()
+
+        organizations = r.json()
+        if not isinstance(organizations, list):
+            return []
+        return [organization for organization in organizations if isinstance(organization, dict)]
+
+    def _search_organizations(*, exact: bool) -> list[dict[str, Any]]:
+        return _load_organizations(
+            search=alias,
+            exact="true" if exact else "false",
+            briefRepresentation="false",
+            max="100",
+        )
+
+    organizations = _search_organizations(exact=True)
+    if not organizations:
+        # Some Keycloak organization endpoints ignore or mishandle exact=true.
+        # Fall back to a broader search and filter locally.
+        organizations = _search_organizations(exact=False)
+    if not organizations:
+        # Some Keycloak builds also fail alias searches entirely for later-created
+        # organizations. Fall back to a bounded list and filter locally.
+        organizations = _load_organizations(
+            briefRepresentation="false",
+            max="100",
+        )
+
+    for organization in organizations:
+        if organization.get("alias") == alias:
+            return organization
+    return None
+
+
+def get_organization_member_by_username(
+    organization_id: str,
+    username: str,
+    admin_token: str | None = None,
+) -> dict[str, Any] | None:
+    """Return the exact-match member representation for one organization username."""
+    if not organization_id or not str(organization_id).strip():
+        raise ValueError("organization_id is required")
+    if not username or not str(username).strip():
+        raise ValueError("username is required")
+
+    organization_id = str(organization_id).strip()
+    normalized_username = str(username).strip()
+    token = admin_token or get_master_admin_token()
+
+    def _search_members(*, exact: bool) -> list[dict[str, Any]]:
+        r = requests.get(
+            _shared_realm_organizations_url(organization_id, "members"),
+            params={
+                "search": normalized_username,
+                "exact": "true" if exact else "false",
+                "max": 100,
+            },
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            timeout=30,
+        )
+        r.raise_for_status()
+
+        members = r.json()
+        if not isinstance(members, list):
+            return []
+        return [member for member in members if isinstance(member, dict)]
+
+    members = _search_members(exact=True)
+    if not members:
+        # Some Keycloak organization member searches return no rows when exact=true.
+        members = _search_members(exact=False)
+
+    exact_matches = [member for member in members if member.get("username") == normalized_username]
+    if len(exact_matches) != 1:
+        return None
+    return exact_matches[0]
+
+
+def get_realm_user_by_username(
+    realm: str,
+    username: str,
+    admin_token: str | None = None,
+) -> dict[str, Any] | None:
+    """Return the exact-match Keycloak user representation for one realm username."""
+    if not realm or not str(realm).strip():
+        raise ValueError("realm is required")
+    if not username or not str(username).strip():
+        raise ValueError("username is required")
+
+    normalized_realm = str(realm).strip()
+    normalized_username = str(username).strip()
+    token = admin_token or get_master_admin_token()
+
+    response = requests.get(
+        f"{keycloak_url()}/admin/realms/{normalized_realm}/users",
+        params={
+            "username": normalized_username,
+            "exact": "true",
+            "max": 100,
+        },
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    response.raise_for_status()
+
+    users = response.json()
+    if not isinstance(users, list):
+        return None
+
+    exact_matches = [
+        user
+        for user in users
+        if isinstance(user, dict) and user.get("username") == normalized_username
+    ]
+    if len(exact_matches) != 1:
+        return None
+    return exact_matches[0]
+
+
+def search_realm_users(
+    realm: str,
+    search: str,
+    *,
+    exact: bool = False,
+    admin_token: str | None = None,
+    max_results: int = 100,
+) -> list[dict[str, Any]]:
+    """Search users in one Keycloak realm and return normalized user representations."""
+    if not realm or not str(realm).strip():
+        raise ValueError("realm is required")
+
+    normalized_realm = str(realm).strip()
+    normalized_search = str(search).strip() if isinstance(search, str) else ""
+    token = admin_token or get_master_admin_token()
+    params: dict[str, Any] = {"max": max_results}
+    if normalized_search:
+        params["search"] = normalized_search
+        params["exact"] = "true" if exact else "false"
+
+    response = requests.get(
+        f"{keycloak_url()}/admin/realms/{normalized_realm}/users",
+        params=params,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    response.raise_for_status()
+
+    users = response.json()
+    if not isinstance(users, list):
+        return []
+
+    return [user for user in users if isinstance(user, dict)]
+
+
+def search_organization_members(
+    organization_id: str,
+    search: str,
+    *,
+    exact: bool = False,
+    admin_token: str | None = None,
+    max_results: int = 100,
+) -> list[dict[str, Any]]:
+    """Search organization members in the shared realm and return normalized member representations."""
+    if not organization_id or not str(organization_id).strip():
+        raise ValueError("organization_id is required")
+
+    organization_id = str(organization_id).strip()
+    normalized_search = str(search).strip() if isinstance(search, str) else ""
+    token = admin_token or get_master_admin_token()
+    params: dict[str, Any] = {"max": max_results}
+    if normalized_search:
+        params["search"] = normalized_search
+        params["exact"] = "true" if exact else "false"
+
+    r = requests.get(
+        _shared_realm_organizations_url(organization_id, "members"),
+        params=params,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    r.raise_for_status()
+
+    members = r.json()
+    if not isinstance(members, list):
+        return []
+
+    return [member for member in members if isinstance(member, dict)]
+
+
+def add_organization_member(
+    organization_id: str,
+    user_id: str,
+    admin_token: str | None = None,
+) -> None:
+    """Ensure one shared-realm user is a member of one organization."""
+    if not organization_id or not str(organization_id).strip():
+        raise ValueError("organization_id is required")
+    if not user_id or not str(user_id).strip():
+        raise ValueError("user_id is required")
+
+    organization_id = str(organization_id).strip()
+    user_id = str(user_id).strip()
+    token = admin_token or get_master_admin_token()
+
+    response = requests.post(
+        _shared_realm_organizations_url(organization_id, "members"),
+        json=user_id,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    if response.status_code == 409:
+        logger.info(
+            "User %s is already a member of organization %s; ignoring conflict.",
+            user_id,
+            organization_id,
+        )
+        return
+    response.raise_for_status()
+
+
+def list_organization_groups(
+    organization_id: str,
+    admin_token: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return the top-level organization groups for one shared-realm organization."""
+    if not organization_id or not str(organization_id).strip():
+        raise ValueError("organization_id is required")
+
+    organization_id = str(organization_id).strip()
+    token = admin_token or get_master_admin_token()
+
+    response = requests.get(
+        _shared_realm_organization_groups_url(organization_id),
+        params={
+            "briefRepresentation": "true",
+            "populateHierarchy": "false",
+            "subGroupsCount": "false",
+            "max": 100,
+        },
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    response.raise_for_status()
+
+    groups = response.json()
+    if not isinstance(groups, list):
+        return []
+
+    return [group for group in groups if isinstance(group, dict)]
+
+
+def get_organization_member_groups(
+    organization_id: str,
+    member_id: str,
+    admin_token: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return the organization-group memberships for one member."""
+    if not organization_id or not str(organization_id).strip():
+        raise ValueError("organization_id is required")
+    if not member_id or not str(member_id).strip():
+        raise ValueError("member_id is required")
+
+    organization_id = str(organization_id).strip()
+    member_id = str(member_id).strip()
+    token = admin_token or get_master_admin_token()
+
+    r = requests.get(
+        _shared_realm_organizations_url(organization_id, "members", quote(member_id, safe=""), "groups"),
+        params={
+            "briefRepresentation": "true",
+            "max": 100,
+        },
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    r.raise_for_status()
+
+    groups = r.json()
+    if not isinstance(groups, list):
+        return []
+
+    return [group for group in groups if isinstance(group, dict)]
+
+
+def list_organization_group_members(
+    organization_id: str,
+    group_id: str,
+    admin_token: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return the members assigned to one top-level organization group."""
+    if not organization_id or not str(organization_id).strip():
+        raise ValueError("organization_id is required")
+    if not group_id or not str(group_id).strip():
+        raise ValueError("group_id is required")
+
+    organization_id = str(organization_id).strip()
+    group_id = str(group_id).strip()
+    token = admin_token or get_master_admin_token()
+
+    response = requests.get(
+        _shared_realm_organization_groups_url(
+            organization_id,
+            quote(group_id, safe=""),
+            "members",
+        ),
+        params={
+            "briefRepresentation": "true",
+            "max": 100,
+        },
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    response.raise_for_status()
+
+    members = response.json()
+    if not isinstance(members, list):
+        return []
+
+    return [member for member in members if isinstance(member, dict)]
+
+
+def get_organization_group_by_name(
+    organization_id: str,
+    group_name: str,
+    admin_token: str | None = None,
+) -> dict[str, Any] | None:
+    """Return the exact top-level organization group representation by name."""
+    if not organization_id or not str(organization_id).strip():
+        raise ValueError("organization_id is required")
+    if not group_name or not str(group_name).strip():
+        raise ValueError("group_name is required")
+
+    organization_id = str(organization_id).strip()
+    normalized_group_name = str(group_name).strip()
+    token = admin_token or get_master_admin_token()
+
+    r = requests.get(
+        _shared_realm_organization_groups_url(organization_id),
+        params={
+            "search": normalized_group_name,
+            "exact": "true",
+            "briefRepresentation": "true",
+            "populateHierarchy": "false",
+            "subGroupsCount": "false",
+            "max": 100,
+        },
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    r.raise_for_status()
+
+    groups = r.json()
+    if not isinstance(groups, list):
+        return None
+
+    for group in groups:
+        if not isinstance(group, dict):
+            continue
+        if group.get("name") != normalized_group_name:
+            continue
+        group_path = group.get("path")
+        if group_path in {None, normalized_group_name, f"/{normalized_group_name}"}:
+            return group
+    return None
+
+
+def get_organization_group_by_id(
+    organization_id: str,
+    group_id: str,
+    admin_token: str | None = None,
+) -> dict[str, Any] | None:
+    """Return one top-level organization group representation by id."""
+    if not organization_id or not str(organization_id).strip():
+        raise ValueError("organization_id is required")
+    if not group_id or not str(group_id).strip():
+        raise ValueError("group_id is required")
+
+    organization_id = str(organization_id).strip()
+    group_id = str(group_id).strip()
+    token = admin_token or get_master_admin_token()
+
+    response = requests.get(
+        _shared_realm_organization_groups_url(organization_id, quote(group_id, safe="")),
+        params={"subGroupsCount": "false"},
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    if response.status_code == 404:
+        return None
+    response.raise_for_status()
+
+    organization_group = response.json()
+    return organization_group if isinstance(organization_group, dict) else None
+
+
+def create_organization_group(
+    organization_id: str,
+    group_name: str,
+    admin_token: str | None = None,
+) -> dict[str, Any]:
+    """Create a top-level organization group and return its representation."""
+    if not organization_id or not str(organization_id).strip():
+        raise ValueError("organization_id is required")
+    if not group_name or not str(group_name).strip():
+        raise ValueError("group_name is required")
+
+    organization_id = str(organization_id).strip()
+    normalized_group_name = str(group_name).strip()
+    token = admin_token or get_master_admin_token()
+
+    r = requests.post(
+        _shared_realm_organization_groups_url(organization_id),
+        json={"name": normalized_group_name},
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    r.raise_for_status()
+
+    location_headers = getattr(r, "headers", None) or {}
+    location = location_headers.get("Location")
+    organization_group: dict[str, Any] | None = None
+    if location and isinstance(location, str):
+        group_id = location.strip().rstrip("/").split("/")[-1]
+        organization_group = get_organization_group_by_id(
+            organization_id,
+            group_id,
+            admin_token=token,
+        )
+    if organization_group is None:
+        organization_group = get_organization_group_by_name(
+            organization_id,
+            normalized_group_name,
+            admin_token=token,
+        )
+    if organization_group is None:
+        raise ValueError(
+            f"Keycloak created organization group '{normalized_group_name}' in organization "
+            f"'{organization_id}' but it could not be fetched afterward."
+        )
+    return organization_group
+
+
+def _organization_group_attribute_values(
+    attributes: Mapping[str, Any] | None,
+    attribute_name: str,
+) -> tuple[str, ...]:
+    if not isinstance(attributes, Mapping):
+        return ()
+
+    raw_value = attributes.get(attribute_name)
+    if isinstance(raw_value, str):
+        raw_values = [raw_value]
+    elif isinstance(raw_value, list):
+        raw_values = [value for value in raw_value if isinstance(value, str)]
+    else:
+        return ()
+
+    normalized_values: list[str] = []
+    seen_values: set[str] = set()
+    for raw_item in raw_values:
+        for candidate_value in raw_item.split(","):
+            normalized_value = candidate_value.strip()
+            if not normalized_value or normalized_value in seen_values:
+                continue
+            seen_values.add(normalized_value)
+            normalized_values.append(normalized_value)
+    return tuple(normalized_values)
+
+
+def _organization_group_attribute_enabled(
+    attributes: Mapping[str, Any] | None,
+    attribute_name: str,
+) -> bool:
+    normalized_values = {
+        value.casefold() for value in _organization_group_attribute_values(attributes, attribute_name)
+    }
+    return any(value in {"1", "true", "yes", "on"} for value in normalized_values)
+
+
+def organization_group_role_names(group: Mapping[str, Any] | None) -> list[str]:
+    """Return M8Flow tenant roles configured for one organization group."""
+    if not isinstance(group, Mapping):
+        return []
+
+    group_name = group.get("name")
+    normalized_group_name = str(group_name or "").strip()
+    attributes = group.get("attributes")
+    if _organization_group_attribute_enabled(
+        attributes if isinstance(attributes, Mapping) else None,
+        ORGANIZATION_GROUP_ROLE_MAPPING_CONFIGURED_ATTRIBUTE,
+    ):
+        return list(
+            normalize_tenant_role_names(
+                _organization_group_attribute_values(
+                    attributes if isinstance(attributes, Mapping) else None,
+                    ORGANIZATION_GROUP_ROLE_NAMES_ATTRIBUTE,
+                )
+            )
+        )
+
+    return list(tenant_roles_for_organization_group(normalized_group_name))
+
+
+def set_organization_group_role_names(
+    organization_id: str,
+    group_id: str,
+    role_names: list[str] | tuple[str, ...],
+    admin_token: str | None = None,
+) -> dict[str, Any]:
+    """Persist M8Flow tenant roles on one organization group via supported group attributes."""
+    if not organization_id or not str(organization_id).strip():
+        raise ValueError("organization_id is required")
+    if not group_id or not str(group_id).strip():
+        raise ValueError("group_id is required")
+
+    organization_id = str(organization_id).strip()
+    group_id = str(group_id).strip()
+    normalized_role_names = list(normalize_tenant_role_names(role_names))
+    token = admin_token or get_master_admin_token()
+
+    organization_group = get_organization_group_by_id(
+        organization_id,
+        group_id,
+        admin_token=token,
+    )
+    if not isinstance(organization_group, dict):
+        raise ValueError(
+            f"Organization group '{group_id}' could not be found in organization '{organization_id}'."
+        )
+
+    group_name = organization_group.get("name")
+    if not isinstance(group_name, str) or not group_name.strip():
+        raise ValueError(
+            f"Organization group '{group_id}' in organization '{organization_id}' does not have a valid name."
+        )
+
+    existing_attributes = organization_group.get("attributes")
+    updated_attributes = copy.deepcopy(existing_attributes) if isinstance(existing_attributes, dict) else {}
+    updated_attributes[ORGANIZATION_GROUP_ROLE_MAPPING_CONFIGURED_ATTRIBUTE] = ["true"]
+    if normalized_role_names:
+        updated_attributes[ORGANIZATION_GROUP_ROLE_NAMES_ATTRIBUTE] = normalized_role_names
+    else:
+        updated_attributes.pop(ORGANIZATION_GROUP_ROLE_NAMES_ATTRIBUTE, None)
+
+    payload: dict[str, Any] = {
+        "name": group_name.strip(),
+        "attributes": updated_attributes,
+    }
+    description = organization_group.get("description")
+    if isinstance(description, str):
+        payload["description"] = description
+
+    response = requests.put(
+        _shared_realm_organization_groups_url(organization_id, quote(group_id, safe="")),
+        json=payload,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    response.raise_for_status()
+
+    refreshed_group = get_organization_group_by_id(
+        organization_id,
+        group_id,
+        admin_token=token,
+    )
+    if isinstance(refreshed_group, dict):
+        return refreshed_group
+    payload["id"] = group_id
+    return payload
+
+
+def get_group_realm_role_mappings(
+    group_id: str,
+    admin_token: str | None = None,
+    *,
+    organization_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return the realm roles granted by one shared-realm group."""
+    if not group_id or not str(group_id).strip():
+        raise ValueError("group_id is required")
+
+    group_id = str(group_id).strip()
+    token = admin_token or get_master_admin_token()
+    role_mappings_url = (
+        _shared_realm_organization_group_role_mappings_url(str(organization_id).strip(), group_id, "composite")
+        if organization_id and str(organization_id).strip()
+        else f"{keycloak_url()}/admin/realms/{shared_realm_name()}/groups/{quote(group_id, safe='')}/role-mappings/realm/composite"
+    )
+
+    response = requests.get(
+        role_mappings_url,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    response.raise_for_status()
+
+    role_mappings = response.json()
+    if not isinstance(role_mappings, list):
+        return []
+
+    return [role_mapping for role_mapping in role_mappings if isinstance(role_mapping, dict)]
+
+
+def get_realm_role_by_name(
+    realm_name: str,
+    role_name: str,
+    admin_token: str | None = None,
+) -> dict[str, Any] | None:
+    """Return one realm-role representation by exact name."""
+    if not realm_name or not str(realm_name).strip():
+        raise ValueError("realm_name is required")
+    if not role_name or not str(role_name).strip():
+        raise ValueError("role_name is required")
+
+    normalized_realm_name = str(realm_name).strip()
+    normalized_role_name = str(role_name).strip()
+    token = admin_token or get_master_admin_token()
+
+    response = requests.get(
+        f"{keycloak_url()}/admin/realms/{quote(normalized_realm_name, safe='')}/roles/{quote(normalized_role_name, safe='')}",
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    if response.status_code == 404:
+        return None
+    response.raise_for_status()
+
+    role = response.json()
+    return role if isinstance(role, dict) else None
+
+
+def add_group_realm_role_mapping(
+    group_id: str,
+    role_name: str,
+    admin_token: str | None = None,
+    *,
+    organization_id: str | None = None,
+) -> None:
+    """Grant one shared-realm role to one shared-realm group."""
+    if not group_id or not str(group_id).strip():
+        raise ValueError("group_id is required")
+    if not role_name or not str(role_name).strip():
+        raise ValueError("role_name is required")
+
+    normalized_group_id = str(group_id).strip()
+    normalized_role_name = str(role_name).strip()
+    token = admin_token or get_master_admin_token()
+
+    existing_role_names = {
+        str(role_mapping.get("name")).strip()
+        for role_mapping in get_group_realm_role_mappings(
+            normalized_group_id,
+            admin_token=token,
+            organization_id=organization_id,
+        )
+        if isinstance(role_mapping.get("name"), str) and str(role_mapping.get("name")).strip()
+    }
+    if normalized_role_name in existing_role_names:
+        return
+
+    role = get_realm_role_by_name(shared_realm_name(), normalized_role_name, admin_token=token)
+    if not isinstance(role, dict):
+        raise ValueError(
+            f"Realm role '{normalized_role_name}' does not exist in shared realm '{shared_realm_name()}'."
+        )
+
+    role_mappings_url = (
+        _shared_realm_organization_group_role_mappings_url(
+            str(organization_id).strip(),
+            normalized_group_id,
+        )
+        if organization_id and str(organization_id).strip()
+        else f"{keycloak_url()}/admin/realms/{shared_realm_name()}/groups/{quote(normalized_group_id, safe='')}/role-mappings/realm"
+    )
+
+    response = requests.post(
+        role_mappings_url,
+        json=[role],
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    response.raise_for_status()
+
+
+def remove_group_realm_role_mapping(
+    group_id: str,
+    role_name: str,
+    admin_token: str | None = None,
+    *,
+    organization_id: str | None = None,
+) -> None:
+    """Remove one shared-realm role from one shared-realm group when present."""
+    if not group_id or not str(group_id).strip():
+        raise ValueError("group_id is required")
+    if not role_name or not str(role_name).strip():
+        raise ValueError("role_name is required")
+
+    normalized_group_id = str(group_id).strip()
+    normalized_role_name = str(role_name).strip()
+    token = admin_token or get_master_admin_token()
+
+    existing_role = next(
+        (
+            role_mapping
+            for role_mapping in get_group_realm_role_mappings(
+                normalized_group_id,
+                admin_token=token,
+                organization_id=organization_id,
+            )
+            if isinstance(role_mapping, dict)
+            and isinstance(role_mapping.get("name"), str)
+            and str(role_mapping.get("name")).strip() == normalized_role_name
+        ),
+        None,
+    )
+    if not isinstance(existing_role, dict):
+        return
+
+    role_mappings_url = (
+        _shared_realm_organization_group_role_mappings_url(
+            str(organization_id).strip(),
+            normalized_group_id,
+        )
+        if organization_id and str(organization_id).strip()
+        else f"{keycloak_url()}/admin/realms/{shared_realm_name()}/groups/{quote(normalized_group_id, safe='')}/role-mappings/realm"
+    )
+
+    response = requests.delete(
+        role_mappings_url,
+        json=[existing_role],
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    if response.status_code != 404:
+        response.raise_for_status()
+
+
+def ensure_organization_group_role_mappings(
+    organization_id: str,
+    *,
+    admin_token: str | None = None,
+) -> None:
+    """Seed default M8Flow tenant-role mappings onto organization groups when unset."""
+    if not organization_id or not str(organization_id).strip():
+        raise ValueError("organization_id is required")
+
+    token = admin_token or get_master_admin_token()
+    for group in list_organization_groups(str(organization_id).strip()):
+        group_id = group.get("id")
+        group_name = group.get("name")
+        if not isinstance(group_id, str) or not group_id.strip():
+            continue
+        if not isinstance(group_name, str) or not group_name.strip():
+            continue
+
+        existing_group = get_organization_group_by_id(
+            str(organization_id).strip(),
+            group_id.strip(),
+            admin_token=token,
+        ) or group
+
+        if _organization_group_attribute_enabled(
+            existing_group.get("attributes") if isinstance(existing_group, Mapping) else None,
+            ORGANIZATION_GROUP_ROLE_MAPPING_CONFIGURED_ATTRIBUTE,
+        ):
+            continue
+
+        default_role_names = normalize_tenant_role_names(
+            tenant_roles_for_organization_group(group_name.strip())
+        )
+        if not default_role_names:
+            continue
+
+        set_organization_group_role_names(
+            str(organization_id).strip(),
+            group_id.strip(),
+            list(default_role_names),
+            admin_token=token,
+        )
+
+
+def ensure_organization_role_groups(
+    organization_id: str,
+    *,
+    group_names: tuple[str, ...] | None = None,
+    admin_token: str | None = None,
+) -> list[dict[str, Any]]:
+    """Ensure the baseline organization workflow groups exist."""
+    if not organization_id or not str(organization_id).strip():
+        raise ValueError("organization_id is required")
+
+    organization_id = str(organization_id).strip()
+    token = admin_token or get_master_admin_token()
+    ensured_groups: list[dict[str, Any]] = []
+    effective_group_names = group_names or default_organizational_group_names()
+    for group_name in effective_group_names:
+        if not group_name or not str(group_name).strip():
+            continue
+        normalized_group_name = str(group_name).strip()
+        organization_group = get_organization_group_by_name(
+            organization_id,
+            normalized_group_name,
+            admin_token=token,
+        )
+        if organization_group is None:
+            logger.info(
+                "Creating organization group '%s' in organization %s within shared realm %s",
+                normalized_group_name,
+                organization_id,
+                shared_realm_name(),
+            )
+            organization_group = create_organization_group(
+                organization_id,
+                normalized_group_name,
+                admin_token=token,
+            )
+        ensured_groups.append(organization_group)
+    ensure_organization_group_role_mappings(organization_id, admin_token=token)
+    return ensured_groups
+
+
+def add_organization_group_member(
+    organization_id: str,
+    group_name: str,
+    member_id: str,
+    admin_token: str | None = None,
+) -> None:
+    """Ensure one organization member belongs to one top-level organization group."""
+    if not organization_id or not str(organization_id).strip():
+        raise ValueError("organization_id is required")
+    if not group_name or not str(group_name).strip():
+        raise ValueError("group_name is required")
+    if not member_id or not str(member_id).strip():
+        raise ValueError("member_id is required")
+
+    organization_id = str(organization_id).strip()
+    normalized_group_name = str(group_name).strip()
+    member_id = str(member_id).strip()
+    token = admin_token or get_master_admin_token()
+
+    organization_group = get_organization_group_by_name(
+        organization_id,
+        normalized_group_name,
+        admin_token=token,
+    )
+    if organization_group is None:
+        organization_group = create_organization_group(
+            organization_id,
+            normalized_group_name,
+            admin_token=token,
+        )
+
+    group_id = organization_group.get("id")
+    if not isinstance(group_id, str) or not group_id.strip():
+        raise ValueError(
+            f"Organization group '{normalized_group_name}' in organization '{organization_id}' has no id."
+        )
+
+    response = requests.put(
+        _shared_realm_organization_groups_url(
+            organization_id,
+            quote(group_id.strip(), safe=""),
+            "members",
+            quote(member_id, safe=""),
+        ),
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    if response.status_code == 409:
+        logger.info(
+            "Organization member %s is already assigned to organization group %s in organization %s; ignoring conflict.",
+            member_id,
+            normalized_group_name,
+            organization_id,
+        )
+        return
+    response.raise_for_status()
+
+
+def remove_organization_group_member(
+    organization_id: str,
+    group_name: str,
+    member_id: str,
+    admin_token: str | None = None,
+) -> None:
+    """Remove one organization member from one top-level organization group when present."""
+    if not organization_id or not str(organization_id).strip():
+        raise ValueError("organization_id is required")
+    if not group_name or not str(group_name).strip():
+        raise ValueError("group_name is required")
+    if not member_id or not str(member_id).strip():
+        raise ValueError("member_id is required")
+
+    organization_id = str(organization_id).strip()
+    normalized_group_name = str(group_name).strip()
+    member_id = str(member_id).strip()
+    token = admin_token or get_master_admin_token()
+
+    organization_group = get_organization_group_by_name(
+        organization_id,
+        normalized_group_name,
+        admin_token=token,
+    )
+    if organization_group is None:
+        return
+
+    group_id = organization_group.get("id")
+    if not isinstance(group_id, str) or not group_id.strip():
+        return
+
+    response = requests.delete(
+        _shared_realm_organization_groups_url(
+            organization_id,
+            quote(group_id.strip(), safe=""),
+            "members",
+            quote(member_id, safe=""),
+        ),
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    if response.status_code != 404:
+        response.raise_for_status()
+
+
+def create_organization(
+    alias: str,
+    name: str | None = None,
+    *,
+    enabled: bool = True,
+    admin_token: str | None = None,
+) -> dict[str, Any]:
+    """Create an organization in the shared realm and return its representation."""
+    if not alias or not str(alias).strip():
+        raise ValueError("alias is required")
+
+    alias = str(alias).strip()
+    organization_name = str(name).strip() if name and str(name).strip() else alias
+    token = admin_token or get_master_admin_token()
+
+    r = requests.post(
+        _shared_realm_organizations_url(),
+        json={"alias": alias, "name": organization_name, "enabled": enabled},
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    r.raise_for_status()
+
+    location_headers = getattr(r, "headers", None) or {}
+    location = location_headers.get("Location")
+    organization: dict[str, Any] | None = None
+    if location and isinstance(location, str):
+        organization_id = location.strip().rstrip("/").split("/")[-1]
+        organization = get_organization_by_id(organization_id, admin_token=token)
+    if organization is None:
+        organization = get_organization_by_alias(alias, admin_token=token)
+    if organization is None:
+        raise ValueError(
+            f"Keycloak created organization '{alias}' but it could not be fetched afterward."
+        )
+    ensure_organization_role_groups(organization["id"], admin_token=token)
+    return organization
+
+
+def update_organization(
+    organization_id: str,
+    *,
+    alias: str,
+    name: str,
+    enabled: bool = True,
+    admin_token: str | None = None,
+) -> None:
+    """Update an organization in the shared realm."""
+    if not organization_id or not str(organization_id).strip():
+        raise ValueError("organization_id is required")
+    if not alias or not str(alias).strip():
+        raise ValueError("alias is required")
+    if not name or not str(name).strip():
+        raise ValueError("name is required")
+
+    organization_id = str(organization_id).strip()
+    alias = str(alias).strip()
+    name = str(name).strip()
+    token = admin_token or get_master_admin_token()
+
+    r = requests.put(
+        _shared_realm_organizations_url(organization_id),
+        json={
+            "id": organization_id,
+            "alias": alias,
+            "name": name,
+            "enabled": enabled,
+        },
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    r.raise_for_status()
+    logger.info(
+        "Updated Keycloak organization %s in shared realm %s: alias=%s name=%s",
+        organization_id,
+        shared_realm_name(),
+        alias,
+        name,
+    )
+
+
+def delete_organization(
+    organization_id: str,
+    admin_token: str | None = None,
+) -> None:
+    """Delete an organization in the shared realm using the provided admin token or the master admin token."""
+    if not organization_id or not str(organization_id).strip():
+        raise ValueError("organization_id is required")
+
+    organization_id = str(organization_id).strip()
+    token = admin_token or get_master_admin_token()
+
+    r = requests.delete(
+        _shared_realm_organizations_url(organization_id),
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=30,
+    )
+    if r.status_code == 404:
+        logger.info("Keycloak organization %s already deleted or not found.", organization_id)
+        return
+    r.raise_for_status()
+    logger.info(
+        "Deleted Keycloak organization %s from shared realm %s",
+        organization_id,
+        shared_realm_name(),
+    )
+
+
 def _list_client_protocol_mappers(
     *,
     base_url: str,
@@ -642,7 +1794,7 @@ def _reconcile_backend_client_claim_mappers(
     client_internal_id: str,
     headers: dict[str, str],
 ) -> None:
-    """Remove legacy roles-as-groups mappers and ensure the separate roles claim mapper exists."""
+    """Remove legacy root-group mappers and ensure the separate roles claim mapper exists."""
     try:
         mappers = _list_client_protocol_mappers(
             base_url=base_url,
@@ -659,12 +1811,12 @@ def _reconcile_backend_client_claim_mappers(
         )
         return
 
-    legacy_mapper_ids = [
+    conflicting_group_mapper_ids = [
         mapper.get("id")
         for mapper in mappers
-        if isinstance(mapper, dict) and _is_legacy_roles_as_groups_mapper(mapper)
+        if isinstance(mapper, dict) and (_is_legacy_roles_as_groups_mapper(mapper) or _is_groups_claim_mapper(mapper))
     ]
-    for mapper_id in legacy_mapper_ids:
+    for mapper_id in conflicting_group_mapper_ids:
         if not isinstance(mapper_id, str) or not mapper_id.strip():
             continue
         delete_url = (
@@ -674,14 +1826,14 @@ def _reconcile_backend_client_claim_mappers(
             delete_response = requests.delete(delete_url, headers=headers, timeout=30)
             delete_response.raise_for_status()
             logger.info(
-                "ensure_backend_redirect_uri_in_keycloak_client: removed legacy groups<-roles mapper realm=%s client=%s mapper_id=%s",
+                "ensure_backend_redirect_uri_in_keycloak_client: removed client groups mapper realm=%s client=%s mapper_id=%s",
                 realm_id,
                 client_internal_id,
                 mapper_id,
             )
         except Exception as exc:
             logger.warning(
-                "ensure_backend_redirect_uri_in_keycloak_client: delete legacy mapper realm=%s client=%s mapper_id=%s error=%s",
+                "ensure_backend_redirect_uri_in_keycloak_client: delete client groups mapper realm=%s client=%s mapper_id=%s error=%s",
                 realm_id,
                 client_internal_id,
                 mapper_id,
@@ -747,9 +1899,6 @@ def _reconcile_groups_claim_mapper_on_resource(
         )
         return
 
-    if any(isinstance(mapper, dict) and _is_normalized_groups_claim_mapper(mapper) for mapper in mappers):
-        return
-
     conflicting_mapper_ids = [
         mapper.get("id")
         for mapper in mappers
@@ -776,28 +1925,6 @@ def _reconcile_groups_claim_mapper_on_resource(
                 mapper_id,
                 exc,
             )
-
-    create_url = f"{base_url}/admin/realms/{realm_id}/{resource_path}/protocol-mappers/models"
-    try:
-        create_response = requests.post(
-            create_url,
-            json=_groups_claim_mapper_payload(),
-            headers=headers,
-            timeout=30,
-        )
-        create_response.raise_for_status()
-        logger.info(
-            "ensure_backend_redirect_uri_in_keycloak_client: created groups mapper realm=%s resource=%s",
-            realm_id,
-            resource_path,
-        )
-    except Exception as exc:
-        logger.warning(
-            "ensure_backend_redirect_uri_in_keycloak_client: create groups mapper realm=%s resource=%s error=%s",
-            realm_id,
-            resource_path,
-            exc,
-        )
 
 
 def _reconcile_profile_scope_groups_claim_mapper(

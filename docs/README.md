@@ -8,6 +8,7 @@ This folder contains project documentation for setup, architecture, and developm
 - [CI validations](./ci-validations.md)
 - [Running locally (without Docker for backend/frontend)](#running-locally-without-docker-for-backendfrontend)
 - [Access the application with multitenant mode off](#access-the-application-with-multitenant-mode-off)
+- [Shared-realm organization group role mapping](shared-realm-organization-group-role-mapping.md)
 - [Sample Templates](#sample-templates)
 - [Integration Services](#integration-services)
 

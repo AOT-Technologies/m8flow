@@ -1,5 +1,4 @@
 import os
-
 from flask import Flask
 from flask import g
 
@@ -36,7 +35,6 @@ class FakeConnection:
 
 
 def test_postgres_sets_tenant_context_from_request() -> None:
-    os.environ.pop("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", None)
     app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     connection = FakeConnection("postgresql")
 
@@ -49,7 +47,6 @@ def test_postgres_sets_tenant_context_from_request() -> None:
 
 
 def test_postgres_sets_tenant_context_from_background() -> None:
-    os.environ.pop("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", None)
     connection = FakeConnection("postgresql")
     token = set_context_tenant_id("tenant-b")
     try:
@@ -61,30 +58,16 @@ def test_postgres_sets_tenant_context_from_background() -> None:
     assert connection.close_calls == 1
 
 
-def test_postgres_missing_tenant_defaults_to_default_when_allowed(monkeypatch) -> None:
-    monkeypatch.setenv("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", "true")
+def test_postgres_missing_tenant_does_nothing() -> None:
     connection = FakeConnection("postgresql")
 
     tenant_scoping_patch._set_postgres_tenant_context(None, None, connection)
 
-    assert connection.calls == [("SET LOCAL app.current_tenant = %s", ("default",))]
-    assert connection.close_calls == 1
-
-
-def test_postgres_missing_tenant_uses_default() -> None:
-    """When no request/context tenant (e.g. background job), default tenant is used."""
-    os.environ.pop("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", None)
-    default_id = os.environ.get("M8FLOW_DEFAULT_TENANT_ID", "default")
-    connection = FakeConnection("postgresql")
-
-    tenant_scoping_patch._set_postgres_tenant_context(None, None, connection)
-
-    assert connection.calls == [("SET LOCAL app.current_tenant = %s", (default_id,))]
-    assert connection.close_calls == 1
+    assert connection.calls == []
+    assert connection.close_calls == 0
 
 
 def test_non_postgres_does_nothing() -> None:
-    os.environ.pop("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", None)
     connection = FakeConnection("sqlite")
 
     tenant_scoping_patch._set_postgres_tenant_context(None, None, connection)

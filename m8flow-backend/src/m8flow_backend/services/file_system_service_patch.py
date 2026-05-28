@@ -1,52 +1,115 @@
 # m8flow-backend/src/m8flow_backend/services/file_system_service_patch.py
 from __future__ import annotations
+
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict
+
 from flask import current_app, g, has_request_context
-from m8flow_backend.tenancy import (
-    DEFAULT_TENANT_ID,
-    allow_missing_tenant_context,
-    get_context_tenant_id,
-    is_tenant_context_exempt_request,
-)
+from m8flow_backend.services.tenant_identity_helpers import current_tenant_id_or_none
 
 _ORIGINALS: Dict[str, Any] = {}
 _PATCHED = False
 
+# Reserved subdirectory used as the BPMN root for global requests (master-realm
+# super-admins, login_return, public/exempt requests).  Cannot collide with a
+# real tenant id because the leading and trailing double-underscore characters
+# are not allowed in tenant ids.  When the directory does not exist on disk the
+# downstream filesystem walker just returns no process models, which is the
+# correct behavior for global admins who do not work with tenant content.
+_GLOBAL_BPMN_SUBDIR = "__m8flow_global__"
+
+
+def _is_global_request() -> bool:
+    """Return True when the current request is intentionally tenant-less.
+
+    A request is treated as global when:
+      - the tenant resolver explicitly marked it via ``g._m8flow_global_request``
+        (master-realm tokens, /login_return, tenant-context-exempt paths), OR
+      - the bearer token in the request was issued by the configured master
+        realm.  This second check is a belt-and-suspenders fallback for the
+        case where the resolver did not run or did not see the decoded token
+        (e.g. when ``omni_auth`` was registered as a Flask ``before_request``
+        before our patches replaced its module attribute, so the original
+        unpatched ``omni_auth`` runs and never sets ``g._m8flow_decoded_token``).
+    """
+    if not has_request_context():
+        return False
+    if bool(getattr(g, "_m8flow_global_request", False)):
+        return True
+    if bool(getattr(g, "_m8flow_super_admin_request", False)):
+        return True
+    if bool(getattr(g, "_m8flow_tenant_context_exempt_request", False)):
+        return True
+
+    # Fallback: detect master-realm tokens directly. Importing here avoids a
+    # circular import at module load.
+    try:
+        from m8flow_backend.config import master_realm_name
+        from m8flow_backend.services.tenant_identity_helpers import (
+            authentication_identifier_from_payload,
+            extract_realm_from_issuer,
+        )
+    except Exception:
+        return False
+
+    decoded_token = getattr(g, "_m8flow_decoded_token", None)
+    if not isinstance(decoded_token, dict):
+        # Try to decode the bearer token without verification.
+        try:
+            from flask import request
+
+            import jwt
+
+            token: str | None = getattr(g, "token", None) if isinstance(getattr(g, "token", None), str) else None
+            if not token:
+                auth_header = (request.headers.get("Authorization") or "").strip()
+                if auth_header.startswith("Bearer ") and len(auth_header) > 7:
+                    token = auth_header[7:].strip() or None
+            if not token:
+                token = request.cookies.get("access_token")
+            if token:
+                payload = jwt.decode(
+                    token,
+                    options={"verify_signature": False, "verify_exp": False},
+                )
+                if isinstance(payload, dict):
+                    decoded_token = payload
+                    g._m8flow_decoded_token = payload
+        except Exception:
+            decoded_token = None
+
+    if not isinstance(decoded_token, dict):
+        return False
+
+    master_realm = master_realm_name()
+    auth_identifier = authentication_identifier_from_payload(decoded_token)
+    issuer_realm = extract_realm_from_issuer(decoded_token.get("iss"))
+    return auth_identifier == master_realm or issuer_realm == master_realm
+
+
 def _get_tenant_id() -> str:
-    """Get the current tenant id from context."""
-    if is_tenant_context_exempt_request():
-        tid: Optional[str] = getattr(g, "m8flow_tenant_id", None)
-        if tid:
-            return tid
-        if allow_missing_tenant_context():
-            return DEFAULT_TENANT_ID
-        raise RuntimeError("Missing tenant id in request context.")
+    """Get the current concrete tenant id from request or background context."""
+    tenant_id = current_tenant_id_or_none()
+    if tenant_id:
+        return tenant_id
 
-    # 1) HTTP request path: must be set by middleware (strict)
     if has_request_context():
-        tid: Optional[str] = getattr(g, "m8flow_tenant_id", None)
-        if tid:
-            return tid
-        if allow_missing_tenant_context():
-            return DEFAULT_TENANT_ID
-        raise RuntimeError("Missing tenant id in request context.")
+        raise RuntimeError("Missing concrete tenant id in request context.")
 
-    # 2) Non-request path (Celery/CLI): use ContextVar if present
-    tid = get_context_tenant_id()
-    if tid:
-        return tid
-
-    if allow_missing_tenant_context():
-        return DEFAULT_TENANT_ID
-
-    raise RuntimeError("Missing tenant id in non-request context.")
-
-
+    raise RuntimeError("Missing concrete tenant id in non-request context.")
 
 def _tenant_bpmn_root(base_dir: str) -> str:
     """Get tenant-specific BPMN root directory."""
-    tenant_id = _get_tenant_id()
+    # If request processing already locked us to a concrete tenant, prefer that
+    # tenant root even for otherwise global/exempt requests. This preserves the
+    # super-admin process-model flow that first discovers the owning tenant and
+    # then delegates into the upstream filesystem-backed services.
+    tenant_id = current_tenant_id_or_none()
+    if not tenant_id and _is_global_request():
+        normalized = os.path.abspath(os.path.normpath(base_dir))
+        return os.path.join(normalized, _GLOBAL_BPMN_SUBDIR)
+    if not tenant_id:
+        tenant_id = _get_tenant_id()
 
     # keep your safety checks here (the tests expect "Unsafe tenant id")
     if (
@@ -61,8 +124,6 @@ def _tenant_bpmn_root(base_dir: str) -> str:
     if os.path.basename(normalized) == tenant_id:
         return normalized
     return os.path.join(normalized, tenant_id)
-
-
 
 def apply() -> None:
     global _PATCHED
@@ -80,4 +141,3 @@ def apply() -> None:
     FileSystemService.root_path = staticmethod(patched_root_path)  # type: ignore[assignment]
 
     _PATCHED = True
-
