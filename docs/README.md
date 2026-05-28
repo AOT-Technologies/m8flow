@@ -5,6 +5,7 @@ This folder contains project documentation for setup, architecture, and developm
 ## Index
 
 - [Repository structure](#repository-structure)
+- [CI validations](./ci-validations.md)
 - [Running locally (without Docker for backend/frontend)](#running-locally-without-docker-for-backendfrontend)
 - [Access the application with multitenant mode off](#access-the-application-with-multitenant-mode-off)
 - [Sample Templates](#sample-templates)
@@ -169,7 +170,7 @@ The sample templates package includes pre-built workflows and guidance for:
 - automatically loading templates during startup
 - using integration-focused templates such as Salesforce, Slack, SMTP, and PostgreSQL examples
 
-For the full template catalog and setup instructions, refer to [m8flow-backend/sample_templates/README.md](m8flow-backend/sample_templates/README.md).
+For the full template catalog and setup instructions, refer to [`m8flow-backend/sample_templates/README.md`](../m8flow-backend/sample_templates/README.md).
 
 ## Integration Services
 
@@ -177,5 +178,5 @@ m8flow includes supporting services for connector execution and event-driven wor
 
 For service-specific setup, configuration, and usage details, refer to:
 
-- [m8flow-connector-proxy/README.md](m8flow-connector-proxy/README.md) for connector proxy support such as SMTP, Slack, HTTP, and related integrations
-- [m8flow-nats-consumer/README.md](m8flow-nats-consumer/README.md) for NATS-based event consumption and event-driven workflow execution
+- [`m8flow-connector-proxy/README.md`](../m8flow-connector-proxy/README.md) for connector proxy support such as SMTP, Slack, HTTP, and related integrations
+- [`m8flow-nats-consumer/README.md`](../m8flow-nats-consumer/README.md) for NATS-based event consumption and event-driven workflow execution
