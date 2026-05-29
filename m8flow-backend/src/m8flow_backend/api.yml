@@ -505,6 +505,47 @@ paths:
           description: Tenant or organization not found
         "500":
           description: Internal server error
+    post:
+      summary: Create tenant Keycloak group
+      description: Creates a new top-level Keycloak organization group for the selected tenant.
+      operationId: m8flow_backend.routes.tenant_role_controller.create_group
+      tags:
+        - Tenant
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique tenant identifier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+      responses:
+        "201":
+          description: Tenant group created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantGroupCreateResponse"
+        "400":
+          description: Invalid request body
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Forbidden - insufficient permissions
+        "404":
+          description: Tenant or organization not found
+        "409":
+          description: Group already exists
+        "500":
+          description: Internal server error
 
   /tenants/{tenant_id}/groups/{group_name}/members/{username}:
     put:
@@ -614,7 +655,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: [tenant-admin, editor, integrator, reviewer, viewer]
+            enum: [tenant-admin, editor, integrator, reviewer, submitter, viewer]
       responses:
         "200":
           description: Group role assigned successfully
@@ -657,7 +698,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: [tenant-admin, editor, integrator, reviewer, viewer]
+            enum: [tenant-admin, editor, integrator, reviewer, submitter, viewer]
       responses:
         "200":
           description: Group role removed successfully
@@ -1779,6 +1820,14 @@ components:
         member:
           $ref: "#/components/schemas/TenantMember"
 
+    TenantGroupCreateResponse:
+      type: object
+      properties:
+        tenant_id:
+          type: string
+        group:
+          $ref: "#/components/schemas/TenantGroup"
+
     TenantGroupMember:
       type: object
       properties:
@@ -1807,7 +1856,7 @@ components:
           type: array
           items:
             type: string
-            enum: [tenant-admin, editor, integrator, reviewer, viewer]
+            enum: [tenant-admin, editor, integrator, reviewer, submitter, viewer]
         member_count:
           type: integer
         members:

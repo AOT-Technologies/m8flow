@@ -47,6 +47,11 @@ const rememberSelectedTenant = (organization: OrganizationMembership) => {
   localStorage.setItem(M8FLOW_TENANT_STORAGE_KEY, organization.alias);
   localStorage.setItem('m8f_tenant_id', tenantId);
   document.cookie = `m8flow_selected_tenant=${encodeURIComponent(tenantId)}; Path=/`;
+  UserService.rememberTenantDisplayName({
+    id: organization.id,
+    alias: organization.alias,
+    name: organization.name,
+  });
 };
 
 export default function TenantSelectPage() {

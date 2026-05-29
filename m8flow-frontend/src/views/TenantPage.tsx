@@ -34,6 +34,7 @@ import ManageAccountsIcon from "@mui/icons-material/ManageAccounts";
 import { usePermissionFetcher } from "@spiffworkflow-frontend/hooks/PermissionService";
 import { Tenant } from "../services/TenantService";
 import { useTenants } from "../hooks/useTenants";
+import UserService from "../services/UserService";
 import TenantModal from "./TenantModal";
 import TenantRoleDialog from "./TenantRoleDialog";
 import { TenantModalType } from "../enums/TenantModalType";
@@ -125,7 +126,22 @@ export default function TenantPage() {
     setSelectedTenant(null);
   };
 
-  const handleModalSuccess = (message: string) => {
+  const handleModalSuccess = (
+    message: string,
+    tenantUpdates?: Partial<Tenant>,
+  ) => {
+    if (
+      modalType === TenantModalType.EDIT_TENANT
+      && selectedTenant
+      && typeof tenantUpdates?.name === "string"
+      && tenantUpdates.name.trim()
+    ) {
+      UserService.rememberTenantDisplayName({
+        id: selectedTenant.id,
+        alias: selectedTenant.slug,
+        name: tenantUpdates.name.trim(),
+      });
+    }
     setSuccessMessage(message);
     refetch();
   };

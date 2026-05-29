@@ -7,6 +7,7 @@ import TenantGateContext from '../contexts/TenantGateContext';
 const mockUseConfig = vi.fn();
 const mockIsLoggedIn = vi.fn();
 const mockGetOrganizationMemberships = vi.fn();
+const mockRememberTenantDisplayName = vi.fn();
 
 vi.mock('../utils/useConfig', () => ({
   useConfig: () => mockUseConfig(),
@@ -16,6 +17,7 @@ vi.mock('../services/UserService', () => ({
   default: {
     getOrganizationMemberships: () => mockGetOrganizationMemberships(),
     isLoggedIn: () => mockIsLoggedIn(),
+    rememberTenantDisplayName: (...args: unknown[]) => mockRememberTenantDisplayName(...args),
   },
 }));
 

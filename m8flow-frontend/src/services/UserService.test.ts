@@ -120,6 +120,32 @@ describe('UserService.doLogin', () => {
     ]);
   });
 
+  it('applies remembered tenant display names when the organization claim is an alias list', async () => {
+    const UserService = await loadUserService('http://localhost:8001/');
+    UserService.rememberTenantDisplayName({
+      alias: 'tenant-b',
+      name: 'Tenant B Updated',
+    });
+    document.cookie = [
+      'id_token=',
+      [
+        btoa(JSON.stringify({ alg: 'none', typ: 'JWT' })),
+        btoa(
+          JSON.stringify({
+            organization: ['tenant-a', 'tenant-b'],
+          }),
+        ),
+        '',
+      ].join('.'),
+      '; Path=/',
+    ].join('');
+
+    expect(UserService.getOrganizationMemberships()).toEqual([
+      { alias: 'tenant-a', id: null, name: null },
+      { alias: 'tenant-b', id: null, name: 'Tenant B Updated' },
+    ]);
+  });
+
   it('falls back to the stored tenant name when the token is multi-organization', async () => {
     const UserService = await loadUserService('http://localhost:8001/');
     localStorage.setItem('m8flow_tenant', 'tenant-b');
@@ -141,6 +167,39 @@ describe('UserService.doLogin', () => {
     ].join('');
 
     expect(UserService.getTenantName()).toBe('tenant-b');
+  });
+
+  it('prefers a remembered tenant display name over stale token claims', async () => {
+    const UserService = await loadUserService('http://localhost:8001/');
+    document.cookie = [
+      'id_token=',
+      [
+        btoa(JSON.stringify({ alg: 'none', typ: 'JWT' })),
+        btoa(
+          JSON.stringify({
+            m8flow_tenant_id: 'tenant-b-id',
+            m8flow_tenant_alias: 'tenant-b',
+            m8flow_tenant_name: 'Tenant B',
+            organization: {
+              'tenant-b': { id: 'tenant-b-id', name: 'Tenant B' },
+            },
+          }),
+        ),
+        '',
+      ].join('.'),
+      '; Path=/',
+    ].join('');
+
+    UserService.rememberTenantDisplayName({
+      id: 'tenant-b-id',
+      alias: 'tenant-b',
+      name: 'Tenant B Updated',
+    });
+
+    expect(UserService.getTenantName()).toBe('Tenant B Updated');
+    expect(UserService.getOrganizationMemberships()).toEqual([
+      { alias: 'tenant-b', id: 'tenant-b-id', name: 'Tenant B Updated' },
+    ]);
   });
 });
 

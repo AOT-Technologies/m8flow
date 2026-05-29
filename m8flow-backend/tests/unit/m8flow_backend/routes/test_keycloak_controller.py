@@ -1,4 +1,5 @@
 """Unit tests for Keycloak API controller (create_realm, tenant_login, create_user_in_realm)."""
+# ruff: noqa: E402
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -435,6 +436,7 @@ class TestDeleteTenantRealm:
 class TestUpdateTenantName:
     """Tests for update_tenant_name (PUT /tenants/{tenant_id})."""
 
+    @patch("m8flow_backend.routes.keycloak_controller.ensure_request_can_access_tenant")
     @patch("m8flow_backend.routes.keycloak_controller.get_master_admin_token")
     @patch("m8flow_backend.routes.keycloak_controller.AuthorizationService.user_has_permission")
     @patch("m8flow_backend.routes.keycloak_controller.update_organization")
@@ -443,11 +445,13 @@ class TestUpdateTenantName:
         mock_update_organization,
         mock_auth,
         mock_get_token,
+        mock_tenant_access,
         app,
         mock_user,
     ):
         mock_auth.return_value = True
         mock_get_token.return_value = "master-token"
+        mock_tenant_access.return_value = None
         tenant_mock = MagicMock()
         tenant_mock.id = "organization-uuid-123"
         tenant_mock.slug = "tenant-a"
@@ -468,13 +472,42 @@ class TestUpdateTenantName:
             name="Tenant A+",
             admin_token="master-token",
         )
+        mock_tenant_access.assert_called_once_with(
+            "organization-uuid-123",
+            forbidden_message="Not authorized to update another tenant.",
+        )
         assert tenant_mock.name == "Tenant A+"
 
+    @patch("m8flow_backend.routes.keycloak_controller.ensure_request_can_access_tenant")
     @patch("m8flow_backend.routes.keycloak_controller.AuthorizationService.user_has_permission")
-    def test_update_tenant_name_missing_name(self, mock_auth, app, mock_user):
+    def test_update_tenant_name_missing_name(self, mock_auth, mock_tenant_access, app, mock_user):
         mock_auth.return_value = True
+        mock_tenant_access.return_value = None
         with app.test_request_context():
             g.user = mock_user
             result, status = update_tenant_name("organization-uuid-123", {"name": "   "})
         assert status == 400
         assert "name is required" in result["detail"]
+
+    @patch("m8flow_backend.routes.keycloak_controller.ensure_request_can_access_tenant")
+    @patch("m8flow_backend.routes.keycloak_controller.AuthorizationService.user_has_permission")
+    def test_update_tenant_name_rejects_cross_tenant_access(
+        self,
+        mock_auth,
+        mock_tenant_access,
+        app,
+        mock_user,
+    ):
+        mock_auth.return_value = True
+        mock_tenant_access.side_effect = ApiError(
+            error_code="forbidden",
+            message="Not authorized to update another tenant.",
+            status_code=403,
+        )
+
+        with app.test_request_context():
+            g.user = mock_user
+            response = update_tenant_name("organization-uuid-123", {"name": "Tenant A+"})
+
+        assert response.status_code == 403
+        assert response.get_json()["message"] == "Not authorized to update another tenant."

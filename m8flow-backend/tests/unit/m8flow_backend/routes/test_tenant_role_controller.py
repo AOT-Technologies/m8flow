@@ -38,7 +38,18 @@ def _load_tenant_role_controller(monkeypatch):
     monkeypatch.setitem(sys.modules, "spiffworkflow_backend.services.authorization_service", fake_authz_module)
 
     sys.modules.pop("m8flow_backend.routes.tenant_role_controller", None)
-    return import_module("m8flow_backend.routes.tenant_role_controller")
+    tenant_role_controller = import_module("m8flow_backend.routes.tenant_role_controller")
+    monkeypatch.setattr(
+        tenant_role_controller,
+        "require_authorized_user",
+        lambda action, forbidden_message, tenant_id=None: SimpleNamespace(username="super-admin"),
+    )
+    monkeypatch.setattr(
+        tenant_role_controller,
+        "ensure_request_can_access_tenant",
+        lambda tenant_id, forbidden_message: None,
+    )
+    return tenant_role_controller
 
 
 def _mock_user():
@@ -59,6 +70,7 @@ def test_list_tenant_members_returns_service_payload(monkeypatch):
 
     with app.test_request_context("/m8flow/tenants/tenant-it-id/members?search=ed"):
         g.user = _mock_user()
+        g._m8flow_super_admin_request = True
         response = tenant_role_controller.list_tenant_members("tenant-it-id")
 
     assert response.status_code == 200
@@ -80,6 +92,7 @@ def test_list_available_tenant_users_returns_service_payload(monkeypatch):
 
     with app.test_request_context("/m8flow/tenants/tenant-it-id/available-users?search=ed"):
         g.user = _mock_user()
+        g._m8flow_super_admin_request = True
         response = tenant_role_controller.list_available_tenant_users_for_tenant("tenant-it-id")
 
     assert response.status_code == 200
@@ -112,6 +125,7 @@ def test_create_tenant_member_returns_created_member(monkeypatch):
         },
     ):
         g.user = _mock_user()
+        g._m8flow_super_admin_request = True
         response = tenant_role_controller.create_tenant_member("tenant-it-id")
 
     assert response.status_code == 201
@@ -143,6 +157,7 @@ def test_list_tenant_groups_returns_service_payload(monkeypatch):
 
     with app.test_request_context("/m8flow/tenants/tenant-it-id/groups?search=admin"):
         g.user = _mock_user()
+        g._m8flow_super_admin_request = True
         response = tenant_role_controller.list_tenant_groups("tenant-it-id")
 
     assert response.status_code == 200
@@ -173,6 +188,7 @@ def test_assign_group_member_returns_updated_member(monkeypatch):
 
     with app.test_request_context("/m8flow/tenants/tenant-it-id/groups/Approvers/members/reviewer"):
         g.user = _mock_user()
+        g._m8flow_super_admin_request = True
         response = tenant_role_controller.assign_group_member(
             "tenant-it-id",
             "Approvers",
@@ -202,6 +218,7 @@ def test_remove_group_member_returns_updated_member(monkeypatch):
 
     with app.test_request_context("/m8flow/tenants/tenant-it-id/groups/Approvers/members/reviewer"):
         g.user = _mock_user()
+        g._m8flow_super_admin_request = True
         response = tenant_role_controller.remove_group_member(
             "tenant-it-id",
             "Approvers",
@@ -232,6 +249,7 @@ def test_assign_group_role_returns_updated_group(monkeypatch):
 
     with app.test_request_context("/m8flow/tenants/tenant-it-id/groups/Approvers/roles/reviewer"):
         g.user = _mock_user()
+        g._m8flow_super_admin_request = True
         response = tenant_role_controller.assign_group_role(
             "tenant-it-id",
             "Approvers",
@@ -262,6 +280,7 @@ def test_remove_group_role_returns_updated_group(monkeypatch):
 
     with app.test_request_context("/m8flow/tenants/tenant-it-id/groups/Approvers/roles/reviewer"):
         g.user = _mock_user()
+        g._m8flow_super_admin_request = True
         response = tenant_role_controller.remove_group_role(
             "tenant-it-id",
             "Approvers",
@@ -288,6 +307,7 @@ def test_assign_member_role_returns_updated_member(monkeypatch):
 
     with app.test_request_context("/m8flow/tenants/tenant-it-id/members/editor/roles/editor"):
         g.user = _mock_user()
+        g._m8flow_super_admin_request = True
         response = tenant_role_controller.assign_member_role("tenant-it-id", "editor", "editor")
 
     assert response.status_code == 200
@@ -310,6 +330,7 @@ def test_remove_member_role_returns_updated_member(monkeypatch):
 
     with app.test_request_context("/m8flow/tenants/tenant-it-id/members/editor/roles/editor"):
         g.user = _mock_user()
+        g._m8flow_super_admin_request = True
         response = tenant_role_controller.remove_member_role("tenant-it-id", "editor", "editor")
 
     assert response.status_code == 200
@@ -318,4 +339,43 @@ def test_remove_member_role_returns_updated_member(monkeypatch):
         "username": "editor",
         "role_name": "editor",
         "member": {"username": "editor", "roles": []},
+    }
+
+
+def test_create_group_returns_created_group(monkeypatch):
+    tenant_role_controller = _load_tenant_role_controller(monkeypatch)
+    app = Flask(__name__)
+    monkeypatch.setattr(
+        tenant_role_controller,
+        "create_tenant_group",
+        lambda tenant_id, group_name: {
+            "id": "group-manager",
+            "name": group_name,
+            "mapped_roles": [],
+            "member_count": 0,
+            "members": [],
+            "path": f"/{group_name}",
+        },
+    )
+
+    with app.test_request_context(
+        "/m8flow/tenants/tenant-it-id/groups",
+        method="POST",
+        json={"name": "Manager"},
+    ):
+        g.user = _mock_user()
+        g._m8flow_super_admin_request = True
+        response = tenant_role_controller.create_group("tenant-it-id")
+
+    assert response.status_code == 201
+    assert response.get_json() == {
+        "tenant_id": "tenant-it-id",
+        "group": {
+            "id": "group-manager",
+            "name": "Manager",
+            "mapped_roles": [],
+            "member_count": 0,
+            "members": [],
+            "path": "/Manager",
+        },
     }

@@ -1479,4 +1479,19 @@ def apply() -> None:
         return None
 
     AuthorizationService.remove_old_permissions_from_added_permissions = patched_remove_old_permissions_from_added_permissions
+
+    _original_request_is_excluded = AuthorizationService.request_is_excluded_from_permission_check.__func__  # type: ignore[attr-defined]
+
+    @classmethod  # type: ignore[misc]
+    def patched_request_is_excluded_from_permission_check(cls) -> bool:
+        if _original_request_is_excluded(cls):
+            return True
+        api_function_full_path, _module = cls.get_fully_qualified_api_function_from_request()
+        if api_function_full_path and api_function_full_path.startswith(
+            "m8flow_backend.routes.tenant_role_controller."
+        ):
+            return True
+        return False
+
+    AuthorizationService.request_is_excluded_from_permission_check = patched_request_is_excluded_from_permission_check
     _PATCHED = True

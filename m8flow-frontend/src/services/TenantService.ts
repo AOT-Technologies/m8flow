@@ -70,6 +70,10 @@ export interface AddTenantMemberRequest {
     group_names?: string[];
 }
 
+export interface CreateTenantGroupRequest {
+    name: string;
+}
+
 export interface UpdateTenantRequest {
     name?: string;
     status?: TenantStatus;
@@ -100,6 +104,11 @@ interface TenantGroupsResponse {
     tenant_id: string;
     search: string;
     groups: TenantGroup[];
+}
+
+interface TenantGroupCreateResponse {
+    tenant_id: string;
+    group: TenantGroup;
 }
 
 interface TenantAvailableUsersResponse {
@@ -299,6 +308,30 @@ const TenantService = {
                 httpMethod: "GET",
                 successCallback: (response: TenantGroupsResponse) =>
                     resolve(response.groups ?? []),
+                failureCallback: reject,
+            });
+        });
+    },
+
+    /**
+     * Create one tenant organization group.
+     */
+    createTenantGroup: (
+        tenantId: string,
+        data: CreateTenantGroupRequest,
+    ): Promise<TenantGroup> => {
+        const name = data.name?.trim();
+        if (!name) {
+            return Promise.reject(new Error("Group name cannot be empty"));
+        }
+
+        return new Promise((resolve, reject) => {
+            HttpService.makeCallToBackend({
+                path: `${BASE_PATH}/tenants/${encodeURIComponent(tenantId)}/groups`,
+                httpMethod: "POST",
+                postBody: { name },
+                successCallback: (response: TenantGroupCreateResponse) =>
+                    resolve(response.group),
                 failureCallback: reject,
             });
         });

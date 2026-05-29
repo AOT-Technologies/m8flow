@@ -5,6 +5,7 @@ import logging
 
 import requests
 from m8flow_backend.config import shared_realm_name
+from m8flow_backend.services.tenant_management_authorization import ensure_request_can_access_tenant
 
 from m8flow_backend.services.keycloak_service import (
     create_organization,
@@ -299,6 +300,11 @@ def update_tenant_name(tenant_id: str, body: dict) -> tuple[dict, int]:
             tenant_id
         )
         raise ApiError(error_code="forbidden", message="Not authorized to update the tenant name.", status_code=403)
+
+    ensure_request_can_access_tenant(
+        tenant_id,
+        forbidden_message="Not authorized to update another tenant.",
+    )
 
     new_name = body.get("name")
     if not new_name or not str(new_name).strip():
