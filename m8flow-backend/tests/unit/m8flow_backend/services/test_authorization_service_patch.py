@@ -907,7 +907,7 @@ def test_parse_permissions_yaml_reviewer_is_limited_to_task_access(monkeypatch) 
     assert "/process-models" not in reviewer_uris
     assert "PM:ALL" not in reviewer_uris
     assert "/processes" not in reviewer_uris
-    assert "/processes/*" not in reviewer_uris
+    assert "/processes/*" in reviewer_uris
     assert "/process-instances" not in reviewer_uris
     assert "/process-instances/for-me" not in reviewer_uris
     assert "/process-instances/report-metadata" not in reviewer_uris
@@ -1005,7 +1005,9 @@ def test_all_permission_assignments_for_user_includes_frontend_access_for_active
     assert [assignment.grant_type for assignment in permission_assignments] == ["permit"]
 
 
-def test_reviewer_permissions_from_yaml_include_onboarding_and_tasks_but_not_process_instance_lists(monkeypatch) -> None:
+def test_reviewer_permissions_from_yaml_include_onboarding_tasks_and_process_items_but_not_process_instance_lists(
+    monkeypatch,
+) -> None:
     app = Flask(__name__)  # NOSONAR - unit test
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -1063,11 +1065,13 @@ def test_reviewer_permissions_from_yaml_include_onboarding_and_tasks_but_not_pro
         for_me_allowed = AuthorizationService.user_has_permission(user, "create", "/v1.0/process-instances/for-me")
         tasks_collection_allowed = AuthorizationService.user_has_permission(user, "read", "/v1.0/tasks")
         task_item_allowed = AuthorizationService.user_has_permission(user, "read", "/v1.0/tasks/123")
+        process_item_allowed = AuthorizationService.user_has_permission(user, "read", "/v1.0/processes/123")
 
     assert onboarding_allowed is True
     assert for_me_allowed is False
     assert tasks_collection_allowed is True
     assert task_item_allowed is True
+    assert process_item_allowed is True
 
 
 def test_user_service_all_principals_for_user_includes_global_super_admin_without_tenant_context(monkeypatch) -> None:

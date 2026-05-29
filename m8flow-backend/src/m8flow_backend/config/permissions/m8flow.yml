@@ -125,7 +125,7 @@ permissions:
     actions: [read]
     uri: /processes
   read-processes:
-    groups: ["tenant-admin", "editor", "viewer", "super-admin", "submitter"]
+    groups: ["tenant-admin", "editor", "viewer", "reviewer", "super-admin", "submitter"]
     actions: [read]
     uri: /processes/*
   run-all-process-models:
