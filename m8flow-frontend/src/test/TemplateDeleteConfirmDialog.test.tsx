@@ -47,14 +47,15 @@ describe('TemplateDeleteConfirmDialog', () => {
     ).toBeInTheDocument();
   });
 
-  it('should call onConfirm and onClose when confirm button is clicked', () => {
+  it('should call onConfirm when confirm button is clicked (parent owns close)', () => {
     render(<TemplateDeleteConfirmDialog {...defaultProps} />);
     fireEvent.click(screen.getByTestId('delete-template-confirm-button'));
     expect(defaultProps.onConfirm).toHaveBeenCalledTimes(1);
-    expect(defaultProps.onClose).toHaveBeenCalledTimes(1);
+    // onClose is called by the parent after async work completes, not by the dialog button
+    expect(defaultProps.onClose).not.toHaveBeenCalled();
   });
 
-  it('should call onClose when cancel button is clicked', () => {
+  it('should not call onConfirm when cancel button is clicked', () => {
     render(<TemplateDeleteConfirmDialog {...defaultProps} />);
     fireEvent.click(screen.getByTestId('delete-template-cancel-button'));
     expect(defaultProps.onClose).toHaveBeenCalledTimes(1);
@@ -94,11 +95,12 @@ describe('TemplateRestoreConfirmDialog', () => {
     ).toBeInTheDocument();
   });
 
-  it('should call onConfirm and onClose when restore button is clicked', () => {
+  it('should call onConfirm when restore button is clicked (parent owns close)', () => {
     render(<TemplateRestoreConfirmDialog {...defaultProps} />);
     fireEvent.click(screen.getByTestId('restore-template-confirm-button'));
     expect(defaultProps.onConfirm).toHaveBeenCalledTimes(1);
-    expect(defaultProps.onClose).toHaveBeenCalledTimes(1);
+    // onClose is called by the parent after async work completes, not by the dialog button
+    expect(defaultProps.onClose).not.toHaveBeenCalled();
   });
 
   it('should call onClose when cancel button is clicked', () => {

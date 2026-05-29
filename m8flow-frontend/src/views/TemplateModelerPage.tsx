@@ -24,6 +24,7 @@ import ProcessBreadcrumb from '@spiffworkflow-frontend/components/ProcessBreadcr
 import DateAndTimeService from '@spiffworkflow-frontend/services/DateAndTimeService';
 import HttpService from '../services/HttpService';
 import TemplateService from '../services/TemplateService';
+import UserService from '../services/UserService';
 import TemplateFileList from '../components/TemplateFileList';
 import CreateProcessModelFromTemplateModal from '../components/CreateProcessModelFromTemplateModal';
 import TemplateDeleteConfirmDialog from '../components/TemplateDeleteConfirmDialog';
@@ -66,11 +67,31 @@ function TemplateDetailsCard({
 }) {
   const { ability, permissionsLoaded } = usePermissionFetcher({
     "/m8flow/templates": ["POST", "PUT", "DELETE"],
+    "/m8flow/admin/templates": ["DELETE"],
   });
 
-  const canCreate = ability.can("POST", "/m8flow/templates");
-  const canPublish = ability.can("PUT", "/m8flow/templates");
+  const canCreate  = ability.can("POST",   "/m8flow/templates");
+  const canPublish = ability.can("PUT",    "/m8flow/templates");
+  const canDelete  = ability.can("DELETE", "/m8flow/templates");
+  // Admin-level: required to delete published templates or others' drafts
+  const hasAdminPermission = permissionsLoaded && ability.can("DELETE", "/m8flow/admin/templates");
+
   const { t } = useTranslation();
+
+  // Mirror the same ownership/admin logic from TemplateGalleryPage:
+  //   - published templates → admin only
+  //   - draft templates     → admin OR the creator
+  const currentUsername = UserService.getUserName() || UserService.getPreferredUsername() || "";
+  const canDeleteThisTemplate = canDelete && (
+    template.isPublished
+      ? hasAdminPermission
+      : hasAdminPermission || (!!currentUsername && template.createdBy === currentUsername)
+  );
+  const deleteThisTemplateDeniedReason = !canDeleteThisTemplate
+    ? template.isPublished
+      ? t("published_delete_admin_only", { defaultValue: "Insufficient permissions to delete published templates." })
+      : t("draft_delete_owner_or_admin_only", { defaultValue: "Only the template creator or an admin can delete this draft template." })
+    : "";
 
   if (!permissionsLoaded) return null;
 
@@ -154,17 +175,28 @@ function TemplateDetailsCard({
           </Button>
         )}
 
-        {canPublish && !template.isDeleted && (
-          <Button
-            size="small"
-            variant="outlined"
-            color="error"
-            startIcon={<DeleteIcon />}
-            data-testid="template-delete-button"
-            onClick={onDelete}
+        {canDelete && !template.isDeleted && (
+          <Tooltip
+            title={
+              canDelete && !canDeleteThisTemplate
+                ? deleteThisTemplateDeniedReason
+                : ""
+            }
           >
-            {t('delete')}
-          </Button>
+            <span>
+              <Button
+                size="small"
+                variant="outlined"
+                color="error"
+                startIcon={<DeleteIcon />}
+                data-testid="template-delete-button"
+                onClick={onDelete}
+                disabled={!canDeleteThisTemplate}
+              >
+                {t('delete')}
+              </Button>
+            </span>
+          </Tooltip>
         )}
 
         {canCreate && !template.isDeleted && (

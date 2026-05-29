@@ -67,10 +67,7 @@ export default function TemplateDeleteConfirmDialog({
           {t("cancel")}
         </Button>
         <Button
-          onClick={() => {
-            onConfirm();
-            onClose();
-          }}
+          onClick={onConfirm}
           color="error"
           variant="contained"
           data-testid="delete-template-confirm-button"
@@ -131,10 +128,7 @@ export function TemplateRestoreConfirmDialog({
           {t("cancel")}
         </Button>
         <Button
-          onClick={() => {
-            onConfirm();
-            onClose();
-          }}
+          onClick={onConfirm}
           color="primary"
           variant="contained"
           data-testid="restore-template-confirm-button"

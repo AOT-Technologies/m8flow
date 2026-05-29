@@ -67,6 +67,14 @@ vi.mock("../services/TemplateService", () => ({
   },
 }));
 
+vi.mock("../services/UserService", () => ({
+  default: {
+    getUserName: vi.fn(() => "tester"),
+    getPreferredUsername: vi.fn(() => "tester"),
+    isSuperAdmin: vi.fn(() => false),
+  },
+}));
+
 
 vi.mock("@spiffworkflow-frontend/hooks/PermissionService", () => ({
   usePermissionFetcher: vi.fn(() => ({
@@ -105,7 +113,8 @@ vi.mock("../components/TemplateDeleteConfirmDialog", () => ({
       <div data-testid="delete-template-confirm-dialog">
         <p>Are you sure you want to delete "{templateName}"?</p>
         <button data-testid="delete-template-cancel-button" onClick={onClose}>Cancel</button>
-        <button data-testid="delete-template-confirm-button" onClick={() => { onConfirm(); onClose(); }}>Delete</button>
+        {/* Confirm only calls onConfirm — parent is responsible for closing */}
+        <button data-testid="delete-template-confirm-button" onClick={onConfirm}>Delete</button>
       </div>
     );
   },
@@ -233,7 +242,7 @@ describe("TemplateModelerPage", () => {
     expect(screen.getByRole("button", { name: /Delete/i })).toBeInTheDocument();
   });
 
-  it("does not show Delete button when user lacks permission", async () => {
+  it("does not show Delete button when user has no base DELETE permission", async () => {
     vi.mocked(usePermissionFetcher).mockReturnValue({
       ability: { can: () => false } as any,
       permissionsLoaded: true,
@@ -248,7 +257,58 @@ describe("TemplateModelerPage", () => {
       expect(screen.getByText("Test Template")).toBeInTheDocument();
     });
 
+    // No base DELETE permission → button is hidden entirely
     expect(screen.queryByTestId("template-delete-button")).not.toBeInTheDocument();
+  });
+
+  it("shows enabled Delete button for draft template owned by current user (no admin required)", async () => {
+    vi.mocked(usePermissionFetcher).mockReturnValue({
+      ability: {
+        can: (method: string, uri: string) => {
+          if (method === "DELETE" && uri === "/m8flow/templates") return true;
+          // No admin permission
+          return false;
+        },
+      } as any,
+      permissionsLoaded: true,
+    });
+    // createdBy matches mocked UserService.getUserName() = "tester"
+    vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
+      opts.successCallback?.(templatePayload({ isPublished: false, createdBy: "tester" }) as any);
+    });
+
+    renderWithRouter(<TemplateModelerPage />);
+
+    await waitFor(() => expect(screen.getByText("Test Template")).toBeInTheDocument());
+
+    const deleteBtn = screen.getByTestId("template-delete-button");
+    expect(deleteBtn).toBeInTheDocument();
+    expect(deleteBtn).not.toBeDisabled();
+  });
+
+  it("shows disabled Delete button for published template when user is not admin", async () => {
+    vi.mocked(usePermissionFetcher).mockReturnValue({
+      ability: {
+        can: (method: string, uri: string) => {
+          if (method === "DELETE" && uri === "/m8flow/templates") return true;
+          // No admin permission
+          return false;
+        },
+      } as any,
+      permissionsLoaded: true,
+    });
+    vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
+      opts.successCallback?.(templatePayload({ isPublished: true }) as any);
+    });
+
+    renderWithRouter(<TemplateModelerPage />);
+
+    await waitFor(() => expect(screen.getByText("Test Template")).toBeInTheDocument());
+
+    // Button is present but disabled — matches list view behavior
+    const deleteBtn = screen.getByTestId("template-delete-button");
+    expect(deleteBtn).toBeInTheDocument();
+    expect(deleteBtn).toBeDisabled();
   });
 
   it("opens delete confirmation dialog when Delete is clicked", async () => {
@@ -506,5 +566,157 @@ describe("TemplateModelerPage", () => {
     await waitFor(() => {
       expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
     });
+  });
+});
+
+// ─── Authorization matrix: DELETE / admin / ownership ─────────────────────────
+// Tests the three-tier model:
+//   tier-1: no base DELETE permission → button hidden
+//   tier-2: DELETE + (no admin, non-owner) → button visible but DISABLED with tooltip
+//   tier-3: DELETE + admin → button visible and ENABLED
+//   tier-3b: DELETE + (no admin, is owner of draft) → button visible and ENABLED
+describe("TemplateModelerPage — delete/publish authorization matrix", () => {
+  const matrixPayload = (overrides: Record<string, unknown> = {}) => ({
+    id: 5,
+    templateKey: "test-key",
+    name: "Auth Matrix Template",
+    version: "V1",
+    visibility: "TENANT",
+    isPublished: false,
+    createdBy: "other-user", // not "tester" by default
+    files: [],
+    createdAt: "2024-01-01T00:00:00.000Z",
+    updatedAt: "2024-01-01T00:00:00.000Z",
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(useParams).mockReturnValue({ templateId: "5" });
+    vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
+      opts.successCallback?.(matrixPayload() as any);
+    });
+  });
+
+  it("hides Delete button entirely when user has no DELETE permission", async () => {
+    vi.mocked(usePermissionFetcher).mockReturnValue({
+      ability: { can: () => false } as any,
+      permissionsLoaded: true,
+    });
+
+    renderWithRouter(<TemplateModelerPage />);
+    await waitFor(() => expect(screen.getByText("Auth Matrix Template")).toBeInTheDocument());
+
+    expect(screen.queryByTestId("template-delete-button")).not.toBeInTheDocument();
+    // PUT=false → no publish or visibility controls either
+    expect(screen.queryByRole("button", { name: "Publish" })).not.toBeInTheDocument();
+  });
+
+  it("shows Delete button HIDDEN when DELETE=false regardless of PUT", async () => {
+    vi.mocked(usePermissionFetcher).mockReturnValue({
+      ability: {
+        can: (method: string) => method === "PUT",
+      } as any,
+      permissionsLoaded: true,
+    });
+
+    renderWithRouter(<TemplateModelerPage />);
+    await waitFor(() => expect(screen.getByText("Auth Matrix Template")).toBeInTheDocument());
+
+    expect(screen.queryByTestId("template-delete-button")).not.toBeInTheDocument();
+    // PUT=true → Publish and visibility controls are visible
+    expect(screen.getByRole("button", { name: "Publish" })).toBeInTheDocument();
+  });
+
+  it("shows Delete button DISABLED (non-owner, non-admin draft) when DELETE=true but no admin", async () => {
+    vi.mocked(usePermissionFetcher).mockReturnValue({
+      ability: {
+        can: (method: string, uri: string) =>
+          method === "DELETE" && uri === "/m8flow/templates",
+      } as any,
+      permissionsLoaded: true,
+    });
+    // createdBy = "other-user" (not "tester"), so owner check fails
+    vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
+      opts.successCallback?.(matrixPayload({ isPublished: false, createdBy: "other-user" }) as any);
+    });
+
+    renderWithRouter(<TemplateModelerPage />);
+    await waitFor(() => expect(screen.getByText("Auth Matrix Template")).toBeInTheDocument());
+
+    const btn = screen.getByTestId("template-delete-button");
+    expect(btn).toBeInTheDocument();
+    expect(btn).toBeDisabled(); // visible but disabled — matching list view UX
+  });
+
+  it("shows Delete button ENABLED for draft owned by current user (no admin required)", async () => {
+    vi.mocked(usePermissionFetcher).mockReturnValue({
+      ability: {
+        can: (method: string, uri: string) =>
+          method === "DELETE" && uri === "/m8flow/templates",
+      } as any,
+      permissionsLoaded: true,
+    });
+    // createdBy matches mocked UserService "tester"
+    vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
+      opts.successCallback?.(matrixPayload({ isPublished: false, createdBy: "tester" }) as any);
+    });
+
+    renderWithRouter(<TemplateModelerPage />);
+    await waitFor(() => expect(screen.getByText("Auth Matrix Template")).toBeInTheDocument());
+
+    const btn = screen.getByTestId("template-delete-button");
+    expect(btn).toBeInTheDocument();
+    expect(btn).not.toBeDisabled();
+  });
+
+  it("shows Delete button ENABLED when DELETE=true and user has admin permission", async () => {
+    vi.mocked(usePermissionFetcher).mockReturnValue({
+      ability: { can: () => true } as any, // all permissions including admin
+      permissionsLoaded: true,
+    });
+
+    renderWithRouter(<TemplateModelerPage />);
+    await waitFor(() => expect(screen.getByText("Auth Matrix Template")).toBeInTheDocument());
+
+    const btn = screen.getByTestId("template-delete-button");
+    expect(btn).toBeInTheDocument();
+    expect(btn).not.toBeDisabled();
+  });
+
+  it("shows Delete button DISABLED for published template when user is not admin", async () => {
+    vi.mocked(usePermissionFetcher).mockReturnValue({
+      ability: {
+        can: (method: string, uri: string) =>
+          method === "DELETE" && uri === "/m8flow/templates",
+      } as any,
+      permissionsLoaded: true,
+    });
+    vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
+      opts.successCallback?.(matrixPayload({ isPublished: true }) as any);
+    });
+
+    renderWithRouter(<TemplateModelerPage />);
+    await waitFor(() => expect(screen.getByText("Auth Matrix Template")).toBeInTheDocument());
+
+    const btn = screen.getByTestId("template-delete-button");
+    expect(btn).toBeInTheDocument();
+    expect(btn).toBeDisabled(); // published requires admin — matches list view
+  });
+
+  it("hides Delete button for deleted template even when DELETE=true + admin", async () => {
+    vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
+      opts.successCallback?.(matrixPayload({ isPublished: true, isDeleted: true }) as any);
+    });
+    vi.mocked(usePermissionFetcher).mockReturnValue({
+      ability: { can: () => true } as any,
+      permissionsLoaded: true,
+    });
+
+    renderWithRouter(<TemplateModelerPage />);
+    await waitFor(() => expect(screen.getByText("Auth Matrix Template")).toBeInTheDocument());
+
+    // isDeleted=true → button hidden entirely regardless of permission
+    expect(screen.queryByTestId("template-delete-button")).not.toBeInTheDocument();
   });
 });
