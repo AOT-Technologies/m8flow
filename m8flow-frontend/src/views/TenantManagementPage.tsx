@@ -9,6 +9,10 @@ import type { Tenant } from "../services/TenantService";
 import TenantModal from "./TenantModal";
 import TenantRoleDialog from "./TenantRoleDialog";
 
+export const tenantManagementPageHelpers = {
+  reloadPage: () => window.location.reload(),
+};
+
 function fallbackTenant(identifier: string): Tenant {
   return {
     id: identifier,
@@ -158,6 +162,7 @@ export default function TenantManagementPage() {
                 : currentTenant
             ));
           }
+          tenantManagementPageHelpers.reloadPage();
         }}
       />
 

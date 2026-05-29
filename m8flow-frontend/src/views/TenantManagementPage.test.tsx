@@ -1,11 +1,14 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import TenantManagementPage from "./TenantManagementPage";
+import TenantManagementPage, {
+  tenantManagementPageHelpers,
+} from "./TenantManagementPage";
 
 const mockGetTenantGroups = vi.fn();
 const mockGetTenantMembers = vi.fn();
 const mockUpdateTenant = vi.fn();
 const mockRememberTenantDisplayName = vi.fn();
+const mockReloadPage = vi.fn();
 
 vi.mock("../services/UserService", () => ({
   default: {
@@ -89,6 +92,9 @@ vi.mock("react-i18next", () => ({
 describe("TenantManagementPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(tenantManagementPageHelpers, "reloadPage").mockImplementation(
+      mockReloadPage,
+    );
     mockGetTenantGroups.mockResolvedValue([
       {
         id: "group-approvers",
@@ -144,5 +150,6 @@ describe("TenantManagementPage", () => {
       alias: "tenant-one",
       name: "Tenant One Updated",
     });
+    expect(mockReloadPage).toHaveBeenCalledTimes(1);
   });
 });
