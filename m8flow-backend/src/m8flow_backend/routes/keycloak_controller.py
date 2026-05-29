@@ -6,6 +6,7 @@ import logging
 import requests
 from m8flow_backend.config import shared_realm_name
 from m8flow_backend.services.tenant_management_authorization import ensure_request_can_access_tenant
+from m8flow_backend.services.tenant_management_authorization import require_authorized_user
 
 from m8flow_backend.services.keycloak_service import (
     create_organization,
@@ -194,6 +195,70 @@ def get_tenant_login_url(tenant: str) -> tuple[dict, int]:
         return {"detail": str(e)}, 400
 
 
+@handle_api_errors
+def get_current_user_organization_memberships() -> tuple[dict, int]:
+    """Return the authenticated user's organization memberships with resolved display names."""
+    from spiffworkflow_backend.services.authentication_service import AuthenticationService
+
+    from m8flow_backend.services.tenant_identity_helpers import organization_memberships_from_payload
+
+    session_token = request.cookies.get("id_token") or request.cookies.get("access_token")
+    if not isinstance(session_token, str) or not session_token.strip():
+        raise ApiError(
+            error_code="not_authenticated",
+            message="Authentication token not found",
+            status_code=401,
+        )
+
+    authentication_identifier = request.cookies.get("authentication_identifier") or shared_realm_name()
+    decoded_token = AuthenticationService.parse_jwt_token(authentication_identifier, session_token)
+    memberships = organization_memberships_from_payload(decoded_token)
+
+    resolved_memberships: list[dict[str, str | None]] = []
+    for organization_alias, organization_details in memberships:
+        organization_id = organization_details.get("id")
+        if not isinstance(organization_id, str) or not organization_id.strip():
+            organization_id = None
+        else:
+            organization_id = organization_id.strip()
+
+        organization_name = organization_details.get("name")
+        if not isinstance(organization_name, str) or not organization_name.strip():
+            organization_name = None
+        else:
+            organization_name = organization_name.strip()
+
+        tenant = None
+        if organization_id:
+            tenant = (
+                db.session.query(M8flowTenantModel)
+                .filter(M8flowTenantModel.id == organization_id)
+                .one_or_none()
+            )
+        if tenant is None:
+            tenant = (
+                db.session.query(M8flowTenantModel)
+                .filter(M8flowTenantModel.slug == organization_alias)
+                .one_or_none()
+            )
+
+        if tenant is not None:
+            if organization_id is None:
+                organization_id = tenant.id
+            if organization_name is None and isinstance(tenant.name, str) and tenant.name.strip():
+                organization_name = tenant.name.strip()
+
+        resolved_memberships.append(
+            {
+                "alias": organization_alias,
+                "id": organization_id,
+                "name": organization_name,
+            }
+        )
+
+    return {"organizations": resolved_memberships}, 200
+
+
 def delete_tenant_realm(realm_id: str) -> tuple[dict, int]:
     """Delete a tenant organization from Keycloak and Postgres. Requires a valid admin token.
     Keycloak is deleted first; Postgres is updated only after Keycloak succeeds to avoid
@@ -286,20 +351,11 @@ def delete_tenant_realm(realm_id: str) -> tuple[dict, int]:
 @handle_api_errors
 def update_tenant_name(tenant_id: str, body: dict) -> tuple[dict, int]:
     """Update a tenant organization's display name. Requires appropriate permissions."""
-    user = getattr(g, 'user', None)
-    if not user:
-        raise ApiError(error_code="not_authenticated", message="User not authenticated", status_code=401)
-    
-    is_authorized = AuthorizationService.user_has_permission(user, "update", request.path)
-        
-    if not is_authorized:
-        logger.warning(
-            "User %s (groups: %s) attempted to update tenant %s without required permissions", 
-            user.username, 
-            [getattr(g, 'identifier', g.name) for g in getattr(user, 'groups', [])],
-            tenant_id
-        )
-        raise ApiError(error_code="forbidden", message="Not authorized to update the tenant name.", status_code=403)
+    user = require_authorized_user(
+        "update",
+        tenant_id=tenant_id,
+        forbidden_message="Not authorized to update the tenant name.",
+    )
 
     ensure_request_can_access_tenant(
         tenant_id,

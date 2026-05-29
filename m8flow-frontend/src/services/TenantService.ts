@@ -94,6 +94,12 @@ export interface CreateTenantResponse {
     keycloak_realm_id?: string;
 }
 
+export interface TenantOrganizationMembership {
+    alias: string;
+    id: string | null;
+    name: string | null;
+}
+
 interface TenantMembersResponse {
     tenant_id: string;
     search: string;
@@ -115,6 +121,10 @@ interface TenantAvailableUsersResponse {
     tenant_id: string;
     search: string;
     users: TenantAvailableUser[];
+}
+
+interface TenantOrganizationMembershipsResponse {
+    organizations: TenantOrganizationMembership[];
 }
 
 interface TenantMemberCreateResponse {
@@ -147,6 +157,21 @@ const TenantService = {
                 path: `${BASE_PATH}/tenants`,
                 httpMethod: "GET",
                 successCallback: resolve,
+                failureCallback: reject,
+            });
+        });
+    },
+
+    /**
+     * Resolve the current user's organization memberships to display names.
+     */
+    getCurrentUserOrganizationMemberships: (): Promise<TenantOrganizationMembership[]> => {
+        return new Promise((resolve, reject) => {
+            HttpService.makeCallToBackend({
+                path: `${BASE_PATH}/organization-memberships`,
+                httpMethod: "GET",
+                successCallback: (response: TenantOrganizationMembershipsResponse) =>
+                    resolve(response.organizations ?? []),
                 failureCallback: reject,
             });
         });

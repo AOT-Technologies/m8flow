@@ -146,9 +146,10 @@ describe('UserService.doLogin', () => {
     ]);
   });
 
-  it('falls back to the stored tenant name when the token is multi-organization', async () => {
+  it('uses the selected organization display name when the token is multi-organization', async () => {
     const UserService = await loadUserService('http://localhost:8001/');
     localStorage.setItem('m8flow_tenant', 'tenant-b');
+    localStorage.setItem('m8f_tenant_id', 'tenant-b-id');
     document.cookie = [
       'id_token=',
       [
@@ -156,8 +157,8 @@ describe('UserService.doLogin', () => {
         btoa(
           JSON.stringify({
             organization: {
-              'tenant-a': { id: 'tenant-a-id' },
-              'tenant-b': { id: 'tenant-b-id' },
+              'tenant-a': { id: 'tenant-a-id', name: 'Tenant A' },
+              'tenant-b': { id: 'tenant-b-id', name: 'Tenant B' },
             },
           }),
         ),
@@ -166,7 +167,7 @@ describe('UserService.doLogin', () => {
       '; Path=/',
     ].join('');
 
-    expect(UserService.getTenantName()).toBe('tenant-b');
+    expect(UserService.getTenantName()).toBe('Tenant B');
   });
 
   it('prefers a remembered tenant display name over stale token claims', async () => {
@@ -200,6 +201,60 @@ describe('UserService.doLogin', () => {
     expect(UserService.getOrganizationMemberships()).toEqual([
       { alias: 'tenant-b', id: 'tenant-b-id', name: 'Tenant B Updated' },
     ]);
+  });
+
+  it('prefers the organization display name over a stale top-level tenant name claim', async () => {
+    const UserService = await loadUserService('http://localhost:8001/');
+    document.cookie = [
+      'id_token=',
+      [
+        btoa(JSON.stringify({ alg: 'none', typ: 'JWT' })),
+        btoa(
+          JSON.stringify({
+            m8flow_tenant_id: 'tenant-test-id',
+            m8flow_tenant_alias: 'test',
+            m8flow_tenant_name: 'Test',
+            organization: {
+              test: { id: 'tenant-test-id', name: 'Test 123ABC' },
+            },
+          }),
+        ),
+        '',
+      ].join('.'),
+      '; Path=/',
+    ].join('');
+
+    expect(UserService.getTenantName()).toBe('Test 123ABC');
+  });
+
+  it('never falls back to the selected slug when a remembered organization name exists', async () => {
+    const UserService = await loadUserService('http://localhost:8001/');
+    localStorage.setItem('m8flow_tenant', 'xyz');
+    localStorage.setItem('m8f_tenant_id', 'tenant-xyz-id');
+    UserService.rememberTenantDisplayName({
+      id: 'tenant-xyz-id',
+      alias: 'xyz',
+      name: 'ABC 1234',
+    });
+
+    document.cookie = [
+      'id_token=',
+      [
+        btoa(JSON.stringify({ alg: 'none', typ: 'JWT' })),
+        btoa(
+          JSON.stringify({
+            organization: {
+              test: { id: 'tenant-test-id', name: 'Test 123ABCD' },
+              xyz: { id: 'tenant-xyz-id' },
+            },
+          }),
+        ),
+        '',
+      ].join('.'),
+      '; Path=/',
+    ].join('');
+
+    expect(UserService.getTenantName()).toBe('ABC 1234');
   });
 });
 

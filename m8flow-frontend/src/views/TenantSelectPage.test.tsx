@@ -7,6 +7,7 @@ import TenantGateContext from '../contexts/TenantGateContext';
 const mockUseConfig = vi.fn();
 const mockIsLoggedIn = vi.fn();
 const mockGetOrganizationMemberships = vi.fn();
+const mockGetCurrentUserOrganizationMemberships = vi.fn();
 const mockRememberTenantDisplayName = vi.fn();
 
 vi.mock('../utils/useConfig', () => ({
@@ -18,6 +19,12 @@ vi.mock('../services/UserService', () => ({
     getOrganizationMemberships: () => mockGetOrganizationMemberships(),
     isLoggedIn: () => mockIsLoggedIn(),
     rememberTenantDisplayName: (...args: unknown[]) => mockRememberTenantDisplayName(...args),
+  },
+}));
+
+vi.mock('../services/TenantService', () => ({
+  default: {
+    getCurrentUserOrganizationMemberships: () => mockGetCurrentUserOrganizationMemberships(),
   },
 }));
 
@@ -164,6 +171,49 @@ describe('TenantSelectPage', () => {
     expect(localStorage.getItem(M8FLOW_TENANT_STORAGE_KEY)).toBe('tenant-b');
     expect(localStorage.getItem('m8f_tenant_id')).toBe('tenant-b-id');
     expect(document.cookie).toContain('m8flow_selected_tenant=tenant-b-id');
+  });
+
+  it('resolves missing organization names before rendering tenant choices', async () => {
+    mockUseConfig.mockReturnValue({
+      ENABLE_MULTITENANT: true,
+      BACKEND_BASE_URL: '/v1.0',
+      MASTER_REALM_IDENTIFIER: 'ops-admin',
+      SHARED_REALM_IDENTIFIER: 'shared-users',
+    });
+    mockIsLoggedIn.mockReturnValue(true);
+    mockGetOrganizationMemberships.mockReturnValue([
+      { alias: 'xyz', id: 'tenant-xyz-id', name: null },
+      { alias: 'm8flow', id: 'tenant-m8flow-id', name: null },
+    ]);
+    mockGetCurrentUserOrganizationMemberships.mockResolvedValue([
+      { alias: 'xyz', id: 'tenant-xyz-id', name: 'ABC 1234' },
+      { alias: 'm8flow', id: 'tenant-m8flow-id', name: 'm8flow' },
+    ]);
+
+    const assignMock = vi.fn();
+    vi.stubGlobal('location', {
+      origin: 'http://localhost',
+      pathname: '/',
+      search: '',
+      assign: assignMock,
+      replace: vi.fn(),
+      href: 'http://localhost/',
+    });
+
+    render(<TenantSelectPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('organization-option-xyz')).toHaveTextContent('ABC 1234');
+    });
+
+    fireEvent.click(screen.getByTestId('organization-option-xyz'));
+
+    expect(assignMock).toHaveBeenCalledWith(
+      expect.stringContaining('tenant=xyz'),
+    );
+    expect(mockRememberTenantDisplayName).toHaveBeenCalledWith(
+      expect.objectContaining({ alias: 'xyz', id: 'tenant-xyz-id', name: 'ABC 1234' }),
+    );
   });
 
   it('does not redirect tenant finalization back to auth or tenant-selection routes', () => {

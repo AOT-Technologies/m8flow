@@ -346,6 +346,22 @@ const getOrganizationMemberships = (): OrganizationMembership[] => {
   });
 };
 
+const getSelectedTenantMembership = (
+  organizationMemberships: OrganizationMembership[],
+): OrganizationMembership | null => {
+  const selectedTenantId = normalizeTenantIdentifier(localStorage.getItem('m8f_tenant_id'));
+  const selectedTenantAlias = normalizeTenantIdentifier(localStorage.getItem('m8flow_tenant'));
+
+  if (!selectedTenantId && !selectedTenantAlias) {
+    return null;
+  }
+
+  return organizationMemberships.find((membership) => (
+    (selectedTenantId && membership.id === selectedTenantId)
+    || (selectedTenantAlias && membership.alias === selectedTenantAlias)
+  )) || null;
+};
+
 const isLoggedIn = () => {
   return !!getAccessToken();
 };
@@ -567,6 +583,13 @@ const setTenantId = (tenantId: string | null): void => {
 };
 
 const getTenantName = (): string | null => {
+  const selectedTenantId = normalizeTenantIdentifier(localStorage.getItem('m8f_tenant_id'));
+  const selectedTenantAlias = normalizeTenantIdentifier(localStorage.getItem('m8flow_tenant'));
+  const rememberedSelectedTenantName = getRememberedTenantDisplayName([
+    selectedTenantId,
+    selectedTenantAlias,
+  ]);
+
   const idObject = getDecodedIdToken();
   if (idObject) {
     const tokenTenantId = normalizeTenantIdentifier(
@@ -582,32 +605,33 @@ const getTenantName = (): string | null => {
     const organizationName = normalizeTenantIdentifier(
       organization && typeof organization.details.name === 'string' ? organization.details.name : null,
     );
+    const selectedTenantMembership = getSelectedTenantMembership(getOrganizationMemberships());
+    const selectedTenantMembershipName = normalizeTenantIdentifier(selectedTenantMembership?.name);
 
     const rememberedTenantName = getRememberedTenantDisplayName([
       tokenTenantId,
       tokenTenantAlias,
       organizationId,
       organization?.alias,
+      selectedTenantId,
+      selectedTenantAlias,
     ]);
     if (rememberedTenantName) {
       return rememberedTenantName;
     }
 
-    if (typeof idObject.m8flow_tenant_name === 'string' && idObject.m8flow_tenant_name) {
-      return idObject.m8flow_tenant_name;
-    }
     if (organizationName) {
       return organizationName;
     }
-    if (typeof idObject.m8flow_tenant_alias === 'string' && idObject.m8flow_tenant_alias) {
-      return idObject.m8flow_tenant_alias;
+    if (selectedTenantMembershipName) {
+      return selectedTenantMembershipName;
     }
-
-    if (organization) {
-      return organization.alias;
+    if (typeof idObject.m8flow_tenant_name === 'string' && idObject.m8flow_tenant_name) {
+      return idObject.m8flow_tenant_name;
     }
   }
-  return localStorage.getItem('m8flow_tenant');
+
+  return rememberedSelectedTenantName;
 };
 
 const UserService = {

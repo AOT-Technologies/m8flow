@@ -62,6 +62,49 @@ def test_tenant_id_for_user_info_prefers_token_claim(monkeypatch) -> None:
     assert _tenant_id_for_user_info(user_info) == "token-tenant"
 
 
+def test_auth_exclusion_additions_include_current_user_organization_memberships() -> None:
+    assert (
+        "m8flow_backend.routes.keycloak_controller.get_current_user_organization_memberships"
+        in authorization_service_patch.M8FLOW_AUTH_EXCLUSION_ADDITIONS
+    )
+
+
+def test_permission_check_exclusion_additions_include_update_tenant_name() -> None:
+    assert (
+        "m8flow_backend.routes.keycloak_controller.update_tenant_name"
+        in authorization_service_patch.M8FLOW_PERMISSION_CHECK_EXCLUSION_ADDITIONS
+    )
+
+
+def test_auth_exclusion_additions_do_not_include_update_tenant_name() -> None:
+    assert (
+        "m8flow_backend.routes.keycloak_controller.update_tenant_name"
+        not in authorization_service_patch.M8FLOW_AUTH_EXCLUSION_ADDITIONS
+    )
+
+
+def test_apply_excludes_update_tenant_name_from_permission_check(monkeypatch) -> None:
+    app = Flask(__name__)  # NOSONAR - unit test
+
+    with app.app_context():
+        authorization_service_patch.apply()
+        from spiffworkflow_backend.services.authorization_service import AuthorizationService
+
+        monkeypatch.setattr(
+            AuthorizationService,
+            "get_fully_qualified_api_function_from_request",
+            classmethod(
+                lambda cls: (
+                    "m8flow_backend.routes.keycloak_controller.update_tenant_name",
+                    None,
+                )
+            ),
+        )
+
+        with app.test_request_context("/v1.0/m8flow/tenants/tenant-a", method="PUT"):
+            assert AuthorizationService.request_is_excluded_from_permission_check() is True
+
+
 def test_tenant_id_for_user_info_uses_local_canonical_tenant_from_org_claim(monkeypatch) -> None:
     monkeypatch.setattr(
         "m8flow_backend.services.authorization_service_patch.current_tenant_id_or_none",
@@ -823,18 +866,19 @@ def test_parse_permissions_yaml_into_group_info_preserves_global_super_admin_gro
     everybody_group = group_permissions_by_name["tenant-a:everybody"]
     super_admin_group = group_permissions_by_name["super-admin"]
 
-    assert [permission["uri"] for permission in everybody_group["permissions"]] == [
+    assert {permission["uri"] for permission in everybody_group["permissions"]} == {
         "/frontend-access",
         "/onboarding",
         "/active-users/*",
         "/extensions",
+        "/m8flow/organization-memberships",
         "/user-groups/for-current-user",
         "/users/exists/by-username",
         "/debug/version-info",
         "/upsearch-locations",
         "/connector-proxy/typeahead/*",
         "/script-assist/enabled",
-    ]
+    }
     super_admin_permission_uris = {p["uri"] for p in super_admin_group["permissions"]}
     assert "/frontend-access" in super_admin_permission_uris
     assert "/m8flow/tenants*" in super_admin_permission_uris

@@ -69,6 +69,46 @@ paths:
                   detail:
                     type: string
 
+  /organization-memberships:
+    get:
+      summary: Get the authenticated user's organization memberships with display names
+      description: Returns the current user's shared-realm organization memberships and resolves each membership to the organization display name stored by M8Flow.
+      operationId: m8flow_backend.routes.keycloak_controller.get_current_user_organization_memberships
+      tags:
+        - Keycloak
+      security: []
+      responses:
+        "200":
+          description: Resolved organization memberships
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - organizations
+                properties:
+                  organizations:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - alias
+                      properties:
+                        alias:
+                          type: string
+                        id:
+                          type: string
+                          nullable: true
+                        name:
+                          type: string
+                          nullable: true
+        "401":
+          description: Authentication token missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /tenant-realms:
     post:
       summary: Create a tenant organization in the shared realm

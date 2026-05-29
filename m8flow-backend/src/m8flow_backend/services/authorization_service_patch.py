@@ -39,12 +39,19 @@ _PERMISSION_SCOPE_TENANT_ID: ContextVar[Any] = ContextVar(
     default=_PERMISSION_SCOPE_TENANT_ID_NOT_SET,
 )
 
-# Endpoints that must be callable without authentication (pre-login tenant selection, tenant login URL,
-# and bootstrap: create realm / create tenant -- no tenant in token yet; Keycloak admin is server-side).
+# Endpoints that must bypass the standard auth/tenant-authorization path because they run
+# before tenant finalization or with server-side auth only.
 M8FLOW_AUTH_EXCLUSION_ADDITIONS = [
     "m8flow_backend.routes.keycloak_controller.get_tenant_login_url",
+    "m8flow_backend.routes.keycloak_controller.get_current_user_organization_memberships",
     "m8flow_backend.tenancy.health_check",
     "m8flow_backend.routes.events_controller.m8flow_trigger",
+]
+
+# Endpoints that still require authenticated users but must bypass the generic
+# pre-controller permission gate so their route-local tenant-aware auth logic can run.
+M8FLOW_PERMISSION_CHECK_EXCLUSION_ADDITIONS = [
+    "m8flow_backend.routes.keycloak_controller.update_tenant_name",
 ]
 
 M8FLOW_ROLE_GROUP_IDENTIFIERS = frozenset(
@@ -1487,6 +1494,8 @@ def apply() -> None:
         if _original_request_is_excluded(cls):
             return True
         api_function_full_path, _module = cls.get_fully_qualified_api_function_from_request()
+        if api_function_full_path in M8FLOW_PERMISSION_CHECK_EXCLUSION_ADDITIONS:
+            return True
         if api_function_full_path and api_function_full_path.startswith(
             "m8flow_backend.routes.tenant_role_controller."
         ):

@@ -96,6 +96,10 @@ permissions:
     groups: ["tenant-admin"]
     actions: [read]
     uri: /m8flow/tenant-management
+  read-current-user-organization-memberships:
+    groups: ["everybody"]
+    actions: [read]
+    uri: /m8flow/organization-memberships
   tenant-admin-update-own-tenant-resources:
     groups: ["tenant-admin"]
     actions: [update]

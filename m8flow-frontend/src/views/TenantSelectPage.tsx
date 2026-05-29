@@ -5,7 +5,7 @@
  * accepted, M8Flow either finalizes the single available organization
  * automatically or asks the user which organization to enter.
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Box,
@@ -15,6 +15,7 @@ import {
   Typography,
 } from '@mui/material';
 import UserService, { type OrganizationMembership } from '../services/UserService';
+import TenantService from '../services/TenantService';
 import { useConfig } from '../utils/useConfig';
 
 export const M8FLOW_TENANT_STORAGE_KEY = 'm8flow_tenant';
@@ -54,6 +55,35 @@ const rememberSelectedTenant = (organization: OrganizationMembership) => {
   });
 };
 
+const mergeOrganizationMemberships = (
+  currentMemberships: OrganizationMembership[],
+  resolvedMemberships: OrganizationMembership[],
+): OrganizationMembership[] => {
+  const resolvedMembershipLookup = new Map<string, OrganizationMembership>();
+  resolvedMemberships.forEach((membership) => {
+    if (membership.id) {
+      resolvedMembershipLookup.set(`id:${membership.id}`, membership);
+    }
+    resolvedMembershipLookup.set(`alias:${membership.alias}`, membership);
+  });
+
+  return currentMemberships.map((membership) => {
+    const resolvedMembership = (
+      (membership.id && resolvedMembershipLookup.get(`id:${membership.id}`))
+      || resolvedMembershipLookup.get(`alias:${membership.alias}`)
+    );
+    if (!resolvedMembership) {
+      return membership;
+    }
+
+    return {
+      alias: membership.alias,
+      id: resolvedMembership.id || membership.id,
+      name: resolvedMembership.name || membership.name,
+    };
+  });
+};
+
 export default function TenantSelectPage() {
   const {
     ENABLE_MULTITENANT,
@@ -62,8 +92,59 @@ export default function TenantSelectPage() {
     SHARED_REALM_IDENTIFIER,
   } = useConfig();
   const loggedIn = UserService.isLoggedIn();
-  const organizations = UserService.getOrganizationMemberships();
+  const tokenOrganizations = UserService.getOrganizationMemberships();
+  const organizationMembershipsKey = JSON.stringify(tokenOrganizations);
+  const [organizations, setOrganizations] = useState<OrganizationMembership[]>(
+    () => tokenOrganizations,
+  );
   const autoFinalizeStarted = useRef(false);
+
+  useEffect(() => {
+    setOrganizations(tokenOrganizations);
+  }, [organizationMembershipsKey]);
+
+  useEffect(() => {
+    let ignore = false;
+
+    if (!loggedIn || tokenOrganizations.length === 0) {
+      return () => {
+        ignore = true;
+      };
+    }
+
+    const hasMissingNames = tokenOrganizations.some((organization) => !organization.name?.trim());
+    if (!hasMissingNames) {
+      setOrganizations(tokenOrganizations);
+      return () => {
+        ignore = true;
+      };
+    }
+
+    TenantService.getCurrentUserOrganizationMemberships()
+      .then((resolvedOrganizations) => {
+        if (ignore) {
+          return;
+        }
+
+        const mergedOrganizations = mergeOrganizationMemberships(
+          tokenOrganizations,
+          resolvedOrganizations,
+        );
+        mergedOrganizations.forEach((organization) => {
+          UserService.rememberTenantDisplayName(organization);
+        });
+        setOrganizations(mergedOrganizations);
+      })
+      .catch(() => {
+        if (!ignore) {
+          setOrganizations(tokenOrganizations);
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [loggedIn, organizationMembershipsKey]);
 
   const finalizeTenantLogin = (organization: OrganizationMembership) => {
     rememberSelectedTenant(organization);

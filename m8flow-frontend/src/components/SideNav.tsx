@@ -393,7 +393,6 @@ function SideNav({
                       variant="body2"
                       sx={{
                         fontWeight: 600,
-                        textTransform: "capitalize",
                       }}
                     >
                       {t("tenant")}: {tenantId}
@@ -574,7 +573,6 @@ function SideNav({
                 data-testid="nav-tenant-id"
                 sx={{
                   color: "text.secondary",
-                  textTransform: "capitalize",
                   fontWeight: 600,
                   mt: 0.5,
                 }}
