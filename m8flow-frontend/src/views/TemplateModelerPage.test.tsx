@@ -41,6 +41,10 @@ vi.mock("react-i18next", () => ({
         public_authenticated_users: "Public (all authenticated users)",
         create_process_model_published_only_tooltip:
           "Process models can only be created from a published template version.",
+        export: "Export",
+        delete: "Delete",
+        cancel: "Cancel",
+        template_deleted_successfully: "Template deleted successfully. Redirecting...",
       };
       return map[key] ?? opts?.defaultValue ?? key;
     },
@@ -58,6 +62,8 @@ vi.mock("../services/TemplateService", () => ({
   default: {
     updateTemplate: vi.fn(),
     getAllVersions: vi.fn(() => Promise.resolve([])),
+    exportTemplate: vi.fn(() => Promise.resolve(new Blob())),
+    deleteTemplate: vi.fn(() => Promise.resolve()),
   },
 }));
 
@@ -85,6 +91,24 @@ vi.mock("../components/TemplateFileList", () => ({
 
 vi.mock("../components/CreateProcessModelFromTemplateModal", () => ({
   default: () => null,
+}));
+
+vi.mock("../components/TemplateDeleteConfirmDialog", () => ({
+  default: ({ open, onClose, onConfirm, templateName }: {
+    open: boolean;
+    onClose: () => void;
+    onConfirm: () => void;
+    templateName: string;
+  }) => {
+    if (!open) return null;
+    return (
+      <div data-testid="delete-template-confirm-dialog">
+        <p>Are you sure you want to delete "{templateName}"?</p>
+        <button data-testid="delete-template-cancel-button" onClick={onClose}>Cancel</button>
+        <button data-testid="delete-template-confirm-button" onClick={() => { onConfirm(); onClose(); }}>Delete</button>
+      </div>
+    );
+  },
 }));
 
 import { useParams } from "react-router-dom";
@@ -131,7 +155,7 @@ describe("TemplateModelerPage", () => {
     });
   });
 
-  it("renders template name — Delete button is not shown on detail page", async () => {
+  it("renders template name and shows Export button", async () => {
     vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
       opts.successCallback?.(templatePayload({ isPublished: false }) as any);
     });
@@ -142,8 +166,8 @@ describe("TemplateModelerPage", () => {
       expect(screen.getByText("Test Template")).toBeInTheDocument();
     });
 
-    // Delete button was removed from detail page — it's only on the gallery page now
-    expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("template-export-button")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Export/i })).toBeInTheDocument();
   });
 
   it("shows Publish button when template is not published", async () => {
@@ -194,9 +218,9 @@ describe("TemplateModelerPage", () => {
     expect(createButton).toBeEnabled();
   });
 
-  it("does not show Delete button for published template (moved to gallery page)", async () => {
+  it("shows Delete button when user has permission", async () => {
     vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
-      opts.successCallback?.(templatePayload({ isPublished: true }) as any);
+      opts.successCallback?.(templatePayload({ isPublished: false }) as any);
     });
 
     renderWithRouter(<TemplateModelerPage />);
@@ -205,7 +229,124 @@ describe("TemplateModelerPage", () => {
       expect(screen.getByText("Test Template")).toBeInTheDocument();
     });
 
-    expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("template-delete-button")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Delete/i })).toBeInTheDocument();
+  });
+
+  it("does not show Delete button when user lacks permission", async () => {
+    vi.mocked(usePermissionFetcher).mockReturnValue({
+      ability: { can: () => false } as any,
+      permissionsLoaded: true,
+    });
+    vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
+      opts.successCallback?.(templatePayload({ isPublished: false }) as any);
+    });
+
+    renderWithRouter(<TemplateModelerPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Test Template")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByTestId("template-delete-button")).not.toBeInTheDocument();
+  });
+
+  it("opens delete confirmation dialog when Delete is clicked", async () => {
+    vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
+      opts.successCallback?.(templatePayload({ isPublished: false }) as any);
+    });
+
+    renderWithRouter(<TemplateModelerPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("template-delete-button")).toBeInTheDocument();
+    });
+
+    // Dialog should not be visible yet
+    expect(screen.queryByTestId("delete-template-confirm-dialog")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("template-delete-button"));
+
+    // Dialog should now appear
+    await waitFor(() => {
+      expect(screen.getByTestId("delete-template-confirm-dialog")).toBeInTheDocument();
+    });
+  });
+
+  it("does not delete when cancel is clicked in confirmation dialog", async () => {
+    vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
+      opts.successCallback?.(templatePayload({ isPublished: false }) as any);
+    });
+
+    renderWithRouter(<TemplateModelerPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("template-delete-button")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("template-delete-button"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("delete-template-confirm-dialog")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("delete-template-cancel-button"));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("delete-template-confirm-dialog")).not.toBeInTheDocument();
+    });
+
+    expect(TemplateService.deleteTemplate).not.toHaveBeenCalled();
+  });
+
+  it("calls deleteTemplate when confirm is clicked in confirmation dialog", async () => {
+    vi.mocked(TemplateService.deleteTemplate).mockResolvedValue(undefined);
+    vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
+      opts.successCallback?.(templatePayload({ isPublished: false }) as any);
+    });
+
+    renderWithRouter(<TemplateModelerPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("template-delete-button")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("template-delete-button"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("delete-template-confirm-dialog")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("delete-template-confirm-button"));
+
+    await waitFor(() => {
+      expect(TemplateService.deleteTemplate).toHaveBeenCalledWith(5);
+    });
+  });
+
+  it("shows error when delete fails", async () => {
+    vi.mocked(TemplateService.deleteTemplate).mockRejectedValue(new Error("Delete failed"));
+    vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
+      opts.successCallback?.(templatePayload({ isPublished: false }) as any);
+    });
+
+    renderWithRouter(<TemplateModelerPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("template-delete-button")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("template-delete-button"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("delete-template-confirm-dialog")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("delete-template-confirm-button"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Delete failed")).toBeInTheDocument();
+    });
   });
 
   it("shows visibility dropdown for draft template when user has edit permission", async () => {

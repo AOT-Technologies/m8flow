@@ -18,12 +18,15 @@ import {
 import type { SelectChangeEvent } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import FileDownloadIcon from '@mui/icons-material/FileDownload';
+import DeleteIcon from '@mui/icons-material/Delete';
 import ProcessBreadcrumb from '@spiffworkflow-frontend/components/ProcessBreadcrumb';
 import DateAndTimeService from '@spiffworkflow-frontend/services/DateAndTimeService';
 import HttpService from '../services/HttpService';
 import TemplateService from '../services/TemplateService';
 import TemplateFileList from '../components/TemplateFileList';
 import CreateProcessModelFromTemplateModal from '../components/CreateProcessModelFromTemplateModal';
+import TemplateDeleteConfirmDialog from '../components/TemplateDeleteConfirmDialog';
 import { Template, TemplateVisibility } from '../types/template';
 import { normalizeTemplate } from '../utils/templateHelpers';
 import './TemplateModelerPage.css';
@@ -46,6 +49,8 @@ function TemplateDetailsCard({
   onVisibilityChange,
   onSaveVisibility,
   isSaving,
+  onExport,
+  onDelete,
 }: {
   template: Template;
   onPublish: () => void;
@@ -56,6 +61,8 @@ function TemplateDetailsCard({
   onVisibilityChange: (visibility: TemplateVisibility) => void;
   onSaveVisibility: () => void;
   isSaving: boolean;
+  onExport: () => void;
+  onDelete: () => void;
 }) {
   const { ability, permissionsLoaded } = usePermissionFetcher({
     "/m8flow/templates": ["POST", "PUT", "DELETE"],
@@ -135,6 +142,31 @@ function TemplateDetailsCard({
         <Typography variant="caption" color="text.secondary">
           {t('updated')}: {DateAndTimeService.convertSecondsToFormattedDateTime(template.updatedAtInSeconds) ?? '—'}
         </Typography>
+        {!template.isDeleted && (
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<FileDownloadIcon />}
+            data-testid="template-export-button"
+            onClick={onExport}
+          >
+            {t('export', { defaultValue: 'Export' })}
+          </Button>
+        )}
+
+        {canPublish && !template.isDeleted && (
+          <Button
+            size="small"
+            variant="outlined"
+            color="error"
+            startIcon={<DeleteIcon />}
+            data-testid="template-delete-button"
+            onClick={onDelete}
+          >
+            {t('delete')}
+          </Button>
+        )}
+
         {canCreate && !template.isDeleted && (
           <Tooltip title={disableCreateProcessModel ? createProcessModelDisabledReason : ""}>
             <span>
@@ -197,6 +229,8 @@ export default function TemplateModelerPage() {
   const [pendingVisibility, setPendingVisibility] = useState<TemplateVisibility | null>(null);
   const [isSavingVisibility, setIsSavingVisibility] = useState(false);
   const [saveVisibilitySuccess, setSaveVisibilitySuccess] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteSuccess, setDeleteSuccess] = useState(false);
 
   const id = templateId ? Number.parseInt(templateId, 10) : NaN;
 
@@ -330,6 +364,44 @@ export default function TemplateModelerPage() {
     }, 1500);
   }, [navigate]);
 
+  const handleExport = useCallback(() => {
+    if (!template || isNaN(id)) return;
+    TemplateService.exportTemplate(id)
+      .then((blob) => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `${template.templateKey || template.name}.zip`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(a.href);
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : 'Export failed');
+      });
+  }, [id, template]);
+
+  const handleDeleteConfirm = useCallback(() => {
+    if (!template || isNaN(id)) return;
+    setDeleteDialogOpen(false);
+    TemplateService.deleteTemplate(id)
+      .then(() => {
+        setDeleteSuccess(true);
+        // Navigate back to templates after a short delay
+        setTimeout(() => {
+          navigate('/templates');
+        }, 1500);
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : 'Delete failed');
+      });
+  }, [id, template, navigate]);
+
+  useEffect(() => {
+    if (!deleteSuccess) return;
+    const timer = globalThis.setTimeout(() => setDeleteSuccess(false), SUCCESS_ALERT_DURATION_MS);
+    return () => globalThis.clearTimeout(timer);
+  }, [deleteSuccess]);
 
   const createProcessModelDisabledReason = t("create_process_model_published_only_tooltip", {
     defaultValue: "Process models can only be created from a published template version.",
@@ -441,6 +513,8 @@ export default function TemplateModelerPage() {
         onVisibilityChange={handleVisibilityChange}
         onSaveVisibility={handleSaveVisibility}
         isSaving={isSavingVisibility}
+        onExport={handleExport}
+        onDelete={() => setDeleteDialogOpen(true)}
       />
       {error && (
         <Alert severity="error" sx={{ mb: 1 }} onClose={() => setError(null)}>
@@ -462,12 +536,25 @@ export default function TemplateModelerPage() {
           Process model created successfully! Redirecting to {createProcessModelSuccess}...
         </Alert>
       )}
+      {deleteSuccess && (
+        <Alert severity="success" sx={{ mb: 1 }} onClose={() => setDeleteSuccess(false)}>
+          {t('template_deleted_successfully', { defaultValue: 'Template deleted successfully. Redirecting...' })}
+        </Alert>
+      )}
 
       <CreateProcessModelFromTemplateModal
         open={createProcessModelOpen}
         onClose={() => setCreateProcessModelOpen(false)}
         template={template}
         onSuccess={handleCreateProcessModelSuccess}
+      />
+
+      <TemplateDeleteConfirmDialog
+        open={deleteDialogOpen}
+        onClose={() => setDeleteDialogOpen(false)}
+        onConfirm={handleDeleteConfirm}
+        templateName={template.name}
+        isPublished={template.isPublished}
       />
     </Box>
   );
