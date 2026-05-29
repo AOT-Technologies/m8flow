@@ -14,6 +14,13 @@ import { parseTaskShowUrl } from '@spiffworkflow-frontend/helpers';
 // https://dev.to/nilanth/how-to-secure-jwt-in-a-single-page-application-cko
 
 const SIGN_IN_PATH = '/';
+const AUTH_REALM_HINT_STORAGE_KEY = 'm8flow_auth_realm';
+
+export interface OrganizationMembership {
+  alias: string;
+  id: string | null;
+  name: string | null;
+}
 
 const getCookie = (key: string) => {
   const parsedCookies = cookie.parse(document.cookie);
@@ -75,6 +82,131 @@ const getAccessToken = () => {
 };
 const getAuthenticationIdentifier = () => {
   return getCookie('authentication_identifier');
+};
+
+const getSelectedTenantCookie = () => {
+  return getCookie('m8flow_selected_tenant');
+};
+
+const hasSelectedTenantCookie = () => {
+  return !!getSelectedTenantCookie();
+};
+
+const getAuthenticationRealmHint = () => {
+  const cookieValue = getCookie(AUTH_REALM_HINT_STORAGE_KEY);
+  if (cookieValue) {
+    return cookieValue;
+  }
+  return localStorage.getItem(AUTH_REALM_HINT_STORAGE_KEY);
+};
+
+const setAuthenticationRealmHint = (identifier: string) => {
+  const normalizedIdentifier = identifier.trim();
+  if (!normalizedIdentifier) {
+    return;
+  }
+
+  document.cookie = `${AUTH_REALM_HINT_STORAGE_KEY}=${encodeURIComponent(normalizedIdentifier)}; Path=/`;
+  localStorage.setItem(AUTH_REALM_HINT_STORAGE_KEY, normalizedIdentifier);
+};
+
+const clearAuthenticationRealmHint = () => {
+  document.cookie = `${AUTH_REALM_HINT_STORAGE_KEY}=; Max-Age=0; Path=/`;
+  localStorage.removeItem(AUTH_REALM_HINT_STORAGE_KEY);
+};
+
+const getDecodedIdToken = (): Record<string, unknown> | null => {
+  const idToken = getIdToken();
+  if (!idToken) {
+    return null;
+  }
+
+  try {
+    return jwtDecode(idToken) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+};
+
+const getSingleOrganizationClaim = (
+  idObject: Record<string, unknown> | null,
+): { alias: string; details: Record<string, unknown> } | null => {
+  if (!idObject) {
+    return null;
+  }
+
+  const organizationClaim = idObject.organization;
+  if (!organizationClaim || typeof organizationClaim !== 'object' || Array.isArray(organizationClaim)) {
+    return null;
+  }
+
+  const organizationEntries = Object.entries(organizationClaim).filter(
+    ([alias, details]) => typeof alias === 'string'
+      && alias.length > 0
+      && details
+      && typeof details === 'object'
+      && !Array.isArray(details),
+  ) as Array<[string, Record<string, unknown>]>;
+
+  if (organizationEntries.length !== 1) {
+    return null;
+  }
+
+  const [alias, details] = organizationEntries[0];
+  return { alias, details };
+};
+
+const getOrganizationMemberships = (): OrganizationMembership[] => {
+  const idObject = getDecodedIdToken();
+  if (!idObject) {
+    return [];
+  }
+
+  const organizationClaim = idObject.organization;
+  if (Array.isArray(organizationClaim)) {
+    return organizationClaim.flatMap((item) => {
+      if (typeof item === 'string' && item.length > 0) {
+        return [{ alias: item, id: null, name: null }];
+      }
+      if (item && typeof item === 'object' && !Array.isArray(item)) {
+        const itemRecord = item as Record<string, unknown>;
+        if (typeof itemRecord.alias === 'string' && itemRecord.alias.length > 0) {
+          return [{
+            alias: itemRecord.alias,
+            id: typeof itemRecord.id === 'string' && itemRecord.id ? itemRecord.id : null,
+            name: typeof itemRecord.name === 'string' && itemRecord.name ? itemRecord.name : null,
+          }];
+        }
+      }
+      return [];
+    });
+  }
+
+  if (!organizationClaim || typeof organizationClaim !== 'object') {
+    return [];
+  }
+
+  return Object.entries(organizationClaim).flatMap(([alias, details]) => {
+    if (
+      typeof alias !== 'string'
+      || !alias.length
+      || !details
+      || typeof details !== 'object'
+      || Array.isArray(details)
+    ) {
+      return [];
+    }
+
+    const organizationDetails = details as Record<string, unknown>;
+    return [{
+      alias,
+      id: typeof organizationDetails.id === 'string' && organizationDetails.id ? organizationDetails.id : null,
+      name:
+        typeof organizationDetails.name === 'string' && organizationDetails.name
+          ? organizationDetails.name
+          : null,
+    }];
+  });
 };
 
 const isLoggedIn = () => {
@@ -164,6 +296,7 @@ const doLogin = (
     loginParams.push(`task_guid=${taskShowParams.task_guid}`);
   }
   if (authenticationOption) {
+    setAuthenticationRealmHint(authenticationOption.identifier);
     loginParams.push(
       `authentication_identifier=${authenticationOption.identifier}`,
     );
@@ -174,6 +307,7 @@ const doLogin = (
 
 const doLogout = () => {
   const idToken = getIdToken();
+  clearAuthenticationRealmHint();
 
   const frontendBaseUrl = globalThis.location.origin;
   let logoutRedirectUrl = `${BACKEND_BASE_URL}/logout?redirect_url=${frontendBaseUrl}&id_token=${idToken}&authentication_identifier=${getAuthenticationIdentifier()}`;
@@ -249,31 +383,37 @@ const getPreferredUsername = () => {
 };
 
 const getTenantId = (): string | null => {
-  // Prefer tenant from JWT (Keycloak RealmInfoMapper: m8flow_tenant_id, m8flow_tenant_name)
-  const idToken = getIdToken();
-  if (idToken) {
-    try {
-      const idObject = jwtDecode(idToken) as Record<string, unknown>;
-      if (typeof idObject.m8flow_tenant_id === 'string' && idObject.m8flow_tenant_id) {
-        return idObject.m8flow_tenant_id;
+  const idObject = getDecodedIdToken();
+  if (idObject) {
+    if (typeof idObject.m8flow_tenant_id === 'string' && idObject.m8flow_tenant_id) {
+      return idObject.m8flow_tenant_id;
+    }
+    if (typeof idObject.m8flow_tenant_alias === 'string' && idObject.m8flow_tenant_alias) {
+      return idObject.m8flow_tenant_alias;
+    }
+
+    const organization = getSingleOrganizationClaim(idObject);
+    if (organization) {
+      if (typeof organization.details.id === 'string' && organization.details.id) {
+        return organization.details.id;
       }
-      if (typeof idObject.m8flow_tenant_name === 'string' && idObject.m8flow_tenant_name) {
-        return idObject.m8flow_tenant_name;
-      }
-      if (typeof idObject.realm_id === 'string' && idObject.realm_id) {
-        return idObject.realm_id;
-      }
-      if (typeof idObject.realm_name === 'string' && idObject.realm_name) {
-        return idObject.realm_name;
-      }
-      if (idObject.m8f_tenant_id !== undefined) {
-        return String(idObject.m8f_tenant_id);
-      }
-      if (idObject.tenant_id !== undefined) {
-        return String(idObject.tenant_id);
-      }
-    } catch {
-      // If JWT decode fails, fall back to localStorage
+      return organization.alias;
+    }
+
+    if (typeof idObject.m8flow_tenant_name === 'string' && idObject.m8flow_tenant_name) {
+      return idObject.m8flow_tenant_name;
+    }
+    if (typeof idObject.realm_id === 'string' && idObject.realm_id) {
+      return idObject.realm_id;
+    }
+    if (typeof idObject.realm_name === 'string' && idObject.realm_name) {
+      return idObject.realm_name;
+    }
+    if (idObject.m8f_tenant_id !== undefined) {
+      return String(idObject.m8f_tenant_id);
+    }
+    if (idObject.tenant_id !== undefined) {
+      return String(idObject.tenant_id);
     }
   }
 
@@ -290,19 +430,21 @@ const setTenantId = (tenantId: string | null): void => {
 };
 
 const getTenantName = (): string | null => {
-  const idToken = getIdToken();
-  if (idToken) {
-    try {
-      const idObject = jwtDecode(idToken) as Record<string, unknown>;
-      if(typeof idObject.m8flow_tenant_name === 'string' && idObject.m8flow_tenant_name) {
-        return idObject.m8flow_tenant_name;
-      }
-    } catch (err) {
-      console.error(err);
-      return null;
+  const idObject = getDecodedIdToken();
+  if (idObject) {
+    if (typeof idObject.m8flow_tenant_name === 'string' && idObject.m8flow_tenant_name) {
+      return idObject.m8flow_tenant_name;
+    }
+    if (typeof idObject.m8flow_tenant_alias === 'string' && idObject.m8flow_tenant_alias) {
+      return idObject.m8flow_tenant_alias;
+    }
+
+    const organization = getSingleOrganizationClaim(idObject);
+    if (organization) {
+      return organization.alias;
     }
   }
-  return null;
+  return localStorage.getItem('m8flow_tenant');
 };
 
 const UserService = {
@@ -311,11 +453,15 @@ const UserService = {
   doLogout,
   getAccessToken,
   getAuthenticationIdentifier,
+  getAuthenticationRealmHint,
   getCurrentLocation,
   getPreferredUsername,
+  getOrganizationMemberships,
+  getSelectedTenantCookie,
   getUserEmail,
   getUserName,
   getTenantId,
+  hasSelectedTenantCookie,
   isLoggedIn,
   isSuperAdmin,
   isPublicUser,

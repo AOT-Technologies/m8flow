@@ -1,2 +1,3 @@
 com.m8flow.keycloak.mapper.RealmInfoMapper
 com.m8flow.keycloak.mapper.NormalizedGroupMembershipMapper
+com.m8flow.keycloak.mapper.NormalizedOrganizationMembershipMapper

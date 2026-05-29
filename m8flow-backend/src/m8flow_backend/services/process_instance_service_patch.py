@@ -18,59 +18,6 @@ def _task_sort_ts(task: object) -> float:
     return 0.0
 
 
-def _normalized_string_attr(obj: object, attr_name: str) -> str | None:
-    value = getattr(obj, attr_name, None)
-    if not isinstance(value, str):
-        return None
-    normalized = value.strip()
-    if normalized:
-        return normalized
-    return None
-
-
-def _safe_potential_owner_label(user: object) -> str | None:
-    """Return the best available stable label for a potential owner."""
-    for attr_name in ("email", "username", "display_name", "service_id"):
-        normalized = _normalized_string_attr(user, attr_name)
-        if normalized:
-            return normalized
-
-    return None
-
-
-def _safe_potential_owner_usernames(human_task: object) -> str | None:
-    """Serialize potential owners without assuming email is always present."""
-    potential_owners = getattr(human_task, "potential_owners", None)
-    if not potential_owners:
-        return None
-
-    serialized_labels: list[str] = []
-    seen: set[str] = set()
-    human_task_id = getattr(human_task, "id", None)
-    human_task_task_id = getattr(human_task, "task_id", None)
-
-    for potential_owner in potential_owners:
-        label = _safe_potential_owner_label(potential_owner)
-        if label is None:
-            current_app.logger.warning(
-                "Skipping potential owner with no usable identifier for human_task id=%s task_id=%s user_id=%s",
-                human_task_id,
-                human_task_task_id,
-                getattr(potential_owner, "id", None),
-            )
-            continue
-
-        if label in seen:
-            continue
-        seen.add(label)
-        serialized_labels.append(label)
-
-    if not serialized_labels:
-        return None
-
-    return ",".join(serialized_labels)
-
-
 def _raise_lane_assignment_api_error(
     process_instance: object,
     exc: Exception,
@@ -130,6 +77,32 @@ def _validate_queued_process_start(process_instance: object, *, handle_error: bo
             message_prefix="Process start could not continue.",
             handle_error=handle_error,
         )
+
+
+def _normalized_username(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _potential_owner_usernames_from_human_task(human_task: object) -> str | None:
+    potential_owners = getattr(human_task, "potential_owners", None)
+    if not potential_owners:
+        return None
+
+    usernames: list[str] = []
+    seen_usernames: set[str] = set()
+    for potential_owner in potential_owners:
+        username = _normalized_username(getattr(potential_owner, "username", None))
+        if username is None or username in seen_usernames:
+            continue
+        usernames.append(username)
+        seen_usernames.add(username)
+
+    if not usernames:
+        return None
+    return ",".join(usernames)
 
 
 def apply() -> None:
@@ -356,7 +329,6 @@ def apply() -> None:
             except TypeError as exc:
                 if "expected str instance" not in str(exc) or "NoneType found" not in str(exc):
                     raise
-
         task_type = spiff_task.task_spec.description
         task_guid = str(spiff_task.id)
 
@@ -391,7 +363,7 @@ def apply() -> None:
                     if group is not None:
                         assigned_user_group_identifier = group.identifier
                 elif len(human_task.potential_owners) > 0:
-                    potential_owner_usernames = _safe_potential_owner_usernames(human_task)
+                    potential_owner_usernames = _potential_owner_usernames_from_human_task(human_task)
 
         parent_id = None
         if spiff_task.parent:
@@ -431,5 +403,4 @@ def apply() -> None:
     ProcessInstanceService.spiff_task_to_api_task = patched_spiff_task_to_api_task
     ProcessInstanceService.update_form_task_data = patched_update_form_task_data
     ProcessInstanceService.run_process_instance_with_processor = patched_run_process_instance_with_processor
-    ProcessInstanceService.spiff_task_to_api_task = patched_spiff_task_to_api_task  # type: ignore[assignment]
     _PATCHED = True

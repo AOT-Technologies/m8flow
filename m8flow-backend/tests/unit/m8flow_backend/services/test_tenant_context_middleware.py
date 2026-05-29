@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 from flask import Flask, g
 
 from spiffworkflow_backend.exceptions.api_error import ApiError
 from spiffworkflow_backend.models.db import db
+from m8flow_backend.services.tenant_identity_helpers import current_tenant_id_or_none
+from m8flow_backend.services.tenant_identity_helpers import current_tenant_identifiers
 from m8flow_backend.services.tenant_context_middleware import (
     _is_tenant_context_exempt_request,
     resolve_request_tenant,
@@ -40,42 +43,14 @@ def _make_app() -> Flask:
 
     # A simple endpoint so test_request_context has a route.
     app.add_url_rule("/test", "test_endpoint", lambda: "ok")
+    app.add_url_rule("/v1.0/permissions-check", "permissions_check_endpoint", lambda: "ok")
     return app
-
-
-@pytest.fixture(autouse=True)
-def _clean_env():
-    """
-    Prevent env leakage between tests, since tenant resolution behavior
-    is controlled by M8FLOW_ALLOW_MISSING_TENANT_CONTEXT.
-    """
-    import os
-
-    old = os.environ.get("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT")
-    os.environ.pop("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", None)
-    yield
-    if old is None:
-        os.environ.pop("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", None)
-    else:
-        os.environ["M8FLOW_ALLOW_MISSING_TENANT_CONTEXT"] = old
-
 
 def _seed_tenants() -> None:
     from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
 
     now = int(datetime.now(timezone.utc).timestamp())
 
-    db.session.add(
-        M8flowTenantModel(
-            id="default",
-            name="Default",
-            slug="default",
-            created_by="test",
-            modified_by="test",
-            created_at_in_seconds=now,
-            updated_at_in_seconds=now,
-        )
-    )
     db.session.add(
         M8flowTenantModel(
             id="tenant-a",
@@ -157,19 +132,28 @@ def test_missing_tenant_raises_by_default() -> None:
                 assert exc.value.error_code == "tenant_required"
 
 
-def test_missing_tenant_defaults_when_allowed() -> None:
-    import os
-
-    os.environ["M8FLOW_ALLOW_MISSING_TENANT_CONTEXT"] = "true"
-
+def test_missing_tenant_still_raises_on_protected_request() -> None:
     app = _make_app()
     with app.app_context():
         db.create_all()
         _seed_tenants()
 
         with app.test_request_context("/test"):
+            with pytest.raises(ApiError) as exc:
+                resolve_request_tenant()
+            assert exc.value.error_code == "tenant_required"
+
+
+def test_missing_tenant_keeps_exempt_request_public() -> None:
+    app = _make_app()
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+
+        with app.test_request_context("/v1.0/status"):
             resolve_request_tenant()
-            assert g.m8flow_tenant_id == "default"
+            assert getattr(g, "m8flow_tenant_id", None) is None
+            assert getattr(g, "_m8flow_public_request", False) is True
 
 
 def test_invalid_tenant_raises() -> None:
@@ -196,6 +180,54 @@ def test_invalid_tenant_raises() -> None:
             with pytest.raises(ApiError) as exc:
                 resolve_request_tenant()
             assert exc.value.error_code == "invalid_tenant"
+
+
+def test_org_uuid_claim_maps_to_legacy_local_tenant_row() -> None:
+    from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
+    from spiffworkflow_backend.models.user import UserModel
+
+    app = _make_app()
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+
+        now = int(datetime.now(timezone.utc).timestamp())
+        db.session.add(
+            M8flowTenantModel(
+                id="m8flow",
+                name="M8Flow Realm",
+                slug="m8flow",
+                created_by="test",
+                modified_by="test",
+                created_at_in_seconds=now,
+                updated_at_in_seconds=now,
+            )
+        )
+
+        user = UserModel(
+            username="tester",
+            email="tester@example.com",
+            service="http://localhost:7002/realms/m8flow",
+            service_id="tester",
+        )
+        db.session.add(user)
+        db.session.flush()
+
+        token = user.encode_auth_token(
+            {
+                "organization": {
+                    "m8flow": {
+                        "id": "370465d2-9b78-4c8b-9d82-c9a4818b747f",
+                    }
+                },
+                "m8flow_authentication_identifier": "m8flow",
+            }
+        )
+        db.session.commit()
+
+        with app.test_request_context("/test", headers={"Authorization": f"Bearer {token}"}):
+            resolve_request_tenant()
+            assert g.m8flow_tenant_id == "m8flow"
 
 
 def test_tenant_validation_raises_503_when_db_not_bound() -> None:
@@ -267,9 +299,17 @@ def test_tenant_override_forbidden() -> None:
             assert exc.value.error_code == "tenant_override_forbidden"
 
 
-def test_tenant_context_propagates_to_queries() -> None:
+def test_tenant_context_propagates_to_queries(monkeypatch) -> None:
     from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScoped
     from m8flow_backend.services import tenant_scoping_patch
+
+    monkeypatch.setattr(tenant_scoping_patch, "_patch_bulk_save_objects", lambda: None)
+    monkeypatch.setattr(tenant_scoping_patch, "_patch_insert_or_ignore_duplicate", lambda: None)
+    monkeypatch.setattr(tenant_scoping_patch, "_patch_task_draft_data", lambda: None)
+    monkeypatch.setattr(tenant_scoping_patch, "_patch_task_instructions", lambda: None)
+    monkeypatch.setattr(tenant_scoping_patch, "_patch_future_task", lambda: None)
+    monkeypatch.setattr(tenant_scoping_patch, "_patch_process_caller_relationship", lambda: None)
+    monkeypatch.setattr(tenant_scoping_patch, "_patch_reference_cache_basic_query", lambda: None)
 
     tenant_scoping_patch.apply()
 
@@ -335,14 +375,328 @@ def test_global_tenant_management_path_is_tenant_context_exempt() -> None:
         assert _is_tenant_context_exempt_request() is True
 
 
-def test_permissions_check_path_is_tenant_context_exempt() -> None:
+def test_permissions_check_path_is_not_tenant_context_exempt() -> None:
     app = _make_app()
     with app.test_request_context("/v1.0/permissions-check"):
-        assert _is_tenant_context_exempt_request() is True
+        assert _is_tenant_context_exempt_request() is False
 
 
-def test_login_return_resolves_tenant_from_state_when_auth_is_excluded() -> None:
+def test_resolves_tenant_from_jwt_claim_on_permissions_check_path(monkeypatch) -> None:
+    from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
+    from spiffworkflow_backend.models.user import UserModel
+
+    app = _make_app()
+    org_tenant_id = "bb768eda-e8cb-4452-9a49-acd2115db07c"
+
+    monkeypatch.setattr(
+        "m8flow_backend.services.tenant_context_middleware._tenant_from_context_var",
+        lambda: None,
+    )
+
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+        now = int(datetime.now(timezone.utc).timestamp())
+        db.session.add(
+            M8flowTenantModel(
+                id=org_tenant_id,
+                name="Org Tenant",
+                slug="org-tenant",
+                created_by="test",
+                modified_by="test",
+                created_at_in_seconds=now,
+                updated_at_in_seconds=now,
+            )
+        )
+
+        user = UserModel(
+            username="tester",
+            email="tester@example.com",
+            service="local",
+            service_id="tester",
+        )
+        db.session.add(user)
+        db.session.flush()
+
+        token = user.encode_auth_token({"m8flow_tenant_id": org_tenant_id})
+        db.session.commit()
+
+        with app.test_request_context(
+            "/v1.0/permissions-check",
+            headers={"Authorization": f"Bearer {token}"},
+        ):
+            resolve_request_tenant()
+
+            assert current_tenant_id_or_none() == org_tenant_id
+            assert g.m8flow_tenant_id == org_tenant_id
+            assert org_tenant_id in current_tenant_identifiers(org_tenant_id)
+
+
+def test_resolves_tenant_from_jwt_claim_on_status_path(monkeypatch) -> None:
+    from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
+    from spiffworkflow_backend.models.user import UserModel
+
+    app = _make_app()
+    org_tenant_id = "bb768eda-e8cb-4452-9a49-acd2115db07c"
+    stale_placeholder_tenant_id = "default"
+
+    monkeypatch.setattr(
+        "m8flow_backend.services.tenant_context_middleware._tenant_from_context_var",
+        lambda: stale_placeholder_tenant_id,
+    )
+
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+        now = int(datetime.now(timezone.utc).timestamp())
+        db.session.add(
+            M8flowTenantModel(
+                id=org_tenant_id,
+                name="Org Tenant",
+                slug="org-tenant",
+                created_by="test",
+                modified_by="test",
+                created_at_in_seconds=now,
+                updated_at_in_seconds=now,
+            )
+        )
+
+        user = UserModel(
+            username="tester",
+            email="tester@example.com",
+            service="local",
+            service_id="tester",
+        )
+        db.session.add(user)
+        db.session.flush()
+
+        token = user.encode_auth_token({"m8flow_tenant_id": org_tenant_id})
+        db.session.commit()
+
+        with app.test_request_context("/v1.0/status", headers={"Authorization": f"Bearer {token}"}):
+            g.m8flow_tenant_id = stale_placeholder_tenant_id
+            resolve_request_tenant()
+
+            assert current_tenant_id_or_none() == org_tenant_id
+            assert g.m8flow_tenant_id == org_tenant_id
+            assert org_tenant_id in current_tenant_identifiers(org_tenant_id)
+
+
+def test_resolves_tenant_from_jwt_claim_on_status_path_without_auth_realm_lookup(monkeypatch) -> None:
+    import jwt
+
+    from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
+    from spiffworkflow_backend.services.authentication_service import AuthenticationService
+
+    app = _make_app()
+    org_tenant_id = "bb768eda-e8cb-4452-9a49-acd2115db07c"
+    stale_placeholder_tenant_id = "default"
+
+    monkeypatch.setattr(
+        "m8flow_backend.services.tenant_context_middleware._tenant_from_context_var",
+        lambda: stale_placeholder_tenant_id,
+    )
+    monkeypatch.setattr(
+        AuthenticationService,
+        "parse_jwt_token",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("parse_jwt_token should not be called")),
+    )
+
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+        now = int(datetime.now(timezone.utc).timestamp())
+        db.session.add(
+            M8flowTenantModel(
+                id=org_tenant_id,
+                name="Org Tenant",
+                slug="org-tenant",
+                created_by="test",
+                modified_by="test",
+                created_at_in_seconds=now,
+                updated_at_in_seconds=now,
+            )
+        )
+        db.session.commit()
+
+        token = jwt.encode(
+            {
+                "iss": "http://localhost:7002/realms/shared-users",
+                "m8flow_tenant_id": org_tenant_id,
+            },
+            "test-secret",
+            algorithm="HS256",
+        )
+
+        with app.test_request_context("/v1.0/status", headers={"Authorization": f"Bearer {token}"}):
+            resolve_request_tenant()
+
+            assert current_tenant_id_or_none() == org_tenant_id
+            assert g.m8flow_tenant_id == org_tenant_id
+            assert org_tenant_id in current_tenant_identifiers(org_tenant_id)
+
+
+def test_protected_request_without_tenant_claim_does_not_fall_back_to_default_auth_identifier(monkeypatch) -> None:
+    import jwt
+
+    from spiffworkflow_backend.services.authentication_service import AuthenticationService
+
+    app = _make_app()
+
+    monkeypatch.setattr(
+        AuthenticationService,
+        "parse_jwt_token",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("parse_jwt_token should not be called")),
+    )
+
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+
+        token = jwt.encode(
+            {
+                "iss": "http://localhost:7002/realms/shared-users",
+                "preferred_username": "editor",
+            },
+            "test-secret",
+            algorithm="HS256",
+        )
+
+        with app.test_request_context("/test", headers={"Authorization": f"Bearer {token}"}):
+            with pytest.raises(ApiError) as exc:
+                resolve_request_tenant()
+
+            assert exc.value.error_code == "tenant_required"
+
+
+def test_selected_tenant_cookie_overrides_explicit_token_tenant_for_shared_realm_multi_org_status(monkeypatch) -> None:
+    import jwt
+
+    from spiffworkflow_backend.services.authentication_service import AuthenticationService
+
+    app = _make_app()
+
+    monkeypatch.setenv("M8FLOW_KEYCLOAK_SHARED_REALM", "m8flow")
+    monkeypatch.setattr(
+        AuthenticationService,
+        "parse_jwt_token",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("parse_jwt_token should not be called")),
+    )
+
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+
+        token = jwt.encode(
+            {
+                "iss": "http://localhost:7002/realms/m8flow",
+                "m8flow_authentication_identifier": "m8flow",
+                "m8flow_tenant_id": "tenant-a",
+                "m8flow_tenant_alias": "tenant-a",
+                "organization": {
+                    "tenant-a": {"id": "tenant-a"},
+                    "it": {"id": "tenant-it-id"},
+                },
+            },
+            "test-secret",
+            algorithm="HS256",
+        )
+
+        with app.test_request_context(
+            "/v1.0/status",
+            headers={"Authorization": f"Bearer {token}"},
+            environ_base={"HTTP_COOKIE": "authentication_identifier=m8flow; m8flow_selected_tenant=tenant-it-id"},
+        ):
+            resolve_request_tenant()
+
+            assert current_tenant_id_or_none() == "tenant-it-id"
+            assert g.m8flow_tenant_id == "tenant-it-id"
+            assert "tenant-it-id" in current_tenant_identifiers("tenant-it-id")
+
+
+def test_resolves_tenant_from_request_header_when_user_belongs(monkeypatch) -> None:
+    app = _make_app()
+
+    monkeypatch.setattr(
+        "m8flow_backend.services.tenant_context_middleware._tenant_from_jwt_claim_cached",
+        lambda *, allow_decode: None,
+    )
+    monkeypatch.setattr(
+        "m8flow_backend.services.tenant_context_middleware._tenant_from_context_var",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        "m8flow_backend.services.tenant_context_middleware.AuthorizationService",
+        SimpleNamespace(should_disable_auth_for_request=lambda: False),
+    )
+
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+
+        user = SimpleNamespace(
+            id=7,
+            username="admin",
+            service="http://localhost:7002/realms/shared-users",
+            groups=[SimpleNamespace(identifier="tenant-a:tenant-admin")],
+        )
+
+        with app.test_request_context(
+            "/test",
+            headers={"x-m8flow-tenant-id": "tenant-a"},
+        ):
+            g.user = user
+            resolve_request_tenant()
+
+            assert g.m8flow_tenant_id == "tenant-a"
+            assert current_tenant_id_or_none() == "tenant-a"
+            assert "tenant-a" in current_tenant_identifiers(g.m8flow_tenant_id)
+
+
+def test_rejects_tenant_header_when_user_not_member(monkeypatch) -> None:
+    app = _make_app()
+
+    monkeypatch.setattr(
+        "m8flow_backend.services.tenant_context_middleware._tenant_from_jwt_claim_cached",
+        lambda *, allow_decode: None,
+    )
+    monkeypatch.setattr(
+        "m8flow_backend.services.tenant_context_middleware._tenant_from_context_var",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        "m8flow_backend.services.tenant_context_middleware.AuthorizationService",
+        SimpleNamespace(should_disable_auth_for_request=lambda: False),
+    )
+
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+
+        user = SimpleNamespace(
+            id=7,
+            username="admin",
+            service="http://localhost:7002/realms/shared-users",
+            groups=[SimpleNamespace(identifier="tenant-b:tenant-admin")],
+        )
+
+        with app.test_request_context(
+            "/test",
+            headers={"x-m8flow-tenant-id": "tenant-a"},
+        ):
+            g.user = user
+            with pytest.raises(ApiError) as exc:
+                resolve_request_tenant()
+
+            assert exc.value.error_code == "tenant_override_forbidden"
+
+
+def test_login_return_resolves_tenant_from_shared_realm_and_cookie() -> None:
+    """Shared-realm login_return resolves tenant from m8flow_selected_tenant cookie."""
     import base64
+    import os
+
+    os.environ["M8FLOW_KEYCLOAK_SHARED_REALM"] = "m8flow"
 
     app = _make_app()
     with app.app_context():
@@ -350,14 +704,51 @@ def test_login_return_resolves_tenant_from_state_when_auth_is_excluded() -> None
         _seed_tenants()
 
         state_payload = {
-            "final_url": "http://localhost:6840/",
-            "authentication_identifier": "it",
+            "final_url": "http://localhost:7000/",
+            "authentication_identifier": "m8flow",
+        }
+        state = base64.b64encode(bytes(str(state_payload), "utf-8")).decode("utf-8")
+
+        with app.test_request_context(
+            f"/v1.0/login_return?state={state}",
+            environ_base={"HTTP_COOKIE": "m8flow_selected_tenant=tenant-it-id"},
+        ):
+            resolve_request_tenant()
+            assert g.m8flow_tenant_id == "tenant-it-id"
+
+    os.environ.pop("M8FLOW_KEYCLOAK_SHARED_REALM", None)
+
+
+def test_login_return_skips_tenant_resolution_when_no_selected_tenant_cookie() -> None:
+    """
+    /login_return is the OAuth callback and runs BEFORE the auth code is exchanged for a JWT.
+    The before_request hook must NOT enforce tenant context here — the handler resolves the
+    tenant from the issued token (or routes shared-realm multi-org users to tenant selection).
+    Failing closed here would break every shared-realm login that didn't pre-set the cookie.
+    """
+    import base64
+    import os
+
+    os.environ["M8FLOW_KEYCLOAK_SHARED_REALM"] = "m8flow"
+
+    app = _make_app()
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+
+        state_payload = {
+            "final_url": "http://localhost:7000/",
+            "authentication_identifier": "m8flow",
         }
         state = base64.b64encode(bytes(str(state_payload), "utf-8")).decode("utf-8")
 
         with app.test_request_context(f"/v1.0/login_return?state={state}"):
             resolve_request_tenant()
-            assert g.m8flow_tenant_id == "tenant-it-id"
+            # Resolution succeeds without a tenant; the login_return handler will set context later.
+            assert getattr(g, "m8flow_tenant_id", "<unset>") is None
+            assert getattr(g, "_m8flow_global_request", False) is True
+
+    os.environ.pop("M8FLOW_KEYCLOAK_SHARED_REALM", None)
 
 
 def test_login_return_skips_tenant_validation_for_master_auth_identifier() -> None:
@@ -377,6 +768,30 @@ def test_login_return_skips_tenant_validation_for_master_auth_identifier() -> No
         with app.test_request_context(f"/v1.0/login_return?state={state}"):
             resolve_request_tenant()
             assert getattr(g, "m8flow_tenant_id", None) is None
+
+
+def test_master_realm_request_does_not_fall_back_to_default_tenant(monkeypatch) -> None:
+    app = _make_app()
+
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+
+        with app.test_request_context(
+            "/v1.0/m8flow/tenants",
+            headers={"Authorization": "Bearer test-token"},
+        ):
+            g._m8flow_decoded_token = {
+                "iss": "http://localhost:7002/realms/master",
+                "preferred_username": "super-admin",
+                "groups": ["super-admin"],
+            }
+            resolve_request_tenant()
+
+            assert current_tenant_id_or_none() is None
+            assert getattr(g, "m8flow_tenant_id", None) is None
+            # /v1.0/m8flow/tenants is an exempt path so it gets the exempt flag
+            assert getattr(g, "_m8flow_tenant_context_exempt_request", False) is True
 
 
 def test_master_super_admin_request_is_tenant_context_exempt(monkeypatch) -> None:

@@ -106,8 +106,8 @@ def test_fill_realm_template_user_realm_roles() -> None:
     assert result["users"][1]["realmRoles"] == ["default-roles-tenant-f"]
 
 
-RBAC_REALM_ROLES = ("editor", "tenant-admin", "integrator", "reviewer", "viewer")
-RBAC_USERNAMES = ("editor", "integrator", "reviewer", "tenant-admin", "viewer")
+RBAC_REALM_ROLES = ("editor", "tenant-admin", "integrator", "reviewer", "submitter", "viewer")
+RBAC_USERNAMES = ("editor", "integrator", "reviewer", "submitter", "tenant-admin", "viewer")
 
 
 def test_fill_realm_template_rbac_roles_and_users() -> None:
@@ -201,12 +201,14 @@ def test_load_default_organizational_group_paths() -> None:
         "/Designers",
         "/Administrators",
         "/Support",
+        "/Submitters",
+        "/Viewers",
     ]
 
 
 @patch("m8flow_backend.services.keycloak_service.load_default_organizational_group_paths")
 def test_fill_realm_template_merges_default_organizational_groups(mock_default_groups) -> None:
-    mock_default_groups.return_value = ["/Designers", "/Approvers", "/Support"]
+    mock_default_groups.return_value = ["/Designers", "/Approvers", "/Support", "/Submitters", "/Viewers"]
     template = {
         "id": "m8flow",
         "realm": "m8flow",
@@ -222,6 +224,8 @@ def test_fill_realm_template_merges_default_organizational_groups(mock_default_g
         "/Designers",
         "/Approvers",
         "/Support",
+        "/Submitters",
+        "/Viewers",
     ]
     assert _flatten_group_paths(template["groups"]) == ["/Administrators"]
 
@@ -332,7 +336,18 @@ def test_ensure_backend_redirect_uri_in_keycloak_client_reconciles_legacy_roles_
             json=lambda: [{"id": "profile-scope-123", "name": "profile"}],
             raise_for_status=lambda: None,
         ),
-        MagicMock(status_code=200, json=lambda: [], raise_for_status=lambda: None),
+        MagicMock(
+            status_code=200,
+            json=lambda: [
+                {
+                    "id": "profile-groups-mapper",
+                    "name": "groups",
+                    "protocolMapper": "oidc-normalized-group-membership-mapper",
+                    "config": {"claim.name": "groups"},
+                }
+            ],
+            raise_for_status=lambda: None,
+        ),
         MagicMock(
             status_code=200,
             json=lambda: {
@@ -349,17 +364,15 @@ def test_ensure_backend_redirect_uri_in_keycloak_client_reconciles_legacy_roles_
 
     ensure_backend_redirect_uri_in_keycloak_client("tenant-a")
 
-    mock_delete.assert_called_once()
-    assert mock_delete.call_args[0][0].endswith("/protocol-mappers/models/legacy-mapper")
-    assert mock_post.call_count == 2
+    assert mock_delete.call_count == 2
+    deleted_urls = [call.args[0] for call in mock_delete.call_args_list]
+    assert any(url.endswith("/clients/client-123/protocol-mappers/models/legacy-mapper") for url in deleted_urls)
+    assert any(url.endswith("/client-scopes/profile-scope-123/protocol-mappers/models/profile-groups-mapper") for url in deleted_urls)
+    assert mock_post.call_count == 1
     roles_mapper_payload = mock_post.call_args_list[0].kwargs["json"]
-    groups_mapper_payload = mock_post.call_args_list[1].kwargs["json"]
     assert roles_mapper_payload["name"] == "roles"
     assert roles_mapper_payload["protocolMapper"] == "oidc-usermodel-realm-role-mapper"
     assert roles_mapper_payload["config"]["claim.name"] == "roles"
-    assert groups_mapper_payload["name"] == "groups"
-    assert groups_mapper_payload["protocolMapper"] == "oidc-normalized-group-membership-mapper"
-    assert groups_mapper_payload["config"]["claim.name"] == "groups"
     mock_put.assert_not_called()
 
 
@@ -403,9 +416,8 @@ def test_ensure_backend_redirect_uri_in_keycloak_client_reconciles_mappers_witho
     ensure_backend_redirect_uri_in_keycloak_client("tenant-a")
 
     mock_delete.assert_not_called()
-    assert mock_post.call_count == 2
+    assert mock_post.call_count == 1
     assert mock_post.call_args_list[0].kwargs["json"]["name"] == "roles"
-    assert mock_post.call_args_list[1].kwargs["json"]["name"] == "groups"
     mock_put.assert_not_called()
 
 
