@@ -54,6 +54,53 @@ _PATCHED = False
 LOGGER = logging.getLogger(__name__)
 
 
+def _remove_spiff_class_registry_conflicts(source_module: ModuleType) -> None:
+    """Remove spiff-origin mapper classes from the SQLAlchemy class registry when an m8flow
+    override class has just been imported alongside them.
+
+    When a spiff model is pre-imported before the override finder is installed (e.g. via
+    spiffworkflow_backend/__init__.py → load_database_models), its class ends up in
+    SQLAlchemy's declarative class registry.  When the m8flow override class is subsequently
+    imported, SQLAlchemy creates a _MultipleClassMarker for the shared class name, which
+    causes "Multiple classes found for path 'X'" errors during mapper configuration.
+
+    This function runs *after* the source module has been imported, so both classes are
+    already present.  It removes the spiff-origin class from any _MultipleClassMarker,
+    leaving only the m8flow class registered under that name.
+    """
+    try:
+        from sqlalchemy import inspect as sa_inspect
+        from sqlalchemy.orm.clsregistry import _MultipleClassMarker
+    except ImportError:
+        return
+
+    source_module_name = getattr(source_module, "__name__", "")
+
+    for obj in list(vars(source_module).values()):
+        if not isinstance(obj, type):
+            continue
+        # Only handle classes defined in the source (m8flow) module.
+        if getattr(obj, "__module__", "") != source_module_name:
+            continue
+        try:
+            mapper = sa_inspect(obj, raiseerr=False)
+            if mapper is None:
+                continue
+            cr = mapper.registry._class_registry
+            class_name = obj.__name__
+            entry = cr.get(class_name)
+            if not isinstance(entry, _MultipleClassMarker):
+                continue
+            # Remove any class whose module belongs to the spiff package.
+            for conflicting_cls in list(entry):
+                if conflicting_cls is None:
+                    continue
+                if getattr(conflicting_cls, "__module__", "").startswith("spiffworkflow_backend."):
+                    entry.remove_item(conflicting_cls)
+        except Exception:
+            continue
+
+
 class _OverrideLoader(importlib.abc.Loader):
     def __init__(self, target_name: str, source_name: str):
         self.target_name = target_name
@@ -66,6 +113,10 @@ class _OverrideLoader(importlib.abc.Loader):
     def exec_module(self, module: ModuleType) -> None:
         # Load the real source module, then copy its namespace into the target module.
         src = importlib.import_module(self.source_name)
+        # If spiff's version of this class was pre-imported it may still be in the
+        # SQLAlchemy declarative registry alongside the m8flow class, creating a
+        # _MultipleClassMarker that causes "Multiple classes found" errors.  Clean that up.
+        _remove_spiff_class_registry_conflicts(src)
         module.__dict__.update(src.__dict__)
         module.__dict__["__name__"] = self.target_name
 
@@ -81,7 +132,7 @@ class _OverrideFinder(importlib.abc.MetaPathFinder):
 def _purge_preimported_override_modules() -> list[str]:
     """
     Remove already-imported spiff model modules that should be overridden.
-    They will be re-imported through the override finder.
+    They will be re-imported through the override finder on next access.
     """
     purged: list[str] = []
     for target_name in _OVERRIDES:
@@ -121,5 +172,15 @@ def apply() -> None:
     # Install finder once, at the front so it wins
     if not any(isinstance(f, _OverrideFinder) for f in sys.meta_path):
         sys.meta_path.insert(0, _OverrideFinder())
+
+    # UserModel requires special handling: spiff's UserModel is kept alive by external
+    # strong references (load_database_models imports it and UserGroupAssignmentModel
+    # references its column via ForeignKey(UserModel.id)), preventing the cyclic garbage
+    # collector from clearing it from the SQLAlchemy class registry.  We must eagerly
+    # register m8flow's UserModel now so it's available before any mapper configuration
+    # runs, regardless of test order.  m8flow's UserModel uses keep_existing=True so the
+    # re-import is safe even though the table already exists in the metadata.
+    if "spiffworkflow_backend.models.user" in purged:
+        importlib.import_module("spiffworkflow_backend.models.user")
 
     _PATCHED = True

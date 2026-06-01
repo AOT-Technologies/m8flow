@@ -82,7 +82,7 @@
   "action_cannot_be_undone": "Tätä toimintoa ei voi kumota.",
   "delete_secret_title": "Poistetaanko salaisuus?",
   "delete_secret_confirm": "Haluatko varmasti poistaa salaisuuden \"{{name}}\"?",
-  "realm_slug": "Realm Slug",
+  "realm_slug": "Vuokralaisen alias",
   "display_name": "Näyttönimi",
   "cancel": "Peruuttaa",
   "delete": "Poistaa",

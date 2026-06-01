@@ -2,13 +2,13 @@
 
 Tests cover:
 - Get tenant by ID and slug
-- Get all tenants (excluding default)
+- Get all tenants
 - Update tenant (name, status)
 - Permission checks
-- Default tenant protection
 - Error handling
 """
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -66,6 +66,7 @@ class TestTenantController:
         with app.app_context():
             with app.test_request_context("/"):
                 g.user = mock_admin_user
+                now = int(datetime.now(timezone.utc).timestamp())
                 
                 # Create tenant
                 tenant = M8flowTenantModel(
@@ -74,7 +75,9 @@ class TestTenantController:
                     slug="get-tenant",
                     status=TenantStatus.ACTIVE,
                     created_by="admin",
-                    modified_by="admin"
+                    modified_by="admin",
+                    created_at_in_seconds=now,
+                    updated_at_in_seconds=now,
                 )
                 db.session.add(tenant)
                 db.session.commit()
@@ -93,21 +96,22 @@ class TestTenantController:
                 assert response.status_code == 404
                 assert response.get_json()["error_code"] == "tenant_not_found"
 
-    def test_get_tenant_by_id_default_forbidden(self, app, mock_admin_user):
-        """Test that getting default tenant by ID is forbidden."""
+    def test_get_tenant_by_id_missing_default_returns_not_found(self, app, mock_admin_user):
+        """Legacy default tenant id now behaves like any other missing tenant."""
         with app.app_context():
             with app.test_request_context("/"):
                 g.user = mock_admin_user
                 
                 response = tenant_controller.get_tenant_by_id("default")
-                assert response.status_code == 403
-                assert response.get_json()["error_code"] == "forbidden_tenant"
+                assert response.status_code == 404
+                assert response.get_json()["error_code"] == "tenant_not_found"
 
     def test_get_tenant_by_slug_success(self, app, mock_admin_user):
         """Test successfully retrieving tenant by slug."""
         with app.app_context():
             with app.test_request_context("/"):
                 g.user = mock_admin_user
+                now = int(datetime.now(timezone.utc).timestamp())
                 
                 # Create tenant
                 tenant = M8flowTenantModel(
@@ -116,7 +120,9 @@ class TestTenantController:
                     slug="slug-tenant",
                     status=TenantStatus.ACTIVE,
                     created_by="admin",
-                    modified_by="admin"
+                    modified_by="admin",
+                    created_at_in_seconds=now,
+                    updated_at_in_seconds=now,
                 )
                 db.session.add(tenant)
                 db.session.commit()
@@ -135,31 +141,22 @@ class TestTenantController:
                 assert response.status_code == 404
                 assert response.get_json()["error_code"] == "tenant_not_found"
 
-    def test_get_all_tenants_excludes_default(self, app, mock_admin_user):
-        """Test that get_all_tenants excludes the default tenant."""
+    def test_get_all_tenants_returns_all_rows(self, app, mock_admin_user):
+        """Test that get_all_tenants returns all tenant rows."""
         with app.app_context():
             with app.test_request_context("/"):
                 g.user = mock_admin_user
+                now = int(datetime.now(timezone.utc).timestamp())
                 
-                # Create default tenant
-                default_tenant = M8flowTenantModel(
-                    id="default",
-                    name="Default Tenant",
-                    slug="default",
-                    status=TenantStatus.ACTIVE,
-                    created_by="system",
-                    modified_by="system"
-                )
-                db.session.add(default_tenant)
-                
-                # Create regular tenants
                 tenant1 = M8flowTenantModel(
                     id="tenant-1",
                     name="Tenant One",
                     slug="tenant-one",
                     status=TenantStatus.ACTIVE,
                     created_by="admin",
-                    modified_by="admin"
+                    modified_by="admin",
+                    created_at_in_seconds=now,
+                    updated_at_in_seconds=now,
                 )
                 tenant2 = M8flowTenantModel(
                     id="tenant-2",
@@ -167,7 +164,9 @@ class TestTenantController:
                     slug="tenant-two",
                     status=TenantStatus.ACTIVE,
                     created_by="admin",
-                    modified_by="admin"
+                    modified_by="admin",
+                    created_at_in_seconds=now,
+                    updated_at_in_seconds=now,
                 )
                 db.session.add(tenant1)
                 db.session.add(tenant2)
@@ -177,9 +176,7 @@ class TestTenantController:
                 response = tenant_controller.get_all_tenants()
                 assert response.status_code == 200
                 
-                # Verify default tenant is excluded
                 data = response.get_json()
                 assert len(data) == 2
-                tenant_ids = [t["id"] for t in data]
-                assert "default" not in tenant_ids
-
+                tenant_ids = {t["id"] for t in data}
+                assert tenant_ids == {"tenant-1", "tenant-2"}

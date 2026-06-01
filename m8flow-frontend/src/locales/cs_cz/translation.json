@@ -82,7 +82,7 @@
   "action_cannot_be_undone": "Tuto akci nelze vrátit zpět.",
   "delete_secret_title": "Smazat tajný klíč?",
   "delete_secret_confirm": "Opravdu chcete smazat tajný klíč \"{{name}}\"?",
-  "realm_slug": "Realm Slug",
+  "realm_slug": "Alias nájemce",
   "display_name": "Zobrazovaný název",
   "cancel": "Zrušit",
   "delete": "Vymazat",

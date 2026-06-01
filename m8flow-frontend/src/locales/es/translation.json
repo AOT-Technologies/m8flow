@@ -82,7 +82,7 @@
   "action_cannot_be_undone": "Esta acción no se puede deshacer.",
   "delete_secret_title": "¿Eliminar secreto?",
   "delete_secret_confirm": "¿Está seguro de que desea eliminar el secreto \"{{name}}\"?",
-  "realm_slug": "Babosa del reino",
+  "realm_slug": "Alias del inquilino",
   "display_name": "Nombre para mostrar",
   "cancel": "Cancelar",
   "delete": "Borrar",

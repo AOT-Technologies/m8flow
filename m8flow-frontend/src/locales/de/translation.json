@@ -82,7 +82,7 @@
   "action_cannot_be_undone": "Diese Aktion kann nicht rückgängig gemacht werden.",
   "delete_secret_title": "Geheimnis löschen?",
   "delete_secret_confirm": "Möchten Sie das Geheimnis \"{{name}}\" wirklich löschen?",
-  "realm_slug": "Reichsschnecke",
+  "realm_slug": "Mandantenalias",
   "display_name": "Anzeigename",
   "cancel": "Stornieren",
   "delete": "Löschen",

@@ -82,7 +82,7 @@
   "action_cannot_be_undone": "Cette action ne peut pas être annulée.",
   "delete_secret_title": "Supprimer le secret ?",
   "delete_secret_confirm": "Êtes-vous sûr de vouloir supprimer le secret \"{{name}}\" ?",
-  "realm_slug": "Limace du royaume",
+  "realm_slug": "Alias du locataire",
   "display_name": "Nom d'affichage",
   "cancel": "Annuler",
   "delete": "Supprimer",

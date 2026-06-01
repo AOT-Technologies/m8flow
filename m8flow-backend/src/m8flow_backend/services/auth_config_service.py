@@ -5,10 +5,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Realm name used by Keycloak and by the frontend cookie authentication_identifier.
-SPIFFWORKFLOW_LOCAL_REALM = "m8flow"
-MASTER_REALM = "master"
-
 
 def _append_csv_value(existing: str | None, value: str) -> str:
     items = [item.strip() for item in (existing or "").split(",") if item.strip()]
@@ -17,35 +13,46 @@ def _append_csv_value(existing: str | None, value: str) -> str:
     return ",".join(items)
 
 
+def _shared_realm_name() -> str:
+    from m8flow_backend.config import shared_realm_name
+
+    return shared_realm_name()
+
+
+def _master_realm_name() -> str:
+    from m8flow_backend.config import master_realm_name
+
+    return master_realm_name()
+
+
 def ensure_realm_identifier_in_auth_configs(flask_app) -> None:
     """
     Ensure SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS has an entry with identifier matching
-    the realm when any config URI points at .../realms/m8flow.
+    the shared realm when any config URI points at that realm.
     """
     configs = flask_app.config.get("SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS") or []
     if not configs:
         return
-    if any(c.get("identifier") == SPIFFWORKFLOW_LOCAL_REALM for c in configs):
+    shared_realm = _shared_realm_name()
+    if any(c.get("identifier") == shared_realm for c in configs):
         return
 
     template = None
     for c in configs:
         uri = (c.get("uri") or "").strip()
-        if f"/realms/{SPIFFWORKFLOW_LOCAL_REALM}" in uri or uri.endswith(
-            f"/realms/{SPIFFWORKFLOW_LOCAL_REALM}"
-        ):
+        if f"/realms/{shared_realm}" in uri or uri.endswith(f"/realms/{shared_realm}"):
             template = c
             break
     if not template:
         return
 
     new_config = copy.deepcopy(template)
-    new_config["identifier"] = SPIFFWORKFLOW_LOCAL_REALM
-    new_config["label"] = new_config.get("label") or SPIFFWORKFLOW_LOCAL_REALM
+    new_config["identifier"] = shared_realm
+    new_config["label"] = new_config.get("label") or shared_realm
     configs.append(new_config)
     logger.info(
         "auth_config_service: added auth config identifier=%s so cookie authentication_identifier matches",
-        SPIFFWORKFLOW_LOCAL_REALM,
+        shared_realm,
     )
 
 
@@ -55,7 +62,7 @@ def ensure_tenant_auth_config(flask_app, tenant: str) -> None:
     if any(c.get("identifier") == tenant for c in configs):
         return
 
-    # Use the first config as template (usually "default" with Keycloak realm).
+    # Use the first config as template (usually the shared-realm Keycloak config).
     if not configs:
         logger.warning("auth_config_service: no auth configs; cannot add tenant %s", tenant)
         return
@@ -109,18 +116,19 @@ def ensure_tenant_auth_config(flask_app, tenant: str) -> None:
 
 
 def ensure_master_auth_config(flask_app) -> None:
-    """Ensure SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS has an entry for the Keycloak master realm."""
+    """Ensure SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS has an entry for the configured admin realm."""
     configs = flask_app.config.get("SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS") or []
-    if any(c.get("identifier") == MASTER_REALM for c in configs):
+    master_realm = _master_realm_name()
+    if any(c.get("identifier") == master_realm for c in configs):
         return
 
     try:
         from m8flow_backend.config import keycloak_url, master_client_secret, spoke_client_id
 
-        realm_uri = f"{keycloak_url().rstrip('/')}/realms/{MASTER_REALM}"
+        realm_uri = f"{keycloak_url().rstrip('/')}/realms/{master_realm}"
         template = copy.deepcopy(configs[0]) if configs else {}
         new_config = template if isinstance(template, dict) else {}
-        new_config["identifier"] = MASTER_REALM
+        new_config["identifier"] = master_realm
         new_config["label"] = "Master"
         new_config["uri"] = realm_uri
         new_config["internal_uri"] = realm_uri
@@ -133,6 +141,6 @@ def ensure_master_auth_config(flask_app) -> None:
         if new_config.get("additional_valid_issuers") is None:
             new_config["additional_valid_issuers"] = []
         configs.append(new_config)
-        logger.info("auth_config_service: added auth config for master realm")
+        logger.info("auth_config_service: added auth config for admin realm %s", master_realm)
     except Exception as exc:
-        logger.warning("auth_config_service: failed to add auth config for master realm: %s", exc)
+        logger.warning("auth_config_service: failed to add auth config for admin realm %s: %s", master_realm, exc)

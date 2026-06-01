@@ -12,20 +12,42 @@ def test_apply_seeds_env_defaults_without_importing_upstream(monkeypatch) -> Non
     for key in list(upstream_auth_defaults_patch.os.environ):
         if key == "SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS" or key.startswith("SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__"):
             monkeypatch.delenv(key, raising=False)
-    monkeypatch.setenv("KEYCLOAK_HOSTNAME", "http://public-keycloak:6842")
-    monkeypatch.setenv("KEYCLOAK_URL", "http://internal-keycloak:6842")
+    monkeypatch.setenv("KEYCLOAK_HOSTNAME", "http://public-keycloak:7002")
+    monkeypatch.setenv("KEYCLOAK_URL", "http://internal-keycloak:7002")
 
     upstream_auth_defaults_patch.apply()
 
     assert upstream_auth_defaults_patch.os.environ["SPIFFWORKFLOW_BACKEND_OPEN_ID_CLIENT_ID"] == "m8flow-backend"
-    assert upstream_auth_defaults_patch.os.environ["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__identifier"] == "default"
+    assert upstream_auth_defaults_patch.os.environ["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__identifier"] == "m8flow"
     assert upstream_auth_defaults_patch.os.environ["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__label"] == "M8Flow Realm"
-    assert upstream_auth_defaults_patch.os.environ["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__uri"] == "http://public-keycloak:6842/realms/m8flow"
+    assert upstream_auth_defaults_patch.os.environ["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__uri"] == "http://public-keycloak:7002/realms/m8flow"
     assert (
         upstream_auth_defaults_patch.os.environ["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__internal_uri"]
-        == "http://internal-keycloak:6842/realms/m8flow"
+        == "http://internal-keycloak:7002/realms/m8flow"
     )
     assert upstream_auth_defaults_patch.os.environ["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__client_id"] == "m8flow-backend"
+
+
+def test_apply_seeds_env_defaults_respects_configured_shared_realm(monkeypatch) -> None:
+    monkeypatch.setattr(upstream_auth_defaults_patch, "_PATCHED", False)
+    monkeypatch.delenv("SPIFFWORKFLOW_BACKEND_OPEN_ID_CLIENT_ID", raising=False)
+    monkeypatch.delenv("SPIFFWORKFLOW_BACKEND_OPEN_ID_SERVER_URL", raising=False)
+    for key in list(upstream_auth_defaults_patch.os.environ):
+        if key == "SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS" or key.startswith("SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__"):
+            monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("KEYCLOAK_HOSTNAME", "http://public-keycloak:7002")
+    monkeypatch.setenv("KEYCLOAK_URL", "http://internal-keycloak:7002")
+    monkeypatch.setenv("M8FLOW_KEYCLOAK_SHARED_REALM", "tenant-hub")
+
+    upstream_auth_defaults_patch.apply()
+
+    assert upstream_auth_defaults_patch.os.environ["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__identifier"] == "tenant-hub"
+    assert upstream_auth_defaults_patch.os.environ["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__label"] == "tenant-hub"
+    assert upstream_auth_defaults_patch.os.environ["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__uri"] == "http://public-keycloak:7002/realms/tenant-hub"
+    assert (
+        upstream_auth_defaults_patch.os.environ["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__internal_uri"]
+        == "http://internal-keycloak:7002/realms/tenant-hub"
+    )
 
 
 def test_apply_runtime_rewrites_upstream_defaults_on_flask_config() -> None:
@@ -45,9 +67,34 @@ def test_apply_runtime_rewrites_upstream_defaults_on_flask_config() -> None:
     upstream_auth_defaults_patch.apply_runtime(app)
 
     assert app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_CLIENT_ID"] == "m8flow-backend"
+    assert app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"][0]["identifier"] == "m8flow"
+    assert app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"][0]["label"] == "M8Flow Realm"
     assert app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"][0]["uri"] == "http://localhost:6842/realms/m8flow"
     assert app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"][0]["internal_uri"] == "http://localhost:6842/realms/m8flow"
     assert app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"][0]["client_id"] == "m8flow-backend"
+
+
+def test_apply_runtime_uses_configured_realm_names_for_labels(monkeypatch) -> None:
+    app = Flask(__name__)
+    app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"] = [
+        {
+            "identifier": "ops-admin",
+            "uri": "http://localhost:6842/realms/ops-admin",
+            "client_id": "m8flow-backend",
+        },
+        {
+            "identifier": "tenant-hub",
+            "uri": "http://localhost:6842/realms/tenant-hub",
+            "client_id": "m8flow-backend",
+        },
+    ]
+    monkeypatch.setenv("M8FLOW_KEYCLOAK_MASTER_REALM", "ops-admin")
+    monkeypatch.setenv("M8FLOW_KEYCLOAK_SHARED_REALM", "tenant-hub")
+
+    upstream_auth_defaults_patch.apply_runtime(app)
+
+    assert app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"][0]["label"] == "Master"
+    assert app.config["SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS"][1]["label"] == "tenant-hub"
 
 
 def test_apply_runtime_fills_missing_auth_config_labels() -> None:

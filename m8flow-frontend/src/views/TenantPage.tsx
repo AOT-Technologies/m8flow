@@ -26,16 +26,17 @@ import {
   Button,
   Snackbar,
 } from "@mui/material";
-import {
-  Search as SearchIcon,
-  Edit as EditIcon,
-  Clear as ClearIcon,
-  Add as AddIcon,
-} from "@mui/icons-material";
+import SearchIcon from "@mui/icons-material/Search";
+import EditIcon from "@mui/icons-material/Edit";
+import ClearIcon from "@mui/icons-material/Clear";
+import AddIcon from "@mui/icons-material/Add";
+import ManageAccountsIcon from "@mui/icons-material/ManageAccounts";
 import { usePermissionFetcher } from "@spiffworkflow-frontend/hooks/PermissionService";
 import { Tenant } from "../services/TenantService";
 import { useTenants } from "../hooks/useTenants";
+import UserService from "../services/UserService";
 import TenantModal from "./TenantModal";
+import TenantRoleDialog from "./TenantRoleDialog";
 import { TenantModalType } from "../enums/TenantModalType";
 
 const STATUS_COLORS = {
@@ -61,6 +62,22 @@ export default function TenantPage() {
   const canCreateTenant =
     permissionsLoaded && ability.can("POST", "/m8flow/tenant-realms");
   const { t } = useTranslation();
+  const translate = (
+    key: string,
+    fallback: string,
+    options?: Record<string, unknown>,
+  ) => {
+    const translated = t(key, options);
+    return translated === key ? fallback : translated;
+  };
+  const organizationAliasLabel = translate(
+    "organization_alias",
+    "Tenant Alias",
+  );
+  const organizationNameLabel = translate(
+    "organization_name",
+    "Tenant Name",
+  );
 
   // Search and filter states
   const [searchQuery, setSearchQuery] = useState("");
@@ -77,6 +94,7 @@ export default function TenantPage() {
     TenantModalType.EDIT_TENANT,
   );
   const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
+  const [roleDialogTenant, setRoleDialogTenant] = useState<Tenant | null>(null);
   const [successMessage, setSuccessMessage] = useState("");
 
   // Handle edit
@@ -92,6 +110,10 @@ export default function TenantPage() {
     setIsModalOpen(true);
   };
 
+  const handleManageRoles = (tenant: Tenant) => {
+    setRoleDialogTenant(tenant);
+  };
+
   // Handle delete
   const handleDeleteClick = (tenant: Tenant) => {
     setSelectedTenant(tenant);
@@ -104,7 +126,22 @@ export default function TenantPage() {
     setSelectedTenant(null);
   };
 
-  const handleModalSuccess = (message: string) => {
+  const handleModalSuccess = (
+    message: string,
+    tenantUpdates?: Partial<Tenant>,
+  ) => {
+    if (
+      modalType === TenantModalType.EDIT_TENANT
+      && selectedTenant
+      && typeof tenantUpdates?.name === "string"
+      && tenantUpdates.name.trim()
+    ) {
+      UserService.rememberTenantDisplayName({
+        id: selectedTenant.id,
+        alias: selectedTenant.slug,
+        name: tenantUpdates.name.trim(),
+      });
+    }
     setSuccessMessage(message);
     refetch();
   };
@@ -184,13 +221,24 @@ export default function TenantPage() {
             alignItems: "center",
           }}
         >
-          <Typography
-            variant="h4"
-            component="h1"
-            style={{ fontWeight: "bold", fontSize: "24px" }}
-          >
-            {t('tenant_management')}
-          </Typography>
+          <Box>
+            <Typography
+              variant="h4"
+              component="h1"
+              style={{ fontWeight: "bold", fontSize: "24px" }}
+            >
+              {translate(
+                "organization_management",
+                "Tenant Management",
+              )}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              {translate(
+                "organization_management_description",
+                "Manage the Keycloak tenants that back access in Keycloak.",
+              )}
+            </Typography>
+          </Box>
           {canCreateTenant && (
             <Button
               variant="contained"
@@ -198,7 +246,7 @@ export default function TenantPage() {
               onClick={handleCreate}
               data-testid="tenant-add-button"
             >
-              {t('add_tenant')}
+              {translate("add_organization", "Add Tenant")}
             </Button>
           )}
         </Box>
@@ -224,14 +272,19 @@ export default function TenantPage() {
                   data-testid="tenant-search-type-select"
                   onChange={(e) => setSearchType(e.target.value as SearchType)}
                 >
-                  <MenuItem value="name">{t('name')}</MenuItem>
-                  <MenuItem value="slug">{t('slug')}</MenuItem>
+                  <MenuItem value="name">{organizationNameLabel}</MenuItem>
+                  <MenuItem value="slug">{organizationAliasLabel}</MenuItem>
                 </Select>
               </FormControl>
 
               <TextField
                 size="small"
-                placeholder={t('search_by_placeholder', { type: searchType === 'name' ? t('name').toLowerCase() : t('slug').toLowerCase() })}
+                placeholder={t('search_by_placeholder', {
+                  type:
+                    searchType === 'name'
+                      ? organizationNameLabel.toLowerCase()
+                      : organizationAliasLabel.toLowerCase(),
+                })}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 data-testid="tenant-search-input"
@@ -275,7 +328,10 @@ export default function TenantPage() {
 
             {/* Filter Summary */}
             <Typography variant="caption" color="text.secondary">
-              {t('showing_tenants_count', { filtered: filteredAndSortedTenants.length, total: tenants.length })}
+              {translate("showing_organizations_count", "Showing {{filtered}} of {{total}} tenant(s)", {
+                filtered: filteredAndSortedTenants.length,
+                total: tenants.length,
+              })}
             </Typography>
           </Stack>
         </Paper>
@@ -294,8 +350,14 @@ export default function TenantPage() {
             <Box sx={{ p: 4, textAlign: "center" }}>
               <Typography color="text.secondary">
                 {searchQuery || statusFilter !== "all"
-                  ? t('no_tenants_matching_filters')
-                  : t('no_tenants_available')}
+                  ? translate(
+                      "no_organizations_matching_filters",
+                      "No tenants found matching your filters",
+                    )
+                  : translate(
+                      "no_organizations_available",
+                      "No tenants available",
+                    )}
               </Typography>
             </Box>
           ) : (
@@ -308,7 +370,7 @@ export default function TenantPage() {
                       direction={sortField === "name" ? sortDirection : "asc"}
                       onClick={() => handleSort("name")}
                     >
-                      {t('name')}
+                      {organizationNameLabel}
                     </TableSortLabel>
                   </TableCell>
                   <TableCell>
@@ -317,7 +379,7 @@ export default function TenantPage() {
                       direction={sortField === "slug" ? sortDirection : "asc"}
                       onClick={() => handleSort("slug")}
                     >
-                      {t('slug')}
+                      {organizationAliasLabel}
                     </TableSortLabel>
                   </TableCell>
                   <TableCell>{t('status')}</TableCell>
@@ -361,7 +423,22 @@ export default function TenantPage() {
                         justifyContent="center"
                       >
                         <Tooltip
-                          title={t('edit_tenant')}
+                          title={translate(
+                            "manage_tenant_groups",
+                            "Manage Tenant Groups",
+                          )}
+                        >
+                          <IconButton
+                            size="small"
+                            color="primary"
+                            data-testid={`tenant-roles-button-${tenant.id}`}
+                            onClick={() => handleManageRoles(tenant)}
+                          >
+                            <ManageAccountsIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip
+                          title={translate("edit_organization", "Edit Tenant")}
                           disableHoverListener={tenant.status === "DELETED"}
                         >
                           <span
@@ -422,6 +499,11 @@ export default function TenantPage() {
         tenant={selectedTenant}
         onClose={handleCloseModal}
         onSuccess={handleModalSuccess}
+      />
+      <TenantRoleDialog
+        open={Boolean(roleDialogTenant)}
+        tenant={roleDialogTenant}
+        onClose={() => setRoleDialogTenant(null)}
       />
       <Snackbar
         open={Boolean(successMessage)}
