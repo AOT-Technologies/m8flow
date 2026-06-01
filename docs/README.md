@@ -254,7 +254,7 @@ If the frontend fails with a missing Rollup native package such as `@rollup/roll
 Run the Celery worker via Docker instead. Since the Celery worker shares code with `m8flow-backend`, make sure the `m8flow-backend` container is **stopped** (you are running the backend locally) before building the worker container:
 
 ```bash
-docker compose -f docker/m8flow-docker-compose.yml up -d --build m8flow-celery-worker
+docker compose -f docker/m8flow-docker-compose.yml up -d --build m8flow-backend m8flow-celery-worker
 ```
 
 ---

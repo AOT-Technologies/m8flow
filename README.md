@@ -42,19 +42,6 @@ _A complete list of the latest features is available in our [release notes](http
 
 ---
 
-## Choose your setup path
-
-m8flow can be run two ways. Pick one — the steps below are **not** sequential.
-
-| You want to… | Use this path |
-|---|---|
-| Try m8flow quickly or run it as a full stack | **[Docker Quick Start](#quick-start-docker)** (this page, below) |
-| Actively develop m8flow backend/frontend code | **[Manual / Local Dev Setup](docs/README.md#running-locally-without-docker-for-backendfrontend)** (in `docs/README.md`) |
-
-> **First-time users:** start with the Docker path. The manual path requires additional tooling (`uv`, `jq`, Node, Python 3.11+) and is intended for contributors working on m8flow itself.
-
----
-
 ## Prerequisites (Docker setup)
 
 Install the following tools:
@@ -264,13 +251,7 @@ docker compose -f docker/m8flow-docker-compose.yml down -v
 ---
 ## Additional Documentation & Developer Resources
 
-- **[Manual / Local Dev Setup](docs/README.md#running-locally-without-docker-for-backendfrontend)** — run backend/frontend without Docker (active development)
-- **[Local-dev Prerequisites](docs/README.md#prerequisites-local-dev-without-docker)** — `uv`, `jq`, Node, Python, OS-specific packages
-- **[Troubleshooting](docs/README.md#troubleshooting)** — common startup, package-metadata, and tenant-migration errors
-- **[Environment variable reference](docs/env-reference.md)**
-- **[How to use m8flow](docs/how-to-use.md)**
-
-More guides and references are available in the `docs/` folder as the documentation expands.
+For details on active development of backend/frontend workflows without docker,  and other development topics, refer to [docs/README.md](docs/README.md). More guides and references are available in the `docs/` folder as the documentation expands.
 
 ---
 
