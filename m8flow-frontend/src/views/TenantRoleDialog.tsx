@@ -13,38 +13,41 @@ import {
   IconButton,
   InputAdornment,
   Paper,
+  Radio,
   Stack,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
-  Radio,
   TableRow,
   TextField,
   Tooltip,
   Typography,
 } from "@mui/material";
-import SearchIcon from "@mui/icons-material/Search";
-import RefreshIcon from "@mui/icons-material/Refresh";
+import GroupAddIcon from "@mui/icons-material/GroupAdd";
 import PersonAddAlt1Icon from "@mui/icons-material/PersonAddAlt1";
+import RefreshIcon from "@mui/icons-material/Refresh";
+import SearchIcon from "@mui/icons-material/Search";
 import { useEffect, useMemo, useState } from "react";
 import type { InputHTMLAttributes } from "react";
 import { useTranslation } from "react-i18next";
 import TenantService, {
-  TenantAvailableUser,
+  TENANT_MEMBER_ROLES,
   Tenant,
+  TenantAvailableUser,
   TenantGroup,
   TenantGroupMember,
   TenantMember,
   TenantMemberRole,
-  TENANT_MEMBER_ROLES,
 } from "../services/TenantService";
 
 interface TenantRoleDialogProps {
-  open: boolean;
+  open?: boolean;
   tenant: Tenant | null;
   onClose: () => void;
+  embedded?: boolean;
+  showDescription?: boolean;
 }
 
 interface AddTenantMemberFormState {
@@ -76,11 +79,14 @@ const testIdInputProps = (
 });
 
 export default function TenantRoleDialog({
-  open,
+  open = false,
   tenant,
   onClose,
+  embedded = false,
+  showDescription = true,
 }: TenantRoleDialogProps) {
   const { t } = useTranslation();
+  const isVisible = embedded ? Boolean(tenant) : open;
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [groups, setGroups] = useState<TenantGroup[]>([]);
@@ -93,6 +99,10 @@ export default function TenantRoleDialog({
   const [availableUsers, setAvailableUsers] = useState<TenantAvailableUser[]>([]);
   const [availableUsersErrorMessage, setAvailableUsersErrorMessage] = useState("");
   const [isLoadingAvailableUsers, setIsLoadingAvailableUsers] = useState(false);
+  const [isCreateGroupDialogOpen, setIsCreateGroupDialogOpen] = useState(false);
+  const [isSubmittingGroup, setIsSubmittingGroup] = useState(false);
+  const [createGroupName, setCreateGroupName] = useState("");
+  const [createGroupErrorMessage, setCreateGroupErrorMessage] = useState("");
   const [groupMutationKey, setGroupMutationKey] = useState<string | null>(null);
   const [groupRoleMutationKey, setGroupRoleMutationKey] = useState<string | null>(null);
   const [memberForm, setMemberForm] = useState<AddTenantMemberFormState>(
@@ -126,8 +136,8 @@ export default function TenantRoleDialog({
       setMembers(nextMembers);
     } catch (error: any) {
       setErrorMessage(
-        getErrorMessage(error) ||
-          translate(
+        getErrorMessage(error)
+          || translate(
             "failed_to_load_tenant_groups",
             "Failed to load tenant groups.",
           ),
@@ -138,7 +148,7 @@ export default function TenantRoleDialog({
   };
 
   useEffect(() => {
-    if (!open || !tenant) {
+    if (!isVisible || !tenant) {
       setSearchQuery("");
       setGroups([]);
       setMembers([]);
@@ -150,13 +160,17 @@ export default function TenantRoleDialog({
       setAvailableUsers([]);
       setAvailableUsersErrorMessage("");
       setIsLoadingAvailableUsers(false);
+      setIsCreateGroupDialogOpen(false);
+      setIsSubmittingGroup(false);
+      setCreateGroupName("");
+      setCreateGroupErrorMessage("");
       setGroupMutationKey(null);
       setGroupRoleMutationKey(null);
       setMemberForm(emptyAddMemberForm());
       return;
     }
-    loadTenantAccessData();
-  }, [open, tenant]);
+    void loadTenantAccessData();
+  }, [isVisible, tenant]);
 
   const loadAvailableUsers = async (search = "") => {
     if (!tenant) {
@@ -175,8 +189,8 @@ export default function TenantRoleDialog({
       }));
     } catch (error: any) {
       setAvailableUsersErrorMessage(
-        getErrorMessage(error) ||
-          translate(
+        getErrorMessage(error)
+          || translate(
             "failed_to_load_available_users",
             "Failed to load existing users.",
           ),
@@ -278,6 +292,21 @@ export default function TenantRoleDialog({
     setMemberForm(emptyAddMemberForm());
   };
 
+  const handleOpenCreateGroupDialog = () => {
+    setCreateGroupName("");
+    setCreateGroupErrorMessage("");
+    setIsCreateGroupDialogOpen(true);
+  };
+
+  const handleCloseCreateGroupDialog = () => {
+    if (isSubmittingGroup) {
+      return;
+    }
+    setIsCreateGroupDialogOpen(false);
+    setCreateGroupName("");
+    setCreateGroupErrorMessage("");
+  };
+
   const handleToggleAddMemberGroup = (groupName: string) => {
     setMemberForm((current) => {
       const groupNames = current.groupNames.includes(groupName)
@@ -305,14 +334,39 @@ export default function TenantRoleDialog({
       await loadTenantAccessData();
     } catch (error: any) {
       setAddMemberErrorMessage(
-        getErrorMessage(error) ||
-          translate(
+        getErrorMessage(error)
+          || translate(
             "failed_to_add_tenant_member",
             "Failed to add user to tenant.",
           ),
       );
     } finally {
       setIsSubmittingMember(false);
+    }
+  };
+
+  const handleCreateTenantGroup = async () => {
+    if (!tenant) {
+      return;
+    }
+    setIsSubmittingGroup(true);
+    setCreateGroupErrorMessage("");
+    try {
+      await TenantService.createTenantGroup(tenant.id, {
+        name: createGroupName,
+      });
+      handleCloseCreateGroupDialog();
+      await loadTenantAccessData();
+    } catch (error: any) {
+      setCreateGroupErrorMessage(
+        getErrorMessage(error)
+          || translate(
+            "failed_to_create_tenant_group",
+            "Failed to create tenant group.",
+          ),
+      );
+    } finally {
+      setIsSubmittingGroup(false);
     }
   };
 
@@ -344,8 +398,8 @@ export default function TenantRoleDialog({
       await loadTenantAccessData();
     } catch (error: any) {
       setErrorMessage(
-        getErrorMessage(error) ||
-          translate(
+        getErrorMessage(error)
+          || translate(
             "failed_to_update_group_membership",
             "Failed to update tenant group membership.",
           ),
@@ -375,8 +429,8 @@ export default function TenantRoleDialog({
       await loadTenantAccessData();
     } catch (error: any) {
       setErrorMessage(
-        getErrorMessage(error) ||
-          translate(
+        getErrorMessage(error)
+          || translate(
             "failed_to_update_group_role",
             "Failed to update tenant group role mapping.",
           ),
@@ -386,279 +440,275 @@ export default function TenantRoleDialog({
     }
   };
 
-  return (
-    <>
-      <Dialog
-        open={open}
-        onClose={onClose}
-        fullWidth
-        maxWidth="lg"
-        data-testid="tenant-role-dialog"
+  const managementContent = (
+    <Stack spacing={2} sx={embedded ? undefined : { mt: 1 }}>
+      {showDescription && (
+        <Typography variant="body2" color="text.secondary">
+          {translate(
+            "tenant_group_management_description",
+            "Review tenant users, add existing members, and manage the Keycloak groups and tenant-scoped roles associated with this tenant.",
+          )}
+        </Typography>
+      )}
+
+      {errorMessage && <Alert severity="error">{errorMessage}</Alert>}
+
+      <Box
+        sx={{
+          display: "flex",
+          gap: 2,
+          alignItems: "center",
+          flexWrap: "wrap",
+        }}
       >
-        <DialogTitle>
-          {translate("manage_tenant_groups", "Manage Tenant Groups")}
-          {tenant ? `: ${tenant.name}` : ""}
-        </DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ mt: 1 }}>
-            <Typography variant="body2" color="text.secondary">
-              {translate(
-                "tenant_group_management_description",
-                "Review the Keycloak groups for this tenant, the tenant-scoped roles they grant, and their current members.",
-              )}
-            </Typography>
-
-            {errorMessage && <Alert severity="error">{errorMessage}</Alert>}
-
-            <Box
-              sx={{
-                display: "flex",
-                gap: 2,
-                alignItems: "center",
-                flexWrap: "wrap",
-              }}
+        <TextField
+          fullWidth
+          size="small"
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+          placeholder={translate(
+            "search_tenant_groups",
+            "Search tenant groups or members...",
+          )}
+          data-testid="tenant-role-search-input"
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon />
+              </InputAdornment>
+            ),
+          }}
+        />
+        <Button
+          variant="contained"
+          startIcon={<PersonAddAlt1Icon />}
+          onClick={handleOpenAddMemberDialog}
+          disabled={!tenant || loading}
+          data-testid="tenant-member-add-button"
+        >
+          {translate("add_tenant_user", "Add User")}
+        </Button>
+        <Button
+          variant="outlined"
+          startIcon={<GroupAddIcon />}
+          onClick={handleOpenCreateGroupDialog}
+          disabled={!tenant || loading}
+          data-testid="tenant-group-add-button"
+        >
+          {translate("create_group", "Create Group")}
+        </Button>
+        <Tooltip
+          title={translate("refresh_tenant_groups", "Refresh tenant groups")}
+        >
+          <span>
+            <IconButton
+              onClick={() => void loadTenantAccessData()}
+              disabled={loading || !tenant}
+              data-testid="tenant-role-refresh-button"
             >
-              <TextField
-                fullWidth
-                size="small"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder={translate(
-                  "search_tenant_groups",
-                  "Search tenant groups or members...",
-                )}
-                data-testid="tenant-role-search-input"
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <SearchIcon />
-                    </InputAdornment>
-                  ),
-                }}
-              />
-              <Button
-                variant="contained"
-                startIcon={<PersonAddAlt1Icon />}
-                onClick={handleOpenAddMemberDialog}
-                disabled={!tenant || loading}
-                data-testid="tenant-member-add-button"
-              >
-              {translate("add_tenant_user", "Add User")}
-              </Button>
-              <Tooltip
-                title={translate("refresh_tenant_groups", "Refresh tenant groups")}
-              >
-                <span>
-                  <IconButton
-                    onClick={loadTenantAccessData}
-                    disabled={loading || !tenant}
-                    data-testid="tenant-role-refresh-button"
-                  >
-                    <RefreshIcon />
-                  </IconButton>
-                </span>
-              </Tooltip>
-            </Box>
+              <RefreshIcon />
+            </IconButton>
+          </span>
+        </Tooltip>
+      </Box>
 
-            <Paper variant="outlined">
-              {loading ? (
-                <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}>
-                  <CircularProgress />
+      <Paper variant="outlined">
+        {loading ? (
+          <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}>
+            <CircularProgress />
+          </Box>
+        ) : (
+          <Stack spacing={3} sx={{ p: 2 }}>
+            <Box>
+              <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1.5 }}>
+                {translate("members", "Members")}
+              </Typography>
+              {filteredMembers.length === 0 ? (
+                <Box sx={{ py: 3, textAlign: "center" }}>
+                  <Typography color="text.secondary">
+                    {translate(
+                      "no_organization_members_found",
+                      "No tenant members found.",
+                    )}
+                  </Typography>
                 </Box>
               ) : (
-                <Stack spacing={3} sx={{ p: 2 }}>
-                  <Box>
-                    <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1.5 }}>
-                      {translate("members", "Members")}
-                    </Typography>
-                    {filteredMembers.length === 0 ? (
-                      <Box sx={{ py: 3, textAlign: "center" }}>
-                        <Typography color="text.secondary">
-                          {translate(
-                            "no_organization_members_found",
-                            "No tenant members found.",
-                          )}
-                        </Typography>
-                      </Box>
-                    ) : (
-                      <TableContainer sx={{ maxHeight: 360 }}>
-                        <Table stickyHeader size="small">
-                          <TableHead>
-                            <TableRow>
-                              <TableCell>
-                                {translate("username", "Username")}
-                              </TableCell>
-                              <TableCell>
-                                {translate("display_name", "Display Name")}
-                              </TableCell>
-                              <TableCell>{translate("email", "Email")}</TableCell>
-                              {groups.map((group) => (
-                                <TableCell key={group.id} align="center">
-                                  {group.name}
-                                </TableCell>
-                              ))}
-                            </TableRow>
-                          </TableHead>
-                          <TableBody>
-                            {filteredMembers.map((member) => {
-                              const memberGroups =
-                                membershipLookup.get(member.username) ??
-                                new Set<string>();
+                <TableContainer sx={{ maxHeight: 360 }}>
+                  <Table stickyHeader size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>{translate("username", "Username")}</TableCell>
+                        <TableCell>
+                          {translate("display_name", "Display Name")}
+                        </TableCell>
+                        <TableCell>{translate("email", "Email")}</TableCell>
+                        {groups.map((group) => (
+                          <TableCell key={group.id} align="center">
+                            {group.name}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {filteredMembers.map((member) => {
+                        const memberGroups =
+                          membershipLookup.get(member.username) ?? new Set<string>();
+                        return (
+                          <TableRow key={member.id || member.username} hover>
+                            <TableCell>{member.username}</TableCell>
+                            <TableCell>{member.display_name || "-"}</TableCell>
+                            <TableCell>{member.email || "-"}</TableCell>
+                            {groups.map((group) => {
+                              const mutationKey = `${member.username}:${group.name}`;
+                              const checked = memberGroups.has(group.name);
                               return (
-                                <TableRow key={member.id || member.username} hover>
-                                  <TableCell>{member.username}</TableCell>
-                                  <TableCell>{member.display_name || "-"}</TableCell>
-                                  <TableCell>{member.email || "-"}</TableCell>
-                                  {groups.map((group) => {
-                                    const mutationKey = `${member.username}:${group.name}`;
-                                    const checked = memberGroups.has(group.name);
-                                    return (
-                                      <TableCell
-                                        key={`${member.username}:${group.id}`}
-                                        align="center"
-                                      >
-                                        <Checkbox
-                                          checked={checked}
-                                          disabled={
-                                            groupMutationKey === mutationKey ||
-                                            loading
-                                          }
-                                          onChange={(event) =>
-                                            handleToggleGroupMembership(
-                                              member,
-                                              group,
-                                              event.target.checked,
-                                            )
-                                          }
-                                          inputProps={{
-                                            ...testIdInputProps(
-                                              `tenant-group-checkbox-${member.username}-${group.name}`,
-                                            ),
-                                          }}
-                                        />
-                                      </TableCell>
-                                    );
-                                  })}
-                                </TableRow>
+                                <TableCell
+                                  key={`${member.username}:${group.id}`}
+                                  align="center"
+                                >
+                                  <Checkbox
+                                    checked={checked}
+                                    disabled={groupMutationKey === mutationKey || loading}
+                                    onChange={(event) =>
+                                      void handleToggleGroupMembership(
+                                        member,
+                                        group,
+                                        event.target.checked,
+                                      )
+                                    }
+                                    inputProps={{
+                                      ...testIdInputProps(
+                                        `tenant-group-checkbox-${member.username}-${group.name}`,
+                                      ),
+                                    }}
+                                  />
+                                </TableCell>
                               );
                             })}
-                          </TableBody>
-                        </Table>
-                      </TableContainer>
-                    )}
-                  </Box>
-
-                  <Box>
-                    <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1.5 }}>
-                      {translate("groups", "Groups")}
-                    </Typography>
-                    {filteredGroups.length === 0 ? (
-                      <Box sx={{ py: 3, textAlign: "center" }}>
-                        <Typography color="text.secondary">
-                          {translate(
-                            "no_tenant_groups_found",
-                            "No tenant groups found.",
-                          )}
-                        </Typography>
-                      </Box>
-                    ) : (
-                      <TableContainer sx={{ maxHeight: 360 }}>
-                        <Table stickyHeader size="small">
-                          <TableHead>
-                            <TableRow>
-                              <TableCell>{translate("group", "Group")}</TableCell>
-                              <TableCell>
-                                {translate("granted_roles", "Granted Roles")}
-                              </TableCell>
-                              <TableCell>{translate("members", "Members")}</TableCell>
-                            </TableRow>
-                          </TableHead>
-                          <TableBody>
-                            {filteredGroups.map((group) => (
-                              <TableRow key={group.id} hover>
-                                <TableCell>
-                                  <Stack spacing={0.5}>
-                                    <Typography fontWeight={600}>
-                                      {group.name}
-                                    </Typography>
-                                  </Stack>
-                                </TableCell>
-                                <TableCell>
-                                  <Stack
-                                    direction="row"
-                                    spacing={1}
-                                    useFlexGap
-                                    flexWrap="wrap"
-                                  >
-                                    {TENANT_MEMBER_ROLES.map((roleName) => {
-                                      const mutationKey = `${group.name}:${roleName}`;
-                                      const checked = group.mapped_roles.includes(roleName);
-                                      return (
-                                        <FormControlLabel
-                                          key={`${group.id}:${roleName}`}
-                                          sx={{ mr: 1 }}
-                                          control={
-                                            <Checkbox
-                                              size="small"
-                                              checked={checked}
-                                              disabled={
-                                                loading ||
-                                                groupRoleMutationKey === mutationKey
-                                              }
-                                              onChange={(event) =>
-                                                handleToggleGroupRole(
-                                                  group,
-                                                  roleName,
-                                                  event.target.checked,
-                                                )
-                                              }
-                                              inputProps={{
-                                                ...testIdInputProps(
-                                                  `tenant-group-role-checkbox-${group.name}-${roleName}`,
-                                                ),
-                                              }}
-                                            />
-                                          }
-                                          label={roleLabel(roleName)}
-                                        />
-                                      );
-                                    })}
-                                  </Stack>
-                                </TableCell>
-                                <TableCell>
-                                  <Stack
-                                    direction="row"
-                                    spacing={1}
-                                    useFlexGap
-                                    flexWrap="wrap"
-                                  >
-                                    {group.members.length > 0 ? (
-                                      group.members.map((member) => (
-                                        <Chip
-                                          key={member.id || member.username}
-                                          size="small"
-                                          label={member.username}
-                                          variant="outlined"
-                                        />
-                                      ))
-                                    ) : (
-                                      <Typography color="text.secondary">-</Typography>
-                                    )}
-                                  </Stack>
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </TableContainer>
-                    )}
-                  </Box>
-                </Stack>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
               )}
-            </Paper>
+            </Box>
+
+            <Box>
+              <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1.5 }}>
+                {translate("groups", "Groups")}
+              </Typography>
+              {filteredGroups.length === 0 ? (
+                <Box sx={{ py: 3, textAlign: "center" }}>
+                  <Typography color="text.secondary">
+                    {translate(
+                      "no_tenant_groups_found",
+                      "No tenant groups found.",
+                    )}
+                  </Typography>
+                </Box>
+              ) : (
+                <TableContainer sx={{ maxHeight: 360 }}>
+                  <Table stickyHeader size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>{translate("group", "Group")}</TableCell>
+                        <TableCell>
+                          {translate("granted_roles", "Granted Roles")}
+                        </TableCell>
+                        <TableCell>{translate("members", "Members")}</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {filteredGroups.map((group) => (
+                        <TableRow key={group.id} hover>
+                          <TableCell>
+                            <Stack spacing={0.5}>
+                              <Typography fontWeight={600}>{group.name}</Typography>
+                            </Stack>
+                          </TableCell>
+                          <TableCell>
+                            <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                              {TENANT_MEMBER_ROLES.map((roleName) => {
+                                const mutationKey = `${group.name}:${roleName}`;
+                                const checked = group.mapped_roles.includes(roleName);
+                                return (
+                                  <FormControlLabel
+                                    key={`${group.id}:${roleName}`}
+                                    sx={{ mr: 1 }}
+                                    control={
+                                      <Checkbox
+                                        size="small"
+                                        checked={checked}
+                                        disabled={loading || groupRoleMutationKey === mutationKey}
+                                        onChange={(event) =>
+                                          void handleToggleGroupRole(
+                                            group,
+                                            roleName,
+                                            event.target.checked,
+                                          )
+                                        }
+                                        inputProps={{
+                                          ...testIdInputProps(
+                                            `tenant-group-role-checkbox-${group.name}-${roleName}`,
+                                          ),
+                                        }}
+                                      />
+                                    }
+                                    label={roleLabel(roleName)}
+                                  />
+                                );
+                              })}
+                            </Stack>
+                          </TableCell>
+                          <TableCell>
+                            <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                              {group.members.length > 0 ? (
+                                group.members.map((member) => (
+                                  <Chip
+                                    key={member.id || member.username}
+                                    size="small"
+                                    label={member.username}
+                                    variant="outlined"
+                                  />
+                                ))
+                              ) : (
+                                <Typography color="text.secondary">-</Typography>
+                              )}
+                            </Stack>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+            </Box>
           </Stack>
-        </DialogContent>
-      </Dialog>
+        )}
+      </Paper>
+    </Stack>
+  );
+
+  return (
+    <>
+      {embedded ? (
+        <Box data-testid="tenant-role-panel">{managementContent}</Box>
+      ) : (
+        <Dialog
+          open={open}
+          onClose={onClose}
+          fullWidth
+          maxWidth="lg"
+          data-testid="tenant-role-dialog"
+        >
+          <DialogTitle>
+            {translate("manage_tenant_groups", "Manage Tenant Groups")}
+            {tenant ? `: ${tenant.name}` : ""}
+          </DialogTitle>
+          <DialogContent>{managementContent}</DialogContent>
+        </Dialog>
+      )}
 
       <Dialog
         open={isAddMemberDialogOpen}
@@ -696,9 +746,7 @@ export default function TenantRoleDialog({
                 "Search existing users...",
               )}
               inputProps={{
-                ...testIdInputProps(
-                  "tenant-member-existing-user-search-input",
-                ),
+                ...testIdInputProps("tenant-member-existing-user-search-input"),
               }}
               InputProps={{
                 startAdornment: (
@@ -715,7 +763,9 @@ export default function TenantRoleDialog({
                   <TableRow>
                     <TableCell sx={{ width: 56 }} />
                     <TableCell>{translate("username", "Username")}</TableCell>
-                    <TableCell>{translate("display_name", "Display Name")}</TableCell>
+                    <TableCell>
+                      {translate("display_name", "Display Name")}
+                    </TableCell>
                     <TableCell>{translate("email", "Email")}</TableCell>
                   </TableRow>
                 </TableHead>
@@ -810,13 +860,66 @@ export default function TenantRoleDialog({
           </Button>
           <Button
             variant="contained"
-            onClick={handleCreateTenantMember}
+            onClick={() => void handleCreateTenantMember()}
             disabled={isSubmittingMember || !memberForm.username}
             data-testid="tenant-member-submit-button"
           >
             {isSubmittingMember
               ? translate("processing", "Processing...")
               : translate("add", "Add")}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={isCreateGroupDialogOpen}
+        onClose={handleCloseCreateGroupDialog}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>
+          {translate("create_group", "Create Group")}
+          {tenant ? `: ${tenant.name}` : ""}
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              {translate(
+                "create_group_description",
+                "Create a new Keycloak group for this tenant. Tenant roles can be assigned after creation.",
+              )}
+            </Typography>
+            {createGroupErrorMessage && (
+              <Alert severity="error">{createGroupErrorMessage}</Alert>
+            )}
+            <TextField
+              label={translate("group_name", "Group Name")}
+              value={createGroupName}
+              onChange={(event) => {
+                setCreateGroupName(event.target.value);
+                if (createGroupErrorMessage) {
+                  setCreateGroupErrorMessage("");
+                }
+              }}
+              inputProps={{
+                ...testIdInputProps("tenant-group-name-input"),
+              }}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={handleCloseCreateGroupDialog} disabled={isSubmittingGroup}>
+            {translate("cancel", "Cancel")}
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => void handleCreateTenantGroup()}
+            disabled={isSubmittingGroup || !createGroupName.trim()}
+            data-testid="tenant-group-submit-button"
+          >
+            {isSubmittingGroup
+              ? translate("processing", "Processing...")
+              : translate("create", "Create")}
           </Button>
         </DialogActions>
       </Dialog>

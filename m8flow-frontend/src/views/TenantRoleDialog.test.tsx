@@ -6,6 +6,7 @@ const mockGetTenantGroups = vi.fn();
 const mockGetTenantMembers = vi.fn();
 const mockGetAvailableTenantUsers = vi.fn();
 const mockAddTenantMember = vi.fn();
+const mockCreateTenantGroup = vi.fn();
 const mockAddTenantMemberToGroup = vi.fn();
 const mockRemoveTenantMemberFromGroup = vi.fn();
 const mockAssignTenantGroupRole = vi.fn();
@@ -26,6 +27,7 @@ vi.mock("../services/TenantService", () => ({
     getAvailableTenantUsers: (...args: unknown[]) =>
       mockGetAvailableTenantUsers(...args),
     addTenantMember: (...args: unknown[]) => mockAddTenantMember(...args),
+    createTenantGroup: (...args: unknown[]) => mockCreateTenantGroup(...args),
     addTenantMemberToGroup: (...args: unknown[]) =>
       mockAddTenantMemberToGroup(...args),
     removeTenantMemberFromGroup: (...args: unknown[]) =>
@@ -54,9 +56,14 @@ vi.mock("react-i18next", () => ({
         display_name: "Display Name",
         email: "Email",
         add_tenant_user: "Add User",
+        create_group: "Create Group",
+        create_group_description:
+          "Create a new Keycloak group for this tenant. Tenant roles can be assigned after creation.",
         create_tenant_user: "Add User to Tenant",
         add_tenant_user_description:
           "Add an existing user to this tenant, then assign Keycloak groups.",
+        group_name: "Group Name",
+        failed_to_create_tenant_group: "Failed to create tenant group.",
         existing_user: "Existing User",
         search_existing_users: "Search existing users...",
         no_available_users_found: "No existing users available to add.",
@@ -140,6 +147,14 @@ describe("TenantRoleDialog", () => {
       email: "new.user@example.com",
       display_name: "new.user",
       roles: ["reviewer"],
+    });
+    mockCreateTenantGroup.mockResolvedValue({
+      id: "group-manager",
+      name: "Manager",
+      path: "/Manager",
+      mapped_roles: [],
+      member_count: 0,
+      members: [],
     });
     mockAddTenantMemberToGroup.mockResolvedValue({
       id: "member-1",
@@ -241,5 +256,22 @@ describe("TenantRoleDialog", () => {
 
     expect(await screen.findAllByText("Submitter")).not.toHaveLength(0);
     expect(screen.getAllByText("Submitters").length).toBeGreaterThan(0);
+  });
+
+  it("creates a tenant group from the dialog", async () => {
+    render(<TenantRoleDialog open tenant={tenant} onClose={vi.fn()} />);
+
+    await screen.findByText("Reviewer User");
+    fireEvent.click(screen.getByTestId("tenant-group-add-button"));
+    fireEvent.change(screen.getByTestId("tenant-group-name-input"), {
+      target: { value: "Manager" },
+    });
+    fireEvent.click(screen.getByTestId("tenant-group-submit-button"));
+
+    await waitFor(() =>
+      expect(mockCreateTenantGroup).toHaveBeenCalledWith("tenant-1", {
+        name: "Manager",
+      }),
+    );
   });
 });

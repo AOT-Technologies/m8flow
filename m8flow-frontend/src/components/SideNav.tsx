@@ -80,6 +80,7 @@ const routeIdentifiers = {
   CONFIGURATION: "configuration",
   CONNECTORS: "connectors",
   TEMPLATES: "templates",
+  TENANT_MANAGEMENT: "tenantManagement",
 };
 
 function SideNav({
@@ -106,6 +107,7 @@ function SideNav({
     [targetUris.secretListPath]: ["GET"],
     [targetUris.serviceTaskListPath]: ["GET"],
     "/tasks/*": ["GET", "PUT"],
+    [targetUris.m8flowTenantManagementPath]: ["GET"],
     "/m8flow/tenants": ["GET"],
     "/m8flow/templates": ["GET"],
   };
@@ -129,6 +131,8 @@ function SideNav({
     selectedTab = routeIdentifiers.CONNECTORS;
   } else if (location.pathname.startsWith("/templates")) {
     selectedTab = routeIdentifiers.TEMPLATES;
+  } else if (location.pathname.startsWith("/tenant-management")) {
+    selectedTab = routeIdentifiers.TENANT_MANAGEMENT;
   }
 
   const versionInfo = appVersionInfo();
@@ -142,7 +146,7 @@ function SideNav({
   }
   const userEmail = UserService.getUserEmail();
   const username = UserService.getPreferredUsername();
-  const tenantId = UserService.getTenantName();
+  const [tenantId, setTenantId] = useState<string | null>(() => UserService.getTenantName());
   let externalDocumentationUrl = "https://spiff-arena.readthedocs.io";
   if (DOCUMENTATION_URL) {
     externalDocumentationUrl = DOCUMENTATION_URL;
@@ -184,6 +188,25 @@ function SideNav({
 
     return () => {
       window.removeEventListener("click", handleClickOutside);
+    };
+  }, []);
+
+  useEffect(() => {
+    const syncTenantName = () => {
+      setTenantId(UserService.getTenantName());
+    };
+
+    syncTenantName();
+    window.addEventListener(
+      UserService.TENANT_DISPLAY_NAME_UPDATED_EVENT,
+      syncTenantName,
+    );
+
+    return () => {
+      window.removeEventListener(
+        UserService.TENANT_DISPLAY_NAME_UPDATED_EVENT,
+        syncTenantName,
+      );
     };
   }, []);
 
@@ -248,6 +271,13 @@ function SideNav({
       route: "/templates",
       id: routeIdentifiers.TEMPLATES,
       permissionRoutes: ["/m8flow/templates"],
+    },
+    {
+      text: t("tenant_management"),
+      icon: <Business />,
+      route: "/tenant-management",
+      id: routeIdentifiers.TENANT_MANAGEMENT,
+      permissionRoutes: [targetUris.m8flowTenantManagementPath],
     },
   ];
 
@@ -363,7 +393,6 @@ function SideNav({
                       variant="body2"
                       sx={{
                         fontWeight: 600,
-                        textTransform: "capitalize",
                       }}
                     >
                       {t("tenant")}: {tenantId}
@@ -544,7 +573,6 @@ function SideNav({
                 data-testid="nav-tenant-id"
                 sx={{
                   color: "text.secondary",
-                  textTransform: "capitalize",
                   fontWeight: 600,
                   mt: 0.5,
                 }}

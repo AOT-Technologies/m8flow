@@ -7,6 +7,7 @@ const mockUsePermissionFetcher = vi.fn();
 const mockCreateTenant = vi.fn();
 const mockGetTenantGroups = vi.fn();
 const mockGetTenantMembers = vi.fn();
+const mockRememberTenantDisplayName = vi.fn();
 
 vi.mock("../hooks/useTenants", () => ({
   useTenants: () => mockUseTenants(),
@@ -37,6 +38,13 @@ vi.mock("../services/TenantService", () => ({
     removeTenantGroupRole: vi.fn(),
     updateTenant: vi.fn(),
     deleteTenant: vi.fn(),
+  },
+}));
+
+vi.mock("../services/UserService", () => ({
+  default: {
+    rememberTenantDisplayName: (...args: unknown[]) =>
+      mockRememberTenantDisplayName(...args),
   },
 }));
 
@@ -123,6 +131,48 @@ describe("TenantPage", () => {
     vi.clearAllMocks();
     mockGetTenantGroups.mockResolvedValue([]);
     mockGetTenantMembers.mockResolvedValue([]);
+  });
+
+  it("remembers the updated tenant display name after editing a tenant", async () => {
+    const refetch = vi.fn();
+    mockUseTenants.mockReturnValue({
+      data: [
+        {
+          id: "tenant-uuid",
+          name: "Opa",
+          slug: "opa",
+          status: "ACTIVE",
+          createdBy: "system",
+          modifiedBy: "system",
+          createdAtInSeconds: 1,
+          updatedAtInSeconds: 1,
+        },
+      ],
+      isLoading: false,
+      error: null,
+      refetch,
+    });
+    mockUsePermissionFetcher.mockReturnValue({
+      ability: { can: () => true },
+      permissionsLoaded: true,
+    });
+
+    render(<TenantPage />);
+
+    fireEvent.click(screen.getByTestId("tenant-edit-button-tenant-uuid"));
+    fireEvent.change(screen.getByDisplayValue("Opa"), {
+      target: { value: "Opa 1111" },
+    });
+    fireEvent.click(screen.getByTestId("tenant-modal-submit-button"));
+
+    await waitFor(() => {
+      expect(mockRememberTenantDisplayName).toHaveBeenCalledWith({
+        id: "tenant-uuid",
+        alias: "opa",
+        name: "Opa 1111",
+      });
+    });
+    expect(refetch).toHaveBeenCalled();
   });
 
   it("creates a tenant from the add tenant modal", async () => {

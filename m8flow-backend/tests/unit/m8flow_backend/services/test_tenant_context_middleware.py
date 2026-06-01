@@ -375,6 +375,12 @@ def test_global_tenant_management_path_is_tenant_context_exempt() -> None:
         assert _is_tenant_context_exempt_request() is True
 
 
+def test_organization_memberships_path_is_tenant_context_exempt() -> None:
+    app = _make_app()
+    with app.test_request_context("/v1.0/m8flow/organization-memberships"):
+        assert _is_tenant_context_exempt_request() is True
+
+
 def test_permissions_check_path_is_not_tenant_context_exempt() -> None:
     app = _make_app()
     with app.test_request_context("/v1.0/permissions-check"):

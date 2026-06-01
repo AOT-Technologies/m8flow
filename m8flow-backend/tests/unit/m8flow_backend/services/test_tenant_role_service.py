@@ -78,6 +78,7 @@ def _load_tenant_role_service(monkeypatch):
     )
     fake_keycloak_service_module.add_organization_member = lambda *_args, **_kwargs: None
     fake_keycloak_service_module.add_organization_group_member = lambda *_args, **_kwargs: None
+    fake_keycloak_service_module.create_organization_group = lambda *_args, **_kwargs: {}
     fake_keycloak_service_module.get_organization_by_id = lambda *_args, **_kwargs: None
     fake_keycloak_service_module.get_organization_by_alias = lambda *_args, **_kwargs: None
     fake_keycloak_service_module.get_organization_group_by_id = lambda *_args, **_kwargs: None
@@ -305,6 +306,49 @@ def test_list_tenant_groups_with_members_reflects_group_members_and_dynamic_role
             ],
         },
     ]
+
+
+def test_create_tenant_group_creates_and_serializes_group(monkeypatch):
+    tenant_role_service = _load_tenant_role_service(monkeypatch)
+    monkeypatch.setattr(
+        tenant_role_service,
+        "_organization_for_tenant",
+        lambda tenant_id: (
+            SimpleNamespace(id=tenant_id, slug="it", name="Information Technology"),
+            {"id": "org-it", "alias": "it"},
+            "org-it",
+        ),
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "list_organization_groups",
+        lambda organization_id: [],
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "create_organization_group",
+        lambda organization_id, group_name: {
+            "id": "group-manager",
+            "name": group_name,
+            "path": f"/{group_name}",
+        },
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "list_organization_group_members",
+        lambda organization_id, group_id: [],
+    )
+
+    result = tenant_role_service.create_tenant_group("tenant-it-id", "Manager")
+
+    assert result == {
+        "id": "group-manager",
+        "name": "Manager",
+        "path": "/Manager",
+        "mapped_roles": [],
+        "member_count": 0,
+        "members": [],
+    }
 
 
 def test_add_tenant_member_adds_existing_user_assigns_groups_and_syncs_locally(monkeypatch):

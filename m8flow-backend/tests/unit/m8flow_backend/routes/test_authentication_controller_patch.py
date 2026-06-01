@@ -122,6 +122,7 @@ def test_synchronize_selected_organization_claims_normalizes_group_names(monkeyp
     assert synchronized_token["organization"] == {
         "m8flow": {
             "id": "org-id",
+            "name": "m8flow",
             "groups": ["Administrators", "Approvers", "Support"],
         }
     }
@@ -1687,6 +1688,7 @@ def test_tenant_finalization_redirects_directly_with_existing_shared_realm_sessi
             "organization": {
                 "tenant-a": {
                     "id": "org-tenant-a",
+                    "name": "Tenant A",
                     "groups": ["tenant-admin"],
                 }
             },
@@ -1698,6 +1700,7 @@ def test_tenant_finalization_redirects_directly_with_existing_shared_realm_sessi
         "organization": {
             "tenant-a": {
                 "id": "org-tenant-a",
+                "name": "Tenant A",
                 "groups": ["tenant-admin"],
             }
         },
@@ -1793,6 +1796,7 @@ def test_tenant_finalization_redirects_directly_for_multi_org_shared_realm_sessi
         "organization": {
             "tenant-a": {
                 "id": "org-tenant-a",
+                "name": "Tenant A",
                 "groups": ["tenant-admin"],
             }
         },
@@ -1804,6 +1808,7 @@ def test_tenant_finalization_redirects_directly_for_multi_org_shared_realm_sessi
         "organization": {
             "tenant-a": {
                 "id": "org-tenant-a",
+                "name": "Tenant A",
                 "groups": ["tenant-admin"],
             }
         },
@@ -1898,6 +1903,7 @@ def test_tenant_finalization_uses_selected_tenant_id_when_alias_lookup_fails(mon
         "organization": {
             "test3": {
                 "id": "tenant-3-id",
+                "name": "Tenant 3",
                 "groups": ["Administrators"],
             }
         },
@@ -1909,6 +1915,7 @@ def test_tenant_finalization_uses_selected_tenant_id_when_alias_lookup_fails(mon
         "organization": {
             "test3": {
                 "id": "tenant-3-id",
+                "name": "Tenant 3",
                 "groups": ["Administrators"],
             }
         },

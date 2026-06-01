@@ -1,4 +1,5 @@
 """Unit tests for Keycloak API controller (create_realm, tenant_login, create_user_in_realm)."""
+# ruff: noqa: E402
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -22,6 +23,7 @@ from m8flow_backend.routes.keycloak_controller import (  # noqa: E402
     create_realm,
     create_user_in_realm,
     delete_tenant_realm,
+    get_current_user_organization_memberships,
     get_tenant_login_url,
     tenant_login,
     update_tenant_name,
@@ -435,6 +437,7 @@ class TestDeleteTenantRealm:
 class TestUpdateTenantName:
     """Tests for update_tenant_name (PUT /tenants/{tenant_id})."""
 
+    @patch("m8flow_backend.routes.keycloak_controller.ensure_request_can_access_tenant")
     @patch("m8flow_backend.routes.keycloak_controller.get_master_admin_token")
     @patch("m8flow_backend.routes.keycloak_controller.AuthorizationService.user_has_permission")
     @patch("m8flow_backend.routes.keycloak_controller.update_organization")
@@ -443,11 +446,13 @@ class TestUpdateTenantName:
         mock_update_organization,
         mock_auth,
         mock_get_token,
+        mock_tenant_access,
         app,
         mock_user,
     ):
         mock_auth.return_value = True
         mock_get_token.return_value = "master-token"
+        mock_tenant_access.return_value = None
         tenant_mock = MagicMock()
         tenant_mock.id = "organization-uuid-123"
         tenant_mock.slug = "tenant-a"
@@ -468,13 +473,138 @@ class TestUpdateTenantName:
             name="Tenant A+",
             admin_token="master-token",
         )
+        mock_tenant_access.assert_called_once_with(
+            "organization-uuid-123",
+            forbidden_message="Not authorized to update another tenant.",
+        )
         assert tenant_mock.name == "Tenant A+"
 
+    @patch("m8flow_backend.routes.keycloak_controller.ensure_request_can_access_tenant")
+    @patch("m8flow_backend.routes.keycloak_controller.get_master_admin_token")
     @patch("m8flow_backend.routes.keycloak_controller.AuthorizationService.user_has_permission")
-    def test_update_tenant_name_missing_name(self, mock_auth, app, mock_user):
+    @patch("m8flow_backend.routes.keycloak_controller.update_organization")
+    def test_update_tenant_name_allows_tenant_admin_group_fallback(
+        self,
+        mock_update_organization,
+        mock_auth,
+        mock_get_token,
+        mock_tenant_access,
+        app,
+        mock_user,
+    ):
+        mock_auth.return_value = False
+        mock_get_token.return_value = "master-token"
+        mock_tenant_access.return_value = None
+        tenant_mock = MagicMock()
+        tenant_mock.id = "organization-uuid-123"
+        tenant_mock.slug = "tenant-a"
+        tenant_mock.name = "Tenant A"
+
+        tenant_admin_group = MagicMock()
+        tenant_admin_group.identifier = "organization-uuid-123:tenant-admin"
+        mock_user.groups = [tenant_admin_group]
+
+        with app.test_request_context():
+            g.user = mock_user
+            with patch("m8flow_backend.routes.keycloak_controller.db") as mock_db:
+                mock_db.session.query.return_value.filter.return_value.one_or_none.return_value = tenant_mock
+                result, status = update_tenant_name("organization-uuid-123", {"name": "Tenant A+"})
+
+        assert status == 200
+        assert result["message"] == "Tenant name updated successfully"
+        assert result["name"] == "Tenant A+"
+        mock_update_organization.assert_called_once_with(
+            "organization-uuid-123",
+            alias="tenant-a",
+            name="Tenant A+",
+            admin_token="master-token",
+        )
+        assert tenant_mock.name == "Tenant A+"
+
+    @patch("m8flow_backend.routes.keycloak_controller.ensure_request_can_access_tenant")
+    @patch("m8flow_backend.routes.keycloak_controller.AuthorizationService.user_has_permission")
+    def test_update_tenant_name_missing_name(self, mock_auth, mock_tenant_access, app, mock_user):
         mock_auth.return_value = True
+        mock_tenant_access.return_value = None
         with app.test_request_context():
             g.user = mock_user
             result, status = update_tenant_name("organization-uuid-123", {"name": "   "})
         assert status == 400
         assert "name is required" in result["detail"]
+
+    @patch("m8flow_backend.routes.keycloak_controller.ensure_request_can_access_tenant")
+    @patch("m8flow_backend.routes.keycloak_controller.AuthorizationService.user_has_permission")
+    def test_update_tenant_name_rejects_cross_tenant_access(
+        self,
+        mock_auth,
+        mock_tenant_access,
+        app,
+        mock_user,
+    ):
+        mock_auth.return_value = True
+        mock_tenant_access.side_effect = ApiError(
+            error_code="forbidden",
+            message="Not authorized to update another tenant.",
+            status_code=403,
+        )
+
+        with app.test_request_context():
+            g.user = mock_user
+            response = update_tenant_name("organization-uuid-123", {"name": "Tenant A+"})
+
+        assert response.status_code == 403
+        assert response.get_json()["message"] == "Not authorized to update another tenant."
+
+
+class TestGetCurrentUserOrganizationMemberships:
+    """Tests for get_current_user_organization_memberships (GET /organization-memberships)."""
+
+    @patch("spiffworkflow_backend.services.authentication_service.AuthenticationService.parse_jwt_token")
+    def test_returns_resolved_organization_memberships(self, mock_parse_jwt_token, app):
+        mock_parse_jwt_token.return_value = {
+            "organization": {
+                "xyz": {
+                    "id": "tenant-xyz-id",
+                    "groups": ["Administrators"],
+                },
+                "m8flow": {
+                    "id": "tenant-m8flow-id",
+                    "name": "m8flow",
+                    "groups": ["Administrators"],
+                },
+            }
+        }
+
+        xyz_tenant = MagicMock()
+        xyz_tenant.id = "tenant-xyz-id"
+        xyz_tenant.slug = "xyz"
+        xyz_tenant.name = "ABC 1234"
+
+        with app.test_request_context(
+            headers={"Cookie": "id_token=test-token; authentication_identifier=m8flow"}
+        ):
+            with patch("m8flow_backend.routes.keycloak_controller.db") as mock_db:
+                mock_db.session.query.return_value.filter.return_value.one_or_none.side_effect = [
+                    xyz_tenant,
+                    None,
+                    None,
+                ]
+                response = get_current_user_organization_memberships()
+
+        result, status = response
+
+        assert status == 200
+        assert result == {
+            "organizations": [
+                {"alias": "xyz", "id": "tenant-xyz-id", "name": "ABC 1234"},
+                {"alias": "m8flow", "id": "tenant-m8flow-id", "name": "m8flow"},
+            ]
+        }
+        mock_parse_jwt_token.assert_called_once_with("m8flow", "test-token")
+
+    def test_requires_authentication_token(self, app):
+        with app.test_request_context():
+            response = get_current_user_organization_memberships()
+
+        assert response.status_code == 401
+        assert response.get_json()["message"] == "Authentication token not found"

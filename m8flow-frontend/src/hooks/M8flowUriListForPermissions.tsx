@@ -7,6 +7,7 @@ export const useM8flowUriListForPermissions = () => {
   const targetUris = useMemo(() => {
     return {
       ...spiffTargetUris,
+      m8flowTenantManagementPath: "/m8flow/tenant-management",
       m8flowTenantListPath: "/m8flow/tenants",
       m8flowTemplateListPath: "/m8flow/templates",
       serviceTaskListPath: "/service-tasks",

@@ -41,9 +41,11 @@ _BASE_TENANT_CONTEXT_EXEMPT_PATH_PREFIXES: tuple[str, ...] = (
     "/v1.0/login",
     "/v1.0/tenants/check",
     "/v1.0/m8flow/tenant-login-url",
+    "/v1.0/m8flow/organization-memberships",
     "/v1.0/m8flow/tenant-realms",
     "/v1.0/m8flow/create-tenant",
     "/m8flow/create-tenant",
+    "/m8flow/organization-memberships",
     # Global tenant-management endpoints are authenticated, but they do not belong to a tenant realm.
     "/v1.0/m8flow/tenants",
     "/m8flow/tenants",

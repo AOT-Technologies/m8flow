@@ -20,7 +20,7 @@ interface TenantModalProps {
   type: TenantModalType;
   tenant: Tenant | null;
   onClose: () => void;
-  onSuccess: (message: string) => void;
+  onSuccess: (message: string, tenantUpdates?: Partial<Tenant>) => void;
 }
 
 const MAX_SLUG_LENGTH = 15;
@@ -172,6 +172,9 @@ export default function TenantModal({
               "organization_updated_successfully",
               "Tenant updated successfully.",
             ),
+        type === TenantModalType.EDIT_TENANT
+          ? { name: editName.trim() }
+          : undefined,
       );
       onClose();
     } catch (err: any) {
