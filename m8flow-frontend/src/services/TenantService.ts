@@ -70,6 +70,10 @@ export interface AddTenantMemberRequest {
     group_names?: string[];
 }
 
+export interface CreateTenantGroupRequest {
+    name: string;
+}
+
 export interface UpdateTenantRequest {
     name?: string;
     status?: TenantStatus;
@@ -90,6 +94,12 @@ export interface CreateTenantResponse {
     keycloak_realm_id?: string;
 }
 
+export interface TenantOrganizationMembership {
+    alias: string;
+    id: string | null;
+    name: string | null;
+}
+
 interface TenantMembersResponse {
     tenant_id: string;
     search: string;
@@ -102,10 +112,19 @@ interface TenantGroupsResponse {
     groups: TenantGroup[];
 }
 
+interface TenantGroupCreateResponse {
+    tenant_id: string;
+    group: TenantGroup;
+}
+
 interface TenantAvailableUsersResponse {
     tenant_id: string;
     search: string;
     users: TenantAvailableUser[];
+}
+
+interface TenantOrganizationMembershipsResponse {
+    organizations: TenantOrganizationMembership[];
 }
 
 interface TenantMemberCreateResponse {
@@ -138,6 +157,21 @@ const TenantService = {
                 path: `${BASE_PATH}/tenants`,
                 httpMethod: "GET",
                 successCallback: resolve,
+                failureCallback: reject,
+            });
+        });
+    },
+
+    /**
+     * Resolve the current user's organization memberships to display names.
+     */
+    getCurrentUserOrganizationMemberships: (): Promise<TenantOrganizationMembership[]> => {
+        return new Promise((resolve, reject) => {
+            HttpService.makeCallToBackend({
+                path: `${BASE_PATH}/organization-memberships`,
+                httpMethod: "GET",
+                successCallback: (response: TenantOrganizationMembershipsResponse) =>
+                    resolve(response.organizations ?? []),
                 failureCallback: reject,
             });
         });
@@ -299,6 +333,30 @@ const TenantService = {
                 httpMethod: "GET",
                 successCallback: (response: TenantGroupsResponse) =>
                     resolve(response.groups ?? []),
+                failureCallback: reject,
+            });
+        });
+    },
+
+    /**
+     * Create one tenant organization group.
+     */
+    createTenantGroup: (
+        tenantId: string,
+        data: CreateTenantGroupRequest,
+    ): Promise<TenantGroup> => {
+        const name = data.name?.trim();
+        if (!name) {
+            return Promise.reject(new Error("Group name cannot be empty"));
+        }
+
+        return new Promise((resolve, reject) => {
+            HttpService.makeCallToBackend({
+                path: `${BASE_PATH}/tenants/${encodeURIComponent(tenantId)}/groups`,
+                httpMethod: "POST",
+                postBody: { name },
+                successCallback: (response: TenantGroupCreateResponse) =>
+                    resolve(response.group),
                 failureCallback: reject,
             });
         });

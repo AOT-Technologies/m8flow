@@ -180,14 +180,14 @@ describe("TemplateService", () => {
     it("sends PUT request and returns parsed template on success", async () => {
       const mockTemplateResponse = {
         id: 5,
-        template_key: "test-key",
+        templateKey: "test-key",
         name: "Test Template",
         version: "V2",
         visibility: "PRIVATE",
-        is_published: false,
-        files: [{ file_type: "json", file_name: "form.json" }],
-        created_at_in_seconds: 1700000000,
-        updated_at_in_seconds: 1700000001,
+        isPublished: false,
+        files: [{ fileType: "json", fileName: "form.json" }],
+        createdAtInSeconds: 1700000000,
+        updatedAtInSeconds: 1700000001,
       };
 
       fetchMock.mockResolvedValue({
