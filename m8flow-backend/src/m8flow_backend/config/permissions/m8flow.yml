@@ -113,8 +113,12 @@ permissions:
     actions: [read]
     uri: PG:ALL
   manage-all-process-groups:
-    groups: ["tenant-admin", "editor"]
+    groups: ["tenant-admin"]
     actions: [all]
+    uri: PG:ALL
+  edit-all-process-groups:
+    groups: ["editor"]
+    actions: [create, read, update]
     uri: PG:ALL
   read-process-group-list:
     groups: ["tenant-admin", "editor", "viewer"]
@@ -125,8 +129,12 @@ permissions:
     actions: [read]
     uri: PM:ALL
   manage-all-process-models:
-    groups: ["tenant-admin", "editor"]
+    groups: ["tenant-admin"]
     actions: [all]
+    uri: PM:ALL
+  edit-all-process-models:
+    groups: ["editor"]
+    actions: [create, read, update]
     uri: PM:ALL
   read-process-model-list:
     groups: ["tenant-admin", "editor", "viewer"]
@@ -304,6 +312,14 @@ permissions:
     groups: ["viewer", "super-admin"]
     actions: [read]
     uri: /tasks/*
+  admin-process-soft-delete-models:
+    groups: ["tenant-admin"]
+    actions: [all]
+    uri: /m8flow/admin/process-models/*
+  admin-process-soft-delete-groups:
+    groups: ["tenant-admin"]
+    actions: [all]
+    uri: /m8flow/admin/process-groups/*
   read-nats-tokens:
     groups: ["integrator", "viewer", "super-admin"]
     actions: [read]

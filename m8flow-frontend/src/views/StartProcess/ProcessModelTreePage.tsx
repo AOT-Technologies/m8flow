@@ -19,7 +19,7 @@ import { Can } from '@casl/react';
 import { Subject } from 'rxjs';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import StarRateIcon from '@mui/icons-material/StarRate';
-import { Delete, Edit, Add, Home } from '@mui/icons-material';
+import { Delete, Edit, Add, Home, DeleteSweep } from '@mui/icons-material';
 import { useDebouncedCallback } from 'use-debounce';
 import { useParams, useNavigate } from 'react-router';
 import useProcessGroups from '../../hooks/useProcessGroups';
@@ -41,7 +41,7 @@ import {
   modifyProcessIdentifierForPathParam,
   unModifyProcessIdentifierForPathParam,
 } from '../../helpers';
-import { useUriListForPermissions } from '../../hooks/UriListForPermissions';
+import { useM8flowUriListForPermissions as useUriListForPermissions } from '../../hooks/M8flowUriListForPermissions';
 import { usePermissionFetcher } from '../../hooks/PermissionService';
 import ConfirmIconButton from '../../components/ConfirmIconButton';
 import HttpService from '../../services/HttpService';
@@ -116,6 +116,7 @@ export default function ProcessModelTreePage({
     [targetUris.processGroupListPath]: ['POST'],
     [targetUris.processGroupShowPath]: ['PUT', 'DELETE'],
     [targetUris.processModelCreatePath]: ['POST'],
+    [targetUris.m8flowDeletedProcessModelsPath]: ['GET'],
   };
   const { ability, permissionsLoaded } = usePermissionFetcher(
     permissionRequestData,
@@ -450,10 +451,13 @@ export default function ProcessModelTreePage({
       HttpService.makeCallToBackend({
         path: `/process-groups/${modifiedGroupId}`,
         successCallback: () => {
-          handleCrumbClick({
-            id: parendGroupId.replaceAll(':', '/'),
-            displayName: 'NOT_USED',
-          });
+          if (parendGroupId === SPIFF_ID) {
+            navigate('/process-groups');
+            window.location.reload();
+          } else {
+            navigate(`/process-groups/${parendGroupId}`);
+            window.location.reload();
+          }
         },
         httpMethod: 'DELETE',
       });
@@ -583,6 +587,19 @@ export default function ProcessModelTreePage({
                       </Breadcrumbs>
                       <Box>
                         <Can
+                          I="GET"
+                          a={targetUris.m8flowDeletedProcessModelsPath}
+                          ability={ability}
+                        >
+                          <Button
+                            size="small"
+                            startIcon={<DeleteSweep />}
+                            onClick={() => navigate('/admin/deleted-processes')}
+                          >
+                            {t('view_deleted', { defaultValue: 'View Deleted' })}
+                          </Button>
+                        </Can>
+                        <Can
                           I="PUT"
                           a={targetUris.processGroupShowPath}
                           ability={ability}
@@ -603,8 +620,9 @@ export default function ProcessModelTreePage({
                             data-testid="delete-process-group-button"
                             renderIcon={<Delete />}
                             iconDescription={t('delete_process_group')}
-                            description={t('delete_process_group_with_name', {
+                            description={t('delete_process_group_soft_confirm', {
                               name: currentProcessGroup.display_name,
+                              defaultValue: `Are you sure you want to delete "${currentProcessGroup.display_name}"? If this group contains models with process instances, it will be soft-deleted and can be restored by an admin.`,
                             })}
                             onConfirmation={deleteProcessGroup}
                             confirmButtonLabel={t('delete')}
@@ -613,22 +631,37 @@ export default function ProcessModelTreePage({
                       </Box>
                     </>
                   ) : (
-                    <Breadcrumbs sx={{ mb: 3 }}>
-                      <Button
-                        data-testid="breadcrumb-root-button"
-                        sx={{ display: 'flex', alignItems: 'center' }}
-                        onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
-                          e.preventDefault();
-                          handleCrumbClick({
-                            id: SPIFF_ID,
-                            displayName: t('home'),
-                          });
-                        }}
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
+                      <Breadcrumbs>
+                        <Button
+                          data-testid="breadcrumb-root-button"
+                          sx={{ display: 'flex', alignItems: 'center' }}
+                          onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
+                            e.preventDefault();
+                            handleCrumbClick({
+                              id: SPIFF_ID,
+                              displayName: t('home'),
+                            });
+                          }}
+                        >
+                          <Home sx={{ mr: 0.5 }} fontSize="inherit" />
+                          Root
+                        </Button>
+                      </Breadcrumbs>
+                      <Can
+                        I="GET"
+                        a={targetUris.m8flowDeletedProcessModelsPath}
+                        ability={ability}
                       >
-                        <Home sx={{ mr: 0.5 }} fontSize="inherit" />
-                        Root
-                      </Button>
-                    </Breadcrumbs>
+                        <Button
+                          size="small"
+                          startIcon={<DeleteSweep />}
+                          onClick={() => navigate('/admin/deleted-processes')}
+                        >
+                          {t('view_deleted', { defaultValue: 'View Deleted' })}
+                        </Button>
+                      </Can>
+                    </Box>
                   )}
                 </Box>
                 {currentProcessGroup && (

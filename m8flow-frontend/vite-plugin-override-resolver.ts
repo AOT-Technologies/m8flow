@@ -63,8 +63,11 @@ export function overrideResolver(): Plugin {
     resolveId(source, importer, options) {
       if (!importer) return null;
 
-      const importerInCore = importer.includes('/spiffworkflow-frontend/src/');
-      const importerInExtensions = importer.includes('/m8flow-frontend/src/');
+      // Normalize Windows backslashes — rollup hands us native-separator paths
+      // during `vite build`, while the dev server pre-normalizes to forward slashes.
+      const normalizedImporter = importer.replace(/\\/g, '/');
+      const importerInCore = normalizedImporter.includes('/spiffworkflow-frontend/src/');
+      const importerInExtensions = normalizedImporter.includes('/m8flow-frontend/src/');
 
       // Handle bare module imports from spiffworkflow-frontend files
       // These need to be resolved to m8flow-frontend/node_modules

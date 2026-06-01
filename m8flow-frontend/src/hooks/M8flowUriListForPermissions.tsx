@@ -11,6 +11,8 @@ export const useM8flowUriListForPermissions = () => {
       m8flowTenantListPath: "/m8flow/tenants",
       m8flowTemplateListPath: "/m8flow/templates",
       serviceTaskListPath: "/service-tasks",
+      m8flowDeletedProcessModelsPath: "/m8flow/admin/process-models/deleted",
+      m8flowDeletedProcessGroupsPath: "/m8flow/admin/process-groups/deleted",
     };
   }, [spiffTargetUris]);
 

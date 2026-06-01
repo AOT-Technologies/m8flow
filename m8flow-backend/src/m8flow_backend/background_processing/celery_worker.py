@@ -12,6 +12,9 @@ from m8flow_backend.background_processing import M8FLOW_CELERY_TASK_EVENT_NOTIFI
 from m8flow_backend.background_processing import (
     M8FLOW_CELERY_TASK_PROCESS_INSTANCE_RUN as CELERY_TASK_PROCESS_INSTANCE_RUN,
 )
+from m8flow_backend.background_processing.celery_tasks.purge_soft_deleted_task import (  # noqa: F401
+    M8FLOW_CELERY_TASK_PURGE_SOFT_DELETED,
+)
 from m8flow_backend.services.celery_worker_runtime import cleanup_scoped_session
 from m8flow_backend.services.celery_worker_runtime import reset_engine_for_worker_process
 from m8flow_backend.services.celery_worker_runtime import tenant_id_for_process_instance
@@ -63,6 +66,13 @@ if celery_app is None:
         "Celery app was not initialized. "
         "Set M8FLOW_BACKEND_CELERY_ENABLED=true."
     )
+
+if celery_app.conf.beat_schedule is None:
+    celery_app.conf.beat_schedule = {}
+celery_app.conf.beat_schedule["purge-soft-deleted-daily"] = {
+    "task": M8FLOW_CELERY_TASK_PURGE_SOFT_DELETED,
+    "schedule": 86400.0,
+}
 
 
 def _extract_process_instance_id(task_name: str, args: Any, kwargs: Any) -> int | None:

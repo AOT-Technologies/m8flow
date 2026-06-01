@@ -183,3 +183,12 @@ def nats_token_salt() -> str:
 def nats_url() -> str:
     """Get the NATS URL from environment variables."""
     return _get("M8FLOW_NATS_URL")
+
+
+def soft_delete_retention_days() -> int:
+    """Number of days to retain soft-deleted items before permanent purge. Default 30."""
+    val = _get("M8FLOW_SOFT_DELETE_RETENTION_DAYS")
+    try:
+        return int(val) if val else 30
+    except (ValueError, TypeError):
+        return 30

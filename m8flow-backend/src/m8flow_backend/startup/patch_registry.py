@@ -277,6 +277,11 @@ POST_APP_EXTENSION_PATCH_SPECS: tuple[PatchSpec, ...] = (
         target="m8flow_backend.routes.secrets_controller_patch:apply",
         minimum_phase=BootPhase.APP_CREATED,
     ),
+    PatchSpec(
+        target="m8flow_backend.services.soft_delete_service_patch:apply",
+        minimum_phase=BootPhase.APP_CREATED,
+        optional_import=True,
+    ),
 )
 
 

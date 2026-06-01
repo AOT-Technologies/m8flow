@@ -57,6 +57,7 @@ const ProcessModelShowWithSaveAsTemplate = lazy(
   () => import('./views/ProcessModelShowWithSaveAsTemplate'),
 );
 const ConnectorsPage = lazy(() => import('./views/Connectors'));
+const SoftDeletedProcessItems = lazy(() => import('./views/Admin/SoftDeletedProcessItems'));
 
 // M8Flow Extension: clear tenant from localStorage on logout so next visit shows tenant selection
 const originalDoLogout = UserService.doLogout;
@@ -252,6 +253,7 @@ export default function ContainerForExtensions() {
     [targetUris.m8flowTenantListPath]: ["GET"],
     [targetUris.m8flowTemplateListPath]: ["GET"],
     [targetUris.serviceTaskListPath]: ["GET"],
+    [targetUris.m8flowDeletedProcessModelsPath]: ["GET"],
   };
   const { ability, permissionsLoaded } = usePermissionFetcher(
     permissionRequestData,
@@ -554,12 +556,21 @@ export default function ContainerForExtensions() {
           <Route path="templates/:templateId" element={<TemplateModelerPage />} />
           <Route path="templates" element={<TemplateGalleryPage />} />
           <Route path="connectors" element={<ConnectorsPage />} />
+          <Route path="admin/deleted-processes" element={<SoftDeletedProcessItems />} />
           <Route
             path="process-models/:process_model_id"
             element={<ProcessModelShowWithSaveAsTemplate />}
           />
           <Route path="extensions/:page_identifier" element={<Extension />} />
           <Route path="login" element={<TenantAwareLogin />} />
+          {/* Route guard: redirect users without soft-delete admin access */}
+          {permissionsLoaded &&
+            !ability.can('GET', targetUris.m8flowDeletedProcessModelsPath) && (
+              <Route
+                path="admin/deleted-processes"
+                element={<Navigate to="/" replace />}
+              />
+            )}
           {/* Route guard: redirect users without process instance read access to home */}
           {permissionsLoaded &&
             !ability.can('GET', targetUris.processInstanceListForMePath) &&

@@ -8,6 +8,7 @@ from flask import g, has_request_context
 
 from m8flow_backend.tenancy import reset_context_tenant_id, set_context_tenant_id
 from m8flow_backend.tenancy import is_super_admin_request
+from m8flow_backend.services.soft_delete_service import SoftDeleteService
 
 _PATCHED = False
 _ORIGINAL_METHODS: dict[str, Any] = {}
@@ -147,7 +148,8 @@ def apply() -> None:
         user: Any | None = None,
     ):
         if not is_super_admin_request():
-            return original_get_process_groups_for_api(cls, process_group_id=process_group_id, user=user)
+            results = original_get_process_groups_for_api(cls, process_group_id=process_group_id, user=user)
+            return [grp for grp in results if not SoftDeleteService.is_soft_deleted_identifier(getattr(grp, "id", ""))]
 
         base_dir = current_app.config["SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR"]
         tenant_ids = _tenant_roots(base_dir)
@@ -162,6 +164,8 @@ def apply() -> None:
                     if isinstance(group_id, str) and group_id in seen:
                         continue
                     if isinstance(group_id, str):
+                        if SoftDeleteService.is_soft_deleted_identifier(group_id):
+                            continue
                         seen.add(group_id)
                     merged.append(group)
 
@@ -178,7 +182,7 @@ def apply() -> None:
         include_files: bool | None = False,
     ):
         if not is_super_admin_request():
-            return original_get_process_models_for_api(
+            results = original_get_process_models_for_api(
                 cls,
                 user=user,
                 process_group_id=process_group_id,
@@ -187,6 +191,7 @@ def apply() -> None:
                 filter_runnable_as_extension=filter_runnable_as_extension,
                 include_files=include_files,
             )
+            return [m for m in results if not SoftDeleteService.is_soft_deleted_identifier(getattr(m, "id", ""))]
 
         base_dir = current_app.config["SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR"]
         tenant_ids = _tenant_roots(base_dir)
@@ -209,6 +214,8 @@ def apply() -> None:
                     if isinstance(process_model_id, str) and process_model_id in seen:
                         continue
                     if isinstance(process_model_id, str):
+                        if SoftDeleteService.is_soft_deleted_identifier(process_model_id):
+                            continue
                         seen.add(process_model_id)
                     merged.append(process_model)
 
@@ -268,7 +275,19 @@ def apply() -> None:
     def patched_process_model_delete(cls, process_model_id: str) -> None:
         if is_super_admin_request():
             raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
-        return original_process_model_delete(cls, process_model_id)
+        from spiffworkflow_backend.services.process_model_service import ProcessModelWithInstancesNotDeletableError
+        try:
+            return original_process_model_delete(cls, process_model_id)
+        except ProcessModelWithInstancesNotDeletableError:
+            try:
+                SoftDeleteService.soft_delete_process_model(process_model_id, user=g.user if has_request_context() else None)
+            except Exception as exc:
+                raise ApiError(
+                    "soft_delete_failed",
+                    f"Could not delete or soft-delete the process model: {exc}",
+                    status_code=500,
+                ) from exc
+            return None
 
     @classmethod
     def patched_process_model_move(cls, original_process_model_id: str, new_location: str) -> Any:
@@ -306,7 +325,19 @@ def apply() -> None:
     def patched_process_group_delete(cls, process_group_id: str) -> None:
         if is_super_admin_request():
             raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
-        return original_process_group_delete(cls, process_group_id)
+        from spiffworkflow_backend.services.process_model_service import ProcessModelWithInstancesNotDeletableError
+        try:
+            return original_process_group_delete(cls, process_group_id)
+        except ProcessModelWithInstancesNotDeletableError:
+            try:
+                SoftDeleteService.soft_delete_process_group(process_group_id, user=g.user if has_request_context() else None)
+            except Exception as exc:
+                raise ApiError(
+                    "soft_delete_failed",
+                    f"Could not delete or soft-delete the process group: {exc}",
+                    status_code=500,
+                ) from exc
+            return None
 
     ProcessModelService.get_process_groups_for_api = patched_get_process_groups_for_api
     ProcessModelService.get_process_models_for_api = patched_get_process_models_for_api
