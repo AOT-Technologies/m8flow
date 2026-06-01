@@ -80,7 +80,7 @@
   "delete_tenant": "Smazat nájemce",
   "are_you_sure_you_want_to_delete_tenant": "Opravdu chcete odstranit tenanta?",
   "action_cannot_be_undone": "Tuto akci nelze vrátit zpět.",
-  "realm_slug": "Realm Slug",
+  "realm_slug": "Alias nájemce",
   "display_name": "Zobrazovaný název",
   "cancel": "Zrušit",
   "delete": "Vymazat",

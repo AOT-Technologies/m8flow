@@ -14,6 +14,129 @@ import { parseTaskShowUrl } from '@spiffworkflow-frontend/helpers';
 // https://dev.to/nilanth/how-to-secure-jwt-in-a-single-page-application-cko
 
 const SIGN_IN_PATH = '/';
+const AUTH_REALM_HINT_STORAGE_KEY = 'm8flow_auth_realm';
+const TENANT_DISPLAY_NAME_OVERRIDES_STORAGE_KEY = 'm8flow_tenant_display_names';
+const TENANT_DISPLAY_NAME_UPDATED_EVENT = 'm8flow:tenant-display-name-updated';
+
+export interface OrganizationMembership {
+  alias: string;
+  id: string | null;
+  name: string | null;
+}
+
+interface TenantDisplayNameReference {
+  alias?: string | null;
+  id?: string | null;
+  name?: string | null;
+}
+
+const normalizeTenantIdentifier = (value: string | null | undefined): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalizedValue = value.trim();
+  return normalizedValue || null;
+};
+
+const readTenantDisplayNameOverrides = (): Record<string, string> => {
+  const storedValue = localStorage.getItem(TENANT_DISPLAY_NAME_OVERRIDES_STORAGE_KEY);
+  if (!storedValue) {
+    return {};
+  }
+
+  try {
+    const parsedValue = JSON.parse(storedValue) as unknown;
+    if (!parsedValue || typeof parsedValue !== 'object' || Array.isArray(parsedValue)) {
+      return {};
+    }
+
+    return Object.entries(parsedValue as Record<string, unknown>).reduce<Record<string, string>>(
+      (accumulator, [identifier, name]) => {
+        const normalizedIdentifier = normalizeTenantIdentifier(identifier);
+        const normalizedName = normalizeTenantIdentifier(
+          typeof name === 'string' ? name : null,
+        );
+        if (normalizedIdentifier && normalizedName) {
+          accumulator[normalizedIdentifier] = normalizedName;
+        }
+        return accumulator;
+      },
+      {},
+    );
+  } catch {
+    return {};
+  }
+};
+
+const writeTenantDisplayNameOverrides = (overrides: Record<string, string>) => {
+  const overrideEntries = Object.entries(overrides);
+  if (!overrideEntries.length) {
+    localStorage.removeItem(TENANT_DISPLAY_NAME_OVERRIDES_STORAGE_KEY);
+    return;
+  }
+
+  localStorage.setItem(
+    TENANT_DISPLAY_NAME_OVERRIDES_STORAGE_KEY,
+    JSON.stringify(Object.fromEntries(overrideEntries)),
+  );
+};
+
+const getRememberedTenantDisplayName = (
+  tenantIdentifiers: Array<string | null | undefined>,
+): string | null => {
+  const overrides = readTenantDisplayNameOverrides();
+  for (const tenantIdentifier of tenantIdentifiers) {
+    const normalizedIdentifier = normalizeTenantIdentifier(tenantIdentifier);
+    if (!normalizedIdentifier) {
+      continue;
+    }
+    const rememberedName = normalizeTenantIdentifier(overrides[normalizedIdentifier]);
+    if (rememberedName) {
+      return rememberedName;
+    }
+  }
+  return null;
+};
+
+const dispatchTenantDisplayNameUpdated = (detail: TenantDisplayNameReference) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.dispatchEvent(
+    new CustomEvent(TENANT_DISPLAY_NAME_UPDATED_EVENT, {
+      detail,
+    }),
+  );
+};
+
+const rememberTenantDisplayName = (tenant: TenantDisplayNameReference) => {
+  const normalizedName = normalizeTenantIdentifier(tenant.name);
+  if (!normalizedName) {
+    return;
+  }
+
+  const identifiers = [
+    normalizeTenantIdentifier(tenant.id),
+    normalizeTenantIdentifier(tenant.alias),
+  ].filter((value): value is string => Boolean(value));
+
+  if (!identifiers.length) {
+    return;
+  }
+
+  const overrides = readTenantDisplayNameOverrides();
+  identifiers.forEach((identifier) => {
+    overrides[identifier] = normalizedName;
+  });
+  writeTenantDisplayNameOverrides(overrides);
+  dispatchTenantDisplayNameUpdated({
+    id: normalizeTenantIdentifier(tenant.id),
+    alias: normalizeTenantIdentifier(tenant.alias),
+    name: normalizedName,
+  });
+};
 
 const getCookie = (key: string) => {
   const parsedCookies = cookie.parse(document.cookie);
@@ -75,6 +198,168 @@ const getAccessToken = () => {
 };
 const getAuthenticationIdentifier = () => {
   return getCookie('authentication_identifier');
+};
+
+const getSelectedTenantCookie = () => {
+  return getCookie('m8flow_selected_tenant');
+};
+
+const hasSelectedTenantCookie = () => {
+  return !!getSelectedTenantCookie();
+};
+
+const getAuthenticationRealmHint = () => {
+  const cookieValue = getCookie(AUTH_REALM_HINT_STORAGE_KEY);
+  if (cookieValue) {
+    return cookieValue;
+  }
+  return localStorage.getItem(AUTH_REALM_HINT_STORAGE_KEY);
+};
+
+const setAuthenticationRealmHint = (identifier: string) => {
+  const normalizedIdentifier = identifier.trim();
+  if (!normalizedIdentifier) {
+    return;
+  }
+
+  document.cookie = `${AUTH_REALM_HINT_STORAGE_KEY}=${encodeURIComponent(normalizedIdentifier)}; Path=/`;
+  localStorage.setItem(AUTH_REALM_HINT_STORAGE_KEY, normalizedIdentifier);
+};
+
+const clearAuthenticationRealmHint = () => {
+  document.cookie = `${AUTH_REALM_HINT_STORAGE_KEY}=; Max-Age=0; Path=/`;
+  localStorage.removeItem(AUTH_REALM_HINT_STORAGE_KEY);
+};
+
+const getDecodedIdToken = (): Record<string, unknown> | null => {
+  const idToken = getIdToken();
+  if (!idToken) {
+    return null;
+  }
+
+  try {
+    return jwtDecode(idToken) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+};
+
+const getSingleOrganizationClaim = (
+  idObject: Record<string, unknown> | null,
+): { alias: string; details: Record<string, unknown> } | null => {
+  if (!idObject) {
+    return null;
+  }
+
+  const organizationClaim = idObject.organization;
+  if (!organizationClaim || typeof organizationClaim !== 'object' || Array.isArray(organizationClaim)) {
+    return null;
+  }
+
+  const organizationEntries = Object.entries(organizationClaim).filter(
+    ([alias, details]) => typeof alias === 'string'
+      && alias.length > 0
+      && details
+      && typeof details === 'object'
+      && !Array.isArray(details),
+  ) as Array<[string, Record<string, unknown>]>;
+
+  if (organizationEntries.length !== 1) {
+    return null;
+  }
+
+  const [alias, details] = organizationEntries[0];
+  return { alias, details };
+};
+
+const getOrganizationMemberships = (): OrganizationMembership[] => {
+  const idObject = getDecodedIdToken();
+  if (!idObject) {
+    return [];
+  }
+
+  const organizationClaim = idObject.organization;
+  if (Array.isArray(organizationClaim)) {
+    return organizationClaim.flatMap((item) => {
+      if (typeof item === 'string' && item.length > 0) {
+        return [{
+          alias: item,
+          id: null,
+          name: getRememberedTenantDisplayName([item]),
+        }];
+      }
+      if (item && typeof item === 'object' && !Array.isArray(item)) {
+        const itemRecord = item as Record<string, unknown>;
+        if (typeof itemRecord.alias === 'string' && itemRecord.alias.length > 0) {
+          const itemId =
+            typeof itemRecord.id === 'string' && itemRecord.id ? itemRecord.id : null;
+          return [{
+            alias: itemRecord.alias,
+            id: itemId,
+            name:
+              getRememberedTenantDisplayName([itemId, itemRecord.alias])
+              || (
+                typeof itemRecord.name === 'string' && itemRecord.name
+                  ? itemRecord.name
+                  : null
+              ),
+          }];
+        }
+      }
+      return [];
+    });
+  }
+
+  if (!organizationClaim || typeof organizationClaim !== 'object') {
+    return [];
+  }
+
+  return Object.entries(organizationClaim).flatMap(([alias, details]) => {
+    if (
+      typeof alias !== 'string'
+      || !alias.length
+      || !details
+      || typeof details !== 'object'
+      || Array.isArray(details)
+    ) {
+      return [];
+    }
+
+    const organizationDetails = details as Record<string, unknown>;
+    const membershipId =
+      typeof organizationDetails.id === 'string' && organizationDetails.id
+        ? organizationDetails.id
+        : null;
+    const membershipName =
+      getRememberedTenantDisplayName([membershipId, alias])
+      || (
+        typeof organizationDetails.name === 'string' && organizationDetails.name
+          ? organizationDetails.name
+          : null
+      );
+
+    return [{
+      alias,
+      id: membershipId,
+      name: membershipName,
+    }];
+  });
+};
+
+const getSelectedTenantMembership = (
+  organizationMemberships: OrganizationMembership[],
+): OrganizationMembership | null => {
+  const selectedTenantId = normalizeTenantIdentifier(localStorage.getItem('m8f_tenant_id'));
+  const selectedTenantAlias = normalizeTenantIdentifier(localStorage.getItem('m8flow_tenant'));
+
+  if (!selectedTenantId && !selectedTenantAlias) {
+    return null;
+  }
+
+  return organizationMemberships.find((membership) => (
+    (selectedTenantId && membership.id === selectedTenantId)
+    || (selectedTenantAlias && membership.alias === selectedTenantAlias)
+  )) || null;
 };
 
 const isLoggedIn = () => {
@@ -164,6 +449,7 @@ const doLogin = (
     loginParams.push(`task_guid=${taskShowParams.task_guid}`);
   }
   if (authenticationOption) {
+    setAuthenticationRealmHint(authenticationOption.identifier);
     loginParams.push(
       `authentication_identifier=${authenticationOption.identifier}`,
     );
@@ -174,6 +460,7 @@ const doLogin = (
 
 const doLogout = () => {
   const idToken = getIdToken();
+  clearAuthenticationRealmHint();
 
   const frontendBaseUrl = globalThis.location.origin;
   let logoutRedirectUrl = `${BACKEND_BASE_URL}/logout?redirect_url=${frontendBaseUrl}&id_token=${idToken}&authentication_identifier=${getAuthenticationIdentifier()}`;
@@ -249,31 +536,37 @@ const getPreferredUsername = () => {
 };
 
 const getTenantId = (): string | null => {
-  // Prefer tenant from JWT (Keycloak RealmInfoMapper: m8flow_tenant_id, m8flow_tenant_name)
-  const idToken = getIdToken();
-  if (idToken) {
-    try {
-      const idObject = jwtDecode(idToken) as Record<string, unknown>;
-      if (typeof idObject.m8flow_tenant_id === 'string' && idObject.m8flow_tenant_id) {
-        return idObject.m8flow_tenant_id;
+  const idObject = getDecodedIdToken();
+  if (idObject) {
+    if (typeof idObject.m8flow_tenant_id === 'string' && idObject.m8flow_tenant_id) {
+      return idObject.m8flow_tenant_id;
+    }
+    if (typeof idObject.m8flow_tenant_alias === 'string' && idObject.m8flow_tenant_alias) {
+      return idObject.m8flow_tenant_alias;
+    }
+
+    const organization = getSingleOrganizationClaim(idObject);
+    if (organization) {
+      if (typeof organization.details.id === 'string' && organization.details.id) {
+        return organization.details.id;
       }
-      if (typeof idObject.m8flow_tenant_name === 'string' && idObject.m8flow_tenant_name) {
-        return idObject.m8flow_tenant_name;
-      }
-      if (typeof idObject.realm_id === 'string' && idObject.realm_id) {
-        return idObject.realm_id;
-      }
-      if (typeof idObject.realm_name === 'string' && idObject.realm_name) {
-        return idObject.realm_name;
-      }
-      if (idObject.m8f_tenant_id !== undefined) {
-        return String(idObject.m8f_tenant_id);
-      }
-      if (idObject.tenant_id !== undefined) {
-        return String(idObject.tenant_id);
-      }
-    } catch {
-      // If JWT decode fails, fall back to localStorage
+      return organization.alias;
+    }
+
+    if (typeof idObject.m8flow_tenant_name === 'string' && idObject.m8flow_tenant_name) {
+      return idObject.m8flow_tenant_name;
+    }
+    if (typeof idObject.realm_id === 'string' && idObject.realm_id) {
+      return idObject.realm_id;
+    }
+    if (typeof idObject.realm_name === 'string' && idObject.realm_name) {
+      return idObject.realm_name;
+    }
+    if (idObject.m8f_tenant_id !== undefined) {
+      return String(idObject.m8f_tenant_id);
+    }
+    if (idObject.tenant_id !== undefined) {
+      return String(idObject.tenant_id);
     }
   }
 
@@ -290,19 +583,55 @@ const setTenantId = (tenantId: string | null): void => {
 };
 
 const getTenantName = (): string | null => {
-  const idToken = getIdToken();
-  if (idToken) {
-    try {
-      const idObject = jwtDecode(idToken) as Record<string, unknown>;
-      if(typeof idObject.m8flow_tenant_name === 'string' && idObject.m8flow_tenant_name) {
-        return idObject.m8flow_tenant_name;
-      }
-    } catch (err) {
-      console.error(err);
-      return null;
+  const selectedTenantId = normalizeTenantIdentifier(localStorage.getItem('m8f_tenant_id'));
+  const selectedTenantAlias = normalizeTenantIdentifier(localStorage.getItem('m8flow_tenant'));
+  const rememberedSelectedTenantName = getRememberedTenantDisplayName([
+    selectedTenantId,
+    selectedTenantAlias,
+  ]);
+
+  const idObject = getDecodedIdToken();
+  if (idObject) {
+    const tokenTenantId = normalizeTenantIdentifier(
+      typeof idObject.m8flow_tenant_id === 'string' ? idObject.m8flow_tenant_id : null,
+    );
+    const tokenTenantAlias = normalizeTenantIdentifier(
+      typeof idObject.m8flow_tenant_alias === 'string' ? idObject.m8flow_tenant_alias : null,
+    );
+    const organization = getSingleOrganizationClaim(idObject);
+    const organizationId = normalizeTenantIdentifier(
+      organization && typeof organization.details.id === 'string' ? organization.details.id : null,
+    );
+    const organizationName = normalizeTenantIdentifier(
+      organization && typeof organization.details.name === 'string' ? organization.details.name : null,
+    );
+    const selectedTenantMembership = getSelectedTenantMembership(getOrganizationMemberships());
+    const selectedTenantMembershipName = normalizeTenantIdentifier(selectedTenantMembership?.name);
+
+    const rememberedTenantName = getRememberedTenantDisplayName([
+      tokenTenantId,
+      tokenTenantAlias,
+      organizationId,
+      organization?.alias,
+      selectedTenantId,
+      selectedTenantAlias,
+    ]);
+    if (rememberedTenantName) {
+      return rememberedTenantName;
+    }
+
+    if (organizationName) {
+      return organizationName;
+    }
+    if (selectedTenantMembershipName) {
+      return selectedTenantMembershipName;
+    }
+    if (typeof idObject.m8flow_tenant_name === 'string' && idObject.m8flow_tenant_name) {
+      return idObject.m8flow_tenant_name;
     }
   }
-  return null;
+
+  return rememberedSelectedTenantName;
 };
 
 const UserService = {
@@ -311,16 +640,22 @@ const UserService = {
   doLogout,
   getAccessToken,
   getAuthenticationIdentifier,
+  getAuthenticationRealmHint,
   getCurrentLocation,
   getPreferredUsername,
+  getOrganizationMemberships,
+  getSelectedTenantCookie,
   getUserEmail,
   getUserName,
   getTenantId,
+  rememberTenantDisplayName,
+  hasSelectedTenantCookie,
   isLoggedIn,
   isSuperAdmin,
   isPublicUser,
   redirectToLogin,
   setTenantId,
+  TENANT_DISPLAY_NAME_UPDATED_EVENT,
   getTenantName,
 };
 

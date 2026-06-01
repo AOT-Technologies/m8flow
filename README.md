@@ -160,7 +160,6 @@ docker compose -f docker/m8flow-docker-compose.yml up -d --build
 
 <a id="try-the-default-test-users"></a>
 3. **Try the Default Test Users:**  
-   Each tenant (including tenants you add later) is provisioned with these default test users.
 
    | Username     | Role                                  |
    |--------------|---------------------------------------|
@@ -208,7 +207,19 @@ After signing in, follow the [How to use m8flow](docs/how-to-use.md) guide to cr
         <img src="./docs/images/tenant-creation.png" alt="Tenant Creation Screen"/>
     </div>
 
-### Once your tenant is created, it will automatically include the set of default test users described above in [Try the Default Test Users](#try-the-default-test-users).
+<a id="adding-users-to-a-tenant"></a>
+### Adding a user to a tenant
+
+1. Ensure the person already has a Keycloak account (created in the **Keycloak** Admin Console or via **self-registration** on the m8flow sign-in page, when enabled).
+2. Open **Tenant Management** and click **Manage Tenant Groups** for the tenant.
+3. Click **+ Add User** and select the existing user to add them to the tenant.
+4. In the **Members** table, assign group membership (Administrators, Designers, Viewers, and so on).
+5. In the **Groups** table, review which tenant-scoped roles each group grants (Tenant Admin, Editor, Integrator, Reviewer, Submitter, Viewer).
+
+   <div align="center">
+       <img src="./docs/images/tenant-group-management.png" alt="Manage Tenant Groups"/>
+   </div>
+
 ---
 
 ## Docker Compose services

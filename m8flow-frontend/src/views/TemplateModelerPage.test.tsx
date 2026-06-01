@@ -118,8 +118,8 @@ describe("TemplateModelerPage", () => {
       expect(screen.getByText("Test Template")).toBeInTheDocument();
     });
 
-    expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Delete" })).toBeEnabled();
+    expect(screen.getByTestId("template-delete-button")).toBeInTheDocument();
+    expect(screen.getByTestId("template-delete-button")).toBeEnabled();
   });
 
   it("shows Publish button when template is not published", async () => {
@@ -130,7 +130,7 @@ describe("TemplateModelerPage", () => {
     renderWithRouter(<TemplateModelerPage />);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Publish" })).toBeInTheDocument();
+      expect(screen.getByTestId("template-publish-button")).toBeInTheDocument();
     });
   });
 
@@ -145,7 +145,7 @@ describe("TemplateModelerPage", () => {
       expect(screen.getByText("Test Template")).toBeInTheDocument();
     });
 
-    expect(screen.queryByRole("button", { name: "Publish" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("template-publish-button")).not.toBeInTheDocument();
   });
 
   it("disables Create Process Model button when template version is draft", async () => {
@@ -155,7 +155,7 @@ describe("TemplateModelerPage", () => {
 
     renderWithRouter(<TemplateModelerPage />);
 
-    const createButton = await screen.findByRole("button", { name: "Create Process Model" });
+    const createButton = await screen.findByTestId("template-create-process-model-button");
     expect(createButton).toBeDisabled();
   });
 
@@ -166,7 +166,7 @@ describe("TemplateModelerPage", () => {
 
     renderWithRouter(<TemplateModelerPage />);
 
-    const createButton = await screen.findByRole("button", { name: "Create Process Model" });
+    const createButton = await screen.findByTestId("template-create-process-model-button");
     expect(createButton).toBeEnabled();
   });
 
@@ -187,7 +187,7 @@ describe("TemplateModelerPage", () => {
 
     renderWithRouter(<TemplateModelerPage />);
 
-    const deleteButton = await screen.findByRole("button", { name: "Delete" });
+    const deleteButton = await screen.findByTestId("template-delete-button");
     expect(deleteButton).toBeDisabled();
   });
 
@@ -203,7 +203,7 @@ describe("TemplateModelerPage", () => {
 
     renderWithRouter(<TemplateModelerPage />);
 
-    const deleteButton = await screen.findByRole("button", { name: "Delete" });
+    const deleteButton = await screen.findByTestId("template-delete-button");
     expect(deleteButton).toBeEnabled();
   });
 
@@ -229,7 +229,7 @@ describe("TemplateModelerPage", () => {
     renderWithRouter(<TemplateModelerPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Visibility: TENANT")).toBeInTheDocument();
+      expect(screen.getByText(/visibility: TENANT/i)).toBeInTheDocument();
     });
 
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
@@ -247,7 +247,7 @@ describe("TemplateModelerPage", () => {
     renderWithRouter(<TemplateModelerPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Visibility: PRIVATE")).toBeInTheDocument();
+      expect(screen.getByText(/visibility: PRIVATE/i)).toBeInTheDocument();
     });
 
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
@@ -264,14 +264,16 @@ describe("TemplateModelerPage", () => {
       expect(screen.getByRole("combobox")).toBeInTheDocument();
     });
 
-    expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("template-save-visibility-button")).not.toBeInTheDocument();
 
     fireEvent.mouseDown(screen.getByRole("combobox"));
-    const publicOption = await screen.findByRole("option", { name: /Public/i });
+    const publicOption = await screen.findByRole("option", {
+      name: /public_authenticated_users|public/i,
+    });
     fireEvent.click(publicOption);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
+      expect(screen.getByTestId("template-save-visibility-button")).toBeInTheDocument();
     });
 
     expect(TemplateService.updateTemplate).not.toHaveBeenCalled();
@@ -292,14 +294,16 @@ describe("TemplateModelerPage", () => {
     });
 
     fireEvent.mouseDown(screen.getByRole("combobox"));
-    const publicOption = await screen.findByRole("option", { name: /Public/i });
+    const publicOption = await screen.findByRole("option", {
+      name: /public_authenticated_users|public/i,
+    });
     fireEvent.click(publicOption);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
+      expect(screen.getByTestId("template-save-visibility-button")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByTestId("template-save-visibility-button"));
 
     await waitFor(() => {
       expect(TemplateService.updateTemplate).toHaveBeenCalledWith(5, { visibility: "PUBLIC" });
@@ -324,14 +328,16 @@ describe("TemplateModelerPage", () => {
     });
 
     fireEvent.mouseDown(screen.getByRole("combobox"));
-    const tenantOption = await screen.findByRole("option", { name: /Tenant-wide/i });
+    const tenantOption = await screen.findByRole("option", {
+      name: /tenant_wide|tenant-wide/i,
+    });
     fireEvent.click(tenantOption);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
+      expect(screen.getByTestId("template-save-visibility-button")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByTestId("template-save-visibility-button"));
 
     await waitFor(() => {
       expect(screen.getByText("Permission denied")).toBeInTheDocument();
@@ -350,19 +356,23 @@ describe("TemplateModelerPage", () => {
     });
 
     fireEvent.mouseDown(screen.getByRole("combobox"));
-    const publicOption = await screen.findByRole("option", { name: /Public/i });
+    const publicOption = await screen.findByRole("option", {
+      name: /public_authenticated_users|public/i,
+    });
     fireEvent.click(publicOption);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
+      expect(screen.getByTestId("template-save-visibility-button")).toBeInTheDocument();
     });
 
     fireEvent.mouseDown(screen.getByRole("combobox"));
-    const privateOption = await screen.findByRole("option", { name: /Private/i });
+    const privateOption = await screen.findByRole("option", {
+      name: /private_only_you|private/i,
+    });
     fireEvent.click(privateOption);
 
     await waitFor(() => {
-      expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
+      expect(screen.queryByTestId("template-save-visibility-button")).not.toBeInTheDocument();
     });
   });
 });

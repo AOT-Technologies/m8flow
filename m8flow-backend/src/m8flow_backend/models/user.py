@@ -33,7 +33,7 @@ class UserModel(SpiffworkflowBaseDBModel):
     __tablename__ = "user"
     __table_args__ = (
         db.UniqueConstraint("service", "service_id", name="service_key"),
-        {"extend_existing": True},
+        {"keep_existing": True},
     )
 
     id: int = db.Column(db.Integer, primary_key=True)

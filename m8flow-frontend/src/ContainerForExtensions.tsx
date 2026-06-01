@@ -47,6 +47,7 @@ import { RouteLoadingFallback } from './components/RouteLoadingFallback';
 
 // Route-level code splitting for heavier pages.
 const ReportsPage = lazy(() => import('./views/ReportsPage'));
+const TenantManagementPage = lazy(() => import('./views/TenantManagementPage'));
 const TenantPage = lazy(() => import('./views/TenantPage'));
 const TemplateGalleryPage = lazy(() => import('./views/TemplateGalleryPage'));
 const TemplateModelerPage = lazy(() => import('./views/TemplateModelerPage'));
@@ -62,11 +63,13 @@ const originalDoLogout = UserService.doLogout;
 UserService.doLogout = () => {
   if (typeof window !== 'undefined') {
     localStorage.removeItem(M8FLOW_TENANT_STORAGE_KEY);
+    localStorage.removeItem('m8f_tenant_id');
+    document.cookie = 'm8flow_selected_tenant=; Max-Age=0; Path=/';
   }
   originalDoLogout();
 };
 
-/** When ENABLE_MULTITENANT: at "/" show TenantSelectPage unless the user can manage tenants globally or already selected a tenant. */
+/** When ENABLE_MULTITENANT: at "/" show the sign-in landing until the user authenticates. */
 function MultitenantRootGate({
   extensionUxElements,
   setAdditionalNavElement,
@@ -97,8 +100,20 @@ function MultitenantRootGate({
     );
   }
 
-  const storedTenant = typeof window !== 'undefined' ? localStorage.getItem(M8FLOW_TENANT_STORAGE_KEY) : null;
-  if (storedTenant) {
+  if (UserService.isLoggedIn()) {
+    return (
+      <RoleBasedRootGate
+        extensionUxElements={extensionUxElements}
+        setAdditionalNavElement={setAdditionalNavElement}
+        isMobile={isMobile}
+        ability={ability}
+        targetUris={targetUris}
+        permissionsLoaded={permissionsLoaded}
+      />
+    );
+  }
+
+  if (UserService.hasSelectedTenantCookie()) {
     return (
       <RoleBasedRootGate
         extensionUxElements={extensionUxElements}
@@ -181,6 +196,11 @@ function RoleBasedRootGate({
         uri: targetUris.m8flowTemplateListPath,
       },
       {
+        route: "/tenant-management",
+        method: "GET",
+        uri: targetUris.m8flowTenantManagementPath,
+      },
+      {
         route: "/tenants",
         method: "GET",
         uri: targetUris.m8flowTenantListPath,
@@ -228,6 +248,7 @@ export default function ContainerForExtensions() {
     [targetUris.messageInstanceListPath]: ["GET"],
     [targetUris.secretListPath]: ["GET"],
     "/tasks/*": ["GET", "PUT"],
+    [targetUris.m8flowTenantManagementPath]: ["GET"],
     [targetUris.m8flowTenantListPath]: ["GET"],
     [targetUris.m8flowTemplateListPath]: ["GET"],
     [targetUris.serviceTaskListPath]: ["GET"],
@@ -501,7 +522,26 @@ export default function ContainerForExtensions() {
           {/* Reports route */}
           <Route path="reports" element={<ReportsPage />} />
           {/* M8Flow Extension: Tenant route */}
-          <Route path="/tenants" element={<TenantPage />} />
+          <Route
+            path="/tenant-management"
+            element={
+              !permissionsLoaded
+                ? null
+                : ability.can("GET", targetUris.m8flowTenantManagementPath)
+                  ? <TenantManagementPage />
+                  : <Navigate to="/" replace />
+            }
+          />
+          <Route
+            path="/tenants"
+            element={
+              !permissionsLoaded
+                ? null
+                : UserService.isSuperAdmin() && ability.can("GET", targetUris.m8flowTenantListPath)
+                  ? <TenantPage />
+                  : <Navigate to="/" replace />
+            }
+          />
           {/* m8 Extension: Template Gallery and Template Modeler routes (more specific first) */}
           <Route
             path="templates/:templateId/files/:fileName"
@@ -599,6 +639,25 @@ export default function ContainerForExtensions() {
           `}
         </style>
       )}
+      {location.pathname === "/tenant-management" && (
+        <style>
+          {`
+            a[href$="/tenant-management"] {
+              background-color: ${(globalTheme.palette as any).background?.light || "#e3f2fd"} !important;
+              color: ${globalTheme.palette.primary.main} !important;
+              border-left-width: 4px !important;
+              border-style: solid !important;
+              border-color: ${globalTheme.palette.primary.main} !important;
+            }
+            a[href$="/tenant-management"] .MuiListItemIcon-root {
+              color: ${globalTheme.palette.primary.main} !important;
+            }
+            a[href$="/tenant-management"] .MuiTypography-root {
+              font-weight: bold !important;
+            }
+          `}
+        </style>
+      )}
       {location.pathname.startsWith("/connectors") && (
         <style>
           {`
@@ -659,7 +718,7 @@ export default function ContainerForExtensions() {
                   setAdditionalNavElement={setAdditionalNavElement}
                   extensionUxElements={[
                     ...(extensionUxElements || []),
-                    ...(ability?.can("GET", targetUris.m8flowTenantListPath)
+                    ...(UserService.isSuperAdmin() && ability?.can("GET", targetUris.m8flowTenantListPath)
                       ? [
                           {
                             page: "/../tenants",
