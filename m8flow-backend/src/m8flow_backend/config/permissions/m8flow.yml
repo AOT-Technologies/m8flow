@@ -15,8 +15,8 @@ groups:
   # The "super-admin" group has platform-wide access, including tenant management and cross-tenant operations.
   "super-admin":
     users: []
-  # The "tenant-admin" group has access to everything within a tenant, but does not have access to tenant management features. 
-  # This group should be assigned to users that need full control over the tenant, but should not have access to manage other tenants.
+  # The "tenant-admin" group has access to everything within a tenant, including tenant-local
+  # member/group management and tenant display-name updates, but it cannot manage other tenants.
   "tenant-admin":
     users: []
   # The "editor" group has access to most features in the frontend and backend, but does not have access to tenant management or some sensitive features like secrets management. 
@@ -92,6 +92,18 @@ permissions:
     groups: ["super-admin"]
     actions: [all]
     uri: /m8flow/tenants*
+  tenant-admin-tenant-management-page:
+    groups: ["tenant-admin"]
+    actions: [read]
+    uri: /m8flow/tenant-management
+  read-current-user-organization-memberships:
+    groups: ["everybody"]
+    actions: [read]
+    uri: /m8flow/organization-memberships
+  tenant-admin-update-own-tenant-resources:
+    groups: ["tenant-admin"]
+    actions: [update]
+    uri: /m8flow/tenants/*
   manage-tenant-realms:
     groups: ["super-admin"]
     actions: [all]
