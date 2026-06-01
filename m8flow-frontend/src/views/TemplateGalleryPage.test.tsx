@@ -5,6 +5,17 @@ import { ThemeProvider, createTheme } from "@mui/material/styles";
 import type React from "react";
 import TemplateGalleryPage from "./TemplateGalleryPage";
 
+vi.mock("@mui/icons-material", () => {
+  const Icon = ({ children }: { children?: React.ReactNode }) => <span>{children}</span>;
+  return {
+    ViewModule: Icon,
+    ViewList: Icon,
+    Visibility: Icon,
+    Delete: Icon,
+    Restore: Icon,
+  };
+});
+
 vi.mock("react-router-dom", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("react-router-dom")>();

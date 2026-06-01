@@ -3,6 +3,8 @@
     "/Approvers",
     "/Designers",
     "/Administrators",
-    "/Support"
+    "/Support",
+    "/Submitters",
+    "/Viewers"
   ]
 }

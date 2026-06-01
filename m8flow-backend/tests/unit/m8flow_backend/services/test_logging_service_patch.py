@@ -5,7 +5,6 @@ import pytest
 from flask import g
 
 from m8flow_backend.services import logging_service_patch as patch
-from m8flow_backend.tenancy import DEFAULT_TENANT_ID
 from spiffworkflow_backend.services import logging_service
 
 
@@ -69,7 +68,7 @@ def test_resolve_tenant_id_prefers_request_context_tenant(monkeypatch, app) -> N
     ("context_tenant_id", "expected"),
     [
         ("ctx-tenant", "ctx-tenant"),
-        (None, DEFAULT_TENANT_ID),
+        (None, "global"),
     ],
 )
 def test_resolve_tenant_id_request_context_falls_back(monkeypatch, app, context_tenant_id, expected) -> None:
@@ -80,7 +79,7 @@ def test_resolve_tenant_id_request_context_falls_back(monkeypatch, app, context_
 
     with app.app_context():
         with app.test_request_context("/"):
-            # No g.m8flow_tenant_id set -> should fall back to ctx/default
+            # No g.m8flow_tenant_id set -> should fall back to ctx/global
             assert patch._resolve_tenant_id_for_logging(record) == expected
 
 
@@ -88,7 +87,7 @@ def test_resolve_tenant_id_request_context_falls_back(monkeypatch, app, context_
     ("context_tenant_id", "expected"),
     [
         ("ctx-tenant", "ctx-tenant"),
-        (None, DEFAULT_TENANT_ID),
+        (None, "global"),
     ],
 )
 def test_resolve_tenant_id_uvicorn_access_falls_back(monkeypatch, context_tenant_id, expected) -> None:
@@ -109,11 +108,33 @@ def test_resolve_tenant_id_uvicorn_access_uses_public_context(monkeypatch) -> No
     assert patch._resolve_tenant_id_for_logging(record) == "public"
 
 
+def test_resolve_tenant_id_request_context_marks_public_request(monkeypatch, app) -> None:
+    record = _make_record()
+    monkeypatch.setattr(patch, "get_context_tenant_id", lambda: None)
+    monkeypatch.setattr(patch, "is_request_active", lambda: False)
+
+    with app.app_context():
+        with app.test_request_context("/"):
+            g._m8flow_public_request = True
+            assert patch._resolve_tenant_id_for_logging(record) == "public"
+
+
+def test_resolve_tenant_id_request_context_marks_global_request(monkeypatch, app) -> None:
+    record = _make_record()
+    monkeypatch.setattr(patch, "get_context_tenant_id", lambda: None)
+    monkeypatch.setattr(patch, "is_request_active", lambda: False)
+
+    with app.app_context():
+        with app.test_request_context("/"):
+            g._m8flow_global_request = True
+            assert patch._resolve_tenant_id_for_logging(record) == "global"
+
+
 @pytest.mark.parametrize(
     ("context_tenant_id", "expected"),
     [
         ("ctx-tenant", "ctx-tenant"),
-        (None, DEFAULT_TENANT_ID),
+        (None, "global"),
     ],
 )
 def test_resolve_tenant_id_request_active_falls_back(monkeypatch, context_tenant_id, expected) -> None:
