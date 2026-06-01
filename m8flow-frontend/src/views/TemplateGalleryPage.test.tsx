@@ -11,6 +11,9 @@ vi.mock("@mui/icons-material", () => {
     ViewModule: Icon,
     ViewList: Icon,
     Visibility: Icon,
+    MoreVert: Icon,
+    Edit: Icon,
+    FileDownload: Icon,
     Delete: Icon,
     Restore: Icon,
   };
@@ -271,6 +274,26 @@ describe("TemplateGalleryPage", () => {
     await waitFor(() => {
       expect(TemplateService.deleteTemplate).toHaveBeenCalledWith(1);
     });
+  });
+
+  it("hides Edit but keeps Export for viewers (no PUT permission) in table view", async () => {
+    // Viewer: can view/export but not edit (no PUT on /m8flow/templates)
+    vi.mocked(usePermissionFetcher).mockReturnValue({
+      ability: {
+        can: (method: string, uri: string) => {
+          if (uri === "/m8flow/templates" && method === "PUT") return false;
+          return true;
+        },
+      } as any,
+      permissionsLoaded: true,
+    });
+
+    renderPage();
+    fireEvent.click(screen.getByTestId("template-gallery-view-table"));
+    fireEvent.click(screen.getByTestId("template-gallery-more-actions-1"));
+
+    expect(screen.queryByTestId("template-row-edit-action")).not.toBeInTheDocument();
+    expect(screen.getByTestId("template-row-export-action")).toBeInTheDocument();
   });
 
   it("shows deleted mode restore action and calls restore API", async () => {

@@ -107,7 +107,16 @@ function TemplateDetailsCard({
       }}
     >
       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, alignItems: 'center' }}>
-        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+        <Typography
+          variant="body2"
+          sx={{
+            fontWeight: 600,
+            flexBasis: '100%',
+            minWidth: 0,
+            overflowWrap: 'anywhere',
+            wordBreak: 'break-word',
+          }}
+        >
           {template.name}
         </Typography>
         <Chip size="small" label={`${t('version')}: ${template.version}`} variant="outlined" />

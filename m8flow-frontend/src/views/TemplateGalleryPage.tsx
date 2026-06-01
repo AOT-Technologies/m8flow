@@ -63,13 +63,14 @@ export default function TemplateGalleryPage() {
   const [templateMode, setTemplateMode] = useState<'active' | 'deleted'>('active');
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const { ability, permissionsLoaded } = usePermissionFetcher({
-    "/m8flow/templates": ["POST", "DELETE"],
+    "/m8flow/templates": ["POST", "PUT", "DELETE"],
     "/m8flow/admin/templates": ["DELETE"],
   });
   const { t } = useTranslation();
   const isSuperAdmin = UserService.isSuperAdmin();
 
   const canCreate = ability.can("POST", "/m8flow/templates");
+  const canEdit = ability.can("PUT", "/m8flow/templates");
   const canDelete = ability.can("DELETE", "/m8flow/templates");
   // RBAC: admin-level template permission (delete published, restore)
   const hasAdminPermission = permissionsLoaded && ability.can("DELETE", "/m8flow/admin/templates");
@@ -492,7 +493,7 @@ export default function TemplateGalleryPage() {
                         onUseTemplate={() => handleUseTemplate(template)}
                         onViewTemplate={() => handleViewTemplate(template)}
                         showTenantContext={isSuperAdmin}
-                        onEditTemplate={templateMode === 'active' ? () => handleEditTemplate(template) : undefined}
+                        onEditTemplate={templateMode === 'active' && canEdit ? () => handleEditTemplate(template) : undefined}
                         onExportTemplate={templateMode === 'active' ? () => handleExportTemplate(template) : undefined}
                         onDeleteTemplate={templateMode === 'active' && canDelete ? () => handleDeleteTemplate(template) : undefined}
                         onRestoreTemplate={templateMode === 'deleted' ? () => handleRestoreTemplate(template) : undefined}
@@ -530,18 +531,20 @@ export default function TemplateGalleryPage() {
       >
         {templateMode === 'active' && (
           <>
-            <MenuItem
-              onClick={() => {
-                if (rowMenuTemplate) handleEditTemplate(rowMenuTemplate);
-                handleRowMenuClose();
-              }}
-              data-testid="template-row-edit-action"
-            >
-              <ListItemIcon>
-                <Edit fontSize="small" />
-              </ListItemIcon>
-              <ListItemText>{t("edit", { defaultValue: "Edit" })}</ListItemText>
-            </MenuItem>
+            {canEdit && (
+              <MenuItem
+                onClick={() => {
+                  if (rowMenuTemplate) handleEditTemplate(rowMenuTemplate);
+                  handleRowMenuClose();
+                }}
+                data-testid="template-row-edit-action"
+              >
+                <ListItemIcon>
+                  <Edit fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>{t("edit", { defaultValue: "Edit" })}</ListItemText>
+              </MenuItem>
+            )}
             <MenuItem
               onClick={() => {
                 if (rowMenuTemplate) handleExportTemplate(rowMenuTemplate);

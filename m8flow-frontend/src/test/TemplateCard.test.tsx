@@ -149,6 +149,19 @@ describe('TemplateCard', () => {
       renderCard({ template: createTemplate({ id: 42 }) });
       expect(screen.getByTestId('template-card-42')).toBeInTheDocument();
     });
+
+    it('should wrap long unbroken names without overlapping the visibility chip', () => {
+      const longName = 'Testing..._deleted_20260529101429';
+      renderCard({
+        template: createTemplate({ name: longName, visibility: 'PUBLIC' }),
+      });
+      const nameEl = screen.getByText(longName);
+      // Both the name and the visibility chip must render
+      expect(nameEl).toBeInTheDocument();
+      expect(screen.getByText('public')).toBeInTheDocument();
+      // Name should be allowed to wrap so it does not overlap the chip
+      expect(nameEl).toHaveStyle({ overflowWrap: 'anywhere', wordBreak: 'break-word' });
+    });
   });
 
   describe('overflow menu', () => {

@@ -155,7 +155,7 @@ export default function TemplateCard({
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <Typography
                 variant="body2"
-                sx={{ fontWeight: 700 }}
+                sx={{ fontWeight: 700, minWidth: 0, overflowWrap: 'anywhere', wordBreak: 'break-word' }}
                 data-testid={`template-card-${template.name}`}
               >
                 {template.name}
@@ -164,7 +164,7 @@ export default function TemplateCard({
                 label={getVisibilityLabel(template.visibility, t)}
                 color={getVisibilityColor(template.visibility)}
                 size="small"
-                sx={{ ml: 1 }}
+                sx={{ ml: 1, flexShrink: 0 }}
               />
             </Box>
             <Typography
