@@ -196,7 +196,7 @@ After signing in, follow the [How to use m8flow](docs/how-to-use.md) guide to cr
 2. Open **Tenant Management** and click **Manage Tenant Groups** for the tenant.
 
 <div align="center">
-        <img src="./docs/images/manage-tenanat-group-btn.png" alt="Tenant Creation Screen"/>
+        <img src="./docs/images/manage-tenant-group-btn.png" alt="Tenant Creation Screen"/>
 </div>
 
 3. Click **+ Add User** and select the existing user to add them to the tenant.
