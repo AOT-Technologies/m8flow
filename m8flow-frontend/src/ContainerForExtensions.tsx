@@ -161,8 +161,6 @@ function RoleBasedRootGate({
     );
   }
 
-  // No Home access: find the first available nav route in sidebar order.
-  // Keep tenant management available, but do not force global operators into it.
   const fallbackRoutes: Array<{ route: string; method: string; uri: string }> =
     [
       {
@@ -181,14 +179,14 @@ function RoleBasedRootGate({
         uri: targetUris.messageInstanceListPath,
       },
       {
-        route: "/connectors",
-        method: "GET",
-        uri: targetUris.serviceTaskListPath,
-      },
-      {
         route: "/configuration",
         method: "GET",
         uri: targetUris.secretListPath,
+      },
+      {
+        route: "/connectors",
+        method: "GET",
+        uri: targetUris.connectorsPath,
       },
       {
         route: "/templates",
@@ -251,7 +249,7 @@ export default function ContainerForExtensions() {
     [targetUris.m8flowTenantManagementPath]: ["GET"],
     [targetUris.m8flowTenantListPath]: ["GET"],
     [targetUris.m8flowTemplateListPath]: ["GET"],
-    [targetUris.serviceTaskListPath]: ["GET"],
+    [targetUris.connectorsPath]: ["GET"],
   };
   const { ability, permissionsLoaded } = usePermissionFetcher(
     permissionRequestData,
@@ -553,6 +551,7 @@ export default function ContainerForExtensions() {
           />
           <Route path="templates/:templateId" element={<TemplateModelerPage />} />
           <Route path="templates" element={<TemplateGalleryPage />} />
+          {/* Connectors self-guards on permission + role (admin/editor/integrator). */}
           <Route path="connectors" element={<ConnectorsPage />} />
           <Route
             path="process-models/:process_model_id"
