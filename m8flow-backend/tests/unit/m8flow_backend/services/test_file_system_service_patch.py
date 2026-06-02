@@ -101,3 +101,36 @@ def test_tenant_bpmn_root_returns_global_subdir_for_global_request() -> None:
         g.m8flow_tenant_id = None
         root = patch._tenant_bpmn_root("/tmp/process_models")
         assert root == os.path.join(os.path.abspath("/tmp/process_models"), "__m8flow_global__")
+
+
+def test_concrete_tenant_overrides_global_request_flag() -> None:
+    """Regression test: super-admins doing cross-tenant iteration explicitly set a concrete
+    tenant id on the context. The patch must honor that concrete id and return the matching
+    tenant subdirectory, EVEN IF ``g._m8flow_global_request`` is also true.  Without this,
+    the existing ``process_model_service_patch._temporary_tenant_context`` loop reads every
+    iteration from the empty ``__m8flow_global__`` subdir and super-admins see zero
+    cross-tenant process groups or models.
+    """
+    app = Flask(__name__)  # NOSONAR
+    with app.test_request_context("/"):
+        g._m8flow_global_request = True  # would otherwise short-circuit to global subdir
+        g.m8flow_tenant_id = "tenant-x"
+        root = patch._tenant_bpmn_root("/tmp/process_models")
+        assert root == os.path.join(os.path.abspath("/tmp/process_models"), "tenant-x")
+
+
+def test_concrete_tenant_from_background_context_overrides_global() -> None:
+    """Same regression as above but for the ContextVar pathway used by
+    ``_temporary_tenant_context``: there is no ``g.m8flow_tenant_id`` set, only the
+    background ContextVar.  ``current_tenant_id_or_none()`` pulls it back into ``g`` and the
+    patch must honor it.
+    """
+    app = Flask(__name__)  # NOSONAR
+    with app.test_request_context("/"):
+        g._m8flow_global_request = True
+        token = set_context_tenant_id("tenant-y")
+        try:
+            root = patch._tenant_bpmn_root("/tmp/process_models")
+            assert root == os.path.join(os.path.abspath("/tmp/process_models"), "tenant-y")
+        finally:
+            reset_context_tenant_id(token)
