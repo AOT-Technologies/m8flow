@@ -34,12 +34,13 @@ export default function Connectors() {
   const { targetUris } = useUriListForPermissions();
 
   const permissionRequestData: PermissionsToCheck = {
-    [targetUris.serviceTaskListPath]: ['GET'],
+    [targetUris.connectorsPath]: ['GET'],
     [targetUris.secretListPath]: ['POST'],
   };
   const { ability, permissionsLoaded } = usePermissionFetcher(
     permissionRequestData,
   );
+  const canAccessConnectors = ability.can('GET', targetUris.connectorsPath);
 
   const [operators, setOperators] = useState<ServiceTaskOperator[] | null>(
     null,
@@ -52,7 +53,7 @@ export default function Connectors() {
   }, [t]);
 
   useEffect(() => {
-    if (!permissionsLoaded || !ability.can('GET', targetUris.serviceTaskListPath)) {
+    if (!permissionsLoaded || !canAccessConnectors) {
       return;
     }
     setLoading(true);
@@ -70,7 +71,7 @@ export default function Connectors() {
         setLoading(false);
       },
     });
-  }, [permissionsLoaded, ability, targetUris.serviceTaskListPath, t]);
+  }, [permissionsLoaded, canAccessConnectors, t]);
 
   const grouped = useMemo(() => {
     if (!operators?.length) {
@@ -106,7 +107,7 @@ export default function Connectors() {
     );
   }
 
-  if (!ability.can('GET', targetUris.serviceTaskListPath)) {
+  if (!canAccessConnectors) {
     return <Navigate to="/" replace />;
   }
 
