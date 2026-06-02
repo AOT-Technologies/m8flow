@@ -80,6 +80,8 @@
   "delete_tenant": "Excluir inquilino",
   "are_you_sure_you_want_to_delete_tenant": "Tem certeza de que deseja excluir o inquilino",
   "action_cannot_be_undone": "Esta ação não pode ser desfeita.",
+  "delete_secret_title": "Eliminar segredo?",
+  "delete_secret_confirm": "Tem a certeza de que pretende eliminar o segredo \"{{name}}\"?",
   "realm_slug": "Alias do locatário",
   "display_name": "Nome de exibição",
   "cancel": "Cancelar",
