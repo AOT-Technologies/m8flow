@@ -4,7 +4,11 @@ import {
   AccordionSummary,
   Box,
   Container,
+  FormControl,
   IconButton,
+  InputLabel,
+  MenuItem,
+  Select,
   Stack,
   Typography,
   Breadcrumbs,
@@ -23,6 +27,8 @@ import { Delete, Edit, Add, Home } from '@mui/icons-material';
 import { useDebouncedCallback } from 'use-debounce';
 import { useParams, useNavigate } from 'react-router';
 import useProcessGroups from '../../hooks/useProcessGroups';
+import { useTenants } from '../../hooks/useTenants';
+import UserService from '../../services/UserService';
 import TreePanel, { TreeRef, SHOW_FAVORITES } from './TreePanel';
 import SearchBar from './SearchBar';
 import ProcessGroupCard from './ProcessGroupCard';
@@ -55,9 +61,23 @@ type OwnProps = {
 };
 
 /**
- * Converts a ProcessGroup to a ProcessGroupLite.
+ * Lite shape augmented with the tenant fields the API attaches to each group.
+ * Kept local so we don't modify the upstream spiffworkflow interfaces.
  */
-const processGroupToLite = (group: ProcessGroup): ProcessGroupLite => {
+type ProcessGroupLiteWithTenant = ProcessGroupLite & {
+  tenantId?: string;
+  tenantName?: string;
+};
+
+/**
+ * Converts a ProcessGroup to a ProcessGroupLite, preserving the tenant fields
+ * (tenantId/tenantName) that the API adds so the tenant chip renders in the
+ * list/tree view.
+ */
+export const processGroupToLite = (
+  group: ProcessGroup,
+): ProcessGroupLiteWithTenant => {
+  const g = group as ProcessGroup & { tenantId?: string; tenantName?: string };
   return {
     id: group.id,
     display_name: group.display_name,
@@ -66,6 +86,8 @@ const processGroupToLite = (group: ProcessGroup): ProcessGroupLite => {
     process_groups: group.process_groups
       ? group.process_groups.map(processGroupToLite)
       : undefined,
+    tenantId: g.tenantId,
+    tenantName: g.tenantName,
   };
 };
 
@@ -80,7 +102,13 @@ export default function ProcessModelTreePage({
   const { t } = useTranslation();
   const params = useParams();
   const navigate = useNavigate();
-  const { processGroups } = useProcessGroups({ processInfo: {} });
+  const isSuperAdmin = UserService.isSuperAdmin();
+  const { data: tenants = [] } = useTenants(isSuperAdmin);
+  const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null);
+  const { processGroups } = useProcessGroups({
+    processInfo: {},
+    tenantId: selectedTenantId,
+  });
   const [groups, setGroups] = useState<
     ProcessGroup[] | ProcessGroupLite[] | null
   >(null);
@@ -294,7 +322,7 @@ export default function ProcessModelTreePage({
       const unModifiedProcessGroupId = unModifyProcessIdentifierForPathParam(
         `${params.process_group_id}`,
       );
-      const processGroupsLite: ProcessGroupLite[] =
+      const processGroupsLite: ProcessGroupLiteWithTenant[] =
         processGroups.map(processGroupToLite);
       const foundProcessGroup = findProcessGroupByPath(
         processGroupsLite,
@@ -491,13 +519,48 @@ export default function ProcessModelTreePage({
         >
           <Stack
             direction="row"
+            gap={2}
             sx={{
               width: '100%',
               paddingTop: 2,
               justifyContent: 'center',
+              alignItems: 'center',
+              flexWrap: 'wrap',
             }}
           >
             <SearchBar callback={handleSearch} stream={clickStream} />
+            {isSuperAdmin && tenants.length > 0 && (
+              <FormControl
+                size="small"
+                sx={{ minWidth: 220 }}
+                data-testid="process-tree-tenant-filter-control"
+              >
+                <InputLabel id="process-tree-tenant-filter-label">
+                  {t('tenant')}
+                </InputLabel>
+                <Select
+                  labelId="process-tree-tenant-filter-label"
+                  label={t('tenant')}
+                  value={selectedTenantId || ''}
+                  data-testid="process-tree-tenant-filter"
+                  onChange={(event) => {
+                    const { value } = event.target;
+                    setSelectedTenantId(
+                      typeof value === 'string' && value !== '' ? value : null,
+                    );
+                  }}
+                >
+                  <MenuItem value="">
+                    <em>{t('all_tenants', 'All Tenants')}</em>
+                  </MenuItem>
+                  {tenants.map((tenant) => (
+                    <MenuItem key={tenant.id} value={tenant.id}>
+                      {tenant.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
           </Stack>
 
           <Stack

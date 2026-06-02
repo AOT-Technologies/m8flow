@@ -6,6 +6,7 @@ from typing import Any, Dict
 
 from flask import current_app, g, has_request_context
 from m8flow_backend.services.tenant_identity_helpers import current_tenant_id_or_none
+from m8flow_backend.tenancy import get_context_tenant_id, is_concrete_tenant_id
 
 _ORIGINALS: Dict[str, Any] = {}
 _PATCHED = False
@@ -94,19 +95,64 @@ def _get_tenant_id() -> str:
 
     raise RuntimeError("Missing concrete tenant id in non-request context.")
 
+def _explicit_concrete_tenant_id() -> str | None:
+    """Return a concrete tenant id explicitly set on the current request/context.
+
+    Unlike ``current_tenant_id_or_none``, this helper deliberately does NOT
+    short-circuit on ``g._m8flow_global_request``: cross-tenant iteration
+    inside ``process_model_service_patch._temporary_tenant_context`` sets a
+    concrete tenant id on a request that is ALSO flagged global (super-admin
+    requests stay flagged global, but we still need each iteration to read
+    that specific tenant's directory).
+    """
+    if has_request_context():
+        request_tenant = getattr(g, "m8flow_tenant_id", None)
+        if isinstance(request_tenant, str):
+            normalized = request_tenant.strip()
+            if is_concrete_tenant_id(normalized):
+                return normalized
+
+    context_tenant = get_context_tenant_id()
+    if isinstance(context_tenant, str):
+        normalized_ctx = context_tenant.strip()
+        if is_concrete_tenant_id(normalized_ctx):
+            return normalized_ctx
+
+    return None
+
+
 def _tenant_bpmn_root(base_dir: str) -> str:
-    """Get tenant-specific BPMN root directory."""
-    # Master-realm and other intentionally global requests (login_return,
-    # tenant-context-exempt) have no tenant id by design.  Route them to a
-    # reserved empty subdirectory instead of raising so endpoints like
-    # /extensions and /process-models simply return no results.
+    """Get tenant-specific BPMN root directory.
+
+    Precedence:
+      1. A concrete tenant id explicitly set on the request/context (via
+         ``set_context_tenant_id`` or ``g.m8flow_tenant_id``) — used by
+         super-admin cross-tenant iteration in ``process_model_service_patch``.
+      2. Otherwise, if the request is intentionally tenant-less (master-realm,
+         /login_return, tenant-context-exempt), route to a reserved empty
+         subdirectory so endpoints like /extensions and /process-models simply
+         return no results.
+      3. Otherwise, resolve the tenant id from the request (and raise if absent).
+    """
+    normalized = os.path.abspath(os.path.normpath(base_dir))
+
+    concrete_tenant_id = _explicit_concrete_tenant_id()
+    if concrete_tenant_id:
+        if (
+            ".." in concrete_tenant_id
+            or "/" in concrete_tenant_id
+            or "\\" in concrete_tenant_id
+        ):
+            raise RuntimeError("Unsafe tenant id")
+        if os.path.basename(normalized) == concrete_tenant_id:
+            return normalized
+        return os.path.join(normalized, concrete_tenant_id)
+
     if _is_global_request():
-        normalized = os.path.abspath(os.path.normpath(base_dir))
         return os.path.join(normalized, _GLOBAL_BPMN_SUBDIR)
 
     tenant_id = _get_tenant_id()
 
-    # keep your safety checks here (the tests expect "Unsafe tenant id")
     if (
         not tenant_id
         or ".." in tenant_id
@@ -115,7 +161,6 @@ def _tenant_bpmn_root(base_dir: str) -> str:
     ):
         raise RuntimeError("Unsafe tenant id")
 
-    normalized = os.path.abspath(os.path.normpath(base_dir))
     if os.path.basename(normalized) == tenant_id:
         return normalized
     return os.path.join(normalized, tenant_id)

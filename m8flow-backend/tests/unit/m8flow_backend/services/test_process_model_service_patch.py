@@ -162,3 +162,141 @@ def test_super_admin_process_model_mutators_are_forbidden(app: Flask, patched_se
         with pytest.raises(ApiError) as exc:
             ProcessModelService.process_group_delete("abil")
         assert exc.value.error_code == "forbidden"
+
+
+class _FakeGroup:
+    def __init__(self, group_id: str) -> None:
+        self.id = group_id
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return f"_FakeGroup({self.id!r})"
+
+
+class _FakeModel:
+    def __init__(self, model_id: str) -> None:
+        self.id = model_id
+
+
+@pytest.fixture()
+def stub_upstream_services(app: Flask, tenant_bpmn_tree: str, monkeypatch):
+    """Patch upstream ProcessModelService methods to return per-tenant fakes.
+
+    Each call to the original ``get_process_groups_for_api`` / ``get_process_models_for_api``
+    receives whatever tenant context was active and is expected to return that tenant's
+    items.  We simulate this by reading ``g.m8flow_tenant_id`` and returning a fixed
+    mapping.
+    """
+    monkeypatch.setenv("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", "1")
+    app.config["SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR"] = tenant_bpmn_tree
+    from m8flow_backend.services import process_model_service_patch as pmp
+
+    pmp.reset()
+
+    groups_by_tenant = {
+        "abil": [_FakeGroup("abil")],
+        "other": [_FakeGroup("other")],
+    }
+    models_by_tenant = {
+        "abil": [_FakeModel("abil/test")],
+        "other": [],
+    }
+
+    def fake_groups(cls, process_group_id=None, user=None):
+        tid = getattr(g, "m8flow_tenant_id", None)
+        return list(groups_by_tenant.get(tid, []))
+
+    def fake_models(
+        cls,
+        user=None,
+        process_group_id=None,
+        recursive=False,
+        filter_runnable_by_user=False,
+        filter_runnable_as_extension=False,
+        include_files=False,
+    ):
+        tid = getattr(g, "m8flow_tenant_id", None)
+        return list(models_by_tenant.get(tid, []))
+
+    monkeypatch.setattr(
+        ProcessModelService,
+        "get_process_groups_for_api",
+        classmethod(fake_groups),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        ProcessModelService,
+        "get_process_models_for_api",
+        classmethod(fake_models),
+        raising=False,
+    )
+
+    with app.app_context():
+        pmp.apply()
+        yield
+    pmp.reset()
+
+
+def test_super_admin_get_process_groups_for_api_merges_across_tenants(
+    app: Flask, stub_upstream_services,
+) -> None:
+    """Regression: super-admin must see process groups from every tenant on disk.
+
+    Before the file_system_service_patch fix, the cross-tenant loop in
+    ``patched_get_process_groups_for_api`` ran but every iteration resolved to the
+    empty ``__m8flow_global__`` subdir because the global-request short-circuit fired
+    inside ``_tenant_bpmn_root``. After the fix, both tenants' groups appear.
+    """
+    with app.test_request_context("/"):
+        g._m8flow_super_admin_request = True
+        g._m8flow_global_request = True
+        g._m8flow_tenant_context_exempt_request = True
+
+        groups = ProcessModelService.get_process_groups_for_api()
+        group_ids = sorted(getattr(group, "id", None) for group in groups)
+        assert group_ids == ["abil", "other"]
+        tenant_ids = {getattr(group, "tenant_id", None) for group in groups}
+        assert tenant_ids == {"abil", "other"}
+        tenant_map = getattr(g, "_m8flow_process_group_tenant_map", {})
+        assert tenant_map.get("abil") == "abil"
+        assert tenant_map.get("other") == "other"
+
+
+def test_super_admin_get_process_groups_honors_tenant_filter(
+    app: Flask, stub_upstream_services,
+) -> None:
+    with app.test_request_context("/"):
+        g._m8flow_super_admin_request = True
+        g._m8flow_global_request = True
+        g._m8flow_tenant_context_exempt_request = True
+        g._m8flow_process_tenant_filter = "abil"
+
+        groups = ProcessModelService.get_process_groups_for_api()
+        group_ids = [getattr(group, "id", None) for group in groups]
+        assert group_ids == ["abil"]
+
+
+def test_non_super_admin_get_process_groups_stamps_current_tenant(
+    app: Flask, stub_upstream_services,
+) -> None:
+    with app.test_request_context("/"):
+        g.m8flow_tenant_id = "abil"
+        groups = ProcessModelService.get_process_groups_for_api()
+        for group in groups:
+            assert getattr(group, "tenant_id", None) == "abil"
+
+
+def test_super_admin_get_process_models_merges_and_stamps_tenant(
+    app: Flask, stub_upstream_services,
+) -> None:
+    with app.test_request_context("/"):
+        g._m8flow_super_admin_request = True
+        g._m8flow_global_request = True
+        g._m8flow_tenant_context_exempt_request = True
+
+        models = ProcessModelService.get_process_models_for_api(user=None, recursive=True)
+        model_ids = [getattr(m, "id", None) for m in models]
+        assert "abil/test" in model_ids
+        for m in models:
+            assert getattr(m, "tenant_id", None) == "abil"
+        model_map = getattr(g, "_m8flow_process_model_tenant_map", {})
+        assert model_map.get("abil/test") == "abil"

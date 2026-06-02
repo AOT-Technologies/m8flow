@@ -140,17 +140,58 @@ def apply() -> None:
     original_process_group_move = ProcessModelService.process_group_move.__func__
     original_process_group_delete = ProcessModelService.process_group_delete.__func__
 
+    def _resolve_tenant_filter(tenant_id_filter: str | None) -> str | None:
+        if tenant_id_filter:
+            return tenant_id_filter
+        if has_request_context():
+            request_filter = getattr(g, "_m8flow_process_tenant_filter", None)
+            if isinstance(request_filter, str) and request_filter:
+                return request_filter
+        return None
+
+    def _record_tenant_for_item(map_key: str, item_id: str, tenant_id: str) -> None:
+        """Record an item_id -> tenant_id mapping on flask.g for controller-layer enrichment.
+
+        The dataclass-based ``ProcessGroup.serialized()`` and the default
+        json serializer for ``ProcessModelInfo`` drop attributes set via
+        ``setattr``, so the controller patch needs an out-of-band mapping
+        to re-attach ``tenantId``/``tenantName`` to each response item.
+        """
+        if not has_request_context():
+            return
+        existing = getattr(g, map_key, None)
+        if not isinstance(existing, dict):
+            existing = {}
+            setattr(g, map_key, existing)
+        existing[item_id] = tenant_id
+
     @classmethod
     def patched_get_process_groups_for_api(
         cls,
         process_group_id: str | None = None,
         user: Any | None = None,
+        tenant_id_filter: str | None = None,
     ):
         if not is_super_admin_request():
-            return original_get_process_groups_for_api(cls, process_group_id=process_group_id, user=user)
+            groups = original_get_process_groups_for_api(cls, process_group_id=process_group_id, user=user)
+            current_tenant_id: str | None = (
+                getattr(g, "m8flow_tenant_id", None) if has_request_context() else None
+            )
+            if current_tenant_id:
+                for group in groups:
+                    if not getattr(group, "tenant_id", None):
+                        setattr(group, "tenant_id", current_tenant_id)
+                    gid = getattr(group, "id", None)
+                    if isinstance(gid, str):
+                        _record_tenant_for_item("_m8flow_process_group_tenant_map", gid, current_tenant_id)
+            return groups
 
         base_dir = current_app.config["SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR"]
         tenant_ids = _tenant_roots(base_dir)
+        effective_filter = _resolve_tenant_filter(tenant_id_filter)
+        if effective_filter:
+            tenant_ids = [tid for tid in tenant_ids if tid == effective_filter]
+
         merged: list[Any] = []
         seen: set[str] = set()
 
@@ -163,6 +204,8 @@ def apply() -> None:
                         continue
                     if isinstance(group_id, str):
                         seen.add(group_id)
+                        _record_tenant_for_item("_m8flow_process_group_tenant_map", group_id, tenant_id)
+                    setattr(group, "tenant_id", tenant_id)
                     merged.append(group)
 
         return merged
@@ -176,9 +219,10 @@ def apply() -> None:
         filter_runnable_by_user: bool | None = False,
         filter_runnable_as_extension: bool | None = False,
         include_files: bool | None = False,
+        tenant_id_filter: str | None = None,
     ):
         if not is_super_admin_request():
-            return original_get_process_models_for_api(
+            process_models = original_get_process_models_for_api(
                 cls,
                 user=user,
                 process_group_id=process_group_id,
@@ -187,9 +231,24 @@ def apply() -> None:
                 filter_runnable_as_extension=filter_runnable_as_extension,
                 include_files=include_files,
             )
+            current_tenant_id: str | None = (
+                getattr(g, "m8flow_tenant_id", None) if has_request_context() else None
+            )
+            if current_tenant_id:
+                for process_model in process_models:
+                    if not getattr(process_model, "tenant_id", None):
+                        setattr(process_model, "tenant_id", current_tenant_id)
+                    pmid = getattr(process_model, "id", None)
+                    if isinstance(pmid, str):
+                        _record_tenant_for_item("_m8flow_process_model_tenant_map", pmid, current_tenant_id)
+            return process_models
 
         base_dir = current_app.config["SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR"]
         tenant_ids = _tenant_roots(base_dir)
+        effective_filter = _resolve_tenant_filter(tenant_id_filter)
+        if effective_filter:
+            tenant_ids = [tid for tid in tenant_ids if tid == effective_filter]
+
         merged: list[Any] = []
         seen: set[str] = set()
 
@@ -210,6 +269,8 @@ def apply() -> None:
                         continue
                     if isinstance(process_model_id, str):
                         seen.add(process_model_id)
+                        _record_tenant_for_item("_m8flow_process_model_tenant_map", process_model_id, tenant_id)
+                    setattr(process_model, "tenant_id", tenant_id)
                     merged.append(process_model)
 
         return merged

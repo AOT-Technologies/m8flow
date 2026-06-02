@@ -1,6 +1,7 @@
 import {
   Card,
   Button,
+  Chip,
   Stack,
   Typography,
   CardActionArea,
@@ -16,6 +17,7 @@ import { modifyProcessIdentifierForPathParam } from '../../helpers';
 import { getStorageValue } from '../../services/LocalStorageService';
 import { PermissionsToCheck, ProcessModel } from '../../interfaces';
 import { usePermissionFetcher } from '../../hooks/PermissionService';
+import UserService from '../../services/UserService';
 
 const defaultStyle = {
   ':hover': {
@@ -55,6 +57,9 @@ export default function ProcessModelCard({
   const [selectedStyle, setSelectedStyle] =
     useState<Record<string, any>>(defaultStyle);
   const [isFavorite, setIsFavorite] = useState(false);
+  const isSuperAdmin = UserService.isSuperAdmin();
+  const tenantName = (model as ProcessModel & { tenantName?: string })
+    .tenantName;
 
   const navigate = useNavigate();
 
@@ -139,13 +144,27 @@ export default function ProcessModelCard({
       <CardActionArea>
         <CardContent>
           <Stack gap={1} sx={{ height: '100%' }}>
-            <Typography
-              variant="body2"
-              sx={{ fontWeight: 700 }}
-              data-testid={`process-model-card-${model.display_name}`}
+            <Stack
+              direction="row"
+              justifyContent="space-between"
+              alignItems="center"
+              gap={1}
             >
-              {model.display_name}
-            </Typography>
+              <Typography
+                variant="body2"
+                sx={{ fontWeight: 700 }}
+                data-testid={`process-model-card-${model.display_name}`}
+              >
+                {model.display_name}
+              </Typography>
+              {isSuperAdmin && tenantName && (
+                <Chip
+                  size="small"
+                  label={tenantName}
+                  data-testid={`process-model-tenant-chip-${model.id}`}
+                />
+              )}
+            </Stack>
             <Typography
               variant="caption"
               sx={{ fontWeight: 700, color: 'text.secondary' }}

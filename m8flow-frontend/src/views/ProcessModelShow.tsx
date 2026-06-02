@@ -16,8 +16,10 @@ import {
   MenuItem,
   ListItemIcon,
   ListItemText,
+  Chip,
 } from '@mui/material';
 import { Can } from '@casl/react';
+import UserService from '../services/UserService';
 // Example icon
 import ProcessBreadcrumb from '../components/ProcessBreadcrumb';
 import HttpService from '../services/HttpService';
@@ -316,6 +318,18 @@ export default function ProcessModelShow() {
           <Typography variant="h2" component="h1">
             {t('process_model')}: {processModel.display_name}
           </Typography>
+          {UserService.isSuperAdmin() &&
+            (processModel as ProcessModel & { tenantName?: string })
+              .tenantName && (
+              <Chip
+                size="small"
+                label={
+                  (processModel as ProcessModel & { tenantName?: string })
+                    .tenantName
+                }
+                data-testid="process-model-show-tenant-chip"
+              />
+            )}
 
           {/* More Actions Menu */}
           {/* If user can edit, delete, or publish, show the more actions menu */}
