@@ -4,6 +4,11 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Box,
   Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   FormControl,
   InputLabel,
   MenuItem,
@@ -35,6 +40,7 @@ export default function SecretList() {
   const [secrets, setSecrets] = useState([]);
   const [pagination, setPagination] = useState(null);
   const [selectedTenantId, setSelectedTenantId] = useState<string>('');
+  const [secretToDelete, setSecretToDelete] = useState<any>(null);
   const { t } = useTranslation();
 
   const isSuperAdmin = UserService.isSuperAdmin();
@@ -151,7 +157,7 @@ export default function SecretList() {
           )}
           <TableCell aria-label="Delete">
             <Can I="DELETE" a={targetUris.secretListPath} ability={ability}>
-              <MdDelete onClick={() => handleDeleteSecret((row as any).key)} />
+              <MdDelete onClick={() => setSecretToDelete(row)} />
             </Can>
           </TableCell>
         </TableRow>
@@ -208,6 +214,37 @@ export default function SecretList() {
             {t('add_a_secret')}
           </Button>
         </Can>
+        <Dialog
+          open={!!secretToDelete}
+          onClose={() => setSecretToDelete(null)}
+        >
+          <DialogTitle>{t('delete_secret_title')}</DialogTitle>
+          <DialogContent>
+            <DialogContentText>
+              {t('delete_secret_confirm', { name: secretToDelete?.key })}
+            </DialogContentText>
+            <DialogContentText
+              sx={{ color: 'error.main', fontWeight: 500, mt: 1 }}
+            >
+              {t('action_cannot_be_undone')}
+            </DialogContentText>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setSecretToDelete(null)}>
+              {t('cancel')}
+            </Button>
+            <Button
+              color="error"
+              variant="contained"
+              onClick={() => {
+                handleDeleteSecret(secretToDelete?.key);
+                setSecretToDelete(null);
+              }}
+            >
+              {t('delete')}
+            </Button>
+          </DialogActions>
+        </Dialog>
       </div>
     );
   }

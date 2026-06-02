@@ -80,6 +80,8 @@
   "delete_tenant": "删除租户",
   "are_you_sure_you_want_to_delete_tenant": "您确定要删除该租户",
   "action_cannot_be_undone": "此操作无法撤销。",
+  "delete_secret_title": "删除密钥？",
+  "delete_secret_confirm": "您确定要删除密钥 \"{{name}}\" 吗？",
   "realm_slug": "租户别名",
   "display_name": "显示名称",
   "cancel": "取消",
