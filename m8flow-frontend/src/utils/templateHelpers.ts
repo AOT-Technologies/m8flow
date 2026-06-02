@@ -30,8 +30,16 @@ function secondsFromApiOrIso(seconds: unknown, iso: unknown): number {
  * Uses createdAtInSeconds/updatedAtInSeconds from API when present, else derives from createdAt/updatedAt ISO strings.
  */
 export function normalizeTemplate(raw: Record<string, unknown>): Template {
-  const createdAtInSeconds = secondsFromApiOrIso(raw.createdAtInSeconds, raw.createdAt);
-  const updatedAtInSeconds = secondsFromApiOrIso(raw.updatedAtInSeconds, raw.updatedAt);
+  // Support both camelCase (createdAtInSeconds) and snake_case (created_at_in_seconds)
+  // that the backend may return, plus ISO string fallbacks (createdAt/updatedAt).
+  const createdAtInSeconds = secondsFromApiOrIso(
+    raw.createdAtInSeconds ?? raw.created_at_in_seconds,
+    raw.createdAt
+  );
+  const updatedAtInSeconds = secondsFromApiOrIso(
+    raw.updatedAtInSeconds ?? raw.updated_at_in_seconds,
+    raw.updatedAt
+  );
   return {
     ...raw,
     files: (raw.files as TemplateFile[]) ?? [],

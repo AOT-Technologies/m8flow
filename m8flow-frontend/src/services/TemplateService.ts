@@ -63,8 +63,16 @@ function secondsFromApiOrIso(seconds: unknown, iso: unknown): number {
 }
 
 function parseTemplateResponse(data: Record<string, unknown>): Template {
-  const createdAtInSeconds = secondsFromApiOrIso(data.createdAtInSeconds, data.createdAt);
-  const updatedAtInSeconds = secondsFromApiOrIso(data.updatedAtInSeconds, data.updatedAt);
+  // Support both camelCase (createdAtInSeconds) and snake_case (created_at_in_seconds)
+  // that the backend may return, plus ISO string fallbacks (createdAt/updatedAt).
+  const createdAtInSeconds = secondsFromApiOrIso(
+    data.createdAtInSeconds ?? data.created_at_in_seconds,
+    data.createdAt
+  );
+  const updatedAtInSeconds = secondsFromApiOrIso(
+    data.updatedAtInSeconds ?? data.updated_at_in_seconds,
+    data.updatedAt
+  );
   return {
     ...data,
     files: (data.files as TemplateFile[]) ?? [],
