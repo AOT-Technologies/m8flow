@@ -2,6 +2,39 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import TenantPage from "./TenantPage";
 
+// Mock react-i18next – the TenantModal uses t("realm_slug"), t("display_name"), etc.
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string, opts?: { count?: number; defaultValue?: string }) => {
+      const map: Record<string, string> = {
+        realm_slug: "Realm Slug",
+        display_name: "Display Name",
+        tenant_management: "Tenant Management",
+        add_tenant: "Add Tenant",
+        tenant_slug_cannot_be_empty: "Tenant slug cannot be empty",
+        tenant_display_name_cannot_be_empty:
+          "Tenant display name cannot be empty",
+        tenant_slug_invalid_pattern:
+          "Tenant slug can only contain letters, numbers, hyphens, and underscores",
+        tenant_display_name_max_length:
+          "Tenant display name must be 50 characters or fewer",
+        tenant_slug_already_exists: "Tenant slug already exists",
+        tenant_created_successfully: "Tenant created successfully.",
+        tenant_updated_successfully: "Tenant updated successfully.",
+        cancel: "Cancel",
+        create: "Create",
+        save: "Save",
+        delete: "Delete",
+        edit_tenant: "Edit Tenant",
+        delete_tenant: "Delete Tenant",
+        search_by: "Search By",
+        name: "Name",
+      };
+      return map[key] ?? opts?.defaultValue ?? key;
+    },
+  }),
+}));
+
 const mockUseTenants = vi.fn();
 const mockUsePermissionFetcher = vi.fn();
 const mockCreateTenant = vi.fn();

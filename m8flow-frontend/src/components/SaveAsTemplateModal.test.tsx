@@ -50,6 +50,7 @@ describe("SaveAsTemplateModal", () => {
   it("renders dialog with title and form fields when open", () => {
     renderWithTheme(<SaveAsTemplateModal {...defaultProps} />);
     expect(screen.getByText("Save as Template")).toBeInTheDocument();
+    // The modal now has Name (instead of Template key + Name separately)
     expect(screen.getByLabelText(/Name/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Description/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Category/i)).toBeInTheDocument();
@@ -73,9 +74,9 @@ describe("SaveAsTemplateModal", () => {
     expect(TemplateService.createTemplateWithFiles).not.toHaveBeenCalled();
   });
 
-  it("shows validation error when name cannot produce a template key", async () => {
+  it("shows validation error when name contains only special characters", async () => {
     renderWithTheme(<SaveAsTemplateModal {...defaultProps} />);
-    typeInField(/Name/i, "!!!");
+    typeInField(/Name/i, "@#$%");
     fireEvent.click(screen.getByRole("button", { name: /Create Template/i }));
     await waitFor(() => {
       expect(screen.getByText("Name must contain at least one letter or number.")).toBeInTheDocument();
@@ -83,7 +84,7 @@ describe("SaveAsTemplateModal", () => {
     expect(TemplateService.createTemplateWithFiles).not.toHaveBeenCalled();
   });
 
-  it("calls getFiles and createTemplateWithFiles with derived key and trimmed name on submit", async () => {
+  it("calls getFiles and createTemplateWithFiles with auto-generated key and trimmed name on submit", async () => {
     renderWithTheme(<SaveAsTemplateModal {...defaultProps} />);
     typeInField(/Name/i, "  My Template  ");
     fireEvent.click(screen.getByRole("button", { name: /Create Template/i }));
@@ -192,9 +193,7 @@ describe("SaveAsTemplateModal", () => {
     typeInField(/Name/i, "My Template");
     const visibilityTrigger = screen.getByRole("combobox");
     fireEvent.mouseDown(visibilityTrigger);
-    const tenantOption = await screen.findByRole("option", {
-      name: /Tenant-wide \(all users in your tenant\)/i,
-    });
+    const tenantOption = await screen.findByRole("option", { name: /Tenant-wide/i });
     fireEvent.click(tenantOption);
     fireEvent.click(screen.getByRole("button", { name: /Create Template/i }));
     await waitFor(() => {
