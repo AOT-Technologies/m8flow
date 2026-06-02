@@ -131,8 +131,6 @@ docker compose -f docker/m8flow-docker-compose.yml up -d --build
 ## Signing In — Application Usage
 
 1. **Log In:**  
-   After choosing your tenant, you'll be redirected to the login page.
-
    <div align="center">
        <img src="./docs/images/access-m8flow-1.png" />
    </div>
