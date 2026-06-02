@@ -192,6 +192,10 @@ permissions:
     groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter", "integrator"]
     actions: [read]
     uri: /service-tasks
+  read-connectors:
+    groups: ["tenant-admin", "editor", "integrator", "super-admin"]
+    actions: [read]
+    uri: /connectors
   read-data-stores:
     groups: ["viewer", "super-admin"]
     actions: [read]
