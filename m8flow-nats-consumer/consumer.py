@@ -40,6 +40,45 @@ running = True
 
 flask_app = None
 
+
+def _resolve_tenant_initiator(username: str, tenant_id: str) -> Any | None:
+    """
+    Resolve the initiating user for a trigger event.
+
+    Fetch every user with this exact username, keep only those that belong to the
+    target tenant, then ignore backend-signed session-token mirror rows — duplicate
+    rows whose ``service`` is the backend's own JWT issuer (``SPIFFWORKFLOW_BACKEND_URL``)
+    instead of a Keycloak realm issuer. A real OIDC user and its backend-signed mirror
+    are the same person, so the real row is preferred. Returns ``None`` when no tenant
+    user matches or when genuinely distinct identities share the username.
+    """
+    from flask import current_app
+
+    from m8flow_backend.services.tenant_identity_helpers import (
+        find_users_for_current_tenant_by_username,
+    )
+
+    tenant_matches = find_users_for_current_tenant_by_username(username, tenant_id=tenant_id)
+    exact_matches = [user for user in tenant_matches if getattr(user, "username", None) == username]
+    if not exact_matches:
+        return None
+    if len(exact_matches) == 1:
+        return exact_matches[0]
+
+    backend_issuer = (current_app.config.get("SPIFFWORKFLOW_BACKEND_URL") or "").strip()
+    real_users = [
+        user for user in exact_matches if (getattr(user, "service", "") or "").strip() != backend_issuer
+    ]
+    if len(real_users) == 1:
+        return real_users[0]
+    if not real_users:
+        # Only backend-signed mirror rows exist; they still reference the real person.
+        return exact_matches[0]
+
+    # Multiple genuinely distinct identities share this username — ambiguous, fail closed.
+    return None
+
+
 def instantiate_process(
     tenant_id: str,
     process_identifier: str,
@@ -57,16 +96,15 @@ def instantiate_process(
     from spiffworkflow_backend.services.process_model_service import ProcessModelService
     from spiffworkflow_backend.services.process_instance_service import ProcessInstanceService
     from m8flow_backend.tenancy import set_context_tenant_id, reset_context_tenant_id
-    from m8flow_backend.services.tenant_identity_helpers import resolve_user_for_current_tenant
 
     with flask_app.app_context():
         token = set_context_tenant_id(tenant_id)
         try:
             # The new user model stores the bare preferred_username (no @tenant_slug suffix).
             # Tenant membership is determined via the service (Keycloak realm) field, not the
-            # username.  resolve_user_for_current_tenant() performs both the username/email lookup
-            # and the tenant-membership filter in one step.
-            user = resolve_user_for_current_tenant(username, tenant_id=tenant_id)
+            # username. _resolve_tenant_initiator() fetches the user by username, narrows to the
+            # target tenant, and ignores backend-signed session-token mirror duplicates.
+            user = _resolve_tenant_initiator(username, tenant_id)
             if user is None:
                 err = f"User '{username}' not found in the database for tenant '{tenant_id}'."
                 logger.error(err)
