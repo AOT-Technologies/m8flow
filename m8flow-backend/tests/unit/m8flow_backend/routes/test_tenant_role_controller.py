@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from importlib import import_module
 from types import ModuleType
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from flask import Flask
