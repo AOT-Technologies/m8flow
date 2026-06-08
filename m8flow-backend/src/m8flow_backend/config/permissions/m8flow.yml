@@ -195,7 +195,7 @@ permissions:
   read-connectors-grouped:
     groups: ["tenant-admin", "editor", "integrator", "super-admin"]
     actions: [read]
-    uri: /connectors-grouped
+    uri: /m8flow/connectors-grouped
   read-data-stores:
     groups: ["viewer", "super-admin"]
     actions: [read]

@@ -99,7 +99,7 @@ export default function Connectors() {
     );
   }
 
-  if (!ability.can('GET', targetUris.connectorsGroupedPath)) {
+  if (!canAccessConnectors) {
     return <Navigate to="/" replace />;
   }
 
