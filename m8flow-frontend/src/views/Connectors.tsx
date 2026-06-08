@@ -44,6 +44,7 @@ export default function Connectors() {
   const { ability, permissionsLoaded } = usePermissionFetcher(
     permissionRequestData,
   );
+  const canAccessConnectors = ability.can('GET', targetUris.connectorsGroupedPath);
 
   const [connectors, setConnectors] = useState<ConnectorGroup[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -56,7 +57,7 @@ export default function Connectors() {
   }, [t]);
 
   useEffect(() => {
-    if (!permissionsLoaded || !ability.can('GET', targetUris.connectorsGroupedPath)) {
+    if (!permissionsLoaded || !canAccessConnectors) {
       return;
     }
     setLoading(true);
@@ -74,7 +75,7 @@ export default function Connectors() {
         setLoading(false);
       },
     });
-  }, [permissionsLoaded, ability, targetUris.connectorsGroupedPath, t]);
+  }, [permissionsLoaded, canAccessConnectors, t]);
 
   const filtered = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();

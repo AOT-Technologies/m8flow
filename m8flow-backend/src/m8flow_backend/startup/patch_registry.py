@@ -121,6 +121,11 @@ POST_APP_CORE_PATCH_SPECS: tuple[PatchSpec, ...] = (
         minimum_phase=BootPhase.APP_CREATED,
     ),
     PatchSpec(
+        target="m8flow_backend.routes.health_controller_patch:apply",
+        minimum_phase=BootPhase.APP_CREATED,
+        needs_flask_app=True,
+    ),
+    PatchSpec(
         target="m8flow_backend.services.file_system_service_patch:apply",
         minimum_phase=BootPhase.APP_CREATED,
     ),
@@ -163,6 +168,10 @@ POST_APP_CORE_PATCH_SPECS: tuple[PatchSpec, ...] = (
     ),
     PatchSpec(
         target="m8flow_backend.services.authentication_service_patch:apply_redirect_uri_scheme_patch",
+        minimum_phase=BootPhase.APP_CREATED,
+    ),
+    PatchSpec(
+        target="m8flow_backend.services.authentication_service_patch:apply_login_scope_patch",
         minimum_phase=BootPhase.APP_CREATED,
     ),
     PatchSpec(
@@ -215,6 +224,11 @@ POST_APP_EXTENSION_PATCH_SPECS: tuple[PatchSpec, ...] = (
         ignore_errors=True,
     ),
     PatchSpec(
+        target="m8flow_backend.routes.user_blueprint_patch:apply",
+        minimum_phase=BootPhase.APP_CREATED,
+        needs_flask_app=True,
+    ),
+    PatchSpec(
         target="m8flow_backend.services.process_instance_processor_patch:apply",
         minimum_phase=BootPhase.APP_CREATED,
     ),
@@ -240,6 +254,10 @@ POST_APP_EXTENSION_PATCH_SPECS: tuple[PatchSpec, ...] = (
     ),
     PatchSpec(
         target="m8flow_backend.routes.process_models_controller_patch:apply",
+        minimum_phase=BootPhase.APP_CREATED,
+    ),
+    PatchSpec(
+        target="m8flow_backend.routes.process_groups_controller_patch:apply",
         minimum_phase=BootPhase.APP_CREATED,
     ),
     PatchSpec(

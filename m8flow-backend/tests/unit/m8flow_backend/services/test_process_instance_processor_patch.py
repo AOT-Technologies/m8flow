@@ -80,6 +80,7 @@ def _setup_processor_patch_fakes(monkeypatch, completed_tasks_with_data=None):  
     fake_human_task_user_module = ModuleType("spiffworkflow_backend.models.human_task_user")
     fake_user_service_module = ModuleType("spiffworkflow_backend.services.user_service")
     fake_processor_module = ModuleType("spiffworkflow_backend.services.process_instance_processor")
+    fake_task_module = ModuleType("SpiffWorkflow.task")
 
     class FakeAddedBy:
         guest = SimpleNamespace(value="guest")
@@ -101,15 +102,40 @@ def _setup_processor_patch_fakes(monkeypatch, completed_tasks_with_data=None):  
         def get_tasks_with_data(cls, _workflow):  # noqa: ANN001
             return tasks
 
+        def __init__(self):
+            self.process_instance_model = SimpleNamespace(process_initiator_id=777)
+
+        @staticmethod
+        def raise_if_no_potential_owners(potential_owners, _message):  # noqa: ANN001
+            if not potential_owners:
+                raise AssertionError("expected potential owners")
+
+    class FakeGroupModel:
+        def __init__(self, identifier: str):
+            self.id = 33
+            self.identifier = identifier
+            self.user_group_assignments = []
+
+    class FakeUserServiceClass:
+        @staticmethod
+        def find_or_create_guest_user():
+            return SimpleNamespace(id=999)
+
+        @staticmethod
+        def find_or_create_group(identifier: str):
+            return FakeGroupModel(identifier)
+
     fake_interfaces_module.PotentialOwnerIdList = dict
     fake_human_task_user_module.HumanTaskUserAddedBy = FakeAddedBy
-    fake_user_service_module.UserService = SimpleNamespace()
+    fake_user_service_module.UserService = FakeUserServiceClass
     fake_processor_module.CustomBpmnScriptEngine = FakeCustomBpmnScriptEngine
     fake_processor_module.ProcessInstanceProcessor = FakeProcessInstanceProcessor
+    fake_task_module.Task = object
 
     monkeypatch.setitem(sys.modules, "spiffworkflow_backend.interfaces", fake_interfaces_module)
     monkeypatch.setitem(sys.modules, "spiffworkflow_backend.models.human_task_user", fake_human_task_user_module)
     monkeypatch.setitem(sys.modules, "spiffworkflow_backend.services.user_service", fake_user_service_module)
+    monkeypatch.setitem(sys.modules, "SpiffWorkflow.task", fake_task_module)
     monkeypatch.setitem(
         sys.modules,
         "spiffworkflow_backend.services.process_instance_processor",
@@ -117,13 +143,13 @@ def _setup_processor_patch_fakes(monkeypatch, completed_tasks_with_data=None):  
     )
     monkeypatch.setattr(process_instance_processor_patch, "_PATCHED", False)
 
-    return FakeCustomBpmnScriptEngine
+    return FakeCustomBpmnScriptEngine, FakeProcessInstanceProcessor
 
 
 def test_evaluate_exposes_completed_task_variable_when_no_external_context_provided(monkeypatch) -> None:
     """Regression: after Celery rehydration the gateway's task.data is {}; decision must reach
     the script engine via completed-task injection so the gateway condition does not raise NameError."""
-    FakeEngine = _setup_processor_patch_fakes(
+    FakeEngine, _FakeProcessor = _setup_processor_patch_fakes(
         monkeypatch,
         completed_tasks_with_data=[
             SimpleNamespace(data={"decision": "Rejected"}, last_state_change=1.0),
@@ -143,7 +169,7 @@ def test_evaluate_exposes_completed_task_variable_when_no_external_context_provi
 def test_evaluate_exposes_rehydrated_data_objects_without_external_context(monkeypatch) -> None:
     """After patched_run_process_instance_with_processor sets bpmn_process_instance.data['data_objects'],
     patched_evaluate must inject those variables even when no external_context is passed."""
-    FakeEngine = _setup_processor_patch_fakes(monkeypatch, completed_tasks_with_data=[])
+    FakeEngine, _FakeProcessor = _setup_processor_patch_fakes(monkeypatch, completed_tasks_with_data=[])
     process_instance_processor_patch.apply()
 
     engine = FakeEngine()
@@ -162,7 +188,7 @@ def test_evaluate_exposes_rehydrated_data_objects_without_external_context(monke
 
 def test_evaluate_external_context_takes_priority_over_completed_task_data(monkeypatch) -> None:
     """external_context must win over completed-task data so callers can always override the context."""
-    FakeEngine = _setup_processor_patch_fakes(
+    FakeEngine, _FakeProcessor = _setup_processor_patch_fakes(
         monkeypatch,
         completed_tasks_with_data=[
             SimpleNamespace(data={"decision": "Rejected"}, last_state_change=1.0),
@@ -394,7 +420,37 @@ def test_get_potential_owners_from_task_resolves_bare_lane_to_existing_org_group
         ],
         "lane_assignment_id": 41,
     }
-    assert group_lookups == ["tenant-a:/Engineering"]
+    assert group_lookups == ["tenant-a:Engineering", "tenant-a:/Engineering"]
+    assert created_group_identifiers == []
+
+
+def test_get_potential_owners_from_task_resolves_swimlane_from_organization_group(monkeypatch) -> None:
+    FakeProcessor, group_lookups, created_group_identifiers = _setup_potential_owner_patch_fakes(
+        monkeypatch,
+        existing_groups={
+            "tenant-a:Approvers": SimpleNamespace(
+                id=61,
+                user_group_assignments=[SimpleNamespace(user_id=17)],
+            )
+        },
+    )
+    process_instance_processor_patch.apply()
+    app = Flask(__name__)
+
+    with app.app_context():
+        processor = FakeProcessor()
+        task = SimpleNamespace(
+            task_spec=SimpleNamespace(lane="Approvers", extensions={}),
+            data={},
+        )
+
+        result = processor.get_potential_owners_from_task(task)
+
+    assert result == {
+        "potential_owners": [{"added_by": "lane_assignment", "user_id": 17}],
+        "lane_assignment_id": 61,
+    }
+    assert group_lookups == ["tenant-a:Approvers"]
     assert created_group_identifiers == []
 
 
@@ -424,7 +480,7 @@ def test_get_potential_owners_from_task_resolves_full_path_lane_to_existing_org_
         "potential_owners": [{"added_by": "lane_assignment", "user_id": 12}],
         "lane_assignment_id": 52,
     }
-    assert group_lookups == ["tenant-a:/Engineering"]
+    assert group_lookups == ["tenant-a:Engineering", "tenant-a:/Engineering"]
     assert created_group_identifiers == []
 
 
@@ -454,7 +510,41 @@ def test_get_potential_owners_from_task_keeps_lane_assignment_for_existing_empty
         "potential_owners": [],
         "lane_assignment_id": 77,
     }
-    assert group_lookups == ["tenant-a:/Operations"]
+    assert group_lookups == ["tenant-a:Operations", "tenant-a:/Operations"]
+    assert created_group_identifiers == []
+
+
+def test_get_potential_owners_from_task_prefers_populated_bare_group_over_empty_legacy_path_group(monkeypatch) -> None:
+    FakeProcessor, group_lookups, created_group_identifiers = _setup_potential_owner_patch_fakes(
+        monkeypatch,
+        existing_groups={
+            "tenant-a:/Manager": SimpleNamespace(
+                id=77,
+                user_group_assignments=[],
+            ),
+            "tenant-a:Manager": SimpleNamespace(
+                id=88,
+                user_group_assignments=[SimpleNamespace(user_id=42)],
+            ),
+        },
+    )
+    process_instance_processor_patch.apply()
+    app = Flask(__name__)
+
+    with app.app_context():
+        processor = FakeProcessor()
+        task = SimpleNamespace(
+            task_spec=SimpleNamespace(lane="Manager", extensions={}),
+            data={},
+        )
+
+        result = processor.get_potential_owners_from_task(task)
+
+    assert result == {
+        "potential_owners": [{"added_by": "lane_assignment", "user_id": 42}],
+        "lane_assignment_id": 88,
+    }
+    assert group_lookups == ["tenant-a:Manager"]
     assert created_group_identifiers == []
 
 
@@ -484,7 +574,7 @@ def test_get_potential_owners_from_task_falls_back_to_existing_legacy_raw_group(
         "potential_owners": [{"added_by": "lane_assignment", "user_id": 23}],
         "lane_assignment_id": 61,
     }
-    assert group_lookups == ["tenant-a:/reviewer", "tenant-a:reviewer"]
+    assert group_lookups == ["tenant-a:reviewer"]
     assert created_group_identifiers == []
 
 
@@ -505,8 +595,8 @@ def test_get_potential_owners_from_task_creates_placeholder_group_when_no_matchi
 
         result = processor.get_potential_owners_from_task(task)
 
-    assert group_lookups == ["tenant-a:/Operations", "tenant-a:Operations"]
-    assert created_group_identifiers == ["tenant-a:/Operations"]
+    assert group_lookups == ["tenant-a:Operations", "tenant-a:/Operations"]
+    assert created_group_identifiers == ["tenant-a:Operations"]
     assert result == {
         "potential_owners": [],
         "lane_assignment_id": 1001,

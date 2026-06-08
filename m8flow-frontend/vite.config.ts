@@ -15,6 +15,7 @@ if (rootEnv.MULTI_TENANT_ON !== undefined && process.env.VITE_MULTI_TENANT_ON ==
 const host = process.env.HOST ?? '0.0.0.0';
 const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 6841;
 const backendPort = process.env.BACKEND_PORT ? parseInt(process.env.BACKEND_PORT, 10) : 6840;
+const isWindows = process.platform === 'win32';
 
 const backendUrl =
   process.env.SPIFFWORKFLOW_BACKEND_URL ??
@@ -25,18 +26,31 @@ const backendUrl =
 
 const multiTenantOn =
   rootEnv.MULTI_TENANT_ON ?? process.env.VITE_MULTI_TENANT_ON ?? 'false';
+const sharedRealmIdentifier =
+  rootEnv.M8FLOW_KEYCLOAK_SHARED_REALM ??
+  process.env.VITE_M8FLOW_KEYCLOAK_SHARED_REALM ??
+  'm8flow';
+const masterRealmIdentifier =
+  rootEnv.M8FLOW_KEYCLOAK_MASTER_REALM ??
+  process.env.VITE_M8FLOW_KEYCLOAK_MASTER_REALM ??
+  'master';
 
 export default defineConfig({
   base: '/',
   publicDir: path.resolve(__dirname, 'public'),
   define: {
     'import.meta.env.VITE_MULTI_TENANT_ON': JSON.stringify(multiTenantOn),
+    'import.meta.env.VITE_M8FLOW_KEYCLOAK_SHARED_REALM': JSON.stringify(sharedRealmIdentifier),
+    'import.meta.env.VITE_M8FLOW_KEYCLOAK_MASTER_REALM': JSON.stringify(masterRealmIdentifier),
   },
   test: {
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     setupFiles: ['src/test/vitest.setup.ts'],
     globals: true,
     environment: 'jsdom',
+    fileParallelism: !isWindows,
+    maxWorkers: isWindows ? 1 : undefined,
+    minWorkers: isWindows ? 1 : undefined,
   },
   plugins: [
     // Override resolver - must be first to check overrides before core

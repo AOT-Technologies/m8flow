@@ -180,14 +180,14 @@ describe("TemplateService", () => {
     it("sends PUT request and returns parsed template on success", async () => {
       const mockTemplateResponse = {
         id: 5,
-        template_key: "test-key",
+        templateKey: "test-key",
         name: "Test Template",
         version: "V2",
         visibility: "PRIVATE",
-        is_published: false,
-        files: [{ file_type: "json", file_name: "form.json" }],
-        created_at_in_seconds: 1700000000,
-        updated_at_in_seconds: 1700000001,
+        isPublished: false,
+        files: [{ fileType: "json", fileName: "form.json" }],
+        createdAtInSeconds: 1700000000,
+        updatedAtInSeconds: 1700000001,
       };
 
       fetchMock.mockResolvedValue({
@@ -261,6 +261,103 @@ describe("TemplateService", () => {
       ).rejects.toThrow("Delete failed");
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ─── API contract: snake_case → camelCase mapping ──────────────────────────
+  // These tests use raw snake_case response fixtures (as the real backend returns)
+  // to catch regressions in parseTemplateResponse field mapping.
+  describe("updateTemplate — snake_case backend response normalization", () => {
+    it("maps snake_case fields to camelCase on success", async () => {
+      const snakeCaseBackendResponse = {
+        id: 9,
+        template_key: "snake-key",
+        name: "Snake Template",
+        version: "V3",
+        visibility: "PUBLIC",
+        is_published: true,
+        is_deleted: false,
+        created_by: "admin",
+        created_at_in_seconds: 1700000000,
+        updated_at_in_seconds: 1700000999,
+        files: [],
+      };
+
+      vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
+        opts.successCallback?.(snakeCaseBackendResponse as any);
+      });
+
+      const result = await TemplateService.updateTemplate(9, { visibility: "PUBLIC" });
+
+      // The service must surface camelCase fields regardless of backend casing
+      expect(result.id).toBe(9);
+      // template_key from backend should pass through (mapper spreads raw)
+      // createdAtInSeconds and updatedAtInSeconds should be resolved from
+      // the numeric snake_case fields via secondsFromApiOrIso
+      expect(result.createdAtInSeconds).toBe(1700000000);
+      expect(result.updatedAtInSeconds).toBe(1700000999);
+      expect(result.files).toEqual([]);
+    });
+
+    it("derives timestamps from ISO strings when numeric seconds are absent", async () => {
+      const isoResponse = {
+        id: 10,
+        template_key: "iso-key",
+        name: "ISO Template",
+        version: "V1",
+        visibility: "PRIVATE",
+        createdAt: "2024-03-15T12:00:00.000Z",
+        updatedAt: "2024-03-16T08:30:00.000Z",
+        files: [],
+      };
+
+      vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
+        opts.successCallback?.(isoResponse as any);
+      });
+
+      const result = await TemplateService.updateTemplate(10, { visibility: "PRIVATE" });
+
+      expect(result.createdAtInSeconds).toBe(Math.floor(Date.parse("2024-03-15T12:00:00.000Z") / 1000));
+      expect(result.updatedAtInSeconds).toBe(Math.floor(Date.parse("2024-03-16T08:30:00.000Z") / 1000));
+    });
+  });
+
+  describe("getTemplateById — snake_case backend response normalization", () => {
+    it("maps snake_case fields to normalized Template on success", async () => {
+      const snakeCaseResponse = {
+        id: 11,
+        template_key: "get-key",
+        name: "Get Template",
+        version: "V2",
+        visibility: "TENANT",
+        is_published: false,
+        is_deleted: false,
+        created_at_in_seconds: 1710000000,
+        updated_at_in_seconds: 1710001000,
+        files: [{ file_type: "bpmn", file_name: "process.bpmn" }],
+      };
+
+      vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
+        opts.successCallback?.(snakeCaseResponse as any);
+      });
+
+      const result = await TemplateService.getTemplateById(11);
+
+      expect(result.id).toBe(11);
+      expect(result.createdAtInSeconds).toBe(1710000000);
+      expect(result.updatedAtInSeconds).toBe(1710001000);
+      expect(result.files).toHaveLength(1);
+    });
+
+    it("returns 0 timestamps when neither numeric seconds nor ISO strings are present", async () => {
+      vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts) => {
+        opts.successCallback?.({ id: 12, name: "No Dates", version: "V1", files: [] } as any);
+      });
+
+      const result = await TemplateService.getTemplateById(12);
+
+      expect(result.createdAtInSeconds).toBe(0);
+      expect(result.updatedAtInSeconds).toBe(0);
     });
   });
 });
