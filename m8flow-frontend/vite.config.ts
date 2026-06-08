@@ -15,6 +15,7 @@ if (rootEnv.MULTI_TENANT_ON !== undefined && process.env.VITE_MULTI_TENANT_ON ==
 const host = process.env.HOST ?? '0.0.0.0';
 const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 6841;
 const backendPort = process.env.BACKEND_PORT ? parseInt(process.env.BACKEND_PORT, 10) : 6840;
+const isWindows = process.platform === 'win32';
 
 const backendUrl =
   process.env.SPIFFWORKFLOW_BACKEND_URL ??
@@ -25,7 +26,6 @@ const backendUrl =
 
 const multiTenantOn =
   rootEnv.MULTI_TENANT_ON ?? process.env.VITE_MULTI_TENANT_ON ?? 'false';
-const isWindows = process.platform === 'win32';
 const sharedRealmIdentifier =
   rootEnv.M8FLOW_KEYCLOAK_SHARED_REALM ??
   process.env.VITE_M8FLOW_KEYCLOAK_SHARED_REALM ??
@@ -50,6 +50,7 @@ export default defineConfig({
     environment: 'jsdom',
     fileParallelism: !isWindows,
     maxWorkers: isWindows ? 1 : undefined,
+    minWorkers: isWindows ? 1 : undefined,
   },
   plugins: [
     // Override resolver - must be first to check overrides before core
@@ -99,12 +100,12 @@ export default defineConfig({
   },
   resolve: {
     alias: [
-      // ── m8flow component overrides (must come BEFORE generic @spiffworkflow-frontend alias) ──
+      // -- m8flow component overrides (must come BEFORE generic @spiffworkflow-frontend alias) --
       {
         find: '@spiffworkflow-frontend/components/ReactDiagramEditor',
         replacement: path.resolve(__dirname, './src/components/ReactDiagramEditor'),
       },
-      // ── Generic fallbacks ──────────────────────────────────────────────────
+      // -- Generic fallbacks --
       {
         find: /^inferno$/,
         replacement:

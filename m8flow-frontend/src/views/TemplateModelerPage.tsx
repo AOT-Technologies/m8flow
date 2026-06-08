@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
@@ -17,19 +17,21 @@ import {
 } from '@mui/material';
 import type { SelectChangeEvent } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
-import DeleteIcon from '@mui/icons-material/Delete';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import FileDownloadIcon from '@mui/icons-material/FileDownload';
+import DeleteIcon from '@mui/icons-material/Delete';
 import ProcessBreadcrumb from '@spiffworkflow-frontend/components/ProcessBreadcrumb';
 import DateAndTimeService from '@spiffworkflow-frontend/services/DateAndTimeService';
 import HttpService from '../services/HttpService';
 import TemplateService from '../services/TemplateService';
+import UserService from '../services/UserService';
 import TemplateFileList from '../components/TemplateFileList';
 import CreateProcessModelFromTemplateModal from '../components/CreateProcessModelFromTemplateModal';
+import TemplateDeleteConfirmDialog from '../components/TemplateDeleteConfirmDialog';
 import { Template, TemplateVisibility } from '../types/template';
 import { normalizeTemplate } from '../utils/templateHelpers';
 import './TemplateModelerPage.css';
 import { usePermissionFetcher } from '@spiffworkflow-frontend/hooks/PermissionService';
-import UserService from '../services/UserService';
 
 
 const VISIBILITY_OPTIONS: { value: TemplateVisibility; label: string }[] = [
@@ -40,41 +42,56 @@ const VISIBILITY_OPTIONS: { value: TemplateVisibility; label: string }[] = [
 
 function TemplateDetailsCard({
   template,
-  onExport,
   onPublish,
   onCreateProcessModel,
   disableCreateProcessModel,
   createProcessModelDisabledReason,
-  onDeleteTemplate,
-  canDeleteTemplate,
-  deleteDisabledReason,
   pendingVisibility,
   onVisibilityChange,
   onSaveVisibility,
   isSaving,
+  onExport,
+  onDelete,
 }: {
   template: Template;
-  onExport: () => void;
   onPublish: () => void;
   onCreateProcessModel: () => void;
   disableCreateProcessModel: boolean;
   createProcessModelDisabledReason: string;
-  onDeleteTemplate: () => void;
-  canDeleteTemplate: boolean;
-  deleteDisabledReason: string;
   pendingVisibility: TemplateVisibility | null;
   onVisibilityChange: (visibility: TemplateVisibility) => void;
   onSaveVisibility: () => void;
   isSaving: boolean;
+  onExport: () => void;
+  onDelete: () => void;
 }) {
   const { ability, permissionsLoaded } = usePermissionFetcher({
     "/m8flow/templates": ["POST", "PUT", "DELETE"],
+    "/m8flow/admin/templates": ["DELETE"],
   });
 
-  const canCreate = ability.can("POST", "/m8flow/templates");
-  const canPublish = ability.can("PUT", "/m8flow/templates");
-  const canDelete = ability.can("DELETE", "/m8flow/templates");
+  const canCreate  = ability.can("POST",   "/m8flow/templates");
+  const canPublish = ability.can("PUT",    "/m8flow/templates");
+  const canDelete  = ability.can("DELETE", "/m8flow/templates");
+  // Admin-level: required to delete published templates or others' drafts
+  const hasAdminPermission = permissionsLoaded && ability.can("DELETE", "/m8flow/admin/templates");
+
   const { t } = useTranslation();
+
+  // Mirror the same ownership/admin logic from TemplateGalleryPage:
+  //   - published templates → admin only
+  //   - draft templates     → admin OR the creator
+  const currentUsername = UserService.getUserName() || UserService.getPreferredUsername() || "";
+  const canDeleteThisTemplate = canDelete && (
+    template.isPublished
+      ? hasAdminPermission
+      : hasAdminPermission || (!!currentUsername && template.createdBy === currentUsername)
+  );
+  const deleteThisTemplateDeniedReason = !canDeleteThisTemplate
+    ? template.isPublished
+      ? t("published_delete_admin_only", { defaultValue: "Insufficient permissions to delete published templates." })
+      : t("draft_delete_owner_or_admin_only", { defaultValue: "Only the template creator or an admin can delete this draft template." })
+    : "";
 
   if (!permissionsLoaded) return null;
 
@@ -90,7 +107,16 @@ function TemplateDetailsCard({
       }}
     >
       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, alignItems: 'center' }}>
-        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+        <Typography
+          variant="body2"
+          sx={{
+            fontWeight: 600,
+            flexBasis: '100%',
+            minWidth: 0,
+            overflowWrap: 'anywhere',
+            wordBreak: 'break-word',
+          }}
+        >
           {template.name}
         </Typography>
         <Chip size="small" label={`${t('version')}: ${template.version}`} variant="outlined" />
@@ -146,7 +172,43 @@ function TemplateDetailsCard({
         <Typography variant="caption" color="text.secondary">
           {t('updated')}: {DateAndTimeService.convertSecondsToFormattedDateTime(template.updatedAtInSeconds) ?? '—'}
         </Typography>
-        {canCreate && (
+        {!template.isDeleted && (
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<FileDownloadIcon />}
+            data-testid="template-export-button"
+            onClick={onExport}
+          >
+            {t('export', { defaultValue: 'Export' })}
+          </Button>
+        )}
+
+        {canDelete && !template.isDeleted && (
+          <Tooltip
+            title={
+              canDelete && !canDeleteThisTemplate
+                ? deleteThisTemplateDeniedReason
+                : ""
+            }
+          >
+            <span>
+              <Button
+                size="small"
+                variant="outlined"
+                color="error"
+                startIcon={<DeleteIcon />}
+                data-testid="template-delete-button"
+                onClick={onDelete}
+                disabled={!canDeleteThisTemplate}
+              >
+                {t('delete')}
+              </Button>
+            </span>
+          </Tooltip>
+        )}
+
+        {canCreate && !template.isDeleted && (
           <Tooltip title={disableCreateProcessModel ? createProcessModelDisabledReason : ""}>
             <span>
               <Button
@@ -163,9 +225,7 @@ function TemplateDetailsCard({
             </span>
           </Tooltip>
         )}
-        <Button size="small" variant="contained" data-testid="template-export-button" onClick={onExport}>
-          {t('export_template')}
-        </Button>
+
         {canPublish && !template.isPublished && (
           <Button
             size="small"
@@ -177,23 +237,7 @@ function TemplateDetailsCard({
             {t('publish')}
           </Button>
         )}
-        {canDelete && (
-          <Tooltip title={canDeleteTemplate ? "" : deleteDisabledReason}>
-            <span>
-              <Button
-                size="small"
-                variant="contained"
-                color="error"
-                startIcon={<DeleteIcon />}
-                data-testid="template-delete-button"
-                onClick={onDeleteTemplate}
-                disabled={!canDeleteTemplate}
-              >
-                {t("delete")}
-              </Button>
-            </span>
-          </Tooltip>
-        )}
+
       </Box>
       {template.description && (
         <Typography
@@ -219,7 +263,6 @@ export default function TemplateModelerPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [publishSuccess, setPublishSuccess] = useState(false);
-  const [exportError, setExportError] = useState<string | null>(null);
   const [allVersions, setAllVersions] = useState<Template[]>([]);
   const [versionsLoading, setVersionsLoading] = useState(false);
   const [createProcessModelOpen, setCreateProcessModelOpen] = useState(false);
@@ -227,31 +270,10 @@ export default function TemplateModelerPage() {
   const [pendingVisibility, setPendingVisibility] = useState<TemplateVisibility | null>(null);
   const [isSavingVisibility, setIsSavingVisibility] = useState(false);
   const [saveVisibilitySuccess, setSaveVisibilitySuccess] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteSuccess, setDeleteSuccess] = useState(false);
 
   const id = templateId ? Number.parseInt(templateId, 10) : NaN;
-  const currentUsername = UserService.getUserName() || UserService.getPreferredUsername() || "";
-
-  // RBAC: check admin-level template permissions (delete published, restore)
-  const { ability: adminAbility, permissionsLoaded: adminPermissionsLoaded } = usePermissionFetcher({
-    "/m8flow/admin/templates": ["DELETE"],
-  });
-  const hasAdminPermission = adminPermissionsLoaded && adminAbility.can("DELETE", "/m8flow/admin/templates");
-
-  const handleExport = useCallback(() => {
-    if (isNaN(id)) return;
-    setExportError(null);
-    TemplateService.exportTemplate(id)
-      .then((blob) => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `template-${template?.templateKey ?? id}-${template?.version ?? 'export'}.zip`;
-        a.click();
-        URL.revokeObjectURL(url);
-      })
-      .catch((err) => setExportError(err instanceof Error ? err.message : 'Export failed'));
-  }, [id, template?.templateKey, template?.version]);
 
   useEffect(() => {
     if (!templateId || isNaN(id)) {
@@ -343,11 +365,6 @@ export default function TemplateModelerPage() {
     return () => globalThis.clearTimeout(timer);
   }, [saveVisibilitySuccess]);
 
-  useEffect(() => {
-    if (!deleteSuccess) return;
-    const timer = globalThis.setTimeout(() => setDeleteSuccess(false), SUCCESS_ALERT_DURATION_MS);
-    return () => globalThis.clearTimeout(timer);
-  }, [deleteSuccess]);
 
   const handleVisibilityChange = useCallback(
     (visibility: TemplateVisibility) => {
@@ -388,55 +405,49 @@ export default function TemplateModelerPage() {
     }, 1500);
   }, [navigate]);
 
-  const canDeleteTemplate = useMemo(() => {
-    if (!template) return false;
-    if (template.isPublished) return hasAdminPermission;
-    return hasAdminPermission || (!!currentUsername && template.createdBy === currentUsername);
-  }, [template, hasAdminPermission, currentUsername]);
+  const handleExport = useCallback(() => {
+    if (!template || isNaN(id)) return;
+    TemplateService.exportTemplate(id)
+      .then((blob) => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `${template.templateKey || template.name}.zip`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(a.href);
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : 'Export failed');
+      });
+  }, [id, template]);
 
-  const deleteDisabledReason = useMemo(() => {
-    if (!template) return "";
-    if (template.isPublished && !hasAdminPermission) {
-      return t("published_delete_admin_only", {
-        defaultValue: "Insufficient permissions to delete published templates.",
+  const handleDeleteConfirm = useCallback(() => {
+    if (!template || isNaN(id)) return;
+    setDeleteDialogOpen(false);
+    TemplateService.deleteTemplate(id)
+      .then(() => {
+        setDeleteSuccess(true);
+        // Navigate back to templates after a short delay
+        setTimeout(() => {
+          navigate('/templates');
+        }, 1500);
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : 'Delete failed');
       });
-    }
-    if (!hasAdminPermission && template.createdBy !== currentUsername) {
-      return t("draft_delete_owner_or_admin_only", {
-        defaultValue: "Only the template creator or an admin can delete this draft template.",
-      });
-    }
-    return "";
-  }, [template, hasAdminPermission, currentUsername, t]);
+  }, [id, template, navigate]);
+
+  useEffect(() => {
+    if (!deleteSuccess) return;
+    const timer = globalThis.setTimeout(() => setDeleteSuccess(false), SUCCESS_ALERT_DURATION_MS);
+    return () => globalThis.clearTimeout(timer);
+  }, [deleteSuccess]);
 
   const createProcessModelDisabledReason = t("create_process_model_published_only_tooltip", {
     defaultValue: "Process models can only be created from a published template version.",
   });
 
-  const handleDeleteTemplate = useCallback(() => {
-    if (!template || isNaN(id)) return;
-    const confirmMessage = template.isPublished
-      ? t("delete_template_published_confirm", {
-          name: template.name,
-          defaultValue: `Delete published template "${template.name}"? It will be soft-deleted and can be restored later.`,
-        })
-      : t("delete_template_draft_confirm", {
-          name: template.name,
-          defaultValue: `Delete draft template "${template.name}"? This will permanently remove it.`,
-        });
-
-    if (!globalThis.confirm(confirmMessage)) return;
-
-    setError(null);
-    TemplateService.deleteTemplate(id)
-      .then(() => {
-        setDeleteSuccess(true);
-        navigate('/templates');
-      })
-      .catch((err) => {
-        setError(err instanceof Error ? err.message : t("delete_failed", { defaultValue: "Delete failed" }));
-      });
-  }, [template, id, navigate, t]);
 
   if (loading && !template) {
     return (
@@ -535,24 +546,17 @@ export default function TemplateModelerPage() {
       )}
       <TemplateDetailsCard
         template={template}
-        onExport={handleExport}
         onPublish={handlePublish}
         onCreateProcessModel={() => setCreateProcessModelOpen(true)}
         disableCreateProcessModel={!template.isPublished}
         createProcessModelDisabledReason={createProcessModelDisabledReason}
-        onDeleteTemplate={handleDeleteTemplate}
-        canDeleteTemplate={canDeleteTemplate}
-        deleteDisabledReason={deleteDisabledReason}
         pendingVisibility={pendingVisibility}
         onVisibilityChange={handleVisibilityChange}
         onSaveVisibility={handleSaveVisibility}
         isSaving={isSavingVisibility}
+        onExport={handleExport}
+        onDelete={() => setDeleteDialogOpen(true)}
       />
-      {exportError && (
-        <Alert severity="error" sx={{ mb: 1 }} onClose={() => setExportError(null)}>
-          {exportError}
-        </Alert>
-      )}
       {error && (
         <Alert severity="error" sx={{ mb: 1 }} onClose={() => setError(null)}>
           {error}
@@ -575,7 +579,7 @@ export default function TemplateModelerPage() {
       )}
       {deleteSuccess && (
         <Alert severity="success" sx={{ mb: 1 }} onClose={() => setDeleteSuccess(false)}>
-          {t("template_deleted_successfully", { defaultValue: "Template deleted successfully." })}
+          {t('template_deleted_successfully', { defaultValue: 'Template deleted successfully. Redirecting...' })}
         </Alert>
       )}
 
@@ -584,6 +588,14 @@ export default function TemplateModelerPage() {
         onClose={() => setCreateProcessModelOpen(false)}
         template={template}
         onSuccess={handleCreateProcessModelSuccess}
+      />
+
+      <TemplateDeleteConfirmDialog
+        open={deleteDialogOpen}
+        onClose={() => setDeleteDialogOpen(false)}
+        onConfirm={handleDeleteConfirm}
+        templateName={template.name}
+        isPublished={template.isPublished}
       />
     </Box>
   );

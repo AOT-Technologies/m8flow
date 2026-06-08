@@ -47,6 +47,7 @@ import { RouteLoadingFallback } from './components/RouteLoadingFallback';
 
 // Route-level code splitting for heavier pages.
 const ReportsPage = lazy(() => import('./views/ReportsPage'));
+const TenantManagementPage = lazy(() => import('./views/TenantManagementPage'));
 const TenantPage = lazy(() => import('./views/TenantPage'));
 const TemplateGalleryPage = lazy(() => import('./views/TemplateGalleryPage'));
 const TemplateModelerPage = lazy(() => import('./views/TemplateModelerPage'));
@@ -160,8 +161,6 @@ function RoleBasedRootGate({
     );
   }
 
-  // No Home access: find the first available nav route in sidebar order.
-  // Keep tenant management available, but do not force global operators into it.
   const fallbackRoutes: Array<{ route: string; method: string; uri: string }> =
     [
       {
@@ -180,19 +179,24 @@ function RoleBasedRootGate({
         uri: targetUris.messageInstanceListPath,
       },
       {
-        route: "/connectors",
-        method: "GET",
-        uri: targetUris.serviceTaskListPath,
-      },
-      {
         route: "/configuration",
         method: "GET",
         uri: targetUris.secretListPath,
       },
       {
+        route: "/connectors",
+        method: "GET",
+        uri: targetUris.connectorsPath,
+      },
+      {
         route: "/templates",
         method: "GET",
         uri: targetUris.m8flowTemplateListPath,
+      },
+      {
+        route: "/tenant-management",
+        method: "GET",
+        uri: targetUris.m8flowTenantManagementPath,
       },
       {
         route: "/tenants",
@@ -242,9 +246,10 @@ export default function ContainerForExtensions() {
     [targetUris.messageInstanceListPath]: ["GET"],
     [targetUris.secretListPath]: ["GET"],
     "/tasks/*": ["GET", "PUT"],
+    [targetUris.m8flowTenantManagementPath]: ["GET"],
     [targetUris.m8flowTenantListPath]: ["GET"],
     [targetUris.m8flowTemplateListPath]: ["GET"],
-    [targetUris.serviceTaskListPath]: ["GET"],
+    [targetUris.connectorsPath]: ["GET"],
   };
   const { ability, permissionsLoaded } = usePermissionFetcher(
     permissionRequestData,
@@ -515,7 +520,26 @@ export default function ContainerForExtensions() {
           {/* Reports route */}
           <Route path="reports" element={<ReportsPage />} />
           {/* M8Flow Extension: Tenant route */}
-          <Route path="/tenants" element={<TenantPage />} />
+          <Route
+            path="/tenant-management"
+            element={
+              !permissionsLoaded
+                ? null
+                : ability.can("GET", targetUris.m8flowTenantManagementPath)
+                  ? <TenantManagementPage />
+                  : <Navigate to="/" replace />
+            }
+          />
+          <Route
+            path="/tenants"
+            element={
+              !permissionsLoaded
+                ? null
+                : UserService.isSuperAdmin() && ability.can("GET", targetUris.m8flowTenantListPath)
+                  ? <TenantPage />
+                  : <Navigate to="/" replace />
+            }
+          />
           {/* m8 Extension: Template Gallery and Template Modeler routes (more specific first) */}
           <Route
             path="templates/:templateId/files/:fileName"
@@ -527,6 +551,7 @@ export default function ContainerForExtensions() {
           />
           <Route path="templates/:templateId" element={<TemplateModelerPage />} />
           <Route path="templates" element={<TemplateGalleryPage />} />
+          {/* Connectors self-guards on permission + role (admin/editor/integrator). */}
           <Route path="connectors" element={<ConnectorsPage />} />
           <Route
             path="process-models/:process_model_id"
@@ -613,6 +638,25 @@ export default function ContainerForExtensions() {
           `}
         </style>
       )}
+      {location.pathname === "/tenant-management" && (
+        <style>
+          {`
+            a[href$="/tenant-management"] {
+              background-color: ${(globalTheme.palette as any).background?.light || "#e3f2fd"} !important;
+              color: ${globalTheme.palette.primary.main} !important;
+              border-left-width: 4px !important;
+              border-style: solid !important;
+              border-color: ${globalTheme.palette.primary.main} !important;
+            }
+            a[href$="/tenant-management"] .MuiListItemIcon-root {
+              color: ${globalTheme.palette.primary.main} !important;
+            }
+            a[href$="/tenant-management"] .MuiTypography-root {
+              font-weight: bold !important;
+            }
+          `}
+        </style>
+      )}
       {location.pathname.startsWith("/connectors") && (
         <style>
           {`
@@ -673,7 +717,7 @@ export default function ContainerForExtensions() {
                   setAdditionalNavElement={setAdditionalNavElement}
                   extensionUxElements={[
                     ...(extensionUxElements || []),
-                    ...(ability?.can("GET", targetUris.m8flowTenantListPath)
+                    ...(UserService.isSuperAdmin() && ability?.can("GET", targetUris.m8flowTenantListPath)
                       ? [
                           {
                             page: "/../tenants",

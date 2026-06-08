@@ -5,19 +5,19 @@ import { ThemeProvider, createTheme } from "@mui/material/styles";
 import type React from "react";
 import TemplateGalleryPage from "./TemplateGalleryPage";
 
-vi.mock("react-i18next", () => ({
-  useTranslation: () => ({
-    t: (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key,
-  }),
-}));
-
-vi.mock("@mui/icons-material", () => ({
-  ViewModule: () => <svg data-testid="icon-view-module" />,
-  ViewList: () => <svg data-testid="icon-view-list" />,
-  Visibility: () => <svg data-testid="icon-visibility" />,
-  Delete: () => <svg data-testid="icon-delete" />,
-  Restore: () => <svg data-testid="icon-restore" />,
-}));
+vi.mock("@mui/icons-material", () => {
+  const Icon = ({ children }: { children?: React.ReactNode }) => <span>{children}</span>;
+  return {
+    ViewModule: Icon,
+    ViewList: Icon,
+    Visibility: Icon,
+    MoreVert: Icon,
+    Edit: Icon,
+    FileDownload: Icon,
+    Delete: Icon,
+    Restore: Icon,
+  };
+});
 
 vi.mock("react-router-dom", async (importOriginal) => {
   const actual =
@@ -27,6 +27,12 @@ vi.mock("react-router-dom", async (importOriginal) => {
     useNavigate: vi.fn(() => vi.fn()),
   };
 });
+
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string, opts?: { defaultValue?: string }) => opts?.defaultValue ?? key,
+  }),
+}));
 
 vi.mock("../hooks/useTemplates", () => ({
   useTemplates: vi.fn(),
@@ -108,6 +114,43 @@ vi.mock("../components/TemplateCard", () => ({
   ),
 }));
 
+vi.mock("../components/TemplateDeleteConfirmDialog", () => ({
+  default: ({ open, onConfirm, onClose }: any) => {
+    if (!open) return null;
+    return (
+      <div data-testid="delete-confirm-dialog">
+        <button
+          data-testid="delete-template-confirm-button"
+          onClick={() => {
+            onConfirm();
+            onClose();
+          }}
+          type="button"
+        >
+          Confirm Delete
+        </button>
+      </div>
+    );
+  },
+  TemplateRestoreConfirmDialog: ({ open, onConfirm, onClose }: any) => {
+    if (!open) return null;
+    return (
+      <div data-testid="restore-confirm-dialog">
+        <button
+          data-testid="restore-template-confirm-button"
+          onClick={() => {
+            onConfirm();
+            onClose();
+          }}
+          type="button"
+        >
+          Confirm Restore
+        </button>
+      </div>
+    );
+  },
+}));
+
 import { useTemplates } from "../hooks/useTemplates";
 import HttpService from "../services/HttpService";
 import TemplateService from "../services/TemplateService";
@@ -151,7 +194,6 @@ function renderPage() {
 describe("TemplateGalleryPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.stubGlobal("confirm", vi.fn(() => true));
     vi.mocked(HttpService.makeCallToBackend).mockImplementation(() => {});
     vi.mocked(usePermissionFetcher).mockReturnValue({
       ability: { can: () => true } as any,
@@ -173,7 +215,9 @@ describe("TemplateGalleryPage", () => {
   it("calls delete API from table action and refreshes list", async () => {
     renderPage();
     fireEvent.click(screen.getByTestId("template-gallery-view-table"));
-    fireEvent.click(screen.getByTestId("template-gallery-delete-button-1"));
+    fireEvent.click(screen.getByTestId("template-gallery-more-actions-1"));
+    fireEvent.click(screen.getByTestId("template-row-delete-action"));
+    fireEvent.click(screen.getByTestId("delete-template-confirm-button"));
 
     await waitFor(() => {
       expect(TemplateService.deleteTemplate).toHaveBeenCalledWith(1);
@@ -182,10 +226,9 @@ describe("TemplateGalleryPage", () => {
   });
 
   it("disables published delete for users without admin permission in table view", async () => {
-    // No admin permission (ability.can returns false for /m8flow/admin/templates)
     vi.mocked(usePermissionFetcher).mockReturnValue({
       ability: {
-        can: (method: string, uri: string) => {
+        can: (_method: string, uri: string) => {
           if (uri === "/m8flow/admin/templates") return false;
           return true;
         },
@@ -206,22 +249,42 @@ describe("TemplateGalleryPage", () => {
 
     renderPage();
     fireEvent.click(screen.getByTestId("template-gallery-view-table"));
+    fireEvent.click(screen.getByTestId("template-gallery-more-actions-1"));
 
-    const deleteButton = await screen.findByTestId("template-gallery-delete-button-1");
-    expect(deleteButton).toBeDisabled();
+    const deleteAction = screen.getByTestId("template-row-delete-action");
+    expect(deleteAction).toHaveAttribute("aria-disabled", "true");
   });
 
   it("calls delete API from card action in active mode", async () => {
     renderPage();
     fireEvent.click(screen.getByTestId("template-card-delete-1"));
+    fireEvent.click(screen.getByTestId("delete-template-confirm-button"));
 
     await waitFor(() => {
       expect(TemplateService.deleteTemplate).toHaveBeenCalledWith(1);
     });
   });
 
+  it("hides Edit but keeps Export for viewers in table view", async () => {
+    vi.mocked(usePermissionFetcher).mockReturnValue({
+      ability: {
+        can: (method: string, uri: string) => {
+          if (uri === "/m8flow/templates" && method === "PUT") return false;
+          return true;
+        },
+      } as any,
+      permissionsLoaded: true,
+    });
+
+    renderPage();
+    fireEvent.click(screen.getByTestId("template-gallery-view-table"));
+    fireEvent.click(screen.getByTestId("template-gallery-more-actions-1"));
+
+    expect(screen.queryByTestId("template-row-edit-action")).not.toBeInTheDocument();
+    expect(screen.getByTestId("template-row-export-action")).toBeInTheDocument();
+  });
+
   it("shows deleted mode restore action and calls restore API", async () => {
-    // Admin permission (ability.can returns true for all URIs)
     vi.mocked(usePermissionFetcher).mockReturnValue({
       ability: { can: () => true } as any,
       permissionsLoaded: true,
@@ -241,6 +304,7 @@ describe("TemplateGalleryPage", () => {
     renderPage();
     fireEvent.click(screen.getByTestId("template-gallery-mode-deleted"));
     fireEvent.click(screen.getByTestId("template-card-restore-1"));
+    fireEvent.click(screen.getByTestId("restore-template-confirm-button"));
 
     await waitFor(() => {
       expect(TemplateService.restoreTemplate).toHaveBeenCalledWith(1);

@@ -1,8 +1,9 @@
 /**
  * Override: useProcessGroups Hook
- * 
- * This override adds a custom header to the process-groups API call
- * and logs the response to console.
+ *
+ * Adds custom headers and forwards an optional ``tenantId`` query parameter so
+ * a super-admin can narrow the cross-tenant process-group / process-model
+ * listing to a single tenant.
  */
 
 import { useQuery } from '@tanstack/react-query';
@@ -13,9 +14,11 @@ import HttpService from '../services/HttpService';
 export default function useProcessGroups({
   processInfo,
   getRunnableProcessModels = false,
+  tenantId = null,
 }: {
   processInfo: Record<string, any>;
   getRunnableProcessModels?: boolean;
+  tenantId?: string | null;
 }) {
   const [processGroups, setProcessGroups] = useState<
     ProcessGroup[] | ProcessGroupLite[] | null
@@ -27,19 +30,24 @@ export default function useProcessGroups({
     setLoading(false);
   };
 
-  let path = '/process-groups';
+  let basePath = '/process-groups';
   if (getRunnableProcessModels) {
-    path =
+    basePath =
       '/process-models?filter_runnable_by_user=true&recursive=true&group_by_process_group=True&per_page=2000';
+  }
+
+  let path = basePath;
+  if (tenantId) {
+    const separator = basePath.includes('?') ? '&' : '?';
+    path = `${basePath}${separator}tenantId=${encodeURIComponent(tenantId)}`;
   }
 
   const getProcessGroups = async () => {
     setLoading(true);
-    
+
     HttpService.makeCallToBackend({
       path,
       httpMethod: 'GET',
-      // Add custom header to the API call
       extraHeaders: {
         'X-m8-Extension': 'true',
         'X-m8-Request-Source': 'useProcessGroups-override',
@@ -56,7 +64,7 @@ export default function useProcessGroups({
   };
 
   useQuery({
-    queryKey: [path, processInfo],
+    queryKey: [path, processInfo, tenantId],
     queryFn: () => getProcessGroups(),
   });
 

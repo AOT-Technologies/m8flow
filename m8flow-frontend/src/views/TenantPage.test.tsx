@@ -80,19 +80,14 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 
-vi.mock("@mui/icons-material", () => ({
-  Search: () => <svg data-testid="icon-search" />,
-  Edit: () => <svg data-testid="icon-edit" />,
-  Clear: () => <svg data-testid="icon-clear" />,
-  Add: () => <svg data-testid="icon-add" />,
-  ManageAccounts: () => <svg data-testid="icon-manage-accounts" />,
-}));
-
 const mockUseTenants = vi.fn();
 const mockUsePermissionFetcher = vi.fn();
 const mockCreateTenant = vi.fn();
+const mockUpdateTenant = vi.fn();
+const mockDeleteTenant = vi.fn();
 const mockGetTenantGroups = vi.fn();
 const mockGetTenantMembers = vi.fn();
+const mockRememberTenantDisplayName = vi.fn();
 
 vi.mock("../hooks/useTenants", () => ({
   useTenants: () => mockUseTenants(),
@@ -121,8 +116,15 @@ vi.mock("../services/TenantService", () => ({
     removeTenantMemberFromGroup: vi.fn(),
     assignTenantGroupRole: vi.fn(),
     removeTenantGroupRole: vi.fn(),
-    updateTenant: vi.fn(),
-    deleteTenant: vi.fn(),
+    updateTenant: (...args: unknown[]) => mockUpdateTenant(...args),
+    deleteTenant: (...args: unknown[]) => mockDeleteTenant(...args),
+  },
+}));
+
+vi.mock("../services/UserService", () => ({
+  default: {
+    rememberTenantDisplayName: (...args: unknown[]) =>
+      mockRememberTenantDisplayName(...args),
   },
 }));
 
@@ -131,6 +133,56 @@ describe("TenantPage", () => {
     vi.clearAllMocks();
     mockGetTenantGroups.mockResolvedValue([]);
     mockGetTenantMembers.mockResolvedValue([]);
+    mockUpdateTenant.mockResolvedValue(undefined);
+    mockDeleteTenant.mockResolvedValue(undefined);
+  });
+
+  it("remembers the updated tenant display name after editing a tenant", async () => {
+    const refetch = vi.fn();
+    mockUseTenants.mockReturnValue({
+      data: [
+        {
+          id: "tenant-uuid",
+          name: "Opa",
+          slug: "opa",
+          status: "ACTIVE",
+          createdBy: "system",
+          modifiedBy: "system",
+          createdAtInSeconds: 1,
+          updatedAtInSeconds: 1,
+        },
+      ],
+      isLoading: false,
+      error: null,
+      refetch,
+    });
+    mockUsePermissionFetcher.mockReturnValue({
+      ability: { can: () => true },
+      permissionsLoaded: true,
+    });
+    mockUpdateTenant.mockResolvedValue({
+      id: "tenant-uuid",
+      slug: "opa",
+      name: "Opa 1111",
+    });
+
+    render(<TenantPage />);
+
+    fireEvent.click(screen.getByTestId("tenant-edit-button-tenant-uuid"));
+    await screen.findByTestId("tenant-modal-dialog");
+    fireEvent.change(screen.getByDisplayValue("Opa"), {
+      target: { value: "Opa 1111" },
+    });
+    fireEvent.click(screen.getByTestId("tenant-modal-submit-button"));
+
+    await waitFor(() => {
+      expect(mockRememberTenantDisplayName).toHaveBeenCalledWith({
+        id: "tenant-uuid",
+        alias: "opa",
+        name: "Opa 1111",
+      });
+    });
+    expect(refetch).toHaveBeenCalled();
   });
 
   it("creates a tenant from the add tenant modal", async () => {

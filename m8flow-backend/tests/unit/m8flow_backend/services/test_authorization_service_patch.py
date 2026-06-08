@@ -62,6 +62,49 @@ def test_tenant_id_for_user_info_prefers_token_claim(monkeypatch) -> None:
     assert _tenant_id_for_user_info(user_info) == "token-tenant"
 
 
+def test_auth_exclusion_additions_include_current_user_organization_memberships() -> None:
+    assert (
+        "m8flow_backend.routes.keycloak_controller.get_current_user_organization_memberships"
+        in authorization_service_patch.M8FLOW_AUTH_EXCLUSION_ADDITIONS
+    )
+
+
+def test_permission_check_exclusion_additions_include_update_tenant_name() -> None:
+    assert (
+        "m8flow_backend.routes.keycloak_controller.update_tenant_name"
+        in authorization_service_patch.M8FLOW_PERMISSION_CHECK_EXCLUSION_ADDITIONS
+    )
+
+
+def test_auth_exclusion_additions_do_not_include_update_tenant_name() -> None:
+    assert (
+        "m8flow_backend.routes.keycloak_controller.update_tenant_name"
+        not in authorization_service_patch.M8FLOW_AUTH_EXCLUSION_ADDITIONS
+    )
+
+
+def test_apply_excludes_update_tenant_name_from_permission_check(monkeypatch) -> None:
+    app = Flask(__name__)  # NOSONAR - unit test
+
+    with app.app_context():
+        authorization_service_patch.apply()
+        from spiffworkflow_backend.services.authorization_service import AuthorizationService
+
+        monkeypatch.setattr(
+            AuthorizationService,
+            "get_fully_qualified_api_function_from_request",
+            classmethod(
+                lambda cls: (
+                    "m8flow_backend.routes.keycloak_controller.update_tenant_name",
+                    None,
+                )
+            ),
+        )
+
+        with app.test_request_context("/v1.0/m8flow/tenants/tenant-a", method="PUT"):
+            assert AuthorizationService.request_is_excluded_from_permission_check() is True
+
+
 def test_tenant_id_for_user_info_uses_local_canonical_tenant_from_org_claim(monkeypatch) -> None:
     monkeypatch.setattr(
         "m8flow_backend.services.authorization_service_patch.current_tenant_id_or_none",
@@ -823,18 +866,19 @@ def test_parse_permissions_yaml_into_group_info_preserves_global_super_admin_gro
     everybody_group = group_permissions_by_name["tenant-a:everybody"]
     super_admin_group = group_permissions_by_name["super-admin"]
 
-    assert [permission["uri"] for permission in everybody_group["permissions"]] == [
+    assert {permission["uri"] for permission in everybody_group["permissions"]} == {
         "/frontend-access",
         "/onboarding",
         "/active-users/*",
         "/extensions",
+        "/m8flow/organization-memberships",
         "/user-groups/for-current-user",
         "/users/exists/by-username",
         "/debug/version-info",
         "/upsearch-locations",
         "/connector-proxy/typeahead/*",
         "/script-assist/enabled",
-    ]
+    }
     super_admin_permission_uris = {p["uri"] for p in super_admin_group["permissions"]}
     assert "/frontend-access" in super_admin_permission_uris
     assert "/m8flow/tenants*" in super_admin_permission_uris
@@ -1039,6 +1083,153 @@ def test_reviewer_permissions_from_yaml_include_onboarding_tasks_and_process_ite
     assert tasks_collection_allowed is True
     assert task_item_allowed is True
     assert process_item_allowed is True
+
+
+def test_tenant_admin_permissions_from_yaml_only_grant_page_access_and_tenant_updates(monkeypatch) -> None:
+    app = Flask(__name__)  # NOSONAR - unit test
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SQLALCHEMY_EXPIRE_ON_COMMIT"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"] = "/v1.0"
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP"] = "spiff_public"
+    app.config["SPIFFWORKFLOW_BACKEND_PERMISSIONS_FILE_ABSOLUTE_PATH"] = str(
+        Path(__file__).resolve().parents[4] / "src" / "m8flow_backend" / "config" / "permissions" / "m8flow.yml"
+    )
+
+    from spiffworkflow_backend.models.db import db
+
+    db.init_app(app)
+
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_id_or_none", lambda: "tenant-a")
+    monkeypatch.setattr(
+        authorization_service_patch,
+        "current_tenant_identifiers",
+        lambda tenant_id=None: {"tenant-a", "tenant-a-slug"},
+    )
+
+    with app.app_context():
+        from spiffworkflow_backend.models.group import GroupModel
+        from spiffworkflow_backend.models.permission_assignment import PermissionAssignmentModel
+        from spiffworkflow_backend.models.permission_target import PermissionTargetModel
+        from spiffworkflow_backend.models.principal import PrincipalModel
+        from spiffworkflow_backend.models.user import UserModel
+        from spiffworkflow_backend.models.user_group_assignment import UserGroupAssignmentModel
+        from spiffworkflow_backend.services.authorization_service import AuthorizationService
+        from spiffworkflow_backend.services.user_service import UserService
+
+        _ = (
+            GroupModel,
+            PermissionAssignmentModel,
+            PermissionTargetModel,
+            PrincipalModel,
+            UserModel,
+            UserGroupAssignmentModel,
+        )
+
+        db.create_all()
+
+        authorization_service_patch.apply()
+
+        user = UserService.create_user(username="tenant-admin", service="service", service_id="service-id")
+        tenant_admin_group = UserService.find_or_create_group("tenant-a:tenant-admin")
+        everybody_group = UserService.find_or_create_group("tenant-a:everybody")
+
+        UserService.add_user_to_group(user, tenant_admin_group)
+        UserService.add_user_to_group(user, everybody_group)
+        AuthorizationService.import_permissions_from_yaml_file(user)
+
+        tenant_management_page_allowed = AuthorizationService.user_has_permission(
+            user,
+            "read",
+            "/v1.0/m8flow/tenant-management",
+        )
+        members_read_allowed = AuthorizationService.user_has_permission(
+            user,
+            "read",
+            "/v1.0/m8flow/tenants/tenant-a/members",
+        )
+        members_create_allowed = AuthorizationService.user_has_permission(
+            user,
+            "create",
+            "/v1.0/m8flow/tenants/tenant-a/members",
+        )
+        available_users_read_allowed = AuthorizationService.user_has_permission(
+            user,
+            "read",
+            "/v1.0/m8flow/tenants/tenant-a/available-users",
+        )
+        groups_read_allowed = AuthorizationService.user_has_permission(
+            user,
+            "read",
+            "/v1.0/m8flow/tenants/tenant-a/groups",
+        )
+        groups_create_allowed = AuthorizationService.user_has_permission(
+            user,
+            "create",
+            "/v1.0/m8flow/tenants/tenant-a/groups",
+        )
+        group_member_update_allowed = AuthorizationService.user_has_permission(
+            user,
+            "update",
+            "/v1.0/m8flow/tenants/tenant-a/groups/Approvers/members/reviewer",
+        )
+        group_member_delete_allowed = AuthorizationService.user_has_permission(
+            user,
+            "delete",
+            "/v1.0/m8flow/tenants/tenant-a/groups/Approvers/members/reviewer",
+        )
+        group_role_update_allowed = AuthorizationService.user_has_permission(
+            user,
+            "update",
+            "/v1.0/m8flow/tenants/tenant-a/groups/Approvers/roles/reviewer",
+        )
+        group_role_delete_allowed = AuthorizationService.user_has_permission(
+            user,
+            "delete",
+            "/v1.0/m8flow/tenants/tenant-a/groups/Approvers/roles/reviewer",
+        )
+        member_role_update_allowed = AuthorizationService.user_has_permission(
+            user,
+            "update",
+            "/v1.0/m8flow/tenants/tenant-a/members/editor/roles/editor",
+        )
+        member_role_delete_allowed = AuthorizationService.user_has_permission(
+            user,
+            "delete",
+            "/v1.0/m8flow/tenants/tenant-a/members/editor/roles/editor",
+        )
+        tenant_list_allowed = AuthorizationService.user_has_permission(
+            user,
+            "read",
+            "/v1.0/m8flow/tenants",
+        )
+        tenant_update_allowed = AuthorizationService.user_has_permission(
+            user,
+            "update",
+            "/v1.0/m8flow/tenants/tenant-a",
+        )
+        tenant_delete_allowed = AuthorizationService.user_has_permission(
+            user,
+            "delete",
+            "/v1.0/m8flow/tenants/tenant-a",
+        )
+
+    assert tenant_management_page_allowed is True
+    assert members_read_allowed is False
+    assert members_create_allowed is False
+    assert available_users_read_allowed is False
+    assert groups_read_allowed is False
+    assert groups_create_allowed is False
+    assert group_member_update_allowed is True
+    assert group_member_delete_allowed is False
+    assert group_role_update_allowed is True
+    assert group_role_delete_allowed is False
+    assert member_role_update_allowed is True
+    assert member_role_delete_allowed is False
+    assert tenant_list_allowed is False
+    assert tenant_update_allowed is True
+    assert tenant_delete_allowed is False
 
 
 def test_user_service_all_principals_for_user_includes_global_super_admin_without_tenant_context(monkeypatch) -> None:

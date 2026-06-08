@@ -1217,16 +1217,20 @@ def _synchronize_selected_organization_claims(
             seen_group_paths.add(normalized_group_path)
             normalized_group_paths.append(normalized_group_path)
 
+    synchronized_organization_details = {
+        "id": organization_id,
+        "groups": normalized_group_paths,
+    }
+    organization_name = organization.get("name")
+    if isinstance(organization_name, str) and organization_name.strip():
+        synchronized_organization_details["name"] = organization_name.strip()
+
     synchronized_token["organization"] = {
-        selected_tenant_alias: {
-            "id": organization_id,
-            "groups": normalized_group_paths,
-        }
+        selected_tenant_alias: synchronized_organization_details
     }
     synchronized_token["m8flow_tenant_id"] = selected_tenant_id
     synchronized_token[TENANT_ALIAS_CLAIM] = selected_tenant_alias
 
-    organization_name = organization.get("name")
     if isinstance(organization_name, str) and organization_name.strip():
         synchronized_token[TENANT_NAME_CLAIM] = organization_name.strip()
 

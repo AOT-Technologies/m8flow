@@ -6,6 +6,7 @@ from typing import Any
 from m8flow_backend.services.keycloak_service import (
     add_organization_member,
     add_organization_group_member,
+    create_organization_group,
     get_organization_by_id,
     get_organization_by_alias,
     get_organization_group_by_id,
@@ -649,6 +650,36 @@ def list_tenant_groups_with_members(
 
     serialized_groups.sort(key=lambda item: str(item.get("name") or ""))
     return serialized_groups
+
+
+def create_tenant_group(tenant_id: str, group_name: str) -> dict[str, Any]:
+    """Create one Keycloak organization group in one tenant and return the serialized group."""
+    normalized_group_name = _normalize_group_name(group_name)
+    if not normalized_group_name:
+        raise ApiError(
+            error_code="invalid_group",
+            message="Group name is required.",
+            status_code=400,
+        )
+
+    _tenant, _organization, organization_id = _organization_for_tenant(tenant_id)
+    existing_group_names = _organization_group_name_lookup(organization_id)
+    if normalized_group_name.casefold() in existing_group_names:
+        raise ApiError(
+            error_code="group_exists",
+            message=f"Group '{normalized_group_name}' already exists in the tenant organization.",
+            status_code=409,
+        )
+
+    created_group = create_organization_group(organization_id, normalized_group_name)
+    serialized_group = _serialize_group(organization_id, created_group)
+    if serialized_group is None:
+        raise ApiError(
+            error_code="invalid_group",
+            message=f"Group '{normalized_group_name}' could not be loaded after creation.",
+            status_code=500,
+        )
+    return serialized_group
 
 
 def add_tenant_member(

@@ -44,7 +44,7 @@ describe("SaveAsTemplateModal", () => {
       name: "Test Template",
       version: "V1",
       visibility: "PRIVATE",
-    } as never);
+    } as any);
   });
 
   it("renders dialog with title and current form fields when open", () => {
@@ -98,7 +98,7 @@ describe("SaveAsTemplateModal", () => {
           name: "My Template",
           visibility: "PRIVATE",
         }),
-        defaultFiles
+        defaultFiles,
       );
     });
   });
@@ -119,7 +119,7 @@ describe("SaveAsTemplateModal", () => {
           category: "Approval",
           tags: ["tag1", "tag2", "tag3"],
         }),
-        defaultFiles
+        defaultFiles,
       );
     });
   });
@@ -166,7 +166,7 @@ describe("SaveAsTemplateModal", () => {
     await waitFor(() => {
       expect(defaultProps.onClose).toHaveBeenCalled();
       expect(onSuccess).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 1, templateKey: "test-key", name: "Test Template" })
+        expect.objectContaining({ id: 1, templateKey: "test-key", name: "Test Template" }),
       );
     });
   });
@@ -201,7 +201,7 @@ describe("SaveAsTemplateModal", () => {
     await waitFor(() => {
       expect(TemplateService.createTemplateWithFiles).toHaveBeenCalledWith(
         expect.objectContaining({ visibility: "TENANT" }),
-        defaultFiles
+        defaultFiles,
       );
     });
   });
