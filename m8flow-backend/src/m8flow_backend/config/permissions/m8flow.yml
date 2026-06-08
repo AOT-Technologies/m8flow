@@ -109,7 +109,7 @@ permissions:
     actions: [read]
     uri: /process-groups
   read-all-process-models:
-    groups: ["viewer", "super-admin", "submitter"]
+    groups: ["viewer", "reviewer", "super-admin", "submitter"]
     actions: [read]
     uri: PM:ALL
   manage-all-process-models:
@@ -169,7 +169,7 @@ permissions:
     actions: [read]
     uri: /service-tasks
   read-script-assist-items:
-    groups: ["tenant-admin", "editor", "viewer", "super-admin","submitter"]
+    groups: ["tenant-admin", "editor", "viewer", "reviewer", "super-admin","submitter"]
     actions: [read]
     uri: /script-assist/*
   read-service-tasks:
@@ -177,7 +177,7 @@ permissions:
     actions: [read]
     uri: /service-tasks/*
   read-service-tasks-root:
-    groups: ["tenant-admin", "editor", "viewer", "submitter", "integrator"]
+    groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter", "integrator"]
     actions: [read]
     uri: /service-tasks
   read-data-stores:
