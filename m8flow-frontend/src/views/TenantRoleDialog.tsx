@@ -33,13 +33,16 @@ import { useEffect, useMemo, useState } from "react";
 import type { InputHTMLAttributes } from "react";
 import { useTranslation } from "react-i18next";
 import TenantService, {
+  normalizeTenantGroupName,
   TENANT_MEMBER_ROLES,
+  TENANT_GROUP_NAME_MAX_LENGTH,
   Tenant,
   TenantAvailableUser,
   TenantGroup,
   TenantGroupMember,
   TenantMember,
   TenantMemberRole,
+  validateTenantGroupName,
 } from "../services/TenantService";
 
 interface TenantRoleDialogProps {
@@ -72,6 +75,15 @@ function emptyAddMemberForm(): AddTenantMemberFormState {
   };
 }
 
+const MEMBER_MATRIX_GROUP_COLUMN_WIDTH = 160;
+const GROUP_NAME_CELL_MAX_WIDTH = 240;
+
+const truncatedValueSx = {
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+} as const;
+
 const testIdInputProps = (
   testId: string,
 ): InputHTMLAttributes<HTMLInputElement> => ({
@@ -103,6 +115,7 @@ export default function TenantRoleDialog({
   const [isSubmittingGroup, setIsSubmittingGroup] = useState(false);
   const [createGroupName, setCreateGroupName] = useState("");
   const [createGroupErrorMessage, setCreateGroupErrorMessage] = useState("");
+  const [isCreateGroupNameTouched, setIsCreateGroupNameTouched] = useState(false);
   const [groupMutationKey, setGroupMutationKey] = useState<string | null>(null);
   const [groupRoleMutationKey, setGroupRoleMutationKey] = useState<string | null>(null);
   const [memberForm, setMemberForm] = useState<AddTenantMemberFormState>(
@@ -164,6 +177,7 @@ export default function TenantRoleDialog({
       setIsSubmittingGroup(false);
       setCreateGroupName("");
       setCreateGroupErrorMessage("");
+      setIsCreateGroupNameTouched(false);
       setGroupMutationKey(null);
       setGroupRoleMutationKey(null);
       setMemberForm(emptyAddMemberForm());
@@ -271,6 +285,28 @@ export default function TenantRoleDialog({
     });
   }, [groups, roleLabel, searchQuery]);
 
+  const createGroupValidationMessage = useMemo(() => {
+    const validationMessage = validateTenantGroupName(createGroupName);
+    if (validationMessage) {
+      return validationMessage;
+    }
+
+    const normalizedGroupName = normalizeTenantGroupName(createGroupName);
+    const duplicateGroup = groups.some(
+      (group) =>
+        normalizeTenantGroupName(group.name).toLowerCase()
+        === normalizedGroupName.toLowerCase(),
+    );
+    if (duplicateGroup) {
+      return translate(
+        "tenant_group_name_exists",
+        `Group '${normalizedGroupName}' already exists in this tenant.`,
+      );
+    }
+
+    return "";
+  }, [createGroupName, groups, translate]);
+
   const handleOpenAddMemberDialog = () => {
     setMemberForm(emptyAddMemberForm());
     setAddMemberErrorMessage("");
@@ -295,6 +331,7 @@ export default function TenantRoleDialog({
   const handleOpenCreateGroupDialog = () => {
     setCreateGroupName("");
     setCreateGroupErrorMessage("");
+    setIsCreateGroupNameTouched(false);
     setIsCreateGroupDialogOpen(true);
   };
 
@@ -305,6 +342,7 @@ export default function TenantRoleDialog({
     setIsCreateGroupDialogOpen(false);
     setCreateGroupName("");
     setCreateGroupErrorMessage("");
+    setIsCreateGroupNameTouched(false);
   };
 
   const handleToggleAddMemberGroup = (groupName: string) => {
@@ -349,11 +387,16 @@ export default function TenantRoleDialog({
     if (!tenant) {
       return;
     }
+    if (createGroupValidationMessage) {
+      setIsCreateGroupNameTouched(true);
+      return;
+    }
+
     setIsSubmittingGroup(true);
     setCreateGroupErrorMessage("");
     try {
       await TenantService.createTenantGroup(tenant.id, {
-        name: createGroupName,
+        name: normalizeTenantGroupName(createGroupName),
       });
       handleCloseCreateGroupDialog();
       await loadTenantAccessData();
@@ -543,8 +586,26 @@ export default function TenantRoleDialog({
                         </TableCell>
                         <TableCell>{translate("email", "Email")}</TableCell>
                         {groups.map((group) => (
-                          <TableCell key={group.id} align="center">
-                            {group.name}
+                          <TableCell
+                            key={group.id}
+                            align="center"
+                            sx={{
+                              width: MEMBER_MATRIX_GROUP_COLUMN_WIDTH,
+                              minWidth: MEMBER_MATRIX_GROUP_COLUMN_WIDTH,
+                              maxWidth: MEMBER_MATRIX_GROUP_COLUMN_WIDTH,
+                            }}
+                          >
+                            <Tooltip title={group.name}>
+                              <Typography
+                                data-testid={`tenant-members-group-header-${group.id}`}
+                                sx={{
+                                  ...truncatedValueSx,
+                                  maxWidth: MEMBER_MATRIX_GROUP_COLUMN_WIDTH - 24,
+                                }}
+                              >
+                                {group.name}
+                              </Typography>
+                            </Tooltip>
                           </TableCell>
                         ))}
                       </TableRow>
@@ -565,6 +626,11 @@ export default function TenantRoleDialog({
                                 <TableCell
                                   key={`${member.username}:${group.id}`}
                                   align="center"
+                                  sx={{
+                                    width: MEMBER_MATRIX_GROUP_COLUMN_WIDTH,
+                                    minWidth: MEMBER_MATRIX_GROUP_COLUMN_WIDTH,
+                                    maxWidth: MEMBER_MATRIX_GROUP_COLUMN_WIDTH,
+                                  }}
                                 >
                                   <Checkbox
                                     checked={checked}
@@ -622,10 +688,19 @@ export default function TenantRoleDialog({
                     <TableBody>
                       {filteredGroups.map((group) => (
                         <TableRow key={group.id} hover>
-                          <TableCell>
-                            <Stack spacing={0.5}>
-                              <Typography fontWeight={600}>{group.name}</Typography>
-                            </Stack>
+                          <TableCell sx={{ width: GROUP_NAME_CELL_MAX_WIDTH }}>
+                            <Tooltip title={group.name}>
+                              <Typography
+                                data-testid={`tenant-group-name-cell-${group.id}`}
+                                fontWeight={600}
+                                sx={{
+                                  ...truncatedValueSx,
+                                  maxWidth: GROUP_NAME_CELL_MAX_WIDTH,
+                                }}
+                              >
+                                {group.name}
+                              </Typography>
+                            </Tooltip>
                           </TableCell>
                           <TableCell>
                             <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
@@ -897,11 +972,26 @@ export default function TenantRoleDialog({
               value={createGroupName}
               onChange={(event) => {
                 setCreateGroupName(event.target.value);
+                setIsCreateGroupNameTouched(true);
                 if (createGroupErrorMessage) {
                   setCreateGroupErrorMessage("");
                 }
               }}
+              onBlur={() => {
+                setIsCreateGroupNameTouched(true);
+                setCreateGroupName((current) => normalizeTenantGroupName(current));
+              }}
+              error={isCreateGroupNameTouched && Boolean(createGroupValidationMessage)}
+              helperText={
+                isCreateGroupNameTouched && createGroupValidationMessage
+                  ? createGroupValidationMessage
+                  : translate(
+                      "tenant_group_name_helper",
+                      `Up to ${TENANT_GROUP_NAME_MAX_LENGTH} characters. Letters, numbers, spaces, hyphens, and underscores only.`,
+                    )
+              }
               inputProps={{
+                maxLength: TENANT_GROUP_NAME_MAX_LENGTH,
                 ...testIdInputProps("tenant-group-name-input"),
               }}
             />
@@ -914,7 +1004,11 @@ export default function TenantRoleDialog({
           <Button
             variant="contained"
             onClick={() => void handleCreateTenantGroup()}
-            disabled={isSubmittingGroup || !createGroupName.trim()}
+            disabled={
+              isSubmittingGroup
+              || !createGroupName.trim()
+              || Boolean(createGroupValidationMessage)
+            }
             data-testid="tenant-group-submit-button"
           >
             {isSubmittingGroup

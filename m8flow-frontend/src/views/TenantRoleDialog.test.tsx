@@ -12,34 +12,35 @@ const mockRemoveTenantMemberFromGroup = vi.fn();
 const mockAssignTenantGroupRole = vi.fn();
 const mockRemoveTenantGroupRole = vi.fn();
 
-vi.mock("../services/TenantService", () => ({
-  TENANT_MEMBER_ROLES: [
-    "tenant-admin",
-    "editor",
-    "integrator",
-    "reviewer",
-    "submitter",
-    "viewer",
-  ],
-  default: {
-    getTenantGroups: (...args: unknown[]) => mockGetTenantGroups(...args),
-    getTenantMembers: (...args: unknown[]) => mockGetTenantMembers(...args),
-    getAvailableTenantUsers: (...args: unknown[]) =>
-      mockGetAvailableTenantUsers(...args),
-    addTenantMember: (...args: unknown[]) => mockAddTenantMember(...args),
-    createTenantGroup: (...args: unknown[]) => mockCreateTenantGroup(...args),
-    addTenantMemberToGroup: (...args: unknown[]) =>
-      mockAddTenantMemberToGroup(...args),
-    removeTenantMemberFromGroup: (...args: unknown[]) =>
-      mockRemoveTenantMemberFromGroup(...args),
-    assignTenantGroupRole: (...args: unknown[]) =>
-      mockAssignTenantGroupRole(...args),
-    removeTenantGroupRole: (...args: unknown[]) =>
-      mockRemoveTenantGroupRole(...args),
-  },
-}));
+vi.mock("../services/TenantService", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../services/TenantService")>();
+  return {
+    ...actual,
+    default: {
+      ...actual.default,
+      getTenantGroups: (...args: unknown[]) => mockGetTenantGroups(...args),
+      getTenantMembers: (...args: unknown[]) => mockGetTenantMembers(...args),
+      getAvailableTenantUsers: (...args: unknown[]) =>
+        mockGetAvailableTenantUsers(...args),
+      addTenantMember: (...args: unknown[]) => mockAddTenantMember(...args),
+      createTenantGroup: (...args: unknown[]) => mockCreateTenantGroup(...args),
+      addTenantMemberToGroup: (...args: unknown[]) =>
+        mockAddTenantMemberToGroup(...args),
+      removeTenantMemberFromGroup: (...args: unknown[]) =>
+        mockRemoveTenantMemberFromGroup(...args),
+      assignTenantGroupRole: (...args: unknown[]) =>
+        mockAssignTenantGroupRole(...args),
+      removeTenantGroupRole: (...args: unknown[]) =>
+        mockRemoveTenantGroupRole(...args),
+    },
+  };
+});
 
 vi.mock("react-i18next", () => ({
+  initReactI18next: {
+    type: "3rdParty",
+    init: () => undefined,
+  },
   useTranslation: () => ({
     t: (key: string) => {
       const messages: Record<string, string> = {
@@ -63,6 +64,9 @@ vi.mock("react-i18next", () => ({
         add_tenant_user_description:
           "Add an existing user to this tenant, then assign Keycloak groups.",
         group_name: "Group Name",
+        tenant_group_name_exists: "Group '{{name}}' already exists in this tenant.",
+        tenant_group_name_helper:
+          "Up to 64 characters. Letters, numbers, spaces, hyphens, and underscores only.",
         failed_to_create_tenant_group: "Failed to create tenant group.",
         existing_user: "Existing User",
         search_existing_users: "Search existing users...",
@@ -273,5 +277,76 @@ describe("TenantRoleDialog", () => {
         name: "Manager",
       }),
     );
+  });
+
+  it("blocks invalid special characters in the create-group dialog", async () => {
+    render(<TenantRoleDialog open tenant={tenant} onClose={vi.fn()} />);
+
+    await screen.findByText("Reviewer User");
+    fireEvent.click(screen.getByTestId("tenant-group-add-button"));
+    fireEvent.change(screen.getByTestId("tenant-group-name-input"), {
+      target: { value: "Bad %#@! group" },
+    });
+
+    expect(
+      screen.getByText(
+        "Group name can only contain letters, numbers, spaces, hyphens, and underscores, and must start and end with a letter or number",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("tenant-group-submit-button")).toBeDisabled();
+    expect(mockCreateTenantGroup).not.toHaveBeenCalled();
+  });
+
+  it("normalizes group-name whitespace before submit", async () => {
+    render(<TenantRoleDialog open tenant={tenant} onClose={vi.fn()} />);
+
+    await screen.findByText("Reviewer User");
+    fireEvent.click(screen.getByTestId("tenant-group-add-button"));
+    fireEvent.change(screen.getByTestId("tenant-group-name-input"), {
+      target: { value: "  Manager   Team  " },
+    });
+    fireEvent.blur(screen.getByTestId("tenant-group-name-input"));
+    fireEvent.click(screen.getByTestId("tenant-group-submit-button"));
+
+    await waitFor(() =>
+      expect(mockCreateTenantGroup).toHaveBeenCalledWith("tenant-1", {
+        name: "Manager Team",
+      }),
+    );
+  });
+
+  it("renders long group names in fixed-width truncated cells", async () => {
+    const longGroupName =
+      "This is a very long tenant group name that should not stretch the table layout";
+    mockGetTenantGroups.mockResolvedValue([
+      {
+        id: "group-long",
+        name: longGroupName,
+        path: `/${longGroupName}`,
+        mapped_roles: [],
+        member_count: 0,
+        members: [],
+      },
+    ]);
+
+    render(<TenantRoleDialog open tenant={tenant} onClose={vi.fn()} />);
+
+    const headerLabel = await screen.findByTestId(
+      "tenant-members-group-header-group-long",
+    );
+    const groupNameCell = await screen.findByTestId(
+      "tenant-group-name-cell-group-long",
+    );
+
+    expect(headerLabel).toHaveStyle({
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap",
+    });
+    expect(groupNameCell).toHaveStyle({
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap",
+    });
   });
 });

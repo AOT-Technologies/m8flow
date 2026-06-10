@@ -34,6 +34,9 @@ export const TENANT_MEMBER_ROLES: TenantMemberRole[] = [
     "viewer",
 ];
 
+export const TENANT_GROUP_NAME_MAX_LENGTH = 64;
+const TENANT_GROUP_NAME_ALLOWED_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9 _-]*[A-Za-z0-9])?$/;
+
 export interface TenantMember {
     id: string;
     username: string;
@@ -73,6 +76,27 @@ export interface AddTenantMemberRequest {
 export interface CreateTenantGroupRequest {
     name: string;
 }
+
+export const normalizeTenantGroupName = (name: string): string =>
+    name.trim().replace(/\s+/g, " ");
+
+export const validateTenantGroupName = (name: string): string | null => {
+    const normalizedName = normalizeTenantGroupName(name);
+
+    if (!normalizedName) {
+        return "Group name cannot be empty";
+    }
+
+    if (normalizedName.length > TENANT_GROUP_NAME_MAX_LENGTH) {
+        return `Group name must be ${TENANT_GROUP_NAME_MAX_LENGTH} characters or fewer`;
+    }
+
+    if (!TENANT_GROUP_NAME_ALLOWED_PATTERN.test(normalizedName)) {
+        return "Group name can only contain letters, numbers, spaces, hyphens, and underscores, and must start and end with a letter or number";
+    }
+
+    return null;
+};
 
 export interface UpdateTenantRequest {
     name?: string;
@@ -345,9 +369,10 @@ const TenantService = {
         tenantId: string,
         data: CreateTenantGroupRequest,
     ): Promise<TenantGroup> => {
-        const name = data.name?.trim();
-        if (!name) {
-            return Promise.reject(new Error("Group name cannot be empty"));
+        const name = normalizeTenantGroupName(data.name ?? "");
+        const validationMessage = validateTenantGroupName(name);
+        if (validationMessage) {
+            return Promise.reject(new Error(validationMessage));
         }
 
         return new Promise((resolve, reject) => {

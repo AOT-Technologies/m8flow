@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from typing import Any
 
@@ -37,6 +38,9 @@ from spiffworkflow_backend.models.db import db
 from spiffworkflow_backend.models.user_group_assignment import UserGroupAssignmentModel
 from spiffworkflow_backend.services.authorization_service import AuthorizationService
 from spiffworkflow_backend.services.user_service import UserService
+
+TENANT_GROUP_NAME_MAX_LENGTH = 64
+TENANT_GROUP_NAME_ALLOWED_PATTERN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9 _-]*[A-Za-z0-9])?$")
 
 
 def _normalize_role_name(role_name: str) -> str:
@@ -242,6 +246,46 @@ def _organization_group_names_for_role_name(role_name: str) -> tuple[str, ...]:
 
 def _normalize_group_name(group_name: str | None) -> str:
     return str(group_name or "").strip().strip("/")
+
+
+def _normalize_new_group_name(group_name: str | None) -> str:
+    return " ".join(str(group_name or "").strip().split())
+
+
+def _validated_new_group_name(group_name: str | None) -> str:
+    normalized_group_name = _normalize_new_group_name(group_name)
+    if not normalized_group_name:
+        raise ApiError(
+            error_code="invalid_group",
+            message="Group name is required.",
+            status_code=400,
+        )
+
+    if len(normalized_group_name) > TENANT_GROUP_NAME_MAX_LENGTH:
+        raise ApiError(
+            error_code="invalid_group",
+            message=(
+                f"Group name must be {TENANT_GROUP_NAME_MAX_LENGTH} characters or fewer."
+            ),
+            status_code=400,
+        )
+
+    if not TENANT_GROUP_NAME_ALLOWED_PATTERN.fullmatch(normalized_group_name):
+        raise ApiError(
+            error_code="invalid_group",
+            message=(
+                "Group name can only contain letters, numbers, spaces, hyphens, "
+                "and underscores, and must start and end with a letter or number."
+            ),
+            status_code=400,
+        )
+
+    return normalized_group_name
+
+
+def _group_name_conflict_key(group_name: str | None) -> str:
+    normalized_group_name = _normalize_new_group_name(_normalize_group_name(group_name))
+    return normalized_group_name.casefold() if normalized_group_name else ""
 
 
 def _organization_group_name_lookup(organization_id: str) -> dict[str, str]:
@@ -654,17 +698,15 @@ def list_tenant_groups_with_members(
 
 def create_tenant_group(tenant_id: str, group_name: str) -> dict[str, Any]:
     """Create one Keycloak organization group in one tenant and return the serialized group."""
-    normalized_group_name = _normalize_group_name(group_name)
-    if not normalized_group_name:
-        raise ApiError(
-            error_code="invalid_group",
-            message="Group name is required.",
-            status_code=400,
-        )
+    normalized_group_name = _validated_new_group_name(group_name)
 
     _tenant, _organization, organization_id = _organization_for_tenant(tenant_id)
     existing_group_names = _organization_group_name_lookup(organization_id)
-    if normalized_group_name.casefold() in existing_group_names:
+    existing_group_name_keys = {
+        _group_name_conflict_key(existing_group_name): existing_group_name
+        for existing_group_name in existing_group_names.values()
+    }
+    if _group_name_conflict_key(normalized_group_name) in existing_group_name_keys:
         raise ApiError(
             error_code="group_exists",
             message=f"Group '{normalized_group_name}' already exists in the tenant organization.",
