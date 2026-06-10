@@ -11,9 +11,10 @@ const HttpMethods = {
 
 export const getBasicHeaders = (): Record<string, string> => {
   const headers: Record<string, string> = {};
-  
-  if (UserService.isLoggedIn()) {
-    headers.Authorization = `Bearer ${UserService.getAccessToken()}`;
+
+  const accessToken = UserService.getAccessToken();
+  if (accessToken) {
+    headers.Authorization = `Bearer ${accessToken}`;
   }
 
   return headers;
