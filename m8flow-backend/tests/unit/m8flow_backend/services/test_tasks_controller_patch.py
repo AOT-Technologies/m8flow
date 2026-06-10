@@ -10,6 +10,76 @@ from flask import jsonify
 from m8flow_backend.routes import tasks_controller_patch
 
 
+def test_extract_process_instance_id_handles_kwargs_args_and_invalid_values() -> None:
+    assert tasks_controller_patch._extract_process_instance_id((), {"process_instance_id": 7}) == 7
+    assert tasks_controller_patch._extract_process_instance_id((), {"process_instance_id": "9"}) == 9
+    assert tasks_controller_patch._extract_process_instance_id((11,), {}) == 11
+    assert tasks_controller_patch._extract_process_instance_id((), {}) is None
+    assert tasks_controller_patch._extract_process_instance_id((), {"process_instance_id": None}) is None
+    assert tasks_controller_patch._extract_process_instance_id((), {"process_instance_id": "abc"}) is None
+
+
+def _build_patched_tasks_controller(monkeypatch):
+    """Apply the patch against a fake tasks_controller module and return it plus a call tracker."""
+    fake_tasks_controller_module = ModuleType("spiffworkflow_backend.routes.tasks_controller")
+    calls: list[str] = []
+
+    def fake_task_list_my_tasks(*args, **kwargs):
+        calls.append("original")
+        return jsonify({"results": [{"id": "original"}], "pagination": {"count": 1, "total": 1, "pages": 1}})
+
+    fake_tasks_controller_module._get_tasks = fake_task_list_my_tasks
+    fake_tasks_controller_module.task_list_my_tasks = fake_task_list_my_tasks
+
+    monkeypatch.setitem(
+        sys.modules,
+        "spiffworkflow_backend.routes.tasks_controller",
+        fake_tasks_controller_module,
+    )
+    monkeypatch.setattr(tasks_controller_patch, "_MODULE_PATCHED", False)
+    monkeypatch.setattr(tasks_controller_patch, "_ORIGINAL_TASK_DATA_SHOW", None)
+    monkeypatch.setattr(
+        tasks_controller_patch,
+        "display_group_identifier",
+        lambda group_identifier: group_identifier,
+    )
+
+    tasks_controller_patch._apply_module_patches()
+    return fake_tasks_controller_module, calls
+
+
+def test_super_admin_per_instance_call_defers_to_original_handler(monkeypatch) -> None:
+    # When a process_instance_id is present (the ProcessInstanceShow "Tasks I can complete" call),
+    # super admins must defer to the original handler rather than the global all-open-tasks view.
+    # The fake tasks_controller module lacks the DB/model attributes the global view needs, so if the
+    # global branch were taken it would raise instead of returning the original sentinel payload.
+    fake_tasks_controller_module, calls = _build_patched_tasks_controller(monkeypatch)
+
+    monkeypatch.setattr(tasks_controller_patch, "is_super_admin_request", lambda: True)
+
+    app = Flask(__name__)
+    with app.app_context():
+        response = fake_tasks_controller_module.task_list_my_tasks(process_instance_id=5)
+        payload = response.get_json()
+
+    assert calls == ["original"]
+    assert payload["results"][0]["id"] == "original"
+
+
+def test_non_super_admin_uses_original_handler(monkeypatch) -> None:
+    fake_tasks_controller_module, calls = _build_patched_tasks_controller(monkeypatch)
+
+    monkeypatch.setattr(tasks_controller_patch, "is_super_admin_request", lambda: False)
+
+    app = Flask(__name__)
+    with app.app_context():
+        response = fake_tasks_controller_module.task_list_my_tasks()
+        payload = response.get_json()
+
+    assert calls == ["original"]
+    assert payload["results"][0]["id"] == "original"
+
+
 def test_apply_rewrites_assigned_group_identifier_for_task_list_responses(monkeypatch) -> None:
     fake_tasks_controller_module = ModuleType("spiffworkflow_backend.routes.tasks_controller")
 

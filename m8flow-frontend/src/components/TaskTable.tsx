@@ -178,7 +178,7 @@ export default function TaskTable({
         </TableCell>
         <TableCell>{waitingFor}</TableCell>
         <TableCell>
-          {hasAccessToCompleteTask ? (
+          {!isSuperAdmin && hasAccessToCompleteTask ? (
             <SpiffTooltip title={t('complete_task')}>
               <IconButton onClick={() => handleRunTask(entry)}>
                 <PlayArrow />

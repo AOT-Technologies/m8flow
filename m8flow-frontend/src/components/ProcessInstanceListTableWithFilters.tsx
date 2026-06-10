@@ -8,7 +8,7 @@ import React, {
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import UserService from '../services/UserService';
-import { useTenants } from '../hooks/useTenants';
+import { useGlobalTenant } from '../contexts/GlobalTenantContext';
 
 import { Close, AddAlt } from '@carbon/icons-react';
 import {
@@ -235,8 +235,18 @@ export default function ProcessInstanceListTableWithFilters({
   >(null);
   const [lastMilestones, setLastMilestones] = useState<string[]>([]);
   const isSuperAdmin = UserService.isSuperAdmin();
-  const { data: tenants = [] } = useTenants(isSuperAdmin);
-  const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null);
+  const { selectedTenantId } = useGlobalTenant();
+
+  const effectiveAdditionalFilters = useMemo(() => {
+    const base = additionalReportFilters || [];
+    if (!isSuperAdmin || !selectedTenantId) {
+      return base;
+    }
+    return [
+      ...base,
+      { field_name: 'tenant_id', field_value: selectedTenantId, operator: 'equals' },
+    ];
+  }, [additionalReportFilters, isSuperAdmin, selectedTenantId]);
   const systemReportOptions: string[] = useMemo(() => {
     return [
       'instances_with_tasks_waiting_for_me',
@@ -283,7 +293,6 @@ export default function ProcessInstanceListTableWithFilters({
     setProcessStatusSelection([]);
     setSelectedUserGroup(null);
     setSelectedLastMilestone(null);
-    setSelectedTenantId(null);
     setStartFromDate('');
     setStartFromTime('');
     setStartToDate('');
@@ -311,8 +320,12 @@ export default function ProcessInstanceListTableWithFilters({
           setProcessInstanceReportSelection(processInstanceReport);
         }
       }
-      if (additionalReportFilters) {
-        additionalReportFilters.forEach((arf: ReportFilter) => {
+      // Strip any tenant_id already in the report – global context is the source of truth
+      reportMetadataBodyToUse.filter_by = reportMetadataBodyToUse.filter_by.filter(
+        (rf: ReportFilter) => rf.field_name !== 'tenant_id',
+      );
+      if (effectiveAdditionalFilters.length > 0) {
+        effectiveAdditionalFilters.forEach((arf: ReportFilter) => {
           if (!reportMetadataBodyToUse.filter_by.includes(arf)) {
             reportMetadataBodyToUse.filter_by.push(arf);
           }
@@ -359,8 +372,6 @@ export default function ProcessInstanceListTableWithFilters({
             setSelectedLastMilestone(reportFilter.field_value);
           } else if (systemReportOptions.includes(reportFilter.field_name)) {
             setSystemReport(reportFilter.field_name);
-          } else if (reportFilter.field_name === 'tenant_id') {
-            setSelectedTenantId(reportFilter.field_value || null);
           } else if (reportFilter.field_name === 'process_model_identifier') {
             if (reportFilter.field_value) {
               processModelSelectionItemsForUseEffect.current.forEach(
@@ -392,7 +403,12 @@ export default function ProcessInstanceListTableWithFilters({
         },
       );
 
-      if (reportMetadataBodyToUse.filter_by.length > 1) {
+      // Exclude the system-injected tenant_id filter so the global tenant selection
+      // (for super admins) does not auto-expand the filter panel on its own.
+      const userFacingFilterCount = reportMetadataBodyToUse.filter_by.filter(
+        (rf: ReportFilter) => rf.field_name !== 'tenant_id',
+      ).length;
+      if (userFacingFilterCount > 1) {
         setShowFilterOptions(true);
       }
 
@@ -405,7 +421,7 @@ export default function ProcessInstanceListTableWithFilters({
       setReportMetadata(reportMetadataBodyToUse);
     },
     [
-      additionalReportFilters,
+      effectiveAdditionalFilters,
       clearFilters,
       dateParametersToAlwaysFilterBy,
       filtersEnabled,
@@ -413,6 +429,25 @@ export default function ProcessInstanceListTableWithFilters({
       systemReportOptions,
     ],
   );
+
+  // When the global tenant selection changes (super admin), rebuild the report
+  // metadata so the table refetches for the new tenant. Skip the initial mount –
+  // the effect below already performs the first load.
+  const tenantInitializedRef = useRef(false);
+  useEffect(() => {
+    if (!tenantInitializedRef.current) {
+      tenantInitializedRef.current = true;
+      return;
+    }
+    // Rebuild report metadata with the new tenant filter. This calls clearFilters()
+    // internally (resetting all filter widgets) and sets a new reportMetadata object
+    // so the child table refetches against the new tenant. Pagination is reset by
+    // onProcessInstanceTableListUpdate when the report_hash changes (mirrors the
+    // filter-apply / report-change flows) – resetting it here too would cause a
+    // duplicate fetch and UI flicker.
+    setReportMetadataFromReport();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTenantId]);
 
   // this is in its own callback to limit scrope of states we need to watch since
   // this function should never have to reload
@@ -1605,40 +1640,6 @@ export default function ProcessInstanceListTableWithFilters({
             </Can>
           </Column>
           <Column md={4}>{processStatusSearch()}</Column>
-          {isSuperAdmin && tenants.length > 0 && (
-            <Column md={4}>
-              <FormControl fullWidth size="small">
-                <InputLabel id="pi-tenant-filter-label">
-                  {t('tenant')}
-                </InputLabel>
-                <Select
-                  fullWidth
-                  labelId="pi-tenant-filter-label"
-                  label={t('tenant')}
-                  value={selectedTenantId || ''}
-                  data-testid="process-instance-tenant-filter"
-                  onChange={(event) => {
-                    const { value } = event.target;
-                    insertOrUpdateFieldInReportMetadata(
-                      reportMetadata!,
-                      'tenant_id',
-                      value,
-                    );
-                    setSelectedTenantId(value || null);
-                  }}
-                >
-                  <MenuItem value="">
-                    <em>{t('all_tenants', 'All Tenants')}</em>
-                  </MenuItem>
-                  {tenants.map((tenant) => (
-                    <MenuItem key={tenant.id} value={tenant.id}>
-                      {tenant.name}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Column>
-          )}
         </Grid>
         <Grid fullWidth className="with-bottom-margin">
           <Column md={4}>

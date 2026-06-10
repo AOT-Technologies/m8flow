@@ -38,6 +38,13 @@ vi.mock("../hooks/useTemplates", () => ({
   useTemplates: vi.fn(),
 }));
 
+vi.mock("../contexts/GlobalTenantContext", () => ({
+  useGlobalTenant: vi.fn(() => ({
+    selectedTenantId: "",
+    setSelectedTenantId: vi.fn(),
+  })),
+}));
+
 vi.mock("../services/TemplateService", () => ({
   default: {
     deleteTemplate: vi.fn(() => Promise.resolve()),
@@ -154,6 +161,8 @@ vi.mock("../components/TemplateDeleteConfirmDialog", () => ({
 import { useTemplates } from "../hooks/useTemplates";
 import HttpService from "../services/HttpService";
 import TemplateService from "../services/TemplateService";
+import UserService from "../services/UserService";
+import { useGlobalTenant } from "../contexts/GlobalTenantContext";
 import { usePermissionFetcher } from "@spiffworkflow-frontend/hooks/PermissionService";
 
 const theme = createTheme();
@@ -203,6 +212,7 @@ describe("TemplateGalleryPage", () => {
       templates: [makeTemplate()],
       pagination: { count: 1, total: 1, pages: 1 },
       templatesLoading: false,
+      loadedTenantId: undefined,
       templateByIdLoading: false,
       templateByKeyLoading: false,
       error: null,
@@ -310,5 +320,56 @@ describe("TemplateGalleryPage", () => {
       expect(TemplateService.restoreTemplate).toHaveBeenCalledWith(1);
     });
     expect(fetchTemplatesMock).toHaveBeenCalled();
+  });
+
+  it("shows loading and hides stale templates until tenant-scoped data is ready", () => {
+    vi.mocked(UserService.isSuperAdmin).mockReturnValue(true);
+    vi.mocked(useGlobalTenant).mockReturnValue({
+      selectedTenantId: "tenant-b",
+      setSelectedTenantId: vi.fn(),
+    });
+    vi.mocked(useTemplates).mockReturnValue({
+      templates: [makeTemplate({ id: 99, name: "Stale Template", tenantId: "tenant-a" })],
+      pagination: { count: 1, total: 1, pages: 1 },
+      templatesLoading: false,
+      loadedTenantId: "tenant-a",
+      templateByIdLoading: false,
+      templateByKeyLoading: false,
+      error: null,
+      fetchTemplates: fetchTemplatesMock,
+      fetchTemplateById: vi.fn(),
+      fetchTemplateByKey: vi.fn(),
+    } as any);
+
+    renderPage();
+
+    expect(screen.getByRole("progressbar")).toBeInTheDocument();
+    expect(screen.queryByTestId("template-card-99")).not.toBeInTheDocument();
+  });
+
+  it("passes global tenant id to fetchTemplates for super admin", () => {
+    vi.mocked(UserService.isSuperAdmin).mockReturnValue(true);
+    vi.mocked(useGlobalTenant).mockReturnValue({
+      selectedTenantId: "tenant-b",
+      setSelectedTenantId: vi.fn(),
+    });
+    vi.mocked(useTemplates).mockReturnValue({
+      templates: [],
+      pagination: null,
+      templatesLoading: true,
+      loadedTenantId: undefined,
+      templateByIdLoading: false,
+      templateByKeyLoading: false,
+      error: null,
+      fetchTemplates: fetchTemplatesMock,
+      fetchTemplateById: vi.fn(),
+      fetchTemplateByKey: vi.fn(),
+    } as any);
+
+    renderPage();
+
+    expect(fetchTemplatesMock).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: "tenant-b" }),
+    );
   });
 });
