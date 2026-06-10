@@ -186,7 +186,7 @@ function RoleBasedRootGate({
       {
         route: "/connectors",
         method: "GET",
-        uri: targetUris.connectorsPath,
+        uri: targetUris.connectorsGroupedPath,
       },
       {
         route: "/templates",
@@ -249,7 +249,7 @@ export default function ContainerForExtensions() {
     [targetUris.m8flowTenantManagementPath]: ["GET"],
     [targetUris.m8flowTenantListPath]: ["GET"],
     [targetUris.m8flowTemplateListPath]: ["GET"],
-    [targetUris.connectorsPath]: ["GET"],
+    [targetUris.connectorsGroupedPath]: ["GET"],
   };
   const { ability, permissionsLoaded } = usePermissionFetcher(
     permissionRequestData,
