@@ -105,7 +105,7 @@ function SideNav({
     [targetUris.processInstanceListPath]: ["GET"],
     [targetUris.processInstanceListForMePath]: ["POST"],
     [targetUris.secretListPath]: ["GET"],
-    [targetUris.connectorsPath]: ["GET"],
+    [targetUris.connectorsGroupedPath]: ["GET"],
     "/tasks/*": ["GET", "PUT"],
     [targetUris.m8flowTenantManagementPath]: ["GET"],
     "/m8flow/tenants": ["GET"],
@@ -263,7 +263,7 @@ function SideNav({
       icon: <Hub />,
       route: "/connectors",
       id: routeIdentifiers.CONNECTORS,
-      permissionRoutes: [targetUris.connectorsPath],
+      permissionRoutes: [targetUris.connectorsGroupedPath],
     },
     {
       text: t("templates"),
