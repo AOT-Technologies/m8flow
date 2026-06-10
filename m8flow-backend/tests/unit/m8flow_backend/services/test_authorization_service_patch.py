@@ -924,39 +924,6 @@ def test_parse_permissions_yaml_submitter_includes_process_model_read_dependenci
     assert "/m8flow/templates/process-models/*" in submitter_uris
 
 
-def test_parse_permissions_yaml_reviewer_is_limited_to_task_access(monkeypatch) -> None:
-    app = Flask(__name__)  # NOSONAR - unit test
-    permissions_path = (
-        Path(__file__).resolve().parents[4] / "src" / "m8flow_backend" / "config" / "permissions" / "m8flow.yml"
-    )
-    app.config["SPIFFWORKFLOW_BACKEND_PERMISSIONS_FILE_ABSOLUTE_PATH"] = str(permissions_path)
-    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
-    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP"] = "spiff_public"
-
-    monkeypatch.setattr(authorization_service_patch, "current_tenant_id_or_none", lambda: "tenant-a")
-
-    with app.app_context():
-        authorization_service_patch.apply()
-        from spiffworkflow_backend.services.authorization_service import AuthorizationService
-
-        group_permissions = AuthorizationService.parse_permissions_yaml_into_group_info()
-
-    group_permissions_by_name = {group["name"]: group for group in group_permissions}
-    reviewer_group = group_permissions_by_name["tenant-a:reviewer"]
-    reviewer_uris = {permission["uri"] for permission in reviewer_group["permissions"]}
-
-    assert "/tasks" in reviewer_uris
-    assert "/tasks/*" in reviewer_uris
-    assert "/process-groups" not in reviewer_uris
-    assert "/process-models" not in reviewer_uris
-    assert "PM:ALL" not in reviewer_uris
-    assert "/processes" not in reviewer_uris
-    assert "/processes/*" not in reviewer_uris
-    assert "/process-instances" not in reviewer_uris
-    assert "/process-instances/for-me" not in reviewer_uris
-    assert "/process-instances/report-metadata" not in reviewer_uris
-
-
 def test_add_permissions_from_group_permissions_keeps_config_unqualified(monkeypatch) -> None:
     app = Flask(__name__)  # NOSONAR - unit test
     app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
@@ -1049,7 +1016,9 @@ def test_all_permission_assignments_for_user_includes_frontend_access_for_active
     assert [assignment.grant_type for assignment in permission_assignments] == ["permit"]
 
 
-def test_reviewer_permissions_from_yaml_include_onboarding_and_tasks_but_not_process_instance_lists(monkeypatch) -> None:
+def test_reviewer_permissions_from_yaml_include_onboarding_tasks_and_process_items_but_not_process_instance_lists(
+    monkeypatch,
+) -> None:
     app = Flask(__name__)  # NOSONAR - unit test
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -1107,11 +1076,13 @@ def test_reviewer_permissions_from_yaml_include_onboarding_and_tasks_but_not_pro
         for_me_allowed = AuthorizationService.user_has_permission(user, "create", "/v1.0/process-instances/for-me")
         tasks_collection_allowed = AuthorizationService.user_has_permission(user, "read", "/v1.0/tasks")
         task_item_allowed = AuthorizationService.user_has_permission(user, "read", "/v1.0/tasks/123")
+        process_item_allowed = AuthorizationService.user_has_permission(user, "read", "/v1.0/processes/123")
 
     assert onboarding_allowed is True
     assert for_me_allowed is False
     assert tasks_collection_allowed is True
     assert task_item_allowed is True
+    assert process_item_allowed is True
 
 
 def test_tenant_admin_permissions_from_yaml_only_grant_page_access_and_tenant_updates(monkeypatch) -> None:

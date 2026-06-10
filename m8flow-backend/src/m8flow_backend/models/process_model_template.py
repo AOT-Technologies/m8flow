@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
-from sqlalchemy import ForeignKey, Index, UniqueConstraint
+from sqlalchemy import Index, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from spiffworkflow_backend.models.db import SpiffworkflowBaseDBModel

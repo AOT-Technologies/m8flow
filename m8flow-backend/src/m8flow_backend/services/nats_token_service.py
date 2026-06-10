@@ -1,13 +1,16 @@
 from __future__ import annotations
-import secrets
-from m8flow_backend.models.nats_token import NatsTokenModel
-from spiffworkflow_backend.models.db import db
-from spiffworkflow_backend.exceptions.api_error import ApiError
-from m8flow_backend.config import nats_token_salt
 
 import hashlib
 import hmac
 import logging
+import secrets
+
+from m8flow_backend.config import nats_token_salt
+from m8flow_backend.models.nats_token import NatsTokenModel
+from spiffworkflow_backend.exceptions.api_error import ApiError
+from spiffworkflow_backend.models.db import db
+
+LOGGER = logging.getLogger("m8flow.nats.token_service")
 
 class NatsTokenService:
     @staticmethod
@@ -65,12 +68,9 @@ class NatsTokenService:
     @staticmethod
     def verify_token(tenant_id: str, raw_token: str) -> bool:
         """Verify a raw token against the stored hash for a tenant."""
-        import logging
-        logger = logging.getLogger("m8flow.nats.token_service")
-
         nats_token = NatsTokenModel.query.filter_by(m8f_tenant_id=tenant_id).first()
         if not nats_token:
-            logger.error("verify_token: No token record found for tenant=%s", tenant_id)
+            LOGGER.error("verify_token: No token record found for tenant=%s", tenant_id)
             return False
 
         salt = nats_token_salt()

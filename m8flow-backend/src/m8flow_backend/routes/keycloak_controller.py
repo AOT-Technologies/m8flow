@@ -13,10 +13,10 @@ from m8flow_backend.services.keycloak_service import (
     create_user_in_realm as create_user_in_realm_svc,
     delete_organization,
     get_organization_by_alias,
+    get_master_admin_token,
     tenant_login as tenant_login_svc,
     tenant_login_authorization_url,
     update_organization,
-    get_master_admin_token,
 )
 from sqlalchemy.exc import IntegrityError
 from spiffworkflow_backend.exceptions.api_error import ApiError

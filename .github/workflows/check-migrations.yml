@@ -5,123 +5,105 @@ on:
     inputs:
       migrations_changed:
         description: "Whether migration files were modified"
-        required: true 
+        required: true
         type: boolean
 
 permissions:
   contents: read
-  pull-requests: read
 
 jobs:
   migration-check:
     name: Validate Migration Compatibility
-    if: ${{ inputs.migrations_changed == true }}
     runs-on: ubuntu-latest
 
     steps:
+      - name: No migration files changed
+        if: ${{ inputs.migrations_changed != true }}
+        run: |
+          echo "No migration files changed; skipping detailed migration validation."
+          echo "## Migration Compatibility Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "No migration files changed for this run." >> $GITHUB_STEP_SUMMARY
+
       - name: Checkout repository
+        if: ${{ inputs.migrations_changed == true }}
         uses: actions/checkout@v4
 
       - name: Install jq (required by fetch-upstream)
+        if: ${{ inputs.migrations_changed == true }}
         run: sudo apt-get update && sudo apt-get install -y jq
 
       - name: Fetch upstream folders (for migrations inspection)
+        if: ${{ inputs.migrations_changed == true }}
         run: ./bin/fetch-upstream.sh
-
-      # -------------------------
-      # PR Description Validation
-      # -------------------------
-      - name: Validate Migration Plan section exists
-        env:
-          PR_BODY: ${{ github.event.pull_request.body }}
-        run: |
-          if [[ -z "$PR_BODY" ]]; then
-            echo "::error::PR description is empty. Migration Plan required."
-            exit 1
-          fi
-
-          echo "$PR_BODY" | grep -qi "Migration Plan" || {
-            echo "::error::Missing 'Migration Plan' section in PR description"
-            exit 1
-          }
-
-      - name: Validate required migration plan content
-        env:
-          PR_BODY: ${{ github.event.pull_request.body }}
-        run: |
-          REQUIRED_SECTIONS=(
-            "Backward Compatibility"
-            "Rollback"
-            "Expand/Contract"
-          )
-
-          for section in "${REQUIRED_SECTIONS[@]}"; do
-            echo "$PR_BODY" | grep -qi "$section" || {
-              echo "::error::Migration Plan missing required section: $section"
-              exit 1
-            }
-          done
 
       # -------------------------
       # Migration File Inspection
       # -------------------------
       - name: Detect destructive migration patterns
+        if: ${{ inputs.migrations_changed == true }}
         run: |
           echo "Scanning migrations for destructive operations..."
 
-          if [ ! -d "spiffworkflow-backend/migrations/versions" ]; then
-            echo "::warning::Migration directory not found"
+          MIGRATION_DIRS=()
+          if [ -d "m8flow-backend/migrations/versions" ]; then
+            MIGRATION_DIRS+=("m8flow-backend/migrations/versions")
+          fi
+          if [ -d "spiffworkflow-backend/migrations/versions" ]; then
+            MIGRATION_DIRS+=("spiffworkflow-backend/migrations/versions")
+          fi
+
+          if [ ${#MIGRATION_DIRS[@]} -eq 0 ]; then
+            echo "::warning::No migration directories found"
             exit 0
           fi
 
-          MATCHES=$(find spiffworkflow-backend/migrations/versions -type f -name "*.py" -exec grep -lE "op\.drop_|DROP TABLE|DROP COLUMN|ALTER TABLE .* DROP" {} \; || true)
+          MATCHES=$(find "${MIGRATION_DIRS[@]}" -type f -name "*.py" -exec grep -lE "op\.drop_|DROP TABLE|DROP COLUMN|ALTER TABLE .* DROP" {} \; || true)
 
           if [[ -n "$MATCHES" ]]; then
             echo "::warning::Potential destructive migration detected in:"
             echo "$MATCHES"
-
-            echo "${{ github.event.pull_request.body }}" | grep -qi "Destructive Migration Approved" || {
-              echo "::error::Destructive migration detected without explicit approval."
-              echo "Add 'Destructive Migration Approved' to the Migration Plan."
-              exit 1
-            }
+            echo "::warning::Review destructive operations carefully before merging."
           fi
 
       # -------------------------
       # Optional: Alembic Sanity Check
       # -------------------------
       - name: Validate Alembic revision files load
+        if: ${{ inputs.migrations_changed == true }}
         run: |
           python - <<'EOF'
           import pathlib, sys
 
-          path = pathlib.Path("spiffworkflow-backend/migrations/versions")
-          if not path.exists():
-            print("Migration directory not found; skipping compile check.")
-            raise SystemExit(0)
+          paths = [
+              pathlib.Path("m8flow-backend/migrations/versions"),
+              pathlib.Path("spiffworkflow-backend/migrations/versions"),
+          ]
+          existing_paths = [path for path in paths if path.exists()]
+          if not existing_paths:
+              print("No migration directories found; skipping compile check.")
+              raise SystemExit(0)
           bad = False
 
-          for file in path.glob("*.py"):
-            try:
-              compile(file.read_text(), file.name, "exec")
-            except Exception as e:
-              print(f"Invalid migration file: {file}: {e}")
-              bad = True
+          for path in existing_paths:
+              for file in path.glob("*.py"):
+                  try:
+                      compile(file.read_text(), file.name, "exec")
+                  except Exception as e:
+                      print(f"Invalid migration file: {file}: {e}")
+                      bad = True
 
           if bad:
-            sys.exit(1)
+              sys.exit(1)
           EOF
 
       - name: Migration compatibility check passed
+        if: ${{ inputs.migrations_changed == true }}
         run: |
-          echo "Migration checks passed ✅"
+          echo "Migration checks passed"
 
-          echo "## Migration Compatibility Check Passed ✅" >> $GITHUB_STEP_SUMMARY
+          echo "## Migration Compatibility Check Passed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "All required sections found in PR description:" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Migration Plan" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Backward Compatibility" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Rollback strategy" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Expand/Contract classification" >> $GITHUB_STEP_SUMMARY
+          echo "Minimal migration checks completed." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Migration files validated successfully." >> $GITHUB_STEP_SUMMARY

@@ -5,13 +5,14 @@ This folder contains project documentation for setup, architecture, and developm
 ## Index
 
 - [Repository structure](#repository-structure)
+- [CI validations](./ci-validations.md)
 - [Prerequisites (local dev, without Docker)](#prerequisites-local-dev-without-docker)
 - [Running locally (without Docker for backend/frontend)](#running-locally-without-docker-for-backendfrontend)
-  - [Step 1 — Fetch upstream SpiffWorkflow source](#step-1--fetch-upstream-spiffworkflow-source-required)
-  - [Step 2 — Start infrastructure services (Docker)](#step-2--start-infrastructure-services-docker)
-  - [Step 3 — Start the backend](#step-3--start-the-backend)
-  - [Step 4 — Start the frontend](#step-4--start-the-frontend)
-  - [Step 5 — Run a Celery worker](#step-5--run-a-celery-worker)
+  - [Step 1 - Fetch upstream SpiffWorkflow source](#step-1---fetch-upstream-spiffworkflow-source-required)
+  - [Step 2 - Start infrastructure services (Docker)](#step-2---start-infrastructure-services-docker)
+  - [Step 3 - Start the backend](#step-3---start-the-backend)
+  - [Step 4 - Start the frontend](#step-4---start-the-frontend)
+  - [Step 5 - Run a Celery worker](#step-5---run-a-celery-worker)
 - [Access the application with multitenant mode off](#access-the-application-with-multitenant-mode-off)
 - [Shared-realm organization group role mapping](shared-realm-organization-group-role-mapping.md)
 - [Sample Templates](#sample-templates)
@@ -77,7 +78,7 @@ m8flow/
 
 ## Prerequisites (local dev, without Docker)
 
-The list below assumes a **clean machine**. If a tool is already installed, skip its install step and continue — instructions throughout this guide call out the resume point. Verify with the version commands at the end of each row.
+The list below assumes a **clean machine**. If a tool is already installed, skip its install step and continue. Verify with the version commands at the end of each row.
 
 | Tool | Minimum version | Verify with | Why it's needed |
 |------|-----------------|-------------|-----------------|
@@ -91,7 +92,7 @@ The list below assumes a **clean machine**. If a tool is already installed, skip
 
 ### Install commands per platform
 
-> **These are either/or — run only the section for your OS.** Don't run them all.
+> **These are either/or - run only the section for your OS.**
 
 #### macOS (Homebrew)
 
@@ -134,11 +135,11 @@ winget install --id OpenJS.NodeJS.LTS -e
 
 Use this mode for active development of m8flow extensions. Make sure you have completed the [Prerequisites](#prerequisites-local-dev-without-docker) above.
 
-### Step 1 — Fetch upstream SpiffWorkflow source (required)
+### Step 1 - Fetch upstream SpiffWorkflow source (required)
 
 > **Don't skip this step.** The upstream `spiffworkflow-backend`, `spiffworkflow-frontend`, and `spiff-arena-common` directories are **gitignored** and not present after a fresh clone. The backend will not start without them.
 
-Run **only the command for your OS** — these are either/or, not sequential:
+Run **only the command for your OS** - these are either/or, not sequential:
 
 **Linux / macOS / WSL**
 
@@ -154,11 +155,11 @@ Run **only the command for your OS** — these are either/or, not sequential:
 
 This populates `spiffworkflow-backend/`, `spiffworkflow-frontend/`, and `spiff-arena-common/` at the upstream tag pinned in [`upstream.sources.json`](../upstream.sources.json).
 
-### Step 2 — Start infrastructure services (Docker)
+### Step 2 - Start infrastructure services (Docker)
 
-Start the infrastructure containers (database, Keycloak, MinIO, Redis), one-time init jobs (`minio-mc-init`, `keycloak-master-admin-init`), and the connector proxy — **but not** the `m8flow-backend` or `m8flow-frontend` containers, since those will run locally.
+Start the infrastructure containers (database, Keycloak, MinIO, Redis), one-time init jobs (`minio-mc-init`, `keycloak-master-admin-init`), and the connector proxy - **but not** the `m8flow-backend` or `m8flow-frontend` containers, since those will run locally.
 
-Run **only the command for your shell** — these are either/or, not sequential:
+Run **only the command for your shell** - these are either/or, not sequential:
 
 **Linux / macOS / WSL (bash, `\` continuation)**
 
@@ -178,7 +179,7 @@ docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build 
   m8flow-connector-proxy
 ```
 
-> **PowerShell users:** do not paste the bash version — `\` is not a line-continuation in PowerShell and each wrapped line will be interpreted as a separate command. If unsure, run the single-line form instead:
+> **PowerShell users:** do not paste the bash version - `\` is not a line continuation in PowerShell and each wrapped line will be interpreted as a separate command. If unsure, run the single-line form instead:
 >
 > ```powershell
 > docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build m8flow-db keycloak-db keycloak keycloak-proxy redis minio minio-mc-init keycloak-master-admin-init m8flow-connector-proxy
@@ -195,11 +196,11 @@ What each service is for:
 | `keycloak-master-admin-init` *(init)* | **Required for "Global admin sign in".** Creates the `m8flow-backend` client and `super-admin` user in the **master** realm. Without it, the master-realm login flow fails with *"Client not found"*. |
 | `m8flow-connector-proxy` | Backend dispatches connector commands here (SMTP, Slack, HTTP). Without it, the backend logs `WinError 10061` on port 6844. |
 
-> If you previously ran the full Docker stack, **stop the `m8flow-backend` and `m8flow-frontend` containers** before continuing — otherwise the local dev servers will collide on ports 6840/6841.
+> If you previously ran the full Docker stack, **stop the `m8flow-backend` and `m8flow-frontend` containers** before continuing - otherwise the local dev servers will collide on ports 6840/6841.
 
-### Step 3 — Start the backend
+### Step 3 - Start the backend
 
-Run **only the command for your OS** — these are either/or:
+Run **only the command for your OS** - these are either/or:
 
 **Linux / macOS / WSL**
 
@@ -227,9 +228,9 @@ Expected response:
 { "ok": true, "can_access_frontend": true }
 ```
 
-### Step 4 — Start the frontend
+### Step 4 - Start the frontend
 
-> **If `npm install` has already been run for this checkout, skip directly to `npm start`.** The `node_modules/` directory under `m8flow-frontend/` is the signal — if it exists and is recent, you can resume from `npm start`.
+> **If `npm install` has already been run for this checkout, skip directly to `npm start`.** The `node_modules/` directory under `m8flow-frontend/` is the signal - if it exists and is recent, you can resume from `npm start`.
 
 ```bash
 cd m8flow-frontend
@@ -241,7 +242,7 @@ Docker bind-mounts the repo `process_models/` directory into the backend and Cel
 
 If the frontend fails with a missing Rollup native package such as `@rollup/rollup-win32-x64-msvc`, reinstall `m8flow-frontend` dependencies on that machine with `npm install`.
 
-### Step 5 — Run a Celery worker
+### Step 5 - Run a Celery worker
 
 **Linux / macOS / WSL**
 
@@ -261,8 +262,7 @@ docker compose -f docker/m8flow-docker-compose.yml up -d --build m8flow-backend 
 
 ## Access the Application with Multitenant mode OFF
 
-
-Although m8flow is designed as a fully multitenant system, you can configure it to present as a single-tenant UI by setting the environment variable `MULTI_TENANT_ON=false`. 
+Although m8flow is designed as a fully multitenant system, you can configure it to present as a single-tenant UI by setting the environment variable `MULTI_TENANT_ON=false`.
 
 With this setting, open `http://localhost:6841/` in your browser. You will be redirected directly to the Keycloak login page.
 
@@ -294,7 +294,7 @@ The sample templates package includes pre-built workflows and guidance for:
 - automatically loading templates during startup
 - using integration-focused templates such as Salesforce, Slack, SMTP, and PostgreSQL examples
 
-For the full template catalog and setup instructions, refer to [m8flow-backend/sample_templates/README.md](m8flow-backend/sample_templates/README.md).
+For the full template catalog and setup instructions, refer to [`m8flow-backend/sample_templates/README.md`](../m8flow-backend/sample_templates/README.md).
 
 ## Integration Services
 
@@ -302,8 +302,8 @@ m8flow includes supporting services for connector execution and event-driven wor
 
 For service-specific setup, configuration, and usage details, refer to:
 
-- [m8flow-connector-proxy/README.md](m8flow-connector-proxy/README.md) for connector proxy support such as SMTP, Slack, HTTP, and related integrations
-- [m8flow-nats-consumer/README.md](m8flow-nats-consumer/README.md) for NATS-based event consumption and event-driven workflow execution
+- [`m8flow-connector-proxy/README.md`](../m8flow-connector-proxy/README.md) for connector proxy support such as SMTP, Slack, HTTP, and related integrations
+- [`m8flow-nats-consumer/README.md`](../m8flow-nats-consumer/README.md) for NATS-based event consumption and event-driven workflow execution
 
 ---
 
@@ -341,7 +341,7 @@ This error appears when an older Keycloak/database state coexists with a newer t
 
 Workarounds, in order of preference:
 
-1. **Fresh local data** (development only — destroys local state):
+1. **Fresh local data** (development only - destroys local state):
 
    ```bash
    docker compose -f docker/m8flow-docker-compose.yml down -v
@@ -383,7 +383,7 @@ A leftover Docker container or another local process is bound to one of m8flow's
 
 ### `spiffworkflow-backend` directory not found
 
-You skipped [Step 1 — Fetch upstream SpiffWorkflow source](#step-1--fetch-upstream-spiffworkflow-source-required). Run `./bin/fetch-upstream.sh` (Linux/macOS) or `.\bin\fetch-upstream.ps1` (Windows) and retry.
+You skipped [Step 1 - Fetch upstream SpiffWorkflow source](#step-1---fetch-upstream-spiffworkflow-source-required). Run `./bin/fetch-upstream.sh` (Linux/macOS) or `.\bin\fetch-upstream.ps1` (Windows) and retry.
 
 ### "Global admin sign in" fails with *"Client not found"* on `realms/master`
 
@@ -409,4 +409,4 @@ Then retry "Global admin sign in" in a **fresh private window** (your previous t
 docker compose -f docker/m8flow-docker-compose.yml up -d --build m8flow-connector-proxy
 ```
 
-If you don't need connector tasks for what you're testing, you can ignore the warning — it's not fatal to startup.
+If you don't need connector tasks for what you're testing, you can ignore the warning - it's not fatal to startup.

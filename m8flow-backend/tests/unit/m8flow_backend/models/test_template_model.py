@@ -9,7 +9,7 @@ from __future__ import annotations
 import sys
 import time
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
 from flask import Flask
@@ -97,4 +97,3 @@ class TestTemplateModel:
             template.name = "Renamed Template"
             db.session.commit()
             assert template.updated_at_in_seconds >= before_update
-

@@ -11,9 +11,9 @@ from flask import make_response
 from flask import request as flask_request
 
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
-from m8flow_backend.tenancy import is_super_admin_request, set_context_tenant_id
+from m8flow_backend.tenancy import is_super_admin_request
 from spiffworkflow_backend.exceptions.api_error import ApiError
-from spiffworkflow_backend.models.db import db
+from spiffworkflow_backend.models.db import db  # noqa: F401
 
 _PATCHED = False
 _ORIGINAL_PROCESS_MODEL_CREATE: Callable[..., Any] | None = None
@@ -55,7 +55,7 @@ def _tenant_name_map(tenant_ids: set[str]) -> dict[str, str]:
     if not tenant_ids:
         return {}
     tenants = M8flowTenantModel.query.filter(M8flowTenantModel.id.in_(tenant_ids)).all()  # type: ignore[attr-defined]
-    return {t.id: t.name for t in tenants}
+    return {tenant.id: tenant.name for tenant in tenants}
 
 
 def _walk_results_and_inject_tenant(

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Extension-local wiring for Spiff timestamp listeners.
 
@@ -7,6 +5,8 @@ We attach timestamp listeners only to mapped models that have created_at_in_seco
 and/or updated_at_in_seconds. Idempotency is ensured by the _PATCHED flag and
 event.contains() to avoid duplicate listener registration when using a patching approach.
 """
+
+from __future__ import annotations
 
 from sqlalchemy import event
 

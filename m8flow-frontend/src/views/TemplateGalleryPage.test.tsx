@@ -114,7 +114,6 @@ vi.mock("../components/TemplateCard", () => ({
   ),
 }));
 
-// Mock TemplateDeleteConfirmDialog to auto-confirm
 vi.mock("../components/TemplateDeleteConfirmDialog", () => ({
   default: ({ open, onConfirm, onClose }: any) => {
     if (!open) return null;
@@ -215,13 +214,9 @@ describe("TemplateGalleryPage", () => {
 
   it("calls delete API from table action and refreshes list", async () => {
     renderPage();
-    // Switch to table view
     fireEvent.click(screen.getByTestId("template-gallery-view-table"));
-    // Open overflow menu for the row
     fireEvent.click(screen.getByTestId("template-gallery-more-actions-1"));
-    // Click delete in overflow menu
     fireEvent.click(screen.getByTestId("template-row-delete-action"));
-    // The confirmation dialog opens – click confirm
     fireEvent.click(screen.getByTestId("delete-template-confirm-button"));
 
     await waitFor(() => {
@@ -231,10 +226,9 @@ describe("TemplateGalleryPage", () => {
   });
 
   it("disables published delete for users without admin permission in table view", async () => {
-    // No admin permission (ability.can returns false for /m8flow/admin/templates)
     vi.mocked(usePermissionFetcher).mockReturnValue({
       ability: {
-        can: (method: string, uri: string) => {
+        can: (_method: string, uri: string) => {
           if (uri === "/m8flow/admin/templates") return false;
           return true;
         },
@@ -255,20 +249,15 @@ describe("TemplateGalleryPage", () => {
 
     renderPage();
     fireEvent.click(screen.getByTestId("template-gallery-view-table"));
-
-    // Open overflow menu for the row
     fireEvent.click(screen.getByTestId("template-gallery-more-actions-1"));
 
-    // The delete action in the menu should be disabled
     const deleteAction = screen.getByTestId("template-row-delete-action");
     expect(deleteAction).toHaveAttribute("aria-disabled", "true");
   });
 
   it("calls delete API from card action in active mode", async () => {
     renderPage();
-    // Click delete on the card (opens confirmation dialog)
     fireEvent.click(screen.getByTestId("template-card-delete-1"));
-    // Confirm the delete
     fireEvent.click(screen.getByTestId("delete-template-confirm-button"));
 
     await waitFor(() => {
@@ -276,8 +265,7 @@ describe("TemplateGalleryPage", () => {
     });
   });
 
-  it("hides Edit but keeps Export for viewers (no PUT permission) in table view", async () => {
-    // Viewer: can view/export but not edit (no PUT on /m8flow/templates)
+  it("hides Edit but keeps Export for viewers in table view", async () => {
     vi.mocked(usePermissionFetcher).mockReturnValue({
       ability: {
         can: (method: string, uri: string) => {
@@ -297,7 +285,6 @@ describe("TemplateGalleryPage", () => {
   });
 
   it("shows deleted mode restore action and calls restore API", async () => {
-    // Admin permission (ability.can returns true for all URIs)
     vi.mocked(usePermissionFetcher).mockReturnValue({
       ability: { can: () => true } as any,
       permissionsLoaded: true,
@@ -316,9 +303,7 @@ describe("TemplateGalleryPage", () => {
 
     renderPage();
     fireEvent.click(screen.getByTestId("template-gallery-mode-deleted"));
-    // Click restore on the card (opens confirmation dialog)
     fireEvent.click(screen.getByTestId("template-card-restore-1"));
-    // Confirm the restore
     fireEvent.click(screen.getByTestId("restore-template-confirm-button"));
 
     await waitFor(() => {

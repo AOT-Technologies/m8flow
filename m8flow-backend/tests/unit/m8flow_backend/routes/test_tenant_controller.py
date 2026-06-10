@@ -10,7 +10,7 @@ Tests cover:
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import pytest
 from flask import Flask, g
@@ -29,7 +29,6 @@ for path in (extension_src, backend_src):
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel, TenantStatus  # noqa: E402
 from m8flow_backend.routes import tenant_controller  # noqa: E402
 from spiffworkflow_backend.models.db import db  # noqa: E402
-from spiffworkflow_backend.exceptions.api_error import ApiError  # noqa: E402
 
 
 @pytest.fixture
