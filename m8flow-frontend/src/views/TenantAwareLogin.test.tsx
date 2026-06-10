@@ -5,8 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import TenantAwareLogin from './TenantAwareLogin';
 
 const mockUseConfig = vi.fn();
-const mockDoLogin = vi.fn();
-const mockGetAuthenticationRealmHint = vi.fn();
+const mockBeginAutomaticReauthentication = vi.fn();
 const mockIsLoggedIn = vi.fn();
 
 vi.mock('../utils/useConfig', () => ({
@@ -15,8 +14,8 @@ vi.mock('../utils/useConfig', () => ({
 
 vi.mock('../services/UserService', () => ({
   default: {
-    doLogin: (...args: unknown[]) => mockDoLogin(...args),
-    getAuthenticationRealmHint: () => mockGetAuthenticationRealmHint(),
+    beginAutomaticReauthentication: (...args: unknown[]) =>
+      mockBeginAutomaticReauthentication(...args),
     isLoggedIn: () => mockIsLoggedIn(),
   },
 }));
@@ -37,7 +36,6 @@ describe('TenantAwareLogin', () => {
       SHARED_REALM_IDENTIFIER: 'shared-users',
     });
     mockIsLoggedIn.mockReturnValue(false);
-    mockGetAuthenticationRealmHint.mockReturnValue('');
     localStorage.setItem('m8flow_tenant', 'it');
     localStorage.setItem('m8f_tenant_id', 'it');
 
@@ -50,18 +48,11 @@ describe('TenantAwareLogin', () => {
     );
 
     await waitFor(() => {
-      expect(mockDoLogin).toHaveBeenCalledWith(
-        {
-          identifier: 'shared-users',
-          label: 'shared-users',
-          uri: '',
-        },
-        '/reports',
-      );
+      expect(mockBeginAutomaticReauthentication).toHaveBeenCalledWith({
+        originalUrl: '/reports',
+        requestedAuthenticationIdentifier: '',
+      });
     });
-
-    expect(localStorage.getItem('m8flow_tenant')).toBeNull();
-    expect(localStorage.getItem('m8f_tenant_id')).toBeNull();
   });
 
   it('preserves an explicit authentication_identifier in single-tenant mode', async () => {
@@ -71,7 +62,6 @@ describe('TenantAwareLogin', () => {
       SHARED_REALM_IDENTIFIER: 'shared-users',
     });
     mockIsLoggedIn.mockReturnValue(false);
-    mockGetAuthenticationRealmHint.mockReturnValue('');
 
     render(
       <MemoryRouter
@@ -84,25 +74,20 @@ describe('TenantAwareLogin', () => {
     );
 
     await waitFor(() => {
-      expect(mockDoLogin).toHaveBeenCalledWith(
-        {
-          identifier: 'ops-admin',
-          label: 'Master',
-          uri: '',
-        },
-        '/tenants',
-      );
+      expect(mockBeginAutomaticReauthentication).toHaveBeenCalledWith({
+        originalUrl: '/tenants',
+        requestedAuthenticationIdentifier: 'ops-admin',
+      });
     });
   });
 
-  it('prefers the persisted master-realm hint when no authentication_identifier is present', async () => {
+  it('delegates multitenant login routing to UserService', async () => {
     mockUseConfig.mockReturnValue({
       ENABLE_MULTITENANT: true,
       MASTER_REALM_IDENTIFIER: 'ops-admin',
       SHARED_REALM_IDENTIFIER: 'shared-users',
     });
     mockIsLoggedIn.mockReturnValue(false);
-    mockGetAuthenticationRealmHint.mockReturnValue('ops-admin');
 
     render(
       <MemoryRouter initialEntries={['/login?original_url=/reports']}>
@@ -113,25 +98,20 @@ describe('TenantAwareLogin', () => {
     );
 
     await waitFor(() => {
-      expect(mockDoLogin).toHaveBeenCalledWith(
-        {
-          identifier: 'ops-admin',
-          label: 'Master',
-          uri: '',
-        },
-        '/reports',
-      );
+      expect(mockBeginAutomaticReauthentication).toHaveBeenCalledWith({
+        originalUrl: '/reports',
+        requestedAuthenticationIdentifier: '',
+      });
     });
   });
 
-  it('uses the master realm for organization-management destinations even without a persisted hint', async () => {
+  it('passes the original URL through for organization-management destinations', async () => {
     mockUseConfig.mockReturnValue({
       ENABLE_MULTITENANT: true,
       MASTER_REALM_IDENTIFIER: 'ops-admin',
       SHARED_REALM_IDENTIFIER: 'shared-users',
     });
     mockIsLoggedIn.mockReturnValue(false);
-    mockGetAuthenticationRealmHint.mockReturnValue('');
 
     render(
       <MemoryRouter initialEntries={['/login?original_url=/tenants']}>
@@ -142,14 +122,10 @@ describe('TenantAwareLogin', () => {
     );
 
     await waitFor(() => {
-      expect(mockDoLogin).toHaveBeenCalledWith(
-        {
-          identifier: 'ops-admin',
-          label: 'Master',
-          uri: '',
-        },
-        '/tenants',
-      );
+      expect(mockBeginAutomaticReauthentication).toHaveBeenCalledWith({
+        originalUrl: '/tenants',
+        requestedAuthenticationIdentifier: '',
+      });
     });
   });
 
@@ -160,7 +136,6 @@ describe('TenantAwareLogin', () => {
       SHARED_REALM_IDENTIFIER: 'shared-users',
     });
     mockIsLoggedIn.mockReturnValue(false);
-    mockGetAuthenticationRealmHint.mockReturnValue('');
     document.cookie = 'm8flow_selected_tenant=tenant-a-id';
     localStorage.setItem('m8flow_tenant', 'tenant-a');
     localStorage.setItem('m8f_tenant_id', 'tenant-a-id');
@@ -183,19 +158,11 @@ describe('TenantAwareLogin', () => {
     );
 
     await waitFor(() => {
-      expect(mockDoLogin).toHaveBeenCalledWith(
-        {
-          identifier: 'shared-users',
-          label: 'shared-users',
-          uri: '',
-        },
-        '/reports',
-      );
+      expect(mockBeginAutomaticReauthentication).toHaveBeenCalledWith({
+        originalUrl: '/reports',
+        requestedAuthenticationIdentifier: '',
+      });
     });
-
-    expect(localStorage.getItem('m8flow_tenant')).toBeNull();
-    expect(localStorage.getItem('m8f_tenant_id')).toBeNull();
-    expect(document.cookie).not.toContain('m8flow_selected_tenant=');
   });
 
   it('redirects logged-in multitenant users back to the requested page', async () => {
@@ -205,7 +172,6 @@ describe('TenantAwareLogin', () => {
       SHARED_REALM_IDENTIFIER: 'shared-users',
     });
     mockIsLoggedIn.mockReturnValue(true);
-    mockGetAuthenticationRealmHint.mockReturnValue('');
 
     const replaceMock = vi.fn();
     vi.stubGlobal('location', {
@@ -228,6 +194,6 @@ describe('TenantAwareLogin', () => {
     await waitFor(() => {
       expect(replaceMock).toHaveBeenCalledWith('/process-instances');
     });
-    expect(mockDoLogin).not.toHaveBeenCalled();
+    expect(mockBeginAutomaticReauthentication).not.toHaveBeenCalled();
   });
 });
