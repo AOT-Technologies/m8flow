@@ -100,12 +100,12 @@ export default defineConfig({
   },
   resolve: {
     alias: [
-      // ── m8flow component overrides (must come BEFORE generic @spiffworkflow-frontend alias) ──
+      // -- m8flow component overrides (must come BEFORE generic @spiffworkflow-frontend alias) --
       {
         find: '@spiffworkflow-frontend/components/ReactDiagramEditor',
         replacement: path.resolve(__dirname, './src/components/ReactDiagramEditor'),
       },
-      // ── Generic fallbacks ──────────────────────────────────────────────────
+      // -- Generic fallbacks --
       {
         find: /^inferno$/,
         replacement:

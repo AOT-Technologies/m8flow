@@ -65,6 +65,7 @@
   },
   "scripts": {
     "build": "vite build",
+    "lint": "eslint src vite.config.ts --quiet",
     "start": "cross-env VITE_VERSION_INFO=\"{\\\"version\\\":\\\"local\\\"}\" VITE_BACKEND_BASE_URL=/v1.0 VITE_MULTI_TENANT_ON=${MULTI_TENANT_ON:-false} vite --host 0.0.0.0",
     "startopen": "cross-env VITE_VERSION_INFO=\"{\\\"version\\\":\\\"local\\\"}\" VITE_MULTI_TENANT_ON=${MULTI_TENANT_ON:-false} vite --host 0.0.0.0",
     "serve": "vite preview",

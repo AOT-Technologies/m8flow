@@ -28,7 +28,6 @@ from m8flow_backend.services.template_authorization_service import TemplateAutho
 from m8flow_backend.tenancy import is_super_admin_request
 from m8flow_backend.services.template_storage_service import (
     FilesystemTemplateStorageService,
-    NoopTemplateStorageService,
     TemplateStorageService,
     file_type_from_filename,
 )

@@ -2,7 +2,7 @@
 """Tests for creating process models from templates and template provenance tracking."""
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 from flask import Flask
@@ -28,7 +28,6 @@ from m8flow_backend.models.process_model_template import ProcessModelTemplateMod
 from m8flow_backend.services.template_service import TemplateService  # noqa: E402
 from spiffworkflow_backend.exceptions.api_error import ApiError  # noqa: E402
 from spiffworkflow_backend.models.db import db  # noqa: E402
-from spiffworkflow_backend.models.user import UserModel  # noqa: E402
 
 import spiffworkflow_backend.load_database_models  # noqa: F401,E402
 

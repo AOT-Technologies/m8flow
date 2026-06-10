@@ -326,7 +326,7 @@ def _patch_reference_cache_basic_query() -> None:
                 )
             )
         if is_tenant_context_exempt_request():
-            return _ORIGINALS["reference_cache_basic_query"]()
+            return _ORIGINALS["reference_cache_basic_query"](cls)
         tenant_id = _require_tenant_scope_id()
         max_generation_id = (
             db.session.query(db.func.max(ReferenceCacheModel.generation_id))
@@ -404,7 +404,21 @@ def _set_postgres_tenant_context(session: Session, transaction: Any, connection:
     if connection.dialect.name != "postgresql":
         return
     if is_super_admin_request():
-        connection.exec_driver_sql("SET LOCAL app.bypass_rls = 'on'")
+        exec_driver_sql = getattr(connection, "exec_driver_sql", None)
+        if callable(exec_driver_sql):
+            exec_driver_sql("SET LOCAL app.bypass_rls = 'on'")
+            return
+
+        raw_connection = getattr(connection, "connection", None)
+        driver_connection = getattr(raw_connection, "driver_connection", raw_connection)
+        if driver_connection is None:
+            return
+
+        cursor = driver_connection.cursor()
+        try:
+            cursor.execute("SET LOCAL app.bypass_rls = 'on'")
+        finally:
+            cursor.close()
         return
     if is_tenant_context_exempt_request():
         return

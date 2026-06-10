@@ -20,7 +20,7 @@ from m8flow_backend.services.tenant_identity_helpers import tenant_id_from_paylo
 from m8flow_backend.services.tenant_identity_helpers import user_belongs_to_current_tenant
 from spiffworkflow_backend.exceptions.api_error import ApiError
 from spiffworkflow_backend.services.authentication_service import AuthenticationService
-from spiffworkflow_backend.services.authorization_service import AuthorizationService
+from spiffworkflow_backend.services.authorization_service import AuthorizationService as _AuthorizationService
 
 try:
     from sqlalchemy.exc import InvalidRequestError
@@ -29,7 +29,6 @@ except ImportError:
 
 from m8flow_backend.canonical_db import get_canonical_db
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
-from m8flow_backend.services.tenant_identity_helpers import extract_realm_from_issuer
 from m8flow_backend.tenancy import (
     SELECTED_TENANT_COOKIE_NAME,
     TENANT_CLAIM,
@@ -43,6 +42,9 @@ from m8flow_backend.tenancy import (
 )
 
 LOGGER = logging.getLogger(__name__)
+# Preserve the module-level AuthorizationService seam because several unit tests
+# monkeypatch it directly even though the current runtime flow no longer calls it.
+AuthorizationService = _AuthorizationService
 TENANT_SELECTION_HEADER_NAME = "x-m8flow-tenant-id"
 MASTER_REALM_IDENTIFIER = "master"
 SUPER_ADMIN_ROLE = "super-admin"
@@ -135,10 +137,7 @@ def resolve_request_tenant() -> None:
             "Canonical db not set; ensure app has been initialized (set_canonical_db must be called during startup)."
         )
 
-    if _is_tenant_context_exempt_request():
-        g._m8flow_tenant_context_exempt_request = True
-        g._m8flow_public_request = True
-        return
+    tenant_context_exempt_request = _is_tenant_context_exempt_request()
 
     # Master realm super-admin is global by design and must bypass tenant scoping.
     if _is_master_super_admin_request():
@@ -163,6 +162,9 @@ def resolve_request_tenant() -> None:
     if tenant_source in {"master_realm", "login_return"}:
         g._m8flow_global_request = True
         g.m8flow_tenant_id = None
+        if tenant_context_exempt_request:
+            g._m8flow_tenant_context_exempt_request = True
+            g._m8flow_public_request = True
         _log_tenant_resolution(
             tenant_id=None,
             source=tenant_source,
@@ -198,7 +200,7 @@ def resolve_request_tenant() -> None:
             status_code=400,
         )
 
-    if _is_tenant_context_exempt_request() and tenant_id in {None, "public"}:
+    if tenant_context_exempt_request and tenant_id in {None, "public"}:
         _log_tenant_resolution(
             tenant_id=tenant_id,
             source="tenant_context_exempt",
@@ -514,10 +516,12 @@ def _decoded_token_cached(*, allow_decode: bool) -> Optional[dict[str, Any]]:
     if not allow_decode:
         return None
 
+    unverified_decoded = _decoded_payload_from_bearer_token_without_verification(token)
+    if isinstance(unverified_decoded, dict):
+        return unverified_decoded
+
     try:
-        authentication_identifier = _authentication_identifier()
-        if not authentication_identifier:
-            return None
+        authentication_identifier = _authentication_identifier() or _master_realm_identifier()
         decoded = AuthenticationService.parse_jwt_token(authentication_identifier, token)
     except Exception as exc:
         if not getattr(g, "_m8flow_warned_decode_token", False):

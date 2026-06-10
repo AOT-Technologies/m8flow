@@ -1487,13 +1487,29 @@ def apply() -> None:
 
     AuthorizationService.remove_old_permissions_from_added_permissions = patched_remove_old_permissions_from_added_permissions
 
-    _original_request_is_excluded = AuthorizationService.request_is_excluded_from_permission_check.__func__  # type: ignore[attr-defined]
+    original_request_is_excluded = getattr(
+        AuthorizationService,
+        "request_is_excluded_from_permission_check",
+        None,
+    )
+    _original_request_is_excluded = getattr(
+        original_request_is_excluded,
+        "__func__",
+        None,
+    )
 
     @classmethod  # type: ignore[misc]
     def patched_request_is_excluded_from_permission_check(cls) -> bool:
-        if _original_request_is_excluded(cls):
+        if _original_request_is_excluded is not None and _original_request_is_excluded(cls):
             return True
-        api_function_full_path, _module = cls.get_fully_qualified_api_function_from_request()
+        get_fully_qualified_api_function = getattr(
+            cls,
+            "get_fully_qualified_api_function_from_request",
+            None,
+        )
+        if get_fully_qualified_api_function is None:
+            return False
+        api_function_full_path, _module = get_fully_qualified_api_function()
         if api_function_full_path in M8FLOW_PERMISSION_CHECK_EXCLUSION_ADDITIONS:
             return True
         if api_function_full_path and api_function_full_path.startswith(
