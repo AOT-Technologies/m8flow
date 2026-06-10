@@ -41,4 +41,4 @@ difflog.txt
 data/*
 process_models/*
 extensions/m8flow-frontend/test/browser/test-results*
-m8flow-frontend\dist
+m8flow-frontend/dist
