@@ -335,10 +335,10 @@ resolve_organization_id_by_alias() {
 
   [ -n "${organization_alias}" ] || return 1
 
-  /opt/keycloak/bin/kcadm.sh get organizations -r "${realm_name}" -q search="${organization_alias}" -q exact=true 2>/dev/null \
-    | grep -B3 "\"alias\" : \"${organization_alias}\"" \
-    | sed -n 's/.*"id" : "\([^"]*\)".*/\1/p' \
-    | head -n 1
+  # Match by alias, not Keycloak's exact= filter (which matches name). sed holds
+  # the last "id" and prints it at the matching "alias" line (no awk/jq in image).
+  /opt/keycloak/bin/kcadm.sh get organizations -r "${realm_name}" -q search="${organization_alias}" 2>/dev/null \
+    | sed -n "/\"id\" : \"/ { s/.*\"id\" : \"\([^\"]*\)\".*/\1/; h; }; /\"alias\" : \"${organization_alias}\"/ { x; p; q; }"
 }
 
 resolve_user_id_by_username() {

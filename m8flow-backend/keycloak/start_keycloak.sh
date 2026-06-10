@@ -592,7 +592,9 @@ function resolve_organization_id_by_alias() {
 
   [[ -n "${organization_alias}" ]] || return 1
 
-  docker exec keycloak /opt/keycloak/bin/kcadm.sh get organizations -r "${realm_name}" -q search="${organization_alias}" -q exact=true 2>/dev/null \
+  # Match by alias via jq; no exact= (Keycloak's exact filter matches name, which
+  # would drop a tenant org whose name differs from its alias).
+  docker exec keycloak /opt/keycloak/bin/kcadm.sh get organizations -r "${realm_name}" -q search="${organization_alias}" 2>/dev/null \
     | jq -r --arg alias "${organization_alias}" '.[] | select(.alias == $alias) | .id' \
     | head -n 1
 }
