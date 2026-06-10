@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 def test_configuration_secrets_add_when_empty(authenticated_page: Page) -> None:
     page = authenticated_page
-    nav_config = page.get_by_test_id("nav-configuration")
+    nav_config = page.get_by_test_id("nav-item-configuration")
     try:
         nav_config.wait_for(state="visible", timeout=SHORT_TIMEOUT)
     except PlaywrightTimeout:
