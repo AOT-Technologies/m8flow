@@ -20,6 +20,10 @@ m8flow-connector-github = { git = "https://github.com/AOT-Technologies/m8flow-co
 connector-postgres-v2 = { git = "https://github.com/sartography/connector-postgres.git", rev = "af95cbc52c326bc925e185009ea5888f3a5869be" }
 connector-http = { git = "https://github.com/sartography/connector-http.git", tag = "v0.0.1" }
 psycopg2-binary = "^2.9.9"
+opentelemetry-sdk = ">=1.20.0"
+opentelemetry-exporter-otlp-proto-grpc = ">=1.20.0"
+opentelemetry-instrumentation-flask = ">=0.41b0"
+opentelemetry-instrumentation-logging = ">=0.41b0"
 
 [build-system]
 requires = ["poetry-core"]

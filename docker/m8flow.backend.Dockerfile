@@ -83,7 +83,12 @@ COPY uvicorn-log.yaml /app/uvicorn-log.yaml
 RUN uv venv /opt/venv \
   && uv pip install --python /opt/venv/bin/python setuptools wheel lxml \
   && uv pip install --python /opt/venv/bin/python --no-build-isolation-package spiffworkflow -e /app/spiffworkflow-backend \
-  && uv pip install --python /opt/venv/bin/python flower "flask>=3.1.3"
+  && uv pip install --python /opt/venv/bin/python flower "flask>=3.1.3" \
+    opentelemetry-sdk \
+    opentelemetry-exporter-otlp-proto-grpc \
+    opentelemetry-instrumentation-flask \
+    opentelemetry-instrumentation-sqlalchemy \
+    opentelemetry-instrumentation-logging
 
 # -----------------------------------------------------------------------------
 # Stage: prod - minimal runtime image for Linux / production (non-root)
@@ -196,6 +201,11 @@ COPY --from=fetch-upstream /upstream/spiff-arena-common /app/spiff-arena-common
 RUN uv pip install --system --break-system-packages setuptools wheel lxml \
   && cd /app/spiffworkflow-backend && uv pip install --system --break-system-packages --no-build-isolation-package spiffworkflow -e . --group dev \
   && uv pip install --system --break-system-packages flower nats-py httpx python-dotenv "flask>=3.1.3" \
+    opentelemetry-sdk \
+    opentelemetry-exporter-otlp-proto-grpc \
+    opentelemetry-instrumentation-flask \
+    opentelemetry-instrumentation-sqlalchemy \
+    opentelemetry-instrumentation-logging \
   && uv cache clean \
   && apt-get purge -y build-essential python3-dev default-libmysqlclient-dev patch python3-pip-whl \
   && apt-get autoremove -y \

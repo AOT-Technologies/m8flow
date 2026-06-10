@@ -55,3 +55,25 @@ Examples:
 ## Advanced Keycloak auth configs
 
 For `SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS` patterns (master realm, `admin-cli`, role mapping), see [m8flow-backend/keycloak/KEYCLOAK_SETUP.md](../m8flow-backend/keycloak/KEYCLOAK_SETUP.md).
+
+## Grafana (otel-lgtm)
+
+Observability UI uses **`GRAFANA_*`** variables in `.env`; [docker/m8flow-docker-compose.yml](../docker/m8flow-docker-compose.yml) maps them to Grafana `GF_*` for the `otel-lgtm` service only (the full `.env` is **not** mounted into Grafana).
+
+- **`GRAFANA_HTTP_PORT`**: host port for Grafana (default `3000`).
+- **`GRAFANA_SERVER_ROOT_URL`**: public base URL of Grafana (OAuth redirects).
+- **`GRAFANA_OIDC_ENABLED`**: keep **`true`** by default to match cloud/production auth posture.
+- **`GRAFANA_OIDC_CLIENT_ID` / `GRAFANA_OIDC_CLIENT_SECRET`**: Keycloak confidential client credentials.
+- **`GRAFANA_ALLOWED_ROLE`**: master-realm role name required for Grafana Admin (paired with JMESPath in Compose).
+- **`GRAFANA_COOKIE_SECURE`**: set `true` when `GRAFANA_SERVER_ROOT_URL` uses `https://`.
+- **Cloud deployment note**: use the same `GRAFANA_*` and `KEYCLOAK_*` keys in ECS/Fargate task env/secrets to keep behavior consistent with local compose.
+
+OTLP ingest ports on `otel-lgtm` are localhost-bound by default in compose (`127.0.0.1:4317`, `127.0.0.1:4318`). Avoid exposing these publicly unless intentionally required and protected.
+
+Full procedure: [grafana-keycloak.md](grafana-keycloak.md).
+
+## Logs (Loki / Promtail / unified dashboard)
+
+- **OTLP application logs**: Python services send logs when `OTEL_EXPORTER_OTLP_ENDPOINT` points at `otel-lgtm` (see [docker/m8flow-docker-compose.yml](../docker/m8flow-docker-compose.yml)); labels typically derive from `OTEL_SERVICE_NAME`.
+- **Docker logs**: The `promtail` service ships selected container stdout to Loki (see [docker/promtail-config.yaml](../docker/promtail-config.yaml)) so Keycloak and other non-OTLP processes appear without duplicating OTLP apps.
+- **Dashboard**: [docs/grafana-logs.md](grafana-logs.md) describes the **M8Flow Unified Logs** dashboard and LogQL examples.
