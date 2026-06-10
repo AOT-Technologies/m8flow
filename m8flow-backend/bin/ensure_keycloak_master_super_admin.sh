@@ -144,7 +144,19 @@ remove_legacy_root_group_mappers() {
 ensure_roles_mapper() {
   realm_name="$1"
   client_internal_id="$2"
-  if ! /opt/keycloak/bin/kcadm.sh get "clients/${client_internal_id}/protocol-mappers/models" -r "${realm_name}" 2>/dev/null | grep -q '"name" : "roles"\|"name":"roles"'; then
+
+  # Fast path: skip if a "roles" mapper already exists on the client.
+  if /opt/keycloak/bin/kcadm.sh get "clients/${client_internal_id}/protocol-mappers/models" -r "${realm_name}" 2>/dev/null \
+    | grep -q '"name"[[:space:]]*:[[:space:]]*"roles"'; then
+    return 0
+  fi
+
+  # Create idempotently. The pre-check above can race with the keycloak container's
+  # own post-start realm configuration (the init service starts as soon as Keycloak is
+  # *healthy*, while the entrypoint is still configuring it) or transiently return empty
+  # under load. Tolerate an "exists with same name" response instead of aborting the
+  # whole init script under `set -eu`.
+  if create_output="$(
     /opt/keycloak/bin/kcadm.sh create "clients/${client_internal_id}/protocol-mappers/models" -r "${realm_name}" \
       -s name=roles \
       -s protocol=openid-connect \
@@ -156,9 +168,18 @@ ensure_roles_mapper() {
       -s 'config."id.token.claim"=true' \
       -s 'config."access.token.claim"=true' \
       -s 'config."claim.name"=roles' \
-      -s 'config."jsonType.label"=String' \
-      >/dev/null
+      -s 'config."jsonType.label"=String' 2>&1
+  )"; then
+    return 0
   fi
+
+  if printf '%s' "${create_output}" | grep -qi 'exists'; then
+    echo ":: Realm ${realm_name}: roles protocol mapper already exists; skipping."
+    return 0
+  fi
+
+  echo >&2 "ERROR: Realm ${realm_name}: failed to create roles protocol mapper: ${create_output}"
+  return 1
 }
 
 ensure_spoke_client_in_realm() {

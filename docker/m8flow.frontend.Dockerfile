@@ -6,8 +6,12 @@ FROM alpine:3.22 AS fetch-upstream
 
 ARG UPSTREAM_TAG=
 
-RUN apk update && apk upgrade && \
-    apk add --no-cache git jq
+# Retry apk: Alpine CDN returns transient "try again later" errors.
+RUN ok=0; for i in 1 2 3 4 5; do \
+      if apk update && apk upgrade && apk add --no-cache git jq; then ok=1; break; fi; \
+      echo "apk attempt $i failed; retrying in 5s..." >&2; sleep 5; \
+    done; \
+    [ "$ok" = 1 ]
 
 COPY upstream.sources.json /tmp/upstream.sources.json
 
@@ -103,11 +107,12 @@ RUN --mount=type=cache,target=/root/.npm \
 # libexpat1, libnghttp2, libsystemd, ncurses) that have no upstream fix yet.
 FROM nginx:1.29.2-alpine
 
-# Install only required utilities
-RUN apk update && \
-    apk upgrade && \
-    apk add --no-cache bash dos2unix && \
-    rm -rf /var/cache/apk/*
+# Install required utilities. Retry apk: Alpine CDN returns transient "try again later" errors.
+RUN ok=0; for i in 1 2 3 4 5; do \
+      if apk update && apk upgrade && apk add --no-cache bash dos2unix; then ok=1; break; fi; \
+      echo "apk attempt $i failed; retrying in 5s..." >&2; sleep 5; \
+    done; \
+    [ "$ok" = 1 ] && rm -rf /var/cache/apk/*
 
 # Remove default nginx configuration
 RUN rm -rf /etc/nginx/conf.d/*
