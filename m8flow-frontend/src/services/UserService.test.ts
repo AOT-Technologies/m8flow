@@ -256,6 +256,16 @@ describe('UserService.doLogin', () => {
 
     expect(UserService.getTenantName()).toBe('ABC 1234');
   });
+
+  it('treats an expired access token as logged out', async () => {
+    const UserService = await loadUserService('http://localhost:8001/tenants');
+    stubAuthCookies({
+      sub: 'user-1',
+      exp: Math.floor(Date.now() / 1000) - 60,
+    });
+
+    expect(UserService.isLoggedIn()).toBe(false);
+  });
 });
 
 const loadUserServiceWithAuth = async (
