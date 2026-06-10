@@ -362,8 +362,38 @@ const getSelectedTenantMembership = (
   )) || null;
 };
 
+const tokenHasExpired = (decodedToken: Record<string, unknown> | null): boolean => {
+  if (!decodedToken) {
+    return false;
+  }
+
+  const expClaim = decodedToken.exp;
+  const expSeconds =
+    typeof expClaim === 'number'
+      ? expClaim
+      : typeof expClaim === 'string'
+        ? Number(expClaim)
+        : NaN;
+
+  if (!Number.isFinite(expSeconds)) {
+    return false;
+  }
+
+  return (expSeconds as number) * 1000 <= Date.now();
+};
+
 const isLoggedIn = () => {
-  return !!getAccessToken();
+  const accessToken = getAccessToken();
+  if (!accessToken) {
+    return false;
+  }
+
+  const decodedAccessToken = decodeTokenRecord(accessToken);
+  if (!decodedAccessToken) {
+    return false;
+  }
+
+  return !tokenHasExpired(decodedAccessToken);
 };
 
 const isPublicUser = () => {
@@ -411,7 +441,9 @@ const tokenIndicatesSuperAdmin = (decoded: Record<string, unknown>): boolean => 
   return false;
 };
 
-const decodeTokenRecord = (token: string | null): Record<string, unknown> | null => {
+const decodeTokenRecord = (
+  token: string | null | undefined,
+): Record<string, unknown> | null => {
   if (!token) {
     return null;
   }
