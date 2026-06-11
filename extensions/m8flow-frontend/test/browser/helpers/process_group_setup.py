@@ -118,7 +118,7 @@ def after_creating_process_group(page: Page) -> None:
 
 def go_to_processes_section(page: Page) -> None:
     _dismiss_blocking_overlays(page)
-    nav = page.get_by_test_id("nav-processes")
+    nav = page.get_by_test_id("nav-item-processes")
     try:
         nav.wait_for(state="visible", timeout=SHORT_TIMEOUT)
     except PlaywrightTimeout:

@@ -19,45 +19,51 @@ from helpers.config import (
 logger = logging.getLogger(__name__)
 
 
-class TenantSelectionError(RuntimeError):
-    """Raised when the tenant-select page rejects the supplied tenant name."""
+def _click_sign_in(page: Page) -> None:
+    """Click the Sign In button on the landing page if it is visible (multi-tenant mode).
 
-
-def _handle_tenant_selection(page: Page, tenant_name: str | None = None) -> None:
-    """If the tenant-select page is showing, fill in the tenant and submit.
-
-    After clicking submit this also waits for the form to disappear (success,
-    redirected to Keycloak) or an inline error (e.g. ``Tenant not found``).
+    In single-tenant mode the landing page is skipped and the user lands
+    directly on the Keycloak form, so this is a no-op in that case.
     """
-    tenant_form = page.get_by_test_id("tenant-select-form")
+    sign_in_btn = page.get_by_test_id("shared-realm-sign-in-button")
     try:
-        tenant_form.wait_for(state="visible", timeout=SHORT_TIMEOUT)
+        sign_in_btn.wait_for(state="visible", timeout=SHORT_TIMEOUT)
+        sign_in_btn.click()
     except PlaywrightTimeout:
-        return
+        pass
 
-    resolved_tenant = tenant_name or DEFAULT_TENANT
-    logger.debug("Submitting tenant '%s' on tenant-select page.", resolved_tenant)
 
-    page.get_by_test_id("tenant-name-input").locator("input").fill(resolved_tenant)
-    page.get_by_test_id("tenant-select-submit-button").click()
+def _click_platform_sign_in(page: Page) -> None:
+    """Click the Platform Sign In button on the Keycloak m8flow realm login page.
 
-    not_found = page.get_by_text("Tenant not found")
-    unable = page.get_by_text("Unable to verify tenant")
+    The Keycloak custom theme injects an #m8f-master-login-button that redirects
+    to the master realm for platform administrator login.
+    Raises PlaywrightTimeout when the button is not visible within KC_TIMEOUT.
+    """
+    page.locator("#m8f-master-login-button").wait_for(
+        state="visible", timeout=KC_TIMEOUT
+    )
+    page.locator("#m8f-master-login-button").click()
+
+
+def _handle_organization_selection(
+    page: Page,
+    organization_alias: str | None = None,
+) -> None:
+    """Select the target organization after Keycloak authentication.
+
+    When the authenticated user belongs to multiple tenants the app renders
+    a list of organization buttons.  Clicks the button for *organization_alias*
+    (defaults to DEFAULT_TENANT).  Does nothing when the selection page is not
+    shown because single-tenant auto-finalization already occurred.
+    """
+    alias = organization_alias or DEFAULT_TENANT
+    org_button = page.get_by_test_id(f"organization-option-{alias}")
     try:
-        page.wait_for_function(
-            "() => !document.querySelector('[data-testid=\"tenant-select-form\"]')"
-            " || !!document.querySelector('p.MuiFormHelperText-root.Mui-error')",
-            timeout=NAV_TIMEOUT,
-        )
-    except PlaywrightTimeout as error:
-        raise TenantSelectionError(
-            f"Tenant submit did not navigate (tenant={resolved_tenant!r})."
-        ) from error
-
-    if not_found.is_visible() or unable.is_visible():
-        raise TenantSelectionError(
-            f"Tenant '{resolved_tenant}' was rejected by the tenant-select page."
-        )
+        org_button.wait_for(state="visible", timeout=SHORT_TIMEOUT)
+        org_button.click()
+    except PlaywrightTimeout:
+        pass
 
 
 def _handle_keycloak_update_password(page: Page, password: str) -> None:
@@ -76,9 +82,8 @@ def _wait_for_post_login(
     """Wait for the app shell or a Keycloak required-action page.
 
     The post-login signal is the user-actions button in the side nav, which
-    every authenticated layout renders. Handles UPDATE_PASSWORD automatically
-    if it appears. *new_password* is used when Keycloak forces a password
-    change; defaults to *password* so the credentials stay the same.
+    every authenticated layout renders.  Handles UPDATE_PASSWORD automatically
+    when Keycloak forces a password change.
     """
     indicator = page.locator(
         '#password-new, [data-testid="nav-user-actions-button"]'
@@ -93,9 +98,13 @@ def _wait_for_post_login(
 
 
 def expect_logged_out(page: Page, timeout: int = PAGE_DATA_TIMEOUT) -> None:
-    """Wait for a post-logout page (tenant-select or Keycloak login form)."""
+    """Wait for a post-logout page.
+
+    Accepts either the landing page Sign In button (multi-tenant mode) or
+    the Keycloak username field (single-tenant mode) as evidence of logout.
+    """
     page.locator(
-        '[data-testid="tenant-select-form"], #username'
+        '[data-testid="shared-realm-sign-in-button"], #username'
     ).first.wait_for(state="visible", timeout=timeout)
 
 
@@ -106,18 +115,18 @@ def is_multi_tenant_mode(
 ) -> bool:
     """Detect whether the backend is configured for multi-tenant mode.
 
-    Navigates to *base_url* and waits briefly for the tenant-select form.
-    Returns True when the picker is rendered (multi-tenant), False when
-    it is absent (single-tenant -- the user is sent straight to Keycloak).
+    Navigates to *base_url* and checks for the Sign In button on the landing
+    page.  Returns True when the landing page is rendered (multi-tenant),
+    False when it is absent (single-tenant -- the user is sent straight to
+    Keycloak without a landing page).
     """
     page.goto(base_url)
-    tenant_form = page.get_by_test_id("tenant-select-form")
+    sign_in_btn = page.get_by_test_id("shared-realm-sign-in-button")
     try:
-        tenant_form.wait_for(state="visible", timeout=timeout)
+        sign_in_btn.wait_for(state="visible", timeout=timeout)
         return True
     except PlaywrightTimeout:
         return False
-
 
 
 def _submit_keycloak_form(page: Page, username: str, password: str) -> None:
@@ -134,25 +143,28 @@ def login(
     username: str | None = None,
     password: str | None = None,
     new_password: str | None = None,
+    tenant: str | None = None,
     base_url: str = BASE_URL,
 ) -> None:
-    """Log in via Keycloak with automatic retry.
+    """Log in via the Sign In flow with automatic retry.
 
-    Works for both single-tenant and multi-tenant setups.
-    Handles Keycloak required actions (e.g. forced password update).
-    *new_password* is forwarded to the update-password handler when
-    Keycloak forces a change; defaults to *password*.
+    Works for both single-tenant and multi-tenant setups.  In multi-tenant
+    mode the landing page Sign In button is clicked before Keycloak, and
+    after successful authentication the target organization is selected via
+    *tenant* (defaults to DEFAULT_TENANT) or auto-finalized when the user
+    belongs to exactly one tenant.  Handles Keycloak UPDATE_PASSWORD actions.
     """
     username = username or DEFAULT_USERNAME
     password = password or DEFAULT_PASSWORD
 
     page.goto(base_url)
-    _handle_tenant_selection(page)
+    _click_sign_in(page)
 
     login_url = f"{base_url.rstrip('/')}/login"
     for attempt in range(1, MAX_LOGIN_ATTEMPTS + 1):
         _submit_keycloak_form(page, username, password)
         try:
+            _handle_organization_selection(page, organization_alias=tenant)
             _wait_for_post_login(page, password, new_password=new_password)
             return
         except (AssertionError, PlaywrightTimeout):
@@ -163,11 +175,8 @@ def login(
                 attempt,
                 page.url,
             )
-            # /login lets TenantAwareLogin redirect back to Keycloak using the
-            # tenant already stored in localStorage. Falling back to base_url
-            # would skip the redirect because the tenant gate is bypassed.
             page.goto(login_url)
-            _handle_tenant_selection(page)
+            _click_sign_in(page)
 
 
 def login_expect_failure(
@@ -175,33 +184,29 @@ def login_expect_failure(
     username: str,
     password: str,
     error_text: str,
-    tenant_name: str | None = None,
     base_url: str = BASE_URL,
 ) -> None:
-    """Submit credentials and assert Keycloak rejects the login."""
+    """Submit credentials via the Sign In flow and assert Keycloak rejects the login."""
     page.goto(base_url)
-    _handle_tenant_selection(page, tenant_name=tenant_name)
+    _click_sign_in(page)
     _submit_keycloak_form(page, username, password)
     expect(page.get_by_text(error_text)).to_be_visible(timeout=KC_TIMEOUT)
 
 
-def login_as_global_admin(
+def login_as_platform_admin(
     page: Page,
     username: str = SUPER_ADMIN_USERNAME,
     password: str = SUPER_ADMIN_PASSWORD,
     base_url: str = BASE_URL,
 ) -> None:
-    """Log in as a global admin via the master realm.
+    """Log in as a platform administrator via the Platform Sign In flow.
 
-    Clicks the 'Global admin sign in' button on the tenant-select page,
-    which redirects to Keycloak's master realm.
+    Navigates to the app root (which auto-redirects to Keycloak m8flow realm),
+    clicks the #m8f-master-login-button injected by the Keycloak custom theme,
+    and submits the platform admin credentials on the master realm login page.
     """
     page.goto(base_url)
-
-    page.get_by_test_id("tenant-select-form").wait_for(
-        state="visible", timeout=KC_TIMEOUT
-    )
-    page.get_by_test_id("global-admin-sign-in-button").click()
+    _click_platform_sign_in(page)
 
     for attempt in range(1, MAX_LOGIN_ATTEMPTS + 1):
         _submit_keycloak_form(page, username, password)
@@ -212,10 +217,31 @@ def login_as_global_admin(
             if attempt == MAX_LOGIN_ATTEMPTS:
                 raise
             page.goto(base_url)
-            page.get_by_test_id("tenant-select-form").wait_for(
-                state="visible", timeout=KC_TIMEOUT
-            )
-            page.get_by_test_id("global-admin-sign-in-button").click()
+            _click_platform_sign_in(page)
+
+
+def login_as_global_admin(
+    page: Page,
+    username: str = SUPER_ADMIN_USERNAME,
+    password: str = SUPER_ADMIN_PASSWORD,
+    base_url: str = BASE_URL,
+) -> None:
+    """Backward-compatible alias for :func:`login_as_platform_admin`."""
+    login_as_platform_admin(page, username=username, password=password, base_url=base_url)
+
+
+def login_expect_failure_platform_sign_in(
+    page: Page,
+    username: str,
+    password: str,
+    error_text: str,
+    base_url: str = BASE_URL,
+) -> None:
+    """Submit credentials via the master realm Platform Sign In and assert Keycloak rejects them."""
+    page.goto(base_url)
+    _click_platform_sign_in(page)
+    _submit_keycloak_form(page, username, password)
+    expect(page.get_by_text(error_text)).to_be_visible(timeout=KC_TIMEOUT)
 
 
 def logout(page: Page, base_url: str = BASE_URL) -> None:
