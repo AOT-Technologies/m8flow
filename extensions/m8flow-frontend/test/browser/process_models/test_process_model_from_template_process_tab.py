@@ -61,7 +61,7 @@ def test_create_process_model_with_faker_name_appears_on_process_tab(
         model_display_name=sample_display_name,
     )
 
-    page.get_by_test_id("nav-processes").click()
+    page.get_by_test_id("nav-item-processes").click()
     page.wait_for_url("**/process-groups**", timeout=PAGE_DATA_TIMEOUT)
 
     expect(

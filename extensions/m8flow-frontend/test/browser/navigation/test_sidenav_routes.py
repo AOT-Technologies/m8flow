@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 def test_sidenav_nav_home(authenticated_page: Page) -> None:
     page = authenticated_page
-    home_nav = page.get_by_test_id("nav-home")
+    home_nav = page.get_by_test_id("nav-item-home")
     expect(home_nav).to_be_visible(timeout=5_000)
     home_nav.click()
     expect(page.get_by_test_id("nav-user-actions-button")).to_be_visible(timeout=10_000)
@@ -15,7 +15,7 @@ def test_sidenav_nav_home(authenticated_page: Page) -> None:
 
 def test_sidenav_nav_templates(authenticated_page: Page) -> None:
     page = authenticated_page
-    page.get_by_test_id("nav-templates").click()
+    page.get_by_test_id("nav-item-templates").click()
     expect(
         page.get_by_test_id("template-gallery-view-mode-toggle")
     ).to_be_visible(timeout=15_000)
@@ -23,7 +23,7 @@ def test_sidenav_nav_templates(authenticated_page: Page) -> None:
 
 def test_sidenav_nav_processes(authenticated_page: Page) -> None:
     page = authenticated_page
-    processes_nav = page.get_by_test_id("nav-processes")
+    processes_nav = page.get_by_test_id("nav-item-processes")
     if not processes_nav.is_visible(timeout=3_000):
         pytest.skip("Processes nav item not visible for current user role")
     processes_nav.click()
@@ -32,7 +32,7 @@ def test_sidenav_nav_processes(authenticated_page: Page) -> None:
 
 def test_sidenav_nav_process_instances(authenticated_page: Page) -> None:
     page = authenticated_page
-    instances_nav = page.get_by_test_id("nav-process-instances")
+    instances_nav = page.get_by_test_id("nav-item-processInstances")
     if not instances_nav.is_visible(timeout=3_000):
         pytest.skip("Process Instances nav item not visible for current user role")
     instances_nav.click()

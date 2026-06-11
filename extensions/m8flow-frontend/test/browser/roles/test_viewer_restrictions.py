@@ -9,14 +9,14 @@ logger = logging.getLogger(__name__)
 
 def test_viewer_no_home_nav(viewer_page: Page) -> None:
     expect(
-        viewer_page.get_by_test_id("nav-home")
+        viewer_page.get_by_test_id("nav-item-home")
     ).not_to_be_visible(timeout=5_000)
     logger.info("Viewer cannot see Home tab.")
 
 
 def test_viewer_no_import_template_button(viewer_page: Page) -> None:
     page = viewer_page
-    page.get_by_test_id("nav-templates").click()
+    page.get_by_test_id("nav-item-templates").click()
     expect(
         page.get_by_test_id("template-gallery-view-mode-toggle")
     ).to_be_visible(timeout=15_000)
@@ -28,14 +28,13 @@ def test_viewer_no_import_template_button(viewer_page: Page) -> None:
 
 def test_viewer_no_tenants_nav(viewer_page: Page) -> None:
     expect(
-        viewer_page.get_by_test_id("nav-tenants")
+        viewer_page.get_by_test_id("nav-item-/../tenants")
     ).not_to_be_visible(timeout=5_000)
     logger.info("Viewer cannot see Tenants tab.")
 
 
 def test_viewer_no_configuration_nav(viewer_page: Page) -> None:
     expect(
-        viewer_page.get_by_test_id("nav-configuration")
+        viewer_page.get_by_test_id("nav-item-configuration")
     ).not_to_be_visible(timeout=5_000)
     logger.info("Viewer cannot see Configuration tab.")
-

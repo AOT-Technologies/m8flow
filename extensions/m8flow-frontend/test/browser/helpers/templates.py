@@ -7,7 +7,7 @@ from helpers.waiters import wait_for_app_ready
 def navigate_to_templates(page: Page) -> None:
     """Click the Templates nav item and wait for the gallery page to appear."""
     wait_for_app_ready(page)
-    page.get_by_test_id("nav-templates").click()
+    page.get_by_test_id("nav-item-templates").click()
     toggle = page.get_by_test_id("template-gallery-view-mode-toggle")
     try:
         expect(toggle).to_be_visible(timeout=PAGE_DATA_TIMEOUT)
