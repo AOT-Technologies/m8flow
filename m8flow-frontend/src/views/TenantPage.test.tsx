@@ -59,6 +59,9 @@ vi.mock("../services/TenantService", () => ({
     "submitter",
     "viewer",
   ],
+  TENANT_GROUP_NAME_MAX_LENGTH: 64,
+  normalizeTenantGroupName: (value: string) => value.trim().replace(/\s+/g, " "),
+  validateTenantGroupName: () => "",
   default: {
     createTenant: (...args: unknown[]) => mockCreateTenant(...args),
     getTenantGroups: (...args: unknown[]) => mockGetTenantGroups(...args),
@@ -92,7 +95,7 @@ vi.mock("react-i18next", () => ({
         edit_organization: "Edit Tenant",
         manage_tenant_groups: "Manage Tenant Groups",
         tenant_group_management_description:
-          "Review tenant users, add existing members, and manage the Keycloak groups and tenant-scoped roles associated with this tenant.",
+          "Add existing members and manage groups and roles associated with this tenant.",
         delete_organization: "Delete Tenant",
         search_by: "Search By",
         organization_alias: "Tenant Alias",
@@ -121,7 +124,13 @@ vi.mock("react-i18next", () => ({
         failed_to_delete_organization:
           "Failed to delete tenant. Please try again.",
         failed_to_load_tenant_groups: "Failed to load tenant groups.",
+        search_organization_members: "Search tenant members...",
+        search_tenant_members_minimum_characters:
+          "Type at least 3 characters to search tenant members.",
         search_tenant_groups: "Search tenant groups or members...",
+        search_groups_or_roles: "Search groups or roles...",
+        no_matching_groups_or_roles_found:
+          "No groups or roles match your search.",
         refresh_tenant_groups: "Refresh tenant groups",
         no_tenant_groups_found: "No tenant groups found.",
         no_organization_members_found: "No tenant members found.",
@@ -427,11 +436,14 @@ describe("TenantPage", () => {
 
     expect(
       await screen.findByText(
-        "Review tenant users, add existing members, and manage the Keycloak groups and tenant-scoped roles associated with this tenant.",
+        "Add existing members and manage groups and roles associated with this tenant.",
       ),
     ).toBeInTheDocument();
     expect(mockGetTenantGroups).toHaveBeenCalledWith("tenant-uuid");
-    expect(mockGetTenantMembers).toHaveBeenCalledWith("tenant-uuid");
+    expect(mockGetTenantMembers).not.toHaveBeenCalled();
+    expect(
+      screen.getByText("Type at least 3 characters to search tenant members."),
+    ).toBeInTheDocument();
     expect(screen.getAllByText("Administrators").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Approvers").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Tenant Admin").length).toBeGreaterThan(0);
@@ -440,7 +452,7 @@ describe("TenantPage", () => {
     expect(screen.getAllByText("reviewer").length).toBeGreaterThan(0);
   });
 
-  it("filters tenant groups by member or group name inside the dialog", async () => {
+  it("filters tenant groups by role inside the dialog", async () => {
     mockUseTenants.mockReturnValue({
       data: [
         {
@@ -516,11 +528,11 @@ describe("TenantPage", () => {
     fireEvent.click(screen.getByTestId("tenant-roles-button-tenant-uuid"));
     await screen.findAllByText("Designers");
 
-    fireEvent.change(screen.getByPlaceholderText("Search tenant groups or members..."), {
+    fireEvent.change(screen.getByTestId("tenant-group-search-input"), {
       target: { value: "integrator" },
     });
 
-    expect(screen.getAllByText("Designers").length).toBe(1);
+    expect(screen.queryByText("Designers")).not.toBeInTheDocument();
     expect(screen.getAllByText("Support").length).toBeGreaterThan(0);
   });
 });

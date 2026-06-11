@@ -101,6 +101,8 @@ jobs:
         run: npm run lint
       - name: Test
         working-directory: spiffworkflow-frontend
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: npm test
 
   # -------------------------
@@ -156,6 +158,8 @@ jobs:
         run: npm run typecheck
       - name: Test
         working-directory: m8flow-frontend
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: npm test
 
   # -------------------------

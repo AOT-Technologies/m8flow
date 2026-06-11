@@ -77,6 +77,9 @@ function emptyAddMemberForm(): AddTenantMemberFormState {
 
 const MEMBER_MATRIX_GROUP_COLUMN_WIDTH = 160;
 const GROUP_NAME_CELL_MAX_WIDTH = 240;
+const ADD_MEMBER_GROUP_NAME_MAX_WIDTH = 420;
+const MIN_SEARCH_LENGTH = 3;
+const DIALOG_TITLE_SX = { fontSize: "1.125rem", fontWeight: 600 } as const;
 
 const truncatedValueSx = {
   overflow: "hidden",
@@ -100,7 +103,8 @@ export default function TenantRoleDialog({
   const { t } = useTranslation();
   const isVisible = embedded ? Boolean(tenant) : open;
   const [loading, setLoading] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [memberSearchQuery, setMemberSearchQuery] = useState("");
+  const [groupSearchQuery, setGroupSearchQuery] = useState("");
   const [groups, setGroups] = useState<TenantGroup[]>([]);
   const [members, setMembers] = useState<TenantMember[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
@@ -108,9 +112,11 @@ export default function TenantRoleDialog({
   const [isSubmittingMember, setIsSubmittingMember] = useState(false);
   const [addMemberErrorMessage, setAddMemberErrorMessage] = useState("");
   const [availableUserSearch, setAvailableUserSearch] = useState("");
+  const [addMemberGroupSearch, setAddMemberGroupSearch] = useState("");
   const [availableUsers, setAvailableUsers] = useState<TenantAvailableUser[]>([]);
   const [availableUsersErrorMessage, setAvailableUsersErrorMessage] = useState("");
   const [isLoadingAvailableUsers, setIsLoadingAvailableUsers] = useState(false);
+  const [isLoadingMembers, setIsLoadingMembers] = useState(false);
   const [isCreateGroupDialogOpen, setIsCreateGroupDialogOpen] = useState(false);
   const [isSubmittingGroup, setIsSubmittingGroup] = useState(false);
   const [createGroupName, setCreateGroupName] = useState("");
@@ -134,19 +140,15 @@ export default function TenantRoleDialog({
   const roleLabel = (roleName: TenantMemberRole) =>
     translate(`tenant_role_${roleName.replace(/-/g, "_")}`, roleName);
 
-  const loadTenantAccessData = async () => {
+  const loadTenantGroups = async () => {
     if (!tenant) {
       return;
     }
     setLoading(true);
     setErrorMessage("");
     try {
-      const [nextGroups, nextMembers] = await Promise.all([
-        TenantService.getTenantGroups(tenant.id),
-        TenantService.getTenantMembers(tenant.id),
-      ]);
+      const nextGroups = await TenantService.getTenantGroups(tenant.id);
       setGroups(nextGroups);
-      setMembers(nextMembers);
     } catch (error: any) {
       setErrorMessage(
         getErrorMessage(error)
@@ -160,9 +162,52 @@ export default function TenantRoleDialog({
     }
   };
 
+  const loadTenantMembers = async (search: string) => {
+    if (!tenant) {
+      return;
+    }
+    const normalizedSearch = search.trim();
+    if (normalizedSearch.length < MIN_SEARCH_LENGTH) {
+      setMembers([]);
+      setIsLoadingMembers(false);
+      return;
+    }
+
+    setIsLoadingMembers(true);
+    setErrorMessage("");
+    try {
+      const nextMembers = await TenantService.getTenantMembers(
+        tenant.id,
+        normalizedSearch,
+      );
+      setMembers(nextMembers);
+    } catch (error: any) {
+      setErrorMessage(
+        getErrorMessage(error)
+          || translate(
+            "failed_to_load_organization_members",
+            "Failed to load tenant members.",
+          ),
+      );
+    } finally {
+      setIsLoadingMembers(false);
+    }
+  };
+
+  const refreshTenantAccessData = async () => {
+    await loadTenantGroups();
+    if (memberSearchQuery.trim().length >= MIN_SEARCH_LENGTH) {
+      await loadTenantMembers(memberSearchQuery);
+    } else {
+      setMembers([]);
+      setIsLoadingMembers(false);
+    }
+  };
+
   useEffect(() => {
     if (!isVisible || !tenant) {
-      setSearchQuery("");
+      setMemberSearchQuery("");
+      setGroupSearchQuery("");
       setGroups([]);
       setMembers([]);
       setErrorMessage("");
@@ -170,9 +215,11 @@ export default function TenantRoleDialog({
       setIsSubmittingMember(false);
       setAddMemberErrorMessage("");
       setAvailableUserSearch("");
+      setAddMemberGroupSearch("");
       setAvailableUsers([]);
       setAvailableUsersErrorMessage("");
       setIsLoadingAvailableUsers(false);
+      setIsLoadingMembers(false);
       setIsCreateGroupDialogOpen(false);
       setIsSubmittingGroup(false);
       setCreateGroupName("");
@@ -183,17 +230,40 @@ export default function TenantRoleDialog({
       setMemberForm(emptyAddMemberForm());
       return;
     }
-    void loadTenantAccessData();
+    void loadTenantGroups();
   }, [isVisible, tenant]);
+
+  useEffect(() => {
+    if (!isVisible || !tenant) {
+      return;
+    }
+    const normalizedSearch = memberSearchQuery.trim();
+    if (normalizedSearch.length < MIN_SEARCH_LENGTH) {
+      setMembers([]);
+      setErrorMessage("");
+      setIsLoadingMembers(false);
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void loadTenantMembers(normalizedSearch);
+    }, 200);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [memberSearchQuery, isVisible, tenant]);
 
   const loadAvailableUsers = async (search = "") => {
     if (!tenant) {
       return;
     }
+    const normalizedSearch = search.trim();
     setIsLoadingAvailableUsers(true);
     setAvailableUsersErrorMessage("");
     try {
-      const nextUsers = await TenantService.getAvailableTenantUsers(tenant.id, search);
+      const nextUsers = await TenantService.getAvailableTenantUsers(
+        tenant.id,
+        normalizedSearch,
+      );
       setAvailableUsers(nextUsers);
       setMemberForm((current) => ({
         ...current,
@@ -218,8 +288,19 @@ export default function TenantRoleDialog({
     if (!isAddMemberDialogOpen || !tenant) {
       return;
     }
+    const normalizedSearch = availableUserSearch.trim();
+    if (normalizedSearch.length < MIN_SEARCH_LENGTH) {
+      setAvailableUsers([]);
+      setAvailableUsersErrorMessage("");
+      setIsLoadingAvailableUsers(false);
+      setMemberForm((current) => ({
+        ...current,
+        username: "",
+      }));
+      return;
+    }
     const timeoutId = window.setTimeout(() => {
-      void loadAvailableUsers(availableUserSearch);
+      void loadAvailableUsers(normalizedSearch);
     }, 200);
 
     return () => window.clearTimeout(timeoutId);
@@ -239,51 +320,39 @@ export default function TenantRoleDialog({
     return lookup;
   }, [groups]);
 
-  const filteredMembers = useMemo(() => {
-    const normalizedQuery = searchQuery.trim().toLowerCase();
-    if (!normalizedQuery) {
-      return members;
-    }
-
-    return members.filter((member) => {
-      const assignedGroupNames = Array.from(
-        membershipLookup.get(member.username) ?? new Set<string>(),
-      );
-      const values = [
-        member.username,
-        member.display_name ?? "",
-        member.email ?? "",
-        ...assignedGroupNames,
-      ]
-        .filter(Boolean)
-        .map((value) => value.toLowerCase());
-      return values.some((value) => value.includes(normalizedQuery));
-    });
-  }, [members, membershipLookup, searchQuery]);
-
   const filteredGroups = useMemo(() => {
-    const normalizedQuery = searchQuery.trim().toLowerCase();
+    const normalizedQuery = groupSearchQuery.trim().toLowerCase();
     if (!normalizedQuery) {
       return groups;
     }
 
     return groups.filter((group) => {
-      const roleLabels = group.mapped_roles.map((roleName) =>
+      const roleValues = group.mapped_roles.flatMap((roleName) => [
+        roleName.toLowerCase(),
         roleLabel(roleName).toLowerCase(),
+      ]);
+      return [group.name.toLowerCase(), ...roleValues].some((value) =>
+        value.includes(normalizedQuery),
       );
-      const memberValues = group.members.flatMap((member) =>
-        [member.username, member.display_name ?? "", member.email ?? ""].map(
-          (value) => value.toLowerCase(),
-        ),
-      );
-      return [
-        group.name.toLowerCase(),
-        (group.path ?? "").toLowerCase(),
-        ...roleLabels,
-        ...memberValues,
-      ].some((value) => value.includes(normalizedQuery));
     });
-  }, [groups, roleLabel, searchQuery]);
+  }, [groupSearchQuery, groups, roleLabel]);
+
+  const filteredAddMemberGroups = useMemo(() => {
+    const normalizedQuery = addMemberGroupSearch.trim().toLowerCase();
+    if (!normalizedQuery) {
+      return groups;
+    }
+
+    return groups.filter((group) => {
+      const roleValues = group.mapped_roles.flatMap((roleName) => [
+        roleName.toLowerCase(),
+        roleLabel(roleName).toLowerCase(),
+      ]);
+      return [group.name.toLowerCase(), ...roleValues].some((value) =>
+        value.includes(normalizedQuery),
+      );
+    });
+  }, [addMemberGroupSearch, groups, roleLabel]);
 
   const createGroupValidationMessage = useMemo(() => {
     const validationMessage = validateTenantGroupName(createGroupName);
@@ -311,6 +380,7 @@ export default function TenantRoleDialog({
     setMemberForm(emptyAddMemberForm());
     setAddMemberErrorMessage("");
     setAvailableUserSearch("");
+    setAddMemberGroupSearch("");
     setAvailableUsers([]);
     setAvailableUsersErrorMessage("");
     setIsAddMemberDialogOpen(true);
@@ -323,6 +393,7 @@ export default function TenantRoleDialog({
     setIsAddMemberDialogOpen(false);
     setAddMemberErrorMessage("");
     setAvailableUserSearch("");
+    setAddMemberGroupSearch("");
     setAvailableUsers([]);
     setAvailableUsersErrorMessage("");
     setMemberForm(emptyAddMemberForm());
@@ -369,7 +440,7 @@ export default function TenantRoleDialog({
         group_names: memberForm.groupNames,
       });
       handleCloseAddMemberDialog();
-      await loadTenantAccessData();
+      await refreshTenantAccessData();
     } catch (error: any) {
       setAddMemberErrorMessage(
         getErrorMessage(error)
@@ -399,7 +470,7 @@ export default function TenantRoleDialog({
         name: normalizeTenantGroupName(createGroupName),
       });
       handleCloseCreateGroupDialog();
-      await loadTenantAccessData();
+      await refreshTenantAccessData();
     } catch (error: any) {
       setCreateGroupErrorMessage(
         getErrorMessage(error)
@@ -438,7 +509,7 @@ export default function TenantRoleDialog({
           group.name,
         );
       }
-      await loadTenantAccessData();
+      await refreshTenantAccessData();
     } catch (error: any) {
       setErrorMessage(
         getErrorMessage(error)
@@ -469,7 +540,7 @@ export default function TenantRoleDialog({
       } else {
         await TenantService.removeTenantGroupRole(tenant.id, group.name, roleName);
       }
-      await loadTenantAccessData();
+      await refreshTenantAccessData();
     } catch (error: any) {
       setErrorMessage(
         getErrorMessage(error)
@@ -486,10 +557,14 @@ export default function TenantRoleDialog({
   const managementContent = (
     <Stack spacing={2} sx={embedded ? undefined : { mt: 1 }}>
       {showDescription && (
-        <Typography variant="body2" color="text.secondary">
+        <Typography
+          variant="body1"
+          color="text.secondary"
+          sx={{ width: "100%", whiteSpace: "nowrap" }}
+        >
           {translate(
             "tenant_group_management_description",
-            "Review tenant users, add existing members, and manage the Keycloak groups and tenant-scoped roles associated with this tenant.",
+            "Add existing members and manage groups and roles associated with this tenant.",
           )}
         </Typography>
       )}
@@ -507,13 +582,15 @@ export default function TenantRoleDialog({
         <TextField
           fullWidth
           size="small"
-          value={searchQuery}
-          onChange={(event) => setSearchQuery(event.target.value)}
+          value={memberSearchQuery}
+          onChange={(event) => setMemberSearchQuery(event.target.value)}
           placeholder={translate(
-            "search_tenant_groups",
-            "Search tenant groups or members...",
+            "search_organization_members",
+            "Search tenant members...",
           )}
-          data-testid="tenant-role-search-input"
+          inputProps={{
+            ...testIdInputProps("tenant-member-search-input"),
+          }}
           InputProps={{
             startAdornment: (
               <InputAdornment position="start">
@@ -545,7 +622,7 @@ export default function TenantRoleDialog({
         >
           <span>
             <IconButton
-              onClick={() => void loadTenantAccessData()}
+              onClick={() => void refreshTenantAccessData()}
               disabled={loading || !tenant}
               data-testid="tenant-role-refresh-button"
             >
@@ -566,7 +643,21 @@ export default function TenantRoleDialog({
               <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1.5 }}>
                 {translate("members", "Members")}
               </Typography>
-              {filteredMembers.length === 0 ? (
+              {memberSearchQuery.trim().length < MIN_SEARCH_LENGTH ? (
+                <Box sx={{ py: 3, textAlign: "center" }}>
+                  <Typography color="text.secondary">
+                    {translate(
+                      "search_tenant_members_minimum_characters",
+                      `Type at least ${MIN_SEARCH_LENGTH} characters to search tenant members.`,
+                      { count: MIN_SEARCH_LENGTH },
+                    )}
+                  </Typography>
+                </Box>
+              ) : isLoadingMembers ? (
+                <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}>
+                  <CircularProgress />
+                </Box>
+              ) : members.length === 0 ? (
                 <Box sx={{ py: 3, textAlign: "center" }}>
                   <Typography color="text.secondary">
                     {translate(
@@ -585,7 +676,7 @@ export default function TenantRoleDialog({
                           {translate("display_name", "Display Name")}
                         </TableCell>
                         <TableCell>{translate("email", "Email")}</TableCell>
-                        {groups.map((group) => (
+                        {filteredGroups.map((group) => (
                           <TableCell
                             key={group.id}
                             align="center"
@@ -611,7 +702,7 @@ export default function TenantRoleDialog({
                       </TableRow>
                     </TableHead>
                     <TableBody>
-                      {filteredMembers.map((member) => {
+                      {members.map((member) => {
                         const memberGroups =
                           membershipLookup.get(member.username) ?? new Set<string>();
                         return (
@@ -619,7 +710,7 @@ export default function TenantRoleDialog({
                             <TableCell>{member.username}</TableCell>
                             <TableCell>{member.display_name || "-"}</TableCell>
                             <TableCell>{member.email || "-"}</TableCell>
-                            {groups.map((group) => {
+                            {filteredGroups.map((group) => {
                               const mutationKey = `${member.username}:${group.name}`;
                               const checked = memberGroups.has(group.name);
                               return (
@@ -664,13 +755,38 @@ export default function TenantRoleDialog({
               <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1.5 }}>
                 {translate("groups", "Groups")}
               </Typography>
+              <TextField
+                size="small"
+                value={groupSearchQuery}
+                onChange={(event) => setGroupSearchQuery(event.target.value)}
+                placeholder={translate(
+                  "search_groups_or_roles",
+                  "Search groups or roles...",
+                )}
+                sx={{ mb: 1.5, maxWidth: 360 }}
+                inputProps={{
+                  ...testIdInputProps("tenant-group-search-input"),
+                }}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon />
+                    </InputAdornment>
+                  ),
+                }}
+              />
               {filteredGroups.length === 0 ? (
                 <Box sx={{ py: 3, textAlign: "center" }}>
                   <Typography color="text.secondary">
-                    {translate(
-                      "no_tenant_groups_found",
-                      "No tenant groups found.",
-                    )}
+                    {groupSearchQuery.trim()
+                      ? translate(
+                          "no_matching_groups_or_roles_found",
+                          "No groups or roles match your search.",
+                        )
+                      : translate(
+                          "no_tenant_groups_found",
+                          "No tenant groups found.",
+                        )}
                   </Typography>
                 </Box>
               ) : (
@@ -777,7 +893,7 @@ export default function TenantRoleDialog({
           maxWidth="lg"
           data-testid="tenant-role-dialog"
         >
-          <DialogTitle>
+          <DialogTitle sx={DIALOG_TITLE_SX}>
             {translate("manage_tenant_groups", "Manage Tenant Groups")}
             {tenant ? `: ${tenant.name}` : ""}
           </DialogTitle>
@@ -791,7 +907,7 @@ export default function TenantRoleDialog({
         fullWidth
         maxWidth="sm"
       >
-        <DialogTitle>
+        <DialogTitle sx={DIALOG_TITLE_SX}>
           {translate("create_tenant_user", "Add User to Tenant")}
           {tenant ? `: ${tenant.name}` : ""}
         </DialogTitle>
@@ -800,7 +916,7 @@ export default function TenantRoleDialog({
             <Typography variant="body2" color="text.secondary">
               {translate(
                 "add_tenant_user_description",
-                "Add an existing user to this tenant, then assign Keycloak groups.",
+                "Add an existing user to this tenant, then assign groups.",
               )}
             </Typography>
 
@@ -851,6 +967,19 @@ export default function TenantRoleDialog({
                         <Box sx={{ py: 3 }}>
                           <CircularProgress size={24} />
                         </Box>
+                      </TableCell>
+                    </TableRow>
+                  ) : availableUserSearch.trim().length
+                    < MIN_SEARCH_LENGTH ? (
+                    <TableRow>
+                      <TableCell colSpan={4} align="center">
+                        <Typography color="text.secondary" sx={{ py: 2 }}>
+                          {translate(
+                            "search_existing_users_minimum_characters",
+                            `Type at least ${MIN_SEARCH_LENGTH} characters to search existing users.`,
+                            { count: MIN_SEARCH_LENGTH },
+                          )}
+                        </Typography>
                       </TableCell>
                     </TableRow>
                   ) : availableUsers.length === 0 ? (
@@ -909,9 +1038,43 @@ export default function TenantRoleDialog({
               <Typography variant="subtitle2" sx={{ mb: 1 }}>
                 {translate("groups", "Groups")}
               </Typography>
+              <TextField
+                size="small"
+                value={addMemberGroupSearch}
+                onChange={(event) => setAddMemberGroupSearch(event.target.value)}
+                placeholder={translate(
+                  "search_groups_or_roles",
+                  "Search groups or roles...",
+                )}
+                sx={{ mb: 1.5 }}
+                inputProps={{
+                  ...testIdInputProps("tenant-member-group-search-input"),
+                }}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon />
+                    </InputAdornment>
+                  ),
+                }}
+              />
               <Stack spacing={1}>
-                {groups.map((group) => (
-                  <Box key={group.id}>
+                {filteredAddMemberGroups.length === 0 ? (
+                  <Typography color="text.secondary">
+                    {translate(
+                      "no_matching_groups_or_roles_found",
+                      "No groups or roles match your search.",
+                    )}
+                  </Typography>
+                ) : filteredAddMemberGroups.map((group) => (
+                  <Box
+                    key={group.id}
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 1,
+                    }}
+                  >
                     <Checkbox
                       checked={memberForm.groupNames.includes(group.name)}
                       onChange={() => handleToggleAddMemberGroup(group.name)}
@@ -922,7 +1085,18 @@ export default function TenantRoleDialog({
                         ),
                       }}
                     />
-                    <Typography component="span">{group.name}</Typography>
+                    <Tooltip title={group.name}>
+                      <Typography
+                        component="span"
+                        data-testid={`tenant-member-group-label-${group.id}`}
+                        sx={{
+                          ...truncatedValueSx,
+                          maxWidth: ADD_MEMBER_GROUP_NAME_MAX_WIDTH,
+                        }}
+                      >
+                        {group.name}
+                      </Typography>
+                    </Tooltip>
                   </Box>
                 ))}
               </Stack>
@@ -952,7 +1126,7 @@ export default function TenantRoleDialog({
         fullWidth
         maxWidth="sm"
       >
-        <DialogTitle>
+        <DialogTitle sx={DIALOG_TITLE_SX}>
           {translate("create_group", "Create Group")}
           {tenant ? `: ${tenant.name}` : ""}
         </DialogTitle>

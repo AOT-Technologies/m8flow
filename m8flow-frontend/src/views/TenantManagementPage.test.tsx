@@ -35,6 +35,9 @@ vi.mock("../services/TenantService", () => ({
     "submitter",
     "viewer",
   ],
+  TENANT_GROUP_NAME_MAX_LENGTH: 64,
+  normalizeTenantGroupName: (value: string) => value.trim().replace(/\s+/g, " "),
+  validateTenantGroupName: () => "",
   default: {
     getTenantGroups: (...args: unknown[]) => mockGetTenantGroups(...args),
     getTenantMembers: (...args: unknown[]) => mockGetTenantMembers(...args),
@@ -56,9 +59,15 @@ vi.mock("react-i18next", () => ({
         tenant_management: "Tenant Management",
         edit_organization: "Edit Tenant",
         tenant_group_management_description:
-          "Review tenant users, add existing members, and manage the Keycloak groups and tenant-scoped roles associated with this tenant.",
+          "Add existing members and manage groups and roles associated with this tenant.",
         manage_tenant_groups: "Manage Tenant Groups",
+        search_organization_members: "Search tenant members...",
+        search_tenant_members_minimum_characters:
+          "Type at least 3 characters to search tenant members.",
         search_tenant_groups: "Search tenant groups or members...",
+        search_groups_or_roles: "Search groups or roles...",
+        no_matching_groups_or_roles_found:
+          "No groups or roles match your search.",
         refresh_tenant_groups: "Refresh tenant groups",
         members: "Members",
         groups: "Groups",
@@ -74,7 +83,7 @@ vi.mock("react-i18next", () => ({
         group_name: "Group Name",
         create_tenant_user: "Add User to Tenant",
         add_tenant_user_description:
-          "Add an existing user to this tenant, then assign Keycloak groups.",
+          "Add an existing user to this tenant, then assign groups.",
         existing_user: "Existing User",
         search_existing_users: "Search existing users...",
         no_available_users_found: "No existing users available to add.",
@@ -131,7 +140,9 @@ describe("TenantManagementPage", () => {
     render(<TenantManagementPage />);
 
     expect(screen.getByText("Tenant Management")).toBeInTheDocument();
-    expect(await screen.findByText("Reviewer User")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Type at least 3 characters to search tenant members."),
+    ).toBeInTheDocument();
     expect(screen.getByTestId("tenant-role-panel")).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("tenant-management-edit-button"));
