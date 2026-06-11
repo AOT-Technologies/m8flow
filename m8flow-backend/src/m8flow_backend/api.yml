@@ -1873,6 +1873,103 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /external-forms/{reference_id}:
+    get:
+      summary: Fetch external form context for a secure link (public)
+      description: >
+        Public endpoint called by the external form mini-app with the reference ID from
+        the emailed secure link. Returns the external form URL and task context. The
+        "actionable" flag is false when the link is expired, superseded, or already
+        submitted. No authentication is required; the unguessable reference ID is the
+        credential.
+      operationId: m8flow_backend.routes.external_forms_controller.external_form_show
+      tags:
+        - ExternalForms
+      security: []
+      parameters:
+        - name: reference_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The unique reference ID from the secure link.
+      responses:
+        "200":
+          description: The external form request context.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExternalFormContextResponse"
+        "404":
+          description: No external form request exists for this reference ID.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /external-forms/{reference_id}/submit:
+    post:
+      summary: Submit external form data and resume the workflow (public)
+      description: >
+        Public endpoint the external form system calls to submit form data for a
+        tracked request. Validates the reference ID, stores the submission, completes
+        the tracked user task as the recipient user, and resumes the workflow. Only the
+        first valid submission for a task counts; sibling links are superseded.
+      operationId: m8flow_backend.routes.external_forms_controller.external_form_submit
+      tags:
+        - ExternalForms
+      security: []
+      parameters:
+        - name: reference_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The unique reference ID from the secure link.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExternalFormSubmitRequest"
+      responses:
+        "200":
+          description: Submission accepted; the workflow has continued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExternalFormSubmitResponse"
+        "400":
+          description: The tracked task is not in a state that allows submission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: No external form request exists for this reference ID.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: This form was already submitted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "410":
+          description: The link is expired or was superseded by another recipient's submission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: The submission was stored but the workflow could not be resumed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /connectors-grouped:
     get:
       operationId: m8flow_backend.routes.connectors_controller.connectors_grouped
@@ -2388,6 +2485,59 @@ components:
           type: integer
         modifiedBy:
           type: string
+
+    ExternalFormContextResponse:
+      type: object
+      properties:
+        reference_id:
+          type: string
+        status:
+          type: string
+          description: pending | notified | submitted | completed | failed | expired | superseded
+        actionable:
+          type: boolean
+          description: True when the link can still be used to submit the form.
+        external_form_url:
+          type: string
+        process_instance_id:
+          type: integer
+        expires_at_in_seconds:
+          type: integer
+          nullable: true
+        task_name:
+          type: string
+          nullable: true
+        task_title:
+          type: string
+          nullable: true
+        process_model_display_name:
+          type: string
+          nullable: true
+
+    ExternalFormSubmitRequest:
+      type: object
+      properties:
+        data:
+          type: object
+          additionalProperties: true
+          description: The submitted form data, made available to the workflow as task data.
+
+    ExternalFormSubmitResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            reference_id:
+              type: string
+            status:
+              type: string
+            process_instance_id:
+              type: integer
 
     M8flowTriggerRequest:
       type: object

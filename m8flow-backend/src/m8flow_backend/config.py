@@ -183,3 +183,8 @@ def nats_token_salt() -> str:
 def nats_url() -> str:
     """Get the NATS URL from environment variables."""
     return _get("M8FLOW_NATS_URL")
+
+
+def external_form_link_ttl_seconds() -> int:
+    """How long an external-form secure link stays valid, from environment."""
+    return int(_get("M8FLOW_EXTERNAL_FORM_LINK_TTL_SECONDS"))
