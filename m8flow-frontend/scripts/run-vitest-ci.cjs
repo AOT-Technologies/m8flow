@@ -34,9 +34,14 @@ const groupDefinitions = [
     match: (file) => file === 'src/views/TemplateModelerPage.test.tsx',
   },
   {
-    name: 'tenant-and-session',
+    name: 'tenant-dialogs',
     match: (file) =>
-      /^src\/views\/Tenant.*\.test\.tsx?$/.test(file) ||
+      /^src\/views\/Tenant(ManagementPage|Page|RoleDialog|SelectPage)\.test\.tsx$/.test(file),
+  },
+  {
+    name: 'session-and-services',
+    match: (file) =>
+      /^src\/views\/TenantAwareLogin\.test\.tsx$/.test(file) ||
       /^(src\/App\.test\.tsx|src\/ContainerForExtensions\.test\.tsx)$/.test(file) ||
       /^src\/services\/(TenantService|UserService)\.test\.ts$/.test(file),
   },
