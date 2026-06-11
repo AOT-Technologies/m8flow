@@ -21,7 +21,7 @@ import {
   TIME_FORMAT_HOURS_MINUTES,
 } from '@spiffworkflow-frontend/config';
 
-function getRuntimeOrBuildConfig(name: string): string | undefined {
+export function getRuntimeOrBuildConfig(name: string): string | undefined {
   const runtime =
     typeof window !== 'undefined'
       ? (
@@ -39,16 +39,16 @@ function getRuntimeOrBuildConfig(name: string): string | undefined {
   return runtime ?? build ?? undefined;
 }
 
-function getEnableMultitenant(): boolean {
+export function getEnableMultitenant(): boolean {
   const raw = getRuntimeOrBuildConfig('MULTI_TENANT_ON') ?? '';
   return String(raw).toLowerCase() === 'true';
 }
 
-function getSharedRealmIdentifier(): string {
+export function getSharedRealmIdentifier(): string {
   return getRuntimeOrBuildConfig('M8FLOW_KEYCLOAK_SHARED_REALM') || 'm8flow';
 }
 
-function getMasterRealmIdentifier(): string {
+export function getMasterRealmIdentifier(): string {
   return getRuntimeOrBuildConfig('M8FLOW_KEYCLOAK_MASTER_REALM') || 'master';
 }
 

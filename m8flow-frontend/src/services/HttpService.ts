@@ -11,9 +11,10 @@ const HttpMethods = {
 
 export const getBasicHeaders = (): Record<string, string> => {
   const headers: Record<string, string> = {};
-  
-  if (UserService.isLoggedIn()) {
-    headers.Authorization = `Bearer ${UserService.getAccessToken()}`;
+
+  const accessToken = UserService.getAccessToken();
+  if (accessToken) {
+    headers.Authorization = `Bearer ${accessToken}`;
   }
 
   return headers;
@@ -27,6 +28,11 @@ type backendCallProps = {
   httpMethod?: string;
   extraHeaders?: object;
   postBody?: any;
+};
+
+type requestExecutionResult = {
+  response: Response;
+  text: string;
 };
 
 export class UnauthenticatedError extends Error {
@@ -84,15 +90,25 @@ const messageForHttpError = (statusCode: number, statusText: string) => {
   return errorMessage;
 };
 
-const makeCallToBackend = ({
+const shouldRetryUnauthenticatedRequest = ({
+  httpMethod,
+  hasRetried,
+}: {
+  httpMethod: string;
+  hasRetried: boolean;
+}) => {
+  // A second GET often succeeds after another concurrent request refreshes auth cookies.
+  return !hasRetried && httpMethod === HttpMethods.GET;
+};
+
+const executeBackendRequest = ({
   path,
-  successCallback,
-  failureCallback,
-  onUnauthorized,
   httpMethod = 'GET',
   extraHeaders = {},
   postBody = {},
-}: backendCallProps) => {
+}: Pick<backendCallProps, 'path' | 'httpMethod' | 'extraHeaders' | 'postBody'>): Promise<
+  requestExecutionResult
+> => {
   const headers = getBasicHeaders();
 
   if (!objectIsEmpty(extraHeaders)) {
@@ -121,16 +137,43 @@ const makeCallToBackend = ({
 
   const updatedPath = path.replace(/^\/v1\.0/, '');
 
-  fetch(`${BACKEND_BASE_URL}${updatedPath}`, httpArgs)
-    .then((response) => {
-      if (response.status === 401) {
+  return fetch(`${BACKEND_BASE_URL}${updatedPath}`, httpArgs).then((response) =>
+    response.text().then((text) => ({ response, text })),
+  );
+};
+
+const makeCallToBackend = ({
+  path,
+  successCallback,
+  failureCallback,
+  onUnauthorized,
+  httpMethod = 'GET',
+  extraHeaders = {},
+  postBody = {},
+}: backendCallProps) => {
+  const makeRequest = (hasRetried = false): Promise<requestExecutionResult> => {
+    return executeBackendRequest({
+      path,
+      httpMethod,
+      extraHeaders,
+      postBody,
+    }).then((result) => {
+      if (result.response.status === 401) {
+        if (
+          shouldRetryUnauthenticatedRequest({
+            httpMethod,
+            hasRetried,
+          })
+        ) {
+          return makeRequest(true);
+        }
         throw new UnauthenticatedError('You must be authenticated to do this.');
       }
-      return response.text().then((result: any) => {
-        return { response, text: result };
-      });
-    })
+      return result;
+    });
+  };
 
+  makeRequest()
     .then((result: any) => {
       let jsonResult = null;
       const isHtml =
@@ -206,19 +249,27 @@ const fetchTextFromBackend = (
   successCallback: (text: string) => void,
   failureCallback?: (err: unknown) => void,
 ) => {
-  const headers = getBasicHeaders();
-  const updatedPath = path.replace(/^\/v1\.0/, '');
-  fetch(`${BACKEND_BASE_URL}${updatedPath}`, {
-    method: 'GET',
-    credentials: 'include',
-    headers: new Headers(headers as Record<string, string>),
-  })
-    .then((response) => {
-      if (response.status === 401) {
+  const makeRequest = (hasRetried = false): Promise<requestExecutionResult> => {
+    return executeBackendRequest({
+      path,
+      httpMethod: HttpMethods.GET,
+    }).then((result) => {
+      if (result.response.status === 401) {
+        if (
+          shouldRetryUnauthenticatedRequest({
+            httpMethod: HttpMethods.GET,
+            hasRetried,
+          })
+        ) {
+          return makeRequest(true);
+        }
         throw new UnauthenticatedError('You must be authenticated to do this.');
       }
-      return response.text().then((text) => ({ response, text }));
-    })
+      return result;
+    });
+  };
+
+  makeRequest()
     .then(({ response, text }) => {
       if (response.ok) {
         successCallback(text);

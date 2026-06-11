@@ -21,6 +21,13 @@ BACKEND_PUBLIC_URL="${M8FLOW_BACKEND_URL:-http://localhost:6840}"
 FRONTEND_PUBLIC_URL="${M8FLOW_BACKEND_URL_FOR_FRONTEND:-http://localhost:6841}"
 BACKEND_REDIRECT_URI="${BACKEND_PUBLIC_URL%/}/*"
 FRONTEND_LOGOUT_REDIRECT_URI="${FRONTEND_PUBLIC_URL%/}/*"
+KEYCLOAK_ACCESS_TOKEN_LIFESPAN="${M8FLOW_KEYCLOAK_ACCESS_TOKEN_LIFESPAN:-1800}"
+KEYCLOAK_ACCESS_TOKEN_LIFESPAN_FOR_IMPLICIT_FLOW="${M8FLOW_KEYCLOAK_ACCESS_TOKEN_LIFESPAN_FOR_IMPLICIT_FLOW:-900}"
+KEYCLOAK_SSO_SESSION_IDLE_TIMEOUT="${M8FLOW_KEYCLOAK_SSO_SESSION_IDLE_TIMEOUT:-86400}"
+KEYCLOAK_SSO_SESSION_MAX_LIFESPAN="${M8FLOW_KEYCLOAK_SSO_SESSION_MAX_LIFESPAN:-864000}"
+KEYCLOAK_CLIENT_SESSION_IDLE_TIMEOUT="${M8FLOW_KEYCLOAK_CLIENT_SESSION_IDLE_TIMEOUT:-0}"
+KEYCLOAK_CLIENT_SESSION_MAX_LIFESPAN="${M8FLOW_KEYCLOAK_CLIENT_SESSION_MAX_LIFESPAN:-0}"
+KEYCLOAK_REVOKE_REFRESH_TOKEN="${M8FLOW_KEYCLOAK_REVOKE_REFRESH_TOKEN:-false}"
 
 escape_sed_replacement() {
   printf '%s' "$1" | sed -e 's/[&|]/\\&/g'
@@ -924,6 +931,19 @@ ensure_shared_realm_single_page_login() {
   fi
 }
 
+update_realm_session_timeouts() {
+  local realm_name="$1"
+
+  /opt/keycloak/bin/kcadm.sh update "realms/${realm_name}" \
+    -s revokeRefreshToken="${KEYCLOAK_REVOKE_REFRESH_TOKEN}" \
+    -s accessTokenLifespan="${KEYCLOAK_ACCESS_TOKEN_LIFESPAN}" \
+    -s accessTokenLifespanForImplicitFlow="${KEYCLOAK_ACCESS_TOKEN_LIFESPAN_FOR_IMPLICIT_FLOW}" \
+    -s ssoSessionIdleTimeout="${KEYCLOAK_SSO_SESSION_IDLE_TIMEOUT}" \
+    -s ssoSessionMaxLifespan="${KEYCLOAK_SSO_SESSION_MAX_LIFESPAN}" \
+    -s clientSessionIdleTimeout="${KEYCLOAK_CLIENT_SESSION_IDLE_TIMEOUT}" \
+    -s clientSessionMaxLifespan="${KEYCLOAK_CLIENT_SESSION_MAX_LIFESPAN}" >/dev/null 2>&1
+}
+
 echo "[keycloak-entrypoint] Running bootstrap-admin user..."
 if /opt/keycloak/bin/kc.sh bootstrap-admin user \
   --username "${BOOTSTRAP_USER}" \
@@ -994,10 +1014,11 @@ else
     echo "[keycloak-entrypoint] add-roles (create-realm) for ${SUPERADMIN_USER} skipped or failed." >&2
   fi
 
-  echo "[keycloak-entrypoint] Setting sslRequired=NONE and loginTheme=m8flow on realms master, ${M8FLOW_REALM_NAME}..."
+  echo "[keycloak-entrypoint] Setting sslRequired=NONE, loginTheme=m8flow, and aligned session timeouts on realms master, ${M8FLOW_REALM_NAME}..."
   for realm in master "${M8FLOW_REALM_NAME}"; do
-    if /opt/keycloak/bin/kcadm.sh update realms/${realm} -s sslRequired=NONE -s loginTheme=m8flow 2>/dev/null; then
-      echo "[keycloak-entrypoint] Realm ${realm}: sslRequired=NONE and loginTheme=m8flow set successfully."
+    if /opt/keycloak/bin/kcadm.sh update realms/${realm} -s sslRequired=NONE -s loginTheme=m8flow >/dev/null 2>&1 \
+      && update_realm_session_timeouts "${realm}"; then
+      echo "[keycloak-entrypoint] Realm ${realm}: sslRequired=NONE, loginTheme=m8flow, and session timeouts set successfully."
     else
       echo "[keycloak-entrypoint] Realm ${realm}: update skipped or failed (realm may not exist yet)." >&2
     fi
