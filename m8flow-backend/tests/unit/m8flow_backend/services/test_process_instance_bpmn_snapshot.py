@@ -252,7 +252,6 @@ def test_duplicate_bpmn_reuses_version_row(monkeypatch) -> None:
 
         # We'll create two separate pi objects for two calls
         instances = []
-        call_count = [0]
 
         def stub_create_process_instance(*_args, **_kwargs):
             pi = SimpleNamespace(id=None, m8f_tenant_id=None, bpmn_version_id=None)

@@ -2,88 +2,6 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import TenantPage from "./TenantPage";
 
-// Mock react-i18next – the TenantModal uses t("realm_slug"), t("display_name"), etc.
-vi.mock("react-i18next", () => ({
-  useTranslation: () => ({
-    t: (key: string, opts?: { count?: number; defaultValue?: string }) => {
-      const map: Record<string, string> = {
-        realm_slug: "Realm Slug",
-        display_name: "Display Name",
-        tenant_management: "Tenant Management",
-        add_tenant: "Add Tenant",
-        tenant_slug_cannot_be_empty: "Tenant slug cannot be empty",
-        tenant_display_name_cannot_be_empty:
-          "Tenant display name cannot be empty",
-        tenant_slug_invalid_pattern:
-          "Tenant slug can only contain letters, numbers, hyphens, and underscores",
-        tenant_display_name_max_length:
-          "Tenant display name must be 50 characters or fewer",
-        tenant_slug_already_exists: "Tenant slug already exists",
-        tenant_created_successfully: "Tenant created successfully.",
-        tenant_updated_successfully: "Tenant updated successfully.",
-        cancel: "Cancel",
-        create: "Create",
-        save: "Save",
-        delete: "Delete",
-        edit_tenant: "Edit Tenant",
-        delete_tenant: "Delete Tenant",
-        search_by: "Search By",
-        name: "Name",
-      };
-      return map[key] ?? opts?.defaultValue ?? key;
-    },
-  }),
-}));
-
-const mockUseTenants = vi.fn();
-const mockUsePermissionFetcher = vi.fn();
-const mockCreateTenant = vi.fn();
-const mockGetTenantGroups = vi.fn();
-const mockGetTenantMembers = vi.fn();
-const mockRememberTenantDisplayName = vi.fn();
-
-vi.mock("../hooks/useTenants", () => ({
-  useTenants: () => mockUseTenants(),
-}));
-
-vi.mock("@spiffworkflow-frontend/hooks/PermissionService", () => ({
-  usePermissionFetcher: () => mockUsePermissionFetcher(),
-}));
-
-vi.mock("../services/TenantService", () => ({
-  TENANT_MEMBER_ROLES: [
-    "tenant-admin",
-    "editor",
-    "integrator",
-    "reviewer",
-    "submitter",
-    "viewer",
-  ],
-  TENANT_GROUP_NAME_MAX_LENGTH: 64,
-  normalizeTenantGroupName: (value: string) => value.trim().replace(/\s+/g, " "),
-  validateTenantGroupName: () => "",
-  default: {
-    createTenant: (...args: unknown[]) => mockCreateTenant(...args),
-    getTenantGroups: (...args: unknown[]) => mockGetTenantGroups(...args),
-    getTenantMembers: (...args: unknown[]) => mockGetTenantMembers(...args),
-    getAvailableTenantUsers: vi.fn(),
-    addTenantMember: vi.fn(),
-    addTenantMemberToGroup: vi.fn(),
-    removeTenantMemberFromGroup: vi.fn(),
-    assignTenantGroupRole: vi.fn(),
-    removeTenantGroupRole: vi.fn(),
-    updateTenant: vi.fn(),
-    deleteTenant: vi.fn(),
-  },
-}));
-
-vi.mock("../services/UserService", () => ({
-  default: {
-    rememberTenantDisplayName: (...args: unknown[]) =>
-      mockRememberTenantDisplayName(...args),
-  },
-}));
-
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, options?: Record<string, unknown>) => {
@@ -168,11 +86,65 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 
+const mockUseTenants = vi.fn();
+const mockUsePermissionFetcher = vi.fn();
+const mockCreateTenant = vi.fn();
+const mockUpdateTenant = vi.fn();
+const mockDeleteTenant = vi.fn();
+const mockGetTenantGroups = vi.fn();
+const mockGetTenantMembers = vi.fn();
+const mockRememberTenantDisplayName = vi.fn();
+
+vi.mock("../hooks/useTenants", () => ({
+  useTenants: () => mockUseTenants(),
+}));
+
+vi.mock("@spiffworkflow-frontend/hooks/PermissionService", () => ({
+  usePermissionFetcher: () => mockUsePermissionFetcher(),
+}));
+
+vi.mock("../services/TenantService", () => ({
+  TENANT_MEMBER_ROLES: [
+    "tenant-admin",
+    "editor",
+    "integrator",
+    "reviewer",
+    "submitter",
+    "viewer",
+  ],
+  TENANT_GROUP_NAME_MAX_LENGTH: 64,
+  normalizeTenantGroupName: (value: string) =>
+    value.trim().replace(/\s+/g, " "),
+  validateTenantGroupName: () => null,
+  default: {
+    createTenant: (...args: unknown[]) => mockCreateTenant(...args),
+    getTenantGroups: (...args: unknown[]) => mockGetTenantGroups(...args),
+    getTenantMembers: (...args: unknown[]) => mockGetTenantMembers(...args),
+    getAvailableTenantUsers: vi.fn(),
+    addTenantMember: vi.fn(),
+    addTenantMemberToGroup: vi.fn(),
+    removeTenantMemberFromGroup: vi.fn(),
+    assignTenantGroupRole: vi.fn(),
+    removeTenantGroupRole: vi.fn(),
+    updateTenant: (...args: unknown[]) => mockUpdateTenant(...args),
+    deleteTenant: (...args: unknown[]) => mockDeleteTenant(...args),
+  },
+}));
+
+vi.mock("../services/UserService", () => ({
+  default: {
+    rememberTenantDisplayName: (...args: unknown[]) =>
+      mockRememberTenantDisplayName(...args),
+  },
+}));
+
 describe("TenantPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetTenantGroups.mockResolvedValue([]);
     mockGetTenantMembers.mockResolvedValue([]);
+    mockUpdateTenant.mockResolvedValue(undefined);
+    mockDeleteTenant.mockResolvedValue(undefined);
   });
 
   it("remembers the updated tenant display name after editing a tenant", async () => {
@@ -198,10 +170,16 @@ describe("TenantPage", () => {
       ability: { can: () => true },
       permissionsLoaded: true,
     });
+    mockUpdateTenant.mockResolvedValue({
+      id: "tenant-uuid",
+      slug: "opa",
+      name: "Opa 1111",
+    });
 
     render(<TenantPage />);
 
     fireEvent.click(screen.getByTestId("tenant-edit-button-tenant-uuid"));
+    await screen.findByTestId("tenant-modal-dialog");
     fireEvent.change(screen.getByDisplayValue("Opa"), {
       target: { value: "Opa 1111" },
     });
@@ -239,6 +217,7 @@ describe("TenantPage", () => {
     render(<TenantPage />);
 
     fireEvent.click(screen.getByTestId("tenant-add-button"));
+    await screen.findByTestId("tenant-modal-dialog");
 
     fireEvent.change(screen.getByLabelText("Tenant Alias"), {
       target: { value: "it-team_1" },
@@ -280,6 +259,7 @@ describe("TenantPage", () => {
     render(<TenantPage />);
 
     fireEvent.click(screen.getByTestId("tenant-add-button"));
+    await screen.findByTestId("tenant-modal-dialog");
     fireEvent.click(screen.getByTestId("tenant-modal-submit-button"));
 
     expect(
@@ -306,6 +286,7 @@ describe("TenantPage", () => {
     render(<TenantPage />);
 
     fireEvent.click(screen.getByTestId("tenant-add-button"));
+    await screen.findByTestId("tenant-modal-dialog");
 
     fireEvent.change(screen.getByLabelText("Tenant Alias"), {
       target: { value: "it team" },
@@ -345,6 +326,7 @@ describe("TenantPage", () => {
     render(<TenantPage />);
 
     fireEvent.click(screen.getByTestId("tenant-add-button"));
+    await screen.findByTestId("tenant-modal-dialog");
     fireEvent.change(screen.getByLabelText("Tenant Alias"), {
       target: { value: "it-team_1" },
     });

@@ -24,7 +24,6 @@ from m8flow_backend.models.process_model_template import ProcessModelTemplateMod
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel  # noqa: E402
 from m8flow_backend.models.template import TemplateModel, TemplateVisibility  # noqa: E402
 from m8flow_backend.services.template_service import TemplateService  # noqa: E402
-from m8flow_backend.services.template_storage_service import TemplateStorageService  # noqa: E402
 from spiffworkflow_backend.exceptions.api_error import ApiError  # noqa: E402
 from spiffworkflow_backend.models.db import db  # noqa: E402
 from spiffworkflow_backend.models.user import UserModel  # noqa: E402
@@ -2238,7 +2237,7 @@ def test_template_tenant_isolation_across_tenants() -> None:
             g.user = user
 
             with patch.object(TemplateService, "storage", MockTemplateStorageService()):
-                template_a = TemplateService.create_template(
+                TemplateService.create_template(
                     metadata={"template_key": "isolated", "name": "Tenant A"},
                     bpmn_bytes=b"<bpmn>test</bpmn>",
                     user=user,
@@ -2250,7 +2249,7 @@ def test_template_tenant_isolation_across_tenants() -> None:
             g.user = user
 
             with patch.object(TemplateService, "storage", MockTemplateStorageService()):
-                template_b = TemplateService.create_template(
+                TemplateService.create_template(
                     metadata={"template_key": "isolated", "name": "Tenant B"},
                     bpmn_bytes=b"<bpmn>test</bpmn>",
                     user=user,

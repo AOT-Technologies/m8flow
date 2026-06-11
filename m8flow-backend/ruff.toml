@@ -1,0 +1,18 @@
+target-version = "py312"
+include = [
+  "src/**/*.py",
+  "tests/**/*.py",
+  "migrations/**/*.py",
+  "bin/**/*.py",
+  "keycloak/keycloak_admin_app/**/*.py",
+]
+
+[lint]
+select = ["E402", "F"]
+
+[lint.per-file-ignores]
+"migrations/env.py" = ["E402"]
+"tests/unit/m8flow_backend/models/test_process_model_template.py" = ["E402"]
+"tests/unit/m8flow_backend/routes/test_keycloak_controller.py" = ["E402"]
+"tests/unit/m8flow_backend/services/test_process_model_from_template.py" = ["E402"]
+"tests/unit/m8flow_backend/services/test_template_service.py" = ["E402"]

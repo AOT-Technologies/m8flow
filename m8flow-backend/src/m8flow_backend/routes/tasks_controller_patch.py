@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import flask.wrappers
 from flask import current_app
-from flask import g
 from flask import jsonify
 from flask import make_response
 from sqlalchemy import desc

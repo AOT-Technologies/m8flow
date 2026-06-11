@@ -51,16 +51,20 @@ def apply() -> None:
         process_instance_id = getattr(task_model, "process_instance_id", None)
         current_task_guid = getattr(task_model, "guid", None)
         if isinstance(process_instance_id, int):
-            from spiffworkflow_backend.models.task import TaskModel as _TaskModel
+            completed_tasks: list[Any] = []
+            try:
+                from spiffworkflow_backend.models.task import TaskModel as _TaskModel
 
-            completed_tasks = (
-                _TaskModel.query.filter_by(
-                    process_instance_id=process_instance_id,
-                    state="COMPLETED",
+                completed_tasks = (
+                    _TaskModel.query.filter_by(
+                        process_instance_id=process_instance_id,
+                        state="COMPLETED",
+                    )
+                    .order_by(_TaskModel.end_in_seconds.asc())
+                    .all()
                 )
-                .order_by(_TaskModel.end_in_seconds.asc())
-                .all()
-            )
+            except Exception:
+                completed_tasks = []
             for completed_task in completed_tasks:
                 if completed_task.guid == current_task_guid:
                     continue
@@ -71,8 +75,49 @@ def apply() -> None:
                 if isinstance(ct_data, dict) and ct_data:
                     merged_data.update(ct_data)
 
+            if not completed_tasks:
+                try:
+                    from spiffworkflow_backend.models.process_instance import ProcessInstanceModel
+                    from spiffworkflow_backend.services.process_instance_processor import (
+                        ProcessInstanceProcessor,
+                    )
+
+                    process_instance_model = ProcessInstanceModel.query.filter_by(id=process_instance_id).first()
+                    if process_instance_model is not None:
+                        processor = ProcessInstanceProcessor(
+                            process_instance_model,
+                            include_task_data_for_completed_tasks=True,
+                            include_completed_subprocesses=True,
+                        )
+                        historical_process_instance = getattr(processor, "bpmn_process_instance", None)
+                        historical_process_data = getattr(historical_process_instance, "data", None)
+                        historical_data_objects = getattr(historical_process_instance, "data_objects", None)
+                        historical_context: dict[str, Any] = {}
+                        if isinstance(historical_data_objects, dict) and historical_data_objects:
+                            historical_context["data_objects"] = historical_data_objects
+                        if isinstance(historical_process_data, dict) and historical_process_data:
+                            historical_context.update(historical_process_data)
+                        if historical_context:
+                            _merge_context_dict(merged_data, historical_context)
+
+                        get_tasks_with_data = getattr(ProcessInstanceProcessor, "get_tasks_with_data", None)
+                        if callable(get_tasks_with_data):
+                            historical_tasks = get_tasks_with_data(historical_process_instance)
+                            if isinstance(historical_tasks, list):
+                                sorted_historical_tasks = sorted(
+                                    historical_tasks,
+                                    key=lambda task: getattr(task, "last_state_change", 0) or 0,
+                                )
+                                for historical_task in sorted_historical_tasks:
+                                    historical_task_data = getattr(historical_task, "data", None)
+                                    if isinstance(historical_task_data, dict) and historical_task_data:
+                                        merged_data.update(historical_task_data)
+                except Exception:
+                    pass
+
         # 3. The current task's own stored data overrides everything accumulated above.
-        task_data = task_model.data if task_model.data is not None else task_model.get_data()
+        task_model_data = getattr(task_model, "data", None)
+        task_data = task_model_data if task_model_data is not None else task_model.get_data()
         if isinstance(task_data, dict) and task_data:
             merged_data.update(task_data)
 

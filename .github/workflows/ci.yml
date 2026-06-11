@@ -2,7 +2,6 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -14,13 +13,12 @@ permissions:
   security-events: write
 
 jobs:
-  changes:
+  path_filters:
+    name: Path Filters
     runs-on: ubuntu-latest
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
-      extensions_backend: ${{ steps.filter.outputs.extensions_backend }}
-      extensions_frontend: ${{ steps.filter.outputs.extensions_frontend }}
       migrations: ${{ steps.filter.outputs.migrations }}
       docker_m8flow: ${{ steps.filter.outputs.docker_m8flow }}
     steps:
@@ -30,26 +28,42 @@ jobs:
         with:
           filters: |
             backend:
-              - 'spiffworkflow-backend/**'
-            frontend:
-              - 'spiffworkflow-frontend/**'
-            extensions_backend:
               - 'm8flow-backend/**'
-              - 'spiffworkflow-backend/**'
-            extensions_frontend:
+            frontend:
               - 'm8flow-frontend/**'
             migrations:
+              - 'm8flow-backend/migrations/versions/*.py'
               - 'spiffworkflow-backend/migrations/versions/*.py'
             docker_m8flow:
               - 'docker/**'
               - 'm8flow-connector-proxy/**'
 
   # -------------------------
+  # Backend Lint
+  # -------------------------
+  backend-lint:
+    name: Backend Lint
+    needs: path_filters
+    if: ${{ github.event_name == 'push' || needs.path_filters.outputs.backend == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.1'
+      - name: Install Ruff
+        run: python -m pip install ruff==0.12.1
+      - name: Run M8Flow backend lint
+        working-directory: m8flow-backend
+        run: python -m ruff check . --config ruff.toml
+
+  # -------------------------
   # Backend CI
   # -------------------------
   backend:
-    needs: changes
-    if: ${{ needs.changes.outputs.backend == 'true' }}
+    name: Backend Unit Tests
+    needs: path_filters
+    if: ${{ github.event_name == 'push' || needs.path_filters.outputs.backend == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -65,79 +79,41 @@ jobs:
       - name: Install dependencies
         working-directory: spiffworkflow-backend
         run: uv sync --group dev
-      - name: Lint with Ruff
-        working-directory: spiffworkflow-backend
-        run: uv run ruff check .
-      - name: Type check with MyPy
-        working-directory: spiffworkflow-backend
-        run: uv run mypy .
-      - name: Test with Pytest
-        working-directory: spiffworkflow-backend
-        run: uv run pytest
-
-  # -------------------------
-  # Frontend CI
-  # -------------------------
-  frontend:
-    needs: changes
-    if: ${{ needs.changes.outputs.frontend == 'true' }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install jq (required by fetch-upstream)
-        run: sudo apt-get update && sudo apt-get install -y jq
-      - name: Fetch upstream folders
-        run: ./bin/fetch-upstream.sh
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: spiffworkflow-frontend/package-lock.json
-      - name: Install dependencies
-        working-directory: spiffworkflow-frontend
-        run: npm ci
-      - name: Lint
-        working-directory: spiffworkflow-frontend
-        run: npm run lint
-      - name: Test
-        working-directory: spiffworkflow-frontend
-        env:
-          NODE_OPTIONS: --max-old-space-size=4096
-        run: npm test
-
-  # -------------------------
-  # Extensions Backend CI
-  # -------------------------
-  extensions-backend:
-    needs: changes
-    if: ${{ needs.changes.outputs.extensions_backend == 'true' }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install jq (required by fetch-upstream)
-        run: sudo apt-get update && sudo apt-get install -y jq
-      - name: Fetch upstream folders
-        run: ./bin/fetch-upstream.sh
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12.1'
-      - name: Install uv
-        run: pip install uv
-      - name: Install dependencies
-        working-directory: spiffworkflow-backend
-        run: uv sync --group dev
-      - name: Run Extension Tests
+      - name: Test M8Flow backend
         working-directory: spiffworkflow-backend
         run: |
           export PYTHONPATH=$PYTHONPATH:$(pwd):$(pwd)/src:$(pwd)/../m8flow-backend/src
           uv run pytest ../m8flow-backend/tests
 
   # -------------------------
-  # Extensions Frontend CI
+  # Frontend Lint
   # -------------------------
-  extensions-frontend:
-    needs: changes
-    if: ${{ needs.changes.outputs.extensions_frontend == 'true' }}
+  frontend-lint:
+    name: Frontend Lint
+    needs: path_filters
+    if: ${{ github.event_name == 'push' || needs.path_filters.outputs.frontend == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: m8flow-frontend/package-lock.json
+      - name: Install M8Flow frontend dependencies
+        working-directory: m8flow-frontend
+        run: npm ci
+      - name: Run M8Flow frontend lint
+        working-directory: m8flow-frontend
+        run: npm run lint
+
+  # -------------------------
+  # Frontend Build + Unit
+  # -------------------------
+  frontend-build-unit:
+    name: Frontend Build and Unit
+    needs: path_filters
+    if: ${{ github.event_name == 'push' || needs.path_filters.outputs.frontend == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -150,13 +126,13 @@ jobs:
           node-version: '20'
           cache: 'npm'
           cache-dependency-path: m8flow-frontend/package-lock.json
-      - name: Install dependencies
+      - name: Install M8Flow frontend dependencies
         working-directory: m8flow-frontend
         run: npm ci
-      - name: Typecheck
+      - name: Build M8Flow frontend bundle
         working-directory: m8flow-frontend
-        run: npm run typecheck
-      - name: Test
+        run: npm run build
+      - name: Run M8Flow frontend unit tests
         working-directory: m8flow-frontend
         env:
           NODE_OPTIONS: --max-old-space-size=4096
@@ -203,20 +179,20 @@ jobs:
   # -------------------------
   migration-check:
     name: Migration Compatibility Check
-    needs: changes
-    if: ${{ needs.changes.outputs.migrations == 'true' && github.event_name == 'pull_request' }}
+    needs: path_filters
+    if: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
     uses: ./.github/workflows/check-migrations.yml
     with:
-      migrations_changed: true
+      migrations_changed: ${{ github.event_name == 'push' || needs.path_filters.outputs.migrations == 'true' }}
 
   # -------------------------
   # Optional Docker Build Dry Run
   # -------------------------
   docker-dry-run:
     name: Docker Build Dry Run
-    needs: changes
+    needs: path_filters
     runs-on: ubuntu-latest
-    if: ${{ (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true' || needs.changes.outputs.extensions_backend == 'true' || needs.changes.outputs.docker_m8flow == 'true') && github.event_name == 'pull_request' }}
+    if: ${{ (needs.path_filters.outputs.backend == 'true' || needs.path_filters.outputs.frontend == 'true' || needs.path_filters.outputs.docker_m8flow == 'true') && github.event_name == 'pull_request' }}
     steps:
       - uses: actions/checkout@v4
       - name: Guard against floating connector refs
@@ -263,3 +239,80 @@ jobs:
             --tag connector-proxy:pr-test \
             --load \
             m8flow-connector-proxy
+
+  # -------------------------
+  # Required Merge Gate
+  # -------------------------
+  required-ci:
+    name: Required CI
+    needs:
+      - path_filters
+      - backend-lint
+      - backend
+      - frontend-lint
+      - frontend-build-unit
+      - codeql
+      - trivy
+      - migration-check
+      - docker-dry-run
+    if: ${{ always() && (github.event_name == 'push' || github.event_name == 'pull_request') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate required CI results
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "backend result: ${{ needs.backend.result }}"
+          echo "backend-lint result: ${{ needs.backend-lint.result }}"
+          echo "frontend-lint result: ${{ needs.frontend-lint.result }}"
+          echo "frontend-build-unit result: ${{ needs.frontend-build-unit.result }}"
+          echo "codeql result: ${{ needs.codeql.result }}"
+          echo "trivy result: ${{ needs.trivy.result }}"
+          echo "migration-check result: ${{ needs.migration-check.result }}"
+          echo "docker-dry-run result: ${{ needs.docker-dry-run.result }}"
+
+          if [[ "${{ github.event_name }}" == "push" || "${{ needs.path_filters.outputs.backend }}" == "true" ]]; then
+            [[ "${{ needs.backend-lint.result }}" == "success" ]] || {
+              echo "::error::Backend lint CI did not succeed."
+              exit 1
+            }
+            [[ "${{ needs.backend.result }}" == "success" ]] || {
+              echo "::error::Backend CI did not succeed."
+              exit 1
+            }
+          fi
+
+          if [[ "${{ github.event_name }}" == "push" || "${{ needs.path_filters.outputs.frontend }}" == "true" ]]; then
+            [[ "${{ needs.frontend-lint.result }}" == "success" ]] || {
+              echo "::error::Frontend lint CI did not succeed."
+              exit 1
+            }
+            [[ "${{ needs.frontend-build-unit.result }}" == "success" ]] || {
+              echo "::error::Frontend build/unit CI did not succeed."
+              exit 1
+            }
+          fi
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            [[ "${{ needs.codeql.result }}" == "success" ]] || {
+              echo "::error::CodeQL scan did not succeed."
+              exit 1
+            }
+            [[ "${{ needs.trivy.result }}" == "success" ]] || {
+              echo "::error::Trivy security scan did not succeed."
+              exit 1
+            }
+          fi
+
+          [[ "${{ needs.migration-check.result }}" == "success" ]] || {
+            echo "::error::Migration compatibility check did not succeed."
+            exit 1
+          }
+
+          if [[ "${{ github.event_name }}" == "pull_request" && ( "${{ needs.path_filters.outputs.backend }}" == "true" || "${{ needs.path_filters.outputs.frontend }}" == "true" || "${{ needs.path_filters.outputs.docker_m8flow }}" == "true" ) ]]; then
+            [[ "${{ needs.docker-dry-run.result }}" == "success" ]] || {
+              echo "::error::Docker build dry run did not succeed."
+              exit 1
+            }
+          fi

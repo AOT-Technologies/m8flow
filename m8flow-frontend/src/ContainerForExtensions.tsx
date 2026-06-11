@@ -186,7 +186,7 @@ function RoleBasedRootGate({
       {
         route: "/connectors",
         method: "GET",
-        uri: targetUris.connectorsPath,
+        uri: targetUris.connectorsGroupedPath,
       },
       {
         route: "/templates",
@@ -249,7 +249,7 @@ export default function ContainerForExtensions() {
     [targetUris.m8flowTenantManagementPath]: ["GET"],
     [targetUris.m8flowTenantListPath]: ["GET"],
     [targetUris.m8flowTemplateListPath]: ["GET"],
-    [targetUris.connectorsPath]: ["GET"],
+    [targetUris.connectorsGroupedPath]: ["GET"],
   };
   const { ability, permissionsLoaded } = usePermissionFetcher(
     permissionRequestData,
@@ -447,6 +447,10 @@ export default function ContainerForExtensions() {
       // Check if user has access to frontend
       if (response.can_access_frontend !== undefined) {
         setCanAccessFrontend(response.can_access_frontend);
+        if (response.can_access_frontend === false) {
+          setExtensionUxElements([]);
+          return;
+        }
       }
 
       if (!permissionsLoaded) {
@@ -592,7 +596,20 @@ export default function ContainerForExtensions() {
     return [<FrontendAccessDenied key="frontendAccessDeniedPage" />];
   };
 
+  const sessionExpiredRecoveryPage = () => {
+    const encodedOriginalUrl = UserService.getCurrentLocation();
+    return [
+      <Navigate
+        key="sessionExpiredRecoveryPage"
+        to={`/login?original_url=${encodedOriginalUrl}`}
+        replace
+      />,
+    ];
+  };
+
   const innerComponents = () => {
+    const sessionAppearsExpired = !UserService.isLoggedIn();
+
     if (backendIsUp === null) {
       return [];
     }
@@ -600,6 +617,12 @@ export default function ContainerForExtensions() {
       return backendIsDownPage();
     }
     if (!canAccessFrontend) {
+      if (sessionAppearsExpired) {
+        if (location.pathname === '/login') {
+          return routeComponents();
+        }
+        return sessionExpiredRecoveryPage();
+      }
       return frontendAccessDeniedPage();
     }
     return routeComponents();

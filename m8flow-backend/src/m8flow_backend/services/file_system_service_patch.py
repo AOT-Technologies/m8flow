@@ -1,10 +1,10 @@
-# m8flow-backend/src/m8flow_backend/services/file_system_service_patch.py
 from __future__ import annotations
 
 import os
 from typing import Any, Dict
 
 from flask import current_app, g, has_request_context
+
 from m8flow_backend.services.tenant_identity_helpers import current_tenant_id_or_none
 from m8flow_backend.tenancy import get_context_tenant_id, is_concrete_tenant_id
 
@@ -12,9 +12,9 @@ _ORIGINALS: Dict[str, Any] = {}
 _PATCHED = False
 
 # Reserved subdirectory used as the BPMN root for global requests (master-realm
-# super-admins, login_return, public/exempt requests).  Cannot collide with a
+# super-admins, login_return, public/exempt requests). Cannot collide with a
 # real tenant id because the leading and trailing double-underscore characters
-# are not allowed in tenant ids.  When the directory does not exist on disk the
+# are not allowed in tenant ids. When the directory does not exist on disk the
 # downstream filesystem walker just returns no process models, which is the
 # correct behavior for global admins who do not work with tenant content.
 _GLOBAL_BPMN_SUBDIR = "__m8flow_global__"
@@ -26,16 +26,18 @@ def _is_global_request() -> bool:
     A request is treated as global when:
       - the tenant resolver explicitly marked it via ``g._m8flow_global_request``
         (master-realm tokens, /login_return, tenant-context-exempt paths), OR
+      - the request was otherwise tagged as super-admin or tenant-context-exempt, OR
       - the bearer token in the request was issued by the configured master
-        realm.  This second check is a belt-and-suspenders fallback for the
-        case where the resolver did not run or did not see the decoded token
-        (e.g. when ``omni_auth`` was registered as a Flask ``before_request``
-        before our patches replaced its module attribute, so the original
-        unpatched ``omni_auth`` runs and never sets ``g._m8flow_decoded_token``).
+        realm. This last check is a fallback when the resolver did not run or
+        did not populate ``g._m8flow_decoded_token``.
     """
     if not has_request_context():
         return False
     if bool(getattr(g, "_m8flow_global_request", False)):
+        return True
+    if bool(getattr(g, "_m8flow_super_admin_request", False)):
+        return True
+    if bool(getattr(g, "_m8flow_tenant_context_exempt_request", False)):
         return True
 
     # Fallback: detect master-realm tokens directly. Importing here avoids a
@@ -51,13 +53,16 @@ def _is_global_request() -> bool:
 
     decoded_token = getattr(g, "_m8flow_decoded_token", None)
     if not isinstance(decoded_token, dict):
-        # Try to decode the bearer token without verification.
         try:
             from flask import request
 
             import jwt
 
-            token: str | None = getattr(g, "token", None) if isinstance(getattr(g, "token", None), str) else None
+            token: str | None = (
+                getattr(g, "token", None)
+                if isinstance(getattr(g, "token", None), str)
+                else None
+            )
             if not token:
                 auth_header = (request.headers.get("Authorization") or "").strip()
                 if auth_header.startswith("Bearer ") and len(auth_header) > 7:
@@ -95,15 +100,14 @@ def _get_tenant_id() -> str:
 
     raise RuntimeError("Missing concrete tenant id in non-request context.")
 
+
 def _explicit_concrete_tenant_id() -> str | None:
     """Return a concrete tenant id explicitly set on the current request/context.
 
-    Unlike ``current_tenant_id_or_none``, this helper deliberately does NOT
-    short-circuit on ``g._m8flow_global_request``: cross-tenant iteration
-    inside ``process_model_service_patch._temporary_tenant_context`` sets a
-    concrete tenant id on a request that is ALSO flagged global (super-admin
-    requests stay flagged global, but we still need each iteration to read
-    that specific tenant's directory).
+    Unlike ``current_tenant_id_or_none()``, this helper deliberately does not
+    short-circuit on global requests. Super-admin cross-tenant iteration keeps
+    the request marked global while temporarily pinning a concrete tenant for
+    filesystem reads.
     """
     if has_request_context():
         request_tenant = getattr(g, "m8flow_tenant_id", None)
@@ -114,35 +118,36 @@ def _explicit_concrete_tenant_id() -> str | None:
 
     context_tenant = get_context_tenant_id()
     if isinstance(context_tenant, str):
-        normalized_ctx = context_tenant.strip()
-        if is_concrete_tenant_id(normalized_ctx):
-            return normalized_ctx
+        normalized_context_tenant = context_tenant.strip()
+        if is_concrete_tenant_id(normalized_context_tenant):
+            return normalized_context_tenant
 
     return None
+
+
+def _unsafe_tenant_id(tenant_id: str) -> bool:
+    return (
+        not tenant_id
+        or ".." in tenant_id
+        or "/" in tenant_id
+        or "\\" in tenant_id
+    )
 
 
 def _tenant_bpmn_root(base_dir: str) -> str:
     """Get tenant-specific BPMN root directory.
 
     Precedence:
-      1. A concrete tenant id explicitly set on the request/context (via
-         ``set_context_tenant_id`` or ``g.m8flow_tenant_id``) — used by
-         super-admin cross-tenant iteration in ``process_model_service_patch``.
-      2. Otherwise, if the request is intentionally tenant-less (master-realm,
-         /login_return, tenant-context-exempt), route to a reserved empty
-         subdirectory so endpoints like /extensions and /process-models simply
-         return no results.
-      3. Otherwise, resolve the tenant id from the request (and raise if absent).
+      1. A concrete tenant id explicitly set on the request/context.
+      2. Otherwise, intentionally tenant-less requests go to the reserved
+         empty global subdirectory.
+      3. Otherwise, resolve the tenant id from the current request/context.
     """
     normalized = os.path.abspath(os.path.normpath(base_dir))
 
     concrete_tenant_id = _explicit_concrete_tenant_id()
     if concrete_tenant_id:
-        if (
-            ".." in concrete_tenant_id
-            or "/" in concrete_tenant_id
-            or "\\" in concrete_tenant_id
-        ):
+        if _unsafe_tenant_id(concrete_tenant_id):
             raise RuntimeError("Unsafe tenant id")
         if os.path.basename(normalized) == concrete_tenant_id:
             return normalized
@@ -151,19 +156,17 @@ def _tenant_bpmn_root(base_dir: str) -> str:
     if _is_global_request():
         return os.path.join(normalized, _GLOBAL_BPMN_SUBDIR)
 
-    tenant_id = _get_tenant_id()
+    tenant_id = current_tenant_id_or_none()
+    if not tenant_id:
+        tenant_id = _get_tenant_id()
 
-    if (
-        not tenant_id
-        or ".." in tenant_id
-        or "/" in tenant_id
-        or "\\" in tenant_id
-    ):
+    if _unsafe_tenant_id(tenant_id):
         raise RuntimeError("Unsafe tenant id")
 
     if os.path.basename(normalized) == tenant_id:
         return normalized
     return os.path.join(normalized, tenant_id)
+
 
 def apply() -> None:
     global _PATCHED
@@ -179,5 +182,4 @@ def apply() -> None:
         return _tenant_bpmn_root(base_dir)
 
     FileSystemService.root_path = staticmethod(patched_root_path)  # type: ignore[assignment]
-
     _PATCHED = True

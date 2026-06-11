@@ -11,7 +11,7 @@ export const useM8flowUriListForPermissions = () => {
       m8flowTenantListPath: "/m8flow/tenants",
       m8flowTemplateListPath: "/m8flow/templates",
       serviceTaskListPath: "/service-tasks",
-      connectorsPath: "/connectors",
+      connectorsGroupedPath: "/m8flow/connectors-grouped",
     };
   }, [spiffTargetUris]);
 
