@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Box,
@@ -95,6 +95,7 @@ export default function TenantPage() {
   );
   const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
   const [roleDialogTenant, setRoleDialogTenant] = useState<Tenant | null>(null);
+  const [pendingRoleDialogTenant, setPendingRoleDialogTenant] = useState<Tenant | null>(null);
   const [successMessage, setSuccessMessage] = useState("");
 
   // Handle edit
@@ -106,6 +107,7 @@ export default function TenantPage() {
 
   const handleCreate = () => {
     setSelectedTenant(null);
+    setPendingRoleDialogTenant(null);
     setModalType(TenantModalType.CREATE_TENANT);
     setIsModalOpen(true);
   };
@@ -129,6 +131,7 @@ export default function TenantPage() {
   const handleModalSuccess = (
     message: string,
     tenantUpdates?: Partial<Tenant>,
+    createdTenant?: Tenant,
   ) => {
     if (
       modalType === TenantModalType.EDIT_TENANT
@@ -142,9 +145,19 @@ export default function TenantPage() {
         name: tenantUpdates.name.trim(),
       });
     }
+    if (modalType === TenantModalType.CREATE_TENANT && createdTenant) {
+      setPendingRoleDialogTenant(createdTenant);
+    }
     setSuccessMessage(message);
     refetch();
   };
+
+  useEffect(() => {
+    if (!isModalOpen && pendingRoleDialogTenant) {
+      setRoleDialogTenant(pendingRoleDialogTenant);
+      setPendingRoleDialogTenant(null);
+    }
+  }, [isModalOpen, pendingRoleDialogTenant]);
 
   // Filter and search logic
   const filteredAndSortedTenants = useMemo(() => {
