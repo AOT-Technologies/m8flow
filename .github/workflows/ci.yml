@@ -136,7 +136,7 @@ jobs:
         working-directory: m8flow-frontend
         env:
           NODE_OPTIONS: --max-old-space-size=4096
-        run: npm test
+        run: npm run test:ci
 
   # -------------------------
   # Security: CodeQL
