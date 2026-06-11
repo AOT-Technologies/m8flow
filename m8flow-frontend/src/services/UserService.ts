@@ -3,6 +3,11 @@ import * as cookie from 'cookie';
 import { BACKEND_BASE_URL } from '@spiffworkflow-frontend/config';
 import { AuthenticationOption } from '@spiffworkflow-frontend/interfaces';
 import { parseTaskShowUrl } from '@spiffworkflow-frontend/helpers';
+import {
+  getEnableMultitenant,
+  getMasterRealmIdentifier,
+  getSharedRealmIdentifier,
+} from '../utils/useConfig';
 
 // NOTE: this currently stores the jwt token in local storage
 // which is considered insecure. Server set cookies seem to be considered
@@ -17,6 +22,8 @@ const SIGN_IN_PATH = '/';
 const AUTH_REALM_HINT_STORAGE_KEY = 'm8flow_auth_realm';
 const TENANT_DISPLAY_NAME_OVERRIDES_STORAGE_KEY = 'm8flow_tenant_display_names';
 const TENANT_DISPLAY_NAME_UPDATED_EVENT = 'm8flow:tenant-display-name-updated';
+const DEFAULT_SHARED_REALM_IDENTIFIER = 'm8flow';
+const DEFAULT_SHARED_REALM_LABEL = 'M8Flow Realm';
 
 export interface OrganizationMembership {
   alias: string;
@@ -171,7 +178,52 @@ const normalizeRedirectUrl = (redirectUrl?: string | null) => {
   return new URL(redirectUrl, globalThis.location.origin).toString();
 };
 
+const getCurrentLoginLandingUrl = () =>
+  `${globalThis.location.origin}${globalThis.location.pathname}${globalThis.location.search || ''}`.replace(
+    /\/login.*$/,
+    '/login',
+  ) || `${globalThis.location.origin}/login`;
+
+const getAuthenticationLabel = (
+  identifier: string,
+  sharedRealmIdentifier: string,
+  masterRealmIdentifier: string,
+) => {
+  if (identifier === masterRealmIdentifier) {
+    return 'Master';
+  }
+  if (identifier === sharedRealmIdentifier) {
+    return sharedRealmIdentifier === DEFAULT_SHARED_REALM_IDENTIFIER
+      ? DEFAULT_SHARED_REALM_LABEL
+      : sharedRealmIdentifier;
+  }
+  return identifier || 'Default';
+};
+
+const originalUrlTargetsOrganizationManagement = (originalUrl: string | null) => {
+  if (!originalUrl) {
+    return false;
+  }
+
+  try {
+    const pathname =
+      new URL(originalUrl, globalThis.location.origin).pathname.replace(/\/+$/, '') || '/';
+    return pathname === '/tenants';
+  } catch {
+    return false;
+  }
+};
+
+const clearSelectedTenantState = () => {
+  localStorage.removeItem('m8flow_tenant');
+  localStorage.removeItem('m8f_tenant_id');
+  document.cookie = 'm8flow_selected_tenant=; Max-Age=0; Path=/';
+};
+
 const redirectToLogin = () => {
+  if (beginAutomaticReauthentication({ originalUrl: getCurrentLocationRaw() })) {
+    return;
+  }
   const encodedUrl = getCurrentLocation();
   const loginUrl = `/login?original_url=${encodedUrl}`;
   globalThis.location.replace(loginUrl);
@@ -490,6 +542,51 @@ const doLogin = (
   globalThis.location.href = url;
 };
 
+const beginAutomaticReauthentication = ({
+  originalUrl,
+  requestedAuthenticationIdentifier,
+}: {
+  originalUrl?: string | null;
+  requestedAuthenticationIdentifier?: string | null;
+} = {}): boolean => {
+  try {
+    const enableMultitenant = getEnableMultitenant();
+    const sharedRealmIdentifier = getSharedRealmIdentifier();
+    const masterRealmIdentifier = getMasterRealmIdentifier();
+    const normalizedOriginalUrl =
+      typeof originalUrl === 'string' && originalUrl.trim()
+        ? normalizeRedirectUrl(originalUrl)
+        : originalUrl || null;
+    const requestedIdentifier = requestedAuthenticationIdentifier?.trim() || '';
+    const persistedRealmHintIdentifier = getAuthenticationRealmHint()?.trim() || '';
+    const destinationRealmIdentifier = originalUrlTargetsOrganizationManagement(
+      normalizedOriginalUrl,
+    )
+      ? masterRealmIdentifier
+      : persistedRealmHintIdentifier || sharedRealmIdentifier;
+    const identifier = requestedIdentifier || destinationRealmIdentifier;
+
+    clearSelectedTenantState();
+    doLogin(
+      {
+        identifier,
+        label: getAuthenticationLabel(
+          identifier,
+          sharedRealmIdentifier,
+          masterRealmIdentifier,
+        ),
+        uri: '',
+      },
+      enableMultitenant
+        ? normalizedOriginalUrl || getCurrentLoginLandingUrl()
+        : normalizedOriginalUrl,
+    );
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 const doLogout = () => {
   const idToken = getIdToken();
   clearAuthenticationRealmHint();
@@ -668,6 +765,7 @@ const getTenantName = (): string | null => {
 
 const UserService = {
   authenticationDisabled,
+  beginAutomaticReauthentication,
   doLogin,
   doLogout,
   getAccessToken,
