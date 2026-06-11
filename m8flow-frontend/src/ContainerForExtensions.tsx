@@ -44,6 +44,7 @@ import TenantSelectPage, {
 } from './views/TenantSelectPage';
 import { useConfig } from './utils/useConfig';
 import { RouteLoadingFallback } from './components/RouteLoadingFallback';
+import { resolveContainerContentState } from './utils/containerContentState';
 
 // Route-level code splitting for heavier pages.
 const ReportsPage = lazy(() => import('./views/ReportsPage'));
@@ -608,24 +609,26 @@ export default function ContainerForExtensions() {
   };
 
   const innerComponents = () => {
-    const sessionAppearsExpired = !UserService.isLoggedIn();
+    const contentState = resolveContainerContentState({
+      backendIsUp,
+      canAccessFrontend,
+      isLoggedIn: UserService.isLoggedIn(),
+      pathname: location.pathname,
+    });
 
-    if (backendIsUp === null) {
-      return [];
-    }
-    if (!backendIsUp) {
-      return backendIsDownPage();
-    }
-    if (!canAccessFrontend) {
-      if (sessionAppearsExpired) {
-        if (location.pathname === '/login') {
-          return routeComponents();
-        }
+    switch (contentState) {
+      case 'loading':
+        return [];
+      case 'backend-down':
+        return backendIsDownPage();
+      case 'frontend-access-denied':
+        return frontendAccessDeniedPage();
+      case 'session-expired-recovery':
         return sessionExpiredRecoveryPage();
-      }
-      return frontendAccessDeniedPage();
+      case 'routes':
+      default:
+        return routeComponents();
     }
-    return routeComponents();
   };
 
   return (

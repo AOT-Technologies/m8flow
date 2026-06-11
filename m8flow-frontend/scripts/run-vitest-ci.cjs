@@ -39,19 +39,33 @@ const groupDefinitions = [
       /^src\/views\/Tenant(ManagementPage|Page|RoleDialog|SelectPage)\.test\.tsx$/.test(file),
   },
   {
-    name: 'session-and-services',
+    name: 'tenant-login',
+    match: (file) => /^src\/views\/TenantAwareLogin\.test\.tsx$/.test(file),
+  },
+  {
+    name: 'app-root',
+    match: (file) => file === 'src/App.test.tsx',
+  },
+  {
+    name: 'container-extensions',
+    match: (file) => file === 'src/ContainerForExtensions.test.tsx',
+  },
+  {
+    name: 'tenant-services',
     match: (file) =>
-      /^src\/views\/TenantAwareLogin\.test\.tsx$/.test(file) ||
-      /^(src\/App\.test\.tsx|src\/ContainerForExtensions\.test\.tsx)$/.test(file) ||
       /^src\/services\/(TenantService|UserService)\.test\.ts$/.test(file),
   },
   {
-    name: 'template-and-dialogs',
+    name: 'template-pages-and-service',
     match: (file) =>
       /^src\/views\/Template(?!ModelerPage).*\.test\.tsx?$/.test(file) ||
       /^src\/components\/SaveAsTemplateModal\.test\.tsx$/.test(file) ||
       /^src\/hooks\/useTemplates\.test\.ts$/.test(file) ||
-      /^src\/services\/TemplateService\.test\.ts$/.test(file) ||
+      /^src\/services\/TemplateService\.test\.ts$/.test(file),
+  },
+  {
+    name: 'template-cards-and-utils',
+    match: (file) =>
       /^src\/test\/Template.*\.test\.tsx$/.test(file) ||
       /^src\/test\/templateHelpers\.test\.ts$/.test(file) ||
       /^src\/utils\/template.*\.test\.ts$/.test(file),
