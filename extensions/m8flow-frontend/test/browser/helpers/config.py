@@ -28,6 +28,7 @@ DEFAULT_TENANT = os.getenv("BROWSER_TEST_TENANT", "m8flow")
 # ---------------------------------------------------------------------------
 SUPER_ADMIN_USERNAME = os.getenv("BROWSER_TEST_SUPER_ADMIN_USERNAME", "super-admin")
 SUPER_ADMIN_PASSWORD = os.getenv("BROWSER_TEST_SUPER_ADMIN_PASSWORD", "super-admin")
+MASTER_REALM_IDENTIFIER = os.getenv("M8FLOW_KEYCLOAK_MASTER_REALM", "master")
 
 NO_ROLE_USERNAME = os.getenv("BROWSER_TEST_NO_ROLE_USERNAME", "no-role")
 NO_ROLE_PASSWORD = os.getenv("BROWSER_TEST_NO_ROLE_PASSWORD", "no-role")

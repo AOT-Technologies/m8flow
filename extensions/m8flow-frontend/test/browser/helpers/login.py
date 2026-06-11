@@ -3,11 +3,13 @@ import logging
 from playwright.sync_api import Page, expect, TimeoutError as PlaywrightTimeout
 from helpers.config import (
     BASE_URL,
+    API_PREFIX,
     DEFAULT_USERNAME,
     DEFAULT_PASSWORD,
     DEFAULT_TENANT,
     SUPER_ADMIN_USERNAME,
     SUPER_ADMIN_PASSWORD,
+    MASTER_REALM_IDENTIFIER,
     KC_TIMEOUT,
     POST_LOGIN_TIMEOUT,
     PAGE_DATA_TIMEOUT,
@@ -185,6 +187,33 @@ def login_expect_failure(
     expect(page.get_by_text(error_text)).to_be_visible(timeout=KC_TIMEOUT)
 
 
+def _navigate_to_global_admin_login(page: Page, base_url: str) -> None:
+    """Navigate to the global-admin (master realm) Keycloak login page.
+
+    In multi-tenant mode the app shows a tenant-select-form with a
+    'global-admin-sign-in-button'.  In single-tenant mode the app skips
+    that form and redirects to the tenant realm directly; the fallback
+    navigates to the master-realm login endpoint directly.
+    """
+    page.goto(base_url)
+    tenant_form = page.get_by_test_id("tenant-select-form")
+    try:
+        tenant_form.wait_for(state="visible", timeout=SHORT_TIMEOUT)
+        page.get_by_test_id("global-admin-sign-in-button").click()
+    except PlaywrightTimeout:
+        redirect_url = f"{base_url.rstrip('/')}/tenants"
+        login_url = (
+            f"{base_url.rstrip('/')}{API_PREFIX}/login"
+            f"?redirect_url={redirect_url}"
+            f"&authentication_identifier={MASTER_REALM_IDENTIFIER}"
+        )
+        logger.debug(
+            "tenant-select-form not found; navigating directly to master-realm login: %s",
+            login_url,
+        )
+        page.goto(login_url)
+
+
 def login_as_global_admin(
     page: Page,
     username: str = SUPER_ADMIN_USERNAME,
@@ -193,15 +222,10 @@ def login_as_global_admin(
 ) -> None:
     """Log in as a global admin via the master realm.
 
-    Clicks the 'Global admin sign in' button on the tenant-select page,
-    which redirects to Keycloak's master realm.
+    Works in both multi-tenant mode (tenant-select-form → global-admin-sign-in-button)
+    and single-tenant mode (direct navigation to the master-realm login endpoint).
     """
-    page.goto(base_url)
-
-    page.get_by_test_id("tenant-select-form").wait_for(
-        state="visible", timeout=KC_TIMEOUT
-    )
-    page.get_by_test_id("global-admin-sign-in-button").click()
+    _navigate_to_global_admin_login(page, base_url)
 
     for attempt in range(1, MAX_LOGIN_ATTEMPTS + 1):
         _submit_keycloak_form(page, username, password)
@@ -211,11 +235,7 @@ def login_as_global_admin(
         except (AssertionError, PlaywrightTimeout):
             if attempt == MAX_LOGIN_ATTEMPTS:
                 raise
-            page.goto(base_url)
-            page.get_by_test_id("tenant-select-form").wait_for(
-                state="visible", timeout=KC_TIMEOUT
-            )
-            page.get_by_test_id("global-admin-sign-in-button").click()
+            _navigate_to_global_admin_login(page, base_url)
 
 
 def logout(page: Page, base_url: str = BASE_URL) -> None:
