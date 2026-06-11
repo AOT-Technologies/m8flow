@@ -882,6 +882,8 @@ def add_organization_member(
 def list_organization_groups(
     organization_id: str,
     admin_token: str | None = None,
+    *,
+    brief_representation: bool = True,
 ) -> list[dict[str, Any]]:
     """Return the top-level organization groups for one shared-realm organization."""
     if not organization_id or not str(organization_id).strip():
@@ -893,7 +895,7 @@ def list_organization_groups(
     response = requests.get(
         _shared_realm_organization_groups_url(organization_id),
         params={
-            "briefRepresentation": "true",
+            "briefRepresentation": "true" if brief_representation else "false",
             "populateHierarchy": "false",
             "subGroupsCount": "false",
             "max": 100,

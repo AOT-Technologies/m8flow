@@ -10,7 +10,7 @@ def _stub_create_group_dependencies(monkeypatch, *, existing_group_names=None):
     monkeypatch.setattr(
         tenant_role_service,
         "_organization_for_tenant",
-        lambda tenant_id: (
+        lambda tenant_id, admin_token=None: (
             SimpleNamespace(id=tenant_id, slug="tenant-slug"),
             {"id": "org-1"},
             "org-1",
@@ -19,19 +19,19 @@ def _stub_create_group_dependencies(monkeypatch, *, existing_group_names=None):
     monkeypatch.setattr(
         tenant_role_service,
         "_organization_group_name_lookup",
-        lambda _organization_id: {
+        lambda _organization_id, groups=None: {
             name.casefold(): name for name in (existing_group_names or [])
         },
     )
     monkeypatch.setattr(
         tenant_role_service,
         "list_organization_group_members",
-        lambda _organization_id, _group_id: [],
+        lambda _organization_id, _group_id, admin_token=None: [],
     )
     monkeypatch.setattr(
         tenant_role_service,
         "get_organization_group_by_id",
-        lambda _organization_id, _group_id: None,
+        lambda _organization_id, _group_id, admin_token=None: None,
     )
     monkeypatch.setattr(
         tenant_role_service,
@@ -101,3 +101,254 @@ def test_create_tenant_group_detects_duplicate_after_normalization(monkeypatch):
         exc_info.value.message
         == "Group 'qa reviewers' already exists in the tenant organization."
     )
+
+
+def test_list_tenant_members_with_roles_reuses_one_admin_token(monkeypatch):
+    admin_token_calls: list[str] = []
+    list_groups_calls: list[tuple[str, str | None, bool]] = []
+
+    monkeypatch.setattr(
+        tenant_role_service,
+        "get_master_admin_token",
+        lambda: admin_token_calls.append("called") or "token-1",
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "_organization_for_tenant",
+        lambda tenant_id, admin_token=None: (
+            SimpleNamespace(id=tenant_id, slug="tenant-slug"),
+            {"id": "org-1"},
+            "org-1",
+        ),
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "list_organization_groups",
+        lambda organization_id, admin_token=None, brief_representation=True: list_groups_calls.append(
+            (organization_id, admin_token, brief_representation)
+        )
+        or [
+            {
+                "id": "group-1",
+                "name": "Administrators",
+                "attributes": {},
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "organization_group_role_names",
+        lambda _group: ["tenant-admin"],
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "get_organization_group_by_id",
+        lambda *_args, **_kwargs: pytest.fail(
+            "full group list should avoid extra group-by-id lookups"
+        ),
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "search_organization_members",
+        lambda organization_id, search, *, exact=False, admin_token=None, max_results=100: [
+            {
+                "id": "member-1",
+                "username": "admin",
+                "email": "admin@example.com",
+            }
+        ]
+        if organization_id == "org-1"
+        and search == "admin"
+        and exact is False
+        and admin_token == "token-1"
+        and max_results == 100
+        else pytest.fail("unexpected organization member search arguments"),
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "get_organization_member_groups",
+        lambda organization_id, member_id, admin_token=None: [
+            {"id": "group-1", "name": "Administrators"}
+        ]
+        if organization_id == "org-1"
+        and member_id == "member-1"
+        and admin_token == "token-1"
+        else pytest.fail("unexpected organization member-groups arguments"),
+    )
+
+    members = tenant_role_service.list_tenant_members_with_roles("tenant-1", search="admin")
+
+    assert admin_token_calls == ["called"]
+    assert list_groups_calls == [("org-1", "token-1", False)]
+    assert members == [
+        {
+            "id": "member-1",
+            "username": "admin",
+            "email": "admin@example.com",
+            "display_name": None,
+            "roles": ["tenant-admin"],
+        }
+    ]
+
+
+def test_organization_group_members_lookup_batches_group_member_requests(monkeypatch):
+    member_lookup_calls: list[tuple[str, str, str | None]] = []
+
+    monkeypatch.setattr(
+        tenant_role_service,
+        "list_organization_group_members",
+        lambda organization_id, group_id, admin_token=None: member_lookup_calls.append(
+            (organization_id, group_id, admin_token)
+        )
+        or [
+            {
+                "id": f"{group_id}-member",
+                "username": f"{group_id}-user",
+                "email": f"{group_id}@example.com",
+            }
+        ],
+    )
+
+    members_by_group_id = tenant_role_service._organization_group_members_lookup(
+        "org-1",
+        [
+            {"id": "group-1", "name": "Administrators"},
+            {"id": "group-2", "name": "Editors"},
+        ],
+        admin_token="token-1",
+    )
+
+    assert sorted(member_lookup_calls) == [
+        ("org-1", "group-1", "token-1"),
+        ("org-1", "group-2", "token-1"),
+    ]
+    assert members_by_group_id == {
+        "group-1": [
+            {
+                "id": "group-1-member",
+                "username": "group-1-user",
+                "email": "group-1@example.com",
+                "display_name": None,
+            }
+        ],
+        "group-2": [
+            {
+                "id": "group-2-member",
+                "username": "group-2-user",
+                "email": "group-2@example.com",
+                "display_name": None,
+            }
+        ],
+    }
+
+
+def test_tenant_member_roles_lookup_batches_member_role_requests(monkeypatch):
+    member_role_calls: list[tuple[str, str, str | None]] = []
+
+    monkeypatch.setattr(
+        tenant_role_service,
+        "_normalized_member_roles",
+        lambda organization_id, member_id, *, group_role_lookup=None, admin_token=None: member_role_calls.append(
+            (organization_id, member_id, admin_token)
+        )
+        or ([f"role-{member_id}"] if group_role_lookup == {"by_group_id": {}, "by_group_name": {}} else []),
+    )
+
+    roles_by_member_id = tenant_role_service._tenant_member_roles_lookup(
+        "org-1",
+        [
+            {"id": "member-1", "username": "admin"},
+            {"id": "member-2", "username": "editor"},
+        ],
+        group_role_lookup={"by_group_id": {}, "by_group_name": {}},
+        admin_token="token-1",
+    )
+
+    assert sorted(member_role_calls) == [
+        ("org-1", "member-1", "token-1"),
+        ("org-1", "member-2", "token-1"),
+    ]
+    assert roles_by_member_id == {
+        "member-1": ["role-member-1"],
+        "member-2": ["role-member-2"],
+    }
+
+
+def test_list_tenant_groups_with_members_reuses_one_admin_token(monkeypatch):
+    admin_token_calls: list[str] = []
+    list_groups_calls: list[tuple[str, str | None, bool]] = []
+
+    monkeypatch.setattr(
+        tenant_role_service,
+        "get_master_admin_token",
+        lambda: admin_token_calls.append("called") or "token-1",
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "_organization_for_tenant",
+        lambda tenant_id, admin_token=None: (
+            SimpleNamespace(id=tenant_id, slug="tenant-slug"),
+            {"id": "org-1"},
+            "org-1",
+        ),
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "list_organization_groups",
+        lambda organization_id, admin_token=None, brief_representation=True: list_groups_calls.append(
+            (organization_id, admin_token, brief_representation)
+        )
+        or [
+            {
+                "id": "group-1",
+                "name": "Administrators",
+                "path": "/Administrators",
+                "attributes": {},
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "organization_group_role_names",
+        lambda _group: ["tenant-admin"],
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "get_organization_group_by_id",
+        lambda *_args, **_kwargs: pytest.fail(
+            "full group list should avoid extra group-by-id lookups"
+        ),
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "list_organization_group_members",
+        lambda organization_id, group_id, admin_token=None: [
+            {"id": "member-1", "username": "admin", "email": "admin@example.com"}
+        ]
+        if organization_id == "org-1"
+        and group_id == "group-1"
+        and admin_token == "token-1"
+        else pytest.fail("unexpected organization group-members arguments"),
+    )
+
+    groups = tenant_role_service.list_tenant_groups_with_members("tenant-1")
+
+    assert admin_token_calls == ["called"]
+    assert list_groups_calls == [("org-1", "token-1", False)]
+    assert groups == [
+        {
+            "id": "group-1",
+            "name": "Administrators",
+            "path": "/Administrators",
+            "mapped_roles": ["tenant-admin"],
+            "member_count": 1,
+            "members": [
+                {
+                    "id": "member-1",
+                    "username": "admin",
+                    "email": "admin@example.com",
+                    "display_name": None,
+                }
+            ],
+        }
+    ]
