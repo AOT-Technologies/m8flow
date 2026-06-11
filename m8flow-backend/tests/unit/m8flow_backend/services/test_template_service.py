@@ -1025,6 +1025,69 @@ def test_list_templates_super_admin_filter_includes_cross_tenant_public() -> Non
         assert "tenant1-tenant" not in keys
 
 
+def test_list_templates_super_admin_without_filter_sees_all_tenants() -> None:
+    """Regression: super-admin with no filter_tenant_id keeps broad cross-tenant visibility.
+
+    The tenant-owned-OR-PUBLIC narrowing only applies when filter_tenant_id is set; without
+    it, the super-admin must still see every template regardless of tenant or visibility.
+    """
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add_all([
+            M8flowTenantModel(id="m8flow", name="M8Flow", slug="m8flow", created_by="test", modified_by="test"),
+            M8flowTenantModel(id="tenant1", name="Tenant 1", slug="tenant1", created_by="test", modified_by="test"),
+            M8flowTenantModel(id="tenant2", name="Tenant 2", slug="tenant2", created_by="test", modified_by="test"),
+        ])
+        user = UserModel(username="super-admin", email="super@example.com", service="local", service_id="super-admin")
+        db.session.add(user)
+        db.session.add_all([
+            TemplateModel(
+                template_key="default-sample",
+                version="V1",
+                name="Default Sample",
+                m8f_tenant_id="m8flow",
+                visibility=TemplateVisibility.public.value,
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
+                created_by="system",
+                modified_by="system",
+            ),
+            TemplateModel(
+                template_key="tenant2-private",
+                version="V1",
+                name="Tenant 2 Private",
+                m8f_tenant_id="tenant2",
+                visibility=TemplateVisibility.private.value,
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
+                created_by="owner2",
+                modified_by="owner2",
+            ),
+            TemplateModel(
+                template_key="tenant1-tenant",
+                version="V1",
+                name="Tenant 1 Scoped",
+                m8f_tenant_id="tenant1",
+                visibility=TemplateVisibility.tenant.value,
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
+                created_by="owner1",
+                modified_by="owner1",
+            ),
+        ])
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g._m8flow_super_admin_request = True
+            results, _ = TemplateService.list_templates(user=user)
+
+        keys = {t.template_key for t in results}
+        assert keys == {"default-sample", "tenant2-private", "tenant1-tenant"}
+
+
 # ============================================================================
 # Get Template Tests
 # ============================================================================

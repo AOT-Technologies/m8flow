@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 import sys
 from types import ModuleType
 
+import pytest
 from flask import Flask
 from flask import jsonify
 
@@ -64,6 +65,26 @@ def test_super_admin_per_instance_call_defers_to_original_handler(monkeypatch) -
 
     assert calls == ["original"]
     assert payload["results"][0]["id"] == "original"
+
+
+def test_super_admin_invalid_process_instance_id_takes_all_open_tasks_branch(monkeypatch) -> None:
+    # An invalid process_instance_id (e.g. "abc") resolves to None via
+    # _extract_process_instance_id, so a super-admin call must take the global
+    # all-open-tasks branch rather than deferring to the original handler. The fake
+    # tasks_controller module cannot satisfy the global view's DB/model dependencies,
+    # so that branch raises here -- but crucially the ORIGINAL handler is never
+    # invoked (calls stays empty), which is what proves the routing decision is
+    # intentional for an unparseable process_instance_id.
+    fake_tasks_controller_module, calls = _build_patched_tasks_controller(monkeypatch)
+
+    monkeypatch.setattr(tasks_controller_patch, "is_super_admin_request", lambda: True)
+
+    app = Flask(__name__)
+    with app.app_context():
+        with pytest.raises(Exception):
+            fake_tasks_controller_module.task_list_my_tasks(process_instance_id="abc")
+
+    assert calls == []
 
 
 def test_non_super_admin_uses_original_handler(monkeypatch) -> None:

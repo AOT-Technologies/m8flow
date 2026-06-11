@@ -58,7 +58,7 @@ def _rewrite_assigned_group_identifiers(response: flask.wrappers.Response) -> fl
     return make_response(jsonify(payload), response.status_code)
 
 
-def _extract_process_instance_id(args: tuple, kwargs: dict) -> int | None:
+def _extract_process_instance_id(args: tuple[object, ...], kwargs: dict[str, object]) -> int | None:
     """Pull process_instance_id from the upstream task_list_my_tasks call signature.
 
     Upstream signature is task_list_my_tasks(process_instance_id=None, page=1, per_page=100).

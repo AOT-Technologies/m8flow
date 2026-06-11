@@ -61,6 +61,7 @@ import { useUriListForPermissions } from '../hooks/UriListForPermissions';
 import 'react-datepicker/dist/react-datepicker.css';
 
 import HttpService from '../services/HttpService';
+import { mergeReportFilters } from '../utils/reportFilters';
 
 import {
   ProcessModel,
@@ -320,17 +321,13 @@ export default function ProcessInstanceListTableWithFilters({
           setProcessInstanceReportSelection(processInstanceReport);
         }
       }
-      // Strip any tenant_id already in the report – global context is the source of truth
-      reportMetadataBodyToUse.filter_by = reportMetadataBodyToUse.filter_by.filter(
-        (rf: ReportFilter) => rf.field_name !== 'tenant_id',
+      // Strip any tenant_id already in the report (global context is the source of
+      // truth) and merge in the effective additional filters, deduping by
+      // field_name + operator so no field — tenant_id included — appears twice.
+      reportMetadataBodyToUse.filter_by = mergeReportFilters(
+        reportMetadataBodyToUse.filter_by,
+        effectiveAdditionalFilters,
       );
-      if (effectiveAdditionalFilters.length > 0) {
-        effectiveAdditionalFilters.forEach((arf: ReportFilter) => {
-          if (!reportMetadataBodyToUse.filter_by.includes(arf)) {
-            reportMetadataBodyToUse.filter_by.push(arf);
-          }
-        });
-      }
 
       // If the showActionColumn is set to true, we need to include the with_oldest_open_task in the query params
       if (
