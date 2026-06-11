@@ -6,10 +6,72 @@ import logging
 _PATCHED = False
 _logger = logging.getLogger(__name__)
 
+# Modules that import _get_task_model_for_request by name and therefore need rebinding.
+_GET_TASK_MODEL_CALLER_MODULES = (
+    "spiffworkflow_backend.routes.process_api_blueprint",
+    "spiffworkflow_backend.routes.tasks_controller",
+    "spiffworkflow_backend.routes.public_controller",
+)
+
+
+def _make_external_form_aware_get_task_model(original, api_error_cls):
+    """Wrap _get_task_model_for_request so a user task configured with an external form
+    (spiffworkflow:property externalFormUrl) no longer 500s on the missing local form file.
+
+    Upstream requires every UserTask to have a formJsonSchemaFilename. External-form tasks
+    intentionally have none, so we catch only that specific error and, when the task carries
+    an externalFormUrl, return the task without a local form schema (with_form_data=False
+    skips the form-building block entirely). Any other task still raises as before.
+
+    Because that block is skipped, the form-related attributes the task page expects are
+    never set. We populate safe empties so the upstream TaskShow renders instead of crashing
+    on `'ui:submitButtonOptions' in form_ui_schema` / `signal_buttons.map(...)` (and hanging
+    when `data` is absent), and we surface the external form URL via instructionsForEndUser.
+    NOTE: this is a fallback — the in-app form is empty; rendering/redirecting to the external
+    form itself is M8F-340."""
+
+    def _patched_get_task_model_for_request(process_instance_id, task_guid="next", with_form_data=False):
+        try:
+            return original(process_instance_id, task_guid=task_guid, with_form_data=with_form_data)
+        except api_error_cls as exc:
+            if getattr(exc, "error_code", None) != "missing_form_file":
+                raise
+            task_model = original(process_instance_id, task_guid=task_guid, with_form_data=False)
+            properties = (getattr(task_model, "extensions", None) or {}).get("properties", {})
+            external_form_url = properties.get("externalFormUrl")
+            if not external_form_url:
+                raise
+            _logger.info(
+                "Task %s (process instance %s) uses an external form (%s); "
+                "returning task without a local form schema.",
+                task_guid,
+                process_instance_id,
+                external_form_url,
+            )
+            if with_form_data:
+                task_model.form_schema = {}
+                task_model.form_ui_schema = {}
+                task_model.data = task_model.get_data()
+                task_model.saved_form_data = None
+                task_model.signal_buttons = []
+                extensions = getattr(task_model, "extensions", None)
+                if isinstance(extensions, dict):
+                    extensions["instructionsForEndUser"] = (
+                        "This task is completed using an external form. "
+                        f"[Open the external form]({external_form_url})"
+                    )
+            return task_model
+
+    return _patched_get_task_model_for_request
+
 
 def apply() -> None:
-    """Patch _update_form_schema_with_task_data_as_needed to log warnings instead of raising 500 errors
-    when task data variables referenced in form schemas are missing or empty lists."""
+    """Patches for spiffworkflow_backend.routes.process_api_blueprint:
+
+    1. _update_form_schema_with_task_data_as_needed logs warnings instead of raising 500s
+       when task-data variables referenced in form schemas are missing or empty lists.
+    2. _get_task_model_for_request returns external-form user tasks without a local form
+       instead of raising missing_form_file (see _make_external_form_aware_get_task_model)."""
     global _PATCHED
     if _PATCHED:
         return
@@ -79,4 +141,16 @@ def apply() -> None:
     process_api_blueprint._update_form_schema_with_task_data_as_needed = (
         _patched_update_form_schema_with_task_data_as_needed
     )
+
+    # Rebind _get_task_model_for_request everywhere it is referenced. The route modules
+    # import it by name (from ... import ...), so patching only the source module would
+    # not reach them.
+    patched_get_task_model = _make_external_form_aware_get_task_model(
+        process_api_blueprint._get_task_model_for_request, ApiError
+    )
+    for module_name in _GET_TASK_MODEL_CALLER_MODULES:
+        module = importlib.import_module(module_name)
+        if hasattr(module, "_get_task_model_for_request"):
+            module._get_task_model_for_request = patched_get_task_model
+
     _PATCHED = True
