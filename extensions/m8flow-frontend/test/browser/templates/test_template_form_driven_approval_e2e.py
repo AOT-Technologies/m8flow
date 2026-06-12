@@ -258,7 +258,7 @@ def _verification_checkbox(page: Page, complaint: ComplaintType):
 
 
 def _open_first_task_assigned_to_me(page: Page, instance_id: str | None = None) -> None:
-    page.get_by_test_id("nav-home").click()
+    page.get_by_test_id("nav-item-home").click()
     wait_for_app_ready(page)
     page.get_by_test_id("tab-tasks-assigned-to-me").click()
     wait_for_app_ready(page)
@@ -312,7 +312,7 @@ def _complete_assignee_verification(
 
 
 def _assert_initiator_sees_completed_workflow(page: Page, instance_id: str | None) -> None:
-    page.get_by_test_id("nav-home").click()
+    page.get_by_test_id("nav-item-home").click()
     wait_for_app_ready(page)
 
     created_by_me_tab = page.get_by_test_id("tab-workflows-created-by-me")

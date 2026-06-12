@@ -22,7 +22,6 @@ def test_super_admin_tenant_page_visible(super_admin_page: Page) -> None:
 
 def test_super_admin_sees_tenants_nav(super_admin_page: Page) -> None:
     expect(
-        super_admin_page.get_by_test_id("nav-tenants")
+        super_admin_page.get_by_test_id("nav-item-/../tenants")
     ).to_be_visible(timeout=10_000)
     logger.info("Super-admin can see Tenants tab.")
-

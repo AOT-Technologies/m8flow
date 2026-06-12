@@ -21,6 +21,13 @@ ORGANIZATION_GROUP_ROLE_MAPPINGS="${M8FLOW_KEYCLOAK_ORGANIZATION_GROUP_ROLE_MAPP
 SPOKE_CLIENT_ID="${M8FLOW_KEYCLOAK_SPOKE_CLIENT_ID:-m8flow-backend}"
 TIMEOUT=120
 ELAPSED=0
+KEYCLOAK_ACCESS_TOKEN_LIFESPAN="${M8FLOW_KEYCLOAK_ACCESS_TOKEN_LIFESPAN:-1800}"
+KEYCLOAK_ACCESS_TOKEN_LIFESPAN_FOR_IMPLICIT_FLOW="${M8FLOW_KEYCLOAK_ACCESS_TOKEN_LIFESPAN_FOR_IMPLICIT_FLOW:-900}"
+KEYCLOAK_SSO_SESSION_IDLE_TIMEOUT="${M8FLOW_KEYCLOAK_SSO_SESSION_IDLE_TIMEOUT:-86400}"
+KEYCLOAK_SSO_SESSION_MAX_LIFESPAN="${M8FLOW_KEYCLOAK_SSO_SESSION_MAX_LIFESPAN:-864000}"
+KEYCLOAK_CLIENT_SESSION_IDLE_TIMEOUT="${M8FLOW_KEYCLOAK_CLIENT_SESSION_IDLE_TIMEOUT:-0}"
+KEYCLOAK_CLIENT_SESSION_MAX_LIFESPAN="${M8FLOW_KEYCLOAK_CLIENT_SESSION_MAX_LIFESPAN:-0}"
+KEYCLOAK_REVOKE_REFRESH_TOKEN="${M8FLOW_KEYCLOAK_REVOKE_REFRESH_TOKEN:-false}"
 
 resolve_client_internal_id() {
   local realm_name="$1"
@@ -890,6 +897,19 @@ ensure_shared_realm_single_page_login() {
   fi
 }
 
+update_realm_session_timeouts() {
+  local realm_name="$1"
+
+  /opt/keycloak/bin/kcadm.sh update "realms/${realm_name}" \
+    -s revokeRefreshToken="${KEYCLOAK_REVOKE_REFRESH_TOKEN}" \
+    -s accessTokenLifespan="${KEYCLOAK_ACCESS_TOKEN_LIFESPAN}" \
+    -s accessTokenLifespanForImplicitFlow="${KEYCLOAK_ACCESS_TOKEN_LIFESPAN_FOR_IMPLICIT_FLOW}" \
+    -s ssoSessionIdleTimeout="${KEYCLOAK_SSO_SESSION_IDLE_TIMEOUT}" \
+    -s ssoSessionMaxLifespan="${KEYCLOAK_SSO_SESSION_MAX_LIFESPAN}" \
+    -s clientSessionIdleTimeout="${KEYCLOAK_CLIENT_SESSION_IDLE_TIMEOUT}" \
+    -s clientSessionMaxLifespan="${KEYCLOAK_CLIENT_SESSION_MAX_LIFESPAN}" >/dev/null 2>&1
+}
+
 echo "[keycloak-init-realms] Waiting for Keycloak admin API at ${BASE} (up to ${TIMEOUT}s)..."
 while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
   if /opt/keycloak/bin/kcadm.sh config credentials --server "$BASE" --realm master \
@@ -905,10 +925,11 @@ if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
   echo "[keycloak-init-realms] WARNING: Keycloak did not become ready within ${TIMEOUT}s; attempting realm update anyway." >&2
 fi
 
-echo "[keycloak-init-realms] Setting sslRequired=NONE on realms master, ${SHARED_REALM}..."
+echo "[keycloak-init-realms] Setting sslRequired=NONE and aligned session timeouts on realms master, ${SHARED_REALM}..."
 for realm in master "${SHARED_REALM}"; do
-  if /opt/keycloak/bin/kcadm.sh update realms/${realm} -s sslRequired=NONE 2>/dev/null; then
-    echo "[keycloak-init-realms] Realm ${realm}: sslRequired=NONE set successfully."
+  if /opt/keycloak/bin/kcadm.sh update realms/${realm} -s sslRequired=NONE >/dev/null 2>&1 \
+    && update_realm_session_timeouts "${realm}"; then
+    echo "[keycloak-init-realms] Realm ${realm}: sslRequired=NONE and session timeouts set successfully."
   else
     echo "[keycloak-init-realms] Realm ${realm}: update failed or realm does not exist." >&2
   fi

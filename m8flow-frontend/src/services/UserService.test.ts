@@ -35,12 +35,26 @@ const loadUserService = async (href: string) => {
   return (await import('./UserService')).default;
 };
 
+const setRuntimeConfig = (config: Record<string, string>) => {
+  (
+    window as Window & {
+      spiffworkflowFrontendJsenv?: Record<string, string>;
+    }
+  ).spiffworkflowFrontendJsenv = config;
+};
+
 describe('UserService.doLogin', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.resetModules();
     localStorage.clear();
     document.cookie = 'm8flow_auth_realm=; Max-Age=0; Path=/';
+    document.cookie = 'm8flow_selected_tenant=; Max-Age=0; Path=/';
+    delete (
+      window as Window & {
+        spiffworkflowFrontendJsenv?: Record<string, string>;
+      }
+    ).spiffworkflowFrontendJsenv;
   });
 
   it('uses the current absolute location without double encoding when redirectUrl is omitted', async () => {
@@ -265,6 +279,46 @@ describe('UserService.doLogin', () => {
     });
 
     expect(UserService.isLoggedIn()).toBe(false);
+  });
+
+  it('re-authenticates organization management routes directly against the master realm', async () => {
+    const currentHref = 'http://localhost:8001/tenants';
+    const UserService = await loadUserService(currentHref);
+    setRuntimeConfig({
+      MULTI_TENANT_ON: 'true',
+      M8FLOW_KEYCLOAK_MASTER_REALM: 'ops-admin',
+      M8FLOW_KEYCLOAK_SHARED_REALM: 'shared-users',
+    });
+    localStorage.setItem('m8flow_tenant', 'tenant-a');
+    localStorage.setItem('m8f_tenant_id', 'tenant-a-id');
+    document.cookie = 'm8flow_selected_tenant=tenant-a-id; Path=/';
+
+    UserService.redirectToLogin();
+
+    expect(globalThis.location.href).toBe(
+      `http://localhost:8000/v1.0/login?redirect_url=${encodeURIComponent(currentHref)}&authentication_identifier=ops-admin`,
+    );
+    expect(localStorage.getItem('m8flow_tenant')).toBeNull();
+    expect(localStorage.getItem('m8f_tenant_id')).toBeNull();
+    expect(document.cookie).not.toContain('m8flow_selected_tenant=tenant-a-id');
+    expect(localStorage.getItem('m8flow_auth_realm')).toBe('ops-admin');
+  });
+
+  it('prefers the persisted realm hint when silently re-authenticating non-admin routes', async () => {
+    const currentHref = 'http://localhost:8001/reports';
+    const UserService = await loadUserService(currentHref);
+    setRuntimeConfig({
+      MULTI_TENANT_ON: 'true',
+      M8FLOW_KEYCLOAK_MASTER_REALM: 'ops-admin',
+      M8FLOW_KEYCLOAK_SHARED_REALM: 'shared-users',
+    });
+    localStorage.setItem('m8flow_auth_realm', 'ops-admin');
+
+    UserService.redirectToLogin();
+
+    expect(globalThis.location.href).toBe(
+      `http://localhost:8000/v1.0/login?redirect_url=${encodeURIComponent(currentHref)}&authentication_identifier=ops-admin`,
+    );
   });
 });
 
