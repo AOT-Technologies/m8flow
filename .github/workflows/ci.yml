@@ -210,10 +210,13 @@ jobs:
           poetry check --lock
       - uses: docker/setup-buildx-action@v3
       - name: Backend image build (no push)
+        # Read-only registry cache reuse (public images, no creds needed). The
+        # backend pulls the shared base via the PYTHON_BASE arg default in the Dockerfile.
         run: |
           docker buildx build \
             --file docker/m8flow.backend.Dockerfile \
             --tag backend:pr-test \
+            --cache-from type=registry,ref=docker.io/m8flow/m8flow-backend:buildcache \
             --load \
             .
       - name: Frontend image build (no push)
