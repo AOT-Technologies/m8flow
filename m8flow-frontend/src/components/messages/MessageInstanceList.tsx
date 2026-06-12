@@ -15,11 +15,6 @@ import {
   DialogContent,
   DialogContentText,
   Typography,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  Box,
 } from '@mui/material';
 import { Link, useSearchParams } from 'react-router-dom';
 import PaginationForTable from '../PaginationForTable';
@@ -34,7 +29,7 @@ import { MessageInstance } from '../../interfaces';
 import DateAndTimeService from '../../services/DateAndTimeService';
 import SpiffTooltip from '../SpiffTooltip';
 import UserService from '../../services/UserService';
-import { useTenants } from '../../hooks/useTenants';
+import { useGlobalTenant } from '../../contexts/GlobalTenantContext';
 
 type OwnProps = {
   processInstanceId?: number;
@@ -47,13 +42,11 @@ export default function MessageInstanceList({ processInstanceId }: OwnProps) {
   const [messageInstances, setMessageInstances] = useState([]);
   const [pagination, setPagination] = useState(null);
   const [searchParams] = useSearchParams();
-  const [selectedTenantId, setSelectedTenantId] = useState<string>('');
-
   const [messageInstanceForModal, setMessageInstanceForModal] =
     useState<MessageInstance | null>(null);
 
   const isSuperAdmin = UserService.isSuperAdmin();
-  const { data: tenants = [] } = useTenants(isSuperAdmin);
+  const { selectedTenantId } = useGlobalTenant();
 
   const fetchMessages = useCallback(() => {
     const setMessageInstanceListFromResult = (result: any) => {
@@ -130,37 +123,6 @@ export default function MessageInstanceList({ processInstanceId }: OwnProps) {
       );
     }
     return null;
-  };
-
-  const tenantFilterElement = () => {
-    if (!isSuperAdmin || tenants.length === 0) {
-      return null;
-    }
-    return (
-      <Box sx={{ mb: 2 }}>
-        <FormControl size="small" sx={{ minWidth: 180 }}>
-          <InputLabel id="message-list-tenant-filter-label">
-            {t('tenant')}
-          </InputLabel>
-          <Select
-            labelId="message-list-tenant-filter-label"
-            label={t('tenant')}
-            value={selectedTenantId}
-            data-testid="message-list-tenant-filter"
-            onChange={(e) => setSelectedTenantId(e.target.value)}
-          >
-            <MenuItem value="">
-              <em>{t('all_tenants', 'All Tenants')}</em>
-            </MenuItem>
-            {tenants.map((tenant) => (
-              <MenuItem key={tenant.id} value={tenant.id}>
-                {tenant.name}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-      </Box>
-    );
   };
 
   const buildTable = () => {
@@ -280,7 +242,6 @@ export default function MessageInstanceList({ processInstanceId }: OwnProps) {
     return (
       <>
         {breadcrumbElement}
-        {tenantFilterElement()}
         {correlationsDisplayModal()}
         <PaginationForTable
           page={page}
