@@ -58,6 +58,24 @@ def _rewrite_assigned_group_identifiers(response: flask.wrappers.Response) -> fl
     return make_response(jsonify(payload), response.status_code)
 
 
+def _extract_process_instance_id(args: tuple[object, ...], kwargs: dict[str, object]) -> int | None:
+    """Pull process_instance_id from the upstream task_list_my_tasks call signature.
+
+    Upstream signature is task_list_my_tasks(process_instance_id=None, page=1, per_page=100).
+    Connexion passes query params by name, so it normally arrives as the
+    process_instance_id kwarg, but guard against positional usage too.
+    """
+    value = kwargs.get("process_instance_id")
+    if value is None and args:
+        value = args[0]
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _rule_looks_like_task_data_show(rule: object) -> bool:
     rule_path = getattr(rule, "rule", None)
     if not isinstance(rule_path, str):
@@ -205,7 +223,13 @@ def _apply_module_patches():
         return _rewrite_assigned_group_identifiers(original_get_tasks(*args, **kwargs))
 
     def patched_task_list_my_tasks(*args, **kwargs) -> flask.wrappers.Response:
-        if is_super_admin_request():
+        # The super-admin global "all open tasks" view backs the Homepage task list, which
+        # never scopes by process_instance_id. The per-instance "Tasks I can complete" call
+        # (ProcessInstanceShow) does pass process_instance_id; for that we defer to the
+        # original handler so super admins see only tasks they can actually complete (none
+        # for a read-only observer), letting the section auto-hide like it does for tenant admins.
+        process_instance_id = _extract_process_instance_id(args, kwargs)
+        if is_super_admin_request() and process_instance_id is None:
             return _rewrite_assigned_group_identifiers(_task_list_all_open_tasks(*args, **kwargs))
         return _rewrite_assigned_group_identifiers(original_task_list_my_tasks(*args, **kwargs))
 

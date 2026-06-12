@@ -4,11 +4,7 @@ import {
   AccordionSummary,
   Box,
   Container,
-  FormControl,
   IconButton,
-  InputLabel,
-  MenuItem,
-  Select,
   Stack,
   Typography,
   Breadcrumbs,
@@ -27,8 +23,8 @@ import { Delete, Edit, Add, Home } from '@mui/icons-material';
 import { useDebouncedCallback } from 'use-debounce';
 import { useParams, useNavigate } from 'react-router';
 import useProcessGroups from '../../hooks/useProcessGroups';
-import { useTenants } from '../../hooks/useTenants';
 import UserService from '../../services/UserService';
+import { useGlobalTenant } from '../../contexts/GlobalTenantContext';
 import TreePanel, { TreeRef, SHOW_FAVORITES } from './TreePanel';
 import SearchBar from './SearchBar';
 import ProcessGroupCard from './ProcessGroupCard';
@@ -103,8 +99,7 @@ export default function ProcessModelTreePage({
   const params = useParams();
   const navigate = useNavigate();
   const isSuperAdmin = UserService.isSuperAdmin();
-  const { data: tenants = [] } = useTenants(isSuperAdmin);
-  const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null);
+  const { selectedTenantId } = useGlobalTenant();
   const { processGroups } = useProcessGroups({
     processInfo: {},
     tenantId: selectedTenantId,
@@ -529,38 +524,6 @@ export default function ProcessModelTreePage({
             }}
           >
             <SearchBar callback={handleSearch} stream={clickStream} />
-            {isSuperAdmin && tenants.length > 0 && (
-              <FormControl
-                size="small"
-                sx={{ minWidth: 220 }}
-                data-testid="process-tree-tenant-filter-control"
-              >
-                <InputLabel id="process-tree-tenant-filter-label">
-                  {t('tenant')}
-                </InputLabel>
-                <Select
-                  labelId="process-tree-tenant-filter-label"
-                  label={t('tenant')}
-                  value={selectedTenantId || ''}
-                  data-testid="process-tree-tenant-filter"
-                  onChange={(event) => {
-                    const { value } = event.target;
-                    setSelectedTenantId(
-                      typeof value === 'string' && value !== '' ? value : null,
-                    );
-                  }}
-                >
-                  <MenuItem value="">
-                    <em>{t('all_tenants', 'All Tenants')}</em>
-                  </MenuItem>
-                  {tenants.map((tenant) => (
-                    <MenuItem key={tenant.id} value={tenant.id}>
-                      {tenant.name}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            )}
           </Stack>
 
           <Stack

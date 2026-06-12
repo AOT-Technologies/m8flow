@@ -47,6 +47,7 @@ import {
 } from "@spiffworkflow-frontend/config";
 import UserService from "../services/UserService";
 import SpiffLogo from "./SpiffLogo";
+import GlobalTenantSelector from "./GlobalTenantSelector";
 import SpiffTooltip from "@spiffworkflow-frontend/components/SpiffTooltip";
 import { UiSchemaUxElement } from "@spiffworkflow-frontend/extension_ui_schema_interfaces";
 import ExtensionUxElementForDisplay from "@spiffworkflow-frontend/components/ExtensionUxElementForDisplay";
@@ -376,7 +377,7 @@ function SideNav({
                 <MuiLink component={Link} to="/" data-testid="nav-logo-link">
                   <SpiffLogo />
                 </MuiLink>
-                {tenantId && (
+                {tenantId && !UserService.isSuperAdmin() && (
                   <Box
                     data-testid="nav-tenant-name"
                     sx={{
@@ -411,6 +412,7 @@ function SideNav({
               {isMobile ? <CloseIcon /> : collapseOrExpandIcon}
             </IconButton>
           </Box>
+          <GlobalTenantSelector isCollapsed={isCollapsed} />
           <List>
             {visibleNavItems.map((item) => {
               if (checkUserHasAccessToNavItem(item)) {

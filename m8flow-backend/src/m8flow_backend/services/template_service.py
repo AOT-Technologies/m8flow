@@ -225,9 +225,14 @@ class TemplateService:
                 )
             )
 
-        # Super-admin tenant filter: narrow to a specific tenant when requested.
+        # Super-admin tenant filter: mirror regular tenant scoping (tenant-owned OR PUBLIC).
         if is_super_admin and filter_tenant_id:
-            query = query.filter(TemplateModel.m8f_tenant_id == filter_tenant_id)
+            query = query.filter(
+                or_(
+                    TemplateModel.m8f_tenant_id == filter_tenant_id,
+                    TemplateModel.visibility == TemplateVisibility.public.value,
+                )
+            )
 
         # Apply filters
         if category:

@@ -2,18 +2,13 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  Box,
   Button,
   Dialog,
   DialogActions,
   DialogContent,
   DialogContentText,
   DialogTitle,
-  FormControl,
-  InputLabel,
-  MenuItem,
   Paper,
-  Select,
   Table,
   TableBody,
   TableCell,
@@ -31,7 +26,7 @@ import { useUriListForPermissions } from '../hooks/UriListForPermissions';
 import { PermissionsToCheck } from '../interfaces';
 import { usePermissionFetcher } from '../hooks/PermissionService';
 import UserService from '../services/UserService';
-import { useTenants } from '../hooks/useTenants';
+import { useGlobalTenant } from '../contexts/GlobalTenantContext';
 
 export default function SecretList() {
   const [searchParams] = useSearchParams();
@@ -39,12 +34,11 @@ export default function SecretList() {
 
   const [secrets, setSecrets] = useState([]);
   const [pagination, setPagination] = useState(null);
-  const [selectedTenantId, setSelectedTenantId] = useState<string>('');
   const [secretToDelete, setSecretToDelete] = useState<any>(null);
   const { t } = useTranslation();
 
   const isSuperAdmin = UserService.isSuperAdmin();
-  const { data: tenants = [] } = useTenants(isSuperAdmin);
+  const { selectedTenantId } = useGlobalTenant();
 
   const { targetUris } = useUriListForPermissions();
   const permissionRequestData: PermissionsToCheck = {
@@ -101,37 +95,6 @@ export default function SecretList() {
       successCallback: reloadSecrets,
       httpMethod: 'DELETE',
     });
-  };
-
-  const tenantFilterElement = () => {
-    if (!isSuperAdmin || tenants.length === 0) {
-      return null;
-    }
-    return (
-      <Box sx={{ mb: 2 }}>
-        <FormControl size="small" sx={{ minWidth: 180 }}>
-          <InputLabel id="secret-list-tenant-filter-label">
-            {t('tenant')}
-          </InputLabel>
-          <Select
-            labelId="secret-list-tenant-filter-label"
-            label={t('tenant')}
-            value={selectedTenantId}
-            data-testid="secret-list-tenant-filter"
-            onChange={(e) => setSelectedTenantId(e.target.value)}
-          >
-            <MenuItem value="">
-              <em>{t('all_tenants', 'All Tenants')}</em>
-            </MenuItem>
-            {tenants.map((tenant) => (
-              <MenuItem key={tenant.id} value={tenant.id}>
-                {tenant.name}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-      </Box>
-    );
   };
 
   const buildTable = () => {
@@ -203,7 +166,6 @@ export default function SecretList() {
     return (
       <div>
         <Typography variant="h1">{t('secrets')}</Typography>
-        {tenantFilterElement()}
         {SecretsDisplayArea()}
         <Can I="POST" a={targetUris.secretListPath} ability={ability}>
           <Button

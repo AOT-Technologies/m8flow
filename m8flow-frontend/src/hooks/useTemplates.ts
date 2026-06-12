@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import HttpService from '../services/HttpService';
 import { Template, TemplateFilters } from '../types/template';
 import { normalizeTemplate } from '../utils/templateHelpers';
@@ -42,6 +42,7 @@ interface UseTemplatesReturn {
   templates: Template[];
   pagination: PaginationObject | null;
   templatesLoading: boolean;
+  loadedTenantId: string | undefined;
   templateByIdLoading: boolean;
   templateByKeyLoading: boolean;
   error: string | null;
@@ -54,11 +55,16 @@ export function useTemplates(): UseTemplatesReturn {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [pagination, setPagination] = useState<PaginationObject | null>(null);
   const [templatesLoading, setTemplatesLoading] = useState<boolean>(false);
+  const [loadedTenantId, setLoadedTenantId] = useState<string | undefined>(undefined);
   const [templateByIdLoading, setTemplateByIdLoading] = useState<boolean>(false);
   const [templateByKeyLoading, setTemplateByKeyLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const requestIdRef = useRef(0);
 
   const fetchTemplates = useCallback((filters?: TemplateFilters) => {
+    const requestId = ++requestIdRef.current;
+    const requestedTenantId = filters?.tenantId;
+
     setTemplatesLoading(true);
     setError(null);
 
@@ -70,13 +76,16 @@ export function useTemplates(): UseTemplatesReturn {
       path,
       httpMethod: HttpService.HttpMethods.GET,
       successCallback: (result: Record<string, unknown>) => {
+        if (requestIdRef.current !== requestId) return;
         const results = result.results as Record<string, unknown>[];
         const pag = result.pagination as PaginationObject | undefined;
         setTemplates(Array.isArray(results) ? results.map((r) => normalizeTemplate(r)) : []);
         setPagination(pag ?? null);
+        setLoadedTenantId(requestedTenantId);
         setTemplatesLoading(false);
       },
       failureCallback: (err: unknown) => {
+        if (requestIdRef.current !== requestId) return;
         setError(getErrorMessage(err, 'Failed to fetch templates'));
         setTemplatesLoading(false);
         if (process.env.NODE_ENV === 'development') {
@@ -151,6 +160,7 @@ export function useTemplates(): UseTemplatesReturn {
     templates,
     pagination,
     templatesLoading,
+    loadedTenantId,
     templateByIdLoading,
     templateByKeyLoading,
     error,
