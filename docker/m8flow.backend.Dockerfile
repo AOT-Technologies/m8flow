@@ -7,6 +7,11 @@
 # Update this to the latest release periodically: https://github.com/astral-sh/uv/releases
 ARG UV_VERSION=0.7.2
 
+# Shared prebuilt base carrying the OS toolchain + Python + uv. Built by
+# docker/m8flow.python-base.Dockerfile and .github/workflows/build-base-image.yml.
+# Override to test a different base: --build-arg PYTHON_BASE=...  (see docs/docker-base-image.md)
+ARG PYTHON_BASE=docker.io/m8flow/m8flow-python-base:ubuntu24.04-py3.12
+
 FROM alpine:3.20 AS fetch-upstream
 ARG UPSTREAM_TAG=
 RUN apk add --no-cache git jq
@@ -35,39 +40,11 @@ RUN set -eu; \
 # -----------------------------------------------------------------------------
 # Stage: builder (for prod) - install backend into venv
 # -----------------------------------------------------------------------------
-FROM ubuntu:24.04 AS builder
+# OS toolchain + uv come from the shared base image (see docker/m8flow.python-base.Dockerfile).
+FROM ${PYTHON_BASE} AS builder
 
 WORKDIR /app
 ENV DEBIAN_FRONTEND=noninteractive
-
-# Re-declare global build arg in this stage
-ARG UV_VERSION
-
-# Build deps for backend (git/ssl, libpq for psycopg2, etc.)
-RUN apt-get update \
-  && apt-get install -y -q --no-install-recommends \
-    bash \
-    build-essential \
-    curl \
-    git \
-    ca-certificates \
-    openssl \
-    libpq-dev \
-    default-libmysqlclient-dev \
-    pkg-config \
-    python3 \
-    python3-venv \
-    python3-dev \
-    python-is-python3 \
-  && apt-get upgrade -y \
-  && apt-get clean \
-  && rm -rf /var/lib/apt/lists/* \
-  && git config --global http.sslVerify true \
-  && git config --global http.sslCAInfo /etc/ssl/certs/ca-certificates.crt
-
-# Install pinned uv via official binary installer (avoids pip-installed tool attack surface)
-RUN curl -fsSL https://astral.sh/uv/install.sh | UV_INSTALL_DIR=/usr/local/bin UV_VERSION=${UV_VERSION} sh \
-  && uv --version
 
 # Copy upstream backend from fetch stage and repo files from build context.
 COPY --from=fetch-upstream /upstream/spiffworkflow-backend /app/spiffworkflow-backend
@@ -88,26 +65,11 @@ RUN uv venv /opt/venv \
 # -----------------------------------------------------------------------------
 # Stage: prod - minimal runtime image for Linux / production (non-root)
 # -----------------------------------------------------------------------------
-FROM ubuntu:24.04 AS prod
+# Runtime deps (libpq5/libmariadb3), gosu, python and uv all come from the shared base.
+FROM ${PYTHON_BASE} AS prod
 
 WORKDIR /app
 ENV DEBIAN_FRONTEND=noninteractive
-
-# Runtime deps + gosu for entrypoint to drop to app user
-RUN apt-get update \
-  && apt-get install -y -q --no-install-recommends \
-    bash \
-    ca-certificates \
-    git \
-    libpq5 \
-    libmariadb3 \
-    gosu \
-    python3 \
-    python3-venv \
-    python-is-python3 \
-  && apt-get upgrade -y \
-  && apt-get clean \
-  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /app /app
@@ -146,39 +108,11 @@ CMD ["/app/m8flow-backend/bin/run_m8flow_backend.sh"]
 # -----------------------------------------------------------------------------
 # Stage: dev (default) - full repo, editable install for local development (non-root)
 # -----------------------------------------------------------------------------
-FROM ubuntu:24.04 AS dev
+# OS toolchain + uv come from the shared base image (see docker/m8flow.python-base.Dockerfile).
+FROM ${PYTHON_BASE} AS dev
 
 WORKDIR /app
 ENV DEBIAN_FRONTEND=noninteractive
-
-# Re-declare global build arg in this stage
-ARG UV_VERSION
-
-RUN apt-get update \
-  && apt-get install -y -q --no-install-recommends \
-    bash \
-    build-essential \
-    curl \
-    git \
-    ca-certificates \
-    openssl \
-    libpq-dev \
-    default-libmysqlclient-dev \
-    pkg-config \
-    gosu \
-    python3 \
-    python3-venv \
-    python3-dev \
-    python-is-python3 \
-  && apt-get upgrade -y \
-  && apt-get clean \
-  && rm -rf /var/lib/apt/lists/* \
-  && git config --global http.sslVerify true \
-  && git config --global http.sslCAInfo /etc/ssl/certs/ca-certificates.crt
-
-# Install pinned uv via official binary installer (avoids pip-installed tool attack surface)
-RUN curl -fsSL https://astral.sh/uv/install.sh | UV_INSTALL_DIR=/usr/local/bin UV_VERSION=${UV_VERSION} sh \
-  && uv --version
 
 # Copy repo files from build context, then overlay upstream from fetch stage.
 # The fetch-stage copy ensures spiffworkflow-backend is always present even
