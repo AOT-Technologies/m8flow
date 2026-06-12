@@ -20,7 +20,11 @@ interface TenantModalProps {
   type: TenantModalType;
   tenant: Tenant | null;
   onClose: () => void;
-  onSuccess: (message: string, tenantUpdates?: Partial<Tenant>) => void;
+  onSuccess: (
+    message: string,
+    tenantUpdates?: Partial<Tenant>,
+    createdTenant?: Tenant,
+  ) => void;
 }
 
 const MAX_SLUG_LENGTH = 15;
@@ -145,11 +149,22 @@ export default function TenantModal({
 
     setLoading(true);
     try {
+      let createdTenant: Tenant | undefined;
       if (type === TenantModalType.CREATE_TENANT) {
-        await TenantService.createTenant({
+        const createdTenantResponse = await TenantService.createTenant({
           slug: createTenantAlias.trim(),
           name: createTenantName.trim(),
         });
+        createdTenant = {
+          id: createdTenantResponse.id,
+          slug: createdTenantResponse.alias,
+          name: createdTenantResponse.name,
+          status: "ACTIVE",
+          createdBy: "",
+          modifiedBy: "",
+          createdAtInSeconds: 0,
+          updatedAtInSeconds: 0,
+        };
       } else if (type === TenantModalType.EDIT_TENANT) {
         if (!tenant) return;
         // TODO: Phase 2 - Only updating name for now. Status change will be added in Phase 2
@@ -175,6 +190,7 @@ export default function TenantModal({
         type === TenantModalType.EDIT_TENANT
           ? { name: editName.trim() }
           : undefined,
+        createdTenant,
       );
       onClose();
     } catch (err: any) {
