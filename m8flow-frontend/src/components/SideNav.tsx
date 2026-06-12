@@ -17,6 +17,7 @@ import {
   Link as MuiLink,
   useMediaQuery,
   Chip,
+  Divider,
 } from "@mui/material";
 import {
   Home,
@@ -36,6 +37,7 @@ import {
   Description,
   Hub,
   Business,
+  CorporateFare,
 } from "@mui/icons-material";
 import { Link, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -372,32 +374,75 @@ function SideNav({
             }}
           >
             {!isCollapsed && (
-              <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
+              <Box
+                sx={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "flex-start",
+                  minWidth: 0,
+                  flexGrow: 1,
+                }}
+              >
                 <MuiLink component={Link} to="/" data-testid="nav-logo-link">
                   <SpiffLogo />
                 </MuiLink>
                 {tenantId && (
-                  <Box
-                    data-testid="nav-tenant-name"
-                    sx={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 0.5,
-                      mt: 0.5,
-                      paddingLeft: "8px",
-                      color: "text.secondary",
-                    }}
+                  <Tooltip
+                    title={tenantId}
+                    placement="bottom"
+                    enterDelay={500}
+                    enterNextDelay={300}
                   >
-                    <Business sx={{ fontSize: "1rem" }} />
-                    <Typography
-                      variant="body2"
+                    <Box
+                      data-testid="nav-tenant-name"
+                      onClick={(event) => event.stopPropagation()}
                       sx={{
-                        fontWeight: 600,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 1,
+                        mt: 1.5,
+                        px: 1.25,
+                        py: 0.5,
+                        width: "100%",
+                        bgcolor: "background.light",
+                        border: "1px solid",
+                        borderColor: "divider",
+                        borderRadius: 1.5,
+                        cursor: "default",
+                        userSelect: "none",
                       }}
                     >
-                      {t("tenant")}: {tenantId}
-                    </Typography>
-                  </Box>
+                    <CorporateFare
+                      sx={{
+                        fontSize: "1.1rem",
+                        color: "primary.main",
+                        flexShrink: 0,
+                      }}
+                    />
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          display: "block",
+                          lineHeight: 1.2,
+                          fontSize: "0.625rem",
+                          letterSpacing: "0.06em",
+                          textTransform: "uppercase",
+                          color: "text.secondary",
+                        }}
+                      >
+                        {t("tenant")}
+                      </Typography>
+                      <Typography
+                        variant="body2"
+                        noWrap
+                        sx={{ fontWeight: 600, lineHeight: 1.3 }}
+                      >
+                        {tenantId}
+                      </Typography>
+                      </Box>
+                    </Box>
+                  </Tooltip>
                 )}
               </Box>
             )}
@@ -411,6 +456,22 @@ function SideNav({
               {isMobile ? <CloseIcon /> : collapseOrExpandIcon}
             </IconButton>
           </Box>
+          {isCollapsed && tenantId && (
+            <Tooltip title={`${t("tenant")}: ${tenantId}`} placement="right">
+              <Box
+                data-testid="nav-tenant-name-collapsed"
+                sx={{
+                  display: "flex",
+                  justifyContent: "center",
+                  mb: 1,
+                  color: "text.secondary",
+                }}
+              >
+                <CorporateFare sx={{ fontSize: "1.25rem" }} />
+              </Box>
+            </Tooltip>
+          )}
+          <Divider sx={{ mx: 2, mb: 1 }} />
           <List>
             {visibleNavItems.map((item) => {
               if (checkUserHasAccessToNavItem(item)) {
