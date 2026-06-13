@@ -255,7 +255,11 @@ describe("TenantPage", () => {
       await screen.findByText("Manage Tenant Groups: Information Technology"),
     ).toBeInTheDocument();
     expect(mockGetTenantGroups).toHaveBeenCalledWith("tenant-uuid");
-    expect(mockGetTenantMembers).toHaveBeenCalledWith("tenant-uuid");
+    expect(mockGetTenantMembers).toHaveBeenCalledWith("tenant-uuid", {
+      search: "",
+      offset: 0,
+      limit: 10,
+    });
   });
 
   it("shows inline validation errors instead of submitting an empty tenant form", async () => {
