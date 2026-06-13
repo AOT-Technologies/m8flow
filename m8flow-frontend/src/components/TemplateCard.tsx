@@ -15,14 +15,12 @@ import {
   ListItemIcon,
   ListItemText,
 } from '@mui/material';
-import {
-  MoreVert,
-  Edit,
-  ContentCopy,
-  FileDownload,
-  Delete,
-  Restore,
-} from '@mui/icons-material';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import DeleteIcon from '@mui/icons-material/Delete';
+import EditIcon from '@mui/icons-material/Edit';
+import FileDownloadIcon from '@mui/icons-material/FileDownload';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
+import RestoreIcon from '@mui/icons-material/Restore';
 import { useNavigate } from 'react-router-dom';
 import { useState, PointerEvent, MouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -241,7 +239,7 @@ export default function TemplateCard({
                 borderRadius: 1,
               }}
             >
-              <MoreVert fontSize="small" />
+              <MoreVertIcon fontSize="small" />
             </IconButton>
             <Menu
               anchorEl={menuAnchor}
@@ -267,7 +265,7 @@ export default function TemplateCard({
                   data-testid={`template-card-edit-${template.id}`}
                 >
                   <ListItemIcon>
-                    <Edit fontSize="small" />
+                    <EditIcon fontSize="small" />
                   </ListItemIcon>
                   <ListItemText>{t("edit", { defaultValue: "Edit" })}</ListItemText>
                 </MenuItem>
@@ -281,7 +279,7 @@ export default function TemplateCard({
                   data-testid={`template-card-duplicate-${template.id}`}
                 >
                   <ListItemIcon>
-                    <ContentCopy fontSize="small" />
+                    <ContentCopyIcon fontSize="small" />
                   </ListItemIcon>
                   <ListItemText>{t("duplicate", { defaultValue: "Duplicate" })}</ListItemText>
                 </MenuItem>
@@ -295,7 +293,7 @@ export default function TemplateCard({
                   data-testid={`template-card-export-${template.id}`}
                 >
                   <ListItemIcon>
-                    <FileDownload fontSize="small" />
+                    <FileDownloadIcon fontSize="small" />
                   </ListItemIcon>
                   <ListItemText>{t("export", { defaultValue: "Export" })}</ListItemText>
                 </MenuItem>
@@ -312,7 +310,7 @@ export default function TemplateCard({
                       data-testid={`template-card-restore-${template.id}`}
                     >
                       <ListItemIcon>
-                        <Restore fontSize="small" />
+                        <RestoreIcon fontSize="small" />
                       </ListItemIcon>
                       <ListItemText>{t("restore", { defaultValue: "Restore" })}</ListItemText>
                     </MenuItem>
@@ -332,7 +330,7 @@ export default function TemplateCard({
                       sx={{ color: 'error.main' }}
                     >
                       <ListItemIcon>
-                        <Delete fontSize="small" color="error" />
+                        <DeleteIcon fontSize="small" color="error" />
                       </ListItemIcon>
                       <ListItemText>{t("delete")}</ListItemText>
                     </MenuItem>

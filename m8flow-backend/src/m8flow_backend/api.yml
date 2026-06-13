@@ -420,6 +420,23 @@ paths:
           schema:
             type: string
           description: Optional username prefix filter for organization members
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Zero-based member offset for paginated loading
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+          description: Maximum number of tenant members to return in one page
       responses:
         "200":
           description: Tenant members retrieved successfully
@@ -494,6 +511,23 @@ paths:
           schema:
             type: string
           description: Optional filter by username, display name, or email
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Zero-based available-user offset for paginated loading
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+          description: Maximum number of available users to return in one page
       responses:
         "200":
           description: Available users retrieved successfully
@@ -1799,6 +1833,12 @@ components:
           type: string
         search:
           type: string
+        offset:
+          type: integer
+        limit:
+          type: integer
+        has_more:
+          type: boolean
         members:
           type: array
           items:
@@ -1811,6 +1851,12 @@ components:
           type: string
         search:
           type: string
+        offset:
+          type: integer
+        limit:
+          type: integer
+        has_more:
+          type: boolean
         users:
           type: array
           items:

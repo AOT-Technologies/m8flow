@@ -16,6 +16,7 @@ const host = process.env.HOST ?? '0.0.0.0';
 const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 6841;
 const backendPort = process.env.BACKEND_PORT ? parseInt(process.env.BACKEND_PORT, 10) : 6840;
 const isWindows = process.platform === 'win32';
+const isCi = process.env.CI === 'true';
 
 const backendUrl =
   process.env.SPIFFWORKFLOW_BACKEND_URL ??
@@ -48,9 +49,9 @@ export default defineConfig({
     setupFiles: ['src/test/vitest.setup.ts'],
     globals: true,
     environment: 'jsdom',
-    fileParallelism: !isWindows,
-    maxWorkers: isWindows ? 1 : undefined,
-    minWorkers: isWindows ? 1 : undefined,
+    fileParallelism: !(isWindows || isCi),
+    maxWorkers: isWindows || isCi ? 1 : undefined,
+    minWorkers: isWindows || isCi ? 1 : undefined,
   },
   plugins: [
     // Override resolver - must be first to check overrides before core

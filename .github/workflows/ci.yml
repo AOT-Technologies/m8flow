@@ -134,7 +134,9 @@ jobs:
         run: npm run build
       - name: Run M8Flow frontend unit tests
         working-directory: m8flow-frontend
-        run: npm test
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: npm run test:ci
 
   # -------------------------
   # Security: CodeQL
