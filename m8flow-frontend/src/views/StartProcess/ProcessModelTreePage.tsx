@@ -21,9 +21,12 @@ import { useTranslation } from 'react-i18next';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Can } from '@casl/react';
 import { Subject } from 'rxjs';
+import AddIcon from '@mui/icons-material/Add';
+import DeleteIcon from '@mui/icons-material/Delete';
+import EditIcon from '@mui/icons-material/Edit';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import HomeIcon from '@mui/icons-material/Home';
 import StarRateIcon from '@mui/icons-material/StarRate';
-import { Delete, Edit, Add, Home } from '@mui/icons-material';
 import { useDebouncedCallback } from 'use-debounce';
 import { useParams, useNavigate } from 'react-router';
 import useProcessGroups from '../../hooks/useProcessGroups';
@@ -625,7 +628,7 @@ export default function ProcessModelTreePage({
                             });
                           }}
                         >
-                          <Home sx={{ mr: 0.5 }} fontSize="inherit" />
+                          <HomeIcon sx={{ mr: 0.5 }} fontSize="inherit" />
                           Root
                         </Button>
                         {crumbs.map((crumb) => (
@@ -654,7 +657,7 @@ export default function ProcessModelTreePage({
                             data-testid="edit-process-group-button"
                             href={`/process-groups/${modifyProcessIdentifierForPathParam(currentProcessGroup.id)}/edit`}
                           >
-                            <Edit />
+                            <EditIcon />
                           </IconButton>
                         </Can>
                         <Can
@@ -664,7 +667,7 @@ export default function ProcessModelTreePage({
                         >
                           <ConfirmIconButton
                             data-testid="delete-process-group-button"
-                            renderIcon={<Delete />}
+                            renderIcon={<DeleteIcon />}
                             iconDescription={t('delete_process_group')}
                             description={t('delete_process_group_with_name', {
                               name: currentProcessGroup.display_name,
@@ -688,7 +691,7 @@ export default function ProcessModelTreePage({
                           });
                         }}
                       >
-                        <Home sx={{ mr: 0.5 }} fontSize="inherit" />
+                        <HomeIcon sx={{ mr: 0.5 }} fontSize="inherit" />
                         Root
                       </Button>
                     </Breadcrumbs>
@@ -740,7 +743,7 @@ export default function ProcessModelTreePage({
                               data-testid="add-process-model-button"
                               href={`/process-models/${modifyProcessIdentifierForPathParam(currentProcessGroup.id)}/new`}
                             >
-                              <Add />
+                              <AddIcon />
                             </IconButton>
                           </Can>
                         </Box>
@@ -802,7 +805,7 @@ export default function ProcessModelTreePage({
                           data-testid="add-process-group-button"
                           href={`/process-groups/new${currentParentGroupIdSearchParam()}`}
                         >
-                          <Add />
+                          <AddIcon />
                         </IconButton>
                       </Can>
                     </Box>

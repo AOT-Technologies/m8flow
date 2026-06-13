@@ -7,7 +7,7 @@ import {
   Button,
   Box,
 } from '@mui/material';
-import { Warning } from '@mui/icons-material';
+import WarningIcon from '@mui/icons-material/Warning';
 import { useTranslation } from 'react-i18next';
 
 export interface TemplateDeleteConfirmDialogProps {
@@ -49,7 +49,7 @@ export default function TemplateDeleteConfirmDialog({
     >
       <DialogTitle id="delete-template-dialog-title">
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Warning color="warning" fontSize="small" />
+          <WarningIcon color="warning" fontSize="small" />
           {t("delete_template_title", { defaultValue: "Delete template?" })}
         </Box>
       </DialogTitle>

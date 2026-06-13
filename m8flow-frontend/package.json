@@ -69,8 +69,9 @@
     "start": "cross-env VITE_VERSION_INFO=\"{\\\"version\\\":\\\"local\\\"}\" VITE_BACKEND_BASE_URL=/v1.0 VITE_MULTI_TENANT_ON=${MULTI_TENANT_ON:-false} vite --host 0.0.0.0",
     "startopen": "cross-env VITE_VERSION_INFO=\"{\\\"version\\\":\\\"local\\\"}\" VITE_MULTI_TENANT_ON=${MULTI_TENANT_ON:-false} vite --host 0.0.0.0",
     "serve": "vite preview",
-    "test": "vitest run",
+    "test": "node scripts/run-vitest-ci.cjs",
     "test:ci": "node scripts/run-vitest-ci.cjs",
+    "test:vitest": "vitest run",
     "typecheck": "tsc --noEmit",
     "postinstall": "node scripts/patch-bpmn-labels.cjs"
   },

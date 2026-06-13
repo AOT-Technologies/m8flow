@@ -5,6 +5,7 @@ const { spawnSync } = require('node:child_process');
 const rootDir = path.resolve(__dirname, '..');
 const srcDir = path.join(rootDir, 'src');
 const vitestEntrypoint = path.join(rootDir, 'node_modules', 'vitest', 'vitest.mjs');
+const isWindows = process.platform === 'win32';
 
 function collectTestFiles(dir) {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -91,23 +92,57 @@ if (assignedFiles.length !== testFiles.length) {
   throw new Error('CI test sharding did not cover every test file exactly once.');
 }
 
+function chunkFiles(files, size) {
+  if (!size || size <= 0 || files.length <= size) {
+    return [files];
+  }
+
+  const batches = [];
+  for (let index = 0; index < files.length; index += size) {
+    batches.push(files.slice(index, index + size));
+  }
+  return batches;
+}
+
+function getBatchSizeForGroup(groupName) {
+  if (!isWindows) {
+    return null;
+  }
+
+  if (groupName === 'template-cards-and-utils') {
+    return 1;
+  }
+
+  return null;
+}
+
 for (const group of groups) {
   if (group.files.length === 0) {
     continue;
   }
 
-  console.log(`\n=== Running Vitest shard: ${group.name} (${group.files.length} files) ===`);
-  const result = spawnSync(
-    process.execPath,
-    [vitestEntrypoint, 'run', ...group.files],
-    {
-      cwd: rootDir,
-      env: process.env,
-      stdio: 'inherit',
-    },
-  );
+  const batches = chunkFiles(group.files, getBatchSizeForGroup(group.name));
 
-  if (result.status !== 0) {
-    process.exit(result.status ?? 1);
+  for (const [batchIndex, batchFiles] of batches.entries()) {
+    const batchLabel =
+      batches.length > 1
+        ? ` [batch ${batchIndex + 1}/${batches.length}]`
+        : '';
+    console.log(
+      `\n=== Running Vitest shard: ${group.name}${batchLabel} (${batchFiles.length} files) ===`,
+    );
+    const result = spawnSync(
+      process.execPath,
+      [vitestEntrypoint, 'run', ...batchFiles],
+      {
+        cwd: rootDir,
+        env: process.env,
+        stdio: 'inherit',
+      },
+    );
+
+    if (result.status !== 0) {
+      process.exit(result.status ?? 1);
+    }
   }
 }
