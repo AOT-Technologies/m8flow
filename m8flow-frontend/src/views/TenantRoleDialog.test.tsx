@@ -1,5 +1,4 @@
 import {
-  act,
   fireEvent,
   render,
   screen,
@@ -27,7 +26,10 @@ vi.mock("../services/TenantService", async (importOriginal) => {
       ...actual.default,
       getTenantGroups: (...args: unknown[]) => mockGetTenantGroups(...args),
       getTenantMembers: (...args: unknown[]) => mockGetTenantMembers(...args),
+      getTenantMembersPage: (...args: unknown[]) => mockGetTenantMembers(...args),
       getAvailableTenantUsers: (...args: unknown[]) =>
+        mockGetAvailableTenantUsers(...args),
+      getAvailableTenantUsersPage: (...args: unknown[]) =>
         mockGetAvailableTenantUsers(...args),
       addTenantMember: (...args: unknown[]) => mockAddTenantMember(...args),
       createTenantGroup: (...args: unknown[]) => mockCreateTenantGroup(...args),
@@ -109,6 +111,73 @@ describe("TenantRoleDialog", () => {
     updatedAtInSeconds: 1,
   };
 
+  const buildMembersPage = (
+    allMembers: Array<{
+      id: string;
+      username: string;
+      email: string | null;
+      display_name: string | null;
+      roles: string[];
+    }>,
+    options?: {
+      search?: string;
+      offset?: number;
+      limit?: number;
+    },
+  ) => {
+    const normalizedSearch = options?.search?.trim().toLowerCase() ?? "";
+    const offset = options?.offset ?? 0;
+    const limit = options?.limit ?? 10;
+    const filteredMembers = normalizedSearch
+      ? allMembers.filter((member) =>
+        [member.username, member.email ?? "", member.display_name ?? ""].some(
+          (value) => value.toLowerCase().includes(normalizedSearch),
+        ))
+      : allMembers;
+    const members = filteredMembers.slice(offset, offset + limit);
+    return Promise.resolve({
+      tenant_id: tenant.id,
+      search: options?.search ?? "",
+      offset,
+      limit,
+      has_more: offset + limit < filteredMembers.length,
+      members,
+    });
+  };
+
+  const buildAvailableUsersPage = (
+    allUsers: Array<{
+      id: string;
+      username: string;
+      email: string | null;
+      display_name: string | null;
+    }>,
+    options?: {
+      search?: string;
+      offset?: number;
+      limit?: number;
+    },
+  ) => {
+    const normalizedSearch = options?.search?.trim().toLowerCase() ?? "";
+    const offset = options?.offset ?? 0;
+    const limit = options?.limit ?? 10;
+    const filteredUsers = normalizedSearch
+      ? allUsers.filter((user) =>
+        [user.username, user.email ?? "", user.display_name ?? ""].some((value) =>
+          value.toLowerCase().includes(normalizedSearch)
+        ))
+      : allUsers;
+    const users = filteredUsers.slice(offset, offset + limit);
+    return Promise.resolve({
+      tenant_id: tenant.id,
+      search: options?.search ?? "",
+      offset,
+      limit,
+      has_more: offset + limit < filteredUsers.length,
+      users,
+    });
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetTenantGroups.mockResolvedValue([
@@ -136,30 +205,38 @@ describe("TenantRoleDialog", () => {
         ],
       },
     ]);
-    mockGetTenantMembers.mockResolvedValue([
-      {
-        id: "member-1",
-        username: "reviewer",
-        email: "reviewer@example.com",
-        display_name: "Reviewer User",
-        roles: ["reviewer"],
-      },
-      {
-        id: "member-3",
-        username: "submitter",
-        email: "submitter@example.com",
-        display_name: "Submitter User",
-        roles: ["submitter"],
-      },
-    ]);
-    mockGetAvailableTenantUsers.mockResolvedValue([
-      {
-        id: "member-2",
-        username: "new.user",
-        email: "new.user@example.com",
-        display_name: "New User",
-      },
-    ]);
+    mockGetTenantMembers.mockImplementation((_tenantId, options) =>
+      buildMembersPage(
+        [
+          {
+            id: "member-1",
+            username: "reviewer",
+            email: "reviewer@example.com",
+            display_name: "Reviewer User",
+            roles: ["reviewer"],
+          },
+          {
+            id: "member-3",
+            username: "submitter",
+            email: "submitter@example.com",
+            display_name: "Submitter User",
+            roles: ["submitter"],
+          },
+        ],
+        options as { search?: string; offset?: number; limit?: number } | undefined,
+      ));
+    mockGetAvailableTenantUsers.mockImplementation((_tenantId, options) =>
+      buildAvailableUsersPage(
+        [
+          {
+            id: "member-2",
+            username: "new.user",
+            email: "new.user@example.com",
+            display_name: "New User",
+          },
+        ],
+        options as { search?: string; offset?: number; limit?: number } | undefined,
+      ));
     mockAddTenantMember.mockResolvedValue({
       id: "member-2",
       username: "new.user",
@@ -225,7 +302,11 @@ describe("TenantRoleDialog", () => {
       },
     );
     await waitFor(() =>
-      expect(mockGetAvailableTenantUsers).toHaveBeenCalledWith("tenant-1", "new"),
+      expect(mockGetAvailableTenantUsers).toHaveBeenCalledWith("tenant-1", {
+        search: "new",
+        offset: 0,
+        limit: 10,
+      }),
     );
     expect(await within(addMemberDialog).findByText("New User")).toBeInTheDocument();
     fireEvent.click(
@@ -248,35 +329,94 @@ describe("TenantRoleDialog", () => {
     );
   });
 
-  it("loads main tenant members only after three characters are typed", async () => {
+  it("loads the first member page on open and fetches page two only after next is clicked", async () => {
+    mockGetTenantMembers.mockImplementation((_tenantId, options) =>
+      buildMembersPage(
+        Array.from({ length: 12 }, (_, index) => ({
+          id: `member-${index + 1}`,
+          username: `user-${index + 1}`,
+          email: `user-${index + 1}@example.com`,
+          display_name: `User ${index + 1}`,
+          roles: index % 2 === 0 ? ["reviewer"] : ["submitter"],
+        })),
+        options as { search?: string; offset?: number; limit?: number } | undefined,
+      ));
+
     render(<TenantRoleDialog open tenant={tenant} onClose={vi.fn()} />);
 
     await screen.findAllByText("Approvers");
-    expect(mockGetTenantMembers).not.toHaveBeenCalled();
-    expect(
-      screen.getByText("Type at least 3 characters to search tenant members."),
-    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(mockGetTenantMembers).toHaveBeenCalledWith("tenant-1", {
+        search: "",
+        offset: 0,
+        limit: 10,
+      }),
+    );
+    expect(mockGetTenantMembers).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText("User 1")).toBeInTheDocument();
+    expect(screen.queryByText("User 11")).not.toBeInTheDocument();
+    expect(screen.getByTestId("tenant-member-page-indicator")).toHaveTextContent("Page 1");
 
-    fireEvent.change(screen.getByTestId("tenant-member-search-input"), {
-      target: { value: "re" },
-    });
-
-    await act(async () => {
-      await new Promise((resolve) => window.setTimeout(resolve, 250));
-    });
-    expect(mockGetTenantMembers).not.toHaveBeenCalled();
-
-    fireEvent.change(screen.getByTestId("tenant-member-search-input"), {
-      target: { value: "rev" },
-    });
+    fireEvent.click(screen.getByTestId("tenant-member-next-page-button"));
 
     await waitFor(() =>
-      expect(mockGetTenantMembers).toHaveBeenCalledWith("tenant-1", "rev"),
+      expect(mockGetTenantMembers).toHaveBeenCalledWith("tenant-1", {
+        search: "",
+        offset: 10,
+        limit: 10,
+      }),
     );
-    expect(await screen.findByText("Reviewer User")).toBeInTheDocument();
+    expect(await screen.findByText("User 11")).toBeInTheDocument();
+    expect(screen.getByTestId("tenant-member-page-indicator")).toHaveTextContent("Page 2");
   });
 
-  it("waits for at least three characters before loading existing users", async () => {
+  it("expands members and collapses groups by default, then toggles both sections", async () => {
+    render(<TenantRoleDialog open tenant={tenant} onClose={vi.fn()} />);
+
+    await screen.findByTestId("tenant-member-table-container");
+    expect(screen.getByTestId("tenant-members-section-toggle")).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(screen.getByTestId("tenant-groups-section-toggle")).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(screen.queryByTestId("tenant-group-search-input")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("tenant-groups-section-toggle"));
+
+    expect(await screen.findByTestId("tenant-group-search-input")).toBeInTheDocument();
+    expect(screen.getByTestId("tenant-groups-section-toggle")).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+
+    fireEvent.click(screen.getByTestId("tenant-members-section-toggle"));
+
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("tenant-member-table-container"),
+      ).not.toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("tenant-members-section-toggle")).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+  });
+
+  it("loads the first available-user page on open and fetches page two only after next is clicked", async () => {
+    mockGetAvailableTenantUsers.mockImplementation((_tenantId, options) =>
+      buildAvailableUsersPage(
+        Array.from({ length: 12 }, (_, index) => ({
+          id: `available-user-${index + 1}`,
+          username: `available-user-${index + 1}`,
+          email: `available-user-${index + 1}@example.com`,
+          display_name: `Available User ${index + 1}`,
+        })),
+        options as { search?: string; offset?: number; limit?: number } | undefined,
+      ));
+
     render(<TenantRoleDialog open tenant={tenant} onClose={vi.fn()} />);
 
     await screen.findAllByText("Approvers");
@@ -285,40 +425,43 @@ describe("TenantRoleDialog", () => {
       name: "Add User to Tenant: Tenant One",
     });
 
-    expect(mockGetAvailableTenantUsers).not.toHaveBeenCalled();
-    expect(
-      within(addMemberDialog).getByText(
-        "Type at least 3 characters to search existing users.",
-      ),
-    ).toBeInTheDocument();
-
-    fireEvent.change(
-      within(addMemberDialog).getByTestId(
-        "tenant-member-existing-user-search-input",
-      ),
-      {
-        target: { value: "ne" },
-      },
+    await waitFor(() =>
+      expect(mockGetAvailableTenantUsers).toHaveBeenCalledWith("tenant-1", {
+        search: "",
+        offset: 0,
+        limit: 10,
+      }),
     );
+    expect(mockGetAvailableTenantUsers).toHaveBeenCalledTimes(1);
+    expect(
+      await within(addMemberDialog).findByText("Available User 1"),
+    ).toBeInTheDocument();
+    expect(
+      within(addMemberDialog).queryByText("Available User 11"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(addMemberDialog).getByTestId("tenant-available-user-page-indicator"),
+    ).toHaveTextContent("Page 1");
 
-    await act(async () => {
-      await new Promise((resolve) => window.setTimeout(resolve, 250));
-    });
-    expect(mockGetAvailableTenantUsers).not.toHaveBeenCalled();
-
-    fireEvent.change(
+    fireEvent.click(
       within(addMemberDialog).getByTestId(
-        "tenant-member-existing-user-search-input",
+        "tenant-available-user-next-page-button",
       ),
-      {
-        target: { value: "new" },
-      },
     );
 
     await waitFor(() =>
-      expect(mockGetAvailableTenantUsers).toHaveBeenCalledWith("tenant-1", "new"),
+      expect(mockGetAvailableTenantUsers).toHaveBeenCalledWith("tenant-1", {
+        search: "",
+        offset: 10,
+        limit: 10,
+      }),
     );
-    expect(await within(addMemberDialog).findByText("New User")).toBeInTheDocument();
+    expect(
+      await within(addMemberDialog).findByText("Available User 11"),
+    ).toBeInTheDocument();
+    expect(
+      within(addMemberDialog).getByTestId("tenant-available-user-page-indicator"),
+    ).toHaveTextContent("Page 2");
   });
 
   it("does not render the group path below the group name", async () => {
@@ -331,11 +474,16 @@ describe("TenantRoleDialog", () => {
   it("toggles tenant group membership from the member matrix", async () => {
     render(<TenantRoleDialog open tenant={tenant} onClose={vi.fn()} />);
 
+    await screen.findByTestId("tenant-member-search-input");
     fireEvent.change(screen.getByTestId("tenant-member-search-input"), {
       target: { value: "rev" },
     });
     await waitFor(() =>
-      expect(mockGetTenantMembers).toHaveBeenCalledWith("tenant-1", "rev"),
+      expect(mockGetTenantMembers).toHaveBeenCalledWith("tenant-1", {
+        search: "rev",
+        offset: 0,
+        limit: 10,
+      }),
     );
     await screen.findByText("Reviewer User");
     fireEvent.click(
@@ -355,6 +503,8 @@ describe("TenantRoleDialog", () => {
     render(<TenantRoleDialog open tenant={tenant} onClose={vi.fn()} />);
 
     await screen.findAllByText("Approvers");
+    fireEvent.click(screen.getByTestId("tenant-groups-section-toggle"));
+    await screen.findByTestId("tenant-group-role-checkbox-Approvers-viewer");
     fireEvent.click(
       screen.getByTestId("tenant-group-role-checkbox-Approvers-viewer"),
     );
@@ -371,6 +521,8 @@ describe("TenantRoleDialog", () => {
   it("renders the submitter granted role when returned by the backend", async () => {
     render(<TenantRoleDialog open tenant={tenant} onClose={vi.fn()} />);
 
+    await screen.findAllByText("Approvers");
+    fireEvent.click(screen.getByTestId("tenant-groups-section-toggle"));
     expect(await screen.findAllByText("Submitter")).not.toHaveLength(0);
     expect(screen.getAllByText("Submitters").length).toBeGreaterThan(0);
   });
@@ -444,15 +596,21 @@ describe("TenantRoleDialog", () => {
 
     render(<TenantRoleDialog open tenant={tenant} onClose={vi.fn()} />);
 
+    await screen.findByTestId("tenant-member-search-input");
     fireEvent.change(screen.getByTestId("tenant-member-search-input"), {
       target: { value: "rev" },
     });
     await waitFor(() =>
-      expect(mockGetTenantMembers).toHaveBeenCalledWith("tenant-1", "rev"),
+      expect(mockGetTenantMembers).toHaveBeenCalledWith("tenant-1", {
+        search: "rev",
+        offset: 0,
+        limit: 10,
+      }),
     );
     const headerLabel = await screen.findByTestId(
       "tenant-members-group-header-group-long",
     );
+    fireEvent.click(screen.getByTestId("tenant-groups-section-toggle"));
     const groupNameCell = await screen.findByTestId(
       "tenant-group-name-cell-group-long",
     );
@@ -489,7 +647,11 @@ describe("TenantRoleDialog", () => {
       target: { value: "rev" },
     });
     await waitFor(() =>
-      expect(mockGetTenantMembers).toHaveBeenCalledWith("tenant-1", "rev"),
+      expect(mockGetTenantMembers).toHaveBeenCalledWith("tenant-1", {
+        search: "rev",
+        offset: 0,
+        limit: 10,
+      }),
     );
     await screen.findByText("Reviewer User");
     expect(
@@ -499,6 +661,8 @@ describe("TenantRoleDialog", () => {
       screen.getByTestId("tenant-members-group-header-group-submitters"),
     ).toBeInTheDocument();
 
+    fireEvent.click(screen.getByTestId("tenant-groups-section-toggle"));
+    await screen.findByTestId("tenant-group-search-input");
     fireEvent.change(screen.getByTestId("tenant-group-search-input"), {
       target: { value: "reviewer" },
     });

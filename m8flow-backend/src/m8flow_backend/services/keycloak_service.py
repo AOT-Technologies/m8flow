@@ -785,6 +785,7 @@ def search_realm_users(
     exact: bool = False,
     admin_token: str | None = None,
     max_results: int = 100,
+    first_result: int = 0,
 ) -> list[dict[str, Any]]:
     """Search users in one Keycloak realm and return normalized user representations."""
     if not realm or not str(realm).strip():
@@ -794,6 +795,8 @@ def search_realm_users(
     normalized_search = str(search).strip() if isinstance(search, str) else ""
     token = admin_token or get_master_admin_token()
     params: dict[str, Any] = {"max": max_results}
+    if first_result > 0:
+        params["first"] = first_result
     if normalized_search:
         params["search"] = normalized_search
         params["exact"] = "true" if exact else "false"
@@ -820,6 +823,7 @@ def search_organization_members(
     exact: bool = False,
     admin_token: str | None = None,
     max_results: int = 100,
+    first_result: int = 0,
 ) -> list[dict[str, Any]]:
     """Search organization members in the shared realm and return normalized member representations."""
     if not organization_id or not str(organization_id).strip():
@@ -829,6 +833,8 @@ def search_organization_members(
     normalized_search = str(search).strip() if isinstance(search, str) else ""
     token = admin_token or get_master_admin_token()
     params: dict[str, Any] = {"max": max_results}
+    if first_result > 0:
+        params["first"] = first_result
     if normalized_search:
         params["search"] = normalized_search
         params["exact"] = "true" if exact else "false"

@@ -41,7 +41,9 @@ vi.mock("../services/TenantService", () => ({
   default: {
     getTenantGroups: (...args: unknown[]) => mockGetTenantGroups(...args),
     getTenantMembers: (...args: unknown[]) => mockGetTenantMembers(...args),
+    getTenantMembersPage: (...args: unknown[]) => mockGetTenantMembers(...args),
     getAvailableTenantUsers: vi.fn(),
+    getAvailableTenantUsersPage: vi.fn(),
     addTenantMember: vi.fn(),
     createTenantGroup: vi.fn(),
     addTenantMemberToGroup: vi.fn(),
@@ -121,15 +123,22 @@ describe("TenantManagementPage", () => {
         ],
       },
     ]);
-    mockGetTenantMembers.mockResolvedValue([
-      {
-        id: "member-1",
-        username: "reviewer",
-        email: "reviewer@example.com",
-        display_name: "Reviewer User",
-        roles: ["reviewer"],
-      },
-    ]);
+    mockGetTenantMembers.mockResolvedValue({
+      tenant_id: "tenant-1",
+      search: "",
+      offset: 0,
+      limit: 10,
+      has_more: false,
+      members: [
+        {
+          id: "member-1",
+          username: "reviewer",
+          email: "reviewer@example.com",
+          display_name: "Reviewer User",
+          roles: ["reviewer"],
+        },
+      ],
+    });
     mockUpdateTenant.mockResolvedValue({
       id: "tenant-1",
       name: "Tenant One Updated",
@@ -141,7 +150,7 @@ describe("TenantManagementPage", () => {
 
     expect(screen.getByText("Tenant Management")).toBeInTheDocument();
     expect(
-      await screen.findByText("Type at least 3 characters to search tenant members."),
+      await screen.findByText("Reviewer User"),
     ).toBeInTheDocument();
     expect(screen.getByTestId("tenant-role-panel")).toBeInTheDocument();
 

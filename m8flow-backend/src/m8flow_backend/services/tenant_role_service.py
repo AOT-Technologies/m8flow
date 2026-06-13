@@ -249,6 +249,55 @@ def _parallel_lookup_worker_count(item_count: int) -> int:
     return max(1, min(MAX_PARALLEL_KEYCLOAK_LOOKUPS, item_count))
 
 
+def _organization_member_username_lookup(
+    organization_id: str,
+    usernames: list[str],
+    *,
+    admin_token: str | None = None,
+) -> set[str]:
+    normalized_usernames = list(
+        {
+            username.strip()
+            for username in usernames
+            if isinstance(username, str) and username.strip()
+        }
+    )
+    if not normalized_usernames:
+        return set()
+
+    def load_membership(username: str) -> str | None:
+        member = get_organization_member_by_username(
+            organization_id,
+            username,
+            admin_token=admin_token,
+        )
+        if not isinstance(member, Mapping):
+            return None
+        member_username = member.get("username")
+        if not isinstance(member_username, str) or not member_username.strip():
+            return None
+        return member_username.strip().casefold()
+
+    if len(normalized_usernames) == 1:
+        membership = load_membership(normalized_usernames[0])
+        return {membership} if membership else set()
+
+    existing_usernames: set[str] = set()
+    with ThreadPoolExecutor(
+        max_workers=_parallel_lookup_worker_count(len(normalized_usernames))
+    ) as executor:
+        future_by_username = {
+            executor.submit(load_membership, username): username
+            for username in normalized_usernames
+        }
+        for future in as_completed(future_by_username):
+            membership = future.result()
+            if membership:
+                existing_usernames.add(membership)
+
+    return existing_usernames
+
+
 def _organization_group_members_lookup(
     organization_id: str,
     groups: list[dict[str, Any]],
@@ -735,6 +784,7 @@ def list_tenant_members_with_roles(
     *,
     search: str | None = None,
     max_results: int = 100,
+    offset: int = 0,
 ) -> list[dict[str, Any]]:
     """Return organization members for one tenant with their org-local tenant roles."""
     admin_token = get_master_admin_token()
@@ -747,6 +797,7 @@ def list_tenant_members_with_roles(
         search or "",
         exact=False,
         max_results=max_results,
+        first_result=offset,
         admin_token=admin_token,
     )
     if not members:
@@ -793,6 +844,7 @@ def list_available_tenant_users(
     *,
     search: str | None = None,
     max_results: int = 100,
+    offset: int = 0,
 ) -> list[dict[str, Any]]:
     """Return existing realm users that are not yet members of the selected tenant."""
     admin_token = get_master_admin_token()
@@ -801,38 +853,54 @@ def list_available_tenant_users(
         admin_token=admin_token,
     )
     normalized_search = str(search or "").strip()
-
-    tenant_members = search_organization_members(
-        organization_id,
-        normalized_search,
-        exact=False,
-        max_results=max_results,
-        admin_token=admin_token,
-    )
-    existing_usernames = {
-        username.strip().casefold()
-        for member in tenant_members
-        if isinstance(member, Mapping)
-        for username in [member.get("username")]
-        if isinstance(username, str) and username.strip()
-    }
+    normalized_offset = max(0, offset)
+    normalized_limit = max(1, max_results)
+    batch_size = max(25, normalized_limit * 2)
 
     available_users: list[dict[str, Any]] = []
-    for user in search_realm_users(
-        shared_realm_name(),
-        normalized_search,
-        exact=False,
-        max_results=max_results,
-        admin_token=admin_token,
-    ):
-        username = user.get("username")
-        if not isinstance(username, str) or not username.strip():
-            continue
-        if username.strip().casefold() in existing_usernames:
-            continue
-        available_users.append(_serialize_group_member(user))
+    available_users_skipped = 0
+    realm_offset = 0
 
-    available_users.sort(key=lambda item: str(item.get("username") or ""))
+    while len(available_users) < normalized_limit:
+        realm_users = search_realm_users(
+            shared_realm_name(),
+            normalized_search,
+            exact=False,
+            max_results=batch_size,
+            first_result=realm_offset,
+            admin_token=admin_token,
+        )
+        if not realm_users:
+            break
+
+        existing_usernames = _organization_member_username_lookup(
+            organization_id,
+            [
+                username
+                for user in realm_users
+                for username in [user.get("username")]
+                if isinstance(username, str)
+            ],
+            admin_token=admin_token,
+        )
+
+        for user in realm_users:
+            username = user.get("username")
+            if not isinstance(username, str) or not username.strip():
+                continue
+            if username.strip().casefold() in existing_usernames:
+                continue
+            if available_users_skipped < normalized_offset:
+                available_users_skipped += 1
+                continue
+            available_users.append(_serialize_group_member(user))
+            if len(available_users) >= normalized_limit:
+                break
+
+        realm_offset += len(realm_users)
+        if len(realm_users) < batch_size:
+            break
+
     return available_users
 
 

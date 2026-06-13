@@ -120,7 +120,9 @@ vi.mock("../services/TenantService", () => ({
     createTenant: (...args: unknown[]) => mockCreateTenant(...args),
     getTenantGroups: (...args: unknown[]) => mockGetTenantGroups(...args),
     getTenantMembers: (...args: unknown[]) => mockGetTenantMembers(...args),
+    getTenantMembersPage: (...args: unknown[]) => mockGetTenantMembers(...args),
     getAvailableTenantUsers: vi.fn(),
+    getAvailableTenantUsersPage: vi.fn(),
     addTenantMember: vi.fn(),
     addTenantMemberToGroup: vi.fn(),
     removeTenantMemberFromGroup: vi.fn(),
@@ -142,7 +144,14 @@ describe("TenantPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetTenantGroups.mockResolvedValue([]);
-    mockGetTenantMembers.mockResolvedValue([]);
+    mockGetTenantMembers.mockResolvedValue({
+      tenant_id: "tenant-uuid",
+      search: "",
+      offset: 0,
+      limit: 10,
+      has_more: false,
+      members: [],
+    });
     mockUpdateTenant.mockResolvedValue(undefined);
     mockDeleteTenant.mockResolvedValue(undefined);
   });
@@ -395,22 +404,29 @@ describe("TenantPage", () => {
         ],
       },
     ]);
-    mockGetTenantMembers.mockResolvedValue([
-      {
-        id: "member-1",
-        username: "admin",
-        email: "admin@example.com",
-        display_name: "Admin User",
-        roles: ["tenant-admin"],
-      },
-      {
-        id: "member-2",
-        username: "reviewer",
-        email: null,
-        display_name: "Reviewer User",
-        roles: ["reviewer"],
-      },
-    ]);
+    mockGetTenantMembers.mockResolvedValue({
+      tenant_id: "tenant-uuid",
+      search: "",
+      offset: 0,
+      limit: 10,
+      has_more: false,
+      members: [
+        {
+          id: "member-1",
+          username: "admin",
+          email: "admin@example.com",
+          display_name: "Admin User",
+          roles: ["tenant-admin"],
+        },
+        {
+          id: "member-2",
+          username: "reviewer",
+          email: null,
+          display_name: "Reviewer User",
+          roles: ["reviewer"],
+        },
+      ],
+    });
 
     render(<TenantPage />);
 
@@ -422,12 +438,14 @@ describe("TenantPage", () => {
       ),
     ).toBeInTheDocument();
     expect(mockGetTenantGroups).toHaveBeenCalledWith("tenant-uuid");
-    expect(mockGetTenantMembers).not.toHaveBeenCalled();
-    expect(
-      screen.getByText("Type at least 3 characters to search tenant members."),
-    ).toBeInTheDocument();
+    expect(mockGetTenantMembers).toHaveBeenCalledWith("tenant-uuid", {
+      search: "",
+      offset: 0,
+      limit: 10,
+    });
     expect(screen.getAllByText("Administrators").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Approvers").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByTestId("tenant-groups-section-toggle"));
     expect(screen.getAllByText("Tenant Admin").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Reviewer").length).toBeGreaterThan(0);
     expect(screen.getAllByText("admin").length).toBeGreaterThan(0);
@@ -488,27 +506,35 @@ describe("TenantPage", () => {
         ],
       },
     ]);
-    mockGetTenantMembers.mockResolvedValue([
-      {
-        id: "member-1",
-        username: "editor",
-        email: null,
-        display_name: "Editor User",
-        roles: ["editor"],
-      },
-      {
-        id: "member-2",
-        username: "integrator",
-        email: null,
-        display_name: "Integrator User",
-        roles: ["integrator"],
-      },
-    ]);
+    mockGetTenantMembers.mockResolvedValue({
+      tenant_id: "tenant-uuid",
+      search: "",
+      offset: 0,
+      limit: 10,
+      has_more: false,
+      members: [
+        {
+          id: "member-1",
+          username: "editor",
+          email: null,
+          display_name: "Editor User",
+          roles: ["editor"],
+        },
+        {
+          id: "member-2",
+          username: "integrator",
+          email: null,
+          display_name: "Integrator User",
+          roles: ["integrator"],
+        },
+      ],
+    });
 
     render(<TenantPage />);
 
     fireEvent.click(screen.getByTestId("tenant-roles-button-tenant-uuid"));
     await screen.findAllByText("Designers");
+    fireEvent.click(screen.getByTestId("tenant-groups-section-toggle"));
 
     fireEvent.change(screen.getByTestId("tenant-group-search-input"), {
       target: { value: "integrator" },

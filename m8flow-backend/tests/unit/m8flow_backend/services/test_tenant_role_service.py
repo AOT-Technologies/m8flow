@@ -150,7 +150,7 @@ def test_list_tenant_members_with_roles_reuses_one_admin_token(monkeypatch):
     monkeypatch.setattr(
         tenant_role_service,
         "search_organization_members",
-        lambda organization_id, search, *, exact=False, admin_token=None, max_results=100: [
+        lambda organization_id, search, *, exact=False, admin_token=None, max_results=100, first_result=0: [
             {
                 "id": "member-1",
                 "username": "admin",
@@ -162,6 +162,7 @@ def test_list_tenant_members_with_roles_reuses_one_admin_token(monkeypatch):
         and exact is False
         and admin_token == "token-1"
         and max_results == 100
+        and first_result == 10
         else pytest.fail("unexpected organization member search arguments"),
     )
     monkeypatch.setattr(
@@ -176,7 +177,11 @@ def test_list_tenant_members_with_roles_reuses_one_admin_token(monkeypatch):
         else pytest.fail("unexpected organization member-groups arguments"),
     )
 
-    members = tenant_role_service.list_tenant_members_with_roles("tenant-1", search="admin")
+    members = tenant_role_service.list_tenant_members_with_roles(
+        "tenant-1",
+        search="admin",
+        offset=10,
+    )
 
     assert admin_token_calls == ["called"]
     assert list_groups_calls == [("org-1", "token-1", False)]
@@ -188,6 +193,111 @@ def test_list_tenant_members_with_roles_reuses_one_admin_token(monkeypatch):
             "display_name": None,
             "roles": ["tenant-admin"],
         }
+    ]
+
+
+def test_list_available_tenant_users_filters_existing_members_and_applies_paging(monkeypatch):
+    admin_token_calls: list[str] = []
+    realm_search_calls: list[tuple[str, str, int, int, str | None]] = []
+    membership_lookup_calls: list[tuple[str, str, str | None]] = []
+
+    monkeypatch.setattr(
+        tenant_role_service,
+        "get_master_admin_token",
+        lambda: admin_token_calls.append("called") or "token-1",
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "_organization_for_tenant",
+        lambda tenant_id, admin_token=None: (
+            SimpleNamespace(id=tenant_id, slug="tenant-slug"),
+            {"id": "org-1"},
+            "org-1",
+        ),
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "search_realm_users",
+        lambda realm, search, *, exact=False, admin_token=None, max_results=100, first_result=0: realm_search_calls.append(
+            (realm, search, max_results, first_result, admin_token)
+        )
+        or (
+            [
+                {"id": "user-1", "username": "admin", "email": "admin@example.com"},
+                {"id": "user-2", "username": "editor", "email": "editor@example.com"},
+                {"id": "user-3", "username": "reviewer", "email": "reviewer@example.com"},
+                *[
+                    {
+                        "id": f"user-{index}",
+                        "username": f"member-{index}",
+                        "email": f"member-{index}@example.com",
+                    }
+                    for index in range(4, 26)
+                ],
+            ]
+            if first_result == 0
+            else [
+                {"id": "user-4", "username": "viewer", "email": "viewer@example.com"},
+                {"id": "user-5", "username": "writer", "email": "writer@example.com"},
+                {"id": "user-6", "username": "worker", "email": "worker@example.com"},
+            ]
+            if first_result == 25
+            else []
+        ),
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "get_organization_member_by_username",
+        lambda organization_id, username, admin_token=None: membership_lookup_calls.append(
+            (organization_id, username, admin_token)
+        )
+        or (
+            {"id": f"member-{username}", "username": username}
+            if username in {"admin", "reviewer"} or username.startswith("member-")
+            else None
+        ),
+    )
+
+    available_users = tenant_role_service.list_available_tenant_users(
+        "tenant-1",
+        search="er",
+        offset=1,
+        max_results=3,
+    )
+
+    assert admin_token_calls == ["called"]
+    assert realm_search_calls == [
+        (tenant_role_service.shared_realm_name(), "er", 25, 0, "token-1"),
+        (tenant_role_service.shared_realm_name(), "er", 25, 25, "token-1"),
+    ]
+    assert len(membership_lookup_calls) == 28
+    assert {
+        ("org-1", "admin", "token-1"),
+        ("org-1", "editor", "token-1"),
+        ("org-1", "reviewer", "token-1"),
+        ("org-1", "viewer", "token-1"),
+        ("org-1", "worker", "token-1"),
+        ("org-1", "writer", "token-1"),
+    }.issubset(set(membership_lookup_calls))
+    assert available_users == [
+        {
+            "id": "user-4",
+            "username": "viewer",
+            "email": "viewer@example.com",
+            "display_name": None,
+        },
+        {
+            "id": "user-5",
+            "username": "writer",
+            "email": "writer@example.com",
+            "display_name": None,
+        },
+        {
+            "id": "user-6",
+            "username": "worker",
+            "email": "worker@example.com",
+            "display_name": None,
+        },
     ]
 
 

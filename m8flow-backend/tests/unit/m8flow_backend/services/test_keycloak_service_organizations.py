@@ -337,6 +337,35 @@ def test_search_realm_users_uses_search_query(
 
 
 @patch("m8flow_backend.services.keycloak_service.get_master_admin_token")
+@patch("m8flow_backend.services.keycloak_service.keycloak_url")
+@patch("m8flow_backend.services.keycloak_service.requests.get")
+def test_search_realm_users_includes_first_offset_when_provided(
+    mock_get,
+    mock_keycloak_url,
+    mock_get_master_admin_token,
+):
+    mock_get_master_admin_token.return_value = "master-token"
+    mock_keycloak_url.return_value = "http://keycloak"
+    mock_get.return_value = MagicMock(
+        status_code=200,
+        json=lambda: [
+            {"id": "user-11", "username": "editor-11"},
+        ],
+    )
+
+    result = search_realm_users(
+        "m8flow",
+        "",
+        exact=False,
+        first_result=10,
+        max_results=10,
+    )
+
+    assert result == [{"id": "user-11", "username": "editor-11"}]
+    assert mock_get.call_args[1]["params"] == {"max": 10, "first": 10}
+
+
+@patch("m8flow_backend.services.keycloak_service.get_master_admin_token")
 @patch("m8flow_backend.services.keycloak_service.shared_realm_name")
 @patch("m8flow_backend.services.keycloak_service.keycloak_url")
 @patch("m8flow_backend.services.keycloak_service.requests.get")
@@ -400,6 +429,38 @@ def test_search_organization_members_can_list_all_members_without_search(
         {"id": "user-2", "username": "reviewer"},
     ]
     assert mock_get.call_args[1]["params"] == {"max": 100}
+
+
+@patch("m8flow_backend.services.keycloak_service.get_master_admin_token")
+@patch("m8flow_backend.services.keycloak_service.shared_realm_name")
+@patch("m8flow_backend.services.keycloak_service.keycloak_url")
+@patch("m8flow_backend.services.keycloak_service.requests.get")
+def test_search_organization_members_includes_first_offset_when_provided(
+    mock_get,
+    mock_keycloak_url,
+    mock_shared_realm_name,
+    mock_get_master_admin_token,
+):
+    mock_get_master_admin_token.return_value = "master-token"
+    mock_shared_realm_name.return_value = "shared-users"
+    mock_keycloak_url.return_value = "http://keycloak"
+    mock_get.return_value = MagicMock(
+        status_code=200,
+        json=lambda: [
+            {"id": "user-11", "username": "reviewer"},
+        ],
+    )
+
+    result = search_organization_members(
+        "org-uuid-123",
+        "",
+        exact=False,
+        first_result=10,
+        max_results=10,
+    )
+
+    assert result == [{"id": "user-11", "username": "reviewer"}]
+    assert mock_get.call_args[1]["params"] == {"max": 10, "first": 10}
 
 
 @patch("m8flow_backend.services.keycloak_service.get_master_admin_token")

@@ -127,7 +127,25 @@ export interface TenantOrganizationMembership {
 interface TenantMembersResponse {
     tenant_id: string;
     search: string;
+    offset?: number;
+    limit?: number;
+    has_more?: boolean;
     members: TenantMember[];
+}
+
+export interface TenantMembersPage {
+    tenant_id: string;
+    search: string;
+    offset: number;
+    limit: number;
+    has_more: boolean;
+    members: TenantMember[];
+}
+
+export interface TenantMemberPageRequest {
+    search?: string;
+    offset?: number;
+    limit?: number;
 }
 
 interface TenantGroupsResponse {
@@ -144,7 +162,25 @@ interface TenantGroupCreateResponse {
 interface TenantAvailableUsersResponse {
     tenant_id: string;
     search: string;
+    offset?: number;
+    limit?: number;
+    has_more?: boolean;
     users: TenantAvailableUser[];
+}
+
+export interface TenantAvailableUsersPage {
+    tenant_id: string;
+    search: string;
+    offset: number;
+    limit: number;
+    has_more: boolean;
+    users: TenantAvailableUser[];
+}
+
+export interface TenantAvailableUserPageRequest {
+    search?: string;
+    offset?: number;
+    limit?: number;
 }
 
 interface TenantOrganizationMembershipsResponse {
@@ -267,10 +303,29 @@ const TenantService = {
      * List tenant organization members and their tenant-local roles
      */
     getTenantMembers: (tenantId: string, search = ""): Promise<TenantMember[]> => {
+        return TenantService.getTenantMembersPage(tenantId, {
+            search,
+            offset: 0,
+            limit: 100,
+        }).then((response) => response.members);
+    },
+
+    /**
+     * List one page of tenant organization members and their tenant-local roles
+     */
+    getTenantMembersPage: (
+        tenantId: string,
+        options: TenantMemberPageRequest = {},
+    ): Promise<TenantMembersPage> => {
         const searchParams = new URLSearchParams();
-        if (search.trim()) {
-            searchParams.set("search", search.trim());
+        const normalizedSearch = options.search?.trim() ?? "";
+        const offset = Math.max(0, options.offset ?? 0);
+        const limit = Math.max(1, options.limit ?? 10);
+        if (normalizedSearch) {
+            searchParams.set("search", normalizedSearch);
         }
+        searchParams.set("offset", `${offset}`);
+        searchParams.set("limit", `${limit}`);
         const queryString = searchParams.toString();
         const path = `${BASE_PATH}/tenants/${encodeURIComponent(tenantId)}/members${
             queryString ? `?${queryString}` : ""
@@ -281,7 +336,14 @@ const TenantService = {
                 path,
                 httpMethod: "GET",
                 successCallback: (response: TenantMembersResponse) =>
-                    resolve(response.members ?? []),
+                    resolve({
+                        tenant_id: response.tenant_id,
+                        search: response.search ?? normalizedSearch,
+                        offset: response.offset ?? offset,
+                        limit: response.limit ?? limit,
+                        has_more: Boolean(response.has_more),
+                        members: response.members ?? [],
+                    }),
                 failureCallback: reject,
             });
         });
@@ -291,10 +353,29 @@ const TenantService = {
      * List existing users that are not yet members of this tenant.
      */
     getAvailableTenantUsers: (tenantId: string, search = ""): Promise<TenantAvailableUser[]> => {
+        return TenantService.getAvailableTenantUsersPage(tenantId, {
+            search,
+            offset: 0,
+            limit: 100,
+        }).then((response) => response.users);
+    },
+
+    /**
+     * List one page of existing users that are not yet members of this tenant.
+     */
+    getAvailableTenantUsersPage: (
+        tenantId: string,
+        options: TenantAvailableUserPageRequest = {},
+    ): Promise<TenantAvailableUsersPage> => {
         const searchParams = new URLSearchParams();
-        if (search.trim()) {
-            searchParams.set("search", search.trim());
+        const normalizedSearch = options.search?.trim() ?? "";
+        const offset = Math.max(0, options.offset ?? 0);
+        const limit = Math.max(1, options.limit ?? 10);
+        if (normalizedSearch) {
+            searchParams.set("search", normalizedSearch);
         }
+        searchParams.set("offset", `${offset}`);
+        searchParams.set("limit", `${limit}`);
         const queryString = searchParams.toString();
         const path = `${BASE_PATH}/tenants/${encodeURIComponent(tenantId)}/available-users${
             queryString ? `?${queryString}` : ""
@@ -305,7 +386,14 @@ const TenantService = {
                 path,
                 httpMethod: "GET",
                 successCallback: (response: TenantAvailableUsersResponse) =>
-                    resolve(response.users ?? []),
+                    resolve({
+                        tenant_id: response.tenant_id,
+                        search: response.search ?? normalizedSearch,
+                        offset: response.offset ?? offset,
+                        limit: response.limit ?? limit,
+                        has_more: Boolean(response.has_more),
+                        users: response.users ?? [],
+                    }),
                 failureCallback: reject,
             });
         });

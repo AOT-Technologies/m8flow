@@ -17,6 +17,11 @@ from m8flow_backend.services.tenant_role_service import remove_tenant_group_memb
 from m8flow_backend.services.tenant_role_service import remove_tenant_group_role
 from m8flow_backend.services.tenant_role_service import remove_tenant_role
 
+DEFAULT_TENANT_MEMBER_PAGE_SIZE = 10
+MAX_TENANT_MEMBER_PAGE_SIZE = 100
+DEFAULT_TENANT_AVAILABLE_USER_PAGE_SIZE = 10
+MAX_TENANT_AVAILABLE_USER_PAGE_SIZE = 100
+
 
 def _require_authorized_user(action: str, tenant_id: str | None = None):
     user = require_authorized_user(
@@ -32,17 +37,55 @@ def _require_authorized_user(action: str, tenant_id: str | None = None):
     return user
 
 
+def _normalized_int_query_arg(
+    name: str,
+    default: int,
+    *,
+    minimum: int = 0,
+    maximum: int | None = None,
+) -> int:
+    raw_value = request.args.get(name)
+    if raw_value is None or not str(raw_value).strip():
+        return default
+
+    try:
+        parsed_value = int(raw_value)
+    except (TypeError, ValueError):
+        return default
+
+    normalized_value = max(minimum, parsed_value)
+    if maximum is not None:
+        normalized_value = min(normalized_value, maximum)
+    return normalized_value
+
+
 @handle_api_errors
 def list_tenant_members(tenant_id: str):
     """List Keycloak organization members for one tenant with their tenant-local roles."""
     _require_authorized_user("read", tenant_id)
     search = request.args.get("search")
-    members = list_tenant_members_with_roles(tenant_id, search=search)
+    offset = _normalized_int_query_arg("offset", 0, minimum=0)
+    limit = _normalized_int_query_arg(
+        "limit",
+        DEFAULT_TENANT_MEMBER_PAGE_SIZE,
+        minimum=1,
+        maximum=MAX_TENANT_MEMBER_PAGE_SIZE,
+    )
+    members = list_tenant_members_with_roles(
+        tenant_id,
+        search=search,
+        offset=offset,
+        max_results=limit + 1,
+    )
+    has_more = len(members) > limit
     return success_response(
         {
             "tenant_id": tenant_id,
             "search": search or "",
-            "members": members,
+            "offset": offset,
+            "limit": limit,
+            "has_more": has_more,
+            "members": members[:limit],
         },
         200,
     )
@@ -53,12 +96,28 @@ def list_available_tenant_users_for_tenant(tenant_id: str):
     """List existing Keycloak users that can be added to one tenant."""
     _require_authorized_user("read", tenant_id)
     search = request.args.get("search")
-    users = list_available_tenant_users(tenant_id, search=search)
+    offset = _normalized_int_query_arg("offset", 0, minimum=0)
+    limit = _normalized_int_query_arg(
+        "limit",
+        DEFAULT_TENANT_AVAILABLE_USER_PAGE_SIZE,
+        minimum=1,
+        maximum=MAX_TENANT_AVAILABLE_USER_PAGE_SIZE,
+    )
+    users = list_available_tenant_users(
+        tenant_id,
+        search=search,
+        offset=offset,
+        max_results=limit + 1,
+    )
+    has_more = len(users) > limit
     return success_response(
         {
             "tenant_id": tenant_id,
             "search": search or "",
-            "users": users,
+            "offset": offset,
+            "limit": limit,
+            "has_more": has_more,
+            "users": users[:limit],
         },
         200,
     )
