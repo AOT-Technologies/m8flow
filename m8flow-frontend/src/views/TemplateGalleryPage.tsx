@@ -46,13 +46,15 @@ import { usePermissionFetcher } from "@spiffworkflow-frontend/hooks/PermissionSe
 import { useTranslation } from 'react-i18next';
 import TemplateService from '../services/TemplateService';
 import UserService from '../services/UserService';
+import { useGlobalTenant } from '../contexts/GlobalTenantContext';
 
 const DEFAULT_PER_PAGE = 10;
 
 export default function TemplateGalleryPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { templates, pagination, templatesLoading, error, fetchTemplates } = useTemplates();
+  const { templates, pagination, templatesLoading, loadedTenantId, error, fetchTemplates } = useTemplates();
+  const { selectedTenantId } = useGlobalTenant();
   const [filters, setFilters] = useState<TemplateFiltersType>({
     latest_only: true,
     include_deleted: false,
@@ -68,6 +70,8 @@ export default function TemplateGalleryPage() {
   });
   const { t } = useTranslation();
   const isSuperAdmin = UserService.isSuperAdmin();
+  const effectiveTenantId = isSuperAdmin ? (selectedTenantId || undefined) : undefined;
+  const showLoading = templatesLoading || loadedTenantId !== effectiveTenantId;
 
   const canCreate = ability.can("POST", "/m8flow/templates");
   const canEdit = ability.can("PUT", "/m8flow/templates");
@@ -89,10 +93,10 @@ export default function TemplateGalleryPage() {
   const page = Number.parseInt(searchParams.get('page') || '1', 10) || 1;
   const perPage = Number.parseInt(searchParams.get('per_page') || String(DEFAULT_PER_PAGE), 10) || DEFAULT_PER_PAGE;
 
-  // Fetch templates on mount and when filters or pagination change
+  // Fetch templates on mount and when filters, pagination, or tenant change
   useEffect(() => {
-    fetchTemplates({ ...filters, page, per_page: perPage });
-  }, [filters, page, perPage, fetchTemplates]);
+    fetchTemplates({ ...filters, tenantId: effectiveTenantId, page, per_page: perPage });
+  }, [filters, effectiveTenantId, page, perPage, fetchTemplates]);
 
 
 
@@ -139,12 +143,12 @@ export default function TemplateGalleryPage() {
   };
 
   const handleImportSuccess = (template: Template) => {
-    fetchTemplates({ ...filters, page, per_page: perPage });
+    fetchTemplates({ ...filters, tenantId: effectiveTenantId, page, per_page: perPage });
     navigate(`/templates/${template.id}`);
   };
 
   const refreshTemplates = () => {
-    fetchTemplates({ ...filters, page, per_page: perPage });
+    fetchTemplates({ ...filters, tenantId: effectiveTenantId, page, per_page: perPage });
   };
 
   const handleTemplateModeChange = (_: unknown, value: 'active' | 'deleted' | null) => {
@@ -356,7 +360,7 @@ export default function TemplateGalleryPage() {
         </Alert>
       )}
 
-      {templatesLoading && templates.length === 0 ? (
+      {showLoading && templates.length === 0 ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
           <CircularProgress />
         </Box>
@@ -372,7 +376,7 @@ export default function TemplateGalleryPage() {
           />
 
           {/* Main Gallery */}
-          {templatesLoading ? (
+          {showLoading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
               <CircularProgress />
             </Box>

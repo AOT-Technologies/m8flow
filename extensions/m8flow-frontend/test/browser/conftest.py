@@ -8,6 +8,8 @@ from playwright.sync_api import Page
 from helpers.reporting.collector import QASessionCollector
 from helpers.config import (
     BASE_URL,
+    DEFAULT_USERNAME,
+    DEFAULT_PASSWORD,
     ROLE_USERS,
     SUPER_ADMIN_USERNAME,
     SUPER_ADMIN_PASSWORD,
@@ -27,6 +29,7 @@ _PAGE_FIXTURES = (
     "editor_page",
     "viewer_page",
     "reviewer_page",
+    "default_admin_page",
     "super_admin_page",
 )
 
@@ -186,6 +189,30 @@ def reviewer_page(browser, base_url):
     ctx = _build_role_context(browser, base_url)
     pg = ctx.new_page()
     login(pg, username=creds["username"], password=creds["password"])
+    wait_for_app_ready(pg)
+    try:
+        yield pg
+    finally:
+        try:
+            try:
+                pg.unroute_all(behavior="ignoreErrors")
+            except Exception:
+                pass
+            try:
+                pg.goto(base_url)
+            except Exception:
+                pass
+            logout(pg)
+        finally:
+            ctx.close()
+
+
+@pytest.fixture(scope="module")
+def default_admin_page(browser, base_url):
+    """Module-scoped default-admin page: log in once per file as DEFAULT_USERNAME/DEFAULT_PASSWORD (admin/admin)."""
+    ctx = _build_role_context(browser, base_url)
+    pg = ctx.new_page()
+    login(pg, username=DEFAULT_USERNAME, password=DEFAULT_PASSWORD)
     wait_for_app_ready(pg)
     try:
         yield pg

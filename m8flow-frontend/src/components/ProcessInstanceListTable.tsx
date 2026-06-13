@@ -241,6 +241,14 @@ export default function ProcessInstanceListTable({
     stopRefreshing,
   ]);
 
+  // Clear stale rows whenever the report metadata changes (e.g. global tenant switch
+  // or applying a filter) so the previous result is not shown while the new data loads.
+  // Auto-reload polling does not change reportMetadata, so this does not cause flicker.
+  useEffect(() => {
+    setProcessInstances([]);
+    setPagination(null);
+  }, [reportMetadata]);
+
   const reportColumns = () => {
     if (reportMetadataFromProcessInstances) {
       return reportMetadataFromProcessInstances.columns;
@@ -499,7 +507,7 @@ export default function ProcessInstanceListTable({
         ) {
           hasAccessToCompleteTask = true;
         }
-        if (hasAccessToCompleteTask && processInstance.task_id) {
+        if (!isSuperAdmin && hasAccessToCompleteTask && processInstance.task_id) {
           goButtonElement = (
             <Button
               variant="contained"

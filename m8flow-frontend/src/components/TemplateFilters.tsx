@@ -8,20 +8,19 @@ import {
   FormControl,
   InputLabel,
   Chip,
-  Stack,
 } from '@mui/material';
 import { useState, useEffect, useRef } from 'react';
 import { useDebouncedCallback } from 'use-debounce';
 import { useTranslation } from 'react-i18next';
 import SearchOutlinedIcon from '@mui/icons-material/SearchOutlined';
 import { TemplateFilters as TemplateFiltersType, TemplateVisibility } from '../types/template';
-import { useTenants } from '../hooks/useTenants';
 
 interface TemplateFiltersProps {
   filters: TemplateFiltersType;
   onFiltersChange: (filters: TemplateFiltersType) => void;
   availableCategories?: string[];
   availableTags?: string[];
+  /** @deprecated Tenant filtering is now handled globally via GlobalTenantSelector */
   showTenantFilter?: boolean;
 }
 
@@ -30,14 +29,12 @@ export default function TemplateFilters({
   onFiltersChange,
   availableCategories = [],
   availableTags = [],
-  showTenantFilter = false,
 }: TemplateFiltersProps) {
   const { t } = useTranslation();
   const [searchText, setSearchText] = useState(filters.search || '');
   const isInitialMount = useRef(true);
   const filtersRef = useRef(filters);
   const onFiltersChangeRef = useRef(onFiltersChange);
-  const { data: tenants = [] } = useTenants(showTenantFilter);
 
   // Keep refs in sync with latest values
   useEffect(() => {
@@ -94,13 +91,6 @@ export default function TemplateFilters({
     onFiltersChange({
       ...filters,
       owner: owner || undefined,
-    });
-  };
-
-  const handleTenantChange = (tenantId: string) => {
-    onFiltersChange({
-      ...filters,
-      tenantId: tenantId || undefined,
     });
   };
 
@@ -174,27 +164,6 @@ export default function TemplateFilters({
         </Select>
       </FormControl>
 
-      {showTenantFilter && tenants.length > 0 && (
-        <FormControl size="small" sx={{ minWidth: 160 }}>
-          <InputLabel>{t("tenant")}</InputLabel>
-          <Select
-            value={filters.tenantId || ''}
-            label={t("tenant")}
-            data-testid="template-filters-tenant-select"
-            onChange={(e) => handleTenantChange(e.target.value)}
-          >
-            <MenuItem value="">
-              <em>{t("all_tenants", "All Tenants")}</em>
-            </MenuItem>
-            {tenants.map((tenant) => (
-              <MenuItem key={tenant.id} value={tenant.id}>
-                {tenant.name}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-      )}
-
       {availableTags.length > 0 && (
         <FormControl size="small" sx={{ minWidth: 150 }}>
           <InputLabel>{t("tag")}</InputLabel>
@@ -245,14 +214,6 @@ export default function TemplateFilters({
           label={`Tag: ${filters.tag}`}
           onDelete={() => handleTagChange('')}
           size="small"
-        />
-      )}
-      {filters.tenantId && (
-        <Chip
-          label={`Tenant: ${tenants.find((t) => t.id === filters.tenantId)?.name || filters.tenantId}`}
-          onDelete={() => handleTenantChange('')}
-          size="small"
-          data-testid="template-filters-tenant-chip"
         />
       )}
     </Paper>

@@ -42,6 +42,7 @@ import DynamicCSSInjection from '@spiffworkflow-frontend/components/DynamicCSSIn
 import TenantSelectPage, {
   M8FLOW_TENANT_STORAGE_KEY,
 } from './views/TenantSelectPage';
+import { GlobalTenantProvider, GLOBAL_TENANT_STORAGE_KEY } from './contexts/GlobalTenantContext';
 import { useConfig } from './utils/useConfig';
 import { RouteLoadingFallback } from './components/RouteLoadingFallback';
 import { resolveContainerContentState } from './utils/containerContentState';
@@ -65,6 +66,7 @@ UserService.doLogout = () => {
   if (typeof window !== 'undefined') {
     localStorage.removeItem(M8FLOW_TENANT_STORAGE_KEY);
     localStorage.removeItem('m8f_tenant_id');
+    localStorage.removeItem(GLOBAL_TENANT_STORAGE_KEY);
     document.cookie = 'm8flow_selected_tenant=; Max-Age=0; Path=/';
   }
   originalDoLogout();
@@ -632,6 +634,7 @@ export default function ContainerForExtensions() {
   };
 
   return (
+    <GlobalTenantProvider>
     <ThemeProvider theme={globalTheme}>
       <CssBaseline />
       <ScrollToTop />
@@ -799,5 +802,6 @@ export default function ContainerForExtensions() {
         </Container>
       </ErrorBoundary>
     </ThemeProvider>
+    </GlobalTenantProvider>
   );
 }

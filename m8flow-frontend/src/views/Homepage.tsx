@@ -2,10 +2,6 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Box,
   Typography,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
 } from '@mui/material';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
@@ -16,7 +12,7 @@ import HeaderTabs from '../components/HeaderTabs';
 import TaskTable from '../components/TaskTable';
 import OnboardingView from './OnboardingView';
 import UserService from '../services/UserService';
-import { useTenants } from '../hooks/useTenants';
+import { useGlobalTenant } from '../contexts/GlobalTenantContext';
 
 type HomepageProps = {
   viewMode: 'table' | 'tile';
@@ -36,11 +32,9 @@ function Homepage({ viewMode, setViewMode, isMobile }: HomepageProps) {
   const [tasks, setTasks] = useState<ProcessInstanceTask[] | null>(null);
   const [groupedTasks, setGroupedTasks] = useState<GroupedItems | null>(null);
   const [selectedGroupBy, setSelectedGroupBy] = useState<string | null>(null);
-  const [selectedTenantId, setSelectedTenantId] = useState<string>('');
-
   const { t } = useTranslation();
   const isSuperAdmin = UserService.isSuperAdmin();
-  const { data: tenants = [] } = useTenants(isSuperAdmin);
+  const { selectedTenantId } = useGlobalTenant();
 
   const responsiblePartyLabel = t('responsible_party');
   const processGroupLabel = t('process_group');
@@ -173,35 +167,6 @@ function Homepage({ viewMode, setViewMode, isMobile }: HomepageProps) {
     return <TaskTable entries={tasks} viewMode={viewMode} />;
   };
 
-  const tenantFilterElement = () => {
-    if (!isSuperAdmin || tenants.length === 0) {
-      return null;
-    }
-    return (
-      <FormControl size="small" sx={{ minWidth: 180, mr: 1 }}>
-        <InputLabel id="homepage-tenant-filter-label">
-          {t('tenant')}
-        </InputLabel>
-        <Select
-          labelId="homepage-tenant-filter-label"
-          label={t('tenant')}
-          value={selectedTenantId}
-          data-testid="homepage-tenant-filter"
-          onChange={(e) => setSelectedTenantId(e.target.value)}
-        >
-          <MenuItem value="">
-            <em>{t('all_tenants', 'All Tenants')}</em>
-          </MenuItem>
-          {tenants.map((tenant) => (
-            <MenuItem key={tenant.id} value={tenant.id}>
-              {tenant.name}
-            </MenuItem>
-          ))}
-        </Select>
-      </FormControl>
-    );
-  };
-
   return (
     <>
       {isMobile ? (
@@ -258,7 +223,6 @@ function Homepage({ viewMode, setViewMode, isMobile }: HomepageProps) {
         }}
         taskControlElement={
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            {tenantFilterElement()}
             <TaskControls
               viewMode={viewMode}
               setViewMode={setViewMode}

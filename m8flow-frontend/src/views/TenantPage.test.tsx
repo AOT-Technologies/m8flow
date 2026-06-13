@@ -204,7 +204,7 @@ describe("TenantPage", () => {
     expect(refetch).toHaveBeenCalled();
   });
 
-  it("creates a tenant from the add tenant modal", async () => {
+  it("opens tenant group management after creating a tenant", async () => {
     const refetch = vi.fn();
     mockUseTenants.mockReturnValue({
       data: [],
@@ -251,6 +251,11 @@ describe("TenantPage", () => {
     expect(
       await screen.findByText("Tenant created successfully."),
     ).toBeInTheDocument();
+    expect(
+      await screen.findByText("Manage Tenant Groups: Information Technology"),
+    ).toBeInTheDocument();
+    expect(mockGetTenantGroups).toHaveBeenCalledWith("tenant-uuid");
+    expect(mockGetTenantMembers).toHaveBeenCalledWith("tenant-uuid");
   });
 
   it("shows inline validation errors instead of submitting an empty tenant form", async () => {
