@@ -118,10 +118,14 @@ export default function TenantManagementPage() {
             >
               {translate("tenant_management", "Tenant Management")}
             </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ mt: 0.5, whiteSpace: "nowrap" }}
+            >
               {translate(
                 "tenant_group_management_description",
-                "Review tenant users, add existing members, and manage the Keycloak groups and tenant-scoped roles associated with this tenant.",
+                "Add existing members and manage groups and roles associated with this tenant.",
               )}
             </Typography>
           </Box>

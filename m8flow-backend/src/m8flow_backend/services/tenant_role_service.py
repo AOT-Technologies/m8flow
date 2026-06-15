@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from m8flow_backend.services.keycloak_service import (
     add_organization_member,
     add_organization_group_member,
     create_organization_group,
+    get_master_admin_token,
     get_organization_by_id,
     get_organization_by_alias,
     get_organization_group_by_id,
@@ -38,6 +41,10 @@ from spiffworkflow_backend.models.user_group_assignment import UserGroupAssignme
 from spiffworkflow_backend.services.authorization_service import AuthorizationService
 from spiffworkflow_backend.services.user_service import UserService
 
+TENANT_GROUP_NAME_MAX_LENGTH = 64
+TENANT_GROUP_NAME_ALLOWED_PATTERN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9 _-]*[A-Za-z0-9])?$")
+MAX_PARALLEL_KEYCLOAK_LOOKUPS = 8
+
 
 def _normalize_role_name(role_name: str) -> str:
     normalized_role_name = str(role_name or "").strip()
@@ -50,18 +57,22 @@ def _normalize_role_name(role_name: str) -> str:
     return normalized_role_name
 
 
-def _organization_for_tenant(tenant_id: str) -> tuple[Any, dict[str, Any], str]:
+def _organization_for_tenant(
+    tenant_id: str,
+    *,
+    admin_token: str | None = None,
+) -> tuple[Any, dict[str, Any], str]:
     tenant = TenantService.get_tenant_by_id(tenant_id)
     organization = None
 
     tenant_identifier = tenant.id.strip() if isinstance(tenant.id, str) and tenant.id.strip() else ""
     if tenant_identifier:
-        organization = get_organization_by_id(tenant_identifier)
+        organization = get_organization_by_id(tenant_identifier, admin_token=admin_token)
 
     if not isinstance(organization, dict):
         tenant_alias = tenant.slug.strip() if isinstance(tenant.slug, str) and tenant.slug.strip() else ""
         if tenant_alias:
-            organization = get_organization_by_alias(tenant_alias)
+            organization = get_organization_by_alias(tenant_alias, admin_token=admin_token)
 
     if not isinstance(organization, dict):
         raise ApiError(
@@ -97,19 +108,34 @@ def _mapped_roles_from_group(group: Mapping[str, Any] | None) -> list[str]:
     return list(organization_group_role_names(group))
 
 
-def _organization_group_role_lookup(organization_id: str) -> dict[str, dict[str, list[str]]]:
+def _organization_group_role_lookup(
+    organization_id: str,
+    *,
+    admin_token: str | None = None,
+    groups: list[dict[str, Any]] | None = None,
+) -> dict[str, dict[str, list[str]]]:
     roles_by_group_id: dict[str, list[str]] = {}
     roles_by_group_name: dict[str, list[str]] = {}
 
-    for group in list_organization_groups(organization_id):
+    organization_groups = groups or list_organization_groups(
+        organization_id,
+        admin_token=admin_token,
+        brief_representation=False,
+    )
+
+    for group in organization_groups:
         group_id = group.get("id")
         group_name = group.get("name")
         if not isinstance(group_name, str) or not group_name.strip():
             continue
 
         effective_group = (
-            get_organization_group_by_id(organization_id, group_id.strip())
-            if isinstance(group_id, str) and group_id.strip()
+            get_organization_group_by_id(
+                organization_id,
+                group_id.strip(),
+                admin_token=admin_token,
+            )
+            if "attributes" not in group and isinstance(group_id, str) and group_id.strip()
             else None
         ) or group
         mapped_roles = _mapped_roles_from_group(effective_group)
@@ -131,6 +157,7 @@ def _roles_for_group(
     *,
     organization_id: str | None = None,
     group_role_lookup: dict[str, dict[str, list[str]]] | None = None,
+    admin_token: str | None = None,
 ) -> list[str]:
     group_id = group.get("id")
     group_name = group.get("name")
@@ -148,7 +175,11 @@ def _roles_for_group(
                 return mapped_roles
 
     effective_group = (
-        get_organization_group_by_id(organization_id, group_id.strip())
+        get_organization_group_by_id(
+            organization_id,
+            group_id.strip(),
+            admin_token=admin_token,
+        )
         if organization_id and isinstance(group_id, str) and group_id.strip()
         else None
     ) or group
@@ -160,10 +191,18 @@ def _normalized_member_roles(
     member_id: str,
     *,
     group_role_lookup: dict[str, dict[str, list[str]]] | None = None,
+    admin_token: str | None = None,
 ) -> list[str]:
-    effective_group_role_lookup = group_role_lookup or _organization_group_role_lookup(organization_id)
+    effective_group_role_lookup = group_role_lookup or _organization_group_role_lookup(
+        organization_id,
+        admin_token=admin_token,
+    )
     roles: set[str] = set()
-    for group in get_organization_member_groups(organization_id, member_id):
+    for group in get_organization_member_groups(
+        organization_id,
+        member_id,
+        admin_token=admin_token,
+    ):
         if not isinstance(group, Mapping):
             continue
         roles.update(
@@ -171,6 +210,7 @@ def _normalized_member_roles(
                 group,
                 organization_id=organization_id,
                 group_role_lookup=effective_group_role_lookup,
+                admin_token=admin_token,
             )
         )
     return sorted(roles)
@@ -205,16 +245,155 @@ def _serialize_group_member(member: Mapping[str, Any]) -> dict[str, Any]:
     return serialized_member
 
 
+def _parallel_lookup_worker_count(item_count: int) -> int:
+    return max(1, min(MAX_PARALLEL_KEYCLOAK_LOOKUPS, item_count))
+
+
+def _organization_member_username_lookup(
+    organization_id: str,
+    usernames: list[str],
+    *,
+    admin_token: str | None = None,
+) -> set[str]:
+    normalized_usernames = list(
+        {
+            username.strip()
+            for username in usernames
+            if isinstance(username, str) and username.strip()
+        }
+    )
+    if not normalized_usernames:
+        return set()
+
+    def load_membership(username: str) -> str | None:
+        member = get_organization_member_by_username(
+            organization_id,
+            username,
+            admin_token=admin_token,
+        )
+        if not isinstance(member, Mapping):
+            return None
+        member_username = member.get("username")
+        if not isinstance(member_username, str) or not member_username.strip():
+            return None
+        return member_username.strip().casefold()
+
+    if len(normalized_usernames) == 1:
+        membership = load_membership(normalized_usernames[0])
+        return {membership} if membership else set()
+
+    existing_usernames: set[str] = set()
+    with ThreadPoolExecutor(
+        max_workers=_parallel_lookup_worker_count(len(normalized_usernames))
+    ) as executor:
+        future_by_username = {
+            executor.submit(load_membership, username): username
+            for username in normalized_usernames
+        }
+        for future in as_completed(future_by_username):
+            membership = future.result()
+            if membership:
+                existing_usernames.add(membership)
+
+    return existing_usernames
+
+
+def _organization_group_members_lookup(
+    organization_id: str,
+    groups: list[dict[str, Any]],
+    *,
+    admin_token: str | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    group_ids = [
+        group_id.strip()
+        for group in groups
+        for group_id in [group.get("id")]
+        if isinstance(group_id, str) and group_id.strip()
+    ]
+    if not group_ids:
+        return {}
+
+    def load_group_members(group_id: str) -> list[dict[str, Any]]:
+        members = [
+            _serialize_group_member(member)
+            for member in list_organization_group_members(
+                organization_id,
+                group_id,
+                admin_token=admin_token,
+            )
+            if isinstance(member, Mapping)
+        ]
+        members.sort(key=lambda item: str(item.get("username") or ""))
+        return members
+
+    if len(group_ids) == 1:
+        group_id = group_ids[0]
+        return {group_id: load_group_members(group_id)}
+
+    members_by_group_id: dict[str, list[dict[str, Any]]] = {}
+    with ThreadPoolExecutor(max_workers=_parallel_lookup_worker_count(len(group_ids))) as executor:
+        future_by_group_id = {
+            executor.submit(load_group_members, group_id): group_id for group_id in group_ids
+        }
+        for future in as_completed(future_by_group_id):
+            group_id = future_by_group_id[future]
+            members_by_group_id[group_id] = future.result()
+
+    return members_by_group_id
+
+
+def _tenant_member_roles_lookup(
+    organization_id: str,
+    members: list[dict[str, Any]],
+    *,
+    group_role_lookup: dict[str, dict[str, list[str]]] | None = None,
+    admin_token: str | None = None,
+) -> dict[str, list[str]]:
+    member_ids = [
+        member_id.strip()
+        for member in members
+        for member_id in [member.get("id")]
+        if isinstance(member_id, str) and member_id.strip()
+    ]
+    if not member_ids:
+        return {}
+
+    def load_member_roles(member_id: str) -> list[str]:
+        return _normalized_member_roles(
+            organization_id,
+            member_id,
+            group_role_lookup=group_role_lookup,
+            admin_token=admin_token,
+        )
+
+    if len(member_ids) == 1:
+        member_id = member_ids[0]
+        return {member_id: load_member_roles(member_id)}
+
+    roles_by_member_id: dict[str, list[str]] = {}
+    with ThreadPoolExecutor(max_workers=_parallel_lookup_worker_count(len(member_ids))) as executor:
+        future_by_member_id = {
+            executor.submit(load_member_roles, member_id): member_id for member_id in member_ids
+        }
+        for future in as_completed(future_by_member_id):
+            member_id = future_by_member_id[future]
+            roles_by_member_id[member_id] = future.result()
+
+    return roles_by_member_id
+
+
 def _mapped_roles_for_group(
     group: Mapping[str, Any],
     *,
     organization_id: str | None = None,
     group_role_lookup: dict[str, dict[str, list[str]]] | None = None,
+    admin_token: str | None = None,
 ) -> list[str]:
     return _roles_for_group(
         group,
         organization_id=organization_id,
         group_role_lookup=group_role_lookup,
+        admin_token=admin_token,
     )
 
 
@@ -242,6 +421,46 @@ def _organization_group_names_for_role_name(role_name: str) -> tuple[str, ...]:
 
 def _normalize_group_name(group_name: str | None) -> str:
     return str(group_name or "").strip().strip("/")
+
+
+def _normalize_new_group_name(group_name: str | None) -> str:
+    return " ".join(str(group_name or "").strip().split())
+
+
+def _validated_new_group_name(group_name: str | None) -> str:
+    normalized_group_name = _normalize_new_group_name(group_name)
+    if not normalized_group_name:
+        raise ApiError(
+            error_code="invalid_group",
+            message="Group name is required.",
+            status_code=400,
+        )
+
+    if len(normalized_group_name) > TENANT_GROUP_NAME_MAX_LENGTH:
+        raise ApiError(
+            error_code="invalid_group",
+            message=(
+                f"Group name must be {TENANT_GROUP_NAME_MAX_LENGTH} characters or fewer."
+            ),
+            status_code=400,
+        )
+
+    if not TENANT_GROUP_NAME_ALLOWED_PATTERN.fullmatch(normalized_group_name):
+        raise ApiError(
+            error_code="invalid_group",
+            message=(
+                "Group name can only contain letters, numbers, spaces, hyphens, "
+                "and underscores, and must start and end with a letter or number."
+            ),
+            status_code=400,
+        )
+
+    return normalized_group_name
+
+
+def _group_name_conflict_key(group_name: str | None) -> str:
+    normalized_group_name = _normalize_new_group_name(_normalize_group_name(group_name))
+    return normalized_group_name.casefold() if normalized_group_name else ""
 
 
 def _organization_group_name_lookup(organization_id: str) -> dict[str, str]:
@@ -322,6 +541,8 @@ def _serialize_group(
     group: Mapping[str, Any],
     *,
     group_role_lookup: dict[str, dict[str, list[str]]] | None = None,
+    members_by_group_id: dict[str, list[dict[str, Any]]] | None = None,
+    admin_token: str | None = None,
 ) -> dict[str, Any] | None:
     group_id = group.get("id")
     group_name = group.get("name")
@@ -330,21 +551,33 @@ def _serialize_group(
     if not isinstance(group_name, str) or not group_name.strip():
         return None
 
-    members = [
-        _serialize_group_member(member)
-        for member in list_organization_group_members(organization_id, group_id.strip())
-        if isinstance(member, Mapping)
-    ]
-    members.sort(key=lambda item: str(item.get("username") or ""))
+    normalized_group_id = group_id.strip()
+    members = (
+        members_by_group_id.get(normalized_group_id)
+        if members_by_group_id is not None
+        else None
+    )
+    if members is None:
+        members = [
+            _serialize_group_member(member)
+            for member in list_organization_group_members(
+                organization_id,
+                normalized_group_id,
+                admin_token=admin_token,
+            )
+            if isinstance(member, Mapping)
+        ]
+        members.sort(key=lambda item: str(item.get("username") or ""))
 
     return {
-        "id": group_id.strip(),
+        "id": normalized_group_id,
         "name": group_name.strip(),
         "path": group.get("path"),
         "mapped_roles": _mapped_roles_for_group(
             group,
             organization_id=organization_id,
             group_role_lookup=group_role_lookup,
+            admin_token=admin_token,
         ),
         "member_count": len(members),
         "members": members,
@@ -551,15 +784,40 @@ def list_tenant_members_with_roles(
     *,
     search: str | None = None,
     max_results: int = 100,
+    offset: int = 0,
 ) -> list[dict[str, Any]]:
     """Return organization members for one tenant with their org-local tenant roles."""
-    _tenant, _organization, organization_id = _organization_for_tenant(tenant_id)
-    group_role_lookup = _organization_group_role_lookup(organization_id)
+    admin_token = get_master_admin_token()
+    _tenant, _organization, organization_id = _organization_for_tenant(
+        tenant_id,
+        admin_token=admin_token,
+    )
     members = search_organization_members(
         organization_id,
         search or "",
         exact=False,
         max_results=max_results,
+        first_result=offset,
+        admin_token=admin_token,
+    )
+    if not members:
+        return []
+
+    organization_groups = list_organization_groups(
+        organization_id,
+        admin_token=admin_token,
+        brief_representation=False,
+    )
+    group_role_lookup = _organization_group_role_lookup(
+        organization_id,
+        admin_token=admin_token,
+        groups=organization_groups,
+    )
+    member_roles_lookup = _tenant_member_roles_lookup(
+        organization_id,
+        members,
+        group_role_lookup=group_role_lookup,
+        admin_token=admin_token,
     )
 
     serialized_members: list[dict[str, Any]] = []
@@ -573,11 +831,7 @@ def list_tenant_members_with_roles(
         serialized_members.append(
             _serialize_member(
                 member,
-                roles=_normalized_member_roles(
-                    organization_id,
-                    member_id.strip(),
-                    group_role_lookup=group_role_lookup,
-                ),
+                roles=member_roles_lookup.get(member_id.strip(), []),
             )
         )
 
@@ -590,40 +844,63 @@ def list_available_tenant_users(
     *,
     search: str | None = None,
     max_results: int = 100,
+    offset: int = 0,
 ) -> list[dict[str, Any]]:
     """Return existing realm users that are not yet members of the selected tenant."""
-    _tenant, _organization, organization_id = _organization_for_tenant(tenant_id)
-    normalized_search = str(search or "").strip()
-
-    tenant_members = search_organization_members(
-        organization_id,
-        normalized_search,
-        exact=False,
-        max_results=max_results,
+    admin_token = get_master_admin_token()
+    _tenant, _organization, organization_id = _organization_for_tenant(
+        tenant_id,
+        admin_token=admin_token,
     )
-    existing_usernames = {
-        username.strip().casefold()
-        for member in tenant_members
-        if isinstance(member, Mapping)
-        for username in [member.get("username")]
-        if isinstance(username, str) and username.strip()
-    }
+    normalized_search = str(search or "").strip()
+    normalized_offset = max(0, offset)
+    normalized_limit = max(1, max_results)
+    batch_size = max(25, normalized_limit * 2)
 
     available_users: list[dict[str, Any]] = []
-    for user in search_realm_users(
-        shared_realm_name(),
-        normalized_search,
-        exact=False,
-        max_results=max_results,
-    ):
-        username = user.get("username")
-        if not isinstance(username, str) or not username.strip():
-            continue
-        if username.strip().casefold() in existing_usernames:
-            continue
-        available_users.append(_serialize_group_member(user))
+    available_users_skipped = 0
+    realm_offset = 0
 
-    available_users.sort(key=lambda item: str(item.get("username") or ""))
+    while len(available_users) < normalized_limit:
+        realm_users = search_realm_users(
+            shared_realm_name(),
+            normalized_search,
+            exact=False,
+            max_results=batch_size,
+            first_result=realm_offset,
+            admin_token=admin_token,
+        )
+        if not realm_users:
+            break
+
+        existing_usernames = _organization_member_username_lookup(
+            organization_id,
+            [
+                username
+                for user in realm_users
+                for username in [user.get("username")]
+                if isinstance(username, str)
+            ],
+            admin_token=admin_token,
+        )
+
+        for user in realm_users:
+            username = user.get("username")
+            if not isinstance(username, str) or not username.strip():
+                continue
+            if username.strip().casefold() in existing_usernames:
+                continue
+            if available_users_skipped < normalized_offset:
+                available_users_skipped += 1
+                continue
+            available_users.append(_serialize_group_member(user))
+            if len(available_users) >= normalized_limit:
+                break
+
+        realm_offset += len(realm_users)
+        if len(realm_users) < batch_size:
+            break
+
     return available_users
 
 
@@ -633,15 +910,35 @@ def list_tenant_groups_with_members(
     search: str | None = None,
 ) -> list[dict[str, Any]]:
     """Return Keycloak organization groups for one tenant with mapped tenant roles and members."""
-    _tenant, _organization, organization_id = _organization_for_tenant(tenant_id)
-    group_role_lookup = _organization_group_role_lookup(organization_id)
+    admin_token = get_master_admin_token()
+    _tenant, _organization, organization_id = _organization_for_tenant(
+        tenant_id,
+        admin_token=admin_token,
+    )
+    organization_groups = list_organization_groups(
+        organization_id,
+        admin_token=admin_token,
+        brief_representation=False,
+    )
+    group_role_lookup = _organization_group_role_lookup(
+        organization_id,
+        admin_token=admin_token,
+        groups=organization_groups,
+    )
+    members_by_group_id = _organization_group_members_lookup(
+        organization_id,
+        organization_groups,
+        admin_token=admin_token,
+    )
     serialized_groups: list[dict[str, Any]] = []
 
-    for group in list_organization_groups(organization_id):
+    for group in organization_groups:
         serialized_group = _serialize_group(
             organization_id,
             group,
             group_role_lookup=group_role_lookup,
+            members_by_group_id=members_by_group_id,
+            admin_token=admin_token,
         )
         if serialized_group is None:
             continue
@@ -654,17 +951,15 @@ def list_tenant_groups_with_members(
 
 def create_tenant_group(tenant_id: str, group_name: str) -> dict[str, Any]:
     """Create one Keycloak organization group in one tenant and return the serialized group."""
-    normalized_group_name = _normalize_group_name(group_name)
-    if not normalized_group_name:
-        raise ApiError(
-            error_code="invalid_group",
-            message="Group name is required.",
-            status_code=400,
-        )
+    normalized_group_name = _validated_new_group_name(group_name)
 
     _tenant, _organization, organization_id = _organization_for_tenant(tenant_id)
     existing_group_names = _organization_group_name_lookup(organization_id)
-    if normalized_group_name.casefold() in existing_group_names:
+    existing_group_name_keys = {
+        _group_name_conflict_key(existing_group_name): existing_group_name
+        for existing_group_name in existing_group_names.values()
+    }
+    if _group_name_conflict_key(normalized_group_name) in existing_group_name_keys:
         raise ApiError(
             error_code="group_exists",
             message=f"Group '{normalized_group_name}' already exists in the tenant organization.",
