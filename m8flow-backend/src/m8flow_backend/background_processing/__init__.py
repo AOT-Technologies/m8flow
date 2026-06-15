@@ -59,6 +59,25 @@ def _iter_tasks_to_rebrand(celery_app: Any, old_prefix: str) -> list[tuple[str, 
     ]
 
 
+def _rebrand_conf_keys(celery_app: Any, old_prefix: str) -> None:
+    """Rename SPIFFWORKFLOW_BACKEND_* config keys to M8FLOW_BACKEND_* in Celery conf.
+
+    celery_app.conf.update(app.config) in the upstream init copies all Flask config
+    into the Celery conf, polluting Flower's Config tab with SPIFFWORKFLOW_BACKEND_*
+    entries. We rename them here so Flower shows M8FLOW_BACKEND_* instead.
+    """
+    changes = getattr(getattr(celery_app, "conf", None), "changes", None)
+    if not isinstance(changes, dict):
+        return
+
+    old_key_prefix = old_prefix.upper() + "_"
+    new_key_prefix = _NEW_PREFIX.upper() + "_"
+
+    for old_key in [k for k in list(changes) if isinstance(k, str) and k.startswith(old_key_prefix)]:
+        new_key = new_key_prefix + old_key[len(old_key_prefix):]
+        changes[new_key] = changes.pop(old_key)
+
+
 def rebrand_celery_tasks(flask_app: Any) -> None:
     """Rename upstream SpiffWorkflow Celery tasks to m8flow names.
 
@@ -80,6 +99,8 @@ def rebrand_celery_tasks(flask_app: Any) -> None:
     tasks_to_rename = _iter_tasks_to_rebrand(celery_app, old_prefix)
     for old_name, new_name in tasks_to_rename:
         if new_name in celery_app.tasks:
+            # New name already registered (m8flow defines its own version) — just remove the old upstream name.
+            celery_app.tasks.pop(old_name, None)
             continue
         task = celery_app.tasks.pop(old_name, None)
         if task is None:
@@ -99,6 +120,8 @@ def rebrand_celery_tasks(flask_app: Any) -> None:
                 pass
         celery_app.tasks[new_name] = task
 
+    _rebrand_conf_keys(celery_app, old_prefix)
+
     # Patch upstream constants so send_task() dispatches with new names.
     # This avoids any changes in spiffworkflow-backend while keeping worker + UI consistent.
     try:
@@ -114,4 +137,3 @@ def rebrand_celery_tasks(flask_app: Any) -> None:
     except Exception:
         # If upstream modules aren't importable in this runtime, do nothing.
         return
-
