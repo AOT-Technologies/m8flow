@@ -17,7 +17,18 @@ _CONNECTOR_DOCS_BASE = (
     "https://github.com/AOT-Technologies/m8flow/tree/main/m8flow-connector-proxy"
 )
 
-CONNECTOR_METADATA: dict[str, dict[str, str]] = {
+# Per-connector configuration fields surfaced to the Connectors "Configure" form.
+#
+# Each field becomes a Secret. The Secret key is the field's explicit "secretKey",
+# which matches the canonical name the shipped sample templates reference
+# (e.g. GITHUB_PAT_TOKEN, SLACK_TOKEN, SF_CLIENT_ID, POSTGRES_CONNECTION_STRING).
+# When a field omits "secretKey", the frontend falls back to "{connectorId}_{fieldId}".
+# Keys must match the runtime resolver M8FLOW_SECRET:(?P<name>\w+), so use only
+# word characters (uppercase letters + underscores, never hyphens). Field "type" is
+# "text" or "password"; "password" fields are masked in the UI. Connectors without a
+# "configFields" entry fall back to redirecting the user to the generic
+# Configuration > Secrets page.
+CONNECTOR_METADATA: dict[str, dict[str, Any]] = {
     "http": {
         "name": "HTTP",
         "description": "Make REST API calls from workflows",
@@ -29,36 +40,70 @@ CONNECTOR_METADATA: dict[str, dict[str, str]] = {
         "description": "Execute PostgreSQL database operations",
         "icon": "database",
         "docsUrl": f"{_CONNECTOR_DOCS_BASE}#postgresql-connector-postgres_v2",
+        "configFields": [
+            {
+                "id": "connection_string",
+                "secretKey": "POSTGRES_CONNECTION_STRING",
+                "label": "Connection String",
+                "type": "password",
+                "required": True,
+                "helpText": "dbname=databasename user=username password=password host=hostname port=portnumber",
+            },
+        ],
     },
     "slack": {
         "name": "Slack",
         "description": "Send messages and notifications",
         "icon": "chat",
         "docsUrl": f"{_CONNECTOR_DOCS_BASE}#slack-connector",
+        "configFields": [
+            {"id": "bot_token", "secretKey": "SLACK_TOKEN", "label": "Bot Token", "type": "password", "required": True},
+            {"id": "channel_id", "secretKey": "SLACK_CHANNEL_ID", "label": "Channel ID", "type": "text", "required": True},
+        ],
     },
     "github": {
         "name": "GitHub",
         "description": "Work with GitHub repositories, branches, and pull requests",
         "icon": "code",
         "docsUrl": f"{_CONNECTOR_DOCS_BASE}#m8flow-connector-proxy",
+        "configFields": [
+            {"id": "pat_token", "secretKey": "GITHUB_PAT_TOKEN", "label": "Personal Access Token", "type": "password", "required": True},
+        ],
     },
     "salesforce": {
         "name": "Salesforce",
         "description": "Manage Salesforce leads and contacts",
         "icon": "cloud",
         "docsUrl": f"{_CONNECTOR_DOCS_BASE}#salesforce-connector",
+        "configFields": [
+            {"id": "client_id", "secretKey": "SF_CLIENT_ID", "label": "Client ID", "type": "text", "required": True},
+            {"id": "client_secret", "secretKey": "SF_CLIENT_SECRET", "label": "Client Secret", "type": "password", "required": True},
+            {"id": "access_token", "secretKey": "SF_ACCESS_TOKEN", "label": "Access Token", "type": "password", "required": True},
+            {"id": "refresh_token", "secretKey": "SF_REFRESH_TOKEN", "label": "Refresh Token", "type": "password", "required": True},
+            {"id": "instance_url", "secretKey": "SF_INSTANCE_URL", "label": "Instance URL", "type": "text", "required": True},
+        ],
     },
     "smtp": {
         "name": "SMTP",
         "description": "Send emails through SMTP",
         "icon": "email",
         "docsUrl": f"{_CONNECTOR_DOCS_BASE}#smtp-connector",
+        "configFields": [
+            {"id": "host", "secretKey": "SMTP_HOST", "label": "Host", "type": "text", "required": True},
+            {"id": "port", "secretKey": "SMTP_PORT", "label": "Port", "type": "text", "required": True},
+            {"id": "username", "secretKey": "SMTP_USER", "label": "Username", "type": "text", "required": True},
+            {"id": "password", "secretKey": "SMTP_PASSWORD", "label": "Password", "type": "password", "required": True},
+            {"id": "from_email", "secretKey": "SMTP_FROM_EMAIL", "label": "From Email", "type": "text", "required": False},
+        ],
     },
     "stripe": {
         "name": "Stripe",
         "description": "Create payments, subscriptions, charges, and refunds",
         "icon": "payment",
         "docsUrl": f"{_CONNECTOR_DOCS_BASE}#stripe-connector",
+        "configFields": [
+            {"id": "api_key", "secretKey": "STRIPE_KEY", "label": "API Key", "type": "password", "required": True},
+        ],
     },
 }
 
@@ -139,6 +184,9 @@ def connectors_grouped() -> flask.wrappers.Response:
                 group_entry["docsUrl"] = docs_url
             else:
                 group_entry["docsUrl"] = _CONNECTOR_DOCS_BASE
+            config_fields = meta.get("configFields", [])
+            if config_fields:
+                group_entry["configFields"] = config_fields
             groups[connector_key] = group_entry
 
         group = groups[connector_key]
