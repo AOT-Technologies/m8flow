@@ -214,5 +214,16 @@
   "no_connectors_available": "No connectors are available at this time.",
   "no_matching_connectors": "No connectors match your search.",
   "connectors_load_failed": "Could not load connectors. Check that the connector proxy is running and configured.",
+  "connector_configure_title": "Configure {{name}}",
+  "connector_config_subtitle": "Enter the credentials this connector needs. Values are saved as secrets and can be referenced from Service Tasks.",
+  "connector_config_save": "Save configuration",
+  "connector_config_saved": "Connector configuration saved.",
+  "connector_config_save_failed": "Could not save the connector configuration. Please try again.",
+  "connector_config_load_failed": "Could not load the connector configuration.",
+  "connector_config_field_set": "Configured",
+  "connector_config_leave_blank_hint": "Leave blank to keep the current value",
+  "connector_config_reference_hint": "Reference in a Service Task as",
+  "connector_config_required_field": "This field is required.",
+  "toggle_visibility": "Toggle visibility",
   "tasks": "Tasks"
 }
