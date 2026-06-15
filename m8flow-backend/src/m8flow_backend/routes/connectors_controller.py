@@ -7,15 +7,47 @@ metadata.
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
+from typing import NotRequired
+from typing import TypedDict
 
 import flask.wrappers
 from flask import jsonify, make_response
 
+logger = logging.getLogger(__name__)
+
 _CONNECTOR_DOCS_BASE = (
     "https://github.com/AOT-Technologies/m8flow/tree/main/m8flow-connector-proxy"
 )
+
+# A saved secret name must match the runtime resolver M8FLOW_SECRET:(?P<name>\w+),
+# so the effective key for every config field has to be all word characters.
+_SECRET_KEY_RE = re.compile(r"^\w+$")
+
+
+class ConnectorConfigField(TypedDict):
+    """A single credential field rendered in the Connectors "Configure" form."""
+
+    id: str
+    label: str
+    type: str  # "text" | "password"
+    required: bool
+    # Canonical Secret key (e.g. GITHUB_PAT_TOKEN). When omitted, the frontend
+    # falls back to "{connectorId}_{id}".
+    secretKey: NotRequired[str]
+    helpText: NotRequired[str]
+
+
+class ConnectorMeta(TypedDict):
+    """Display + configuration metadata for one connector."""
+
+    name: str
+    description: str
+    icon: str
+    docsUrl: NotRequired[str]
+    configFields: NotRequired[list[ConnectorConfigField]]
 
 # Per-connector configuration fields surfaced to the Connectors "Configure" form.
 #
@@ -28,7 +60,7 @@ _CONNECTOR_DOCS_BASE = (
 # "text" or "password"; "password" fields are masked in the UI. Connectors without a
 # "configFields" entry fall back to redirecting the user to the generic
 # Configuration > Secrets page.
-CONNECTOR_METADATA: dict[str, dict[str, Any]] = {
+CONNECTOR_METADATA: dict[str, ConnectorMeta] = {
     "http": {
         "name": "HTTP",
         "description": "Make REST API calls from workflows",
@@ -147,6 +179,37 @@ def _humanize_connector_key(key: str) -> str:
     return " ".join(w.capitalize() for w in words if w)
 
 
+def effective_secret_key(connector_key: str, field: ConnectorConfigField) -> str:
+    """The Secret key a config field resolves to (explicit, else derived)."""
+    return field.get("secretKey") or f"{connector_key}_{field['id']}"
+
+
+def _valid_config_fields(
+    connector_key: str, fields: list[ConnectorConfigField]
+) -> list[ConnectorConfigField]:
+    """Drop fields whose effective Secret key can't be resolved at runtime.
+
+    The runtime resolver only matches ``M8FLOW_SECRET:(?P<name>\\w+)``; a field
+    whose key contains non-word characters would save a secret that no Service
+    Task could ever reference, so it is rejected here (with a warning) rather
+    than surfaced in the UI.
+    """
+    valid: list[ConnectorConfigField] = []
+    for field in fields:
+        key = effective_secret_key(connector_key, field)
+        if _SECRET_KEY_RE.match(key):
+            valid.append(field)
+        else:
+            logger.warning(
+                "Connector '%s' config field '%s' has invalid secret key '%s' "
+                "(must match ^\\w+$); skipping it.",
+                connector_key,
+                field.get("id"),
+                key,
+            )
+    return valid
+
+
 def connectors_grouped() -> flask.wrappers.Response:
     """Return service-task operations grouped by connector with metadata."""
     from spiffworkflow_backend.services.service_task_service import ServiceTaskService
@@ -184,7 +247,9 @@ def connectors_grouped() -> flask.wrappers.Response:
                 group_entry["docsUrl"] = docs_url
             else:
                 group_entry["docsUrl"] = _CONNECTOR_DOCS_BASE
-            config_fields = meta.get("configFields", [])
+            config_fields = _valid_config_fields(
+                connector_key, meta.get("configFields", [])
+            )
             if config_fields:
                 group_entry["configFields"] = config_fields
             groups[connector_key] = group_entry
