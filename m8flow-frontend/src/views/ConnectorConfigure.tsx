@@ -52,14 +52,18 @@ interface FieldState {
  *
  * Prefers the field's explicit `secretKey` (the canonical name the sample
  * templates reference, e.g. GITHUB_PAT_TOKEN). Falls back to
- * `{connectorId}_{fieldId}` when none is declared. Either way the result uses
- * only word characters (no hyphens): the runtime resolver matches
- * `M8FLOW_SECRET:(?P<name>\w+)` and `\w` excludes "-".
+ * `{connectorId}_{fieldId}` when none is declared. The result is normalized to
+ * word characters only: the runtime resolver matches
+ * `M8FLOW_SECRET:(?P<name>\w+)` and `\w` excludes "-", so any non-word char in a
+ * connector/field id (or a malformed explicit key) would otherwise produce a
+ * secret that can never be resolved. The replace is a no-op for the existing
+ * all-uppercase explicit keys.
  */
-const secretKeyFor = (
+export const secretKeyFor = (
   connectorId: string,
   field: ConnectorConfigField,
-): string => field.secretKey ?? `${connectorId}_${field.id}`;
+): string =>
+  (field.secretKey ?? `${connectorId}_${field.id}`).replace(/\W/g, '_');
 
 const callBackend = (opts: {
   path: string;
@@ -76,6 +80,49 @@ const callBackend = (opts: {
     });
   });
 
+/** Page size when scanning existing secrets. */
+const SECRETS_PER_PAGE = 100;
+
+/**
+ * Fetch every Secret key visible to the active tenant.
+ *
+ * Follows pagination (`{ results, pagination: { pages } }`) so keys beyond the
+ * first page are not missed — fetching only page 1 would wrongly report a
+ * connector secret as "not configured" for tenants with many secrets, forcing a
+ * spurious required-field error and a POST create that conflicts with the
+ * already-existing key. Correct even if the server caps `per_page`, since it
+ * relies on the reported page count.
+ */
+const fetchAllSecretKeys = async (): Promise<Set<string>> => {
+  const keys = new Set<string>();
+  const collect = (res: any) =>
+    (res?.results ?? []).forEach((r: any) => {
+      if (r?.key) {
+        keys.add(r.key);
+      }
+    });
+
+  const firstPage: any = await callBackend({
+    path: `/secrets?per_page=${SECRETS_PER_PAGE}&page=1`,
+    httpMethod: 'GET',
+  });
+  collect(firstPage);
+
+  const totalPages = Number(firstPage?.pagination?.pages) || 1;
+  if (totalPages > 1) {
+    const remaining = await Promise.all(
+      Array.from({ length: totalPages - 1 }, (_, i) =>
+        callBackend({
+          path: `/secrets?per_page=${SECRETS_PER_PAGE}&page=${i + 2}`,
+          httpMethod: 'GET',
+        }),
+      ),
+    );
+    remaining.forEach(collect);
+  }
+  return keys;
+};
+
 /**
  * Connector-specific configuration form.
  *
@@ -88,6 +135,12 @@ const callBackend = (opts: {
  * Secret values are write-only by design, so existing values are never pre-filled:
  * a field whose secret already exists is shown as "Configured" and left unchanged
  * unless the user types a new value.
+ *
+ * Access is intentionally gated on secret WRITE (POST) permission: this is a
+ * credential-entry form whose only purpose is to create/update secrets, and the
+ * Connectors page only surfaces the "Configure" action to POST-capable users.
+ * Users without write access are redirected away rather than shown a read-only
+ * view.
  */
 export default function ConnectorConfigure() {
   const { t } = useTranslation();
@@ -144,12 +197,9 @@ export default function ConnectorConfigure() {
         setConnector(match);
 
         // 2. Determine which fields already have a saved secret (keys only).
-        HttpService.makeCallToBackend({
-          path: '/secrets?per_page=100&page=1',
-          successCallback: (secretResult: any) => {
-            const keys = new Set<string>(
-              (secretResult?.results ?? []).map((r: any) => r.key),
-            );
+        //    Scans every page so a secret beyond page 1 is still detected.
+        fetchAllSecretKeys()
+          .then((keys) => {
             const initial: Record<string, FieldState> = {};
             match.configFields!.forEach((field) => {
               initial[field.id] = {
@@ -159,12 +209,11 @@ export default function ConnectorConfigure() {
             });
             setFieldStates(initial);
             setLoading(false);
-          },
-          failureCallback: () => {
+          })
+          .catch(() => {
             setLoadError(t('connector_config_load_failed'));
             setLoading(false);
-          },
-        });
+          });
       },
       failureCallback: () => {
         setLoadError(t('connector_config_load_failed'));
