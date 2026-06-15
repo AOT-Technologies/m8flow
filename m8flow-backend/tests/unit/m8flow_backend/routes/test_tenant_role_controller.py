@@ -62,21 +62,31 @@ def _mock_user():
 def test_list_tenant_members_returns_service_payload(monkeypatch):
     tenant_role_controller = _load_tenant_role_controller(monkeypatch)
     app = Flask(__name__)
+    service_calls: list[tuple[str, str | None, int, int]] = []
     monkeypatch.setattr(
         tenant_role_controller,
         "list_tenant_members_with_roles",
-        lambda tenant_id, search=None: [{"username": "editor", "roles": ["editor"]}],
+        lambda tenant_id, search=None, offset=0, max_results=100: service_calls.append(
+            (tenant_id, search, offset, max_results)
+        )
+        or [{"username": "editor", "roles": ["editor"]}],
     )
 
-    with app.test_request_context("/m8flow/tenants/tenant-it-id/members?search=ed"):
+    with app.test_request_context(
+        "/m8flow/tenants/tenant-it-id/members?search=ed&offset=10&limit=10"
+    ):
         g.user = _mock_user()
         g._m8flow_super_admin_request = True
         response = tenant_role_controller.list_tenant_members("tenant-it-id")
 
     assert response.status_code == 200
+    assert service_calls == [("tenant-it-id", "ed", 10, 11)]
     assert response.get_json() == {
         "tenant_id": "tenant-it-id",
         "search": "ed",
+        "offset": 10,
+        "limit": 10,
+        "has_more": False,
         "members": [{"username": "editor", "roles": ["editor"]}],
     }
 
@@ -84,21 +94,31 @@ def test_list_tenant_members_returns_service_payload(monkeypatch):
 def test_list_available_tenant_users_returns_service_payload(monkeypatch):
     tenant_role_controller = _load_tenant_role_controller(monkeypatch)
     app = Flask(__name__)
+    service_calls: list[tuple[str, str | None, int, int]] = []
     monkeypatch.setattr(
         tenant_role_controller,
         "list_available_tenant_users",
-        lambda tenant_id, search=None: [{"username": "editor", "email": "editor@example.com"}],
+        lambda tenant_id, search=None, offset=0, max_results=100: service_calls.append(
+            (tenant_id, search, offset, max_results)
+        )
+        or [{"username": "editor", "email": "editor@example.com"}],
     )
 
-    with app.test_request_context("/m8flow/tenants/tenant-it-id/available-users?search=ed"):
+    with app.test_request_context(
+        "/m8flow/tenants/tenant-it-id/available-users?search=ed&offset=10&limit=10"
+    ):
         g.user = _mock_user()
         g._m8flow_super_admin_request = True
         response = tenant_role_controller.list_available_tenant_users_for_tenant("tenant-it-id")
 
     assert response.status_code == 200
+    assert service_calls == [("tenant-it-id", "ed", 10, 11)]
     assert response.get_json() == {
         "tenant_id": "tenant-it-id",
         "search": "ed",
+        "offset": 10,
+        "limit": 10,
+        "has_more": False,
         "users": [{"username": "editor", "email": "editor@example.com"}],
     }
 
