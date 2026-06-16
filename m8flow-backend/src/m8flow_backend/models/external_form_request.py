@@ -39,6 +39,7 @@ class ExternalFormRequestModel(M8fTenantScopedMixin, TenantScoped, Spiffworkflow
     __tablename__ = "m8flow_external_form_requests"
     __table_args__ = (
         db.Index("ix_m8flow_external_form_requests_instance_task", "process_instance_id", "task_guid"),
+        db.Index("ix_m8flow_external_form_requests_sweep", "status", "notified_at_in_seconds"),
     )
 
     id: int = db.Column(db.Integer, primary_key=True)
@@ -56,6 +57,7 @@ class ExternalFormRequestModel(M8fTenantScopedMixin, TenantScoped, Spiffworkflow
     expires_at_in_seconds: Optional[int] = db.Column(db.Integer, nullable=True)
     attempts: int = db.Column(db.Integer, nullable=False, default=0)
     last_error: Optional[str] = db.Column(db.Text, nullable=True)
+    notified_at_in_seconds: Optional[int] = db.Column(db.Integer, nullable=True)
 
     def is_actionable(self) -> bool:
         return self.status in ACTIONABLE_STATUSES
