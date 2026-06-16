@@ -3,6 +3,8 @@ import asyncio
 import json
 import logging
 import uuid
+from m8flow_backend.config import nats_notifications_stream_name
+from m8flow_backend.config import nats_notifications_subject
 from m8flow_backend.config import nats_url
 from spiffworkflow_backend.exceptions.api_error import ApiError
 
@@ -113,7 +115,57 @@ class NatsService:
 
 
     @staticmethod
+    async def _publish_notification(tenant_slug: str, payload: dict) -> None:
+        """Fire-and-forget publish of an internal notification event (M8F-339).
+
+        Unlike trigger events there is no api_key and no reply inbox: the producer is
+        the backend itself and the payload is only a pointer — the worker re-reads all
+        authoritative state from the database. Nats-Msg-Id is deterministic per
+        (tenant, instance, task) so JetStream's dedup window absorbs rapid repeat
+        publishes from back-to-back save() calls."""
+        if NATS is None:
+            raise ApiError(
+                error_code="nats_dependency_missing",
+                message="NATS support is not available because the 'nats-py' dependency is not installed.",
+                status_code=503,
+            )
+
+        nc = NATS()
+        await nc.connect(nats_url(), connect_timeout=5)
+        try:
+            js = nc.jetstream()
+            stream_name = nats_notifications_stream_name()
+            try:
+                await js.stream_info(stream_name)
+            except NotFoundError:
+                logger.info(
+                    "nats_service: creating notifications stream '%s' (subject '%s')",
+                    stream_name,
+                    nats_notifications_subject(),
+                )
+                await js.add_stream(name=stream_name, subjects=[nats_notifications_subject()])
+
+            subject = f"m8flow.notifications.{tenant_slug}.external-form"
+            message_id = f"extform-{tenant_slug}-{payload.get('process_instance_id')}-{payload.get('task_guid')}"
+            ack = await js.publish(
+                subject,
+                json.dumps(payload).encode("utf-8"),
+                headers={"Nats-Msg-Id": message_id, "tenant_slug": tenant_slug},
+            )
+            logger.info(
+                "Published notification to NATS: subject=%s stream=%s seq=%s", subject, ack.stream, ack.seq
+            )
+        finally:
+            await nc.close()
+
+    @classmethod
+    def publish_notification(cls, tenant_slug: str, payload: dict) -> None:
+        """Synchronous wrapper to publish a notification event to NATS."""
+        cls._run_coroutine(cls._publish_notification(tenant_slug, payload))
+
+    @classmethod
     def publish_event(
+        cls,
         tenant_id: str,
         tenant_slug: str,
         process_identifier: str,
@@ -132,23 +184,18 @@ class NatsService:
             api_key=api_key,
             stream_name=stream_name
         )
+        return cls._run_coroutine(coro)
 
-        
+    @staticmethod
+    def _run_coroutine(coro):
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
-            # No loop is running, we can use asyncio.run
             return asyncio.run(coro)
-        
-        # If a loop is already running (e.g. in uvicorn), we can't use asyncio.run
-        # We use a Future to wait for the result from the coroutine
         if loop.is_running():
-            # This is tricky in a synchronous Flask handler. 
-            # However, if we are in an ASGI environment, we might actually be in a sync thread worker.
-            # For now, let's try to run it in a new thread or use a loop runner.
             from concurrent.futures import ThreadPoolExecutor
             with ThreadPoolExecutor() as executor:
                 return executor.submit(asyncio.run, coro).result()
-        
+
         return loop.run_until_complete(coro)
 

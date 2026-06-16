@@ -185,6 +185,38 @@ def nats_url() -> str:
     return _get("M8FLOW_NATS_URL")
 
 
+def nats_enabled() -> bool:
+    """Whether the NATS event-driven integration is switched on."""
+    return (_get("M8FLOW_NATS_ENABLED") or "false").lower() == "true"
+
+
+def nats_notifications_stream_name() -> str:
+    """JetStream stream for notification events — separate from the
+    trigger stream so the engine consumer never receives notification traffic."""
+    return _get("M8FLOW_NATS_NOTIFICATIONS_STREAM_NAME") or "M8FLOW_NOTIFICATIONS"
+
+
+def nats_notifications_subject() -> str:
+    """Subject wildcard the notifications stream captures."""
+    return _get("M8FLOW_NATS_NOTIFICATIONS_SUBJECT") or "m8flow.notifications.>"
+
+
 def external_form_link_ttl_seconds() -> int:
     """How long an external-form secure link stays valid, from environment."""
-    return int(_get("M8FLOW_EXTERNAL_FORM_LINK_TTL_SECONDS"))
+    return int(_get("M8FLOW_EXTERNAL_FORM_LINK_TTL_SECONDS") or "604800")
+
+
+def notification_max_attempts() -> int:
+    """Give up notifying a request after this many failed email attempts."""
+    return int(_get("M8FLOW_NOTIFICATION_MAX_ATTEMPTS") or "5")
+
+
+def notification_sweep_interval_seconds() -> int:
+    """How often the notification worker sweeps for missed pending requests."""
+    return int(_get("M8FLOW_NOTIFICATION_SWEEP_INTERVAL_SECONDS") or "60")
+
+
+def notification_sweep_grace_seconds() -> int:
+    """Pending rows younger than this are left to the event fast-path before
+    the sweep picks them up, so the two never race on fresh rows."""
+    return int(_get("M8FLOW_NOTIFICATION_SWEEP_GRACE_SECONDS") or "120")
