@@ -642,6 +642,87 @@ def mock_process_groups_api(
 
 
 # ===================================================================
+# Task mock data (Home tab task list)
+# ===================================================================
+
+_TASKS_LIST_RE = re.compile(r"/v1\.0/tasks(?:\?|$)")
+
+# A single ``ProcessInstanceTask``-shaped record. Field names mirror those read
+# by ``TaskTable`` (``m8flow-frontend/src/components/TaskTable.tsx``).
+MOCK_TASK: dict[str, Any] = {
+    "id": 101,
+    "process_instance_id": 101,
+    "task_id": "Activity_review_0001",
+    "task_name": "review_task",
+    "task_title": "Review request",
+    "process_model_identifier": "group-alpha/expense-approval",
+    "process_model_display_name": "Expense Approval",
+    "process_initiator_username": "initiator-user",
+    "created_at_in_seconds": 1_700_000_000,
+    "updated_at_in_seconds": 1_700_000_500,
+    "last_milestone_bpmn_name": "Submitted",
+    "potential_owner_usernames": "admin",
+    "assigned_user_group_identifier": "",
+    "status": "user_input_required",
+    "summary": "Awaiting reviewer decision",
+}
+
+ALL_MOCK_TASKS: list[dict[str, Any]] = [copy.deepcopy(MOCK_TASK)]
+
+
+def make_task(overrides: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Create a copy of :data:`MOCK_TASK` with optional field overrides."""
+    task = copy.deepcopy(MOCK_TASK)
+    if overrides:
+        task.update(overrides)
+    return task
+
+
+def make_tasks(
+    count: int, overrides: dict[str, Any] | None = None
+) -> list[dict[str, Any]]:
+    """Generate *count* distinct mock tasks (unique ids / titles / models)."""
+    tasks: list[dict[str, Any]] = []
+    for i in range(count):
+        task = make_task({
+            "id": 1000 + i,
+            "process_instance_id": 1000 + i,
+            "task_id": f"Activity_{i:04d}",
+            "task_title": f"Review request #{i}",
+            "process_model_display_name": f"Expense Approval {i}",
+            "process_model_identifier": f"group-alpha/expense-approval-{i}",
+        })
+        if overrides:
+            task.update(overrides)
+        tasks.append(task)
+    return tasks
+
+
+def mock_tasks_api(
+    page: Page,
+    tasks: list[dict[str, Any]] | None = None,
+) -> None:
+    """Intercept ``GET /v1.0/tasks`` (the Home task list) and return *tasks*.
+
+    Only the list endpoint is fulfilled; task-detail navigations and every
+    other backend call fall through untouched. Pass ``[]`` to exercise the
+    empty state. Call ``page.unroute_all()`` to remove the handler.
+    """
+    source = tasks if tasks is not None else copy.deepcopy(ALL_MOCK_TASKS)
+    payload = {"results": [copy.deepcopy(t) for t in source]}
+
+    def _handle(route: Route) -> None:
+        parsed = urlparse(route.request.url)
+        probe = parsed.path + ("?" if parsed.query else "")
+        if route.request.method != "GET" or not _TASKS_LIST_RE.search(probe):
+            route.fallback()
+            return
+        _json_response(route, payload)
+
+    page.route("**/v1.0/tasks*", _handle)
+
+
+# ===================================================================
 # Permissions mocking
 # ===================================================================
 
