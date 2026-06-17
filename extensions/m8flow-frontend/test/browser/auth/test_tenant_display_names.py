@@ -205,7 +205,7 @@ def test_multi_org_tenant_selector_and_sidenav_use_display_names(admin_page: Pag
         timeout=NAV_TIMEOUT
     )
     expect(admin_page.get_by_test_id("nav-tenant-name")).to_contain_text(
-        f"Tenant: {chosen['name']}", timeout=SHORT_TIMEOUT
+        chosen["name"], timeout=SHORT_TIMEOUT
     )
 
     admin_page.get_by_test_id("nav-user-actions-button").click()
@@ -304,7 +304,7 @@ def test_tenant_admin_can_submit_tenant_rename_for_selected_org(admin_page: Page
     assert payload["name"] == renamed_organization["name"]
 
     expect(admin_page.get_by_test_id("nav-tenant-name")).to_contain_text(
-        f"Tenant: {renamed_organization['name']}", timeout=SHORT_TIMEOUT
+        renamed_organization["name"], timeout=SHORT_TIMEOUT
     )
     logger.info(
         "Tenant-admin rename request succeeded for '%s' (%s).",

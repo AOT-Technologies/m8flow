@@ -19,6 +19,7 @@ from helpers.mocks import (
     mock_all_apis,
     MOCK_TEMPLATE_PRIVATE,
     MOCK_TEMPLATE_PUBLIC,
+    MOCK_TEMPLATE_PUBLISHED,
     ALL_MOCK_TEMPLATES,
     MOCK_PROCESS_GROUP,
     MOCK_PROCESS_GROUP_HR,
@@ -111,7 +112,16 @@ def mocked_process_model_page(process_models_editor_page: Page) -> Page:
     _reset_for_next_test(page)
     _install_clear_spiff_favorites_init_script(page)
     mock_permissions_api(page)
-    mock_template_api(page, templates=ALL_MOCK_TEMPLATES)
+    # Creating a process model is gated to PUBLISHED templates
+    # (TemplateModelerPage: disableCreateProcessModel = !template.isPublished),
+    # so the first gallery card and the detail endpoint must be published or the
+    # create button stays disabled.
+    mock_template_api(
+        page,
+        templates=[MOCK_TEMPLATE_PUBLISHED, *ALL_MOCK_TEMPLATES],
+        template_detail=MOCK_TEMPLATE_PUBLISHED,
+        all_versions=[MOCK_TEMPLATE_PUBLISHED],
+    )
     mock_template_files_api(page)
     mock_process_groups_api(page, groups=ALL_MOCK_PROCESS_GROUPS)
     mock_create_process_model_api(page)
