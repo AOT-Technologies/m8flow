@@ -1,0 +1,35 @@
+# M8Flow MCP Server - Docker Compose
+# Usage: docker compose up -d --build
+
+version: '3.8'
+
+services:
+  m8flow-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: m8flow/m8flow-mcp:latest
+    container_name: m8flow-mcp
+    restart: unless-stopped
+    env_file:
+      - .env
+
+    environment:
+      SERVER_TYPE: remote
+      PORT: 8000
+      M8FLOW_API_URL: http://host.docker.internal:6840
+      KEYCLOAK_URL: http://host.docker.internal:6842
+      KEYCLOAK_REALM: m8flow
+      LOG_LEVEL: INFO
+      PYTHONUNBUFFERED: "1"
+    ports:
+      - "8000:8000"
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8000/health\", timeout=5)' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
