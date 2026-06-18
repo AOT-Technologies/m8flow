@@ -104,7 +104,7 @@ export default function Connectors() {
   }
 
   return (
-    <Box sx={{ p: 3 }}>
+    <Box sx={{ p: 3 }} data-testid="connectors-page">
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
         <Typography variant="h4" sx={{ fontWeight: 700 }}>
           {t('connectors')}
@@ -166,6 +166,7 @@ export default function Connectors() {
       ) : connectors.length === 0 ? (
         <Paper
           elevation={0}
+          data-testid="connectors-empty"
           sx={{
             p: 4,
             textAlign: 'center',
@@ -181,6 +182,7 @@ export default function Connectors() {
       ) : filtered.length === 0 ? (
         <Paper
           elevation={0}
+          data-testid="connectors-no-match"
           sx={{
             p: 4,
             textAlign: 'center',
@@ -199,6 +201,7 @@ export default function Connectors() {
             <Grid size={{ xs: 12, sm: 6, md: 4 }} key={connector.id}>
               <Paper
                 elevation={0}
+                data-testid={`connector-card-${connector.id}`}
                 sx={{
                   p: 2.5,
                   height: '100%',
@@ -220,6 +223,7 @@ export default function Connectors() {
                     <Typography
                       variant="h6"
                       component="h2"
+                      data-testid={`connector-name-${connector.id}`}
                       sx={{ fontWeight: 600, lineHeight: 1.3 }}
                     >
                       {connector.name}
@@ -237,6 +241,7 @@ export default function Connectors() {
                     size="small"
                     variant="outlined"
                     color="primary"
+                    data-testid={`connector-op-count-${connector.id}`}
                   />
                   <Chip
                     icon={<CheckCircleOutlineIcon />}
@@ -250,6 +255,7 @@ export default function Connectors() {
                 <Typography
                   variant="body2"
                   color="text.secondary"
+                  data-testid={`connector-description-${connector.id}`}
                   sx={{ mb: 2, flexGrow: 1 }}
                 >
                   {connector.description || t('use_via_service_task')}
