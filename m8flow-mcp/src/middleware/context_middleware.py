@@ -15,7 +15,7 @@ from fastmcp.server.middleware import Middleware, MiddlewareContext
 
 # from simple_auth import get_bearer_token  # Not needed - deprecated middleware
 from src.config import settings
-from src.utils.context import set_tenant_id, AUTH_TOKEN_KEY
+from src.utils.context import AUTH_TOKEN_KEY, set_tenant_id
 
 
 class ContextExtractionMiddleware(Middleware):

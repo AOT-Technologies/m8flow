@@ -7,9 +7,9 @@ then use get_tool() / list_tools() from the server layer.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable
-
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Internal registry — populated by the @tool decorator
@@ -25,13 +25,14 @@ class ToolDefinition:
     name: str
     description: str
     parameters: dict[str, Any]  # JSON-Schema describing accepted params
-    required_roles: list[str]   # user must hold *any one* of these roles
+    required_roles: list[str]  # user must hold *any one* of these roles
     handler: Callable[[dict[str, Any], str], Awaitable[Any]]
 
 
 # ---------------------------------------------------------------------------
 # Decorator used by tool modules
 # ---------------------------------------------------------------------------
+
 
 def tool(
     name: str,
@@ -66,7 +67,10 @@ def tool(
         async def list_tasks(params: dict, token: str):
             ...
     """
-    def decorator(func: Callable[[dict[str, Any], str], Awaitable[Any]]) -> Callable[[dict[str, Any], str], Awaitable[Any]]:
+
+    def decorator(
+        func: Callable[[dict[str, Any], str], Awaitable[Any]],
+    ) -> Callable[[dict[str, Any], str], Awaitable[Any]]:
         _registry[name] = ToolDefinition(
             name=name,
             description=description,
@@ -75,12 +79,14 @@ def tool(
             handler=func,
         )
         return func
+
     return decorator
 
 
 # ---------------------------------------------------------------------------
 # Public helpers consumed by server.py
 # ---------------------------------------------------------------------------
+
 
 def get_tool(name: str) -> ToolDefinition | None:
     """Get a tool definition by name."""
@@ -95,7 +101,7 @@ def list_tools() -> list[ToolDefinition]:
 def register_all() -> None:
     """Import every tool module so their @tool decorators execute."""
     # Import all tool modules to trigger decorator execution
-    from src.tools import process_models, process_instances, tasks  # noqa: F401
+    from src.tools import process_instances, process_models, tasks  # noqa: F401
 
 
 __all__ = [

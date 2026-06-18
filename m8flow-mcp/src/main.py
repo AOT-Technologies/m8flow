@@ -2,17 +2,21 @@
 
 from __future__ import annotations
 
+import base64
+import json
+import os
 import sys
 
 from fastmcp import FastMCP
 
 from src.config import settings
+from src.mcp_tools import register_tools
 from src.middleware import (
     ContextExtractionMiddleware,
     ObservabilityMiddleware,
     TenantContextMiddleware,
 )
-from src.mcp_tools import register_tools
+from src.utils.context import set_auth_token, set_tenant_id
 from src.utils.logging import get_logger, setup_logging
 
 # Setup logging
@@ -30,17 +34,9 @@ mcp.add_middleware(TenantContextMiddleware())
 # Set authentication token at startup
 # NOTE: Middleware-based auth doesn't work reliably with FastMCP 3.4.2
 # as on_call_tool isn't consistently invoked. Setting globally instead.
-import os
-from src.utils.context import set_auth_token, set_tenant_id
-import json
-import base64
 
 # Get token from environment or settings
-auth_token = (
-    os.getenv("M8FLOW_BEARER_TOKEN")
-    or os.getenv("FORMSFLOW_BEARER_TOKEN")
-    or settings.m8flow_bearer_token
-)
+auth_token = os.getenv("M8FLOW_BEARER_TOKEN") or os.getenv("FORMSFLOW_BEARER_TOKEN") or settings.m8flow_bearer_token
 
 if auth_token:
     # Ensure Bearer prefix
@@ -51,15 +47,17 @@ if auth_token:
     # Extract tenant ID from JWT token
     try:
         token_part = auth_token.replace("Bearer ", "")
-        parts = token_part.split('.')
+        parts = token_part.split(".")
         if len(parts) == 3:
             # Decode JWT payload
-            payload = parts[1] + '=' * (4 - len(parts[1]) % 4)
+            payload = parts[1] + "=" * (4 - len(parts[1]) % 4)
             claims = json.loads(base64.urlsafe_b64decode(payload))
-            tenant_id = claims.get('m8flow_tenant_id')
+            tenant_id = claims.get("m8flow_tenant_id")
             if tenant_id:
                 set_tenant_id(tenant_id)
-                logger.info(f"Authentication configured: user={claims.get('preferred_username')}, tenant={tenant_id[:20]}...")
+                logger.info(
+                    f"Authentication configured: user={claims.get('preferred_username')}, tenant={tenant_id[:20]}..."
+                )
             else:
                 logger.warning("No m8flow_tenant_id found in JWT claims")
     except Exception as e:

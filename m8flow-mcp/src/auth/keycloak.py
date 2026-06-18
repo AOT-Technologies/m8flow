@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
-from jose import ExpiredSignatureError, jwt, JWTError
+from jose import ExpiredSignatureError, JWTError, jwt
 
 from src.utils.logging import get_logger
 
@@ -102,7 +102,7 @@ class KeycloakAuth:
                 logger.debug(f"Fetched JWKS from {self.jwks_uri}")
                 return self._jwks
         except httpx.HTTPError as exc:
-            raise AuthError(502, f"Failed to fetch JWKS from Keycloak: {exc}")
+            raise AuthError(502, f"Failed to fetch JWKS from Keycloak: {exc}") from exc
 
     @staticmethod
     def _find_key(jwks: dict[str, Any], kid: str) -> dict[str, Any] | None:
@@ -117,7 +117,7 @@ class KeycloakAuth:
         """
         for key in jwks.get("keys", []):
             if key.get("kid") == kid:
-                return key  # type: ignore[return-value]
+                return key  # type: ignore[no-any-return]
         return None
 
     @staticmethod
@@ -169,8 +169,8 @@ class KeycloakAuth:
         # 1. Decode header to find the signing key id
         try:
             header = jwt.get_unverified_header(token)
-        except JWTError:
-            raise AuthError(401, "Malformed JWT token")
+        except JWTError as exc:
+            raise AuthError(401, "Malformed JWT token") from exc
 
         kid = header.get("kid")
         if not kid or not isinstance(kid, str):
@@ -196,10 +196,10 @@ class KeycloakAuth:
                 issuer=self.issuer,
                 options={"verify_aud": False},  # Manual audience check below
             )
-        except ExpiredSignatureError:
-            raise AuthError(401, "Token has expired")
+        except ExpiredSignatureError as exc:
+            raise AuthError(401, "Token has expired") from exc
         except JWTError as exc:
-            raise AuthError(401, f"Token validation failed: {exc}")
+            raise AuthError(401, f"Token validation failed: {exc}") from exc
 
         # 4. Audience verification — accept token if aud or azp matches
         aud = payload.get("aud", [])

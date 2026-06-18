@@ -69,8 +69,7 @@ async def get_process_model(params: dict[str, Any], token: str) -> Any:
 @tool(
     name="start_process_instance",
     description=(
-        "Start a new process instance from a process model. "
-        "This initiates a workflow execution. Admin role required."
+        "Start a new process instance from a process model. This initiates a workflow execution. Admin role required."
     ),
     parameters={
         "type": "object",

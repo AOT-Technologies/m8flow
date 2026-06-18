@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Interactive demo of m8flow MCP tools."""
 
 import asyncio
 import json
-import sys
 import os
+import sys
 
 # Fix Windows console encoding
 if sys.platform == "win32":
     import codecs
+
     sys.stdout = codecs.getwriter("utf-8")(sys.stdout.buffer, errors="replace")
 
 # Add src to path
@@ -36,14 +36,15 @@ async def demo_tools():
 
     # Decode token to get tenant ID
     import base64
-    parts = token.split('.')
+
+    parts = token.split(".")
     if len(parts) == 3:
         payload = parts[1]
-        payload += '=' * (4 - len(payload) % 4)
+        payload += "=" * (4 - len(payload) % 4)
         decoded = base64.urlsafe_b64decode(payload)
         claims = json.loads(decoded)
-        tenant_id = claims.get('m8flow_tenant_id')
-        username = claims.get('preferred_username')
+        tenant_id = claims.get("m8flow_tenant_id")
+        username = claims.get("preferred_username")
 
         print(f"👤 User: {username}")
         print(f"🏢 Tenant: {tenant_id}")
@@ -104,7 +105,9 @@ async def demo_tools():
 
                     if result.get("pagination"):
                         pag = result["pagination"]
-                        print(f"\n  📊 Total: {pag.get('total', 0)} | Page: {pag.get('page', 1)} of {pag.get('pages', 0)}")
+                        print(
+                            f"\n  📊 Total: {pag.get('total', 0)} | Page: {pag.get('page', 1)} of {pag.get('pages', 0)}"
+                        )
                 else:
                     print(f"\n❌ Error: {result.get('error', 'Unknown error')}")
 
@@ -134,7 +137,7 @@ async def demo_tools():
                         "display_name": display_name,
                         "description": description or None,
                     }
-                    print(f"\n📤 Creating process model...")
+                    print("\n📤 Creating process model...")
                     result = await client.post("/v1.0/process-models", token, data=data)
 
                     if "error" not in result:
@@ -160,7 +163,9 @@ async def demo_tools():
 
                     if result.get("pagination"):
                         pag = result["pagination"]
-                        print(f"\n  📊 Total: {pag.get('total', 0)} | Page: {pag.get('page', 1)} of {pag.get('pages', 0)}")
+                        print(
+                            f"\n  📊 Total: {pag.get('total', 0)} | Page: {pag.get('page', 1)} of {pag.get('pages', 0)}"
+                        )
                 else:
                     print(f"\n❌ Error: {result.get('error', 'Unknown error')}")
 
@@ -173,7 +178,7 @@ async def demo_tools():
                     if variables_str:
                         try:
                             variables = json.loads(variables_str)
-                        except:
+                        except (json.JSONDecodeError, ValueError):
                             print("⚠️  Invalid JSON, using empty variables")
 
                     print(f"\n🚀 Starting process instance for model '{model_id}'...")
@@ -215,7 +220,9 @@ async def demo_tools():
 
                     if result.get("pagination"):
                         pag = result["pagination"]
-                        print(f"\n  📊 Total: {pag.get('total', 0)} | Page: {pag.get('page', 1)} of {pag.get('pages', 0)}")
+                        print(
+                            f"\n  📊 Total: {pag.get('total', 0)} | Page: {pag.get('page', 1)} of {pag.get('pages', 0)}"
+                        )
                 else:
                     print(f"\n❌ Error: {result.get('error', 'Unknown error')}")
 

@@ -44,9 +44,7 @@ class ContextExtractionMiddleware(Middleware):
 
         # Priority 1: Explicit bearer token from environment
         auth_token = (
-            os.getenv("M8FLOW_BEARER_TOKEN")
-            or os.getenv("FORMSFLOW_BEARER_TOKEN")
-            or settings.m8flow_bearer_token
+            os.getenv("M8FLOW_BEARER_TOKEN") or os.getenv("FORMSFLOW_BEARER_TOKEN") or settings.m8flow_bearer_token
         )
 
         if auth_token:

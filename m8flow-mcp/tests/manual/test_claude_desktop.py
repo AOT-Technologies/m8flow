@@ -1,4 +1,5 @@
 """Test script that mimics Claude Desktop's MCP client."""
+
 import json
 import subprocess
 import sys
@@ -26,7 +27,7 @@ proc = subprocess.Popen(
     stderr=subprocess.PIPE,
     text=True,
     env=env,
-    cwd=r"C:\AOT\forms-flow-ai-ee\m8flow-mcp-proper"
+    cwd=r"C:\AOT\forms-flow-ai-ee\m8flow-mcp-proper",
 )
 
 try:
@@ -38,8 +39,8 @@ try:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "test-client", "version": "1.0"}
-        }
+            "clientInfo": {"name": "test-client", "version": "1.0"},
+        },
     }
 
     print(f"Sending: {json.dumps(init_request)}")
@@ -58,7 +59,8 @@ try:
         try:
             # Read with timeout
             import select
-            if sys.platform != 'win32':
+
+            if sys.platform != "win32":
                 ready = select.select([proc.stdout], [], [], 2)
                 if ready[0]:
                     response = proc.stdout.readline()

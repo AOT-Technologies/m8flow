@@ -3,14 +3,16 @@
 
 import asyncio
 import sys
-from src.auth.token_service import token_service
+
 from src.auth.rbac import decode_jwt_payload
+from src.auth.token_service import token_service
+
 
 async def check_jwt_tenant():
     """Check if JWT token contains tenant ID."""
-    print("="*60)
+    print("=" * 60)
     print("JWT Tenant ID Check")
-    print("="*60)
+    print("=" * 60)
     print()
 
     # Get token
@@ -28,15 +30,22 @@ async def check_jwt_tenant():
         print("[2/2] Checking for tenant ID in JWT...")
         claims = decode_jwt_payload(token)
 
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("JWT Claims Found:")
-        print("="*60)
+        print("=" * 60)
 
         # Key claims
         important_claims = [
-            'sub', 'preferred_username', 'email', 'name',
-            'm8f_tenant_id', 'tenantId', 'tenant_id', 'tenant',
-            'realm_access', 'resource_access'
+            "sub",
+            "preferred_username",
+            "email",
+            "name",
+            "m8f_tenant_id",
+            "tenantId",
+            "tenant_id",
+            "tenant",
+            "realm_access",
+            "resource_access",
         ]
 
         for key in important_claims:
@@ -47,11 +56,11 @@ async def check_jwt_tenant():
                 else:
                     print(f"  {key}: {value}")
 
-        print("="*60)
+        print("=" * 60)
         print()
 
         # Check for tenant
-        tenant_fields = ['m8f_tenant_id', 'tenantId', 'tenant_id', 'tenant', 'organization_id']
+        tenant_fields = ["m8f_tenant_id", "tenantId", "tenant_id", "tenant", "organization_id"]
         tenant_id = None
         found_field = None
 
@@ -64,9 +73,9 @@ async def check_jwt_tenant():
         if tenant_id:
             print(f"[OK] TENANT ID FOUND: {found_field} = '{tenant_id}'")
             print()
-            print("="*60)
+            print("=" * 60)
             print("Result: JWT is configured correctly for multi-tenancy!")
-            print("="*60)
+            print("=" * 60)
             print()
             print("Your m8flow-mcp-proper will:")
             print(f"  - Extract tenant: '{tenant_id}'")
@@ -77,9 +86,9 @@ async def check_jwt_tenant():
         else:
             print("[WARNING] NO TENANT ID FOUND IN JWT!")
             print()
-            print("="*60)
+            print("=" * 60)
             print("Result: JWT does NOT contain tenant information")
-            print("="*60)
+            print("=" * 60)
             print()
             print("Multi-tenancy will NOT work until you configure Keycloak:")
             print()
@@ -115,6 +124,7 @@ async def check_jwt_tenant():
     except Exception as e:
         print(f"[ERROR] Failed to decode JWT: {e}")
         return 1
+
 
 if __name__ == "__main__":
     sys.exit(asyncio.run(check_jwt_tenant()))
