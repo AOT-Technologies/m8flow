@@ -59,7 +59,7 @@ def register_process_instance_tools(mcp: FastMCP) -> None:
     async def list_process_instances(
         process_model_id: str | None = None,
         page: int = 1,
-        per_page: int = 10,
+        per_page: int = 50,
         status: str | None = None,
     ) -> dict[str, Any]:
         """List process instances.
@@ -67,7 +67,7 @@ def register_process_instance_tools(mcp: FastMCP) -> None:
         Args:
             process_model_id: Optional filter by process model
             page: Page number (default: 1)
-            per_page: Items per page (default: 10)
+            per_page: Items per page (default: 50, max: 1000)
             status: Optional filter by status (complete, error, waiting, etc.)
 
         Returns:
@@ -77,17 +77,31 @@ def register_process_instance_tools(mcp: FastMCP) -> None:
         if not token:
             return {"error": "No authentication token available"}
 
+        # Build filters for report_metadata
+        filter_by = []
+        if process_model_id:
+            filter_by.append({"field_name": "process_model_identifier", "field_value": process_model_id})
+        if status:
+            filter_by.append({"field_name": "process_status", "field_value": status})
+
+        # Build request body - matches frontend format
+        body: dict[str, Any] = {
+            "report_metadata": {
+                "columns": [],
+                "filter_by": filter_by,
+                "order_by": [],
+            }
+        }
+
+        # Query params for pagination
         params: dict[str, Any] = {
             "page": page,
             "per_page": per_page,
         }
-        if process_model_id:
-            params["process_model_identifier"] = process_model_id
-        if status:
-            params["process_status"] = status
 
         try:
-            result = await client.get("/v1.0/process-instances", token, params=params)
+            # Use POST /for-me endpoint (same as frontend)
+            result = await client.post("/v1.0/process-instances/for-me", token, data=body, params=params)
             return result
         except Exception as e:
             logger.error(f"Failed to list process instances: {e}")
