@@ -287,7 +287,7 @@ jobs:
           echo "Starting container in HTTP mode for testing..."
           docker run -d --name mcp-test \
             -e M8FLOW_API_URL=http://localhost:6840 \
-            -e SERVER_TYPE=sse \
+            -e SERVER_TYPE=remote \
             -e HOST=0.0.0.0 \
             -e PORT=8000 \
             -p 8000:8000 \

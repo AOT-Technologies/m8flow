@@ -26,10 +26,15 @@ def test_settings_can_be_imported() -> None:
 
 def test_exceptions_can_be_imported() -> None:
     """Test that custom exceptions can be imported."""
-    from src.errors.exceptions import M8FlowAPIError, M8FlowError
+    from src.errors.exceptions import (
+        AuthenticationError,
+        M8flowAPIError,
+        NetworkError,
+    )
 
-    assert M8FlowError is not None
-    assert M8FlowAPIError is not None
+    assert M8flowAPIError is not None
+    assert AuthenticationError is not None
+    assert NetworkError is not None
 
 
 def test_logger_can_be_imported() -> None:
