@@ -66,8 +66,6 @@ warn_unused_ignores = true
 warn_no_return = true
 check_untyped_defs = true
 strict_equality = true
-mypy_path = "."
-explicit_package_bases = true
 
 [[tool.mypy.overrides]]
 module = ["fastmcp.*", "jose.*"]

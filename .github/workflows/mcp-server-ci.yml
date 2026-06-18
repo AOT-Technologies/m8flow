@@ -125,7 +125,7 @@ jobs:
 
       - name: Run mypy
         working-directory: m8flow-mcp
-        run: MYPYPATH=. python -m mypy src/ tests/unit/ tests/integration/
+        run: python -m mypy -p src -p tests.unit -p tests.integration
 
   # -------------------------
   # Unit Tests
