@@ -389,15 +389,12 @@ jobs:
 
       - name: Image published
         run: |
-          echo "✅ MCP Server Docker image published to Docker Hub!"
+          echo "✅ MCP Server Docker image published!"
           echo "📦 Tags: ${{ steps.meta.outputs.tags }}"
           echo ""
           echo "🔗 Pull commands:"
           echo "  docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
           echo "  docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:M8F-345-mcp-server"
-          echo ""
-          echo "🌐 View on Docker Hub:"
-          echo "  https://hub.docker.com/r/m8flow/mcp-server"
           echo ""
           echo "💡 To use with Cursor, update your mcp.json:"
           echo "  \"image\": \"${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest\""
