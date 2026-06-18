@@ -98,6 +98,7 @@ def main() -> int:
 
             # Run with the wrapped app
             import uvicorn
+
             uvicorn.run(
                 server,
                 host=settings.host,
