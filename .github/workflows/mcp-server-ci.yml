@@ -125,9 +125,7 @@ jobs:
 
       - name: Run mypy
         working-directory: m8flow-mcp
-        env:
-          PYTHONPATH: ${{ github.workspace }}/m8flow-mcp
-        run: python -m mypy -p src -p tests.unit -p tests.integration
+        run: PYTHONPATH="${PWD}" python -m mypy src tests/unit tests/integration
 
   # -------------------------
   # Unit Tests
