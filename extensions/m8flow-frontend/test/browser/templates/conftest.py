@@ -17,12 +17,21 @@ from helpers.config import (
 from helpers.login import login, logout
 from helpers.mocks import (
     ALL_MOCK_TEMPLATES,
+    MISSING_TEMPLATE_ID,
+    MOCK_TEMPLATE_PRIVATE,
+    MOCK_TEMPLATE_PRIVATE_V1,
+    MOCK_TEMPLATE_PRIVATE_V2,
     MOCK_TEMPLATE_PUBLISHED,
     MOCK_TEMPLATE_V2,
+    PUBLISHED_V1_MARKER,
+    PUBLISHED_V2_MARKER,
+    bpmn_with_marker,
     mock_permissions_api,
     mock_template_api,
+    mock_template_detail_not_found,
     mock_template_export_api,
     mock_template_files_api,
+    mock_template_files_versioned,
 )
 from helpers.waiters import wait_for_app_ready
 
@@ -107,6 +116,99 @@ def mocked_templates_page_multi_version(authenticated_page_module: Page) -> Page
     )
     mock_template_files_api(page)
     mock_template_export_api(page)
+    page.goto(BASE_URL)
+    wait_for_app_ready(page)
+    return page
+
+
+@pytest.fixture
+def mocked_published_multi_version(authenticated_page_module: Page) -> Page:
+    """Published family: V1 (id 4, published) + V2 (id 5, draft), version-distinct BPMN."""
+    page = authenticated_page_module
+    _reset_template_page(page)
+    mock_permissions_api(page)
+    gallery_source = [*ALL_MOCK_TEMPLATES, copy.deepcopy(MOCK_TEMPLATE_V2)]
+    both_versions = [
+        copy.deepcopy(MOCK_TEMPLATE_PUBLISHED),
+        copy.deepcopy(MOCK_TEMPLATE_V2),
+    ]
+    mock_template_api(
+        page,
+        templates=gallery_source,
+        template_detail=copy.deepcopy(MOCK_TEMPLATE_V2),
+        all_versions=both_versions,
+    )
+    mock_template_files_versioned(
+        page,
+        {
+            MOCK_TEMPLATE_PUBLISHED["id"]: bpmn_with_marker(PUBLISHED_V1_MARKER),
+            MOCK_TEMPLATE_V2["id"]: bpmn_with_marker(PUBLISHED_V2_MARKER),
+        },
+    )
+    mock_template_export_api(page)
+    page.goto(BASE_URL)
+    wait_for_app_ready(page)
+    return page
+
+
+@pytest.fixture
+def mocked_private_multi_version(authenticated_page_module: Page) -> Page:
+    """Private family: V1 (id 6) + V2 (id 7), both drafts (both show a Draft chip)."""
+    page = authenticated_page_module
+    _reset_template_page(page)
+    mock_permissions_api(page)
+    gallery_source = [
+        *ALL_MOCK_TEMPLATES,
+        copy.deepcopy(MOCK_TEMPLATE_PRIVATE_V1),
+        copy.deepcopy(MOCK_TEMPLATE_PRIVATE_V2),
+    ]
+    both_versions = [
+        copy.deepcopy(MOCK_TEMPLATE_PRIVATE_V1),
+        copy.deepcopy(MOCK_TEMPLATE_PRIVATE_V2),
+    ]
+    mock_template_api(
+        page,
+        templates=gallery_source,
+        template_detail=copy.deepcopy(MOCK_TEMPLATE_PRIVATE_V2),
+        all_versions=both_versions,
+    )
+    mock_template_files_api(page)
+    mock_template_export_api(page)
+    page.goto(BASE_URL)
+    wait_for_app_ready(page)
+    return page
+
+
+@pytest.fixture
+def mocked_single_version(authenticated_page_module: Page) -> Page:
+    """Single-version template (id 1): the version selector must stay hidden."""
+    page = authenticated_page_module
+    _reset_template_page(page)
+    mock_permissions_api(page)
+    mock_template_api(
+        page,
+        templates=ALL_MOCK_TEMPLATES,
+        template_detail=copy.deepcopy(MOCK_TEMPLATE_PRIVATE),
+        all_versions=[copy.deepcopy(MOCK_TEMPLATE_PRIVATE)],
+    )
+    mock_template_files_api(page)
+    mock_template_export_api(page)
+    page.goto(BASE_URL)
+    wait_for_app_ready(page)
+    return page
+
+
+@pytest.fixture
+def mocked_template_not_found(authenticated_page_module: Page) -> Page:
+    """Standard template mocks + a 404 for ``MISSING_TEMPLATE_ID`` (non-existent version)."""
+    page = authenticated_page_module
+    _reset_template_page(page)
+    mock_permissions_api(page)
+    mock_template_api(page, templates=ALL_MOCK_TEMPLATES)
+    mock_template_files_api(page)
+    mock_template_export_api(page)
+    # Register the 404 last so it wins for the targeted id.
+    mock_template_detail_not_found(page, MISSING_TEMPLATE_ID)
     page.goto(BASE_URL)
     wait_for_app_ready(page)
     return page
