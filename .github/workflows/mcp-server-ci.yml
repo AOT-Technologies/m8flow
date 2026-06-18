@@ -283,20 +283,26 @@ jobs:
         run: |
           set +e  # Don't fail immediately on error
 
-          # Run container and check health
+          # Run container in HTTP mode (stdio mode exits immediately in detached mode)
+          echo "Starting container in HTTP mode for testing..."
           docker run -d --name mcp-test \
             -e M8FLOW_API_URL=http://localhost:6840 \
-            -e SERVER_TYPE=stdio \
+            -e SERVER_TYPE=sse \
+            -e HOST=0.0.0.0 \
+            -e PORT=8000 \
             -p 8000:8000 \
             m8flow-mcp:${{ steps.tag.outputs.tag }}
 
-          sleep 5
+          # Wait for server to start
+          echo "Waiting for server to start..."
+          sleep 10
 
           # Check if container is running
+          echo ""
           echo "Container status:"
           docker ps -a | grep mcp-test || true
 
-          # Always show logs
+          # Show logs
           echo ""
           echo "Container logs:"
           docker logs mcp-test || true
@@ -304,7 +310,7 @@ jobs:
           # Check if container is still running
           if docker ps | grep -q mcp-test; then
             echo ""
-            echo "✅ Container is running"
+            echo "✅ Container is running in HTTP mode"
             EXIT_CODE=0
           else
             echo ""
