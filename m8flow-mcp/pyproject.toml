@@ -77,6 +77,8 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 asyncio_mode = "auto"
+# Exclude manual test scripts (they're not pytest tests)
+norecursedirs = ["tests/manual", ".git", ".tox", "dist", "build"]
 addopts = [
     "--strict-markers",
     "--cov=src",

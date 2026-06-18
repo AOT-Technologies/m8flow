@@ -281,6 +281,8 @@ jobs:
 
       - name: Test Docker image
         run: |
+          set +e  # Don't fail immediately on error
+
           # Run container and check health
           docker run -d --name mcp-test \
             -e M8FLOW_API_URL=http://localhost:6840 \
@@ -291,14 +293,30 @@ jobs:
           sleep 5
 
           # Check if container is running
-          docker ps | grep mcp-test
+          echo "Container status:"
+          docker ps -a | grep mcp-test || true
 
-          # Check logs
-          docker logs mcp-test
+          # Always show logs
+          echo ""
+          echo "Container logs:"
+          docker logs mcp-test || true
+
+          # Check if container is still running
+          if docker ps | grep -q mcp-test; then
+            echo ""
+            echo "✅ Container is running"
+            EXIT_CODE=0
+          else
+            echo ""
+            echo "❌ Container stopped or failed to start"
+            EXIT_CODE=1
+          fi
 
           # Cleanup
-          docker stop mcp-test
-          docker rm mcp-test
+          docker stop mcp-test 2>/dev/null || true
+          docker rm mcp-test 2>/dev/null || true
+
+          exit $EXIT_CODE
 
       - name: Display image info
         run: |
