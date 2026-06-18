@@ -33,7 +33,7 @@ _client = M8flowAPIClient()
     },
     required_roles=["viewer", "admin"],  # Read-only operation
 )
-async def list_process_models(params: dict, token: str) -> Any:
+async def list_process_models(params: dict[str, Any], token: str) -> Any:
     """List all process models."""
     return await _client.get(
         "/v1.0/process-models",
@@ -60,7 +60,7 @@ async def list_process_models(params: dict, token: str) -> Any:
     },
     required_roles=["viewer", "admin"],  # Read-only operation
 )
-async def get_process_model(params: dict, token: str) -> Any:
+async def get_process_model(params: dict[str, Any], token: str) -> Any:
     """Get a specific process model."""
     process_model_id = params["process_model_id"]
     return await _client.get(f"/v1.0/process-models/{process_model_id}", token)
@@ -90,7 +90,7 @@ async def get_process_model(params: dict, token: str) -> Any:
     },
     required_roles=["admin"],  # Write operation - admin only!
 )
-async def start_process_instance(params: dict, token: str) -> Any:
+async def start_process_instance(params: dict[str, Any], token: str) -> Any:
     """Start a new process instance."""
     process_model_id = params["process_model_id"]
     variables = params.get("variables", {})

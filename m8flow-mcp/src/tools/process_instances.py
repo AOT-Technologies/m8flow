@@ -33,7 +33,7 @@ _client = M8flowAPIClient()
     },
     required_roles=["viewer", "admin"],  # Read-only operation
 )
-async def list_process_instances(params: dict, token: str) -> Any:
+async def list_process_instances(params: dict[str, Any], token: str) -> Any:
     """List all process instances."""
     return await _client.get(
         "/v1.0/process-instances",

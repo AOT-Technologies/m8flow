@@ -49,7 +49,8 @@ class TenantContextMiddleware(Middleware):
                 payload += "=" * (4 - padding)
 
             decoded = base64.urlsafe_b64decode(payload)
-            return json.loads(decoded)
+            claims: dict[str, Any] = json.loads(decoded)
+            return claims
 
         except Exception as e:
             logger.warning(f"Failed to decode JWT claims: {e}")

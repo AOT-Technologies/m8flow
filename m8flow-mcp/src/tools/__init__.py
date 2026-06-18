@@ -26,7 +26,7 @@ class ToolDefinition:
     description: str
     parameters: dict[str, Any]  # JSON-Schema describing accepted params
     required_roles: list[str]   # user must hold *any one* of these roles
-    handler: Callable[[dict, str], Awaitable[Any]]
+    handler: Callable[[dict[str, Any], str], Awaitable[Any]]
 
 
 # ---------------------------------------------------------------------------
@@ -38,7 +38,7 @@ def tool(
     description: str,
     parameters: dict[str, Any],
     required_roles: list[str] | None = None,
-):
+) -> Callable[[Callable[[dict[str, Any], str], Awaitable[Any]]], Callable[[dict[str, Any], str], Awaitable[Any]]]:
     """Register an async function as an MCP tool.
 
     The decorated function must have the signature::
@@ -66,7 +66,7 @@ def tool(
         async def list_tasks(params: dict, token: str):
             ...
     """
-    def decorator(func: Callable[[dict, str], Awaitable[Any]]):
+    def decorator(func: Callable[[dict[str, Any], str], Awaitable[Any]]) -> Callable[[dict[str, Any], str], Awaitable[Any]]:
         _registry[name] = ToolDefinition(
             name=name,
             description=description,
