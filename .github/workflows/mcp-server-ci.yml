@@ -250,7 +250,7 @@ jobs:
     name: MCP Docker Build & Test
     needs: path_filters
     runs-on: ubuntu-latest
-    if: ${{ (github.event_name == 'workflow_dispatch' || needs.path_filters.outputs.docker == 'true' || needs.path_filters.outputs.code == 'true') && (github.event.inputs.run_type != 'test-only') }}
+    if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || needs.path_filters.outputs.docker == 'true' || needs.path_filters.outputs.code == 'true') && (github.event.inputs.run_type != 'test-only') }}
     steps:
       - uses: actions/checkout@v4
 
