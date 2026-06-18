@@ -8,6 +8,7 @@ import os
 import sys
 
 from fastmcp import FastMCP
+from starlette.responses import JSONResponse
 
 from src.config import settings
 from src.mcp_tools import register_tools
@@ -83,10 +84,25 @@ def main() -> int:
         if settings.is_remote:
             # HTTP mode for Cursor
             logger.info(f"Starting m8flow MCP server in HTTP mode on {settings.host}:{settings.port}")
-            mcp.run(
-                transport="streamable-http",
+
+            # Add health check endpoint to the underlying Starlette app
+            async def health_check(request):
+                """Health check endpoint for load balancer."""
+                return JSONResponse({"status": "healthy", "server": "m8flow-mcp", "version": "1.0.0"})
+
+            # Get the HTTP app and add the health check route
+            server = mcp.http_app(transport="streamable-http")
+            server.add_route("/health", health_check, methods=["GET"])
+
+            logger.info("Health check endpoint added at /health")
+
+            # Run with the wrapped app
+            import uvicorn
+            uvicorn.run(
+                server,
                 host=settings.host,
                 port=settings.port,
+                log_level="info",
             )
         else:
             # stdio mode for Claude Desktop
