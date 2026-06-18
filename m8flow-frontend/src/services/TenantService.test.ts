@@ -149,4 +149,160 @@ describe("TenantService group name validation", () => {
       }),
     );
   });
+
+  it("normalizes missing member groups to an empty array", async () => {
+    vi.mocked(HttpService.makeCallToBackend).mockImplementation((options: any) => {
+      options.successCallback?.({
+        tenant_id: "tenant-1",
+        search: "",
+        offset: 0,
+        limit: 10,
+        has_more: false,
+        members: [
+          {
+            id: "member-1",
+            username: "reviewer",
+            email: "reviewer@example.com",
+            display_name: "Reviewer User",
+            roles: ["reviewer"],
+          },
+        ],
+      });
+    });
+
+    await expect(
+      TenantService.getTenantMembersPage("tenant-1", {
+        offset: 0,
+        limit: 10,
+      }),
+    ).resolves.toEqual({
+      tenant_id: "tenant-1",
+      search: "",
+      offset: 0,
+      limit: 10,
+      has_more: false,
+      members: [
+        {
+          id: "member-1",
+          username: "reviewer",
+          email: "reviewer@example.com",
+          display_name: "Reviewer User",
+          roles: ["reviewer"],
+          groups: [],
+        },
+      ],
+    });
+  });
+
+  it("aggregates tenant groups across pages", async () => {
+    vi.mocked(HttpService.makeCallToBackend).mockImplementation((options: any) => {
+      if (options.path.includes("offset=0")) {
+        options.successCallback?.({
+          tenant_id: "tenant-1",
+          search: "",
+          offset: 0,
+          limit: 100,
+          has_more: true,
+          groups: [
+            {
+              id: "group-1",
+              name: "Approvers",
+              path: "/Approvers",
+              mapped_roles: ["reviewer"],
+              member_count: 1,
+              members: [],
+            },
+          ],
+        });
+        return;
+      }
+
+      options.successCallback?.({
+        tenant_id: "tenant-1",
+        search: "",
+        offset: 1,
+        limit: 100,
+        has_more: false,
+        groups: [
+          {
+            id: "group-2",
+            name: "Submitters",
+            path: "/Submitters",
+            mapped_roles: ["submitter"],
+            member_count: 1,
+            members: [],
+          },
+        ],
+      });
+    });
+
+    await expect(TenantService.getTenantGroups("tenant-1")).resolves.toEqual([
+      {
+        id: "group-1",
+        name: "Approvers",
+        path: "/Approvers",
+        mapped_roles: ["reviewer"],
+        member_count: 1,
+        members: [],
+      },
+      {
+        id: "group-2",
+        name: "Submitters",
+        path: "/Submitters",
+        mapped_roles: ["submitter"],
+        member_count: 1,
+        members: [],
+      },
+    ]);
+  });
+
+  it("rejects stale tenant group pagination responses", async () => {
+    let callCount = 0;
+    vi.mocked(HttpService.makeCallToBackend).mockImplementation((options: any) => {
+      callCount += 1;
+      if (callCount === 1) {
+        options.successCallback?.({
+          tenant_id: "tenant-1",
+          search: "",
+          offset: 0,
+          limit: 100,
+          has_more: true,
+          groups: [
+            {
+              id: "group-1",
+              name: "Approvers",
+              path: "/Approvers",
+              mapped_roles: ["reviewer"],
+              member_count: 1,
+              members: [],
+            },
+          ],
+        });
+        return;
+      }
+
+      options.successCallback?.({
+        tenant_id: "tenant-1",
+        search: "",
+        offset: 0,
+        limit: 100,
+        has_more: true,
+        groups: [
+          {
+            id: "group-1",
+            name: "Approvers",
+            path: "/Approvers",
+            mapped_roles: ["reviewer"],
+            member_count: 1,
+            members: [],
+          },
+        ],
+      });
+    });
+
+    await expect(TenantService.getTenantGroups("tenant-1")).rejects.toThrow(
+      "Tenant group pagination returned a stale page.",
+    );
+    expect(callCount).toBe(2);
+  });
 });

@@ -1,6 +1,7 @@
 import HttpService from "@spiffworkflow-frontend/services/HttpService";
 
 const BASE_PATH = "/v1.0/m8flow";
+const MAX_TENANT_GROUP_PAGE_REQUESTS = 1000;
 
 // Shared type definitions
 export type TenantStatus = "ACTIVE" | "INACTIVE" | "DELETED";
@@ -43,7 +44,7 @@ export interface TenantMember {
     email: string | null;
     display_name: string | null;
     roles: TenantMemberRole[];
-    groups?: TenantMemberGroup[];
+    groups: TenantMemberGroup[];
 }
 
 export interface TenantMemberGroup {
@@ -246,6 +247,14 @@ interface TenantGroupRoleMutationResponse {
     group: TenantGroup;
 }
 
+const normalizeTenantMember = (member: TenantMember): TenantMember => ({
+    ...member,
+    groups: member.groups ?? [],
+});
+
+const normalizeTenantMembers = (members: TenantMember[] | undefined): TenantMember[] =>
+    (members ?? []).map(normalizeTenantMember);
+
 const TenantService = {
     /**
      * Get all tenants
@@ -381,7 +390,7 @@ const TenantService = {
                         offset: response.offset ?? offset,
                         limit: response.limit ?? limit,
                         has_more: Boolean(response.has_more),
-                        members: response.members ?? [],
+                        members: normalizeTenantMembers(response.members),
                     }),
                 failureCallback: reject,
             });
@@ -459,7 +468,7 @@ const TenantService = {
                     group_names: data.group_names ?? [],
                 },
                 successCallback: (response: TenantMemberCreateResponse) =>
-                    resolve(response.member),
+                    resolve(normalizeTenantMember(response.member)),
                 failureCallback: reject,
             });
         });
@@ -472,8 +481,11 @@ const TenantService = {
         const groups: TenantGroup[] = [];
         const limit = 100;
         let offset = 0;
+        let pageRequests = 0;
+        let didComplete = false;
 
-        while (true) {
+        while (pageRequests < MAX_TENANT_GROUP_PAGE_REQUESTS) {
+            pageRequests += 1;
             const response = await TenantService.getTenantGroupsPage(tenantId, {
                 search,
                 offset,
@@ -481,9 +493,24 @@ const TenantService = {
             });
             groups.push(...response.groups);
             if (!response.has_more || response.groups.length === 0) {
+                didComplete = true;
                 break;
             }
-            offset = response.offset + response.groups.length;
+
+            if (response.offset < offset) {
+                throw new Error("Tenant group pagination returned a stale page.");
+            }
+
+            const nextOffset = offset + response.groups.length;
+            if (nextOffset <= offset) {
+                throw new Error("Tenant group pagination did not advance.");
+            }
+
+            offset = nextOffset;
+        }
+
+        if (!didComplete) {
+            throw new Error("Tenant group pagination exceeded the maximum number of pages.");
         }
 
         return groups;
@@ -613,7 +640,7 @@ const TenantService = {
                 )}/members/${encodeURIComponent(username)}`,
                 httpMethod: "PUT",
                 successCallback: (response: TenantGroupMembershipMutationResponse) =>
-                    resolve(response.member),
+                    resolve(normalizeTenantMember(response.member)),
                 failureCallback: reject,
             });
         });
@@ -634,7 +661,7 @@ const TenantService = {
                 )}/members/${encodeURIComponent(username)}`,
                 httpMethod: "DELETE",
                 successCallback: (response: TenantGroupMembershipMutationResponse) =>
-                    resolve(response.member),
+                    resolve(normalizeTenantMember(response.member)),
                 failureCallback: reject,
             });
         });
@@ -697,7 +724,7 @@ const TenantService = {
                 )}/roles/${encodeURIComponent(roleName)}`,
                 httpMethod: "PUT",
                 successCallback: (response: { member: TenantMember }) =>
-                    resolve(response.member),
+                    resolve(normalizeTenantMember(response.member)),
                 failureCallback: reject,
             });
         });
@@ -718,7 +745,7 @@ const TenantService = {
                 )}/roles/${encodeURIComponent(roleName)}`,
                 httpMethod: "DELETE",
                 successCallback: (response: { member: TenantMember }) =>
-                    resolve(response.member),
+                    resolve(normalizeTenantMember(response.member)),
                 failureCallback: reject,
             });
         });
