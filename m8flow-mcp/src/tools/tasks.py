@@ -33,7 +33,7 @@ _client = M8flowAPIClient()
     },
     required_roles=["viewer", "admin"],  # Read-only operation
 )
-async def list_tasks(params: dict, token: str) -> Any:
+async def list_tasks(params: dict[str, Any], token: str) -> Any:
     """List all user tasks."""
     return await _client.get(
         "/v1.0/tasks",

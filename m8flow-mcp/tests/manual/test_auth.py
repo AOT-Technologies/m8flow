@@ -153,15 +153,15 @@ async def test_middleware():
             return "next_result"
 
         print("\n[TEST] Extracting token via middleware...")
-        result = await middleware.on_message(MockContext(), mock_next)
+        await middleware.on_message(MockContext(), mock_next)
 
         token = get_auth_token()
         if token:
-            print(f"  [OK] Token extracted and set in context")
+            print("  [OK] Token extracted and set in context")
             print(f"       Token prefix: {token[:30]}...")
             return True
         else:
-            print(f"  [WARNING] No token in context")
+            print("  [WARNING] No token in context")
             return False
 
     except Exception as e:

@@ -59,7 +59,8 @@ class M8flowAPIClient:
             if not response.content:
                 return {}
             try:
-                return response.json()
+                result: dict[str, Any] = response.json()
+                return result
             except Exception:
                 return {"raw_content": response.text}
 

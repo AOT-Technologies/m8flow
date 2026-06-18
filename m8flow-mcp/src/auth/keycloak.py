@@ -117,7 +117,7 @@ class KeycloakAuth:
         """
         for key in jwks.get("keys", []):
             if key.get("kid") == kid:
-                return key
+                return key  # type: ignore[return-value]
         return None
 
     @staticmethod
@@ -173,6 +173,8 @@ class KeycloakAuth:
             raise AuthError(401, "Malformed JWT token")
 
         kid = header.get("kid")
+        if not kid or not isinstance(kid, str):
+            raise AuthError(401, "JWT header missing valid kid")
 
         # 2. Look up the signing key in JWKS (auto-refresh on miss)
         jwks = await self._fetch_jwks()

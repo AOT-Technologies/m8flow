@@ -48,7 +48,7 @@ def decode_jwt_payload(token: str) -> dict[str, Any]:
 
         # Decode base64
         decoded_bytes = base64.urlsafe_b64decode(payload)
-        decoded_json = json.loads(decoded_bytes)
+        decoded_json: dict[str, Any] = json.loads(decoded_bytes)
 
         return decoded_json
 

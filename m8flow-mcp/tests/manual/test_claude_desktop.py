@@ -1,6 +1,6 @@
 """Test script that mimics Claude Desktop's MCP client."""
-import subprocess
 import json
+import subprocess
 import sys
 import time
 
