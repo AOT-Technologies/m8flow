@@ -45,7 +45,15 @@ def _click_platform_sign_in(page: Page) -> None:
     page.locator("#m8f-master-login-button").wait_for(
         state="visible", timeout=KC_TIMEOUT
     )
-    page.locator("#m8f-master-login-button").click()
+    # The Keycloak theme (masterRealmLogin.js) wires the real href and removes
+    # aria-disabled on DOMContentLoaded. Clicking before that runs lands on a
+    # disabled href="#" link, so the click is a no-op and hangs waiting for a
+    # navigation that never starts. Wait for the enabled state before clicking.
+    enabled_button = page.locator(
+        '#m8f-master-login-button:not([aria-disabled="true"])'
+    )
+    enabled_button.wait_for(state="visible", timeout=KC_TIMEOUT)
+    enabled_button.click()
 
 
 def _handle_organization_selection(
