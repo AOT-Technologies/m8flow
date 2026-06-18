@@ -10,13 +10,13 @@ import httpx
 from src.client.http_client import get_http_client
 from src.config import settings
 from src.errors import (
-    M8flowAPIError,
     AuthenticationError,
     AuthorizationError,
-    NotFoundError,
-    TenantError,
-    ServerError,
+    M8flowAPIError,
     NetworkError,
+    NotFoundError,
+    ServerError,
+    TenantError,
     TimeoutError,
 )
 from src.utils.context import get_tenant_id
@@ -77,15 +77,9 @@ class M8flowAPIClient:
 
             # Specific error types with better messages
             if response.status_code == 401:
-                raise AuthenticationError(
-                    error_msg or "Token expired or invalid - please re-authenticate",
-                    error_body
-                )
+                raise AuthenticationError(error_msg or "Token expired or invalid - please re-authenticate", error_body)
             elif response.status_code == 403:
-                raise AuthorizationError(
-                    error_msg or "You don't have permission to access this resource",
-                    error_body
-                )
+                raise AuthorizationError(error_msg or "You don't have permission to access this resource", error_body)
             elif response.status_code == 404:
                 raise NotFoundError(error_msg or "Resource not found", error_body)
             elif response.status_code == 400 and "tenant" in error_code.lower():
@@ -102,11 +96,7 @@ class M8flowAPIClient:
                 error_msg = response.text or "Internal server error"
                 error_body = {}
 
-            raise ServerError(
-                response.status_code,
-                f"m8flow backend error: {error_msg}",
-                error_body
-            )
+            raise ServerError(response.status_code, f"m8flow backend error: {error_msg}", error_body)
 
         # Unexpected status codes
         raise M8flowAPIError(response.status_code, f"Unexpected response: {response.text}", {})
@@ -126,13 +116,13 @@ class M8flowAPIClient:
             response = await client.get(url, headers=request_headers, params=params, timeout=self.timeout)
             return await self._handle_response(response)
         except httpx.ConnectError as e:
-            raise NetworkError(f"Cannot connect to m8flow at {self.base_url}: {e}")
-        except httpx.TimeoutException:
-            raise TimeoutError(f"Request to {path} timed out after {self.timeout}s")
+            raise NetworkError(f"Cannot connect to m8flow at {self.base_url}: {e}") from e
+        except httpx.TimeoutException as e:
+            raise TimeoutError(f"Request to {path} timed out after {self.timeout}s") from e
         except (AuthenticationError, AuthorizationError, NotFoundError, TenantError, ServerError, M8flowAPIError):
             raise  # Re-raise our custom errors
         except Exception as e:
-            raise M8flowAPIError(0, f"Unexpected error: {e}", {})
+            raise M8flowAPIError(0, f"Unexpected error: {e}", {}) from e
 
     async def post(
         self,
@@ -150,13 +140,13 @@ class M8flowAPIClient:
             response = await client.post(url, headers=request_headers, json=data, params=params, timeout=self.timeout)
             return await self._handle_response(response)
         except httpx.ConnectError as e:
-            raise NetworkError(f"Cannot connect to m8flow at {self.base_url}: {e}")
-        except httpx.TimeoutException:
-            raise TimeoutError(f"Request to {path} timed out after {self.timeout}s")
+            raise NetworkError(f"Cannot connect to m8flow at {self.base_url}: {e}") from e
+        except httpx.TimeoutException as e:
+            raise TimeoutError(f"Request to {path} timed out after {self.timeout}s") from e
         except (AuthenticationError, AuthorizationError, NotFoundError, TenantError, ServerError, M8flowAPIError):
             raise  # Re-raise our custom errors
         except Exception as e:
-            raise M8flowAPIError(0, f"Unexpected error: {e}", {})
+            raise M8flowAPIError(0, f"Unexpected error: {e}", {}) from e
 
     async def put(
         self,

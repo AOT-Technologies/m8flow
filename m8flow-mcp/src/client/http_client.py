@@ -1,6 +1,7 @@
 """Shared HTTP client with connection pooling for m8flow API"""
 
 import httpx
+
 from src.config import settings
 
 # Global shared client instance

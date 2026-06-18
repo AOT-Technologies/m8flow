@@ -13,8 +13,8 @@ def register_tools(mcp: "FastMCP") -> None:
         mcp: FastMCP server instance
     """
     # Import tool registration functions
-    from src.mcp_tools.process_models import register_process_model_tools
     from src.mcp_tools.process_instances import register_process_instance_tools
+    from src.mcp_tools.process_models import register_process_model_tools
     from src.mcp_tools.tasks import register_task_tools
 
     # Register each tool group

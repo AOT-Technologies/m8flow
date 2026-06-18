@@ -82,6 +82,7 @@ class TenantContextMiddleware(Middleware):
 
         # Fallback to DEFAULT_TENANT_ID if not set from JWT
         from src.utils.context import get_tenant_id
+
         if not get_tenant_id() and settings.default_tenant_id:
             set_tenant_id(settings.default_tenant_id)
             logger.debug(f"Using default tenant from config: {settings.default_tenant_id}")

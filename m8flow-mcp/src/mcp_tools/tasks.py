@@ -15,7 +15,7 @@ logger = get_logger(__name__)
 client = M8flowAPIClient()
 
 
-def register_task_tools(mcp: "FastMCP") -> None:
+def register_task_tools(mcp: FastMCP) -> None:
     """Register task management tools with MCP server.
 
     Args:

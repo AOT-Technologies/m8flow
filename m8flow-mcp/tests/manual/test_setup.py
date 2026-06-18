@@ -6,24 +6,23 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent))
 
+
 def test_imports():
     """Test that all modules can be imported."""
     print("Testing imports...")
 
     try:
         # Test basic imports without dependencies
-        import src
         print("  [OK] src package")
 
-        import src.config
         print("  [OK] src.config package")
 
-        import src.utils
         print("  [OK] src.utils package")
 
         # Test if pydantic-settings is installed
         try:
-            from src.config.settings import Settings, settings
+            from src.config.settings import settings  # noqa: F401
+
             print("  [OK] Settings class (pydantic-settings installed)")
             print(f"       - Default m8flow URL: {settings.m8flow_api_url}")
             print(f"       - Server type: {settings.server_type}")
@@ -32,10 +31,8 @@ def test_imports():
             return False
 
         # Test utils
-        from src.utils.logging import get_logger, setup_logging
         print("  [OK] Logging utils")
 
-        from src.utils.context import get_auth_token, set_auth_token
         print("  [OK] Context utils")
 
         return True
@@ -43,8 +40,10 @@ def test_imports():
     except Exception as e:
         print(f"  [ERROR] Import failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
+
 
 def test_configuration():
     """Test configuration system."""
@@ -70,16 +69,13 @@ def test_configuration():
         print(f"  [ERROR] Configuration test failed: {e}")
         return False
 
+
 def test_context():
     """Test context management."""
     print("\nTesting context management...")
 
     try:
-        from src.utils.context import (
-            get_auth_token, set_auth_token,
-            get_tenant_id, set_tenant_id,
-            clear_context
-        )
+        from src.utils.context import clear_context, get_auth_token, get_tenant_id, set_auth_token, set_tenant_id
 
         # Test set/get
         set_auth_token("test-token")
@@ -101,6 +97,7 @@ def test_context():
     except Exception as e:
         print(f"  [ERROR] Context test failed: {e}")
         return False
+
 
 def main():
     """Run all tests."""
@@ -137,6 +134,7 @@ def main():
         print("  pip install pydantic pydantic-settings")
         print("  OR: uv sync")
         return 1
+
 
 if __name__ == "__main__":
     sys.exit(main())

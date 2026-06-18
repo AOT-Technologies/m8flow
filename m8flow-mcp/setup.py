@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Setup script for m8flow-mcp package distribution."""
 
-from setuptools import setup, find_packages
 from pathlib import Path
+
+from setuptools import find_packages, setup
 
 # Read README for long description
 readme_file = Path(__file__).parent / "README.md"
@@ -18,11 +19,9 @@ setup(
     author_email="support@aot-technologies.com",
     url="https://github.com/AOT-Technologies/m8flow-mcp",
     license="Apache-2.0",
-
     # Package discovery
     packages=find_packages(include=["src", "src.*"]),
     package_dir={"": "."},
-
     # Dependencies
     install_requires=[
         "fastmcp>=0.3.0",
@@ -33,7 +32,6 @@ setup(
         "python-multipart>=0.0.9",
         "uvicorn>=0.30.0",
     ],
-
     # Extra dependencies for development
     extras_require={
         "dev": [
@@ -44,17 +42,14 @@ setup(
             "mypy>=1.9",
         ]
     },
-
     # Python version requirement
     python_requires=">=3.12",
-
     # Entry point for CLI command
     entry_points={
         "console_scripts": [
             "m8flow-mcp=src.main:main",
         ],
     },
-
     # PyPI classifiers
     classifiers=[
         "Development Status :: 4 - Beta",
@@ -65,7 +60,6 @@ setup(
         "Topic :: Software Development :: Libraries",
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
     ],
-
     # Include non-Python files
     include_package_data=True,
     zip_safe=False,

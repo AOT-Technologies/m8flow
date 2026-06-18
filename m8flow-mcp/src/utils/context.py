@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from contextvars import ContextVar
-from typing import Any
 
 # Context variables for storing request-scoped data
 AUTH_TOKEN_KEY = "auth_token"

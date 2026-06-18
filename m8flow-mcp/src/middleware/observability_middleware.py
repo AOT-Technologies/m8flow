@@ -39,7 +39,7 @@ class ObservabilityMiddleware(Middleware):
             # Log successful response
             logger.info(
                 f"MCP Response completed in {round(duration_ms, 2)}ms",
-                extra={"params": {"duration_ms": round(duration_ms, 2), "status": "success"}}
+                extra={"params": {"duration_ms": round(duration_ms, 2), "status": "success"}},
             )
 
             return result
@@ -52,7 +52,7 @@ class ObservabilityMiddleware(Middleware):
             logger.error(
                 f"MCP Error: {str(error)} (after {round(duration_ms, 2)}ms)",
                 extra={"params": {"duration_ms": round(duration_ms, 2), "status": "error", "error": str(error)}},
-                exc_info=True
+                exc_info=True,
             )
 
             # Re-raise the error

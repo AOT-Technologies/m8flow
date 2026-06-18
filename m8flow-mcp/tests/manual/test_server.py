@@ -14,26 +14,19 @@ def test_imports():
     try:
         # Test config
         from src.config import settings
+
         print(f"  [OK] Config loaded (API URL: {settings.m8flow_api_url})")
 
         # Test API client
-        from src.api_client import M8flowAPIClient, M8flowAPIError
         print("  [OK] API client imported")
 
         # Test middleware
-        from src.middleware import (
-            ContextExtractionMiddleware,
-            ObservabilityMiddleware,
-            TenantContextMiddleware,
-        )
         print("  [OK] Middleware imported")
 
         # Test tools
-        from src.mcp_tools import register_tools
         print("  [OK] Tools imported")
 
         # Test main
-        from src.main import mcp
         print("  [OK] Main server imported")
 
         return True
@@ -41,6 +34,7 @@ def test_imports():
     except Exception as e:
         print(f"  [ERROR] Import failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -64,6 +58,7 @@ def test_server_structure():
     except Exception as e:
         print(f"  [ERROR] Server test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -73,13 +68,10 @@ def test_tool_imports():
     print("\nTesting tool modules...")
 
     try:
-        from src.mcp_tools.process_models import register_process_model_tools
         print("  [OK] process_models tools")
 
-        from src.mcp_tools.process_instances import register_process_instance_tools
         print("  [OK] process_instances tools")
 
-        from src.mcp_tools.tasks import register_task_tools
         print("  [OK] tasks tools")
 
         return True
@@ -87,6 +79,7 @@ def test_tool_imports():
     except Exception as e:
         print(f"  [ERROR] Tool import failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 

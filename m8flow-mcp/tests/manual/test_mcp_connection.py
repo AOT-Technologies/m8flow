@@ -1,9 +1,7 @@
 #!/usr/bin/env python
 """Test MCP server can start and respond."""
-import subprocess
+
 import sys
-import time
-import json
 
 print("Testing M8Flow MCP Server Connection...")
 print("=" * 60)
@@ -20,6 +18,7 @@ try:
     import fastmcp
     import httpx
     import pydantic
+
     print(f"  ✅ fastmcp {fastmcp.__version__}")
     print(f"  ✅ httpx {httpx.__version__}")
     print(f"  ✅ pydantic {pydantic.__version__}")
@@ -32,6 +31,7 @@ print("\n[Test 3] Server module test:")
 try:
     sys.path.insert(0, "c:/AOT/m8flow-mcp")
     from src.main import mcp
+
     print(f"  ✅ MCP server loaded: {mcp.name}")
     print(f"  ✅ Server has {len(mcp.tools)} tools registered")
 except Exception as e:
@@ -42,6 +42,7 @@ except Exception as e:
 print("\n[Test 4] Configuration test:")
 try:
     from src.config import settings
+
     print(f"  ✅ Server type: {settings.server_type}")
     print(f"  ✅ API URL: {settings.m8flow_api_url}")
     print(f"  ✅ Token: {'SET' if settings.m8flow_bearer_token else 'NOT SET'}")

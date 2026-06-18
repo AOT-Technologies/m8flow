@@ -17,7 +17,7 @@ async def test_token_service():
         from src.auth.token_service import TokenService
         from src.config import settings
 
-        print(f"\n[CONFIG]")
+        print("\n[CONFIG]")
         print(f"  Keycloak URL: {settings.keycloak_url}")
         print(f"  Realm: {settings.keycloak_realm}")
         print(f"  Client ID: {settings.client_id}")
@@ -47,7 +47,7 @@ async def test_token_service():
             payload_b64 += "=" * (-len(payload_b64) % 4)
             claims = json.loads(base64.urlsafe_b64decode(payload_b64))
 
-            print(f"\n[TOKEN CLAIMS]")
+            print("\n[TOKEN CLAIMS]")
             print(f"  Subject: {claims.get('sub')}")
             print(f"  Username: {claims.get('preferred_username')}")
             print(f"  Email: {claims.get('email')}")
@@ -96,25 +96,25 @@ async def test_jwt_validation():
         # Get a token
         print("\n[TEST] Fetching token to validate...")
         token = await token_service.get_token()
-        print(f"  [OK] Got token to validate")
+        print("  [OK] Got token to validate")
 
         # Create validator
-        print(f"\n[TEST] Creating KeycloakAuth validator...")
+        print("\n[TEST] Creating KeycloakAuth validator...")
         auth = KeycloakAuth(
             keycloak_url=settings.keycloak_url,
             realm=settings.keycloak_realm,
             client_id=settings.client_id,
         )
-        print(f"  [OK] Validator created")
+        print("  [OK] Validator created")
         print(f"       JWKS URI: {auth.jwks_uri}")
         print(f"       Issuer: {auth.issuer}")
 
         # Validate token
-        print(f"\n[TEST] Validating token...")
+        print("\n[TEST] Validating token...")
         user_context = await auth.validate_token(token)
 
-        print(f"  [OK] Token validated successfully!")
-        print(f"\n[USER CONTEXT]")
+        print("  [OK] Token validated successfully!")
+        print("\n[USER CONTEXT]")
         print(f"  Username: {user_context.username}")
         print(f"  Email: {user_context.email}")
         print(f"  Roles: {user_context.roles[:5]}")

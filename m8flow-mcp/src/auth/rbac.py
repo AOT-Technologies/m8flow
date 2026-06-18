@@ -54,7 +54,7 @@ def decode_jwt_payload(token: str) -> dict[str, Any]:
 
     except Exception as e:
         logger.warning(f"Failed to decode JWT token: {e}")
-        raise ValueError(f"Failed to decode JWT token: {e}")
+        raise ValueError(f"Failed to decode JWT token: {e}") from e
 
 
 def get_user_roles(token: str) -> list[str]:
@@ -92,7 +92,7 @@ def get_user_roles(token: str) -> list[str]:
 
     # Check Keycloak resource/client roles
     if "resource_access" in payload and isinstance(payload["resource_access"], dict):
-        for client, access in payload["resource_access"].items():
+        for _client, access in payload["resource_access"].items():
             if isinstance(access, dict) and "roles" in access:
                 client_roles = access["roles"]
                 if isinstance(client_roles, list):
@@ -136,9 +136,7 @@ def check_authorization(token: str, required_roles: list[str]) -> None:
         return
 
     # Authorization failed
-    logger.warning(
-        f"Authorization denied: user roles {user_roles} do not match required {required_roles}"
-    )
+    logger.warning(f"Authorization denied: user roles {user_roles} do not match required {required_roles}")
     raise AuthorizationError(
         f"Insufficient permissions. Required roles: {', '.join(required_roles)}",
         {"user_roles": user_roles, "required_roles": required_roles},

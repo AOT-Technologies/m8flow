@@ -15,7 +15,7 @@ logger = get_logger(__name__)
 client = M8flowAPIClient()
 
 
-def register_process_instance_tools(mcp: "FastMCP") -> None:
+def register_process_instance_tools(mcp: FastMCP) -> None:
     """Register process instance tools with MCP server.
 
     Args:
