@@ -43,6 +43,12 @@ export interface TenantMember {
     email: string | null;
     display_name: string | null;
     roles: TenantMemberRole[];
+    groups?: TenantMemberGroup[];
+}
+
+export interface TenantMemberGroup {
+    id: string;
+    name: string;
 }
 
 export interface TenantGroupMember {
@@ -74,6 +80,10 @@ export interface AddTenantMemberRequest {
 }
 
 export interface CreateTenantGroupRequest {
+    name: string;
+}
+
+export interface RenameTenantGroupRequest {
     name: string;
 }
 
@@ -151,12 +161,41 @@ export interface TenantMemberPageRequest {
 interface TenantGroupsResponse {
     tenant_id: string;
     search: string;
+    offset?: number;
+    limit?: number;
+    has_more?: boolean;
     groups: TenantGroup[];
+}
+
+export interface TenantGroupsPage {
+    tenant_id: string;
+    search: string;
+    offset: number;
+    limit: number;
+    has_more: boolean;
+    groups: TenantGroup[];
+}
+
+export interface TenantGroupPageRequest {
+    search?: string;
+    offset?: number;
+    limit?: number;
 }
 
 interface TenantGroupCreateResponse {
     tenant_id: string;
     group: TenantGroup;
+}
+
+interface TenantGroupUpdateResponse {
+    tenant_id: string;
+    previous_group_name: string;
+    group: TenantGroup;
+}
+
+interface TenantGroupDeleteResponse {
+    tenant_id: string;
+    group_name: string;
 }
 
 interface TenantAvailableUsersResponse {
@@ -429,11 +468,43 @@ const TenantService = {
     /**
      * List tenant organization groups and their members
      */
-    getTenantGroups: (tenantId: string, search = ""): Promise<TenantGroup[]> => {
-        const searchParams = new URLSearchParams();
-        if (search.trim()) {
-            searchParams.set("search", search.trim());
+    getTenantGroups: async (tenantId: string, search = ""): Promise<TenantGroup[]> => {
+        const groups: TenantGroup[] = [];
+        const limit = 100;
+        let offset = 0;
+
+        while (true) {
+            const response = await TenantService.getTenantGroupsPage(tenantId, {
+                search,
+                offset,
+                limit,
+            });
+            groups.push(...response.groups);
+            if (!response.has_more || response.groups.length === 0) {
+                break;
+            }
+            offset = response.offset + response.groups.length;
         }
+
+        return groups;
+    },
+
+    /**
+     * List one page of tenant organization groups and their members
+     */
+    getTenantGroupsPage: (
+        tenantId: string,
+        options: TenantGroupPageRequest = {},
+    ): Promise<TenantGroupsPage> => {
+        const searchParams = new URLSearchParams();
+        const normalizedSearch = options.search?.trim() ?? "";
+        const offset = Math.max(0, options.offset ?? 0);
+        const limit = Math.max(1, options.limit ?? 10);
+        if (normalizedSearch) {
+            searchParams.set("search", normalizedSearch);
+        }
+        searchParams.set("offset", `${offset}`);
+        searchParams.set("limit", `${limit}`);
         const queryString = searchParams.toString();
         const path = `${BASE_PATH}/tenants/${encodeURIComponent(tenantId)}/groups${
             queryString ? `?${queryString}` : ""
@@ -444,7 +515,14 @@ const TenantService = {
                 path,
                 httpMethod: "GET",
                 successCallback: (response: TenantGroupsResponse) =>
-                    resolve(response.groups ?? []),
+                    resolve({
+                        tenant_id: response.tenant_id,
+                        search: response.search ?? normalizedSearch,
+                        offset: response.offset ?? offset,
+                        limit: response.limit ?? limit,
+                        has_more: Boolean(response.has_more),
+                        groups: response.groups ?? [],
+                    }),
                 failureCallback: reject,
             });
         });
@@ -470,6 +548,51 @@ const TenantService = {
                 postBody: { name },
                 successCallback: (response: TenantGroupCreateResponse) =>
                     resolve(response.group),
+                failureCallback: reject,
+            });
+        });
+    },
+
+    /**
+     * Rename one tenant organization group.
+     */
+    renameTenantGroup: (
+        tenantId: string,
+        currentGroupName: string,
+        data: RenameTenantGroupRequest,
+    ): Promise<TenantGroup> => {
+        const name = normalizeTenantGroupName(data.name ?? "");
+        const validationMessage = validateTenantGroupName(name);
+        if (validationMessage) {
+            return Promise.reject(new Error(validationMessage));
+        }
+
+        return new Promise((resolve, reject) => {
+            HttpService.makeCallToBackend({
+                path: `${BASE_PATH}/tenants/${encodeURIComponent(tenantId)}/groups/${encodeURIComponent(
+                    currentGroupName,
+                )}`,
+                httpMethod: "PUT",
+                postBody: { name },
+                successCallback: (response: TenantGroupUpdateResponse) =>
+                    resolve(response.group),
+                failureCallback: reject,
+            });
+        });
+    },
+
+    /**
+     * Delete one tenant organization group.
+     */
+    deleteTenantGroup: (tenantId: string, groupName: string): Promise<string> => {
+        return new Promise((resolve, reject) => {
+            HttpService.makeCallToBackend({
+                path: `${BASE_PATH}/tenants/${encodeURIComponent(tenantId)}/groups/${encodeURIComponent(
+                    groupName,
+                )}`,
+                httpMethod: "DELETE",
+                successCallback: (response: TenantGroupDeleteResponse) =>
+                    resolve(response.group_name),
                 failureCallback: reject,
             });
         });

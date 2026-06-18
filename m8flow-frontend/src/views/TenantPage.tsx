@@ -2,25 +2,19 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Box,
+  ButtonBase,
   Typography,
   Paper,
   Stack,
   TextField,
   InputAdornment,
   IconButton,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   TableSortLabel,
   Chip,
   MenuItem,
   Select,
   FormControl,
   InputLabel,
-  Tooltip,
   CircularProgress,
   Alert,
   Button,
@@ -30,7 +24,7 @@ import SearchIcon from "@mui/icons-material/Search";
 import EditIcon from "@mui/icons-material/Edit";
 import ClearIcon from "@mui/icons-material/Clear";
 import AddIcon from "@mui/icons-material/Add";
-import ManageAccountsIcon from "@mui/icons-material/ManageAccounts";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { usePermissionFetcher } from "@spiffworkflow-frontend/hooks/PermissionService";
 import { Tenant } from "../services/TenantService";
 import { useTenants } from "../hooks/useTenants";
@@ -43,6 +37,11 @@ const STATUS_COLORS = {
   ACTIVE: "success",
   INACTIVE: "warning",
   DELETED: "error",
+} as const;
+const TENANT_EXPANDED_ROW_BACKGROUND_COLOR = "#DDF4F1";
+const TENANT_LIST_GRID_TEMPLATE_COLUMNS = {
+  xs: "1fr",
+  md: "minmax(220px, 2fr) minmax(220px, 2fr) minmax(110px, auto) 40px",
 } as const;
 
 type SortField = "name" | "slug";
@@ -94,9 +93,16 @@ export default function TenantPage() {
     TenantModalType.EDIT_TENANT,
   );
   const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
-  const [roleDialogTenant, setRoleDialogTenant] = useState<Tenant | null>(null);
-  const [pendingRoleDialogTenant, setPendingRoleDialogTenant] = useState<Tenant | null>(null);
+  const [expandedTenantId, setExpandedTenantId] = useState<string | null>(null);
+  const [pendingExpandedTenantId, setPendingExpandedTenantId] = useState<string | null>(null);
+  const [createdTenantPreview, setCreatedTenantPreview] = useState<Tenant | null>(null);
   const [successMessage, setSuccessMessage] = useState("");
+
+  const toggleTenantExpansion = (tenantId: string) => {
+    setExpandedTenantId((currentTenantId) =>
+      currentTenantId === tenantId ? null : tenantId,
+    );
+  };
 
   // Handle edit
   const handleEdit = (tenant: Tenant) => {
@@ -107,19 +113,9 @@ export default function TenantPage() {
 
   const handleCreate = () => {
     setSelectedTenant(null);
-    setPendingRoleDialogTenant(null);
+    setPendingExpandedTenantId(null);
+    setCreatedTenantPreview(null);
     setModalType(TenantModalType.CREATE_TENANT);
-    setIsModalOpen(true);
-  };
-
-  const handleManageRoles = (tenant: Tenant) => {
-    setRoleDialogTenant(tenant);
-  };
-
-  // Handle delete
-  const handleDeleteClick = (tenant: Tenant) => {
-    setSelectedTenant(tenant);
-    setModalType(TenantModalType.DELETE_TENANT);
     setIsModalOpen(true);
   };
 
@@ -146,22 +142,48 @@ export default function TenantPage() {
       });
     }
     if (modalType === TenantModalType.CREATE_TENANT && createdTenant) {
-      setPendingRoleDialogTenant(createdTenant);
+      setCreatedTenantPreview(createdTenant);
+      setPendingExpandedTenantId(createdTenant.id);
     }
     setSuccessMessage(message);
     refetch();
   };
 
   useEffect(() => {
-    if (!isModalOpen && pendingRoleDialogTenant) {
-      setRoleDialogTenant(pendingRoleDialogTenant);
-      setPendingRoleDialogTenant(null);
+    if (!isModalOpen && pendingExpandedTenantId) {
+      setExpandedTenantId(pendingExpandedTenantId);
+      setPendingExpandedTenantId(null);
     }
-  }, [isModalOpen, pendingRoleDialogTenant]);
+  }, [isModalOpen, pendingExpandedTenantId]);
+
+  const tenantsWithPendingCreate = useMemo(() => {
+    if (!createdTenantPreview) {
+      return tenants;
+    }
+
+    const hasCreatedTenant = tenants.some(
+      (tenant) => tenant.id === createdTenantPreview.id,
+    );
+
+    if (hasCreatedTenant) {
+      return tenants;
+    }
+
+    return [createdTenantPreview, ...tenants];
+  }, [createdTenantPreview, tenants]);
+
+  useEffect(() => {
+    if (
+      createdTenantPreview
+      && tenants.some((tenant) => tenant.id === createdTenantPreview.id)
+    ) {
+      setCreatedTenantPreview(null);
+    }
+  }, [createdTenantPreview, tenants]);
 
   // Filter and search logic
   const filteredAndSortedTenants = useMemo(() => {
-    let filtered = [...tenants];
+    let filtered = [...tenantsWithPendingCreate];
 
     // Apply search filter
     if (searchQuery.trim()) {
@@ -194,13 +216,22 @@ export default function TenantPage() {
 
     return filtered;
   }, [
-    tenants,
+    tenantsWithPendingCreate,
     searchQuery,
     searchType,
     statusFilter,
     sortField,
     sortDirection,
   ]);
+
+  useEffect(() => {
+    if (
+      expandedTenantId
+      && !filteredAndSortedTenants.some((tenant) => tenant.id === expandedTenantId)
+    ) {
+      setExpandedTenantId(null);
+    }
+  }, [expandedTenantId, filteredAndSortedTenants]);
 
   // Handle sort
   const handleSort = (field: SortField) => {
@@ -343,14 +374,14 @@ export default function TenantPage() {
             <Typography variant="caption" color="text.secondary">
               {translate("showing_organizations_count", "Showing {{filtered}} of {{total}} tenant(s)", {
                 filtered: filteredAndSortedTenants.length,
-                total: tenants.length,
+                total: tenantsWithPendingCreate.length,
               })}
             </Typography>
           </Stack>
         </Paper>
 
-        {/* Table */}
-        <TableContainer component={Paper}>
+        {/* Accordion List */}
+        <Paper>
           {loading ? (
             <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}>
               <CircularProgress />
@@ -374,136 +405,194 @@ export default function TenantPage() {
               </Typography>
             </Box>
           ) : (
-            <Table data-testid="tenant-table">
-              <TableHead>
-                <TableRow>
-                  <TableCell>
-                    <TableSortLabel
-                      active={sortField === "name"}
-                      direction={sortField === "name" ? sortDirection : "asc"}
-                      onClick={() => handleSort("name")}
-                    >
-                      {organizationNameLabel}
-                    </TableSortLabel>
-                  </TableCell>
-                  <TableCell>
-                    <TableSortLabel
-                      active={sortField === "slug"}
-                      direction={sortField === "slug" ? sortDirection : "asc"}
-                      onClick={() => handleSort("slug")}
-                    >
-                      {organizationAliasLabel}
-                    </TableSortLabel>
-                  </TableCell>
-                  <TableCell>{t('status')}</TableCell>
-                  <TableCell align="center">{t('actions')}</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {filteredAndSortedTenants.map((tenant) => (
-                  <TableRow
-                    key={tenant.id}
-                    hover
-                    data-testid={`tenant-row-${tenant.id}`}
-                    sx={{ "&:last-child td, &:last-child th": { border: 0 } }}
+            <Box data-testid="tenant-table">
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: TENANT_LIST_GRID_TEMPLATE_COLUMNS,
+                  gap: 2,
+                  px: 2,
+                  py: 2,
+                  alignItems: "center",
+                  borderBottom: "1px solid",
+                  borderColor: "divider",
+                }}
+              >
+                <Box>
+                  <TableSortLabel
+                    active={sortField === "name"}
+                    direction={sortField === "name" ? sortDirection : "asc"}
+                    onClick={() => handleSort("name")}
                   >
-                    <TableCell>
-                      <Typography variant="body2" fontWeight={500}>
-                        {tenant.name}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2" color="text.secondary">
-                        {tenant.slug}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Chip
-                        label={tenant.status}
-                        color={STATUS_COLORS[tenant.status]}
-                        size="small"
+                    {organizationNameLabel}
+                  </TableSortLabel>
+                </Box>
+                <Box>
+                  <TableSortLabel
+                    active={sortField === "slug"}
+                    direction={sortField === "slug" ? sortDirection : "asc"}
+                    onClick={() => handleSort("slug")}
+                  >
+                    {organizationAliasLabel}
+                  </TableSortLabel>
+                </Box>
+                <Typography variant="body2">{t("status")}</Typography>
+                <Box />
+              </Box>
+
+              {filteredAndSortedTenants.map((tenant, index) => {
+                const isExpanded = expandedTenantId === tenant.id;
+
+                return (
+                  <Box
+                    component="section"
+                    key={tenant.id}
+                    data-testid={`tenant-row-${tenant.id}`}
+                    sx={{
+                      borderBottom:
+                        index === filteredAndSortedTenants.length - 1
+                          ? "none"
+                          : "1px solid",
+                      borderColor: "divider",
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        display: "grid",
+                        gridTemplateColumns: {
+                          xs: "1fr auto",
+                          md: "minmax(220px, 2fr) minmax(220px, 2fr) minmax(110px, auto) 40px",
+                        },
+                        gap: 2,
+                        px: 2,
+                        py: 1,
+                        alignItems: "center",
+                        backgroundColor: isExpanded
+                          ? TENANT_EXPANDED_ROW_BACKGROUND_COLOR
+                          : "transparent",
+                        transition: "background-color 0.2s ease",
+                      }}
+                    >
+                      <ButtonBase
+                        onClick={() => toggleTenantExpansion(tenant.id)}
+                        data-testid={`tenant-accordion-summary-${tenant.id}`}
+                        aria-expanded={isExpanded}
+                        aria-controls={`tenant-accordion-details-${tenant.id}`}
                         sx={{
-                          fontWeight: 600,
-                          minWidth: 85,
-                          fontSize: "0.75rem",
+                          display: "grid",
+                          gridColumn: {
+                            xs: "1 / span 1",
+                            md: "1 / span 3",
+                          },
+                          gridTemplateColumns: {
+                            xs: "1fr",
+                            md: "minmax(220px, 2fr) minmax(220px, 2fr) minmax(110px, auto)",
+                          },
+                          gap: 2,
+                          alignItems: "center",
+                          justifyItems: "start",
+                          textAlign: "left",
+                          width: "100%",
+                          borderRadius: 1,
+                          px: 0,
+                          py: 1,
                         }}
-                      />
-                    </TableCell>
-                    <TableCell align="center">
-                      <Stack
-                        direction="row"
-                        spacing={1}
-                        justifyContent="center"
                       >
-                        <Tooltip
-                          title={translate(
-                            "manage_tenant_groups",
-                            "Manage Tenant Groups",
-                          )}
-                        >
-                          <IconButton
+                        <Typography variant="body2" fontWeight={700}>
+                          {tenant.name}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {tenant.slug}
+                        </Typography>
+                        <Box>
+                          <Chip
+                            label={tenant.status}
+                            color={STATUS_COLORS[tenant.status]}
                             size="small"
-                            color="primary"
-                            data-testid={`tenant-roles-button-${tenant.id}`}
-                            onClick={() => handleManageRoles(tenant)}
-                          >
-                            <ManageAccountsIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip
-                          title={translate("edit_organization", "Edit Tenant")}
-                          disableHoverListener={tenant.status === "DELETED"}
+                            sx={{
+                              fontWeight: 600,
+                              minWidth: 85,
+                              fontSize: "0.75rem",
+                            }}
+                          />
+                        </Box>
+                      </ButtonBase>
+                      <IconButton
+                        size="small"
+                        onClick={() => toggleTenantExpansion(tenant.id)}
+                        data-testid={`tenant-accordion-toggle-${tenant.id}`}
+                        aria-label={
+                          isExpanded
+                            ? `Collapse ${tenant.name}`
+                            : `Expand ${tenant.name}`
+                        }
+                        aria-expanded={isExpanded}
+                        aria-controls={`tenant-accordion-details-${tenant.id}`}
+                      >
+                        <ExpandMoreIcon
+                          sx={{
+                            transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)",
+                            transition: "transform 0.2s ease",
+                          }}
+                        />
+                      </IconButton>
+                    </Box>
+                    {isExpanded ? (
+                      <Box
+                        data-testid={`tenant-accordion-details-${tenant.id}`}
+                        id={`tenant-accordion-details-${tenant.id}`}
+                        sx={{ px: 2, pb: 2, pt: 1.5 }}
+                      >
+                        <Stack
+                          direction="row"
+                          alignItems="center"
+                          spacing={2}
+                          useFlexGap
+                          flexWrap="wrap"
+                          sx={{ mb: 1.5 }}
                         >
-                          <span
-                            style={{
-                              cursor:
-                                tenant.status === "DELETED"
-                                  ? "not-allowed"
-                                  : "pointer",
+                          <Typography
+                            variant="body1"
+                            color="text.secondary"
+                            sx={{
+                              flex: "1 1 480px",
+                              minWidth: 0,
                             }}
                           >
-                            <IconButton
-                              size="small"
-                              color="primary"
-                              data-testid={`tenant-edit-button-${tenant.id}`}
-                              onClick={() => handleEdit(tenant)}
-                              disabled={tenant.status === "DELETED"}
-                            >
-                              <EditIcon fontSize="small" />
-                            </IconButton>
-                          </span>
-                        </Tooltip>
-                        {/* TODO: Phase 2 - Delete functionality will be implemented in Phase 2 */}
-                        {/* <Tooltip
-                          title="Delete Tenant"
-                          disableHoverListener={tenant.status === "DELETED"}
-                        >
-                          <span
-                            style={{
-                              cursor:
-                                tenant.status === "DELETED"
-                                  ? "not-allowed"
-                                  : "pointer",
+                            {translate(
+                              "tenant_group_management_description",
+                              "Add existing users as members and manage groups and roles associated with this tenant.",
+                            )}
+                          </Typography>
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            startIcon={<EditIcon />}
+                            onClick={() => handleEdit(tenant)}
+                            disabled={tenant.status === "DELETED"}
+                            data-testid={`tenant-inline-edit-button-${tenant.id}`}
+                            sx={{
+                              flexShrink: 0,
+                              marginLeft: "auto",
                             }}
                           >
-                            <IconButton
-                              size="small"
-                              color="error"
-                              onClick={() => handleDeleteClick(tenant)}
-                              disabled={tenant.status === "DELETED"}
-                            >
-                              <DeleteIcon fontSize="small" />
-                            </IconButton>
-                          </span>
-                        </Tooltip> */}
-                      </Stack>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                            {translate("edit_organization_name", "Edit Name")}
+                          </Button>
+                        </Stack>
+                        <TenantRoleDialog
+                          embedded
+                          tenant={tenant}
+                          onClose={() => undefined}
+                          showDescription={false}
+                        />
+                      </Box>
+                    ) : null}
+                  </Box>
+                );
+              })}
+            </Box>
           )}
-        </TableContainer>
+        </Paper>
       </Stack>
 
       <TenantModal
@@ -512,11 +601,6 @@ export default function TenantPage() {
         tenant={selectedTenant}
         onClose={handleCloseModal}
         onSuccess={handleModalSuccess}
-      />
-      <TenantRoleDialog
-        open={Boolean(roleDialogTenant)}
-        tenant={roleDialogTenant}
-        onClose={() => setRoleDialogTenant(null)}
       />
       <Snackbar
         open={Boolean(successMessage)}

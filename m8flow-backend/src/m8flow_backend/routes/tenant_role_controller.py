@@ -6,6 +6,7 @@ from m8flow_backend.helpers.response_helper import success_response
 from m8flow_backend.services.tenant_management_authorization import ensure_request_can_access_tenant
 from m8flow_backend.services.tenant_management_authorization import require_authorized_user
 from m8flow_backend.services.tenant_role_service import create_tenant_group
+from m8flow_backend.services.tenant_role_service import delete_tenant_group
 from m8flow_backend.services.tenant_role_service import add_tenant_group_member
 from m8flow_backend.services.tenant_role_service import add_tenant_member
 from m8flow_backend.services.tenant_role_service import assign_tenant_group_role
@@ -13,6 +14,7 @@ from m8flow_backend.services.tenant_role_service import assign_tenant_role
 from m8flow_backend.services.tenant_role_service import list_available_tenant_users
 from m8flow_backend.services.tenant_role_service import list_tenant_groups_with_members
 from m8flow_backend.services.tenant_role_service import list_tenant_members_with_roles
+from m8flow_backend.services.tenant_role_service import rename_tenant_group
 from m8flow_backend.services.tenant_role_service import remove_tenant_group_member
 from m8flow_backend.services.tenant_role_service import remove_tenant_group_role
 from m8flow_backend.services.tenant_role_service import remove_tenant_role
@@ -21,6 +23,8 @@ DEFAULT_TENANT_MEMBER_PAGE_SIZE = 10
 MAX_TENANT_MEMBER_PAGE_SIZE = 100
 DEFAULT_TENANT_AVAILABLE_USER_PAGE_SIZE = 10
 MAX_TENANT_AVAILABLE_USER_PAGE_SIZE = 100
+DEFAULT_TENANT_GROUP_PAGE_SIZE = 10
+MAX_TENANT_GROUP_PAGE_SIZE = 100
 
 
 def _require_authorized_user(action: str, tenant_id: str | None = None):
@@ -150,12 +154,28 @@ def list_tenant_groups(tenant_id: str):
     """List Keycloak organization groups for one tenant with their members and mapped tenant roles."""
     _require_authorized_user("read", tenant_id)
     search = request.args.get("search")
-    groups = list_tenant_groups_with_members(tenant_id, search=search)
+    offset = _normalized_int_query_arg("offset", 0, minimum=0)
+    limit = _normalized_int_query_arg(
+        "limit",
+        DEFAULT_TENANT_GROUP_PAGE_SIZE,
+        minimum=1,
+        maximum=MAX_TENANT_GROUP_PAGE_SIZE,
+    )
+    groups = list_tenant_groups_with_members(
+        tenant_id,
+        search=search,
+        offset=offset,
+        max_results=limit + 1,
+    )
+    has_more = len(groups) > limit
     return success_response(
         {
             "tenant_id": tenant_id,
             "search": search or "",
-            "groups": groups,
+            "offset": offset,
+            "limit": limit,
+            "has_more": has_more,
+            "groups": groups[:limit],
         },
         200,
     )
@@ -175,6 +195,38 @@ def create_group(tenant_id: str):
             "group": group,
         },
         201,
+    )
+
+
+@handle_api_errors
+def update_group(tenant_id: str, group_name: str):
+    """Rename one Keycloak organization group inside one tenant."""
+    _require_authorized_user("update", tenant_id)
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        payload = {}
+    group = rename_tenant_group(tenant_id, group_name, payload.get("name"))
+    return success_response(
+        {
+            "tenant_id": tenant_id,
+            "previous_group_name": group_name,
+            "group": group,
+        },
+        200,
+    )
+
+
+@handle_api_errors
+def remove_group(tenant_id: str, group_name: str):
+    """Delete one Keycloak organization group inside one tenant."""
+    _require_authorized_user("delete", tenant_id)
+    deleted_group_name = delete_tenant_group(tenant_id, group_name)
+    return success_response(
+        {
+            "tenant_id": tenant_id,
+            "group_name": deleted_group_name,
+        },
+        200,
     )
 
 

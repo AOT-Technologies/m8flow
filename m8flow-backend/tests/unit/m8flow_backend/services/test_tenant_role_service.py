@@ -103,6 +103,201 @@ def test_create_tenant_group_detects_duplicate_after_normalization(monkeypatch):
     )
 
 
+def test_rename_tenant_group_preserves_roles_and_resyncs_members(monkeypatch):
+    rename_calls: list[tuple[str, str, str, list[str] | None]] = []
+    sync_calls: list[tuple[str, str, str, dict[str, dict[str, list[str]]]]] = []
+
+    monkeypatch.setattr(
+        tenant_role_service,
+        "_organization_for_tenant",
+        lambda tenant_id, admin_token=None: (
+            SimpleNamespace(id=tenant_id, slug="tenant-slug"),
+            {"id": "org-1"},
+            "org-1",
+        ),
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "_organization_group_or_error",
+        lambda organization_id, group_name: {
+            "id": "group-1",
+            "name": group_name,
+            "path": f"/{group_name}",
+        },
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "_organization_group_name_lookup",
+        lambda _organization_id: {
+            "approvers": "Approvers",
+            "submitters": "Submitters",
+        },
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "_mapped_roles_for_group",
+        lambda group, organization_id=None, group_role_lookup=None, admin_token=None: [
+            "reviewer"
+        ],
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "rename_organization_group",
+        lambda organization_id, group_id, group_name, mapped_role_names=None, admin_token=None: (
+            rename_calls.append(
+                (organization_id, group_id, group_name, list(mapped_role_names or []))
+            )
+            or {
+                "id": group_id,
+                "name": group_name,
+                "path": f"/{group_name}",
+                "attributes": {
+                    "m8flow.role_mapping.configured": ["true"],
+                    "m8flow.role_names": list(mapped_role_names or []),
+                },
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "_organization_group_role_lookup",
+        lambda organization_id, admin_token=None, groups=None: {
+            "by_group_id": {"group-1": ["reviewer"]},
+            "by_group_name": {"qa reviewers": ["reviewer"]},
+        },
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "_sync_local_members_for_group",
+        lambda tenant, organization_id, group, group_role_lookup=None: sync_calls.append(
+            (
+                tenant.id,
+                organization_id,
+                str(group.get("name") or ""),
+                group_role_lookup or {},
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "list_organization_group_members",
+        lambda _organization_id, _group_id, admin_token=None: [],
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "_serialize_group",
+        lambda organization_id, group, group_role_lookup=None, members_by_group_id=None, admin_token=None: {
+            "id": group["id"],
+            "name": group["name"],
+            "path": group["path"],
+            "mapped_roles": ["reviewer"],
+            "member_count": 0,
+            "members": [],
+        },
+    )
+
+    renamed_group = tenant_role_service.rename_tenant_group(
+        "tenant-1",
+        "Approvers",
+        "  QA   Reviewers  ",
+    )
+
+    assert rename_calls == [("org-1", "group-1", "QA Reviewers", ["reviewer"])]
+    assert sync_calls == [
+        (
+            "tenant-1",
+            "org-1",
+            "QA Reviewers",
+            {
+                "by_group_id": {"group-1": ["reviewer"]},
+                "by_group_name": {"qa reviewers": ["reviewer"]},
+            },
+        )
+    ]
+    assert renamed_group == {
+        "id": "group-1",
+        "name": "QA Reviewers",
+        "path": "/QA Reviewers",
+        "mapped_roles": ["reviewer"],
+        "member_count": 0,
+        "members": [],
+    }
+
+
+def test_delete_tenant_group_removes_group_and_resyncs_members(monkeypatch):
+    delete_calls: list[tuple[str, str]] = []
+    sync_calls: list[tuple[str, str, str, dict[str, dict[str, list[str]]]]] = []
+
+    monkeypatch.setattr(
+        tenant_role_service,
+        "_organization_for_tenant",
+        lambda tenant_id, admin_token=None: (
+            SimpleNamespace(id=tenant_id, slug="tenant-slug"),
+            {"id": "org-1"},
+            "org-1",
+        ),
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "_organization_group_or_error",
+        lambda organization_id, group_name: {
+            "id": "group-1",
+            "name": group_name,
+            "path": f"/{group_name}",
+        },
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "list_organization_group_members",
+        lambda organization_id, group_id, admin_token=None: [
+            {"id": "member-1", "username": "reviewer"},
+            {"id": "member-2", "username": "submitter"},
+        ]
+        if organization_id == "org-1" and group_id == "group-1"
+        else [],
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "delete_organization_group",
+        lambda organization_id, group_id, admin_token=None: delete_calls.append(
+            (organization_id, group_id)
+        ),
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "_organization_group_role_lookup",
+        lambda organization_id, admin_token=None, groups=None: {
+            "by_group_id": {},
+            "by_group_name": {},
+        },
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "_sync_local_member_from_keycloak_member",
+        lambda tenant, organization_id, member, group_role_lookup=None: sync_calls.append(
+            (
+                tenant.id,
+                organization_id,
+                str(member.get("username") or ""),
+                group_role_lookup or {},
+            )
+        )
+        or (SimpleNamespace(id=member.get("id")), []),
+    )
+
+    deleted_group_name = tenant_role_service.delete_tenant_group(
+        "tenant-1",
+        "Approvers",
+    )
+
+    assert deleted_group_name == "Approvers"
+    assert delete_calls == [("org-1", "group-1")]
+    assert sync_calls == [
+        ("tenant-1", "org-1", "reviewer", {"by_group_id": {}, "by_group_name": {}}),
+        ("tenant-1", "org-1", "submitter", {"by_group_id": {}, "by_group_name": {}}),
+    ]
+
+
 def test_list_tenant_members_with_roles_reuses_one_admin_token(monkeypatch):
     admin_token_calls: list[str] = []
     list_groups_calls: list[tuple[str, str | None, bool]] = []
@@ -192,6 +387,7 @@ def test_list_tenant_members_with_roles_reuses_one_admin_token(monkeypatch):
             "email": "admin@example.com",
             "display_name": None,
             "roles": ["tenant-admin"],
+            "groups": [{"id": "group-1", "name": "Administrators"}],
         }
     ]
 
@@ -457,6 +653,102 @@ def test_list_tenant_groups_with_members_reuses_one_admin_token(monkeypatch):
                     "id": "member-1",
                     "username": "admin",
                     "email": "admin@example.com",
+                    "display_name": None,
+                }
+            ],
+        }
+    ]
+
+
+def test_list_tenant_groups_with_members_applies_paging_before_member_lookups(monkeypatch):
+    member_lookup_calls: list[tuple[str, str, str | None]] = []
+
+    monkeypatch.setattr(
+        tenant_role_service,
+        "get_master_admin_token",
+        lambda: "token-1",
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "_organization_for_tenant",
+        lambda tenant_id, admin_token=None: (
+            SimpleNamespace(id=tenant_id, slug="tenant-slug"),
+            {"id": "org-1"},
+            "org-1",
+        ),
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "list_organization_groups",
+        lambda organization_id, admin_token=None, brief_representation=True: [
+            {
+                "id": "group-b",
+                "name": "Bravo",
+                "path": "/Bravo",
+                "attributes": {},
+            },
+            {
+                "id": "group-a",
+                "name": "Alpha",
+                "path": "/Alpha",
+                "attributes": {},
+            },
+            {
+                "id": "group-c",
+                "name": "Charlie",
+                "path": "/Charlie",
+                "attributes": {},
+            },
+        ]
+        if organization_id == "org-1" and admin_token == "token-1" and brief_representation is False
+        else pytest.fail("unexpected organization group list arguments"),
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "organization_group_role_names",
+        lambda _group: [],
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "get_organization_group_by_id",
+        lambda *_args, **_kwargs: pytest.fail(
+            "full group list should avoid extra group-by-id lookups"
+        ),
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "list_organization_group_members",
+        lambda organization_id, group_id, admin_token=None: member_lookup_calls.append(
+            (organization_id, group_id, admin_token)
+        )
+        or [
+            {
+                "id": f"{group_id}-member",
+                "username": f"{group_id}-user",
+                "email": f"{group_id}@example.com",
+            }
+        ],
+    )
+
+    groups = tenant_role_service.list_tenant_groups_with_members(
+        "tenant-1",
+        offset=1,
+        max_results=1,
+    )
+
+    assert member_lookup_calls == [("org-1", "group-b", "token-1")]
+    assert groups == [
+        {
+            "id": "group-b",
+            "name": "Bravo",
+            "path": "/Bravo",
+            "mapped_roles": [],
+            "member_count": 1,
+            "members": [
+                {
+                    "id": "group-b-member",
+                    "username": "group-b-user",
+                    "email": "group-b@example.com",
                     "display_name": None,
                 }
             ],

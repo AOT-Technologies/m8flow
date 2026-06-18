@@ -65,4 +65,88 @@ describe("TenantService group name validation", () => {
       "Group name must be 64 characters or fewer",
     );
   });
+
+  it("normalizes whitespace before sending the rename-group request", async () => {
+    vi.mocked(HttpService.makeCallToBackend).mockImplementation((options: any) => {
+      options.successCallback?.({
+        tenant_id: "tenant-1",
+        previous_group_name: "Approvers",
+        group: {
+          id: "group-1",
+          name: "QA Reviewers",
+          path: "/QA Reviewers",
+          mapped_roles: ["reviewer"],
+          member_count: 1,
+          members: [],
+        },
+      });
+    });
+
+    await TenantService.renameTenantGroup("tenant-1", "Approvers", {
+      name: "  QA   Reviewers  ",
+    });
+
+    expect(HttpService.makeCallToBackend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/v1.0/m8flow/tenants/tenant-1/groups/Approvers",
+        httpMethod: "PUT",
+        postBody: { name: "QA Reviewers" },
+      }),
+    );
+  });
+
+  it("sends the delete-group request to the tenant group endpoint", async () => {
+    vi.mocked(HttpService.makeCallToBackend).mockImplementation((options: any) => {
+      options.successCallback?.({
+        tenant_id: "tenant-1",
+        group_name: "QA Reviewers",
+      });
+    });
+
+    await expect(
+      TenantService.deleteTenantGroup("tenant-1", "QA Reviewers"),
+    ).resolves.toBe("QA Reviewers");
+
+    expect(HttpService.makeCallToBackend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/v1.0/m8flow/tenants/tenant-1/groups/QA%20Reviewers",
+        httpMethod: "DELETE",
+      }),
+    );
+  });
+
+  it("requests one page of tenant groups with offset and limit", async () => {
+    vi.mocked(HttpService.makeCallToBackend).mockImplementation((options: any) => {
+      options.successCallback?.({
+        tenant_id: "tenant-1",
+        search: "review",
+        offset: 10,
+        limit: 10,
+        has_more: true,
+        groups: [],
+      });
+    });
+
+    await expect(
+      TenantService.getTenantGroupsPage("tenant-1", {
+        search: "review",
+        offset: 10,
+        limit: 10,
+      }),
+    ).resolves.toEqual({
+      tenant_id: "tenant-1",
+      search: "review",
+      offset: 10,
+      limit: 10,
+      has_more: true,
+      groups: [],
+    });
+
+    expect(HttpService.makeCallToBackend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/v1.0/m8flow/tenants/tenant-1/groups?search=review&offset=10&limit=10",
+        httpMethod: "GET",
+      }),
+    );
+  });
 });

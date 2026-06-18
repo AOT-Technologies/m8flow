@@ -9,10 +9,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import TenantRoleDialog from "./TenantRoleDialog";
 
 const mockGetTenantGroups = vi.fn();
+const mockGetTenantGroupsPage = vi.fn();
 const mockGetTenantMembers = vi.fn();
 const mockGetAvailableTenantUsers = vi.fn();
 const mockAddTenantMember = vi.fn();
 const mockCreateTenantGroup = vi.fn();
+const mockRenameTenantGroup = vi.fn();
+const mockDeleteTenantGroup = vi.fn();
 const mockAddTenantMemberToGroup = vi.fn();
 const mockRemoveTenantMemberFromGroup = vi.fn();
 const mockAssignTenantGroupRole = vi.fn();
@@ -25,6 +28,7 @@ vi.mock("../services/TenantService", async (importOriginal) => {
     default: {
       ...actual.default,
       getTenantGroups: (...args: unknown[]) => mockGetTenantGroups(...args),
+      getTenantGroupsPage: (...args: unknown[]) => mockGetTenantGroupsPage(...args),
       getTenantMembers: (...args: unknown[]) => mockGetTenantMembers(...args),
       getTenantMembersPage: (...args: unknown[]) => mockGetTenantMembers(...args),
       getAvailableTenantUsers: (...args: unknown[]) =>
@@ -33,6 +37,8 @@ vi.mock("../services/TenantService", async (importOriginal) => {
         mockGetAvailableTenantUsers(...args),
       addTenantMember: (...args: unknown[]) => mockAddTenantMember(...args),
       createTenantGroup: (...args: unknown[]) => mockCreateTenantGroup(...args),
+      renameTenantGroup: (...args: unknown[]) => mockRenameTenantGroup(...args),
+      deleteTenantGroup: (...args: unknown[]) => mockDeleteTenantGroup(...args),
       addTenantMemberToGroup: (...args: unknown[]) =>
         mockAddTenantMemberToGroup(...args),
       removeTenantMemberFromGroup: (...args: unknown[]) =>
@@ -51,11 +57,14 @@ vi.mock("react-i18next", () => ({
     init: () => undefined,
   },
   useTranslation: () => ({
-    t: (key: string) => {
+    t: (key: string, options?: Record<string, unknown>) => {
+      if (key === "tenant_groups_page_indicator") {
+        return `Page ${options?.page ?? ""}`;
+      }
       const messages: Record<string, string> = {
         manage_tenant_groups: "Manage Tenant Groups",
         tenant_group_management_description:
-          "Add existing members and manage groups and roles associated with this tenant.",
+          "Add existing users as members and manage groups and roles associated with this tenant.",
         search_organization_members: "Search tenant members...",
         search_tenant_members_minimum_characters:
           "Type at least 3 characters to search tenant members.",
@@ -64,17 +73,41 @@ vi.mock("react-i18next", () => ({
         members: "Members",
         groups: "Groups",
         group: "Group",
+        action: "Action",
         granted_roles: "Granted Roles",
         username: "Username",
         display_name: "Display Name",
         email: "Email",
-        add_tenant_user: "Add User",
+        effective_roles: "Effective Roles",
+        add_tenant_user: "Add Member",
+        manage_member_groups: "Manage Member Groups",
+        manage_member_groups_description:
+          "Add or remove this member from tenant groups.",
+        manage_granted_roles: "Manage Granted Roles",
+        manage_granted_roles_description:
+          "Grant or revoke tenant roles for this group.",
+        rename_tenant_group: "Rename Group",
+        rename_tenant_group_description:
+          "Change this group's name while keeping its members and granted roles.",
+        remove_tenant_member: "Remove Member",
+        remove_tenant_member_confirmation:
+          "Remove this member from all tenant groups?",
+        remove_tenant_member_unavailable:
+          "This member is not assigned to any groups.",
+        remove_tenant_group: "Remove Group",
+        remove_tenant_group_confirmation:
+          "Remove this group from the tenant? Members will remain in the tenant, but any roles granted through this group will be removed.",
+        no_groups_assigned: "No groups",
+        no_effective_roles_assigned: "No effective roles",
+        no_granted_roles_assigned: "No granted roles",
         create_group: "Create Group",
         create_group_description:
           "Create a new Keycloak group for this tenant. Tenant roles can be assigned after creation.",
         create_tenant_user: "Add User to Tenant",
         add_tenant_user_description:
           "Add an existing user to this tenant, then assign groups.",
+        failed_to_remove_tenant_member: "Failed to remove tenant member.",
+        failed_to_remove_tenant_group: "Failed to remove tenant group.",
         group_name: "Group Name",
         tenant_group_name_exists: "Group '{{name}}' already exists in this tenant.",
         tenant_group_name_helper:
@@ -90,8 +123,11 @@ vi.mock("react-i18next", () => ({
           "No groups or roles match your search.",
         tenant_role_reviewer: "Reviewer",
         tenant_role_submitter: "Submitter",
+        close: "Close",
         cancel: "Cancel",
         add: "Add",
+        save: "Save",
+        remove: "Remove",
         processing: "Processing...",
       };
       return messages[key] ?? key;
@@ -118,6 +154,10 @@ describe("TenantRoleDialog", () => {
       email: string | null;
       display_name: string | null;
       roles: string[];
+      groups?: Array<{
+        id: string;
+        name: string;
+      }>;
     }>,
     options?: {
       search?: string;
@@ -178,16 +218,63 @@ describe("TenantRoleDialog", () => {
     });
   };
 
+  const buildGroupsPage = (
+    allGroups: Array<{
+      id: string;
+      name: string;
+      path: string | null;
+      mapped_roles: string[];
+      member_count: number;
+      members: Array<{
+        id: string;
+        username: string;
+        email: string | null;
+        display_name: string | null;
+      }>;
+    }>,
+    options?: {
+      search?: string;
+      offset?: number;
+      limit?: number;
+    },
+  ) => {
+    const normalizedSearch = options?.search?.trim().toLowerCase() ?? "";
+    const offset = options?.offset ?? 0;
+    const limit = options?.limit ?? 10;
+    const filteredGroups = normalizedSearch
+      ? allGroups.filter((group) =>
+        [group.name, ...group.mapped_roles].some((value) =>
+          value.toLowerCase().includes(normalizedSearch)
+        ))
+      : allGroups;
+    const groups = filteredGroups.slice(offset, offset + limit);
+    return Promise.resolve({
+      tenant_id: tenant.id,
+      search: options?.search ?? "",
+      offset,
+      limit,
+      has_more: offset + limit < filteredGroups.length,
+      groups,
+    });
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetTenantGroups.mockResolvedValue([
+    const tenantGroups = [
       {
         id: "group-approvers",
         name: "Approvers",
         path: "/Approvers",
         mapped_roles: ["reviewer"],
-        member_count: 0,
-        members: [],
+        member_count: 1,
+        members: [
+          {
+            id: "member-1",
+            username: "reviewer",
+            email: "reviewer@example.com",
+            display_name: "Reviewer User",
+          },
+        ],
       },
       {
         id: "group-submitters",
@@ -204,7 +291,13 @@ describe("TenantRoleDialog", () => {
           },
         ],
       },
-    ]);
+    ];
+    mockGetTenantGroups.mockResolvedValue(tenantGroups);
+    mockGetTenantGroupsPage.mockImplementation((_tenantId, options) =>
+      buildGroupsPage(
+        tenantGroups,
+        options as { search?: string; offset?: number; limit?: number } | undefined,
+      ));
     mockGetTenantMembers.mockImplementation((_tenantId, options) =>
       buildMembersPage(
         [
@@ -214,6 +307,12 @@ describe("TenantRoleDialog", () => {
             email: "reviewer@example.com",
             display_name: "Reviewer User",
             roles: ["reviewer"],
+            groups: [
+              {
+                id: "group-approvers",
+                name: "Approvers",
+              },
+            ],
           },
           {
             id: "member-3",
@@ -221,6 +320,12 @@ describe("TenantRoleDialog", () => {
             email: "submitter@example.com",
             display_name: "Submitter User",
             roles: ["submitter"],
+            groups: [
+              {
+                id: "group-submitters",
+                name: "Submitters",
+              },
+            ],
           },
         ],
         options as { search?: string; offset?: number; limit?: number } | undefined,
@@ -243,6 +348,12 @@ describe("TenantRoleDialog", () => {
       email: "new.user@example.com",
       display_name: "new.user",
       roles: ["reviewer"],
+      groups: [
+        {
+          id: "group-approvers",
+          name: "Approvers",
+        },
+      ],
     });
     mockCreateTenantGroup.mockResolvedValue({
       id: "group-manager",
@@ -252,12 +363,38 @@ describe("TenantRoleDialog", () => {
       member_count: 0,
       members: [],
     });
+    mockRenameTenantGroup.mockResolvedValue({
+      id: "group-approvers",
+      name: "QA Reviewers",
+      path: "/QA Reviewers",
+      mapped_roles: ["reviewer"],
+      member_count: 1,
+      members: [
+        {
+          id: "member-1",
+          username: "reviewer",
+          email: "reviewer@example.com",
+          display_name: "Reviewer User",
+        },
+      ],
+    });
+    mockDeleteTenantGroup.mockResolvedValue("Approvers");
     mockAddTenantMemberToGroup.mockResolvedValue({
       id: "member-1",
       username: "reviewer",
       email: "reviewer@example.com",
       display_name: "Reviewer User",
       roles: ["reviewer"],
+      groups: [
+        {
+          id: "group-approvers",
+          name: "Approvers",
+        },
+        {
+          id: "group-submitters",
+          name: "Submitters",
+        },
+      ],
     });
     mockRemoveTenantMemberFromGroup.mockResolvedValue({
       id: "member-1",
@@ -265,6 +402,7 @@ describe("TenantRoleDialog", () => {
       email: "reviewer@example.com",
       display_name: "Reviewer User",
       roles: [],
+      groups: [],
     });
     mockAssignTenantGroupRole.mockResolvedValue({
       id: "group-approvers",
@@ -344,7 +482,7 @@ describe("TenantRoleDialog", () => {
 
     render(<TenantRoleDialog open tenant={tenant} onClose={vi.fn()} />);
 
-    await screen.findAllByText("Approvers");
+    await screen.findByTestId("tenant-member-table-container");
     await waitFor(() =>
       expect(mockGetTenantMembers).toHaveBeenCalledWith("tenant-1", {
         search: "",
@@ -368,6 +506,57 @@ describe("TenantRoleDialog", () => {
     );
     expect(await screen.findByText("User 11")).toBeInTheDocument();
     expect(screen.getByTestId("tenant-member-page-indicator")).toHaveTextContent("Page 2");
+  });
+
+  it("loads the first group page on open and fetches page two only after next is clicked", async () => {
+    mockGetTenantGroupsPage.mockImplementation((_tenantId, options) =>
+      buildGroupsPage(
+        Array.from({ length: 12 }, (_, index) => ({
+          id: `group-${index + 1}`,
+          name: `Group ${index + 1}`,
+          path: `/Group ${index + 1}`,
+          mapped_roles: index % 2 === 0 ? ["reviewer"] : ["submitter"],
+          member_count: 1,
+          members: [
+            {
+              id: `member-${index + 1}`,
+              username: `user-${index + 1}`,
+              email: `user-${index + 1}@example.com`,
+              display_name: `User ${index + 1}`,
+            },
+          ],
+        })),
+        options as { search?: string; offset?: number; limit?: number } | undefined,
+      ));
+
+    render(<TenantRoleDialog open tenant={tenant} onClose={vi.fn()} />);
+
+    await waitFor(() =>
+      expect(mockGetTenantGroupsPage).toHaveBeenCalledWith("tenant-1", {
+        search: "",
+        offset: 0,
+        limit: 10,
+      }),
+    );
+
+    fireEvent.click(screen.getByTestId("tenant-groups-section-toggle"));
+
+    expect(await screen.findByTestId("tenant-group-table-container")).toBeInTheDocument();
+    expect(await screen.findByText("Group 1")).toBeInTheDocument();
+    expect(screen.queryByText("Group 11")).not.toBeInTheDocument();
+    expect(screen.getByTestId("tenant-group-page-indicator")).toHaveTextContent("Page 1");
+
+    fireEvent.click(screen.getByTestId("tenant-group-next-page-button"));
+
+    await waitFor(() =>
+      expect(mockGetTenantGroupsPage).toHaveBeenCalledWith("tenant-1", {
+        search: "",
+        offset: 10,
+        limit: 10,
+      }),
+    );
+    expect(await screen.findByText("Group 11")).toBeInTheDocument();
+    expect(screen.getByTestId("tenant-group-page-indicator")).toHaveTextContent("Page 2");
   });
 
   it("expands members and collapses groups by default, then toggles both sections", async () => {
@@ -403,6 +592,38 @@ describe("TenantRoleDialog", () => {
       "aria-expanded",
       "false",
     );
+  });
+
+  it("renders each section action alongside its matching search input", async () => {
+    render(<TenantRoleDialog open tenant={tenant} onClose={vi.fn()} />);
+
+    await screen.findByTestId("tenant-member-table-container");
+    expect(
+      within(screen.getByTestId("tenant-members-toolbar")).getByTestId(
+        "tenant-member-search-input",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("tenant-members-toolbar")).getByRole("button", {
+        name: "Add Member",
+      }),
+    ).toHaveAttribute("data-testid", "tenant-member-add-button");
+
+    fireEvent.click(screen.getByTestId("tenant-groups-section-toggle"));
+
+    expect(
+      await screen.findByTestId("tenant-groups-toolbar"),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("tenant-groups-toolbar")).getByTestId(
+        "tenant-group-search-input",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("tenant-groups-toolbar")).getByTestId(
+        "tenant-group-add-button",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("loads the first available-user page on open and fetches page two only after next is clicked", async () => {
@@ -471,7 +692,7 @@ describe("TenantRoleDialog", () => {
     expect(screen.queryByText("/Approvers")).not.toBeInTheDocument();
   });
 
-  it("toggles tenant group membership from the member matrix", async () => {
+  it("manages tenant group membership from the member actions dialog", async () => {
     render(<TenantRoleDialog open tenant={tenant} onClose={vi.fn()} />);
 
     await screen.findByTestId("tenant-member-search-input");
@@ -486,25 +707,140 @@ describe("TenantRoleDialog", () => {
       }),
     );
     await screen.findByText("Reviewer User");
+    fireEvent.click(screen.getByTestId("tenant-member-manage-groups-button-reviewer"));
+    await screen.findByTestId("tenant-member-groups-dialog");
     fireEvent.click(
-      screen.getByTestId("tenant-group-checkbox-reviewer-Approvers"),
+      screen.getByTestId(
+        "tenant-member-groups-dialog-checkbox-reviewer-Submitters",
+      ),
     );
 
     await waitFor(() =>
       expect(mockAddTenantMemberToGroup).toHaveBeenCalledWith(
         "tenant-1",
         "reviewer",
-        "Approvers",
+        "Submitters",
       ),
     );
   });
 
-  it("toggles tenant roles from the group matrix", async () => {
+  it("removes a tenant member from all assigned groups", async () => {
+    const tenantGroups = [
+      {
+        id: "group-approvers",
+        name: "Approvers",
+        path: "/Approvers",
+        mapped_roles: ["reviewer"],
+        member_count: 1,
+        members: [
+          {
+            id: "member-1",
+            username: "reviewer",
+            email: "reviewer@example.com",
+            display_name: "Reviewer User",
+          },
+        ],
+      },
+      {
+        id: "group-submitters",
+        name: "Submitters",
+        path: "/Submitters",
+        mapped_roles: ["submitter"],
+        member_count: 2,
+        members: [
+          {
+            id: "member-1",
+            username: "reviewer",
+            email: "reviewer@example.com",
+            display_name: "Reviewer User",
+          },
+          {
+            id: "member-3",
+            username: "submitter",
+            email: "submitter@example.com",
+            display_name: "Submitter User",
+          },
+        ],
+      },
+    ];
+    mockGetTenantGroups.mockResolvedValue(tenantGroups);
+    mockGetTenantGroupsPage.mockImplementation((_tenantId, options) =>
+      buildGroupsPage(
+        tenantGroups,
+        options as { search?: string; offset?: number; limit?: number } | undefined,
+      ));
+    mockGetTenantMembers.mockImplementation((_tenantId, options) =>
+      buildMembersPage(
+        [
+          {
+            id: "member-1",
+            username: "reviewer",
+            email: "reviewer@example.com",
+            display_name: "Reviewer User",
+            roles: ["reviewer", "submitter"],
+            groups: [
+              { id: "group-approvers", name: "Approvers" },
+              { id: "group-submitters", name: "Submitters" },
+            ],
+          },
+          {
+            id: "member-3",
+            username: "submitter",
+            email: "submitter@example.com",
+            display_name: "Submitter User",
+            roles: ["submitter"],
+            groups: [
+              { id: "group-submitters", name: "Submitters" },
+            ],
+          },
+        ],
+        options as { search?: string; offset?: number; limit?: number } | undefined,
+      ));
+
+    render(<TenantRoleDialog open tenant={tenant} onClose={vi.fn()} />);
+
+    await screen.findByTestId("tenant-member-table-container");
+    fireEvent.click(screen.getByTestId("tenant-member-remove-button-reviewer"));
+    await screen.findByTestId("tenant-member-remove-dialog");
+    fireEvent.click(screen.getByTestId("tenant-member-remove-confirm-button"));
+
+    await waitFor(() =>
+      expect(mockRemoveTenantMemberFromGroup).toHaveBeenNthCalledWith(
+        1,
+        "tenant-1",
+        "reviewer",
+        "Approvers",
+      ),
+    );
+    await waitFor(() =>
+      expect(mockRemoveTenantMemberFromGroup).toHaveBeenNthCalledWith(
+        2,
+        "tenant-1",
+        "reviewer",
+        "Submitters",
+      ),
+    );
+  });
+
+  it("renders effective roles for each tenant member", async () => {
+    render(<TenantRoleDialog open tenant={tenant} onClose={vi.fn()} />);
+
+    await screen.findByTestId("tenant-member-table-container");
+    expect(
+      screen.getByTestId("tenant-member-role-chip-reviewer-reviewer"),
+    ).toHaveTextContent("Reviewer");
+    expect(
+      screen.getByTestId("tenant-member-role-chip-submitter-submitter"),
+    ).toHaveTextContent("Submitter");
+  });
+
+  it("manages granted roles from the group actions dialog", async () => {
     render(<TenantRoleDialog open tenant={tenant} onClose={vi.fn()} />);
 
     await screen.findAllByText("Approvers");
     fireEvent.click(screen.getByTestId("tenant-groups-section-toggle"));
-    await screen.findByTestId("tenant-group-role-checkbox-Approvers-viewer");
+    fireEvent.click(screen.getByTestId("tenant-group-manage-roles-button-Approvers"));
+    await screen.findByTestId("tenant-group-roles-dialog");
     fireEvent.click(
       screen.getByTestId("tenant-group-role-checkbox-Approvers-viewer"),
     );
@@ -515,6 +851,42 @@ describe("TenantRoleDialog", () => {
         "Approvers",
         "viewer",
       ),
+    );
+  });
+
+  it("renames a tenant group from the group actions dialog", async () => {
+    render(<TenantRoleDialog open tenant={tenant} onClose={vi.fn()} />);
+
+    await screen.findAllByText("Approvers");
+    fireEvent.click(screen.getByTestId("tenant-groups-section-toggle"));
+    fireEvent.click(screen.getByTestId("tenant-group-rename-button-Approvers"));
+    await screen.findByTestId("tenant-group-rename-dialog");
+    fireEvent.change(screen.getByTestId("tenant-group-rename-input"), {
+      target: { value: "QA Reviewers" },
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("tenant-group-rename-submit-button")).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByTestId("tenant-group-rename-submit-button"));
+
+    await waitFor(() =>
+      expect(mockRenameTenantGroup).toHaveBeenCalledWith("tenant-1", "Approvers", {
+        name: "QA Reviewers",
+      }),
+    );
+  });
+
+  it("removes a tenant group from the group actions dialog", async () => {
+    render(<TenantRoleDialog open tenant={tenant} onClose={vi.fn()} />);
+
+    await screen.findAllByText("Approvers");
+    fireEvent.click(screen.getByTestId("tenant-groups-section-toggle"));
+    fireEvent.click(screen.getByTestId("tenant-group-remove-button-Approvers"));
+    await screen.findByTestId("tenant-group-remove-dialog");
+    fireEvent.click(screen.getByTestId("tenant-group-remove-confirm-button"));
+
+    await waitFor(() =>
+      expect(mockDeleteTenantGroup).toHaveBeenCalledWith("tenant-1", "Approvers"),
     );
   });
 
@@ -531,10 +903,15 @@ describe("TenantRoleDialog", () => {
     render(<TenantRoleDialog open tenant={tenant} onClose={vi.fn()} />);
 
     await screen.findAllByText("Approvers");
+    fireEvent.click(screen.getByTestId("tenant-groups-section-toggle"));
     fireEvent.click(screen.getByTestId("tenant-group-add-button"));
+    await screen.findByTestId("tenant-group-name-input");
     fireEvent.change(screen.getByTestId("tenant-group-name-input"), {
       target: { value: "Manager" },
     });
+    await waitFor(() =>
+      expect(screen.getByTestId("tenant-group-submit-button")).toBeEnabled(),
+    );
     fireEvent.click(screen.getByTestId("tenant-group-submit-button"));
 
     await waitFor(() =>
@@ -548,6 +925,7 @@ describe("TenantRoleDialog", () => {
     render(<TenantRoleDialog open tenant={tenant} onClose={vi.fn()} />);
 
     await screen.findAllByText("Approvers");
+    fireEvent.click(screen.getByTestId("tenant-groups-section-toggle"));
     fireEvent.click(screen.getByTestId("tenant-group-add-button"));
     fireEvent.change(screen.getByTestId("tenant-group-name-input"), {
       target: { value: "Bad %#@! group" },
@@ -566,11 +944,16 @@ describe("TenantRoleDialog", () => {
     render(<TenantRoleDialog open tenant={tenant} onClose={vi.fn()} />);
 
     await screen.findAllByText("Approvers");
+    fireEvent.click(screen.getByTestId("tenant-groups-section-toggle"));
     fireEvent.click(screen.getByTestId("tenant-group-add-button"));
+    await screen.findByTestId("tenant-group-name-input");
     fireEvent.change(screen.getByTestId("tenant-group-name-input"), {
       target: { value: "  Manager   Team  " },
     });
     fireEvent.blur(screen.getByTestId("tenant-group-name-input"));
+    await waitFor(() =>
+      expect(screen.getByTestId("tenant-group-submit-button")).toBeEnabled(),
+    );
     fireEvent.click(screen.getByTestId("tenant-group-submit-button"));
 
     await waitFor(() =>
@@ -583,7 +966,7 @@ describe("TenantRoleDialog", () => {
   it("renders long group names in fixed-width truncated cells and tooltips across dialogs", async () => {
     const longGroupName =
       "This is a very long tenant group name that should not stretch the table layout";
-    mockGetTenantGroups.mockResolvedValue([
+    const tenantGroups = [
       {
         id: "group-long",
         name: longGroupName,
@@ -592,7 +975,13 @@ describe("TenantRoleDialog", () => {
         member_count: 0,
         members: [],
       },
-    ]);
+    ];
+    mockGetTenantGroups.mockResolvedValue(tenantGroups);
+    mockGetTenantGroupsPage.mockImplementation((_tenantId, options) =>
+      buildGroupsPage(
+        tenantGroups,
+        options as { search?: string; offset?: number; limit?: number } | undefined,
+      ));
 
     render(<TenantRoleDialog open tenant={tenant} onClose={vi.fn()} />);
 
@@ -607,9 +996,6 @@ describe("TenantRoleDialog", () => {
         limit: 10,
       }),
     );
-    const headerLabel = await screen.findByTestId(
-      "tenant-members-group-header-group-long",
-    );
     fireEvent.click(screen.getByTestId("tenant-groups-section-toggle"));
     const groupNameCell = await screen.findByTestId(
       "tenant-group-name-cell-group-long",
@@ -619,11 +1005,6 @@ describe("TenantRoleDialog", () => {
       "tenant-member-group-label-group-long",
     );
 
-    expect(headerLabel).toHaveStyle({
-      overflow: "hidden",
-      textOverflow: "ellipsis",
-      whiteSpace: "nowrap",
-    });
     expect(groupNameCell).toHaveStyle({
       overflow: "hidden",
       textOverflow: "ellipsis",
@@ -643,42 +1024,27 @@ describe("TenantRoleDialog", () => {
     render(<TenantRoleDialog open tenant={tenant} onClose={vi.fn()} />);
 
     await screen.findAllByText("Approvers");
-    fireEvent.change(screen.getByTestId("tenant-member-search-input"), {
-      target: { value: "rev" },
-    });
-    await waitFor(() =>
-      expect(mockGetTenantMembers).toHaveBeenCalledWith("tenant-1", {
-        search: "rev",
-        offset: 0,
-        limit: 10,
-      }),
-    );
-    await screen.findByText("Reviewer User");
-    expect(
-      screen.getByTestId("tenant-members-group-header-group-approvers"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByTestId("tenant-members-group-header-group-submitters"),
-    ).toBeInTheDocument();
-
     fireEvent.click(screen.getByTestId("tenant-groups-section-toggle"));
     await screen.findByTestId("tenant-group-search-input");
     fireEvent.change(screen.getByTestId("tenant-group-search-input"), {
       target: { value: "reviewer" },
     });
 
+    await waitFor(() =>
+      expect(mockGetTenantGroupsPage).toHaveBeenCalledWith("tenant-1", {
+        search: "reviewer",
+        offset: 0,
+        limit: 10,
+      }),
+    );
     expect(
-      screen.getByTestId("tenant-group-name-cell-group-approvers"),
+      await screen.findByTestId("tenant-group-name-cell-group-approvers"),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByTestId("tenant-group-name-cell-group-submitters"),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByTestId("tenant-members-group-header-group-approvers"),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByTestId("tenant-members-group-header-group-submitters"),
-    ).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("tenant-group-name-cell-group-submitters"),
+      ).not.toBeInTheDocument(),
+    );
   });
 
   it("filters add-member groups by group name or mapped role", async () => {

@@ -13,7 +13,7 @@ vi.mock("react-i18next", () => ({
         edit_organization: "Edit Tenant",
         manage_tenant_groups: "Manage Tenant Groups",
         tenant_group_management_description:
-          "Add existing members and manage groups and roles associated with this tenant.",
+          "Add existing users as members and manage groups and roles associated with this tenant.",
         delete_organization: "Delete Tenant",
         search_by: "Search By",
         organization_alias: "Tenant Alias",
@@ -59,7 +59,7 @@ vi.mock("react-i18next", () => ({
         username: "Username",
         display_name: "Display Name",
         email: "Email",
-        add_tenant_user: "Add User",
+        add_tenant_user: "Add Member",
         tenant_role_tenant_admin: "Tenant Admin",
         tenant_role_editor: "Editor",
         tenant_role_integrator: "Integrator",
@@ -92,6 +92,7 @@ const mockCreateTenant = vi.fn();
 const mockUpdateTenant = vi.fn();
 const mockDeleteTenant = vi.fn();
 const mockGetTenantGroups = vi.fn();
+const mockGetTenantGroupsPage = vi.fn();
 const mockGetTenantMembers = vi.fn();
 const mockRememberTenantDisplayName = vi.fn();
 
@@ -119,11 +120,14 @@ vi.mock("../services/TenantService", () => ({
   default: {
     createTenant: (...args: unknown[]) => mockCreateTenant(...args),
     getTenantGroups: (...args: unknown[]) => mockGetTenantGroups(...args),
+    getTenantGroupsPage: (...args: unknown[]) => mockGetTenantGroupsPage(...args),
     getTenantMembers: (...args: unknown[]) => mockGetTenantMembers(...args),
     getTenantMembersPage: (...args: unknown[]) => mockGetTenantMembers(...args),
     getAvailableTenantUsers: vi.fn(),
     getAvailableTenantUsersPage: vi.fn(),
     addTenantMember: vi.fn(),
+    renameTenantGroup: vi.fn(),
+    deleteTenantGroup: vi.fn(),
     addTenantMemberToGroup: vi.fn(),
     removeTenantMemberFromGroup: vi.fn(),
     assignTenantGroupRole: vi.fn(),
@@ -144,6 +148,14 @@ describe("TenantPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetTenantGroups.mockResolvedValue([]);
+    mockGetTenantGroupsPage.mockResolvedValue({
+      tenant_id: "tenant-uuid",
+      search: "",
+      offset: 0,
+      limit: 10,
+      has_more: false,
+      groups: [],
+    });
     mockGetTenantMembers.mockResolvedValue({
       tenant_id: "tenant-uuid",
       search: "",
@@ -187,7 +199,10 @@ describe("TenantPage", () => {
 
     render(<TenantPage />);
 
-    fireEvent.click(screen.getByTestId("tenant-edit-button-tenant-uuid"));
+    fireEvent.click(screen.getByTestId("tenant-accordion-summary-tenant-uuid"));
+    fireEvent.click(
+      await screen.findByTestId("tenant-inline-edit-button-tenant-uuid"),
+    );
     await screen.findByTestId("tenant-modal-dialog");
     fireEvent.change(screen.getByDisplayValue("Opa"), {
       target: { value: "Opa 1111" },
@@ -252,9 +267,14 @@ describe("TenantPage", () => {
       await screen.findByText("Tenant created successfully."),
     ).toBeInTheDocument();
     expect(
-      await screen.findByText("Manage Tenant Groups: Information Technology"),
+      await screen.findByTestId("tenant-accordion-details-tenant-uuid"),
     ).toBeInTheDocument();
-    expect(mockGetTenantGroups).toHaveBeenCalledWith("tenant-uuid");
+    expect(screen.getByText("Information Technology")).toBeInTheDocument();
+    expect(mockGetTenantGroupsPage).toHaveBeenCalledWith("tenant-uuid", {
+      search: "",
+      offset: 0,
+      limit: 10,
+    });
     expect(mockGetTenantMembers).toHaveBeenCalledWith("tenant-uuid", {
       search: "",
       offset: 0,
@@ -381,38 +401,45 @@ describe("TenantPage", () => {
       ability: { can: () => true },
       permissionsLoaded: true,
     });
-    mockGetTenantGroups.mockResolvedValue([
-      {
-        id: "group-admin",
-        name: "Administrators",
-        path: "/Administrators",
-        mapped_roles: ["tenant-admin"],
-        member_count: 1,
-        members: [
-          {
-            id: "member-1",
-            username: "admin",
-            email: "admin@example.com",
-            display_name: "Admin User",
-          },
-        ],
-      },
-      {
-        id: "group-approvers",
-        name: "Approvers",
-        path: "/Approvers",
-        mapped_roles: ["reviewer"],
-        member_count: 1,
-        members: [
-          {
-            id: "member-2",
-            username: "reviewer",
-            email: null,
-            display_name: "Reviewer User",
-          },
-        ],
-      },
-    ]);
+    mockGetTenantGroupsPage.mockResolvedValue({
+      tenant_id: "tenant-uuid",
+      search: "",
+      offset: 0,
+      limit: 10,
+      has_more: false,
+      groups: [
+        {
+          id: "group-admin",
+          name: "Administrators",
+          path: "/Administrators",
+          mapped_roles: ["tenant-admin"],
+          member_count: 1,
+          members: [
+            {
+              id: "member-1",
+              username: "admin",
+              email: "admin@example.com",
+              display_name: "Admin User",
+            },
+          ],
+        },
+        {
+          id: "group-approvers",
+          name: "Approvers",
+          path: "/Approvers",
+          mapped_roles: ["reviewer"],
+          member_count: 1,
+          members: [
+            {
+              id: "member-2",
+              username: "reviewer",
+              email: null,
+              display_name: "Reviewer User",
+            },
+          ],
+        },
+      ],
+    });
     mockGetTenantMembers.mockResolvedValue({
       tenant_id: "tenant-uuid",
       search: "",
@@ -426,6 +453,7 @@ describe("TenantPage", () => {
           email: "admin@example.com",
           display_name: "Admin User",
           roles: ["tenant-admin"],
+          groups: [{ id: "group-admin", name: "Administrators" }],
         },
         {
           id: "member-2",
@@ -433,20 +461,28 @@ describe("TenantPage", () => {
           email: null,
           display_name: "Reviewer User",
           roles: ["reviewer"],
+          groups: [{ id: "group-approvers", name: "Approvers" }],
         },
       ],
     });
 
     render(<TenantPage />);
 
-    fireEvent.click(screen.getByTestId("tenant-roles-button-tenant-uuid"));
+    fireEvent.click(screen.getByTestId("tenant-accordion-summary-tenant-uuid"));
 
     expect(
+      await screen.findByTestId("tenant-accordion-details-tenant-uuid"),
+    ).toBeInTheDocument();
+    expect(
       await screen.findByText(
-        "Add existing members and manage groups and roles associated with this tenant.",
+        "Add existing users as members and manage groups and roles associated with this tenant.",
       ),
     ).toBeInTheDocument();
-    expect(mockGetTenantGroups).toHaveBeenCalledWith("tenant-uuid");
+    expect(mockGetTenantGroupsPage).toHaveBeenCalledWith("tenant-uuid", {
+      search: "",
+      offset: 0,
+      limit: 10,
+    });
     expect(mockGetTenantMembers).toHaveBeenCalledWith("tenant-uuid", {
       search: "",
       offset: 0,
@@ -483,38 +519,55 @@ describe("TenantPage", () => {
       ability: { can: () => true },
       permissionsLoaded: true,
     });
-    mockGetTenantGroups.mockResolvedValue([
-      {
-        id: "group-designers",
-        name: "Designers",
-        path: "/Designers",
-        mapped_roles: ["editor"],
-        member_count: 1,
-        members: [
-          {
-            id: "member-1",
-            username: "editor",
-            email: null,
-            display_name: "Editor User",
-          },
-        ],
-      },
-      {
-        id: "group-support",
-        name: "Support",
-        path: "/Support",
-        mapped_roles: ["integrator"],
-        member_count: 1,
-        members: [
-          {
-            id: "member-2",
-            username: "integrator",
-            email: null,
-            display_name: "Integrator User",
-          },
-        ],
-      },
-    ]);
+    mockGetTenantGroupsPage.mockImplementation((_tenantId, options) => {
+      const search = options?.search ?? "";
+      const allGroups = [
+        {
+          id: "group-designers",
+          name: "Designers",
+          path: "/Designers",
+          mapped_roles: ["editor"],
+          member_count: 1,
+          members: [
+            {
+              id: "member-1",
+              username: "editor",
+              email: null,
+              display_name: "Editor User",
+            },
+          ],
+        },
+        {
+          id: "group-support",
+          name: "Support",
+          path: "/Support",
+          mapped_roles: ["integrator"],
+          member_count: 1,
+          members: [
+            {
+              id: "member-2",
+              username: "integrator",
+              email: null,
+              display_name: "Integrator User",
+            },
+          ],
+        },
+      ];
+      const filteredGroups = search
+        ? allGroups.filter((group) =>
+          [group.name, ...group.mapped_roles].some((value) =>
+            value.toLowerCase().includes(search.toLowerCase())
+          ))
+        : allGroups;
+      return Promise.resolve({
+        tenant_id: "tenant-uuid",
+        search,
+        offset: options?.offset ?? 0,
+        limit: options?.limit ?? 10,
+        has_more: false,
+        groups: filteredGroups,
+      });
+    });
     mockGetTenantMembers.mockResolvedValue({
       tenant_id: "tenant-uuid",
       search: "",
@@ -528,6 +581,7 @@ describe("TenantPage", () => {
           email: null,
           display_name: "Editor User",
           roles: ["editor"],
+          groups: [{ id: "group-designers", name: "Designers" }],
         },
         {
           id: "member-2",
@@ -535,21 +589,112 @@ describe("TenantPage", () => {
           email: null,
           display_name: "Integrator User",
           roles: ["integrator"],
+          groups: [{ id: "group-support", name: "Support" }],
         },
       ],
     });
 
     render(<TenantPage />);
 
-    fireEvent.click(screen.getByTestId("tenant-roles-button-tenant-uuid"));
-    await screen.findAllByText("Designers");
+    fireEvent.click(screen.getByTestId("tenant-accordion-summary-tenant-uuid"));
+    await screen.findByTestId("tenant-accordion-details-tenant-uuid");
     fireEvent.click(screen.getByTestId("tenant-groups-section-toggle"));
+    await screen.findByTestId("tenant-group-name-cell-group-designers");
 
     fireEvent.change(screen.getByTestId("tenant-group-search-input"), {
       target: { value: "integrator" },
     });
 
-    expect(screen.queryByText("Designers")).not.toBeInTheDocument();
-    expect(screen.getAllByText("Support").length).toBeGreaterThan(0);
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("tenant-group-name-cell-group-designers"),
+      ).not.toBeInTheDocument(),
+    );
+    expect(
+      screen.getByTestId("tenant-group-name-cell-group-support"),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps only one tenant accordion expanded at a time", async () => {
+    mockUseTenants.mockReturnValue({
+      data: [
+        {
+          id: "tenant-1",
+          name: "Tenant One",
+          slug: "tenant-one",
+          status: "ACTIVE",
+          createdBy: "system",
+          modifiedBy: "system",
+          createdAtInSeconds: 1,
+          updatedAtInSeconds: 1,
+        },
+        {
+          id: "tenant-2",
+          name: "Tenant Two",
+          slug: "tenant-two",
+          status: "ACTIVE",
+          createdBy: "system",
+          modifiedBy: "system",
+          createdAtInSeconds: 1,
+          updatedAtInSeconds: 1,
+        },
+      ],
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    mockUsePermissionFetcher.mockReturnValue({
+      ability: { can: () => true },
+      permissionsLoaded: true,
+    });
+
+    render(<TenantPage />);
+
+    fireEvent.click(screen.getByTestId("tenant-accordion-summary-tenant-1"));
+    expect(
+      await screen.findByTestId("tenant-accordion-details-tenant-1"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("tenant-accordion-summary-tenant-2"));
+    expect(
+      await screen.findByTestId("tenant-accordion-details-tenant-2"),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("tenant-accordion-details-tenant-1"),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it("opens a tenant accordion when clicking the chevron toggle", async () => {
+    mockUseTenants.mockReturnValue({
+      data: [
+        {
+          id: "tenant-uuid",
+          name: "Information Technology",
+          slug: "it",
+          status: "ACTIVE",
+          createdBy: "system",
+          modifiedBy: "system",
+          createdAtInSeconds: 1,
+          updatedAtInSeconds: 1,
+        },
+      ],
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    mockUsePermissionFetcher.mockReturnValue({
+      ability: { can: () => true },
+      permissionsLoaded: true,
+    });
+
+    render(<TenantPage />);
+
+    fireEvent.click(screen.getByTestId("tenant-accordion-toggle-tenant-uuid"));
+
+    expect(
+      await screen.findByTestId("tenant-accordion-details-tenant-uuid"),
+    ).toBeInTheDocument();
   });
 });
