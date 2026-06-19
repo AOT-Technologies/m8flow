@@ -55,6 +55,13 @@ export default function TemplateFileList({ template, templateId }: TemplateFileL
 
   return (
     <Box sx={{ mt: 1 }}>
+      <Typography
+        variant="overline"
+        color="text.secondary"
+        sx={{ display: "block", mb: 0.5, letterSpacing: "0.08em" }}
+      >
+        Files
+      </Typography>
       <TableContainer>
         <Table size="medium" className="process-model-file-table" data-testid="template-file-list-table">
           <TableHead>
