@@ -233,7 +233,7 @@ describe("TenantPage", () => {
       permissionsLoaded: true,
     });
     mockCreateTenant.mockResolvedValue({
-      alias: "it-team_1",
+      alias: "information-technology",
       name: "Information Technology",
       organization_id: "tenant-uuid",
       id: "tenant-uuid",
@@ -244,9 +244,6 @@ describe("TenantPage", () => {
     fireEvent.click(screen.getByTestId("tenant-add-button"));
     await screen.findByTestId("tenant-modal-dialog");
 
-    fireEvent.change(screen.getByLabelText("Tenant Alias"), {
-      target: { value: "it-team_1" },
-    });
     fireEvent.change(screen.getByLabelText("Tenant Name"), {
       target: { value: "Information Technology" },
     });
@@ -255,7 +252,7 @@ describe("TenantPage", () => {
 
     await waitFor(() => {
       expect(mockCreateTenant).toHaveBeenCalledWith({
-        slug: "it-team_1",
+        slug: "information-technology",
         name: "Information Technology",
       });
     });
@@ -302,15 +299,12 @@ describe("TenantPage", () => {
     fireEvent.click(screen.getByTestId("tenant-modal-submit-button"));
 
     expect(
-      await screen.findByText("Tenant alias cannot be empty"),
-    ).toBeInTheDocument();
-    expect(
       await screen.findByText("Tenant name cannot be empty"),
     ).toBeInTheDocument();
     expect(mockCreateTenant).not.toHaveBeenCalled();
   });
 
-  it("validates slug format and display name length before submit", async () => {
+  it("uses a name-only create form and validates display name length before submit", async () => {
     mockUseTenants.mockReturnValue({
       data: [],
       isLoading: false,
@@ -327,9 +321,7 @@ describe("TenantPage", () => {
     fireEvent.click(screen.getByTestId("tenant-add-button"));
     await screen.findByTestId("tenant-modal-dialog");
 
-    fireEvent.change(screen.getByLabelText("Tenant Alias"), {
-      target: { value: "it team" },
-    });
+    expect(screen.queryByLabelText("Tenant Alias")).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Tenant Name"), {
       target: { value: "A".repeat(51) },
     });
@@ -337,19 +329,35 @@ describe("TenantPage", () => {
     fireEvent.click(screen.getByTestId("tenant-modal-submit-button"));
 
     expect(
-      await screen.findByText(
-        "Tenant alias can only contain letters, numbers, hyphens, and underscores",
-      ),
-    ).toBeInTheDocument();
-    expect(
       await screen.findByText("Tenant name must be 50 characters or fewer"),
     ).toBeInTheDocument();
     expect(mockCreateTenant).not.toHaveBeenCalled();
   });
 
-  it("shows a slug validation error when the tenant slug already exists", async () => {
+  it("generates a unique tenant alias when the base alias already exists", async () => {
     mockUseTenants.mockReturnValue({
-      data: [],
+      data: [
+        {
+          id: "tenant-1",
+          name: "Information Technology",
+          slug: "information-technology",
+          status: "ACTIVE",
+          createdBy: "system",
+          modifiedBy: "system",
+          createdAtInSeconds: 1,
+          updatedAtInSeconds: 1,
+        },
+        {
+          id: "tenant-2",
+          name: "Information Technology 2",
+          slug: "information-technology-2",
+          status: "ACTIVE",
+          createdBy: "system",
+          modifiedBy: "system",
+          createdAtInSeconds: 1,
+          updatedAtInSeconds: 1,
+        },
+      ],
       isLoading: false,
       error: null,
       refetch: vi.fn(),
@@ -358,26 +366,29 @@ describe("TenantPage", () => {
       ability: { can: () => true },
       permissionsLoaded: true,
     });
-    mockCreateTenant.mockRejectedValue({
-      detail: "Organization already exists or conflict",
+    mockCreateTenant.mockResolvedValue({
+      alias: "information-technology-3",
+      name: "Information Technology",
+      organization_id: "tenant-uuid",
+      id: "tenant-uuid",
     });
 
     render(<TenantPage />);
 
     fireEvent.click(screen.getByTestId("tenant-add-button"));
     await screen.findByTestId("tenant-modal-dialog");
-    fireEvent.change(screen.getByLabelText("Tenant Alias"), {
-      target: { value: "it-team_1" },
-    });
     fireEvent.change(screen.getByLabelText("Tenant Name"), {
       target: { value: "Information Technology" },
     });
 
     fireEvent.click(screen.getByTestId("tenant-modal-submit-button"));
 
-    expect(
-      await screen.findByText("Tenant alias already exists"),
-    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(mockCreateTenant).toHaveBeenCalledWith({
+        slug: "information-technology-3",
+        name: "Information Technology",
+      });
+    });
   });
 
   it("opens tenant group management and loads dynamic keycloak groups", async () => {

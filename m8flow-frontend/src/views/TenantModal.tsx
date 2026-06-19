@@ -19,6 +19,7 @@ interface TenantModalProps {
   open: boolean;
   type: TenantModalType;
   tenant: Tenant | null;
+  existingTenants?: Tenant[];
   onClose: () => void;
   onSuccess: (
     message: string,
@@ -27,22 +28,8 @@ interface TenantModalProps {
   ) => void;
 }
 
-const MAX_SLUG_LENGTH = 15;
 const MAX_DISPLAY_NAME_LENGTH = 50;
-const TENANT_SLUG_PATTERN = /^[A-Za-z0-9_-]+$/;
-
-function validateTenantSlug(value: string): string {
-  if (!value) {
-    return "organization_alias_cannot_be_empty";
-  }
-  if (value.length > MAX_SLUG_LENGTH) {
-    return "organization_alias_max_length";
-  }
-  if (!TENANT_SLUG_PATTERN.test(value)) {
-    return "organization_alias_invalid_pattern";
-  }
-  return "";
-}
+const GENERATED_TENANT_ALIAS_FALLBACK = "tenant";
 
 function validateDisplayName(value: string): string {
   if (!value) {
@@ -52,6 +39,38 @@ function validateDisplayName(value: string): string {
     return "organization_name_max_length";
   }
   return "";
+}
+
+function generateTenantAliasBase(name: string): string {
+  const normalizedName = name
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  const sanitizedAlias = normalizedName
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-");
+
+  return sanitizedAlias || GENERATED_TENANT_ALIAS_FALLBACK;
+}
+
+function generateUniqueTenantAlias(name: string, existingTenants: Tenant[]): string {
+  const baseAlias = generateTenantAliasBase(name);
+  const existingAliases = new Set(
+    existingTenants
+      .map((existingTenant) => existingTenant.slug?.trim().toLowerCase())
+      .filter((slug): slug is string => Boolean(slug)),
+  );
+
+  if (!existingAliases.has(baseAlias)) {
+    return baseAlias;
+  }
+
+  let suffix = 2;
+  while (existingAliases.has(`${baseAlias}-${suffix}`)) {
+    suffix += 1;
+  }
+  return `${baseAlias}-${suffix}`;
 }
 
 function getErrorMessage(error: any): string {
@@ -68,6 +87,7 @@ export default function TenantModal({
   open,
   type,
   tenant,
+  existingTenants = [],
   onClose,
   onSuccess,
 }: TenantModalProps) {
@@ -83,9 +103,7 @@ export default function TenantModal({
   };
 
   // Create State
-  const [createTenantAlias, setCreateTenantAlias] = useState("");
   const [createTenantName, setCreateTenantName] = useState("");
-  const [createTenantAliasError, setCreateTenantAliasError] = useState("");
   const [createTenantNameError, setCreateTenantNameError] = useState("");
 
   // Edit State
@@ -96,18 +114,15 @@ export default function TenantModal({
   useEffect(() => {
     if (open) {
       if (type === TenantModalType.CREATE_TENANT) {
-        setCreateTenantAlias("");
         setCreateTenantName("");
       } else if (tenant && type === TenantModalType.EDIT_TENANT) {
         setEditName(tenant.name);
       }
     } else if (!open) {
       // Reset state when modal closes to prevent stale data
-      setCreateTenantAlias("");
       setCreateTenantName("");
       setEditName("");
     }
-    setCreateTenantAliasError("");
     setCreateTenantNameError("");
     setEditNameError("");
     setSubmitError("");
@@ -115,20 +130,13 @@ export default function TenantModal({
 
   const handleSubmit = async () => {
     let hasValidationError = false;
-    setCreateTenantAliasError("");
     setCreateTenantNameError("");
     setEditNameError("");
     setSubmitError("");
 
     if (type === TenantModalType.CREATE_TENANT) {
-      const trimmedTenantAlias = createTenantAlias.trim();
       const trimmedTenantName = createTenantName.trim();
-      const tenantAliasError = validateTenantSlug(trimmedTenantAlias);
       const tenantNameError = validateDisplayName(trimmedTenantName);
-      if (tenantAliasError) {
-        setCreateTenantAliasError(t(tenantAliasError, { count: MAX_SLUG_LENGTH }));
-        hasValidationError = true;
-      }
       if (tenantNameError) {
         setCreateTenantNameError(t(tenantNameError, { count: MAX_DISPLAY_NAME_LENGTH }));
         hasValidationError = true;
@@ -151,8 +159,12 @@ export default function TenantModal({
     try {
       let createdTenant: Tenant | undefined;
       if (type === TenantModalType.CREATE_TENANT) {
+        const generatedTenantAlias = generateUniqueTenantAlias(
+          createTenantName.trim(),
+          existingTenants,
+        );
         const createdTenantResponse = await TenantService.createTenant({
-          slug: createTenantAlias.trim(),
+          slug: generatedTenantAlias,
           name: createTenantName.trim(),
         });
         createdTenant = {
@@ -195,20 +207,6 @@ export default function TenantModal({
       onClose();
     } catch (err: any) {
       const errorMessage = getErrorMessage(err);
-      if (
-        type === TenantModalType.CREATE_TENANT &&
-        errorMessage &&
-        (errorMessage.toLowerCase().includes("already exists") ||
-          errorMessage.toLowerCase().includes("conflict"))
-      ) {
-        setCreateTenantAliasError(
-          translate(
-            "organization_alias_already_exists",
-            "Tenant alias already exists",
-          ),
-        );
-        return;
-      }
       const action =
         type === TenantModalType.CREATE_TENANT
           ? "create"
@@ -288,46 +286,25 @@ export default function TenantModal({
               </Alert>
             )}
             {isCreate ? (
-              <>
-                <TextField
-                  label={translate("organization_alias", "Tenant Alias")}
-                  fullWidth
-                  value={createTenantAlias}
-                  onChange={(e) => {
-                    setCreateTenantAlias(e.target.value);
-                    if (createTenantAliasError) {
-                      setCreateTenantAliasError("");
-                    }
-                    if (submitError) {
-                      setSubmitError("");
-                    }
-                  }}
-                  disabled={loading}
-                  error={Boolean(createTenantAliasError)}
-                  helperText={createTenantAliasError}
-                  inputProps={{ maxLength: MAX_SLUG_LENGTH }}
-                  data-testid="tenant-realm-id-input"
-                />
-                <TextField
-                  label={translate("organization_name", "Tenant Name")}
-                  fullWidth
-                  value={createTenantName}
-                  onChange={(e) => {
-                    setCreateTenantName(e.target.value);
-                    if (createTenantNameError) {
-                      setCreateTenantNameError("");
-                    }
-                    if (submitError) {
-                      setSubmitError("");
-                    }
-                  }}
-                  disabled={loading}
-                  error={Boolean(createTenantNameError)}
-                  helperText={createTenantNameError}
-                  inputProps={{ maxLength: MAX_DISPLAY_NAME_LENGTH }}
-                  data-testid="tenant-display-name-input"
-                />
-              </>
+              <TextField
+                label={translate("organization_name", "Tenant Name")}
+                fullWidth
+                value={createTenantName}
+                onChange={(e) => {
+                  setCreateTenantName(e.target.value);
+                  if (createTenantNameError) {
+                    setCreateTenantNameError("");
+                  }
+                  if (submitError) {
+                    setSubmitError("");
+                  }
+                }}
+                disabled={loading}
+                error={Boolean(createTenantNameError)}
+                helperText={createTenantNameError}
+                inputProps={{ maxLength: MAX_DISPLAY_NAME_LENGTH }}
+                data-testid="tenant-display-name-input"
+              />
             ) : (
               <TextField
                 label={translate("organization_name", "Tenant Name")}

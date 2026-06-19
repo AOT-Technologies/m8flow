@@ -188,6 +188,17 @@ After signing in, follow the [How to use m8flow](docs/how-to-use.md) guide to cr
     <div align="center">
         <img src="./docs/images/tenant-creation.png" alt="Tenant Creation Screen"/>
     </div>
+4. Enter a name for the tenant:
+
+    <div align="center">
+        <img src="./docs/images/tenant-creation-2.png" alt="Tenant Creation Screen - Enter a name"/>
+    </div>
+
+5. The new tenant was created and is ready to have members added to it:
+
+    <div align="center">
+        <img src="./docs/images/tenant-creation-3.png" alt="Tenant Creation Screen - Tenant created"/>
+    </div>
 
 <a id="adding-users-to-a-tenant"></a>
 ### Adding a user to a tenant

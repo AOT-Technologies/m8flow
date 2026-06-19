@@ -599,6 +599,7 @@ export default function TenantPage() {
         open={isModalOpen}
         type={modalType}
         tenant={selectedTenant}
+        existingTenants={tenantsWithPendingCreate}
         onClose={handleCloseModal}
         onSuccess={handleModalSuccess}
       />
