@@ -13,14 +13,15 @@ import {
   TextField,
 } from "@mui/material";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import TemplateService from "../services/TemplateService";
 import { nameToTemplateKey } from "../utils/templateKey";
 import type { CreateTemplateMetadata, Template, TemplateVisibility } from "../types/template";
 
-const VISIBILITY_OPTIONS: { value: TemplateVisibility; label: string }[] = [
-  { value: "PRIVATE", label: "Private (only you)" },
-  { value: "TENANT", label: "Tenant-wide (all users in your tenant)" },
-  { value: "PUBLIC", label: "Public (all authenticated users)" },
+const VISIBILITY_OPTIONS: { value: TemplateVisibility; labelKey: string }[] = [
+  { value: "PRIVATE", labelKey: "private_only_you" },
+  { value: "TENANT", labelKey: "tenant_wide" },
+  { value: "PUBLIC", labelKey: "public_authenticated_users" },
 ];
 
 const SUPPORTED_EXT = [".bpmn", ".json", ".dmn", ".md"];
@@ -44,6 +45,7 @@ export default function SaveAsTemplateModal({
   onSuccess,
   getFiles,
 }: SaveAsTemplateModalProps) {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -67,12 +69,12 @@ export default function SaveAsTemplateModal({
   const handleSubmit = async () => {
     const trimmedName = name.trim();
     if (!trimmedName) {
-      setError("Name is required.");
+      setError(t("name_required"));
       return;
     }
     const template_key = nameToTemplateKey(trimmedName);
     if (!template_key) {
-      setError("Name must contain at least one letter or number.");
+      setError(t("name_must_contain_letter_or_number"));
       return;
     }
 
@@ -81,7 +83,7 @@ export default function SaveAsTemplateModal({
     try {
       const files = await getFiles();
       if (!files?.length) {
-        setError("No files to save. Please try again.");
+        setError(t("no_files_to_save"));
         setLoading(false);
         return;
       }
@@ -89,7 +91,7 @@ export default function SaveAsTemplateModal({
         f.name.toLowerCase().endsWith(".bpmn")
       );
       if (!hasBpmn) {
-        setError("At least one BPMN file is required.");
+        setError(t("at_least_one_bpmn_required"));
         setLoading(false);
         return;
       }
@@ -112,7 +114,7 @@ export default function SaveAsTemplateModal({
       onSuccess?.(template);
     } catch (err: unknown) {
       const message =
-        err instanceof Error ? err.message : "Failed to create template. Please try again.";
+        err instanceof Error ? err.message : t("failed_to_create_template_retry");
       setError(message);
     } finally {
       setLoading(false);
@@ -128,7 +130,7 @@ export default function SaveAsTemplateModal({
       data-testid="save-as-template-dialog"
     >
       <DialogTitle sx={{ fontSize: "1.25rem", fontWeight: 600 }}>
-        Save as Template
+        {t("save_as_template")}
       </DialogTitle>
       <DialogContent>
         <Stack spacing={2.5} sx={{ pt: 1 }}>
@@ -136,55 +138,55 @@ export default function SaveAsTemplateModal({
             <Alert severity="error" sx={{ mb: 1 }} data-testid="save-as-template-error-alert">{error}</Alert>
           )}
           <TextField
-            label="Name"
+            label={t("name")}
             fullWidth
             required
-            placeholder="e.g. Approval Workflow"
+            placeholder={t("eg_approval_workflow")}
             value={name}
             onChange={(e) => setName(e.target.value)}
             disabled={loading}
             data-testid="save-as-template-name-input"
           />
           <TextField
-            label="Description"
+            label={t("description")}
             fullWidth
             multiline
             minRows={2}
-            placeholder="Optional description"
+            placeholder={t("optional_description")}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             disabled={loading}
             data-testid="save-as-template-description-input"
           />
           <TextField
-            label="Category"
+            label={t("category")}
             fullWidth
-            placeholder="Optional category"
+            placeholder={t("optional_category")}
             value={category}
             onChange={(e) => setCategory(e.target.value)}
             disabled={loading}
             data-testid="save-as-template-category-input"
           />
           <TextField
-            label="Tags"
+            label={t("tags")}
             fullWidth
-            placeholder="Comma-separated tags"
+            placeholder={t("comma_separated_tags")}
             value={tags}
             onChange={(e) => setTags(e.target.value)}
             disabled={loading}
             data-testid="save-as-template-tags-input"
           />
           <FormControl fullWidth disabled={loading}>
-            <InputLabel>Visibility</InputLabel>
+            <InputLabel>{t("visibility")}</InputLabel>
             <Select
               value={visibility}
-              label="Visibility"
+              label={t("visibility")}
               data-testid="save-as-template-visibility-select"
               onChange={(e) => setVisibility(e.target.value as TemplateVisibility)}
             >
               {VISIBILITY_OPTIONS.map((opt) => (
                 <MenuItem key={opt.value} value={opt.value}>
-                  {opt.label}
+                  {t(opt.labelKey)}
                 </MenuItem>
               ))}
             </Select>
@@ -193,7 +195,7 @@ export default function SaveAsTemplateModal({
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
         <Button data-testid="save-as-template-cancel-button" onClick={onClose} disabled={loading} variant="outlined">
-          Cancel
+          {t("cancel")}
         </Button>
         <Button
           data-testid="save-as-template-submit-button"
@@ -202,7 +204,7 @@ export default function SaveAsTemplateModal({
           color="primary"
           disabled={loading}
         >
-          {loading ? "Creating..." : "Create Template"}
+          {loading ? t("creating") : t("create_template")}
         </Button>
       </DialogActions>
     </Dialog>
