@@ -146,7 +146,7 @@
   "rename_tenant_group": "Rename Group",
   "rename_tenant_group_description": "Change this group's name while keeping its members and granted roles.",
   "remove_tenant_member": "Remove Member",
-  "remove_tenant_member_confirmation": "Remove this member from all tenant groups?",
+  "remove_tenant_member_confirmation": "Remove this member from the tenant?",
   "remove_tenant_member_unavailable": "This member is not assigned to any groups.",
   "remove_tenant_group": "Remove Group",
   "remove_tenant_group_confirmation": "Remove this group from the tenant? Members will remain in the tenant, but any roles granted through this group will be removed.",

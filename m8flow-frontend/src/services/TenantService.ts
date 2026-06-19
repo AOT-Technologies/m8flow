@@ -233,6 +233,11 @@ interface TenantMemberCreateResponse {
     member: TenantMember;
 }
 
+interface TenantMemberDeleteResponse {
+    tenant_id: string;
+    username: string;
+}
+
 interface TenantGroupMembershipMutationResponse {
     tenant_id: string;
     group_name: string;
@@ -469,6 +474,26 @@ const TenantService = {
                 },
                 successCallback: (response: TenantMemberCreateResponse) =>
                     resolve(normalizeTenantMember(response.member)),
+                failureCallback: reject,
+            });
+        });
+    },
+
+    /**
+     * Remove one tenant member from a tenant organization.
+     */
+    removeTenantMember: (
+        tenantId: string,
+        username: string,
+    ): Promise<string> => {
+        return new Promise((resolve, reject) => {
+            HttpService.makeCallToBackend({
+                path: `${BASE_PATH}/tenants/${encodeURIComponent(tenantId)}/members/${encodeURIComponent(
+                    username,
+                )}`,
+                httpMethod: "DELETE",
+                successCallback: (response: TenantMemberDeleteResponse) =>
+                    resolve(response.username),
                 failureCallback: reject,
             });
         });

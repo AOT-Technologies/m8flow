@@ -17,6 +17,7 @@ const mockCreateTenantGroup = vi.fn();
 const mockRenameTenantGroup = vi.fn();
 const mockDeleteTenantGroup = vi.fn();
 const mockAddTenantMemberToGroup = vi.fn();
+const mockRemoveTenantMember = vi.fn();
 const mockRemoveTenantMemberFromGroup = vi.fn();
 const mockAssignTenantGroupRole = vi.fn();
 const mockRemoveTenantGroupRole = vi.fn();
@@ -41,6 +42,7 @@ vi.mock("../services/TenantService", async (importOriginal) => {
       deleteTenantGroup: (...args: unknown[]) => mockDeleteTenantGroup(...args),
       addTenantMemberToGroup: (...args: unknown[]) =>
         mockAddTenantMemberToGroup(...args),
+      removeTenantMember: (...args: unknown[]) => mockRemoveTenantMember(...args),
       removeTenantMemberFromGroup: (...args: unknown[]) =>
         mockRemoveTenantMemberFromGroup(...args),
       assignTenantGroupRole: (...args: unknown[]) =>
@@ -91,7 +93,7 @@ vi.mock("react-i18next", () => ({
           "Change this group's name while keeping its members and granted roles.",
         remove_tenant_member: "Remove Member",
         remove_tenant_member_confirmation:
-          "Remove this member from all tenant groups?",
+          "Remove this member from the tenant?",
         remove_tenant_member_unavailable:
           "This member is not assigned to any groups.",
         remove_tenant_group: "Remove Group",
@@ -404,6 +406,7 @@ describe("TenantRoleDialog", () => {
       roles: [],
       groups: [],
     });
+    mockRemoveTenantMember.mockResolvedValue("reviewer");
     mockAssignTenantGroupRole.mockResolvedValue({
       id: "group-approvers",
       name: "Approvers",
@@ -724,7 +727,7 @@ describe("TenantRoleDialog", () => {
     );
   });
 
-  it("removes a tenant member from all assigned groups", async () => {
+  it("removes a tenant member from the tenant", async () => {
     const tenantGroups = [
       {
         id: "group-approvers",
@@ -805,20 +808,42 @@ describe("TenantRoleDialog", () => {
     fireEvent.click(screen.getByTestId("tenant-member-remove-confirm-button"));
 
     await waitFor(() =>
-      expect(mockRemoveTenantMemberFromGroup).toHaveBeenNthCalledWith(
-        1,
+      expect(mockRemoveTenantMember).toHaveBeenCalledWith(
         "tenant-1",
         "reviewer",
-        "Approvers",
       ),
     );
+  });
+
+  it("allows removing a tenant member with no groups", async () => {
+    mockGetTenantMembers.mockImplementation((_tenantId, options) =>
+      buildMembersPage(
+        [
+          {
+            id: "member-9",
+            username: "john",
+            email: "john@example.com",
+            display_name: "John Doe",
+            roles: [],
+            groups: [],
+          },
+        ],
+        options as { search?: string; offset?: number; limit?: number } | undefined,
+      ));
+    mockRemoveTenantMember.mockResolvedValue("john");
+
+    render(<TenantRoleDialog open tenant={tenant} onClose={vi.fn()} />);
+
+    await screen.findByTestId("tenant-member-table-container");
+    const removeButton = screen.getByTestId("tenant-member-remove-button-john");
+    expect(removeButton).not.toBeDisabled();
+
+    fireEvent.click(removeButton);
+    await screen.findByTestId("tenant-member-remove-dialog");
+    fireEvent.click(screen.getByTestId("tenant-member-remove-confirm-button"));
+
     await waitFor(() =>
-      expect(mockRemoveTenantMemberFromGroup).toHaveBeenNthCalledWith(
-        2,
-        "tenant-1",
-        "reviewer",
-        "Submitters",
-      ),
+      expect(mockRemoveTenantMember).toHaveBeenCalledWith("tenant-1", "john"),
     );
   });
 

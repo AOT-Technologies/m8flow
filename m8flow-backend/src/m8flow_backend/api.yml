@@ -491,6 +491,46 @@ paths:
         "500":
           description: Internal server error
 
+  /tenants/{tenant_id}/members/{username}:
+    delete:
+      summary: Remove tenant organization member
+      description: Removes one Keycloak organization member from the selected tenant and clears local tenant-scoped assignments.
+      operationId: m8flow_backend.routes.tenant_role_controller.delete_tenant_member
+      tags:
+        - Tenant
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique tenant identifier
+        - name: username
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Tenant member username
+      responses:
+        "200":
+          description: Tenant member removed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantMemberDeleteResponse"
+        "400":
+          description: Invalid tenant member data
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Forbidden - insufficient permissions
+        "404":
+          description: Tenant member not found
+        "409":
+          description: Local user synchronization conflict
+        "500":
+          description: Internal server error
+
   /tenants/{tenant_id}/available-users:
     get:
       summary: List existing users available to add to a tenant
@@ -1990,6 +2030,14 @@ components:
             type: string
         member:
           $ref: "#/components/schemas/TenantMember"
+
+    TenantMemberDeleteResponse:
+      type: object
+      properties:
+        tenant_id:
+          type: string
+        username:
+          type: string
 
     TenantMemberRoleMutationResponse:
       type: object

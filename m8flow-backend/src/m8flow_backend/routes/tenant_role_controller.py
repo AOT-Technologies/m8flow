@@ -15,6 +15,7 @@ from m8flow_backend.services.tenant_role_service import list_available_tenant_us
 from m8flow_backend.services.tenant_role_service import list_tenant_groups_with_members
 from m8flow_backend.services.tenant_role_service import list_tenant_members_with_roles
 from m8flow_backend.services.tenant_role_service import rename_tenant_group
+from m8flow_backend.services.tenant_role_service import remove_tenant_member
 from m8flow_backend.services.tenant_role_service import remove_tenant_group_member
 from m8flow_backend.services.tenant_role_service import remove_tenant_group_role
 from m8flow_backend.services.tenant_role_service import remove_tenant_role
@@ -146,6 +147,20 @@ def create_tenant_member(tenant_id: str):
             "group_names": payload.get("group_names") or [],
         },
         201,
+    )
+
+
+@handle_api_errors
+def delete_tenant_member(tenant_id: str, username: str):
+    """Remove one Keycloak organization member from one tenant."""
+    _require_authorized_user("delete", tenant_id)
+    removed_username = remove_tenant_member(tenant_id, username)
+    return success_response(
+        {
+            "tenant_id": tenant_id,
+            "username": removed_username,
+        },
+        200,
     )
 
 

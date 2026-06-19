@@ -1079,24 +1079,11 @@ export default function TenantRoleDialog({
       return;
     }
 
-    const currentMemberGroups = memberPendingRemoval.groups ?? [];
-
-    if (currentMemberGroups.length === 0) {
-      setMemberPendingRemoval(null);
-      return;
-    }
-
     setMemberRemovalUsername(memberPendingRemoval.username);
     setErrorMessage("");
 
     try {
-      for (const group of currentMemberGroups) {
-        await TenantService.removeTenantMemberFromGroup(
-          tenant.id,
-          memberPendingRemoval.username,
-          group.name,
-        );
-      }
+      await TenantService.removeTenantMember(tenant.id, memberPendingRemoval.username);
 
       if (selectedMemberForGroupManagement?.username === memberPendingRemoval.username) {
         setSelectedMemberForGroupManagement(null);
@@ -1312,8 +1299,7 @@ export default function TenantRoleDialog({
                           <TableBody>
                             {members.map((member) => {
                               const memberGroups = member.groups ?? [];
-                              const removeMemberDisabled =
-                                memberGroups.length === 0 || memberRemovalUsername !== null;
+                              const removeMemberDisabled = memberRemovalUsername !== null;
                               return (
                                 <TableRow key={member.id || member.username} hover>
                                   <TableCell>{member.username}</TableCell>
@@ -1389,17 +1375,10 @@ export default function TenantRoleDialog({
                                         </span>
                                       </Tooltip>
                                       <Tooltip
-                                        title={
-                                          memberGroups.length > 0
-                                            ? translate(
-                                                "remove_tenant_member",
-                                                "Remove Member",
-                                              )
-                                            : translate(
-                                                "remove_tenant_member_unavailable",
-                                                "This member is not assigned to any groups.",
-                                              )
-                                        }
+                                        title={translate(
+                                          "remove_tenant_member",
+                                          "Remove Member",
+                                        )}
                                       >
                                         <span>
                                           <IconButton
@@ -1889,7 +1868,7 @@ export default function TenantRoleDialog({
             <Typography variant="body2" color="text.secondary">
               {translate(
                 "remove_tenant_member_confirmation",
-                "Remove this member from all tenant groups?",
+                "Remove this member from the tenant?",
               )}
             </Typography>
             {memberPendingRemoval ? (

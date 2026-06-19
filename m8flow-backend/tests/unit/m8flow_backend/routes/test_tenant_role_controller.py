@@ -160,6 +160,27 @@ def test_create_tenant_member_returns_created_member(monkeypatch):
     }
 
 
+def test_delete_tenant_member_returns_deleted_username(monkeypatch):
+    tenant_role_controller = _load_tenant_role_controller(monkeypatch)
+    app = Flask(__name__)
+    monkeypatch.setattr(
+        tenant_role_controller,
+        "remove_tenant_member",
+        lambda tenant_id, username: username,
+    )
+
+    with app.test_request_context("/m8flow/tenants/tenant-it-id/members/editor"):
+        g.user = _mock_user()
+        g._m8flow_super_admin_request = True
+        response = tenant_role_controller.delete_tenant_member("tenant-it-id", "editor")
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "tenant_id": "tenant-it-id",
+        "username": "editor",
+    }
+
+
 def test_list_tenant_groups_returns_service_payload(monkeypatch):
     tenant_role_controller = _load_tenant_role_controller(monkeypatch)
     app = Flask(__name__)

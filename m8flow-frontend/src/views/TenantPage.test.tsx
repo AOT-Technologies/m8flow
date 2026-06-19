@@ -126,6 +126,7 @@ vi.mock("../services/TenantService", () => ({
     getAvailableTenantUsers: vi.fn(),
     getAvailableTenantUsersPage: vi.fn(),
     addTenantMember: vi.fn(),
+    removeTenantMember: vi.fn(),
     renameTenantGroup: vi.fn(),
     deleteTenantGroup: vi.fn(),
     addTenantMemberToGroup: vi.fn(),

@@ -885,6 +885,34 @@ def add_organization_member(
     response.raise_for_status()
 
 
+def remove_organization_member(
+    organization_id: str,
+    member_id: str,
+    admin_token: str | None = None,
+) -> None:
+    """Remove one shared-realm user from one organization when present."""
+    if not organization_id or not str(organization_id).strip():
+        raise ValueError("organization_id is required")
+    if not member_id or not str(member_id).strip():
+        raise ValueError("member_id is required")
+
+    organization_id = str(organization_id).strip()
+    member_id = str(member_id).strip()
+    token = admin_token or get_master_admin_token()
+
+    response = requests.delete(
+        _shared_realm_organizations_url(
+            organization_id,
+            "members",
+            quote(member_id, safe=""),
+        ),
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    if response.status_code != 404:
+        response.raise_for_status()
+
+
 def list_organization_groups(
     organization_id: str,
     admin_token: str | None = None,

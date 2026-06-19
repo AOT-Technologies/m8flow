@@ -22,6 +22,7 @@ from m8flow_backend.services.keycloak_service import (
     organization_group_role_names,
     rename_organization_group,
     remove_organization_group_member,
+    remove_organization_member,
     search_realm_users,
     search_organization_members,
     set_organization_group_role_names,
@@ -33,6 +34,7 @@ from m8flow_backend.services.tenant_group_mapping import (
     organization_group_name_candidates_for_tenant_role,
 )
 from m8flow_backend.services.tenant_identity_helpers import (
+    qualified_config_group_identifier,
     qualify_group_identifier,
     upsert_local_shared_realm_member,
 )
@@ -823,6 +825,50 @@ def _delete_local_assignment(user: Any, group: Any, tenant_id: str) -> bool:
     return True
 
 
+def _clear_local_tenant_assignments(user: Any, tenant_id: str) -> None:
+    removed_group_ids: set[int] = set()
+
+    if hasattr(UserGroupAssignmentModel, "m8f_tenant_id"):
+        assignments = (
+            UserGroupAssignmentModel.query.filter_by(user_id=user.id)
+            .filter_by(m8f_tenant_id=tenant_id)
+            .all()
+        )
+        if not assignments:
+            return
+
+        for assignment in assignments:
+            group_id = getattr(assignment, "group_id", None)
+            if isinstance(group_id, int):
+                removed_group_ids.add(group_id)
+            db.session.delete(assignment)
+        db.session.commit()
+    else:
+        group_identifiers = {
+            qualify_group_identifier(role_name, tenant_id=tenant_id)
+            for role_name in VALID_TENANT_ROLE_NAMES
+        }
+        default_group_identifier = qualified_config_group_identifier(
+            "SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP",
+            tenant_id=tenant_id,
+        )
+        if default_group_identifier:
+            group_identifiers.add(default_group_identifier)
+
+        for group_identifier in sorted(group_identifiers):
+            group = UserService.find_or_create_group(group_identifier, source_is_open_id=True)
+            assignment_deleted = _delete_local_assignment(user, group, tenant_id)
+            if assignment_deleted:
+                removed_group_ids.add(group.id)
+
+    if removed_group_ids:
+        UserService.update_human_task_assignments_for_user(
+            user,
+            new_group_ids=set(),
+            old_group_ids=removed_group_ids,
+        )
+
+
 def _tenant_member_or_error(organization_id: str, tenant_slug: str, username: str) -> dict[str, Any]:
     member = get_organization_member_by_username(organization_id, username)
     if isinstance(member, dict):
@@ -1204,6 +1250,26 @@ def add_tenant_member(
         member,
     )
     return _serialize_member(member, roles=roles)
+
+
+def remove_tenant_member(tenant_id: str, username: str) -> str:
+    """Remove one tenant member from the tenant organization and clear tenant-local assignments."""
+    normalized_username = str(username or "").strip()
+    if not normalized_username:
+        raise ApiError(
+            error_code="invalid_member",
+            message="Username is required.",
+            status_code=400,
+        )
+
+    tenant, _organization, organization_id = _organization_for_tenant(tenant_id)
+    member = _tenant_member_or_error(organization_id, tenant.slug, normalized_username)
+    member_id = _tenant_member_id_or_error(member, normalized_username)
+    local_user = _upsert_local_member_or_error(member, normalized_username)
+
+    remove_organization_member(organization_id, member_id)
+    _clear_local_tenant_assignments(local_user, tenant.id)
+    return normalized_username
 
 
 def add_tenant_group_member(tenant_id: str, username: str, group_name: str) -> dict[str, Any]:

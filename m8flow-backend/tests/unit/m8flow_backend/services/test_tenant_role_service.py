@@ -754,3 +754,53 @@ def test_list_tenant_groups_with_members_applies_paging_before_member_lookups(mo
             ],
         }
     ]
+
+
+def test_remove_tenant_member_removes_organization_membership_and_clears_local_access(monkeypatch):
+    organization_removals: list[tuple[str, str]] = []
+    cleared_assignments: list[tuple[int, str]] = []
+
+    monkeypatch.setattr(
+        tenant_role_service,
+        "_organization_for_tenant",
+        lambda tenant_id, admin_token=None: (
+            SimpleNamespace(id=tenant_id, slug="tenant-slug"),
+            {"id": "org-1"},
+            "org-1",
+        ),
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "_tenant_member_or_error",
+        lambda organization_id, tenant_slug, username: {
+            "id": "member-1",
+            "username": username,
+            "email": "editor@example.com",
+        },
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "_tenant_member_id_or_error",
+        lambda member, username: str(member["id"]),
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "_upsert_local_member_or_error",
+        lambda member, username: SimpleNamespace(id=11, username=username),
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "remove_organization_member",
+        lambda organization_id, member_id: organization_removals.append((organization_id, member_id)),
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "_clear_local_tenant_assignments",
+        lambda user, tenant_id: cleared_assignments.append((user.id, tenant_id)),
+    )
+
+    removed_username = tenant_role_service.remove_tenant_member("tenant-1", "editor")
+
+    assert removed_username == "editor"
+    assert organization_removals == [("org-1", "member-1")]
+    assert cleared_assignments == [(11, "tenant-1")]
