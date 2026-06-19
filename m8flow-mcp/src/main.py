@@ -85,16 +85,17 @@ def main() -> int:
             # HTTP mode for Cursor
             logger.info(f"Starting m8flow MCP server in HTTP mode on {settings.host}:{settings.port}")
 
-            # Add health check endpoint to the underlying Starlette app
+            # Add health check endpoints to the underlying Starlette app
             async def health_check(request):
                 """Health check endpoint for load balancer."""
                 return JSONResponse({"status": "healthy", "server": "m8flow-mcp", "version": "1.0.0"})
 
-            # Get the HTTP app and add the health check route
+            # Get the HTTP app and add the health check routes
             server = mcp.http_app(transport="streamable-http")
             server.add_route("/health", health_check, methods=["GET"])
+            server.add_route("/mcp/health", health_check, methods=["GET"])
 
-            logger.info("Health check endpoint added at /health")
+            logger.info("Health check endpoints added at /health and /mcp/health")
 
             # Run with the wrapped app
             import uvicorn
