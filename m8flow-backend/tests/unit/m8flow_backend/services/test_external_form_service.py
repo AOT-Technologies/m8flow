@@ -1,4 +1,4 @@
-"""Unit tests for ExternalFormService (M8F-338).
+"""Unit tests for ExternalFormService.
 
 Tests cover:
 - create_requests_for_task: one PENDING row per recipient, default expiry,

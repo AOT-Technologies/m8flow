@@ -1,4 +1,4 @@
-"""Add m8flow_external_form_requests table (M8F-338 / M8F-339)
+"""Add m8flow_external_form_requests table
 
 Single consolidated migration for the external-form tracking table. Final schema:
 external_form_url is TEXT (the link can embed a full form schema), notified_at_in_seconds

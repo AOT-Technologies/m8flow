@@ -1,4 +1,4 @@
-"""Unit tests for ExternalFormRequestModel (M8F-338).
+"""Unit tests for ExternalFormRequestModel.
 
 Tests cover:
 - Model creation with required fields and defaults

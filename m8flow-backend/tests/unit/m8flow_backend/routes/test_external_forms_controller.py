@@ -1,4 +1,4 @@
-"""Unit tests for external_forms_controller (M8F-338).
+"""Unit tests for external_forms_controller.
 
 Tests cover:
 - GET context endpoint response shape and ApiError -> status-code mapping

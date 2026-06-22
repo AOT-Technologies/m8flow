@@ -1,4 +1,4 @@
-"""Unit tests for external_form_completion_guard_patch (M8F-339/340).
+"""Unit tests for external_form_completion_guard_patch.
 
 The guard ensures an external-form user task can only be completed via the external-form
 submission — never the in-app task page or the guest/public controller — so the task

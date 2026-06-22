@@ -32,7 +32,7 @@ CLAIMABLE_STATUSES = (
     ExternalFormRequestStatus.failed.value,
 )
 
-# SMTP is configured per-tenant via encrypted tenant secrets (M8F-339), never global
+# SMTP is configured per-tenant via encrypted tenant secrets, never global
 # env. These keys are read from the recipient's tenant when sending — host and
 # from_email are required; the rest are optional.
 #
@@ -58,12 +58,12 @@ def _is_truthy(value: str | None) -> bool:
 
 
 class ExternalFormNotificationService:
-    """Email delivery for external-form secure links (M8F-339).
+    """Email delivery for external-form secure links.
 
     The tracking row is the source of truth: a request is emailed exactly when an
     atomic claim flips it to 'notified' and stamps notified_at_in_seconds. A failed
     SMTP attempt reverts to 'failed' with notified_at cleared, so the periodic sweep
-    retries it; a failed *resume* (M8F-338) keeps notified_at set and is never
+    retries it; a failed *resume* keeps notified_at set and is never
     re-emailed. Callers must hold a Flask app context with the row's tenant set."""
 
     @classmethod
@@ -116,7 +116,7 @@ class ExternalFormNotificationService:
     @staticmethod
     def build_secure_link(row: ExternalFormRequestModel) -> str:
         """The recipient's secure link: the task's own externalFormUrl (set per-task in
-        the modeler, M8F-337) with ref=<reference_id> appended, preserving any query
+        the modeler) with ref=<reference_id> appended, preserving any query
         params it already carries."""
         scheme, netloc, path, query, fragment = urlsplit(row.external_form_url)
         query_params = parse_qsl(query, keep_blank_values=True)
@@ -199,7 +199,7 @@ class ExternalFormNotificationService:
 
     @classmethod
     def resolve_smtp_settings(cls) -> dict[str, Any] | None:
-        """Per-tenant SMTP config from the recipient tenant's encrypted secrets (M8F-339).
+        """Per-tenant SMTP config from the recipient tenant's encrypted secrets.
 
         Requires the caller to have set the tenant context. Returns None when the tenant
         has not configured SMTP (host and from_email are the minimum needed to send)."""
