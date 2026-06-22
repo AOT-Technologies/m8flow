@@ -1,6 +1,7 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { Visibility, GetApp } from "@mui/icons-material";
 import {
   Box,
@@ -57,6 +58,13 @@ export default function TemplateFileList({ template, templateId }: TemplateFileL
 
   return (
     <Box sx={{ mt: 1 }}>
+      <Typography
+        variant="overline"
+        color="text.secondary"
+        sx={{ display: "block", mb: 0.5, letterSpacing: "0.08em" }}
+      >
+        {t("files")}
+      </Typography>
       <TableContainer>
         <Table size="medium" className="process-model-file-table" data-testid="template-file-list-table">
           <TableHead>
