@@ -104,7 +104,7 @@ def _read_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
-@lru_cache(maxsize=None)
+@lru_cache(maxsize=16)  # one entry per supported locale (+ fallback/test locales)
 def _merged_bundle(locale: str) -> dict:
     """Merge upstream base + m8flow override for *locale* (override wins)."""
     root = _repo_root()
