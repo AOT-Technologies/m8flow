@@ -209,7 +209,7 @@ export default function TemplateCard({
                   {t('tenant')}: {tenantDisplayValue}
                 </Typography>
                 <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                  Owner: {template.createdBy || '--'}
+                  {t("owner_label", { owner: template.createdBy || '--' })}
                 </Typography>
               </>
             )}
