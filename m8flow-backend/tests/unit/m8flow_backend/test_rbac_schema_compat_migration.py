@@ -31,6 +31,41 @@ def _bind_operations(module, connection: sa.Connection) -> None:
     module.op = Operations(context)
 
 
+def test_drop_indexes_skips_unique_constraint_backing_indexes(monkeypatch) -> None:
+    module = _load_migration_module()
+    drop_calls: list[tuple[str, str]] = []
+
+    class _FakeInspector:
+        @staticmethod
+        def get_unique_constraints(_table_name: str) -> list[dict[str, object]]:
+            return [
+                {"name": "permission_assignment_uniq", "column_names": ["principal_id", "permission_target_id", "permission"]}
+            ]
+
+        @staticmethod
+        def get_indexes(_table_name: str) -> list[dict[str, object]]:
+            return [
+                {"name": "permission_assignment_uniq", "column_names": ["principal_id", "permission_target_id", "permission"]},
+                {"name": "ix_permission_assignment_principal_id", "column_names": ["principal_id"]},
+                {"name": "ix_permission_assignment_permission_target_id", "column_names": ["permission_target_id"]},
+            ]
+
+    class _FakeOp:
+        @staticmethod
+        def drop_index(index_name: str, *, table_name: str) -> None:
+            drop_calls.append((index_name, table_name))
+
+    monkeypatch.setattr(module, "_inspector", lambda: _FakeInspector())
+    monkeypatch.setattr(module, "op", _FakeOp())
+
+    module._drop_indexes("permission_assignment__rbac_compat_old")
+
+    assert drop_calls == [
+        ("ix_permission_assignment_principal_id", "permission_assignment__rbac_compat_old"),
+        ("ix_permission_assignment_permission_target_id", "permission_assignment__rbac_compat_old"),
+    ]
+
+
 def _index_exists(connection: sa.Connection, table_name: str, columns: list[str], *, unique: bool | None = None) -> bool:
     for index in sa.inspect(connection).get_indexes(table_name):
         if list(index.get("column_names") or []) != columns:
