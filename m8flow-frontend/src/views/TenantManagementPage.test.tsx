@@ -5,6 +5,7 @@ import TenantManagementPage, {
 } from "./TenantManagementPage";
 
 const mockGetTenantGroups = vi.fn();
+const mockGetTenantGroupsPage = vi.fn();
 const mockGetTenantMembers = vi.fn();
 const mockUpdateTenant = vi.fn();
 const mockRememberTenantDisplayName = vi.fn();
@@ -40,12 +41,16 @@ vi.mock("../services/TenantService", () => ({
   validateTenantGroupName: () => "",
   default: {
     getTenantGroups: (...args: unknown[]) => mockGetTenantGroups(...args),
+    getTenantGroupsPage: (...args: unknown[]) => mockGetTenantGroupsPage(...args),
     getTenantMembers: (...args: unknown[]) => mockGetTenantMembers(...args),
     getTenantMembersPage: (...args: unknown[]) => mockGetTenantMembers(...args),
     getAvailableTenantUsers: vi.fn(),
     getAvailableTenantUsersPage: vi.fn(),
     addTenantMember: vi.fn(),
+    removeTenantMember: vi.fn(),
     createTenantGroup: vi.fn(),
+    renameTenantGroup: vi.fn(),
+    deleteTenantGroup: vi.fn(),
     addTenantMemberToGroup: vi.fn(),
     removeTenantMemberFromGroup: vi.fn(),
     assignTenantGroupRole: vi.fn(),
@@ -61,7 +66,7 @@ vi.mock("react-i18next", () => ({
         tenant_management: "Tenant Management",
         edit_organization: "Edit Tenant",
         tenant_group_management_description:
-          "Add existing members and manage groups and roles associated with this tenant.",
+          "Add existing users as members and manage groups and roles associated with this tenant.",
         manage_tenant_groups: "Manage Tenant Groups",
         search_organization_members: "Search tenant members...",
         search_tenant_members_minimum_characters:
@@ -78,7 +83,7 @@ vi.mock("react-i18next", () => ({
         username: "Username",
         display_name: "Display Name",
         email: "Email",
-        add_tenant_user: "Add User",
+        add_tenant_user: "Add Member",
         create_group: "Create Group",
         create_group_description:
           "Create a new Keycloak group for this tenant. Tenant roles can be assigned after creation.",
@@ -123,6 +128,30 @@ describe("TenantManagementPage", () => {
         ],
       },
     ]);
+    mockGetTenantGroupsPage.mockResolvedValue({
+      tenant_id: "tenant-1",
+      search: "",
+      offset: 0,
+      limit: 10,
+      has_more: false,
+      groups: [
+        {
+          id: "group-approvers",
+          name: "Approvers",
+          path: "/Approvers",
+          mapped_roles: ["reviewer"],
+          member_count: 1,
+          members: [
+            {
+              id: "member-1",
+              username: "reviewer",
+              email: "reviewer@example.com",
+              display_name: "Reviewer User",
+            },
+          ],
+        },
+      ],
+    });
     mockGetTenantMembers.mockResolvedValue({
       tenant_id: "tenant-1",
       search: "",
@@ -136,6 +165,7 @@ describe("TenantManagementPage", () => {
           email: "reviewer@example.com",
           display_name: "Reviewer User",
           roles: ["reviewer"],
+          groups: [{ id: "group-approvers", name: "Approvers" }],
         },
       ],
     });
