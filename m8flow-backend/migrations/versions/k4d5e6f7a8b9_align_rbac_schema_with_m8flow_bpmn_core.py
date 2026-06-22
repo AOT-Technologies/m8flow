@@ -133,9 +133,14 @@ def _assert_no_backup_tables(*table_names: str) -> None:
 
 
 def _drop_indexes(table_name: str) -> None:
+    unique_constraint_names = {
+        constraint.get("name")
+        for constraint in _inspector().get_unique_constraints(table_name)
+        if constraint.get("name")
+    }
     for index in _inspector().get_indexes(table_name):
         index_name = index.get("name")
-        if index_name:
+        if index_name and index_name not in unique_constraint_names:
             op.drop_index(index_name, table_name=table_name)
 
 
