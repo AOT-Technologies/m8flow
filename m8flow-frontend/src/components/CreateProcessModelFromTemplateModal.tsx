@@ -14,6 +14,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useEffect, useState, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { ProcessGroup, ProcessGroupLite } from "@spiffworkflow-frontend/interfaces";
 import TemplateService from "../services/TemplateService";
@@ -60,6 +61,7 @@ export default function CreateProcessModelFromTemplateModal({
   template,
   onSuccess,
 }: Readonly<CreateProcessModelFromTemplateModalProps>) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -108,29 +110,29 @@ export default function CreateProcessModelFromTemplateModal({
   const handleSubmit = async () => {
     // Validation
     if (!selectedGroup) {
-      setError("Please select a process group.");
+      setError(t("please_select_process_group"));
       return;
     }
     const trimmedId = processModelId.trim();
     if (!trimmedId) {
-      setError("Process model ID is required.");
+      setError(t("process_model_id_required"));
       return;
     }
     if (!/^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/.test(trimmedId)) {
-      setError("Process model ID must contain only lowercase letters, numbers, and hyphens, and cannot start or end with a hyphen.");
+      setError(t("process_model_id_invalid"));
       return;
     }
     const trimmedName = displayName.trim();
     if (!trimmedName) {
-      setError("Display name is required.");
+      setError(t("display_name_required"));
       return;
     }
     if (!template) {
-      setError("No template selected.");
+      setError(t("no_template_selected"));
       return;
     }
     if (!template.isPublished) {
-      setError("Process models can only be created from a published template version.");
+      setError(t("create_process_model_published_only_tooltip"));
       return;
     }
 
@@ -157,7 +159,7 @@ export default function CreateProcessModelFromTemplateModal({
       onClose();
     } catch (err: unknown) {
       const message =
-        err instanceof Error ? err.message : "Failed to create process model. Please try again.";
+        err instanceof Error ? err.message : t("failed_to_create_process_model");
       setError(message);
     } finally {
       setLoading(false);
@@ -173,13 +175,13 @@ export default function CreateProcessModelFromTemplateModal({
       data-testid="create-process-model-from-template-dialog"
     >
       <DialogTitle sx={{ fontSize: "1.25rem", fontWeight: 600 }}>
-        Create Process Model from Template
+        {t("create_process_model_from_template")}
       </DialogTitle>
       <DialogContent>
         <Stack spacing={2.5} sx={{ pt: 1 }}>
           {template && (
             <Alert severity="info" sx={{ mb: 1 }}>
-              Creating from template: <strong>{template.name}</strong> ({template.version})
+              {t("creating_from_template")}: <strong>{template.name}</strong> ({template.version})
             </Alert>
           )}
           {error && (
@@ -198,9 +200,9 @@ export default function CreateProcessModelFromTemplateModal({
               renderInput={(params) => (
                 <TextField
                   {...params}
-                  label="Process Group"
+                  label={t("process_group")}
                   required
-                  placeholder="Select a process group"
+                  placeholder={t("select_a_process_group")}
                   InputProps={{
                     ...params.InputProps,
                     endAdornment: (
@@ -215,45 +217,45 @@ export default function CreateProcessModelFromTemplateModal({
             />
             {!groupsLoading && flattenedGroups.length === 0 && (
               <Alert severity="warning" sx={{ mt: 1 }}>
-                No process groups found.{" "}
+                {t("no_process_groups_found")}{" "}
                 <Link href="/process-groups/new" target="_blank" rel="noopener">
-                  Create a process group
+                  {t("create_a_process_group")}
                 </Link>{" "}
-                first, then return here.
+                {t("then_return_here")}
               </Alert>
             )}
           </Box>
 
           <TextField
-            label="Display Name"
+            label={t("display_name")}
             fullWidth
             required
-            placeholder="e.g. My Approval Workflow"
+            placeholder={t("eg_my_approval_workflow")}
             value={displayName}
             onChange={(e) => handleDisplayNameChange(e.target.value)}
             disabled={loading}
-            helperText="Human-readable name for the process model"
+            helperText={t("human_readable_name_helper")}
             data-testid="create-from-template-display-name-input"
           />
 
           <TextField
-            label="Process Model ID"
+            label={t("process_model_id")}
             fullWidth
             required
-            placeholder="e.g. my-approval-workflow"
+            placeholder={t("eg_my_approval_workflow_id")}
             value={processModelId}
             onChange={(e) => handleProcessModelIdChange(e.target.value)}
             disabled={loading}
-            helperText="Unique identifier (lowercase letters, numbers, and hyphens only)"
+            helperText={t("process_model_id_helper")}
             data-testid="create-from-template-id-input"
           />
 
           <TextField
-            label="Description"
+            label={t("description")}
             fullWidth
             multiline
             minRows={2}
-            placeholder="Optional description"
+            placeholder={t("optional_description")}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             disabled={loading}
@@ -262,14 +264,14 @@ export default function CreateProcessModelFromTemplateModal({
 
           {selectedGroup && processModelId && (
             <Typography variant="body2" color="text.secondary">
-              Full path: <code>{selectedGroup.id}/{processModelId}</code>
+              {t("full_path")}: <code>{selectedGroup.id}/{processModelId}</code>
             </Typography>
           )}
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
         <Button data-testid="create-from-template-cancel-button" onClick={onClose} disabled={loading} variant="outlined">
-          Cancel
+          {t("cancel")}
         </Button>
         <Button
           data-testid="create-from-template-submit-button"
@@ -278,7 +280,7 @@ export default function CreateProcessModelFromTemplateModal({
           color="primary"
           disabled={loading || groupsLoading || !template?.isPublished}
         >
-          {loading ? "Creating..." : "Create Process Model"}
+          {loading ? t("creating") : t("create_process_model")}
         </Button>
       </DialogActions>
     </Dialog>

@@ -32,6 +32,19 @@ export interface ConnectorOperation {
   parameters: ConnectorOperationParam[];
 }
 
+export interface ConnectorConfigField {
+  id: string;
+  /**
+   * Canonical Secret key (e.g. GITHUB_PAT_TOKEN). Matches the names the sample
+   * templates reference. When absent, the key falls back to `{connectorId}_{id}`.
+   */
+  secretKey?: string;
+  label: string;
+  type: 'text' | 'password';
+  required: boolean;
+  helpText?: string;
+}
+
 export interface ConnectorGroup {
   id: string;
   name: string;
@@ -41,6 +54,7 @@ export interface ConnectorGroup {
   operationCount: number;
   operations: ConnectorOperation[];
   docsUrl?: string;
+  configFields?: ConnectorConfigField[];
 }
 
 interface ConnectorOperationsModalProps {
@@ -65,6 +79,7 @@ export default function ConnectorOperationsModal({
       maxWidth="md"
       fullWidth
       scroll="paper"
+      data-testid="connector-operations-modal"
     >
       <DialogTitle>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
@@ -86,6 +101,7 @@ export default function ConnectorOperationsModal({
           connector.operations.map((op) => (
             <Accordion
               key={op.id}
+              data-testid={`connector-operation-${op.id}`}
               disableGutters
               elevation={0}
               sx={{

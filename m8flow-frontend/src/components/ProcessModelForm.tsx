@@ -211,7 +211,7 @@ export default function ProcessModelForm({
           <TextField
             id={`process-model-notification-address-key-${index}`}
             data-testid={`notification-address-input-${index}`}
-            label="Address"
+            label={t("address")}
             value={notificationAddress}
             onChange={(event: any) => {
               const notificationAddresses: string[] =

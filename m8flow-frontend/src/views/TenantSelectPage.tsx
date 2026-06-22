@@ -6,6 +6,7 @@
  * automatically or asks the user which organization to enter.
  */
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Alert,
   Box,
@@ -91,6 +92,7 @@ export default function TenantSelectPage() {
     MASTER_REALM_IDENTIFIER,
     SHARED_REALM_IDENTIFIER,
   } = useConfig();
+  const { t } = useTranslation();
   const loggedIn = UserService.isLoggedIn();
   const tokenOrganizations = UserService.getOrganizationMemberships();
   const organizationMembershipsKey = JSON.stringify(tokenOrganizations);
@@ -193,12 +195,10 @@ export default function TenantSelectPage() {
       <Container maxWidth="sm">
         <Box sx={{ padding: 3 }}>
           <Typography variant="h4" component="h1" sx={{ mb: 2 }}>
-            Sign in to m8flow
+            {t("sign_in_to_m8flow")}
           </Typography>
           <Typography color="text.secondary" sx={{ mb: 3 }}>
-            Sign in with your shared realm account first. If your account belongs
-            to more than one tenant, you will choose the tenant after your
-            credentials are accepted.
+            {t("shared_realm_sign_in_description")}
           </Typography>
           <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
             <Button
@@ -207,14 +207,14 @@ export default function TenantSelectPage() {
               onClick={handleSharedRealmSignIn}
               data-testid="shared-realm-sign-in-button"
             >
-              Sign in
+              {t("sign_in")}
             </Button>
             <Button
               variant="text"
               onClick={handleGlobalAdminSignIn}
               data-testid="global-admin-sign-in-button"
             >
-              Platform admin sign in
+              {t("platform_admin_sign_in")}
             </Button>
           </Stack>
         </Box>
@@ -227,18 +227,17 @@ export default function TenantSelectPage() {
       <Container maxWidth="sm">
         <Box sx={{ padding: 3 }}>
           <Typography variant="h4" component="h1" sx={{ mb: 2 }}>
-            No tenants available
+            {t("no_tenants_available")}
           </Typography>
           <Alert severity="warning" sx={{ mb: 3 }}>
-            Your account authenticated successfully, but it is not a member of any
-            tenant in the shared realm.
+            {t("account_not_member_of_any_tenant")}
           </Alert>
           <Button
             variant="text"
             onClick={handleGlobalAdminSignIn}
             data-testid="global-admin-sign-in-button"
           >
-            Platform admin sign in
+            {t("platform_admin_sign_in")}
           </Button>
         </Box>
       </Container>
@@ -250,10 +249,12 @@ export default function TenantSelectPage() {
       <Container maxWidth="sm">
         <Box sx={{ padding: 3 }}>
           <Typography variant="h5" component="h1" sx={{ mb: 2 }}>
-            Finalizing tenant access
+            {t("finalizing_tenant_access")}
           </Typography>
           <Typography color="text.secondary">
-            Continuing into {organizations[0].name || organizations[0].alias}...
+            {t("continuing_into_tenant", {
+              tenant: organizations[0].name || organizations[0].alias,
+            })}
           </Typography>
         </Box>
       </Container>
@@ -264,11 +265,10 @@ export default function TenantSelectPage() {
     <Container maxWidth="sm">
       <Box sx={{ padding: 3 }}>
         <Typography variant="h4" component="h1" sx={{ mb: 2 }}>
-          Select a Tenant
+          {t("select_a_tenant")}
         </Typography>
         <Typography color="text.secondary" sx={{ mb: 3 }}>
-          Your account has access to more than one tenant. Choose the tenant
-          you want to enter for this session.
+          {t("multi_tenant_choose_description")}
         </Typography>
         <Stack spacing={2}>
           {organizations.map((organization) => (

@@ -138,7 +138,7 @@ export default function ProcessModelTabs({
         onChange={(_event, newValue) => {
           updateSelectedTab(newValue);
         }}
-        aria-label="List of tabs"
+        aria-label={t("list_of_tabs")}
       >
         <Tab value={0} label={t("about")} data-testid="process-model-tab-about" />
         <Tab value={1} label={t("files")} data-testid="process-model-files" />
