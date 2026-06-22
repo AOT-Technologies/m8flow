@@ -192,20 +192,10 @@ services:
       M8FLOW_BACKEND_SW_UPGRADE_DB: "false"
       M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: "/data/process_models"
       # SMTP is resolved per-tenant from encrypted tenant secrets, not from env.
-      # For local testing, set a tenant's SMTP_HOST=mailpit / SMTP_PORT=1025 secrets.
     volumes:
       - type: bind
         source: ../data/process_models
         target: /data/process_models
-    restart: unless-stopped
-
-  mailpit:
-    profiles: ["nats"]
-    container_name: m8flow-mailpit
-    image: axllent/mailpit:v1.21
-    ports:
-      - "${M8FLOW_MAILPIT_UI_PORT:-6853}:8025"
-      - "${M8FLOW_MAILPIT_SMTP_PORT:-6854}:1025"
     restart: unless-stopped
 
   minio:

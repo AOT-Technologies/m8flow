@@ -245,6 +245,10 @@ POST_APP_EXTENSION_PATCH_SPECS: tuple[PatchSpec, ...] = (
         minimum_phase=BootPhase.APP_CREATED,
     ),
     PatchSpec(
+        target="m8flow_backend.services.external_form_completion_guard_patch:apply",
+        minimum_phase=BootPhase.APP_CREATED,
+    ),
+    PatchSpec(
         target="m8flow_backend.services.process_instance_report_service_patch:apply",
         minimum_phase=BootPhase.APP_CREATED,
     ),

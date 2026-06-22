@@ -60,8 +60,12 @@ def test_returns_external_form_task_without_local_form() -> None:
     assert task_model.signal_buttons == []
     assert task_model.data == {"foo": "bar"}
     assert task_model.saved_form_data is None
-    # The external form URL is surfaced to the user in place of the (absent) local form.
-    assert "https://forms.acme.com/leave" in task_model.extensions["instructionsForEndUser"]
+    # The task page explains the task is completed via an emailed link, but must NOT expose
+    # an in-app link to the form (the bare URL carries no per-recipient ref token).
+    instructions = task_model.extensions["instructionsForEndUser"]
+    assert "external form" in instructions
+    assert "https://forms.acme.com/leave" not in instructions
+    assert "](" not in instructions  # no markdown link
 
 
 def test_does_not_populate_form_fields_when_form_data_not_requested() -> None:

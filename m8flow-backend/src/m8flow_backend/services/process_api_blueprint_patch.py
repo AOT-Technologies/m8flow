@@ -26,7 +26,9 @@ def _make_external_form_aware_get_task_model(original, api_error_cls):
     Because that block is skipped, the form-related attributes the task page expects are
     never set. We populate safe empties so the upstream TaskShow renders instead of crashing
     on `'ui:submitButtonOptions' in form_ui_schema` / `signal_buttons.map(...)` (and hanging
-    when `data` is absent), and we surface the external form URL via instructionsForEndUser.
+    when `data` is absent), and we set instructionsForEndUser to a short note explaining the
+    task is completed via an emailed link (no in-app link — the bare URL has no recipient
+    token and the task must not be completable here).
     NOTE: this is a fallback — the in-app form is empty; rendering/redirecting to the external
     form itself is M8F-340."""
 
@@ -56,9 +58,13 @@ def _make_external_form_aware_get_task_model(original, api_error_cls):
                 task_model.signal_buttons = []
                 extensions = getattr(task_model, "extensions", None)
                 if isinstance(extensions, dict):
+                    # Deliberately no link: the in-app task page must not offer a way to open
+                    # the form. Each recipient is emailed their own secure link (with a unique
+                    # ref= token); the bare externalFormUrl here carries no token and the task
+                    # stays open until the recipient submits via that emailed link.
                     extensions["instructionsForEndUser"] = (
-                        "This task is completed using an external form. "
-                        f"[Open the external form]({external_form_url})"
+                        "This task is completed using an external form. The assigned "
+                        "recipient receives a secure link by email and cannot complete it here."
                     )
             return task_model
 
