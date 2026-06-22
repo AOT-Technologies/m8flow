@@ -59,6 +59,7 @@ const ProcessModelShowWithSaveAsTemplate = lazy(
   () => import('./views/ProcessModelShowWithSaveAsTemplate'),
 );
 const ConnectorsPage = lazy(() => import('./views/Connectors'));
+const ConnectorConfigurePage = lazy(() => import('./views/ConnectorConfigure'));
 
 // M8Flow Extension: clear tenant from localStorage on logout so next visit shows tenant selection
 const originalDoLogout = UserService.doLogout;
@@ -559,6 +560,11 @@ export default function ContainerForExtensions() {
           <Route path="templates/:templateId" element={<TemplateModelerPage />} />
           <Route path="templates" element={<TemplateGalleryPage />} />
           {/* Connectors self-guards on permission + role (admin/editor/integrator). */}
+          {/* Connector-specific configuration form (more specific route first). */}
+          <Route
+            path="connectors/:connectorId/configure"
+            element={<ConnectorConfigurePage />}
+          />
           <Route path="connectors" element={<ConnectorsPage />} />
           <Route
             path="process-models/:process_model_id"
