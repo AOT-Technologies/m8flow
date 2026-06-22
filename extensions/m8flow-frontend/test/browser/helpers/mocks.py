@@ -120,6 +120,50 @@ MOCK_TEMPLATE_V2: dict[str, Any] = {
     "modifiedBy": "admin",
 }
 
+# Private multi-version family (both drafts) -- key ``test-template-private-multi``.
+# Used to verify version-selector behavior for private/draft templates, where every
+# version shows a "Draft" chip (contrast with the published family above).
+MOCK_TEMPLATE_PRIVATE_V1: dict[str, Any] = {
+    "id": 6,
+    "templateKey": "test-template-private-multi",
+    "version": "V1",
+    "name": "Private Multi-Version Template",
+    "description": "Private template, first version",
+    "tags": ["test"],
+    "category": "Testing",
+    "tenantId": "m8flow",
+    "visibility": "PRIVATE",
+    "files": [
+        {"fileType": "bpmn", "fileName": "process.bpmn"},
+        {"fileType": "json", "fileName": "form.json"},
+    ],
+    "isPublished": False,
+    "status": "DRAFT",
+    "createdAtInSeconds": 1700005000,
+    "createdBy": "admin",
+    "updatedAtInSeconds": 1700005000,
+    "modifiedBy": "admin",
+}
+
+MOCK_TEMPLATE_PRIVATE_V2: dict[str, Any] = {
+    "id": 7,
+    "templateKey": "test-template-private-multi",
+    "version": "V2",
+    "name": "Private Multi-Version Template",
+    "description": "Private template, second version",
+    "tags": ["test"],
+    "category": "Testing",
+    "tenantId": "m8flow",
+    "visibility": "PRIVATE",
+    "files": [{"fileType": "bpmn", "fileName": "process.bpmn"}],
+    "isPublished": False,
+    "status": "DRAFT",
+    "createdAtInSeconds": 1700006000,
+    "createdBy": "admin",
+    "updatedAtInSeconds": 1700006000,
+    "modifiedBy": "admin",
+}
+
 ALL_MOCK_TEMPLATES: list[dict[str, Any]] = [
     MOCK_TEMPLATE_PRIVATE,
     MOCK_TEMPLATE_TENANT,
@@ -478,6 +522,23 @@ def mock_template_detail(
     page.route("**/v1.0/m8flow/templates/*", _handle_detail)
 
 
+def mock_template_detail_not_found(page: Page, missing_id: int) -> None:
+    """Intercept GET .../templates/<missing_id> and return 404.
+
+    Exercises the invalid / non-existent version path on the detail page without
+    a live backend. Register this AFTER the standard detail mock so it takes
+    precedence for the targeted id (later ``page.route`` handlers run first).
+    """
+
+    def _handle(route: Route) -> None:
+        if route.request.method != "GET":
+            route.fallback()
+            return
+        _json_response(route, {"message": "Template not found"}, status=404)
+
+    page.route(f"**/v1.0/m8flow/templates/{missing_id}*", _handle)
+
+
 def mock_template_import_api(
     page: Page,
     response_template: dict[str, Any] | None = None,
@@ -796,6 +857,60 @@ def mock_template_files_api(page: Page) -> None:
                 content_type="application/xml",
                 body=_SAMPLE_BPMN,
             )
+        else:
+            route.fulfill(
+                status=200,
+                content_type="application/json",
+                body=_SAMPLE_FORM_JSON,
+            )
+
+    page.route("**/v1.0/m8flow/templates/*/files/*", _handle_file)
+
+
+# Markers embedded in each published-family version's BPMN so tests can prove the
+# served XML changed when the selected version changes. ``MISSING_TEMPLATE_ID`` is
+# the id used by ``mock_template_detail_not_found`` for the non-existent-version case.
+PUBLISHED_V1_MARKER = "Process_published_v1"
+PUBLISHED_V2_MARKER = "Process_published_v2"
+MISSING_TEMPLATE_ID = 99999
+
+
+def bpmn_with_marker(marker: str) -> str:
+    """Return a minimal-but-valid BPMN XML string carrying a unique ``marker``.
+
+    The marker is embedded as the process id (e.g. ``Process_v1``) so a test can
+    assert the served XML actually changed between template versions.
+    """
+    return _SAMPLE_BPMN.replace(
+        'id="Process_sample_process_automation_0m6iyy5"',
+        f'id="{marker}"',
+    ).replace(
+        'bpmnElement="Process_sample_process_automation_0m6iyy5"',
+        f'bpmnElement="{marker}"',
+    )
+
+
+_FILES_ID_RE = re.compile(r"/v1\.0/m8flow/templates/(\d+)/files/")
+
+
+def mock_template_files_versioned(
+    page: Page,
+    content_by_id: dict[int, str],
+) -> None:
+    """Intercept GET .../templates/<id>/files/<filename> with per-version content.
+
+    ``content_by_id`` maps a template id to the BPMN/XML body returned for that
+    version's ``.bpmn``/``.dmn`` files. Ids not present (and all JSON/MD files)
+    fall back to the shared ``_SAMPLE_BPMN`` / ``_SAMPLE_FORM_JSON``.
+    """
+
+    def _handle_file(route: Route) -> None:
+        url = route.request.url
+        if url.endswith(".bpmn") or url.endswith(".dmn"):
+            m = _FILES_ID_RE.search(url)
+            tid = int(m.group(1)) if m else None
+            body = content_by_id.get(tid, _SAMPLE_BPMN) if tid is not None else _SAMPLE_BPMN
+            route.fulfill(status=200, content_type="application/xml", body=body)
         else:
             route.fulfill(
                 status=200,
