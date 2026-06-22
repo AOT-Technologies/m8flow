@@ -16,13 +16,8 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import TemplateService from "../services/TemplateService";
 import { nameToTemplateKey } from "../utils/templateKey";
+import { VISIBILITY_OPTIONS } from "../utils/templateHelpers";
 import type { CreateTemplateMetadata, Template, TemplateVisibility } from "../types/template";
-
-const VISIBILITY_OPTIONS: { value: TemplateVisibility; labelKey: string }[] = [
-  { value: "PRIVATE", labelKey: "private_only_you" },
-  { value: "TENANT", labelKey: "tenant_wide" },
-  { value: "PUBLIC", labelKey: "public_authenticated_users" },
-];
 
 const SUPPORTED_EXT = [".bpmn", ".json", ".dmn", ".md"];
 

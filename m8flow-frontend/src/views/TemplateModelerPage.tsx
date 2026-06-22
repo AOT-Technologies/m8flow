@@ -29,16 +29,9 @@ import TemplateFileList from '../components/TemplateFileList';
 import CreateProcessModelFromTemplateModal from '../components/CreateProcessModelFromTemplateModal';
 import TemplateDeleteConfirmDialog from '../components/TemplateDeleteConfirmDialog';
 import { Template, TemplateVisibility } from '../types/template';
-import { normalizeTemplate } from '../utils/templateHelpers';
+import { normalizeTemplate, VISIBILITY_OPTIONS } from '../utils/templateHelpers';
 import './TemplateModelerPage.css';
 import { usePermissionFetcher } from '@spiffworkflow-frontend/hooks/PermissionService';
-
-
-const VISIBILITY_OPTIONS: { value: TemplateVisibility; label: string }[] = [
-  { value: 'PRIVATE', label: 'private_only_you' },
-  { value: 'TENANT', label: 'tenant_wide' },
-  { value: 'PUBLIC', label: 'public_authenticated_users' },
-];
 
 function TemplateDetailsCard({
   template,
@@ -137,7 +130,7 @@ function TemplateDetailsCard({
               >
                 {VISIBILITY_OPTIONS.map((opt) => (
                   <MenuItem key={opt.value} value={opt.value}>
-                    {t(opt.label)}
+                    {t(opt.labelKey)}
                   </MenuItem>
                 ))}
               </Select>

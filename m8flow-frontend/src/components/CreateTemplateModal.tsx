@@ -17,12 +17,7 @@ import { useTranslation } from "react-i18next";
 import TemplateService from "../services/TemplateService";
 import type { CreateTemplateMetadata, Template, TemplateVisibility } from "../types/template";
 import { nameToTemplateKey } from "../utils/templateKey";
-
-const VISIBILITY_OPTIONS: { value: TemplateVisibility; labelKey: string }[] = [
-  { value: "PRIVATE", labelKey: "private_only_you" },
-  { value: "TENANT", labelKey: "tenant_wide" },
-  { value: "PUBLIC", labelKey: "public_authenticated_users" },
-];
+import { VISIBILITY_OPTIONS } from "../utils/templateHelpers";
 
 export interface CreateTemplateModalProps {
   open: boolean;
