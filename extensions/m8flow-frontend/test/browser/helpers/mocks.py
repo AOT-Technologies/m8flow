@@ -1121,3 +1121,204 @@ def generate_templates(count: int = 15) -> list[dict[str, Any]]:
         })
         for i in range(count)
     ]
+
+
+# ===================================================================
+# Connector mock data -- shape returned by GET /v1.0/m8flow/connectors-grouped
+# ===================================================================
+
+MOCK_CONNECTOR_HTTP: dict[str, Any] = {
+    "id": "http",
+    "name": "HTTP",
+    "description": "Make REST API calls from workflows.",
+    "status": "available",
+    "icon": "globe",
+    "operationCount": 3,
+    "docsUrl": "https://github.com/AOT-Technologies/m8flow/tree/main/m8flow-connector-proxy#http-connector",
+    "operations": [
+        {
+            "id": "http/GetRequest",
+            "name": "GET Request",
+            "rawName": "GetRequest",
+            "description": "Perform an HTTP GET request.",
+            "parameters": [
+                {"id": "url", "type": "string", "required": True},
+                {"id": "headers", "type": "object", "required": False},
+            ],
+        },
+        {
+            "id": "http/PostRequest",
+            "name": "POST Request",
+            "rawName": "PostRequest",
+            "description": "Perform an HTTP POST request.",
+            "parameters": [
+                {"id": "url", "type": "string", "required": True},
+                {"id": "body", "type": "object", "required": False},
+            ],
+        },
+        {
+            "id": "http/PutRequest",
+            "name": "PUT Request",
+            "rawName": "PutRequest",
+            "description": "Perform an HTTP PUT request.",
+            "parameters": [
+                {"id": "url", "type": "string", "required": True},
+            ],
+        },
+    ],
+}
+
+# Exactly one operation -> exercises the singular "1 operation" chip.
+# Empty description -> exercises the use_via_service_task fallback text.
+MOCK_CONNECTOR_SLACK: dict[str, Any] = {
+    "id": "slack",
+    "name": "Slack",
+    "description": "",
+    "status": "available",
+    "icon": "slack",
+    "operationCount": 1,
+    "operations": [
+        {
+            "id": "slack/PostMessage",
+            "name": "Post Message",
+            "rawName": "PostMessage",
+            "description": "Send a message to a Slack channel.",
+            "parameters": [
+                {"id": "channel", "type": "string", "required": True},
+                {"id": "text", "type": "string", "required": True},
+            ],
+        },
+    ],
+}
+
+MOCK_CONNECTOR_SMTP: dict[str, Any] = {
+    "id": "smtp",
+    "name": "SMTP Email",
+    "description": "Send emails over SMTP.",
+    "status": "available",
+    "icon": "mail",
+    "operationCount": 2,
+    "operations": [
+        {
+            "id": "smtp/SendEmail",
+            "name": "Send Email",
+            "rawName": "SendEmail",
+            "description": "Send a plain-text email.",
+            "parameters": [
+                {"id": "to", "type": "string", "required": True},
+                {"id": "subject", "type": "string", "required": True},
+                {"id": "body", "type": "string", "required": False},
+            ],
+        },
+        {
+            "id": "smtp/SendTemplatedEmail",
+            "name": "Send Templated Email",
+            "rawName": "SendTemplatedEmail",
+            "description": "",
+            "parameters": [],
+        },
+    ],
+}
+
+ALL_MOCK_CONNECTORS: list[dict[str, Any]] = [
+    MOCK_CONNECTOR_HTTP,
+    MOCK_CONNECTOR_SLACK,
+    MOCK_CONNECTOR_SMTP,
+]
+
+
+def make_connector(overrides: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Create a copy of MOCK_CONNECTOR_HTTP with optional overrides."""
+    connector = copy.deepcopy(MOCK_CONNECTOR_HTTP)
+    if overrides:
+        connector.update(overrides)
+    return connector
+
+
+def generate_connectors(count: int = 9) -> list[dict[str, Any]]:
+    """Generate *count* unique mock connectors (responsive-grid / list tests)."""
+    return [
+        make_connector({
+            "id": f"gen_connector_{i}",
+            "name": f"Generated Connector {i}",
+            "description": f"Auto-generated connector #{i}",
+        })
+        for i in range(count)
+    ]
+
+
+def mock_connectors_api(
+    page: Page,
+    connectors: list[dict[str, Any]] | None = None,
+    status: int = 200,
+    hang: bool = False,
+) -> None:
+    """Intercept GET /v1.0/m8flow/connectors-grouped.
+
+    - ``hang=True`` leaves the request pending forever so the page stays in
+      its loading state (CircularProgress) -- deterministic loading-state test.
+    - ``status >= 400`` returns an error body so the page shows the load-failed
+      alert.
+    - otherwise returns the connector list (defaults to ALL_MOCK_CONNECTORS).
+    """
+    payload = ALL_MOCK_CONNECTORS if connectors is None else connectors
+
+    def _handle(route: Route) -> None:
+        if hang:
+            # Intentionally never fulfill: the in-flight request keeps the
+            # component's `loading` state true so the spinner stays visible.
+            return
+        if status >= 400:
+            _json_response(route, {"message": "connector proxy unavailable"}, status)
+            return
+        _json_response(route, payload, status)
+
+    page.route("**/v1.0/m8flow/connectors-grouped*", _handle)
+
+
+def mock_permissions_api_custom(
+    page: Page,
+    deny_connectors: bool = False,
+    deny_secrets: bool = False,
+) -> None:
+    """Like ``mock_permissions_api`` but can selectively deny permissions.
+
+    - ``deny_connectors`` -> GET on the connectors-grouped URI is denied, so the
+      Connectors page redirects to "/" and the nav item is hidden.
+    - ``deny_secrets`` -> POST on the secrets URI is denied, so the per-card
+      "Configure" button is not rendered.
+    """
+
+    def _allowed(url: str, method: str) -> bool:
+        if deny_connectors and "connectors-grouped" in url and method == "GET":
+            return False
+        if deny_secrets and "secret" in url and method == "POST":
+            return False
+        return True
+
+    def _handle(route: Route) -> None:
+        body = route.request.post_data
+        if not body:
+            _json_response(route, {"results": {}})
+            return
+        data = json.loads(body)
+        reqs = data.get("requests_to_check", {})
+        results: dict[str, Any] = {}
+        for url, methods in reqs.items():
+            if isinstance(methods, (dict, list)):
+                results[url] = {m: _allowed(url, m) for m in methods}
+            else:
+                results[url] = methods
+        _json_response(route, {"results": results})
+
+    page.route("**/permissions-check*", _handle)
+
+
+def mock_connectors_denied_permissions_api(page: Page) -> None:
+    """Deny GET on the connectors-grouped URI (restricted-user test)."""
+    mock_permissions_api_custom(page, deny_connectors=True)
+
+
+def mock_secrets_denied_permissions_api(page: Page) -> None:
+    """Grant connectors access but deny secrets POST (Configure-hidden test)."""
+    mock_permissions_api_custom(page, deny_secrets=True)
