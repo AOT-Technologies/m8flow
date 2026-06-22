@@ -1,4 +1,4 @@
-"""Unit tests for ExternalFormNotificationService (M8F-339).
+"""Unit tests for ExternalFormNotificationService.
 
 Tests cover:
 - claim: atomic pending->notified transition, second claim refused (the
@@ -262,7 +262,7 @@ class TestSweepCandidates:
         assert [c[0] for c in candidates] == [row.id]
 
     def test_never_picks_up_resume_failed_rows(self, app, tenant, alice):
-        """Regression: M8F-338 _record_failure reuses status='failed' for workflow-resume
+        """Regression: _record_failure reuses status='failed' for workflow-resume
         failures, which only happen after the email went out. notified_at stays set, so
         the sweep must not re-email."""
         row = _create_request(tenant, alice)

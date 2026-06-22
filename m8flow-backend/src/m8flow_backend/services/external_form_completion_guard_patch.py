@@ -70,7 +70,7 @@ def assert_task_completable_in_app(task_guid: str) -> None:
 
 def apply() -> None:
     """Gate _task_submit_shared so external-form user tasks can only be completed via the
-    external-form submission (M8F-339/340). The task waits — no in-app manual completion."""
+    external-form submission. The task waits — no in-app manual completion."""
     global _PATCHED
     if _PATCHED:
         return

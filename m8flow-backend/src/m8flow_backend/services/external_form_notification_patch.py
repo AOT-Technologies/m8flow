@@ -77,7 +77,7 @@ def _find_ready_human_task(process_instance_id: int, task_guid: str):
 
 def _emit_external_form_requests(processor) -> None:
     """Create per-recipient tracking rows for ready external-form user tasks and publish
-    one notification event per task (M8F-339). Runs after save() committed, in both the
+    one notification event per task. Runs after save() committed, in both the
     API process and the celery worker. create_requests_for_task is idempotent, so the
     repeated save() calls per instance only ever publish when new rows appear."""
     from m8flow_backend.services.external_form_service import ExternalFormService
@@ -171,8 +171,8 @@ def _emit_external_form_requests(processor) -> None:
 
 def apply() -> None:
     """Wrap ProcessInstanceProcessor.save() so reaching a user task that carries the
-    externalFormUrl extension (M8F-337) creates tracking rows and publishes a NATS
-    notification event (M8F-339). The hook runs after the original save() committed,
+    externalFormUrl extension creates tracking rows and publishes a NATS
+    notification event. The hook runs after the original save() committed,
     and never lets a notification-path error break workflow execution."""
     global _PATCHED
     if _PATCHED:

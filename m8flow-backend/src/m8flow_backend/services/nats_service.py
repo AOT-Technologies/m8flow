@@ -116,7 +116,7 @@ class NatsService:
 
     @staticmethod
     async def _publish_notification(tenant_slug: str, payload: dict) -> None:
-        """Fire-and-forget publish of an internal notification event (M8F-339).
+        """Fire-and-forget publish of an internal notification event.
 
         Unlike trigger events there is no api_key and no reply inbox: the producer is
         the backend itself and the payload is only a pointer — the worker re-reads all

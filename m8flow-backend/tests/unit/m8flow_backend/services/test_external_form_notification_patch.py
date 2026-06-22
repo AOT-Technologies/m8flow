@@ -1,4 +1,4 @@
-"""Unit tests for external_form_notification_patch (M8F-339).
+"""Unit tests for external_form_notification_patch.
 
 Tests cover:
 - _emit_external_form_requests: one tracking row per potential owner, exactly one

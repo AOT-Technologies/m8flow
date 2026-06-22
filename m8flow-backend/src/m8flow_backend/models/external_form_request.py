@@ -34,7 +34,7 @@ ACTIONABLE_STATUSES = (
 @dataclass
 class ExternalFormRequestModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel, AuditDateTimeMixin):
     """One external-form request per (human task, recipient); reference_id is the
-    unguessable token in the emailed secure link (M8F-338)."""
+    unguessable token in the emailed secure link."""
 
     __tablename__ = "m8flow_external_form_requests"
     __table_args__ = (
@@ -66,7 +66,7 @@ class ExternalFormRequestModel(M8fTenantScopedMixin, TenantScoped, Spiffworkflow
         return self.status in ACTIONABLE_STATUSES
 
     def to_public_dict(self) -> dict[str, Any]:
-        """Shape returned to the external mini-app (M8F-340). No recipient PII."""
+        """Shape returned to the external mini-app. No recipient PII."""
         return {
             "reference_id": self.reference_id,
             "status": self.status,

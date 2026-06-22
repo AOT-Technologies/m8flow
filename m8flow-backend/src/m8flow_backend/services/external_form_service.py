@@ -21,7 +21,7 @@ LOGGER = logging.getLogger("m8flow.external_forms.service")
 
 
 class ExternalFormService:
-    """External-form request lifecycle and submission round-trip (M8F-338)."""
+    """External-form request lifecycle and submission round-trip."""
 
     @staticmethod
     def generate_reference_id() -> str:
@@ -46,7 +46,7 @@ class ExternalFormService:
     ) -> list[ExternalFormRequestModel]:
         """Create one PENDING row per recipient ({user_id, email, user_details?}).
         Recipients already holding an actionable link are skipped, so event
-        redelivery (M8F-339) never issues duplicate links."""
+        redelivery never issues duplicate links."""
         if expires_at_in_seconds is None:
             expires_at_in_seconds = int(time.time()) + external_form_link_ttl_seconds()
 
@@ -124,7 +124,7 @@ class ExternalFormService:
 
     @classmethod
     def get_form_context(cls, reference_id: str) -> dict[str, Any]:
-        """Context for the external mini-app (M8F-340): always 200 for a known link,
+        """Context for the external mini-app: always 200 for a known link,
         with ``actionable`` telling the app whether to render the form or a message."""
         row = cls._find_request_or_raise(reference_id)
         cls._expire_if_needed(row)

@@ -30,7 +30,7 @@ def _make_external_form_aware_get_task_model(original, api_error_cls):
     task is completed via an emailed link (no in-app link — the bare URL has no recipient
     token and the task must not be completable here).
     NOTE: this is a fallback — the in-app form is empty; rendering/redirecting to the external
-    form itself is M8F-340."""
+    form itself is handled elsewhere."""
 
     def _patched_get_task_model_for_request(process_instance_id, task_guid="next", with_form_data=False):
         try:

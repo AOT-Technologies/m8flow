@@ -1,4 +1,4 @@
-"""External-form notification worker (M8F-339).
+"""External-form notification worker.
 
 Consumes external_form.requests_created events from the M8FLOW_NOTIFICATIONS
 JetStream stream and emails each recipient their secure link. A periodic sweep
