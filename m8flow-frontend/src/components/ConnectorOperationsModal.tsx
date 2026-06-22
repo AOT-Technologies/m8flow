@@ -79,6 +79,7 @@ export default function ConnectorOperationsModal({
       maxWidth="md"
       fullWidth
       scroll="paper"
+      data-testid="connector-operations-modal"
     >
       <DialogTitle>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
@@ -100,6 +101,7 @@ export default function ConnectorOperationsModal({
           connector.operations.map((op) => (
             <Accordion
               key={op.id}
+              data-testid={`connector-operation-${op.id}`}
               disableGutters
               elevation={0}
               sx={{
