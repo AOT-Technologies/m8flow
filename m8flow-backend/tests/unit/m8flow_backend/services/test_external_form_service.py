@@ -6,8 +6,9 @@ Tests cover:
 - get_form_context: unknown reference, actionable flag, lazy expiry
 - submit: validation matrix (unknown / already-submitted / superseded / expired),
   first-submit-wins with sibling supersede, workflow resume as recipient user,
-  failure recording (status failed, attempts, last_error) and retry
+  failure recording (status failed, attempts, logged reason) and retry
 """
+import logging
 import sys
 import time
 from pathlib import Path
@@ -249,38 +250,63 @@ class TestSubmit:
         assert exc_info.value.status_code == 410
         assert row.status == ExternalFormRequestStatus.expired.value
 
-    def test_engine_api_error_records_failure_and_keeps_link_retryable(self, app, tenant, alice, monkeypatch):
+    def test_engine_api_error_records_failure_and_keeps_link_retryable(self, app, tenant, alice, monkeypatch, caplog):
         (row,) = _create_requests(tenant, alice)
         monkeypatch.setattr(
             "spiffworkflow_backend.routes.process_api_blueprint._task_submit_shared",
             Mock(side_effect=ApiError(error_code="invalid_state", message="not READY", status_code=400)),
         )
 
-        with app.test_request_context():
-            with pytest.raises(ApiError) as exc_info:
-                ExternalFormService.submit(row.reference_id, {"answer": 1})
+        with caplog.at_level(logging.WARNING):
+            with app.test_request_context():
+                with pytest.raises(ApiError) as exc_info:
+                    ExternalFormService.submit(row.reference_id, {"answer": 1})
 
         assert exc_info.value.error_code == "invalid_state"
         assert row.status == ExternalFormRequestStatus.failed.value
         assert row.attempts == 1
-        assert "invalid_state" in row.last_error
+        # Failure reason is logged (not stored on the row).
+        assert "invalid_state" in caplog.text
         assert row.is_actionable()
 
-    def test_unexpected_engine_error_is_wrapped_and_recorded(self, app, tenant, alice, monkeypatch):
+    def test_task_already_completed_elsewhere_is_terminal_not_retryable(self, app, tenant, alice, monkeypatch):
+        # The user task was completed by another route (e.g. the in-app task page) before
+        # this link was submitted. The link should resolve cleanly as already-submitted
+        # and become terminal, not a retryable failure.
+        from spiffworkflow_backend.exceptions.error import HumanTaskAlreadyCompletedError
+
         (row,) = _create_requests(tenant, alice)
         monkeypatch.setattr(
             "spiffworkflow_backend.routes.process_api_blueprint._task_submit_shared",
-            Mock(side_effect=RuntimeError("boom")),
+            Mock(side_effect=HumanTaskAlreadyCompletedError("already completed")),
         )
 
         with app.test_request_context():
             with pytest.raises(ApiError) as exc_info:
                 ExternalFormService.submit(row.reference_id, {"answer": 1})
 
+        assert exc_info.value.error_code == "already_submitted"
+        assert exc_info.value.status_code == 409
+        assert row.status == ExternalFormRequestStatus.completed.value
+        assert not row.is_actionable()
+
+    def test_unexpected_engine_error_is_wrapped_and_recorded(self, app, tenant, alice, monkeypatch, caplog):
+        (row,) = _create_requests(tenant, alice)
+        monkeypatch.setattr(
+            "spiffworkflow_backend.routes.process_api_blueprint._task_submit_shared",
+            Mock(side_effect=RuntimeError("boom")),
+        )
+
+        with caplog.at_level(logging.WARNING):
+            with app.test_request_context():
+                with pytest.raises(ApiError) as exc_info:
+                    ExternalFormService.submit(row.reference_id, {"answer": 1})
+
         assert exc_info.value.error_code == "workflow_resume_failed"
         assert exc_info.value.status_code == 500
         assert row.status == ExternalFormRequestStatus.failed.value
-        assert "boom" in row.last_error
+        # Failure reason is logged (not stored on the row).
+        assert "boom" in caplog.text
 
     def test_failed_link_can_be_retried_successfully(self, app, tenant, alice, monkeypatch):
         (row,) = _create_requests(tenant, alice)

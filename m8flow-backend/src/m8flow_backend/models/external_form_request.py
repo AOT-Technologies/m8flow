@@ -49,14 +49,17 @@ class ExternalFormRequestModel(M8fTenantScopedMixin, TenantScoped, Spiffworkflow
     recipient_user_id: int = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
     email: str = db.Column(db.String(255), nullable=False)
     user_details: Optional[dict] = db.Column(db.JSON, nullable=True)
-    external_form_url: str = db.Column(db.String(2048), nullable=False)
+    # Text (not a bounded varchar): the configured external form URL can embed an entire
+    # form schema (e.g. the M8F Forms app lz-compresses the Form.io schema into ?form=...),
+    # which routinely exceeds a few KB. A fixed varchar truncates the insert and breaks
+    # notification creation. See migration m5e6f7a8b1c2.
+    external_form_url: str = db.Column(db.Text, nullable=False)
     status: str = db.Column(
         db.String(32), nullable=False, default=ExternalFormRequestStatus.pending.value, index=True
     )
     form_submission_data: Optional[dict] = db.Column(db.JSON, nullable=True)
     expires_at_in_seconds: Optional[int] = db.Column(db.Integer, nullable=True)
     attempts: int = db.Column(db.Integer, nullable=False, default=0)
-    last_error: Optional[str] = db.Column(db.Text, nullable=True)
     notified_at_in_seconds: Optional[int] = db.Column(db.Integer, nullable=True)
 
     def is_actionable(self) -> bool:

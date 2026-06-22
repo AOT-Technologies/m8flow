@@ -199,12 +199,34 @@ class ExternalFormService:
                 status_code=410,
             )
         g.user = recipient
+        # Authorize this request as the one path allowed to complete an external-form task;
+        # the completion guard (external_form_completion_guard_patch) blocks every other route.
+        g._m8flow_external_form_completion = True
 
         try:
             # Imported at call time so house patches that rebind this name are honored.
+            from spiffworkflow_backend.exceptions.error import HumanTaskAlreadyCompletedError
             from spiffworkflow_backend.routes.process_api_blueprint import _task_submit_shared
 
             _task_submit_shared(row.process_instance_id, row.task_guid, form_data)
+        except HumanTaskAlreadyCompletedError:
+            # The underlying user task was already completed by another route (e.g. the
+            # in-app task page) before this link was submitted. There is nothing left to
+            # resume, so mark the request terminal and tell the recipient cleanly instead
+            # of surfacing a scary, retryable failure.
+            db.session.rollback()
+            row.status = ExternalFormRequestStatus.completed.value
+            db.session.commit()
+            LOGGER.info(
+                "external-form: task already completed via another route for task=%s instance=%s",
+                row.task_guid,
+                row.process_instance_id,
+            )
+            raise ApiError(
+                error_code="already_submitted",
+                message="This task has already been completed.",
+                status_code=409,
+            ) from None
         except ApiError as api_error:
             cls._record_failure(row, f"{api_error.error_code}: {api_error.message}")
             raise
@@ -250,7 +272,6 @@ class ExternalFormService:
         db.session.rollback()
         row.status = ExternalFormRequestStatus.failed.value
         row.attempts = (row.attempts or 0) + 1
-        row.last_error = error_message[:4000]
         try:
             db.session.commit()
         except Exception:

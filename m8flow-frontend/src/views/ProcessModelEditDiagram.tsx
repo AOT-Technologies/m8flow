@@ -16,12 +16,15 @@ import { useTranslation } from 'react-i18next';
 import {
   Button,
   ButtonGroup,
+  Chip,
   Dialog,
+  Divider,
   Tabs,
   Tab,
   TextField,
   Box,
   Stack,
+  Typography,
   TextareaAutosize,
   CircularProgress,
   IconButton,
@@ -1309,6 +1312,11 @@ export default function ProcessModelEditDiagram() {
     if (!showJsonSchemaEditor || !permissionsLoaded) {
       return null;
     }
+
+    const displaySchemaName = jsonSchemaFileName
+      ? jsonSchemaFileName.replace(/-schema\.json$/, '')
+      : t('schema_name');
+
     return (
       <Dialog
         className="wide-dialog"
@@ -1317,26 +1325,240 @@ export default function ProcessModelEditDiagram() {
         aria-labelledby="modal-modal-title"
         aria-describedby="modal-modal-description"
         data-testid="json-schema-editor-dialog"
+        maxWidth={false}
+        PaperProps={{
+          sx: {
+            width: 'min(1440px, calc(100vw - 32px))',
+            maxHeight: 'calc(100vh - 32px)',
+            borderRadius: 2,
+            overflow: 'hidden',
+          },
+        }}
       >
-        <Box sx={{ p: 4 }}>
-          <h2 id="modal-modal-title">
-            {t('diagram_json_schema_editor_title')}
-          </h2>
-          <ReactFormBuilder
-            processModelId={params.process_model_id || ''}
-            fileName={jsonSchemaFileName}
-            onFileNameSet={setJsonSchemaFileName}
-            canUpdateFiles={ability.can(
-              'POST',
-              targetUris.processModelFileCreatePath,
-            )}
-            canCreateFiles={ability.can(
-              'PUT',
-              targetUris.processModelFileCreatePath,
-            )}
-            pythonWorker={pythonWorker}
-          />
-          <Button data-testid="json-schema-editor-close-button" onClick={handleJsonSchemaEditorClose}>{t('close')}</Button>
+        <Box
+          sx={{
+            bgcolor: 'grey.50',
+            display: 'flex',
+            flexDirection: 'column',
+            minHeight: { xs: 'auto', md: 720 },
+          }}
+        >
+          <Stack
+            direction={{ xs: 'column', md: 'row' }}
+            spacing={2}
+            sx={{
+              alignItems: { xs: 'flex-start', md: 'center' },
+              bgcolor: 'background.paper',
+              justifyContent: 'space-between',
+              px: { xs: 2.5, md: 4 },
+              py: { xs: 2, md: 2.5 },
+            }}
+          >
+            <Box sx={{ minWidth: 0 }}>
+              <Typography
+                color="primary"
+                sx={{
+                  fontSize: 12,
+                  fontWeight: 800,
+                  letterSpacing: 0,
+                  lineHeight: 1.3,
+                  mb: 0.5,
+                  textTransform: 'uppercase',
+                }}
+              >
+                {t('form_editor', { defaultValue: 'Form editor' })}
+              </Typography>
+              <Typography
+                id="modal-modal-title"
+                variant="h5"
+                sx={{
+                  color: 'text.primary',
+                  fontWeight: 800,
+                  lineHeight: 1.2,
+                  overflowWrap: 'anywhere',
+                }}
+              >
+                {displaySchemaName}
+              </Typography>
+              <Typography
+                id="modal-modal-description"
+                variant="body2"
+                color="text.secondary"
+                sx={{ mt: 0.75, maxWidth: 760 }}
+              >
+                {t('m8flow_form_editor_description', {
+                  defaultValue:
+                    'Define the schema, tune UI settings, and verify the task form preview in one workspace.',
+                })}
+              </Typography>
+            </Box>
+            <Stack
+              direction="row"
+              spacing={1}
+              sx={{
+                alignItems: 'center',
+                flexShrink: 0,
+                width: { xs: '100%', sm: 'auto' },
+              }}
+            >
+              <Chip
+                icon={<Check fontSize="small" />}
+                label={t('auto_saves', { defaultValue: 'Auto-saves' })}
+                size="small"
+                color="primary"
+                variant="outlined"
+                sx={{
+                  borderRadius: 1,
+                  fontWeight: 700,
+                  height: 32,
+                }}
+              />
+              <Button
+                data-testid="json-schema-editor-header-close-button"
+                onClick={handleJsonSchemaEditorClose}
+                startIcon={<Close />}
+                variant="outlined"
+                sx={{ flexShrink: 0 }}
+              >
+                {t('close')}
+              </Button>
+            </Stack>
+          </Stack>
+          <Divider />
+          <Box
+            className="m8flow-form-editor"
+            sx={{
+              flex: 1,
+              minHeight: 0,
+              overflow: 'auto',
+              p: { xs: 2, md: 3 },
+              '& .m8flow-form-builder-shell': {
+                bgcolor: 'background.paper',
+                border: '1px solid',
+                borderColor: 'divider',
+                borderRadius: 2,
+                boxShadow: '0 12px 32px rgba(15, 23, 42, 0.08)',
+                p: { xs: 2, md: 2.5 },
+              },
+              '& .m8flow-form-builder-shell > .MuiGrid-root': {
+                alignItems: 'stretch',
+              },
+              '& .m8flow-form-builder-shell > .MuiGrid-root > .MuiGrid-root':
+                {
+                  display: 'flex',
+                  flexDirection: 'column',
+                  minWidth: 0,
+                },
+              '& .m8flow-form-builder-shell .MuiTabs-root': {
+                bgcolor: 'grey.50',
+                border: '1px solid',
+                borderColor: 'divider',
+                borderRadius: 2,
+                minHeight: 44,
+                mb: 2,
+                p: 0.5,
+              },
+              '& .m8flow-form-builder-shell .MuiTabs-indicator': {
+                display: 'none',
+              },
+              '& .m8flow-form-builder-shell .MuiTab-root': {
+                borderRadius: 1.5,
+                color: 'text.secondary',
+                fontWeight: 800,
+                letterSpacing: 0,
+                minHeight: 36,
+                px: 2,
+                textTransform: 'none',
+              },
+              '& .m8flow-form-builder-shell .MuiTab-root.Mui-selected': {
+                bgcolor: 'background.paper',
+                boxShadow: '0 2px 10px rgba(15, 23, 42, 0.08)',
+                color: 'primary.main',
+              },
+              '& .m8flow-form-builder-shell .MuiTypography-body1': {
+                color: 'text.secondary',
+                fontSize: 14,
+                lineHeight: 1.55,
+                mb: 1.5,
+              },
+              '& .m8flow-form-builder-shell .MuiTypography-h4': {
+                color: 'text.primary',
+                fontSize: 20,
+                fontWeight: 800,
+                letterSpacing: 0,
+                lineHeight: 1.25,
+                mb: 1.5,
+              },
+              '& .m8flow-form-builder-shell .monaco-editor, & .m8flow-form-builder-shell .overflow-guard':
+                {
+                  borderRadius: 8,
+                },
+              '& .m8flow-form-builder-shell #custom_form': {
+                bgcolor: 'grey.50',
+                border: '1px dashed',
+                borderColor: 'divider',
+                borderRadius: 2,
+                minHeight: 600,
+                p: { xs: 2, md: 2.5 },
+              },
+              '& .m8flow-form-builder-shell .error_info_small': {
+                color: 'error.main',
+                fontWeight: 700,
+                minHeight: 22,
+              },
+              '& .m8flow-form-builder-shell .react-json-schema-form-submit-button':
+                {
+                  borderRadius: 1,
+                  fontWeight: 800,
+                  textTransform: 'none',
+                },
+            }}
+          >
+            <Box className="m8flow-form-builder-shell">
+              <ReactFormBuilder
+                processModelId={params.process_model_id || ''}
+                fileName={jsonSchemaFileName}
+                onFileNameSet={setJsonSchemaFileName}
+                canUpdateFiles={ability.can(
+                  'POST',
+                  targetUris.processModelFileCreatePath,
+                )}
+                canCreateFiles={ability.can(
+                  'PUT',
+                  targetUris.processModelFileCreatePath,
+                )}
+                pythonWorker={pythonWorker}
+              />
+            </Box>
+          </Box>
+          <Divider />
+          <Stack
+            direction={{ xs: 'column', sm: 'row' }}
+            spacing={1.5}
+            sx={{
+              alignItems: { xs: 'stretch', sm: 'center' },
+              bgcolor: 'background.paper',
+              justifyContent: 'space-between',
+              px: { xs: 2.5, md: 4 },
+              py: 2,
+            }}
+          >
+            <Typography variant="body2" color="text.secondary">
+              {t('m8flow_form_editor_autosave_note', {
+                defaultValue:
+                  'Schema, UI settings, and example data are saved as you work.',
+              })}
+            </Typography>
+            <Button
+              data-testid="json-schema-editor-close-button"
+              onClick={handleJsonSchemaEditorClose}
+              startIcon={<Check />}
+              variant="contained"
+              sx={{ alignSelf: { xs: 'stretch', sm: 'center' } }}
+            >
+              {t('done', { defaultValue: 'Done' })}
+            </Button>
+          </Stack>
         </Box>
       </Dialog>
     );

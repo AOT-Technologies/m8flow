@@ -9,6 +9,7 @@ Tests cover:
 - build_secure_link: ref= appended preserving query params; mini-app base override
 - notify: end-to-end with SMTP mocked, failure recording and retry
 """
+import logging
 import sys
 import time
 from pathlib import Path
@@ -52,9 +53,9 @@ def _notification_env(monkeypatch):
 # Default per-tenant SMTP secrets used by the configured-tenant tests. SMTP is resolved
 # from the tenant's encrypted secrets, so we stub _read_tenant_secret instead of env.
 DEFAULT_SMTP_SECRETS = {
-    "SMTP_HOST": "smtp.test",
-    "SMTP_PORT": "2525",
-    "SMTP_FROM_EMAIL": "no-reply@tenant-one.example",
+    "NATS_SMTP_HOST": "smtp.test",
+    "NATS_SMTP_PORT": "2525",
+    "NATS_SMTP_FROM_EMAIL": "no-reply@tenant-one.example",
 }
 
 
@@ -206,16 +207,18 @@ class TestClaim:
 
 
 class TestReleaseFailed:
-    def test_reverts_to_retryable_failed_state(self, app, tenant, alice):
+    def test_reverts_to_retryable_failed_state(self, app, tenant, alice, caplog):
         row = _create_request(tenant, alice)
         ExternalFormNotificationService.claim(row.id)
 
-        ExternalFormNotificationService.release_failed(row.id, "connection refused")
+        with caplog.at_level(logging.WARNING):
+            ExternalFormNotificationService.release_failed(row.id, "connection refused")
 
         row = _fresh(row.id)
         assert row.status == ExternalFormRequestStatus.failed.value
         assert row.notified_at_in_seconds is None
-        assert row.last_error == "connection refused"
+        # Failure reason is logged (not stored on the row).
+        assert "connection refused" in caplog.text
 
     def test_does_not_clobber_submitted_row(self, app, tenant, alice):
         row = _create_request(tenant, alice)
@@ -324,9 +327,9 @@ class TestNotify:
         assert row.reference_id in message.get_body(("html",)).get_content()
 
     def test_uses_tenant_smtp_host_port_and_login(self, app, tenant, alice, fake_smtp, smtp_secrets):
-        smtp_secrets["SMTP_USERNAME"] = "mailuser"
-        smtp_secrets["SMTP_PASSWORD"] = "mailpass"
-        smtp_secrets["SMTP_STARTTLS"] = "true"
+        smtp_secrets["NATS_SMTP_USERNAME"] = "mailuser"
+        smtp_secrets["NATS_SMTP_PASSWORD"] = "mailpass"
+        smtp_secrets["NATS_SMTP_STARTTLS"] = "true"
         row = _create_request(tenant, alice)
 
         assert ExternalFormNotificationService.notify(row.reference_id) == "sent"
@@ -342,17 +345,19 @@ class TestNotify:
         assert ExternalFormNotificationService.notify(row.reference_id) == "skipped:not_claimable"
         assert len(fake_smtp.sent_messages) == 1
 
-    def test_smtp_failure_releases_claim_for_retry(self, app, tenant, alice, fake_smtp, smtp_secrets):
+    def test_smtp_failure_releases_claim_for_retry(self, app, tenant, alice, fake_smtp, smtp_secrets, caplog):
         row = _create_request(tenant, alice)
         fake_smtp.fail_with = ConnectionRefusedError("smtp down")
 
-        result = ExternalFormNotificationService.notify(row.reference_id)
+        with caplog.at_level(logging.WARNING):
+            result = ExternalFormNotificationService.notify(row.reference_id)
 
         assert result.startswith("failed:")
         row = _fresh(row.id)
         assert row.status == ExternalFormRequestStatus.failed.value
         assert row.notified_at_in_seconds is None
-        assert "smtp down" in row.last_error
+        # Failure reason is logged (not stored on the row).
+        assert "smtp down" in caplog.text
 
         fake_smtp.fail_with = None
         assert ExternalFormNotificationService.notify(row.reference_id) == "sent"
@@ -369,7 +374,7 @@ class TestNotify:
         assert _fresh(row.id).status == ExternalFormRequestStatus.pending.value
 
     def test_missing_from_email_is_unconfigured(self, app, tenant, alice, fake_smtp, smtp_secrets):
-        del smtp_secrets["SMTP_FROM_EMAIL"]  # host present but no sender address
+        del smtp_secrets["NATS_SMTP_FROM_EMAIL"]  # host present but no sender address
         row = _create_request(tenant, alice)
 
         assert ExternalFormNotificationService.notify(row.reference_id) == "skipped:smtp_unconfigured"
@@ -381,15 +386,17 @@ class TestNotify:
         assert ExternalFormNotificationService.notify(row.reference_id) == "skipped:expired"
         assert fake_smtp.sent_messages == []
 
-    def test_non_http_link_is_refused_and_recorded(self, app, tenant, alice, fake_smtp, smtp_secrets):
+    def test_non_http_link_is_refused_and_recorded(self, app, tenant, alice, fake_smtp, smtp_secrets, caplog):
         row = _create_request(tenant, alice, external_form_url="javascript:alert(1)")
 
-        assert ExternalFormNotificationService.notify(row.reference_id) == "skipped:unsafe_url"
+        with caplog.at_level(logging.WARNING):
+            assert ExternalFormNotificationService.notify(row.reference_id) == "skipped:unsafe_url"
 
         assert fake_smtp.sent_messages == []
         row = _fresh(row.id)
         assert row.status == ExternalFormRequestStatus.failed.value
-        assert "not http/https" in row.last_error
+        # Failure reason is logged (not stored on the row).
+        assert "not http/https" in caplog.text
 
 
 class TestRenderEmail:

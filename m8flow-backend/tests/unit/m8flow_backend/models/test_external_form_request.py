@@ -101,7 +101,6 @@ class TestExternalFormRequestModel:
         assert saved.status == ExternalFormRequestStatus.pending.value
         assert saved.attempts == 0
         assert saved.form_submission_data is None
-        assert saved.last_error is None
         assert saved.external_form_url == "https://forms.example.com/leave-request"
 
     def test_reference_id_unique_constraint(self, app, tenant, recipient):

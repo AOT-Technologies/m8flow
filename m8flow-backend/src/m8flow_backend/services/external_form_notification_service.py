@@ -35,14 +35,18 @@ CLAIMABLE_STATUSES = (
 # SMTP is configured per-tenant via encrypted tenant secrets (M8F-339), never global
 # env. These keys are read from the recipient's tenant when sending — host and
 # from_email are required; the rest are optional.
+#
+# The NATS notification worker uses its OWN, NATS_-prefixed secrets so they stay
+# independent of the plain SMTP_* secrets that the BPMN smtp/SendHTMLEmail connector
+# reads. This lets the two email paths be configured separately.
 SMTP_SECRET_KEYS = {
-    "host": "SMTP_HOST",
-    "port": "SMTP_PORT",
-    "username": "SMTP_USERNAME",
-    "password": "SMTP_PASSWORD",
-    "from_email": "SMTP_FROM_EMAIL",
-    "starttls": "SMTP_STARTTLS",
-    "ssl": "SMTP_SSL",
+    "host": "NATS_SMTP_HOST",
+    "port": "NATS_SMTP_PORT",
+    "username": "NATS_SMTP_USERNAME",
+    "password": "NATS_SMTP_PASSWORD",
+    "from_email": "NATS_SMTP_FROM_EMAIL",
+    "starttls": "NATS_SMTP_STARTTLS",
+    "ssl": "NATS_SMTP_SSL",
 }
 
 _TRUTHY = {"1", "true", "yes", "on"}
@@ -98,12 +102,16 @@ class ExternalFormNotificationService:
             .values(
                 status=ExternalFormRequestStatus.failed.value,
                 notified_at_in_seconds=None,
-                last_error=error_message[:4000],
                 updated_at_in_seconds=now,
             )
             .execution_options(synchronize_session=False)
         )
         db.session.commit()
+        LOGGER.warning(
+            "external-form-notify: send failed for reference row id=%s (left retryable): %s",
+            request_id,
+            error_message,
+        )
 
     @staticmethod
     def build_secure_link(row: ExternalFormRequestModel) -> str:
