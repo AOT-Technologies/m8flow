@@ -1,0 +1,210 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import type React from 'react';
+import ConnectorConfigure, { secretKeyFor } from './ConnectorConfigure';
+
+// Shared, mutable state the hoisted mocks read from. Each test sets these in
+// beforeEach / inline before rendering.
+const h = vi.hoisted(() => ({
+  connectorsResponse: [] as any[],
+  secretsPages: {} as Record<string, any>,
+  params: { connectorId: 'github' } as Record<string, string>,
+  navigate: (() => {}) as (...args: any[]) => void,
+  calls: [] as any[],
+}));
+
+vi.mock('../services/HttpService', () => ({
+  default: {
+    HttpMethods: { GET: 'GET', POST: 'POST', DELETE: 'DELETE' },
+    makeCallToBackend: vi.fn((opts: any) => {
+      h.calls.push(opts);
+      const { path, httpMethod = 'GET', successCallback } = opts;
+      if (path === '/m8flow/connectors-grouped') {
+        successCallback(h.connectorsResponse);
+      } else if (path.startsWith('/secrets?')) {
+        const page =
+          new URLSearchParams(path.split('?')[1]).get('page') ?? '1';
+        successCallback(
+          h.secretsPages[page] ?? { results: [], pagination: { pages: 1 } },
+        );
+      } else if (path.startsWith('/secrets')) {
+        // create/update by key
+        successCallback({});
+      }
+      // record-only for assertions on httpMethod
+      void httpMethod;
+    }),
+  },
+}));
+
+vi.mock('@spiffworkflow-frontend/hooks/PermissionService', () => ({
+  usePermissionFetcher: vi.fn(() => ({
+    ability: { can: () => true },
+    permissionsLoaded: true,
+  })),
+}));
+
+vi.mock('../hooks/M8flowUriListForPermissions', () => ({
+  useM8flowUriListForPermissions: vi.fn(() => ({
+    targetUris: {
+      connectorsGroupedPath: '/m8flow/connectors-grouped',
+      secretListPath: '/secrets',
+    },
+  })),
+}));
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, opts?: { name?: string }) =>
+      opts?.name ? `${key}:${opts.name}` : key,
+  }),
+}));
+
+vi.mock('react-router-dom', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react-router-dom')>();
+  return {
+    ...actual,
+    useNavigate: () => h.navigate,
+    useParams: () => h.params,
+  };
+});
+
+vi.mock('@casl/react', () => ({
+  Can: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+}));
+
+vi.mock('../utils/connectorCardDisplay', () => ({
+  ConnectorNameAvatar: () => <span data-testid="avatar" />,
+}));
+
+vi.mock('../components/Notification', () => ({
+  Notification: ({ title }: { title?: string }) => (
+    <div data-testid="notification">{title}</div>
+  ),
+}));
+
+vi.mock('../helpers', () => ({
+  setPageTitle: vi.fn(),
+}));
+
+vi.mock('@mui/icons-material', () =>
+  new Proxy(
+    {},
+    { get: () => () => null },
+  ),
+);
+
+const GITHUB_CONNECTOR = {
+  id: 'github',
+  name: 'GitHub',
+  description: 'GitHub',
+  status: 'available',
+  icon: 'code',
+  operationCount: 1,
+  operations: [],
+  configFields: [
+    {
+      id: 'pat_token',
+      secretKey: 'GITHUB_PAT_TOKEN',
+      label: 'Personal Access Token',
+      type: 'password',
+      required: true,
+    },
+  ],
+};
+
+const renderPage = () =>
+  render(
+    <MemoryRouter>
+      <ConnectorConfigure />
+    </MemoryRouter>,
+  );
+
+beforeEach(() => {
+  h.connectorsResponse = [GITHUB_CONNECTOR];
+  h.secretsPages = {};
+  h.params = { connectorId: 'github' };
+  h.navigate = vi.fn();
+  h.calls = [];
+});
+
+describe('secretKeyFor', () => {
+  it('uses the explicit secretKey verbatim', () => {
+    expect(
+      secretKeyFor('github', GITHUB_CONNECTOR.configFields[0] as any),
+    ).toBe('GITHUB_PAT_TOKEN');
+  });
+
+  it('sanitizes a derived fallback key to word characters only', () => {
+    expect(
+      secretKeyFor('foo-bar', {
+        id: 'baz-qux',
+        label: 'x',
+        type: 'text',
+        required: true,
+      } as any),
+    ).toBe('foo_bar_baz_qux');
+  });
+});
+
+describe('ConnectorConfigure existence detection', () => {
+  it('detects a secret that lives beyond the first page and updates via PUT', async () => {
+    // Two pages of secrets; the connector key only appears on page 2.
+    h.secretsPages = {
+      '1': { results: [{ key: 'UNRELATED' }], pagination: { pages: 2 } },
+      '2': {
+        results: [{ key: 'GITHUB_PAT_TOKEN' }],
+        pagination: { pages: 2 },
+      },
+    };
+
+    renderPage();
+
+    // Field is recognized as already configured.
+    expect(
+      await screen.findByText('connector_config_field_set'),
+    ).toBeInTheDocument();
+
+    // Entering a new value and saving must UPDATE (PUT) the existing key,
+    // not POST a duplicate.
+    const input = screen
+      .getByTestId('connector-config-field-pat_token')
+      .querySelector('input')!;
+    fireEvent.change(input, { target: { value: 'new-token' } });
+    fireEvent.click(screen.getByTestId('connector-config-save'));
+
+    await waitFor(() => {
+      const putCall = h.calls.find(
+        (c) => c.path === '/secrets/GITHUB_PAT_TOKEN',
+      );
+      expect(putCall).toBeTruthy();
+      expect(putCall.httpMethod).toBe('PUT');
+    });
+    expect(
+      h.calls.some((c) => c.path === '/secrets' && c.httpMethod === 'POST'),
+    ).toBe(false);
+  });
+
+  it('shows a required error when a required field has no existing secret', async () => {
+    h.secretsPages = {
+      '1': { results: [], pagination: { pages: 1 } },
+    };
+
+    renderPage();
+
+    // Not configured: wait for the form to render the field.
+    await screen.findByTestId('connector-config-field-pat_token');
+    expect(
+      screen.queryByText('connector_config_field_set'),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('connector-config-save'));
+
+    expect(
+      await screen.findByText('connector_config_required_field'),
+    ).toBeInTheDocument();
+    // Nothing persisted.
+    expect(h.calls.some((c) => c.path.startsWith('/secrets/'))).toBe(false);
+  });
+});
