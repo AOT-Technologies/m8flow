@@ -268,7 +268,12 @@ export default function Connectors() {
                     <Button
                       variant="outlined"
                       size="small"
-                      onClick={() => navigate('/configuration/secrets')}
+                      onClick={() =>
+                        connector.configFields &&
+                        connector.configFields.length > 0
+                          ? navigate(`/connectors/${connector.id}/configure`)
+                          : navigate('/configuration/secrets')
+                      }
                       data-testid={`connector-configure-${connector.id}`}
                     >
                       {t('configure')}
