@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Iterable
 from collections.abc import Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
+from types import SimpleNamespace
 from typing import Any
 
 from m8flow_backend.services.tenant_identity_helpers import active_organization_from_payload
@@ -416,6 +418,14 @@ def _normalize_permissions_yaml_config(permission_configs: dict[str, Any], tenan
         normalized_permission_configs["permissions"] = normalized_permissions
 
     return normalized_permission_configs
+
+
+def _normalize_permission_command(command: str | None) -> str | None:
+    """Normalize optional permission commands from config before persistence."""
+    if not isinstance(command, str):
+        return None
+    normalized_command = command.strip()
+    return normalized_command or None
 
 
 def _normalize_keycloak_groups(user_info: dict[str, Any]) -> list[str]:
@@ -845,6 +855,7 @@ def apply() -> None:
     from spiffworkflow_backend.models.db import db
     from spiffworkflow_backend.models.group import SPIFF_GUEST_GROUP
     from spiffworkflow_backend.models.permission_assignment import PermissionAssignmentModel
+    from spiffworkflow_backend.models.permission_target import PermissionTargetModel
     from spiffworkflow_backend.models.principal import MissingPrincipalError
     from spiffworkflow_backend.models.principal import PrincipalModel
     from spiffworkflow_backend.models.user import SPIFF_GUEST_USER
@@ -855,12 +866,12 @@ def apply() -> None:
     except Exception:
         UserGroupAssignmentNotFoundError = Exception  # type: ignore[misc, assignment]
     from spiffworkflow_backend.models.user_group_assignment_waiting import UserGroupAssignmentWaitingModel
+    from spiffworkflow_backend.helpers.api_version import remove_api_prefix
     from spiffworkflow_backend.services import authorization_service
     from spiffworkflow_backend.services.authorization_service import AuthorizationService
     from spiffworkflow_backend.services.user_service import UserService
 
     _original_exclusion_list = authorization_service.AuthorizationService.authentication_exclusion_list
-    _original_add_permission_from_uri_or_macro = AuthorizationService.add_permission_from_uri_or_macro
 
     @classmethod
     def _patched_authentication_exclusion_list(cls) -> list:
@@ -1003,6 +1014,58 @@ def apply() -> None:
         return principals
 
     UserService.all_principals_for_user = patched_all_principals_for_user
+
+    @classmethod
+    def patched_all_permission_assignments_for_user(cls, user: UserModel) -> list[Any]:
+        principals = UserService.all_principals_for_user(user)
+        principal_ids = [principal.id for principal in principals]
+        if not principal_ids:
+            return []
+
+        assignment_rows = (
+            db.session.query(PermissionAssignmentModel, PermissionTargetModel)
+            .join(
+                PermissionTargetModel,
+                PermissionAssignmentModel.permission_target_id == PermissionTargetModel.id,
+            )
+            .filter(PermissionAssignmentModel.principal_id.in_(principal_ids))
+            .all()
+        )
+
+        return [
+            SimpleNamespace(
+                id=permission_assignment.id,
+                principal_id=permission_assignment.principal_id,
+                permission_target_id=permission_target.id,
+                permission=permission_assignment.permission,
+                grant_type=permission_assignment.grant_type,
+                permission_target=permission_target,
+            )
+            for permission_assignment, permission_target in assignment_rows
+        ]
+
+    AuthorizationService.all_permission_assignments_for_user = patched_all_permission_assignments_for_user
+
+    @classmethod
+    def patched_find_or_create_permission_target(
+        cls,
+        uri: str,
+        command: str | None = None,
+    ) -> PermissionTargetModel:
+        uri_with_percent = re.sub(r"\*", "%", uri)
+        target_uri_normalized = remove_api_prefix(uri_with_percent)
+        normalized_command = _normalize_permission_command(command)
+        permission_target = PermissionTargetModel.query.filter_by(
+            uri=target_uri_normalized,
+            command=normalized_command,
+        ).first()
+        if permission_target is None:
+            permission_target = PermissionTargetModel(uri=target_uri_normalized, command=normalized_command)
+            db.session.add(permission_target)
+            db.session.commit()
+        return permission_target
+
+    AuthorizationService.find_or_create_permission_target = patched_find_or_create_permission_target
 
     @classmethod
     def patched_create_user_from_sign_in(cls, user_info: dict[str, Any]):
@@ -1230,20 +1293,89 @@ def apply() -> None:
                     continue
                 uri = permission_config["uri"]
                 actions = cls.get_permissions_from_config(permission_config)
+                command = _normalize_permission_command(permission_config.get("command"))
                 for group_identifier in permission_config.get("groups", []):
-                    group_permissions_by_group[group_identifier]["permissions"].append({"actions": actions, "uri": uri})
+                    permission_payload = {"actions": actions, "uri": uri}
+                    if command is not None:
+                        permission_payload["command"] = command
+                    group_permissions_by_group[group_identifier]["permissions"].append(permission_payload)
 
         return normalize_group_permissions(list(group_permissions_by_group.values()), tenant_id=tenant_id)
 
     AuthorizationService.parse_permissions_yaml_into_group_info = patched_parse_permissions_yaml_into_group_info
 
+    def _command_target_overrides(
+        permission: str,
+        target: str,
+        command: str | None,
+    ) -> list[tuple[str, str, str | None]] | None:
+        normalized_command = _normalize_permission_command(command)
+        if normalized_command != "process.start":
+            return None
+
+        if target.startswith("PM:"):
+            process_model_identifier = target.removeprefix("PM:").replace("/", ":").removeprefix(":")
+            process_related_path_segment = "*" if process_model_identifier == "ALL" else f"{process_model_identifier}/*"
+            return [("create", f"/process-models/{process_related_path_segment}", normalized_command)]
+
+        if target.startswith("/process-models"):
+            return [("create", target, normalized_command)]
+
+        return []
+
     @classmethod
-    def patched_add_permission_from_uri_or_macro(cls, group_identifier: str, permission: str, target: str):
-        """Tenant-qualify group identifiers before delegating permission creation upstream."""
+    def patched_add_permission_from_uri_or_macro(
+        cls,
+        group_identifier: str,
+        permission: str,
+        target: str,
+        command: str | None = None,
+    ):
+        """Tenant-qualify group identifiers and persist permission targets by uri+command."""
         tenant_id = _active_permission_scope_tenant_id()
         normalized_group_identifier = _normalize_external_group_identifier(group_identifier) or group_identifier
         qualified_group_identifier = qualify_group_identifier(normalized_group_identifier, tenant_id=tenant_id)
-        return _original_add_permission_from_uri_or_macro.__func__(cls, qualified_group_identifier, permission, target)
+        group = UserService.find_or_create_group(qualified_group_identifier)
+        grant_type = "permit"
+        permission_without_deny = permission
+        if permission.startswith("DENY:"):
+            permission_without_deny = permission.removeprefix("DENY:")
+            grant_type = "deny"
+
+        permissions_to_assign = cls.explode_permissions(permission_without_deny, target)
+        permission_assignments = []
+        command_target_overrides = _command_target_overrides(permission_without_deny, target, command)
+        default_command = None if command_target_overrides is not None else _normalize_permission_command(command)
+
+        for permission_to_assign in permissions_to_assign:
+            permission_target = cls.find_or_create_permission_target(
+                permission_to_assign.target_uri,
+                command=default_command,
+            )
+            permission_assignments.append(
+                cls.create_permission_for_principal(
+                    principal=group.principal,
+                    permission_target=permission_target,
+                    permission=permission_to_assign.permission,
+                    grant_type=grant_type,
+                )
+            )
+
+        if command_target_overrides:
+            for override_permission, override_target_uri, override_command in command_target_overrides:
+                permission_target = cls.find_or_create_permission_target(
+                    override_target_uri,
+                    command=override_command,
+                )
+                permission_assignments.append(
+                    cls.create_permission_for_principal(
+                        principal=group.principal,
+                        permission_target=permission_target,
+                        permission=override_permission,
+                        grant_type=grant_type,
+                    )
+                )
+        return permission_assignments
 
     AuthorizationService.add_permission_from_uri_or_macro = patched_add_permission_from_uri_or_macro
 
@@ -1354,25 +1486,28 @@ def apply() -> None:
             )
             for permission_index, permission in enumerate(group["permissions"], start=1):
                 current_app.logger.debug(
-                    "ADD PERMISSIONS - Processing permission %s/%s for group: %s, uri: %s, actions: %s",
+                    "ADD PERMISSIONS - Processing permission %s/%s for group: %s, uri: %s, actions: %s, command: %s",
                     permission_index,
                     len(group["permissions"]),
                     group_identifier,
                     permission["uri"],
                     permission["actions"],
+                    permission.get("command"),
                 )
 
                 for crud_op in permission["actions"]:
                     current_app.logger.debug(
-                        "ADD PERMISSIONS - Adding permission: %s on %s for group: %s",
+                        "ADD PERMISSIONS - Adding permission: %s on %s for group: %s, command: %s",
                         crud_op,
                         permission["uri"],
                         group_identifier,
+                        permission.get("command"),
                     )
                     new_permissions = cls.add_permission_from_uri_or_macro(
                         group_identifier=group_identifier,
                         target=permission["uri"],
                         permission=crud_op,
+                        command=permission.get("command"),
                     )
                     current_app.logger.debug(
                         "ADD PERMISSIONS - Added %s permission assignments",

@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 from flask import Flask
 
+from m8flow_backend.services import model_override_patch
 from m8flow_backend.services import authorization_service_patch
 from m8flow_backend.services.authorization_service_patch import _keycloak_realm_roles_as_groups
 from m8flow_backend.services.authorization_service_patch import _find_existing_user_for_sign_in
@@ -924,6 +925,38 @@ def test_parse_permissions_yaml_submitter_includes_process_model_read_dependenci
     assert "/m8flow/templates/process-models/*" in submitter_uris
 
 
+def test_parse_permissions_yaml_into_group_info_preserves_command_metadata(monkeypatch) -> None:
+    app = Flask(__name__)  # NOSONAR - unit test
+    permissions_path = (
+        Path(__file__).resolve().parents[4] / "src" / "m8flow_backend" / "config" / "permissions" / "m8flow.yml"
+    )
+    app.config["SPIFFWORKFLOW_BACKEND_PERMISSIONS_FILE_ABSOLUTE_PATH"] = str(permissions_path)
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP"] = "spiff_public"
+
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_id_or_none", lambda: "tenant-a")
+
+    with app.app_context():
+        authorization_service_patch.apply()
+        from spiffworkflow_backend.services.authorization_service import AuthorizationService
+
+        group_permissions = AuthorizationService.parse_permissions_yaml_into_group_info()
+
+    viewer_group = {group["name"]: group for group in group_permissions}["tenant-a:viewer"]
+    commands_by_uri = {
+        permission["uri"]: permission.get("command")
+        for permission in viewer_group["permissions"]
+        if "command" in permission
+    }
+
+    assert commands_by_uri["PM:ALL"] == "process_model.read"
+    assert commands_by_uri["/process-models"] == "process_model.list"
+    assert commands_by_uri["/process-instances"] == "process_instance.list"
+    assert commands_by_uri["/process-instances/*"] == "process_instance.read"
+    assert commands_by_uri["/tasks"] == "task.list"
+    assert commands_by_uri["/tasks/*"] == "task.read"
+
+
 def test_add_permissions_from_group_permissions_keeps_config_unqualified(monkeypatch) -> None:
     app = Flask(__name__)  # NOSONAR - unit test
     app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
@@ -958,6 +991,195 @@ def test_add_permissions_from_group_permissions_keeps_config_unqualified(monkeyp
         assert "tenant-a:everybody" in captured_group_identifiers
         assert "tenant-a:reviewer" in captured_group_identifiers
 
+
+def test_add_permissions_from_group_permissions_passes_command_to_permission_creation(monkeypatch) -> None:
+    app = Flask(__name__)  # NOSONAR - unit test
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP"] = "spiff_public"
+
+    captured_calls: list[tuple[str, str, str, str | None]] = []
+
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_id_or_none", lambda: "tenant-a")
+
+    with app.app_context():
+        authorization_service_patch.apply()
+        from spiffworkflow_backend.services.authorization_service import AuthorizationService
+        from spiffworkflow_backend.services.user_service import UserService
+
+        monkeypatch.setattr(
+            UserService,
+            "find_or_create_group",
+            classmethod(lambda cls, group_identifier, source_is_open_id=False: SimpleNamespace(identifier=group_identifier)),
+        )
+        monkeypatch.setattr(
+            AuthorizationService,
+            "add_permission_from_uri_or_macro",
+            classmethod(
+                lambda cls, group_identifier, permission, target, command=None: (
+                    captured_calls.append((group_identifier, permission, target, command)) or []
+                )
+            ),
+        )
+
+        AuthorizationService.add_permissions_from_group_permissions(
+            [
+                {
+                    "name": "reviewer",
+                    "users": [],
+                    "permissions": [
+                        {"actions": ["read", "update"], "uri": "/tasks/*", "command": "task.read"},
+                    ],
+                }
+            ],
+            group_permissions_only=True,
+        )
+
+    assert captured_calls == [
+        ("tenant-a:reviewer", "read", "/tasks/*", "task.read"),
+        ("tenant-a:reviewer", "update", "/tasks/*", "task.read"),
+    ]
+
+
+def test_add_permission_from_uri_or_macro_uses_command_when_finding_targets(monkeypatch) -> None:
+    app = Flask(__name__)  # NOSONAR - unit test
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP"] = "spiff_public"
+
+    captured_target_calls: list[tuple[str, str | None]] = []
+
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_id_or_none", lambda: "tenant-a")
+
+    with app.app_context():
+        authorization_service_patch.apply()
+        from spiffworkflow_backend.services.authorization_service import AuthorizationService
+        from spiffworkflow_backend.services.user_service import UserService
+
+        monkeypatch.setattr(
+            UserService,
+            "find_or_create_group",
+            classmethod(
+                lambda cls, group_identifier, source_is_open_id=False: SimpleNamespace(
+                    identifier=group_identifier,
+                    principal=SimpleNamespace(id=7),
+                )
+            ),
+        )
+        monkeypatch.setattr(
+            AuthorizationService,
+            "explode_permissions",
+            classmethod(lambda cls, permission, target: [SimpleNamespace(permission="read", target_uri=target)]),
+        )
+        monkeypatch.setattr(
+            AuthorizationService,
+            "find_or_create_permission_target",
+            classmethod(
+                lambda cls, uri, command=None: (
+                    captured_target_calls.append((uri, command)) or SimpleNamespace(id=11, uri=uri, command=command)
+                )
+            ),
+        )
+        monkeypatch.setattr(
+            AuthorizationService,
+            "create_permission_for_principal",
+            classmethod(
+                lambda cls, principal, permission_target, permission, grant_type="permit": SimpleNamespace(
+                    principal=principal,
+                    permission_target=permission_target,
+                    permission=permission,
+                    grant_type=grant_type,
+                )
+            ),
+        )
+
+        AuthorizationService.add_permission_from_uri_or_macro(
+            "reviewer",
+            "read",
+            "/tasks/*",
+            command="task.read",
+        )
+
+    assert captured_target_calls == [("/tasks/*", "task.read")]
+
+
+def test_process_start_command_only_persists_on_process_model_target(monkeypatch) -> None:
+    app = Flask(__name__)  # NOSONAR - unit test
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SQLALCHEMY_EXPIRE_ON_COMMIT"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"] = "/v1.0"
+
+    from spiffworkflow_backend.models.db import db
+
+    db.init_app(app)
+
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_id_or_none", lambda: "tenant-a")
+    monkeypatch.setattr(
+        authorization_service_patch,
+        "current_tenant_identifiers",
+        lambda tenant_id=None: {"tenant-a", "tenant-a-slug"},
+    )
+
+    with app.app_context():
+        model_override_patch.apply()
+        from spiffworkflow_backend.models.group import GroupModel
+        from spiffworkflow_backend.models.permission_assignment import PermissionAssignmentModel
+        from spiffworkflow_backend.models.permission_target import PermissionTargetModel
+        from spiffworkflow_backend.models.principal import PrincipalModel
+        from spiffworkflow_backend.models.user import UserModel
+        from spiffworkflow_backend.models.user_group_assignment import UserGroupAssignmentModel
+        from spiffworkflow_backend.services.authorization_service import AuthorizationService
+        from spiffworkflow_backend.services.user_service import UserService
+
+        _ = (
+            GroupModel,
+            PermissionAssignmentModel,
+            PermissionTargetModel,
+            PrincipalModel,
+            UserModel,
+            UserGroupAssignmentModel,
+        )
+
+        db.create_all()
+        authorization_service_patch.apply()
+
+        group = UserService.find_or_create_group("tenant-a:submitter")
+        AuthorizationService.add_permission_from_uri_or_macro(
+            group.identifier,
+            "start",
+            "PM:ALL",
+            command="process.start",
+        )
+
+        command_rows = [
+            (assignment.permission_target.uri, assignment.permission)
+            for assignment in PermissionAssignmentModel.query.join(PermissionTargetModel)
+            .filter(PermissionTargetModel.command == "process.start")
+            .all()
+        ]
+        all_targets = {
+            (permission_target.uri, permission_target.command)
+            for permission_target in PermissionTargetModel.query.all()
+        }
+
+    assert command_rows == [("/process-models/%", "create")]
+    assert ("/process-instances/%", None) in all_targets
+    assert ("/process-instance-run/%", None) in all_targets
+    assert ("/process-instances/for-me/%", None) in all_targets
+    assert ("/logs/%", None) in all_targets
+    assert ("/logs/typeahead-filter-values/%", None) in all_targets
+    assert ("/process-data-file-download/%", None) in all_targets
+    assert ("/process-instance-events/%", None) in all_targets
+    assert ("/event-error-details/%", None) in all_targets
+    assert ("/process-instances/%", "process.start") not in all_targets
+    assert ("/process-instance-run/%", "process.start") not in all_targets
+    assert ("/process-instances/for-me/%", "process.start") not in all_targets
+    assert ("/logs/%", "process.start") not in all_targets
+    assert ("/logs/typeahead-filter-values/%", "process.start") not in all_targets
+    assert ("/process-data-file-download/%", "process.start") not in all_targets
+    assert ("/process-instance-events/%", "process.start") not in all_targets
+    assert ("/event-error-details/%", "process.start") not in all_targets
+
+
 def test_all_permission_assignments_for_user_includes_frontend_access_for_active_tenant(monkeypatch) -> None:
     app = Flask(__name__)  # NOSONAR - unit test
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
@@ -977,6 +1199,7 @@ def test_all_permission_assignments_for_user_includes_frontend_access_for_active
     )
 
     with app.app_context():
+        model_override_patch.apply()
         from spiffworkflow_backend.models.group import GroupModel
         from spiffworkflow_backend.models.permission_assignment import PermissionAssignmentModel
         from spiffworkflow_backend.models.permission_target import PermissionTargetModel
@@ -1042,6 +1265,7 @@ def test_reviewer_permissions_from_yaml_include_onboarding_tasks_and_process_ite
     )
 
     with app.app_context():
+        model_override_patch.apply()
         from spiffworkflow_backend.models.group import GroupModel
         from spiffworkflow_backend.models.permission_assignment import PermissionAssignmentModel
         from spiffworkflow_backend.models.permission_target import PermissionTargetModel
@@ -1109,6 +1333,7 @@ def test_tenant_admin_permissions_from_yaml_only_grant_page_access_and_tenant_up
     )
 
     with app.app_context():
+        model_override_patch.apply()
         from spiffworkflow_backend.models.group import GroupModel
         from spiffworkflow_backend.models.permission_assignment import PermissionAssignmentModel
         from spiffworkflow_backend.models.permission_target import PermissionTargetModel
@@ -1287,6 +1512,7 @@ def test_global_super_admin_permission_matches_normalized_org_management_route(m
     )
 
     with app.app_context():
+        model_override_patch.apply()
         from spiffworkflow_backend.models.group import GroupModel
         from spiffworkflow_backend.models.permission_assignment import PermissionAssignmentModel
         from spiffworkflow_backend.models.permission_target import PermissionTargetModel
@@ -1352,6 +1578,7 @@ def test_tenant_scoped_user_does_not_automatically_get_global_super_admin_permis
     )
 
     with app.app_context():
+        model_override_patch.apply()
         from spiffworkflow_backend.models.group import GroupModel
         from spiffworkflow_backend.models.permission_assignment import PermissionAssignmentModel
         from spiffworkflow_backend.models.permission_target import PermissionTargetModel
@@ -1408,6 +1635,7 @@ def test_master_realm_create_user_from_sign_in_assigns_global_super_admin_group(
     monkeypatch.setattr(authorization_service_patch, "_master_realm_identifier", lambda: "master")
 
     with app.app_context():
+        model_override_patch.apply()
         from spiffworkflow_backend.models.group import GroupModel
         from spiffworkflow_backend.models.permission_assignment import PermissionAssignmentModel
         from spiffworkflow_backend.models.permission_target import PermissionTargetModel
@@ -1503,6 +1731,7 @@ def test_master_realm_create_user_from_sign_in_tolerates_default_group_assignmen
     monkeypatch.setattr(authorization_service_patch, "_master_realm_identifier", lambda: "master")
 
     with app.app_context():
+        model_override_patch.apply()
         from spiffworkflow_backend.models.group import GroupModel
         from spiffworkflow_backend.models.permission_assignment import PermissionAssignmentModel
         from spiffworkflow_backend.models.permission_target import PermissionTargetModel
@@ -1689,7 +1918,7 @@ def test_shared_realm_create_user_from_sign_in_reuses_existing_same_realm_user(m
             return []
 
         @classmethod
-        def add_permission_from_uri_or_macro(cls, group_identifier, permission, target):
+        def add_permission_from_uri_or_macro(cls, group_identifier, permission, target, command=None):
             return []
 
         @classmethod
