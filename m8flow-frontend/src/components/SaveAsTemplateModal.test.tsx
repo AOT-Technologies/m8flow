@@ -3,6 +3,14 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { ThemeProvider, createTheme } from "@mui/material/styles";
 import type React from "react";
 import SaveAsTemplateModal from "./SaveAsTemplateModal";
+import enUs from "../locales/en_us/translation.json";
+
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string, opts?: { defaultValue?: string }) =>
+      (enUs as Record<string, string>)[key] ?? opts?.defaultValue ?? key,
+  }),
+}));
 
 vi.mock("../services/TemplateService", () => ({
   default: {
