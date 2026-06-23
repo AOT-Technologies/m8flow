@@ -9,6 +9,7 @@ const mockIsLoggedIn = vi.fn();
 const mockGetOrganizationMemberships = vi.fn();
 const mockGetCurrentUserOrganizationMemberships = vi.fn();
 const mockRememberTenantDisplayName = vi.fn();
+const mockDoLogout = vi.fn();
 
 vi.mock('../utils/useConfig', () => ({
   useConfig: () => mockUseConfig(),
@@ -19,6 +20,7 @@ vi.mock('../services/UserService', () => ({
     getOrganizationMemberships: () => mockGetOrganizationMemberships(),
     isLoggedIn: () => mockIsLoggedIn(),
     rememberTenantDisplayName: (...args: unknown[]) => mockRememberTenantDisplayName(...args),
+    doLogout: () => mockDoLogout(),
   },
 }));
 
@@ -249,6 +251,60 @@ describe('TenantSelectPage', () => {
     expect(assignMock).not.toHaveBeenCalledWith(
       expect.stringContaining(`redirect_url=${encodeURIComponent('http://localhost/tenant')}`),
     );
+  });
+
+  it('hides platform admin sign-in and shows contact guidance when a logged-in user has no tenants', () => {
+    mockUseConfig.mockReturnValue({
+      ENABLE_MULTITENANT: true,
+      BACKEND_BASE_URL: '/v1.0',
+      MASTER_REALM_IDENTIFIER: 'ops-admin',
+      SHARED_REALM_IDENTIFIER: 'shared-users',
+    });
+    mockIsLoggedIn.mockReturnValue(true);
+    mockGetOrganizationMemberships.mockReturnValue([]);
+
+    vi.stubGlobal('location', {
+      origin: 'http://localhost',
+      pathname: '/',
+      search: '',
+      assign: vi.fn(),
+      replace: vi.fn(),
+      href: 'http://localhost/',
+    });
+
+    render(<TenantSelectPage />);
+
+    expect(screen.queryByTestId('global-admin-sign-in-button')).toBeNull();
+    expect(screen.getByTestId('no-tenant-access-message')).toBeInTheDocument();
+  });
+
+  it('logs the user out and returns to login when Back to login is clicked on the no-tenants page', () => {
+    mockUseConfig.mockReturnValue({
+      ENABLE_MULTITENANT: true,
+      BACKEND_BASE_URL: '/v1.0',
+      MASTER_REALM_IDENTIFIER: 'ops-admin',
+      SHARED_REALM_IDENTIFIER: 'shared-users',
+    });
+    mockIsLoggedIn.mockReturnValue(true);
+    mockGetOrganizationMemberships.mockReturnValue([]);
+
+    vi.stubGlobal('location', {
+      origin: 'http://localhost',
+      pathname: '/',
+      search: '',
+      assign: vi.fn(),
+      replace: vi.fn(),
+      href: 'http://localhost/',
+    });
+
+    render(<TenantSelectPage />);
+
+    const backToLoginButton = screen.getByTestId('back-to-login-button');
+    expect(backToLoginButton).toBeInTheDocument();
+
+    fireEvent.click(backToLoginButton);
+
+    expect(mockDoLogout).toHaveBeenCalledTimes(1);
   });
 
   it('routes platform admin sign-in through the configured master realm', () => {

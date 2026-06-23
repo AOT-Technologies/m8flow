@@ -15,6 +15,7 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import UserService, { type OrganizationMembership } from '../services/UserService';
 import TenantService from '../services/TenantService';
 import { useConfig } from '../utils/useConfig';
@@ -232,12 +233,21 @@ export default function TenantSelectPage() {
           <Alert severity="warning" sx={{ mb: 3 }}>
             {t("account_not_member_of_any_tenant")}
           </Alert>
+          <Typography
+            color="text.secondary"
+            sx={{ mb: 3 }}
+            data-testid="no-tenant-access-message"
+          >
+            {t("contact_admin_for_tenant_access")}
+          </Typography>
           <Button
             variant="text"
-            onClick={handleGlobalAdminSignIn}
-            data-testid="global-admin-sign-in-button"
+            startIcon={<ArrowBackIcon />}
+            onClick={() => UserService.doLogout()}
+            data-testid="back-to-login-button"
+            sx={{ px: 0 }}
           >
-            {t("platform_admin_sign_in")}
+            {t("back_to_login")}
           </Button>
         </Box>
       </Container>
