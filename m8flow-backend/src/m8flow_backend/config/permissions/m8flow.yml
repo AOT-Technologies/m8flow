@@ -124,6 +124,7 @@ permissions:
     groups: ["viewer", "reviewer", "super-admin", "submitter"]
     actions: [read]
     uri: PM:ALL
+    command: process_model.read
   manage-all-process-models:
     groups: ["tenant-admin", "editor"]
     actions: [all]
@@ -132,6 +133,7 @@ permissions:
     groups: ["tenant-admin", "editor", "viewer"]
     actions: [read]
     uri: /process-models
+    command: process_model.list
   read-process-list:
     groups: ["tenant-admin", "editor", "viewer"]
     actions: [read]
@@ -144,10 +146,12 @@ permissions:
     groups: ["tenant-admin", "editor","submitter"]
     actions: [start]
     uri: PM:ALL
+    command: process.start
   read-process-instance-list:
     groups: ["tenant-admin", "editor", "viewer"]
     actions: [read]
     uri: /process-instances
+    command: process_instance.list
   create-process-instance-list-for-me:
     groups: ["tenant-admin", "editor"]
     actions: [create]
@@ -160,6 +164,7 @@ permissions:
     groups: ["tenant-admin", "editor", "viewer", "super-admin","submitter"]
     actions: [read]
     uri: /process-instances/*
+    command: process_instance.read
   read-user-search:
     groups: ["tenant-admin", "editor", "viewer", "reviewer", "integrator"]
     actions: [read]
@@ -304,10 +309,12 @@ permissions:
     groups: ["tenant-admin", "editor", "viewer", "reviewer"]
     actions: [read]
     uri: /tasks
+    command: task.list
   read-tasks:
     groups: ["viewer", "super-admin"]
     actions: [read]
     uri: /tasks/*
+    command: task.read
   read-nats-tokens:
     groups: ["integrator", "viewer", "super-admin"]
     actions: [read]
