@@ -54,12 +54,17 @@ vi.mock('../hooks/M8flowUriListForPermissions', () => ({
   })),
 }));
 
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key: string, opts?: { name?: string }) =>
-      opts?.name ? `${key}:${opts.name}` : key,
-  }),
-}));
+vi.mock('react-i18next', () => {
+  // Stable `t` reference: the component lists `t` in its data-loading effect
+  // deps (matching real react-i18next, where `t` is stable). Returning a new
+  // function each render would re-run the effect every render and re-set the
+  // loading flag, leaving the form stuck on the spinner forever.
+  const t = (key: string, opts?: { name?: string }) =>
+    opts?.name ? `${key}:${opts.name}` : key;
+  return {
+    useTranslation: () => ({ t }),
+  };
+});
 
 vi.mock('react-router-dom', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react-router-dom')>();
@@ -88,12 +93,25 @@ vi.mock('../helpers', () => ({
   setPageTitle: vi.fn(),
 }));
 
-vi.mock('@mui/icons-material', () =>
-  new Proxy(
-    {},
-    { get: () => () => null },
-  ),
-);
+vi.mock('@mui/icons-material', () => {
+  const Icon = () => null;
+  return new Proxy(
+    { __esModule: true },
+    {
+      get: (_target, prop) => {
+        if (prop === '__esModule') return true;
+        // Must NOT return a function for `then` (or symbols) or the mocked
+        // module namespace looks like a never-resolving thenable and vitest
+        // hangs awaiting it during collection.
+        if (prop === 'then' || typeof prop === 'symbol') return undefined;
+        return Icon;
+      },
+      // vitest validates accessed exports with `prop in module` and throws
+      // "No <name> export is defined" otherwise — report every icon as present.
+      has: () => true,
+    },
+  );
+});
 
 const GITHUB_CONNECTOR = {
   id: 'github',
