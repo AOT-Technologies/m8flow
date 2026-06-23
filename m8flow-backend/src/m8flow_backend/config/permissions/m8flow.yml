@@ -129,6 +129,13 @@ permissions:
     groups: ["tenant-admin", "editor"]
     actions: [all]
     uri: PM:ALL
+  # Compatibility-only command targets for future m8flow-bpmn-core integration.
+  # These enrich synced permission targets without changing current URI-based auth behavior.
+  import-process-definitions:
+    groups: ["tenant-admin", "editor"]
+    actions: [create]
+    uri: /process-definitions/*
+    command: process_definition.import
   read-process-model-list:
     groups: ["tenant-admin", "editor", "viewer"]
     actions: [read]
@@ -165,6 +172,26 @@ permissions:
     actions: [read]
     uri: /process-instances/*
     command: process_instance.read
+  suspend-process-instances:
+    groups: ["tenant-admin", "editor"]
+    actions: [create]
+    uri: /process-instances/*
+    command: process.suspend
+  resume-process-instances:
+    groups: ["tenant-admin", "editor"]
+    actions: [create]
+    uri: /process-instances/*
+    command: process.resume
+  retry-process-instances:
+    groups: ["tenant-admin", "editor"]
+    actions: [create]
+    uri: /process-instances/*
+    command: process.retry
+  terminate-process-instances:
+    groups: ["tenant-admin", "editor"]
+    actions: [create]
+    uri: /process-instances/*
+    command: process.terminate
   read-user-search:
     groups: ["tenant-admin", "editor", "viewer", "reviewer", "integrator"]
     actions: [read]

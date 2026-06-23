@@ -106,6 +106,30 @@ def test_apply_excludes_update_tenant_name_from_permission_check(monkeypatch) ->
             assert AuthorizationService.request_is_excluded_from_permission_check() is True
 
 
+def test_apply_keeps_request_time_authorization_methods_unchanged() -> None:
+    app = Flask(__name__)  # NOSONAR - unit test
+
+    with app.app_context():
+        from spiffworkflow_backend.services.authorization_service import AuthorizationService
+
+        original_methods = {
+            "has_permission": AuthorizationService.has_permission.__func__,
+            "user_has_permission": AuthorizationService.user_has_permission.__func__,
+            "check_permission_for_request": AuthorizationService.check_permission_for_request.__func__,
+            "check_for_permission": AuthorizationService.check_for_permission.__func__,
+        }
+
+        authorization_service_patch.apply()
+
+        assert AuthorizationService.has_permission.__func__ is original_methods["has_permission"]
+        assert AuthorizationService.user_has_permission.__func__ is original_methods["user_has_permission"]
+        assert (
+            AuthorizationService.check_permission_for_request.__func__
+            is original_methods["check_permission_for_request"]
+        )
+        assert AuthorizationService.check_for_permission.__func__ is original_methods["check_for_permission"]
+
+
 def test_tenant_id_for_user_info_uses_local_canonical_tenant_from_org_claim(monkeypatch) -> None:
     monkeypatch.setattr(
         "m8flow_backend.services.authorization_service_patch.current_tenant_id_or_none",
@@ -942,11 +966,30 @@ def test_parse_permissions_yaml_into_group_info_preserves_command_metadata(monke
 
         group_permissions = AuthorizationService.parse_permissions_yaml_into_group_info()
 
+    tenant_admin_group = {group["name"]: group for group in group_permissions}["tenant-a:tenant-admin"]
+    editor_group = {group["name"]: group for group in group_permissions}["tenant-a:editor"]
     viewer_group = {group["name"]: group for group in group_permissions}["tenant-a:viewer"]
+    tenant_admin_commands = {
+        (permission["uri"], permission["command"])
+        for permission in tenant_admin_group["permissions"]
+        if "command" in permission
+    }
+    editor_commands = {
+        (permission["uri"], permission["command"])
+        for permission in editor_group["permissions"]
+        if "command" in permission
+    }
     commands_by_uri = {
         permission["uri"]: permission.get("command")
         for permission in viewer_group["permissions"]
         if "command" in permission
+    }
+    compatibility_commands = {
+        ("/process-definitions/*", "process_definition.import"),
+        ("/process-instances/*", "process.suspend"),
+        ("/process-instances/*", "process.resume"),
+        ("/process-instances/*", "process.retry"),
+        ("/process-instances/*", "process.terminate"),
     }
 
     assert commands_by_uri["PM:ALL"] == "process_model.read"
@@ -955,6 +998,9 @@ def test_parse_permissions_yaml_into_group_info_preserves_command_metadata(monke
     assert commands_by_uri["/process-instances/*"] == "process_instance.read"
     assert commands_by_uri["/tasks"] == "task.list"
     assert commands_by_uri["/tasks/*"] == "task.read"
+    assert compatibility_commands <= tenant_admin_commands
+    assert compatibility_commands <= editor_commands
+    assert not {command for _, command in compatibility_commands}.intersection(commands_by_uri.values())
 
 
 def test_add_permissions_from_group_permissions_keeps_config_unqualified(monkeypatch) -> None:
@@ -1178,6 +1224,63 @@ def test_process_start_command_only_persists_on_process_model_target(monkeypatch
     assert ("/process-data-file-download/%", "process.start") not in all_targets
     assert ("/process-instance-events/%", "process.start") not in all_targets
     assert ("/event-error-details/%", "process.start") not in all_targets
+
+
+def test_core_compatibility_commands_sync_to_expected_targets(monkeypatch) -> None:
+    app = Flask(__name__)  # NOSONAR - unit test
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SQLALCHEMY_EXPIRE_ON_COMMIT"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"] = "/v1.0"
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP"] = "spiff_public"
+    permissions_path = (
+        Path(__file__).resolve().parents[4] / "src" / "m8flow_backend" / "config" / "permissions" / "m8flow.yml"
+    )
+    app.config["SPIFFWORKFLOW_BACKEND_PERMISSIONS_FILE_ABSOLUTE_PATH"] = str(permissions_path)
+
+    from spiffworkflow_backend.models.db import db
+
+    db.init_app(app)
+
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_id_or_none", lambda: "tenant-a")
+    monkeypatch.setattr(
+        authorization_service_patch,
+        "current_tenant_identifiers",
+        lambda tenant_id=None: {"tenant-a", "tenant-a-slug"},
+    )
+
+    with app.app_context():
+        model_override_patch.apply()
+        from spiffworkflow_backend.models.permission_target import PermissionTargetModel
+        from spiffworkflow_backend.services.authorization_service import AuthorizationService
+
+        db.create_all()
+        authorization_service_patch.apply()
+
+        group_permissions = AuthorizationService.parse_permissions_yaml_into_group_info()
+        tenant_admin_group = [group for group in group_permissions if group["name"] == "tenant-a:tenant-admin"]
+
+        AuthorizationService.add_permissions_from_group_permissions(
+            tenant_admin_group,
+            group_permissions_only=True,
+        )
+
+        command_targets = {
+            (permission_target.uri, permission_target.command)
+            for permission_target in PermissionTargetModel.query.filter(PermissionTargetModel.command.isnot(None)).all()
+        }
+
+    expected_targets = {
+        ("/process-models/%", "process.start"),
+        ("/process-definitions/%", "process_definition.import"),
+        ("/process-instances/%", "process.suspend"),
+        ("/process-instances/%", "process.resume"),
+        ("/process-instances/%", "process.retry"),
+        ("/process-instances/%", "process.terminate"),
+    }
+
+    assert expected_targets <= command_targets
 
 
 def test_all_permission_assignments_for_user_includes_frontend_access_for_active_tenant(monkeypatch) -> None:
