@@ -321,6 +321,8 @@
   "sign_in": "Sign in",
   "platform_admin_sign_in": "Platform admin sign in",
   "account_not_member_of_any_tenant": "Your account authenticated successfully, but it is not a member of any tenant in the shared realm.",
+  "contact_admin_for_tenant_access": "Please contact your Super Admin or Tenant Administrator to request access to a tenant.",
+  "back_to_login": "Back to login",
   "finalizing_tenant_access": "Finalizing tenant access",
   "continuing_into_tenant": "Continuing into {{tenant}}...",
   "select_a_tenant": "Select a Tenant",
