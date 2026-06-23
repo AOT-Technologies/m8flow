@@ -59,7 +59,25 @@ vi.mock('../components/ConnectorOperationsModal', () => ({
 
 vi.mock('../helpers', () => ({ setPageTitle: vi.fn() }));
 
-vi.mock('@mui/icons-material', () => new Proxy({}, { get: () => () => null }));
+vi.mock('@mui/icons-material', () => {
+  const Icon = () => null;
+  return new Proxy(
+    { __esModule: true },
+    {
+      get: (_target, prop) => {
+        if (prop === '__esModule') return true;
+        // Must NOT return a function for `then` (or symbols) or the mocked
+        // module namespace looks like a never-resolving thenable and vitest
+        // hangs awaiting it during collection.
+        if (prop === 'then' || typeof prop === 'symbol') return undefined;
+        return Icon;
+      },
+      // vitest validates accessed exports with `prop in module` and throws
+      // "No <name> export is defined" otherwise — report every icon as present.
+      has: () => true,
+    },
+  );
+});
 
 const base = {
   description: '',
