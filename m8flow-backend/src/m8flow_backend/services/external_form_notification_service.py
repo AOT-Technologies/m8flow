@@ -191,8 +191,8 @@ class ExternalFormNotificationService:
             return None
         try:
             value = SecretService._decrypt(secret.value)
-        except Exception:
-            LOGGER.warning("external-form-notify: could not decrypt tenant secret '%s'", key, exc_info=True)
+        except Exception as exc:
+            LOGGER.warning("external-form-notify: could not decrypt a tenant secret (%s)", type(exc).__name__)
             return None
         value = (value or "").strip()
         return value or None
