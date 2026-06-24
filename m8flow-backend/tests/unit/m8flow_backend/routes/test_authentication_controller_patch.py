@@ -2191,3 +2191,136 @@ def test_finalized_shared_realm_token_reuses_existing_user_for_follow_up_request
     assert client.get("/v1.0/tasks", headers=auth_headers).status_code == 200
     assert client.get("/v1.0/onboarding", headers=auth_headers).status_code == 200
     assert client.get("/v1.0/extensions", headers=auth_headers).status_code == 200
+
+
+def test_viewer_can_access_process_instance_list_endpoints_m8f_133(monkeypatch) -> None:
+    """Regression for M8F-133.
+
+    The process-instance list endpoints are POST routes, so the authorization
+    check requires the "create" action (POST -> create). A "viewer" was only ever
+    granted "read" on /process-instances, so both the default "For Me" view and the
+    "All" tab returned 403. m8flow.yml now grants the viewer "create" on both list
+    URIs; this asserts the authorization layer lets the POSTs through (200 from the
+    stub views) instead of raising 403.
+    """
+    org_tenant_id = "7338e743-e0cf-4161-83a4-3b3ff446609b"
+    permissions_path = (
+        Path(__file__).resolve().parents[4] / "src" / "m8flow_backend" / "config" / "permissions" / "m8flow.yml"
+    )
+
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SQLALCHEMY_EXPIRE_ON_COMMIT"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    app.config["SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"] = "/v1.0"
+    app.config["SPIFFWORKFLOW_BACKEND_URL"] = "http://localhost:7000"
+    app.config["SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND"] = "http://localhost:7001"
+    app.config["SPIFFWORKFLOW_BACKEND_USE_AUTH_FOR_METRICS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_IS_AUTHORITY_FOR_USER_GROUPS"] = True
+    app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_TENANT_SPECIFIC_FIELDS"] = []
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP"] = "spiff_public"
+    app.config["SPIFFWORKFLOW_BACKEND_PERMISSIONS_FILE_ABSOLUTE_PATH"] = str(permissions_path)
+    app.config["THREAD_LOCAL_DATA"] = SimpleNamespace()
+
+    db.init_app(app)
+    set_canonical_db(db)
+    set_phase(BootPhase.APP_CREATED)
+    register_request_active_hooks(app)
+    register_request_tenant_context_hooks(app)
+
+    # Stub views: omni_auth runs as a before_request hook and performs the permission
+    # check before the view executes, so a 403 short-circuits these. Reaching the stub
+    # (200) proves authorization passed.
+    app.add_url_rule(
+        "/v1.0/process-instances/for-me",
+        "process_instance_list_for_me",
+        lambda: ("ok", 200),
+        methods=["POST"],
+    )
+    app.add_url_rule(
+        "/v1.0/process-instances",
+        "process_instance_list",
+        lambda: ("ok", 200),
+        methods=["POST"],
+    )
+
+    decoded_token = {
+        "iss": "http://localhost:7002/realms/m8flow",
+        "sub": "viewer-subject",
+        "preferred_username": "viewer",
+        "m8flow_authentication_identifier": "m8flow",
+        "m8flow_tenant_id": org_tenant_id,
+        "groups": ["/viewer"],
+        "organization": {
+            "it": {"id": org_tenant_id, "groups": ["/viewer"]},
+        },
+    }
+
+    monkeypatch.setattr(auth_patch_module, "_PATCHED", False)
+    monkeypatch.setattr(auth_patch_module, "_REFRESH_TOKEN_TENANT_PATCHED", False)
+    monkeypatch.setattr(auth_patch_module, "_COOKIE_DOMAIN_PATCHED", False)
+    monkeypatch.setattr(auth_patch_module, "_PUBLIC_GROUP_PATCHED", False)
+    monkeypatch.setattr(authorization_service_patch, "_PATCHED", False)
+    monkeypatch.setattr(authentication_controller, "_get_decoded_token", lambda _token: decoded_token)
+
+    from spiffworkflow_backend.services.authentication_service import AuthenticationService
+    from spiffworkflow_backend.services.user_service import UserService
+    from spiffworkflow_backend.models.user import UserModel
+
+    monkeypatch.setattr(
+        AuthenticationService,
+        "validate_decoded_token",
+        classmethod(lambda cls, decoded, authentication_identifier=None: decoded is decoded_token),
+    )
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(
+            M8flowTenantModel(
+                id=org_tenant_id,
+                name="Information Technology",
+                slug="it",
+                created_by="test",
+                modified_by="test",
+                created_at_in_seconds=1,
+                updated_at_in_seconds=1,
+            )
+        )
+        db.session.commit()
+
+        apply_refresh_token_tenant_patch()
+        auth_patch_module.apply()
+        authorization_service_patch.apply()
+        app.before_request(authentication_controller.omni_auth)
+
+        UserService.create_user(
+            username="viewer",
+            service="http://localhost:7002/realms/m8flow",
+            service_id="viewer-subject",
+        )
+
+    client = app.test_client()
+    client.set_cookie("authentication_identifier", "m8flow")
+
+    for_me_response = client.post(
+        "/v1.0/process-instances/for-me?per_page=50&page=1",
+        headers={"Authorization": "Bearer viewer-token"},
+        json={"report_metadata": {"columns": [], "filter_by": [], "order_by": []}},
+    )
+    all_response = client.post(
+        "/v1.0/process-instances?per_page=50&page=1",
+        headers={"Authorization": "Bearer viewer-token"},
+        json={"report_metadata": {"columns": [], "filter_by": [], "order_by": []}},
+    )
+
+    assert for_me_response.status_code == 200, for_me_response.get_data(as_text=True)
+    assert all_response.status_code == 200, all_response.get_data(as_text=True)
+
+    with app.app_context():
+        refreshed_user = UserModel.query.filter_by(
+            service="http://localhost:7002/realms/m8flow",
+            service_id="viewer-subject",
+        ).one()
+        assert f"{org_tenant_id}:viewer" in {group.identifier for group in refreshed_user.groups}
