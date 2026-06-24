@@ -211,6 +211,7 @@
   "organization_created_successfully": "租户创建成功。",
   "organization_updated_successfully": "租户更新成功。",
   "organization_alias_already_exists": "租户别名已存在",
+  "organization_name_already_exists": "已存在同名租户。",
   "failed_to_create_organization": "创建租户失败。请重试。",
   "failed_to_update_organization": "更新租户失败。请重试。",
   "failed_to_delete_organization": "删除租户失败。请重试。",

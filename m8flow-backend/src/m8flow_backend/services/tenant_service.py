@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel, TenantStatus
 from spiffworkflow_backend.models.db import db
 from spiffworkflow_backend.exceptions.api_error import ApiError
@@ -37,6 +39,19 @@ class TenantService:
         if tenant:
             return {"exists": True, "tenant_id": tenant.id}
         return {"exists": False}
+
+    @staticmethod
+    def name_exists(name: str, exclude_tenant_id: str | None = None) -> bool:
+        """Return True if another tenant already uses the given display name (case-insensitive)."""
+        if not name or not name.strip():
+            return False
+        normalized = name.strip().lower()
+        query = M8flowTenantModel.query.filter(
+            db.func.lower(M8flowTenantModel.name) == normalized
+        )
+        if exclude_tenant_id:
+            query = query.filter(M8flowTenantModel.id != exclude_tenant_id)
+        return db.session.query(query.exists()).scalar()
 
     @staticmethod
     def get_tenant_by_slug(slug: str):

@@ -211,6 +211,7 @@
   "organization_created_successfully": "Nájemce byl úspěšně vytvořen.",
   "organization_updated_successfully": "Nájemce byl úspěšně aktualizován.",
   "organization_alias_already_exists": "Alias nájemce již existuje",
+  "organization_name_already_exists": "Nájemce s tímto názvem již existuje.",
   "failed_to_create_organization": "Vytvoření nájemce se nezdařilo. Zkuste to prosím znovu.",
   "failed_to_update_organization": "Aktualizace nájemce se nezdařila. Zkuste to prosím znovu.",
   "failed_to_delete_organization": "Smazání nájemce se nezdařilo. Zkuste to prosím znovu.",
