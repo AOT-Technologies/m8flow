@@ -241,6 +241,72 @@ jobs:
             m8flow-connector-proxy
 
   # -------------------------
+  # Frontend E2E (Playwright) — non-required soft-launch
+  # -------------------------
+  # Boots the full Docker stack and runs the existing pytest-playwright suite under
+  # extensions/m8flow-frontend/test/browser. Intentionally NOT wired into the
+  # required-ci merge gate yet: it surfaces a ✅/❌ check on the PR but does not block
+  # merges. Promote to required (and add to branch protection) once it proves stable.
+  frontend-e2e:
+    name: Frontend E2E (Playwright)
+    needs: path_filters
+    if: ${{ github.event_name == 'push' || needs.path_filters.outputs.backend == 'true' || needs.path_filters.outputs.frontend == 'true' || needs.path_filters.outputs.docker_m8flow == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create .env from sample
+        run: cp sample.env .env
+      - name: Build and start full stack
+        run: |
+          docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build --wait \
+            m8flow-db keycloak-db keycloak keycloak-proxy redis minio \
+            minio-mc-init keycloak-master-admin-init m8flow-backend m8flow-frontend
+      - name: Wait for backend and frontend to be ready
+        run: |
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:6840/v1.0/status && break || sleep 5
+          done
+          curl -sf http://localhost:6840/v1.0/status
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:6841 && break || sleep 5
+          done
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.1'
+      - name: Install uv
+        run: pip install uv
+      - name: Install E2E test deps and Chromium
+        working-directory: extensions/m8flow-frontend/test/browser
+        run: |
+          uv sync
+          uv run playwright install --with-deps chromium
+      - name: Run M8Flow E2E tests (parallel, mock/core subset)
+        working-directory: extensions/m8flow-frontend/test/browser
+        env:
+          E2E_URL: http://localhost:6841
+        run: |
+          uv run python -m pytest . \
+            --ignore=templates/test_template_form_driven_approval_e2e.py \
+            -n 4 --dist loadscope \
+            --html-report
+      - name: Dump stack logs on failure
+        if: failure()
+        run: docker compose -f docker/m8flow-docker-compose.yml logs --no-color > stack-logs.txt || true
+      - name: Upload E2E test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results
+          path: |
+            extensions/m8flow-frontend/test/browser/test-results/
+            stack-logs.txt
+          retention-days: 14
+      - name: Tear down stack
+        if: always()
+        run: docker compose -f docker/m8flow-docker-compose.yml down -v || true
+
+  # -------------------------
   # Required Merge Gate
   # -------------------------
   required-ci:
