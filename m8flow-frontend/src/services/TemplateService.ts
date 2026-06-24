@@ -409,6 +409,17 @@ const TemplateService = {
     });
   },
 
+  /**
+   * Check whether a template name (by its derived key) is already taken in the
+   * current tenant. Reuses getAllVersions, which excludes soft-deleted templates,
+   * so names freed by deleted templates are reported as available.
+   */
+  templateNameExists(templateKey: string): Promise<boolean> {
+    const key = templateKey.trim();
+    if (!key) return Promise.resolve(false);
+    return this.getAllVersions(key).then((versions) => versions.length > 0);
+  },
+
   importTemplate(
     zipFile: File,
     metadata: CreateTemplateMetadata
