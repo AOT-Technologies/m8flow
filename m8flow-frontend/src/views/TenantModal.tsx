@@ -54,6 +54,22 @@ function generateTenantAliasBase(name: string): string {
   return sanitizedAlias || GENERATED_TENANT_ALIAS_FALLBACK;
 }
 
+function isDuplicateTenantName(
+  name: string,
+  existingTenants: Tenant[],
+  excludeTenantId?: string,
+): boolean {
+  const normalizedName = name.trim().toLowerCase();
+  if (!normalizedName) {
+    return false;
+  }
+  return existingTenants.some(
+    (existingTenant) =>
+      existingTenant.id !== excludeTenantId &&
+      existingTenant.name?.trim().toLowerCase() === normalizedName,
+  );
+}
+
 function generateUniqueTenantAlias(name: string, existingTenants: Tenant[]): string {
   const baseAlias = generateTenantAliasBase(name);
   const existingAliases = new Set(
@@ -140,6 +156,14 @@ export default function TenantModal({
       if (tenantNameError) {
         setCreateTenantNameError(t(tenantNameError, { count: MAX_DISPLAY_NAME_LENGTH }));
         hasValidationError = true;
+      } else if (isDuplicateTenantName(trimmedTenantName, existingTenants)) {
+        setCreateTenantNameError(
+          translate(
+            "organization_name_already_exists",
+            "A tenant with this name already exists.",
+          ),
+        );
+        hasValidationError = true;
       }
     } else if (type === TenantModalType.EDIT_TENANT) {
       if (!tenant) return;
@@ -147,6 +171,14 @@ export default function TenantModal({
       const editError = validateDisplayName(trimmedName);
       if (editError) {
         setEditNameError(t(editError, { count: MAX_DISPLAY_NAME_LENGTH }));
+        hasValidationError = true;
+      } else if (isDuplicateTenantName(trimmedName, existingTenants, tenant.id)) {
+        setEditNameError(
+          translate(
+            "organization_name_already_exists",
+            "A tenant with this name already exists.",
+          ),
+        );
         hasValidationError = true;
       }
     }

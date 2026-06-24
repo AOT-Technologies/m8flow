@@ -211,6 +211,7 @@
   "organization_created_successfully": "Mandant erfolgreich erstellt.",
   "organization_updated_successfully": "Mandant erfolgreich aktualisiert.",
   "organization_alias_already_exists": "Der Mandantenalias existiert bereits",
+  "organization_name_already_exists": "Ein Mandant mit diesem Namen existiert bereits.",
   "failed_to_create_organization": "Der Mandant konnte nicht erstellt werden. Bitte versuchen Sie es erneut.",
   "failed_to_update_organization": "Der Mandant konnte nicht aktualisiert werden. Bitte versuchen Sie es erneut.",
   "failed_to_delete_organization": "Der Mandant konnte nicht gelöscht werden. Bitte versuchen Sie es erneut.",

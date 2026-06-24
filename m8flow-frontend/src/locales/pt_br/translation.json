@@ -211,6 +211,7 @@
   "organization_created_successfully": "Inquilino criado com sucesso.",
   "organization_updated_successfully": "Inquilino atualizado com sucesso.",
   "organization_alias_already_exists": "O alias do inquilino já existe",
+  "organization_name_already_exists": "Já existe um inquilino com este nome.",
   "failed_to_create_organization": "Falha ao criar inquilino. Por favor, tente novamente.",
   "failed_to_update_organization": "Falha ao atualizar inquilino. Por favor, tente novamente.",
   "failed_to_delete_organization": "Falha ao excluir inquilino. Por favor, tente novamente.",
