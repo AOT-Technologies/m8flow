@@ -7,6 +7,7 @@ dependencies = [
     "pytest-playwright",
     "pytest-timeout",
     "pytest-rerunfailures",
+    "pytest-xdist",
     "faker",
 ]
 
