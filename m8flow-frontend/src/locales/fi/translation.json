@@ -211,6 +211,7 @@
   "organization_created_successfully": "Vuokralaisen luominen onnistui.",
   "organization_updated_successfully": "Vuokralaisen päivitys onnistui.",
   "organization_alias_already_exists": "Vuokralaisen alias on jo olemassa",
+  "organization_name_already_exists": "Tämänniminen vuokralainen on jo olemassa.",
   "failed_to_create_organization": "Vuokralaisen luominen epäonnistui. Yritä uudelleen.",
   "failed_to_update_organization": "Vuokralaisen päivittäminen epäonnistui. Yritä uudelleen.",
   "failed_to_delete_organization": "Vuokralaisen poistaminen epäonnistui. Yritä uudelleen.",

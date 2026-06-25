@@ -211,6 +211,7 @@
   "organization_created_successfully": "Locataire créé avec succès.",
   "organization_updated_successfully": "Locataire mis à jour avec succès.",
   "organization_alias_already_exists": "L'alias du locataire existe déjà",
+  "organization_name_already_exists": "Un locataire portant ce nom existe déjà.",
   "failed_to_create_organization": "Échec de la création du locataire. Veuillez réessayer.",
   "failed_to_update_organization": "Échec de la mise à jour du locataire. Veuillez réessayer.",
   "failed_to_delete_organization": "Échec de la suppression du locataire. Veuillez réessayer.",

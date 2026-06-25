@@ -96,6 +96,7 @@
   "organization_alias_invalid_pattern": "Tenant alias can only contain letters, numbers, hyphens, and underscores",
   "organization_name_cannot_be_empty": "Tenant name cannot be empty",
   "organization_name_max_length": "Tenant name must be {{count}} characters or fewer",
+  "organization_name_already_exists": "A tenant with this name already exists.",
   "organization_created_successfully": "Tenant created successfully.",
   "organization_updated_successfully": "Tenant updated successfully.",
   "organization_alias_already_exists": "Tenant alias already exists",
