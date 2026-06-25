@@ -1,4 +1,7 @@
+import { useTranslation } from 'react-i18next';
+
 export function RouteLoadingFallback() {
+  const { t } = useTranslation();
   return (
     <div
       style={{
@@ -8,9 +11,9 @@ export function RouteLoadingFallback() {
         minHeight: 240,
         width: '100%',
       }}
-      aria-label="Loading"
+      aria-label={t('loading')}
     >
-      Loading…
+      {t('loading')}…
     </div>
   );
 }

@@ -885,6 +885,34 @@ def add_organization_member(
     response.raise_for_status()
 
 
+def remove_organization_member(
+    organization_id: str,
+    member_id: str,
+    admin_token: str | None = None,
+) -> None:
+    """Remove one shared-realm user from one organization when present."""
+    if not organization_id or not str(organization_id).strip():
+        raise ValueError("organization_id is required")
+    if not member_id or not str(member_id).strip():
+        raise ValueError("member_id is required")
+
+    organization_id = str(organization_id).strip()
+    member_id = str(member_id).strip()
+    token = admin_token or get_master_admin_token()
+
+    response = requests.delete(
+        _shared_realm_organizations_url(
+            organization_id,
+            "members",
+            quote(member_id, safe=""),
+        ),
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    if response.status_code != 404:
+        response.raise_for_status()
+
+
 def list_organization_groups(
     organization_id: str,
     admin_token: str | None = None,
@@ -1107,6 +1135,101 @@ def create_organization_group(
             f"'{organization_id}' but it could not be fetched afterward."
         )
     return organization_group
+
+
+def delete_organization_group(
+    organization_id: str,
+    group_id: str,
+    admin_token: str | None = None,
+) -> None:
+    """Delete one top-level organization group when it exists."""
+    if not organization_id or not str(organization_id).strip():
+        raise ValueError("organization_id is required")
+    if not group_id or not str(group_id).strip():
+        raise ValueError("group_id is required")
+
+    organization_id = str(organization_id).strip()
+    group_id = str(group_id).strip()
+    token = admin_token or get_master_admin_token()
+
+    response = requests.delete(
+        _shared_realm_organization_groups_url(
+            organization_id,
+            quote(group_id, safe=""),
+        ),
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    if response.status_code != 404:
+        response.raise_for_status()
+
+
+def rename_organization_group(
+    organization_id: str,
+    group_id: str,
+    group_name: str,
+    *,
+    mapped_role_names: list[str] | tuple[str, ...] | None = None,
+    admin_token: str | None = None,
+) -> dict[str, Any]:
+    """Rename one top-level organization group while preserving its supported attributes."""
+    if not organization_id or not str(organization_id).strip():
+        raise ValueError("organization_id is required")
+    if not group_id or not str(group_id).strip():
+        raise ValueError("group_id is required")
+    if not group_name or not str(group_name).strip():
+        raise ValueError("group_name is required")
+
+    organization_id = str(organization_id).strip()
+    group_id = str(group_id).strip()
+    normalized_group_name = str(group_name).strip()
+    token = admin_token or get_master_admin_token()
+
+    organization_group = get_organization_group_by_id(
+        organization_id,
+        group_id,
+        admin_token=token,
+    )
+    if not isinstance(organization_group, dict):
+        raise ValueError(
+            f"Organization group '{group_id}' could not be found in organization '{organization_id}'."
+        )
+
+    existing_attributes = organization_group.get("attributes")
+    updated_attributes = copy.deepcopy(existing_attributes) if isinstance(existing_attributes, dict) else {}
+    if mapped_role_names is not None:
+        normalized_role_names = list(normalize_tenant_role_names(mapped_role_names))
+        updated_attributes[ORGANIZATION_GROUP_ROLE_MAPPING_CONFIGURED_ATTRIBUTE] = ["true"]
+        if normalized_role_names:
+            updated_attributes[ORGANIZATION_GROUP_ROLE_NAMES_ATTRIBUTE] = normalized_role_names
+        else:
+            updated_attributes.pop(ORGANIZATION_GROUP_ROLE_NAMES_ATTRIBUTE, None)
+
+    payload: dict[str, Any] = {
+        "name": normalized_group_name,
+        "attributes": updated_attributes,
+    }
+    description = organization_group.get("description")
+    if isinstance(description, str):
+        payload["description"] = description
+
+    response = requests.put(
+        _shared_realm_organization_groups_url(organization_id, quote(group_id, safe="")),
+        json=payload,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    response.raise_for_status()
+
+    refreshed_group = get_organization_group_by_id(
+        organization_id,
+        group_id,
+        admin_token=token,
+    )
+    if isinstance(refreshed_group, dict):
+        return refreshed_group
+    payload["id"] = group_id
+    return payload
 
 
 def _organization_group_attribute_values(

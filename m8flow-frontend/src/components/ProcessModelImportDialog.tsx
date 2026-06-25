@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Dialog,
   DialogTitle,
@@ -33,6 +34,7 @@ export function ProcessModelImportDialog({
   processGroupId,
   onImportSuccess,
 }: ProcessModelImportDialogProps) {
+  const { t } = useTranslation();
   const [importSource, setImportSource] = useState("");
   const [isValid, setIsValid] = useState<boolean | null>(null);
   const [isImporting, setIsImporting] = useState(false);
@@ -97,7 +99,7 @@ export function ProcessModelImportDialog({
 
     // Validate process group ID
     if (!processGroupId || processGroupId.trim() === "") {
-      setErrorMessage("Process group ID is required for import.");
+      setErrorMessage(t("process_group_id_required_import"));
       return;
     }
 
@@ -121,14 +123,12 @@ export function ProcessModelImportDialog({
               "Import response missing expected data structure:",
               result,
             );
-            setErrorMessage(
-              "Import failed: The server response did not contain a valid process model ID.",
-            );
+            setErrorMessage(t("import_failed_no_id"));
           }
         },
         failureCallback: (error: any) => {
           console.error("Import error:", error);
-          setErrorMessage(error?.message || "Import failed");
+          setErrorMessage(error?.message || t("import_failed"));
         },
       });
     } finally {
@@ -138,7 +138,7 @@ export function ProcessModelImportDialog({
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth data-testid="process-model-import-dialog">
-      <DialogTitle>Import Process Model</DialogTitle>
+      <DialogTitle>{t("import_process_model")}</DialogTitle>
       <DialogContent>
         <Box sx={{ width: "100%", mb: 2 }}>
           <Tabs
@@ -150,14 +150,14 @@ export function ProcessModelImportDialog({
           >
             <Tab
               value="github"
-              label="GitHub Repository"
+              label={t("github_repository")}
               icon={<GitHubIcon />}
               iconPosition="start"
               data-testid="import-tab-github"
             />
             <Tab
               value="marketplace"
-              label="Model Marketplace"
+              label={t("model_marketplace")}
               icon={<TagIcon />}
               iconPosition="start"
               data-testid="import-tab-marketplace"
@@ -168,15 +168,15 @@ export function ProcessModelImportDialog({
           {importType === "github" ? (
             <>
               <Typography variant="body1" gutterBottom>
-                Enter the GitHub URL of a process model to import:
+                {t("enter_github_url_prompt")}
               </Typography>
               <TextField
                 fullWidth
-                label="GitHub Repository URL"
+                label={t("github_repository_url")}
                 variant="outlined"
                 value={importSource}
                 onChange={handleSourceChange}
-                placeholder="https://github.com/owner/repo/tree/branch/path/to/model"
+                placeholder={t("github_url_placeholder")}
                 margin="normal"
                 InputProps={{
                   startAdornment: (
@@ -188,7 +188,7 @@ export function ProcessModelImportDialog({
                 error={isValid === false}
                 helperText={
                   isValid === false
-                    ? "Please enter a valid GitHub URL to a process model directory"
+                    ? t("invalid_github_url")
                     : "" //Removed the example GitHub URL referencing Sartography
                 }
                 disabled={isImporting}
@@ -198,15 +198,15 @@ export function ProcessModelImportDialog({
           ) : (
             <>
               <Typography variant="body1" gutterBottom>
-                Enter the model alias to import from the marketplace:
+                {t("enter_model_alias_prompt")}
               </Typography>
               <TextField
                 fullWidth
-                label="Model Alias"
+                label={t("model_alias")}
                 variant="outlined"
                 value={importSource}
                 onChange={handleSourceChange}
-                placeholder="timer-events"
+                placeholder={t("model_alias_placeholder")}
                 margin="normal"
                 InputProps={{
                   startAdornment: (
@@ -218,8 +218,8 @@ export function ProcessModelImportDialog({
                 error={isValid === false}
                 helperText={
                   isValid === false
-                    ? "Please enter a valid model alias (only letters, numbers, hyphens, and underscores)"
-                    : "Example: timer-events"
+                    ? t("invalid_model_alias")
+                    : t("model_alias_example")
                 }
                 disabled={isImporting}
                 data-testid="model-alias-input"
@@ -237,7 +237,7 @@ export function ProcessModelImportDialog({
       </DialogContent>
       <DialogActions>
         <Button data-testid="import-cancel-button" onClick={onClose} disabled={isImporting}>
-          Cancel
+          {t("cancel")}
         </Button>
         <Button
           onClick={handleImport}
@@ -249,7 +249,7 @@ export function ProcessModelImportDialog({
           }
           data-testid="import-button"
         >
-          {isImporting ? "Importing..." : "Import Model"}
+          {isImporting ? t("importing") : t("import_model")}
         </Button>
       </DialogActions>
     </Dialog>

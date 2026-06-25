@@ -1,4 +1,14 @@
-import type { Template, TemplateFile } from "../types/template";
+import type { Template, TemplateFile, TemplateVisibility } from "../types/template";
+
+/**
+ * Single source of truth for the template visibility dropdown options.
+ * `labelKey` is an i18next translation key (resolve with `t(opt.labelKey)`).
+ */
+export const VISIBILITY_OPTIONS: { value: TemplateVisibility; labelKey: string }[] = [
+  { value: "PRIVATE", labelKey: "private_only_you" },
+  { value: "TENANT", labelKey: "tenant_wide" },
+  { value: "PUBLIC", labelKey: "public_authenticated_users" },
+];
 
 /**
  * Sort an array of files so the primary file (identified by name) comes first.
