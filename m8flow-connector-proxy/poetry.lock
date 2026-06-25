@@ -334,9 +334,9 @@ spiffworkflow-connector-command = {git = "https://github.com/sartography/spiffwo
 
 [package.source]
 type = "git"
-url = "https://github.com/abilpraju-aot/m8flow-connectors.git"
-reference = "M8F-n8n-connector"
-resolved_reference = "a618d0b658b33994ebd6222a70ade4c7ee5a8ec6"
+url = "https://github.com/AOT-Technologies/m8flow-connectors.git"
+reference = "main"
+resolved_reference = "11ed6b1494af90772c12c02f5809fbe742167327"
 subdirectory = "connectors/m8flow-connector-n8n"
 
 [[package]]
@@ -722,4 +722,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12.1,<3.13"
-content-hash = "f9f00453683987fde66ef5ee178c5ba4c7c22b3039ce94ba7a7861920de9b2ea"
+content-hash = "aac0be49c5f4be7fe787f97f1f6fc0c2e23158fdc8ae0cb4ec7621730df893c5"
