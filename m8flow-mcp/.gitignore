@@ -58,3 +58,19 @@ htmlcov/
 middleware_debug.log
 server_debug.log
 test_write.log
+server.log
+
+# Temporary Files
+*.tmp
+.~lock.*
+*_summary.txt
+*_report.txt
+*_analysis.txt
+
+# Generated Documentation (keep only final versions)
+create_excel_documentation.py
+test_mcp_server.py
+test_remote_mcp.py
+
+# Test Files (keep in tests/ only)
+test_workflow.bpmn

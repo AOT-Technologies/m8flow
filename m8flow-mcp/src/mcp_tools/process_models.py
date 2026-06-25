@@ -57,14 +57,16 @@ def register_process_model_tools(mcp: FastMCP) -> None:
             return {"error": str(e)}
 
     @mcp.tool(name="get_process_model", description="Get details of a specific process model")
-    async def get_process_model(process_model_id: str) -> dict[str, Any]:
+    async def get_process_model(process_model_id: str, include_template_info: bool = True) -> dict[str, Any]:
         """Get process model details.
 
         Args:
             process_model_id: ID of the process model
+            include_template_info: Include template provenance if available (default: True)
 
         Returns:
-            Process model details
+            Process model details, optionally with template_info showing which
+            template (and version) was used to create this model
         """
         token = get_auth_token()
         if not token:
@@ -72,6 +74,20 @@ def register_process_model_tools(mcp: FastMCP) -> None:
 
         try:
             result = await client.get(f"/v1.0/process-models/{process_model_id}", token)
+
+            # Add template provenance if requested
+            if include_template_info:
+                try:
+                    # Import locally to avoid circular dependency
+                    from src.mcp_tools.templates import _get_process_model_template_info
+
+                    template_info = await _get_process_model_template_info(process_model_id, token)
+                    if template_info:
+                        result["template_info"] = template_info
+                except Exception as e:
+                    logger.debug(f"Could not fetch template info for {process_model_id}: {e}")
+                    # Not an error - model may not be from template
+
             return result
         except Exception as e:
             logger.error(f"Failed to get process model {process_model_id}: {e}")
@@ -81,23 +97,35 @@ def register_process_model_tools(mcp: FastMCP) -> None:
     async def create_process_model(
         identifier: str,
         display_name: str,
+        process_group_id: str,
         description: str | None = None,
-        process_group_id: str | None = None,
     ) -> dict[str, Any]:
         """Create a new process model.
 
         Args:
-            identifier: Unique identifier for the model
-            display_name: Display name
+            identifier: Unique identifier for the model (e.g., "expense-approval")
+            display_name: Display name for the model
+            process_group_id: Process group ID (REQUIRED, e.g., "finance")
             description: Optional description
-            process_group_id: Optional process group ID
 
         Returns:
             Created process model details
+
+        Example:
+            create_process_model(
+                identifier="expense-approval",
+                display_name="Expense Approval Workflow",
+                process_group_id="finance",
+                description="Workflow for approving expense reports"
+            )
         """
         token = get_auth_token()
         if not token:
             return {"error": "No authentication token available"}
+
+        # Backend expects group ID in URL path, not body
+        # Convert slashes to colons (e.g., "finance/sub" -> "finance:sub")
+        modified_group_id = process_group_id.replace("/", ":")
 
         data: dict[str, Any] = {
             "id": identifier,
@@ -105,11 +133,10 @@ def register_process_model_tools(mcp: FastMCP) -> None:
         }
         if description:
             data["description"] = description
-        if process_group_id:
-            data["process_group_id"] = process_group_id
 
         try:
-            result = await client.post("/v1.0/process-models", token, data=data)
+            # Correct endpoint: POST /v1.0/process-models/{modified_process_group_id}
+            result = await client.post(f"/v1.0/process-models/{modified_group_id}", token, data=data)
             return result
         except Exception as e:
             logger.error(f"Failed to create process model: {e}")
