@@ -105,7 +105,7 @@ async def test_workflow_lifecycle():
                         return True  # Not a failure, just can't proceed
 
                     instance_id = instance_data.get('id')
-                    print(f"✅ Workflow instance started!")
+                    print("✅ Workflow instance started!")
                     print(f"   Instance ID: {instance_id}\n")
 
                 except Exception as e:
@@ -189,12 +189,12 @@ async def test_workflow_lifecycle():
                 print("✅ Workflow Lifecycle Test Completed Successfully!")
                 print("=" * 60)
                 print("\nSummary:")
-                print(f"  ✓ Discovered workflows")
+                print("  ✓ Discovered workflows")
                 print(f"  ✓ Started instance #{instance_id}")
-                print(f"  ✓ Listed tasks")
-                print(f"  ✓ Retrieved task details")
-                print(f"  ✓ Read workflow resource")
-                print(f"  • Task completion (skipped for safety)")
+                print("  ✓ Listed tasks")
+                print("  ✓ Retrieved task details")
+                print("  ✓ Read workflow resource")
+                print("  • Task completion (skipped for safety)")
 
                 return True
 

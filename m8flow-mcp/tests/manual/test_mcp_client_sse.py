@@ -37,7 +37,7 @@ async def test_m8flow_mcp_sse():
         print("Set it with: export M8FLOW_BEARER_TOKEN='your-token'")
         return False
 
-    print(f"📡 Connecting to m8flow MCP server...")
+    print("📡 Connecting to m8flow MCP server...")
     print(f"   URL: {server_url}")
     print(f"   Token: {bearer_token[:20]}...\n")
 

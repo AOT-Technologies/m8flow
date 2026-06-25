@@ -4,10 +4,10 @@ This module provides shared fixtures and configuration for all tests.
 """
 
 import os
-import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
+import pytest
 
 # Set test environment variables before any imports
 os.environ["M8FLOW_API_URL"] = "http://test.local:6840"
