@@ -316,7 +316,7 @@ jobs:
         # Keycloak realm/user init. Pre-built images mean no rebuild here.
         run: docker compose --profile init -f "$COMPOSE_FILE" up -d
       - name: Wait for stack to be ready
-        run: ./.github/scripts/wait-for-e2e-stack.sh
+        run: bash ./.github/scripts/wait-for-e2e-stack.sh
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12.1'
