@@ -17,11 +17,9 @@ services:
     environment:
       SERVER_TYPE: remote
       PORT: 8000
-      M8FLOW_API_URL: http://host.docker.internal:6840
-      KEYCLOAK_URL: http://host.docker.internal:6842
-      KEYCLOAK_REALM: m8flow
       LOG_LEVEL: INFO
       PYTHONUNBUFFERED: "1"
+      # M8FLOW_API_URL and M8FLOW_BEARER_TOKEN are loaded from .env file
     ports:
       - "8000:8000"
 
