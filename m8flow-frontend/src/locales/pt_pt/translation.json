@@ -63,6 +63,7 @@
   "nats_monitoring_description": "Monitorize os streams, consumidores e mensagens do NATS.",
   "open_in_new_tab": "Abrir em novo separador",
   "embedded_dashboard_unavailable": "Não foi possível incorporar este painel. Abra-o num novo separador.",
+  "embedded_dashboard_slow_or_blocked": "O painel está a demorar mais do que o esperado a carregar. A incorporação pode estar bloqueada — abra-o num novo separador.",
   "add_tenant": "Adicionar inquilino",
   "search_by": "Pesquisar por",
   "name": "Nome",

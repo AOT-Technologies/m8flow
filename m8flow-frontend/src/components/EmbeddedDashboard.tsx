@@ -1,32 +1,65 @@
+import CloseIcon from "@mui/icons-material/Close";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import {
+  Alert,
   Box,
   Button,
   CircularProgress,
+  IconButton,
   Stack,
   Typography,
 } from "@mui/material";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 interface OwnProps {
   title: string;
   src: string;
   description?: string;
+  /** Milliseconds to wait for the iframe to load before surfacing the slow/blocked notice. */
+  loadTimeoutMs?: number;
 }
+
+const DEFAULT_LOAD_TIMEOUT_MS = 12_000;
 
 /**
  * Renders an external operations dashboard (e.g. Celery Flower, NATS NUI) embedded
  * in an iframe inside the m8flow app shell, with a consistent page header.
  *
- * Some embedded apps may refuse framing via X-Frame-Options / frame-ancestors CSP.
- * The iframe `onError` (and a manual "Open in new tab" action) provide a graceful
- * fallback so the section degrades to a launch link instead of a broken frame.
+ * These dashboards live on external, cross-origin URLs. When an embed is refused via
+ * `X-Frame-Options` / CSP `frame-ancestors`, the browser does NOT fire the iframe
+ * `onError` event (and same-origin policy prevents inspecting the frame's content),
+ * so a blocked embed is effectively undetectable from JavaScript and simply renders
+ * as a blank frame. We therefore degrade gracefully with two mechanisms:
+ *  - a best-effort load timeout that catches never-loads (connection refused, 404,
+ *    very slow hosts) and surfaces a non-blocking notice without unmounting the frame
+ *    (a slow-but-valid dashboard still appears if it eventually loads);
+ *  - an always-visible "Open in new tab" action in the header, which is the guaranteed
+ *    fallback for the silent blocked-embed case we cannot detect.
+ * The `onError` handler is kept for the rare genuine error events but is not relied upon.
  */
-export default function EmbeddedDashboard({ title, src, description }: OwnProps) {
+export default function EmbeddedDashboard({
+  title,
+  src,
+  description,
+  loadTimeoutMs = DEFAULT_LOAD_TIMEOUT_MS,
+}: OwnProps) {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
+  const [timedOut, setTimedOut] = useState(false);
+  const [noticeDismissed, setNoticeDismissed] = useState(false);
+
+  // Best-effort detection of a frame that never loads. Reset whenever the src changes.
+  useEffect(() => {
+    setLoading(true);
+    setFailed(false);
+    setTimedOut(false);
+    setNoticeDismissed(false);
+
+    const timer = setTimeout(() => setTimedOut(true), loadTimeoutMs);
+    return () => clearTimeout(timer);
+  }, [src, loadTimeoutMs]);
 
   const openInNewTab = (
     <Button
@@ -39,6 +72,9 @@ export default function EmbeddedDashboard({ title, src, description }: OwnProps)
       {t("open_in_new_tab")}
     </Button>
   );
+
+  // Show the slow/blocked notice once the timeout fires while still loading, unless dismissed.
+  const showSlowNotice = timedOut && loading && !failed && !noticeDismissed;
 
   return (
     <Box
@@ -76,6 +112,29 @@ export default function EmbeddedDashboard({ title, src, description }: OwnProps)
           {openInNewTab}
         </Stack>
       </Box>
+
+      {showSlowNotice && (
+        <Alert
+          severity="warning"
+          data-testid="embedded-dashboard-slow-notice"
+          action={
+            <Stack direction="row" spacing={1} alignItems="center">
+              {openInNewTab}
+              <IconButton
+                size="small"
+                aria-label={t("close")}
+                onClick={() => setNoticeDismissed(true)}
+                data-testid="embedded-dashboard-slow-notice-dismiss"
+              >
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            </Stack>
+          }
+          sx={{ borderRadius: 0, alignItems: "center" }}
+        >
+          {t("embedded_dashboard_slow_or_blocked")}
+        </Alert>
+      )}
 
       <Box sx={{ position: "relative", flexGrow: 1, minHeight: 0 }}>
         {loading && !failed && (
