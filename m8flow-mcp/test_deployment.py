@@ -11,11 +11,9 @@ Usage:
 
 import os
 import sys
-import time
-import subprocess
 import tempfile
+import time
 from pathlib import Path
-from typing import Dict, List, Tuple
 
 
 class Colors:
@@ -37,7 +35,7 @@ class TestRunner:
         self.passed = 0
         self.failed = 0
         self.skipped = 0
-        self.tests: List[Tuple[str, callable]] = []
+        self.tests: list[tuple[str, callable]] = []
 
     def test(self, name: str):
         """Decorator to register a test."""

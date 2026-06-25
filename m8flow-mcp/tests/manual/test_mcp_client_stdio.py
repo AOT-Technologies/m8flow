@@ -48,7 +48,7 @@ async def test_m8flow_mcp_stdio():
         }
     )
 
-    print(f"📡 Connecting to m8flow MCP server...")
+    print("📡 Connecting to m8flow MCP server...")
     print(f"   Token: {bearer_token[:20]}...")
     print(f"   API: {server_params.env['M8FLOW_API_URL']}\n")
 

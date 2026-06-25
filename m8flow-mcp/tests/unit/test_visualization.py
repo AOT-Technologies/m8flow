@@ -7,11 +7,11 @@ Tests the BPMN content retrieval functionality including:
 """
 
 import os
-import pytest
 import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+import pytest
 
 # Set test environment
 os.environ.setdefault("M8FLOW_API_URL", "http://test.local")
