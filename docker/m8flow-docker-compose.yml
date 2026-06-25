@@ -265,6 +265,8 @@ services:
       dockerfile: docker/m8flow.backend.Dockerfile
       args:
         UPSTREAM_TAG: ${UPSTREAM_TAG:-}
+        # Shared base image. Override to build/test against a locally-built base.
+        PYTHON_BASE: ${PYTHON_BASE:-docker.io/m8flow/m8flow-python-base:ubuntu24.04-py3.12}
     user: "0"
     env_file: ../.env
     environment:

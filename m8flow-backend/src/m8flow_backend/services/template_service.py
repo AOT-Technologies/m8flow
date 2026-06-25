@@ -41,6 +41,10 @@ MAX_ZIP_ENTRIES = 100
 
 UNIQUE_TEMPLATE_CONSTRAINT = "uq_template_key_version_tenant"  # keep in sync with TemplateModel __table_args__
 
+# Template display name: letters, numbers, spaces, hyphen, underscore; max 100 chars.
+TEMPLATE_NAME_MAX_LENGTH = 100
+_TEMPLATE_NAME_RE = re.compile(r"^[A-Za-z0-9 _-]+$")
+
 TENANT_REQUIRED_MESSAGE = "Tenant context required"
 SUPER_ADMIN_READ_ONLY_MESSAGE = "Super-admin is read-only across tenants."
 
@@ -83,6 +87,26 @@ class TemplateService:
 
         # If the latest version is in some unexpected/legacy format, start the V-series at V1
         return "V1"
+
+    @classmethod
+    def _validate_template_name(cls, name: str) -> None:
+        """Reject template names that are too long or contain disallowed characters.
+
+        Allowed: letters, numbers, spaces, hyphen, underscore; max 100 chars (trimmed).
+        """
+        stripped = (name or "").strip()
+        if len(stripped) > TEMPLATE_NAME_MAX_LENGTH:
+            raise ApiError(
+                error_code="template_name_too_long",
+                message=f"Template name must be {TEMPLATE_NAME_MAX_LENGTH} characters or fewer.",
+                status_code=400,
+            )
+        if not _TEMPLATE_NAME_RE.match(stripped):
+            raise ApiError(
+                error_code="template_name_invalid_chars",
+                message="Template name may only contain letters, numbers, spaces, hyphens and underscores.",
+                status_code=400,
+            )
 
     @classmethod
     def create_template(
@@ -128,7 +152,28 @@ class TemplateService:
         if not template_key or not name:
             raise ApiError("missing_fields", "template_key and name are required", status_code=400)
 
-        version = metadata.get("version") or cls._next_version(template_key, tenant)
+        cls._validate_template_name(name)
+
+        explicit_version = metadata.get("version")
+        # When no explicit version is supplied this is a brand-new template, not an
+        # intentional version bump (those go through _get_or_create_draft_version, never
+        # here). Since template_key is derived from the name, a key collision in the same
+        # tenant means the name is already taken, so reject instead of silently versioning.
+        # Soft-deleted templates free up their name (is_deleted=False filter).
+        if not explicit_version:
+            existing = TemplateModel.query.filter_by(
+                template_key=template_key,
+                m8f_tenant_id=tenant,
+                is_deleted=False,
+            ).first()
+            if existing:
+                raise ApiError(
+                    error_code="template_name_exists",
+                    message=f"A template named '{name}' already exists. Please choose a different name.",
+                    status_code=409,
+                )
+
+        version = explicit_version or cls._next_version(template_key, tenant)
         visibility = metadata.get("visibility", TemplateVisibility.private.value)
         tags = metadata.get("tags")
         category = metadata.get("category")
@@ -380,6 +425,9 @@ class TemplateService:
         if not TemplateAuthorizationService.can_edit(template, user):
             raise ApiError("forbidden", "You cannot edit this template", status_code=403)
 
+        if "name" in updates:
+            cls._validate_template_name(updates["name"])
+
         for field in ["name", "description", "tags", "category", "visibility", "status", "files"]:
             if field in updates:
                 setattr(template, field, updates[field])
@@ -485,7 +533,10 @@ class TemplateService:
         
         if not TemplateAuthorizationService.can_edit(existing_template, user):
             raise ApiError("forbidden", "You cannot edit this template", status_code=403)
-        
+
+        if "name" in updates:
+            cls._validate_template_name(updates["name"])
+
         # Get current user info
         username = getattr(g, "user", None)
         username_str = username.username if username and hasattr(username, "username") else None

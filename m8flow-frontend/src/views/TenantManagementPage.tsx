@@ -125,7 +125,7 @@ export default function TenantManagementPage() {
             >
               {translate(
                 "tenant_group_management_description",
-                "Add existing members and manage groups and roles associated with this tenant.",
+                "Add existing users as members and manage groups and roles associated with this tenant.",
               )}
             </Typography>
           </Box>

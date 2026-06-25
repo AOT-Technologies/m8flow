@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { nameToTemplateKey } from "./templateKey";
+import {
+  isValidTemplateName,
+  nameToTemplateKey,
+  TEMPLATE_NAME_MAX_LENGTH,
+} from "./templateKey";
 
 describe("nameToTemplateKey", () => {
   it("converts a simple name to a slug", () => {
@@ -64,5 +68,40 @@ describe("nameToTemplateKey", () => {
 
   it("handles tab characters as whitespace", () => {
     expect(nameToTemplateKey("a\tb")).toBe("a-b");
+  });
+});
+
+describe("isValidTemplateName", () => {
+  it("accepts letters, numbers, spaces, hyphens and underscores", () => {
+    expect(isValidTemplateName("My Template_v2")).toBe(true);
+    expect(isValidTemplateName("approval-flow 2024")).toBe(true);
+    expect(isValidTemplateName("123")).toBe(true);
+  });
+
+  it("trims before validating", () => {
+    expect(isValidTemplateName("  My Template  ")).toBe(true);
+  });
+
+  it("rejects other special characters", () => {
+    expect(isValidTemplateName("Test@Template")).toBe(false);
+    expect(isValidTemplateName("report/final")).toBe(false);
+    expect(isValidTemplateName("price#1")).toBe(false);
+    expect(isValidTemplateName("a.b")).toBe(false);
+  });
+
+  it("rejects accented/unicode letters", () => {
+    expect(isValidTemplateName("café")).toBe(false);
+    expect(isValidTemplateName("价格")).toBe(false);
+  });
+
+  it("rejects an empty or whitespace-only name", () => {
+    expect(isValidTemplateName("")).toBe(false);
+    expect(isValidTemplateName("   ")).toBe(false);
+  });
+});
+
+describe("TEMPLATE_NAME_MAX_LENGTH", () => {
+  it("is 100", () => {
+    expect(TEMPLATE_NAME_MAX_LENGTH).toBe(100);
   });
 });
