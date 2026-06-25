@@ -16,7 +16,11 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import TemplateService from "../services/TemplateService";
 import type { CreateTemplateMetadata, Template, TemplateVisibility } from "../types/template";
-import { nameToTemplateKey } from "../utils/templateKey";
+import {
+  isValidTemplateName,
+  nameToTemplateKey,
+  TEMPLATE_NAME_MAX_LENGTH,
+} from "../utils/templateKey";
 import { VISIBILITY_OPTIONS } from "../utils/templateHelpers";
 
 export interface CreateTemplateModalProps {
@@ -65,6 +69,14 @@ export default function CreateTemplateModal({
       setError(t("name_required"));
       return;
     }
+    if (trimmedName.length > TEMPLATE_NAME_MAX_LENGTH) {
+      setError(t("template_name_too_long"));
+      return;
+    }
+    if (!isValidTemplateName(trimmedName)) {
+      setError(t("template_name_invalid_chars"));
+      return;
+    }
     const template_key = nameToTemplateKey(trimmedName);
     if (!template_key) {
       setError(t("name_must_contain_letter_or_number"));
@@ -80,6 +92,11 @@ export default function CreateTemplateModal({
     setLoading(true);
     setError(null);
     try {
+      if (await TemplateService.templateNameExists(template_key)) {
+        setError(t("template_name_exists"));
+        setLoading(false);
+        return;
+      }
       const metadata: CreateTemplateMetadata = {
         template_key,
         name: trimmedName,
@@ -125,6 +142,7 @@ export default function CreateTemplateModal({
             onChange={(e) => setName(e.target.value)}
             disabled={loading}
             placeholder={t("eg_approval_workflow")}
+            inputProps={{ maxLength: TEMPLATE_NAME_MAX_LENGTH }}
             data-testid="create-template-name-input"
           />
           <TextField

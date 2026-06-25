@@ -456,8 +456,8 @@ def test_create_template_without_bpmn_content() -> None:
                 assert e.status_code == 400
 
 
-def test_create_template_auto_versioning() -> None:
-    """Verify automatic version assignment."""
+def test_create_template_duplicate_name_blocked() -> None:
+    """A second create with the same key (derived from name) in the same tenant is rejected."""
     app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -485,14 +485,240 @@ def test_create_template_auto_versioning() -> None:
                 )
                 assert template1.version == "V1"
 
-                # Second template with same key should get V2
+                # Second create with same key (same name) is rejected, not silently versioned.
+                try:
+                    TemplateService.create_template(
+                        metadata={"template_key": "auto-version", "name": "Test"},
+                        bpmn_bytes=b"<bpmn>test</bpmn>",
+                        user=user,
+                        tenant_id="tenant-a",
+                    )
+                    assert False, "Should have raised ApiError for duplicate name"
+                except ApiError as e:
+                    assert e.error_code == "template_name_exists"
+                    assert e.status_code == 409
+
+
+def test_create_template_duplicate_name_allowed_after_soft_delete() -> None:
+    """A name freed by a soft-deleted template can be reused for a new create."""
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = user
+
+            # Existing template with this key is soft-deleted, so the name is free.
+            deleted = TemplateModel(
+                template_key="reuse-me",
+                version="V1",
+                name="Reuse Me",
+                m8f_tenant_id="tenant-a",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
+                is_deleted=True,
+                created_by="tester",
+                modified_by="tester",
+            )
+            db.session.add(deleted)
+            db.session.commit()
+
+            with patch.object(TemplateService, "storage", MockTemplateStorageService()):
+                template = TemplateService.create_template(
+                    metadata={"template_key": "reuse-me", "name": "Reuse Me"},
+                    bpmn_bytes=b"<bpmn>test</bpmn>",
+                    user=user,
+                    tenant_id="tenant-a",
+                )
+                assert template.template_key == "reuse-me"
+                assert template.is_deleted is False
+
+
+def test_create_template_explicit_version_bypasses_duplicate_block() -> None:
+    """An explicit version (programmatic X-Template-Version path) still versions an existing key."""
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = user
+
+            with patch.object(TemplateService, "storage", MockTemplateStorageService()):
+                template1 = TemplateService.create_template(
+                    metadata={"template_key": "explicit", "name": "Explicit"},
+                    bpmn_bytes=b"<bpmn>test</bpmn>",
+                    user=user,
+                    tenant_id="tenant-a",
+                )
+                assert template1.version == "V1"
+
+                # Explicit version is allowed even though the key already exists.
                 template2 = TemplateService.create_template(
-                    metadata={"template_key": "auto-version", "name": "Test"},
+                    metadata={"template_key": "explicit", "name": "Explicit", "version": "V2"},
                     bpmn_bytes=b"<bpmn>test</bpmn>",
                     user=user,
                     tenant_id="tenant-a",
                 )
                 assert template2.version == "V2"
+
+
+def test_create_template_invalid_name_chars_rejected() -> None:
+    """Create with disallowed characters in the name raises template_name_invalid_chars."""
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = user
+
+            with patch.object(TemplateService, "storage", MockTemplateStorageService()):
+                try:
+                    TemplateService.create_template(
+                        metadata={"template_key": "bad", "name": "Bad@Name"},
+                        bpmn_bytes=b"<bpmn>test</bpmn>",
+                        user=user,
+                        tenant_id="tenant-a",
+                    )
+                    assert False, "Should have raised ApiError for invalid characters"
+                except ApiError as e:
+                    assert e.error_code == "template_name_invalid_chars"
+                    assert e.status_code == 400
+
+
+def test_create_template_name_too_long_rejected() -> None:
+    """Create with a name longer than 100 chars raises template_name_too_long."""
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = user
+
+            with patch.object(TemplateService, "storage", MockTemplateStorageService()):
+                try:
+                    TemplateService.create_template(
+                        metadata={"template_key": "long", "name": "a" * 101},
+                        bpmn_bytes=b"<bpmn>test</bpmn>",
+                        user=user,
+                        tenant_id="tenant-a",
+                    )
+                    assert False, "Should have raised ApiError for too-long name"
+                except ApiError as e:
+                    assert e.error_code == "template_name_too_long"
+                    assert e.status_code == 400
+
+
+def test_create_template_valid_name_with_allowed_chars() -> None:
+    """Create succeeds with letters, numbers, spaces, hyphen and underscore."""
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = user
+
+            with patch.object(TemplateService, "storage", MockTemplateStorageService()):
+                template = TemplateService.create_template(
+                    metadata={"template_key": "ok-name", "name": "My Template_v2 - 2024"},
+                    bpmn_bytes=b"<bpmn>test</bpmn>",
+                    user=user,
+                    tenant_id="tenant-a",
+                )
+                assert template.name == "My Template_v2 - 2024"
+
+
+def test_update_template_invalid_name_rejected_and_valid_rename_succeeds() -> None:
+    """update_template rejects invalid name characters but allows a valid rename."""
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(M8flowTenantModel(id="tenant-a", name="Tenant A", slug="tenant-a", created_by="test", modified_by="test"))
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            g.user = user
+
+            template = TemplateModel(
+                template_key="rename-me",
+                version="V1",
+                name="Original",
+                m8f_tenant_id="tenant-a",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
+                is_published=False,
+                created_by="tester",
+                modified_by="tester",
+            )
+            db.session.add(template)
+            db.session.commit()
+
+            # Invalid characters are rejected.
+            try:
+                TemplateService.update_template("rename-me", "V1", {"name": "Bad/Name"}, user=user)
+                assert False, "Should have raised ApiError for invalid characters"
+            except ApiError as e:
+                assert e.error_code == "template_name_invalid_chars"
+                assert e.status_code == 400
+
+            # A valid rename succeeds.
+            updated = TemplateService.update_template("rename-me", "V1", {"name": "New Name_2"}, user=user)
+            assert updated.name == "New Name_2"
 
 
 def test_create_template_with_provided_version() -> None:
@@ -2417,19 +2643,27 @@ def test_template_versioning_multiple_tenants() -> None:
             g.user = user
 
             with patch.object(TemplateService, "storage", MockTemplateStorageService()):
-                # Create multiple versions for tenant-a
+                # Create first version for tenant-a via the service (V1).
                 TemplateService.create_template(
                     metadata={"template_key": "shared", "name": "Shared"},
                     bpmn_bytes=b"<bpmn>test</bpmn>",
                     user=user,
                     tenant_id="tenant-a",
                 )
-                TemplateService.create_template(
-                    metadata={"template_key": "shared", "name": "Shared"},
-                    bpmn_bytes=b"<bpmn>test</bpmn>",
-                    user=user,
-                    tenant_id="tenant-a",
+            # A second version is added the way the edit/publish cycle does (direct row),
+            # not via create (which now rejects a duplicate name in the same tenant).
+            db.session.add(
+                TemplateModel(
+                    template_key="shared",
+                    version="V2",
+                    name="Shared",
+                    m8f_tenant_id="tenant-a",
+                    files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
+                    created_by="tester",
+                    modified_by="tester",
                 )
+            )
+            db.session.commit()
 
         with app.test_request_context("/"):
             g.m8flow_tenant_id = "tenant-b"
