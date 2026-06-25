@@ -54,7 +54,7 @@ def mock_process_model():
         "display_name": "Test Model",
         "process_group_id": "test-group",
         "primary_file_name": "test-model.bpmn",
-        "primary_process_id": "Process_1"
+        "primary_process_id": "Process_1",
     }
 
 
@@ -66,7 +66,7 @@ def mock_process_instance():
         "process_model_identifier": "test-group/test-model",
         "status": "complete",
         "start_in_seconds": 1719000000,
-        "end_in_seconds": 1719000100
+        "end_in_seconds": 1719000100,
     }
 
 
@@ -77,7 +77,7 @@ def mock_template():
         "id": 1,
         "name": "Single Approval",
         "description": "A simple approval workflow",
-        "bpmnContent": "<?xml version='1.0'?><bpmn:definitions></bpmn:definitions>"
+        "bpmnContent": "<?xml version='1.0'?><bpmn:definitions></bpmn:definitions>",
     }
 
 
@@ -90,7 +90,7 @@ def mock_task():
         "process_instance_id": 123,
         "state": "READY",
         "lane_assignment_id": None,
-        "potential_owner_usernames": ["admin"]
+        "potential_owner_usernames": ["admin"],
     }
 
 
@@ -125,12 +125,6 @@ def mock_api_client():
 # Pytest configuration
 def pytest_configure(config):
     """Configure pytest."""
-    config.addinivalue_line(
-        "markers", "slow: marks tests as slow (deselect with '-m \"not slow\"')"
-    )
-    config.addinivalue_line(
-        "markers", "integration: marks tests as integration tests"
-    )
-    config.addinivalue_line(
-        "markers", "unit: marks tests as unit tests"
-    )
+    config.addinivalue_line("markers", "slow: marks tests as slow (deselect with '-m \"not slow\"')")
+    config.addinivalue_line("markers", "integration: marks tests as integration tests")
+    config.addinivalue_line("markers", "unit: marks tests as unit tests")
