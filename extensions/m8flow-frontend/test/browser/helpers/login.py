@@ -196,30 +196,51 @@ def login_expect_failure(
 
 
 def _navigate_to_global_admin_login(page: Page, base_url: str) -> None:
-    """Navigate to the global-admin (master realm) Keycloak login page.
+    """Reach the master-realm Keycloak login page for the platform admin.
 
-    In multi-tenant mode the app shows a tenant-select-form with a
-    'global-admin-sign-in-button'.  In single-tenant mode the app skips
-    that form and redirects to the tenant realm directly; the fallback
-    navigates to the master-realm login endpoint directly.
+    Prefers the current flow -- the Keycloak m8flow-realm login page injects a
+    Platform Sign In button (``#m8f-master-login-button``) that redirects to the
+    master realm.  Falls back to the older entry points so this keeps working
+    across deployments:
+
+      1. New flow: click ``#m8f-master-login-button`` on the Keycloak page.
+      2. Legacy multi-tenant landing page: ``tenant-select-form`` ->
+         ``global-admin-sign-in-button``.
+      3. Legacy single-tenant: navigate to the master-realm login endpoint.
+
+    Each option is probed with ``SHORT_TIMEOUT`` so falling through is quick.
     """
     page.goto(base_url)
-    tenant_form = page.get_by_test_id("tenant-select-form")
+
+    platform_button = page.locator("#m8f-master-login-button")
     try:
-        tenant_form.wait_for(state="visible", timeout=SHORT_TIMEOUT)
-        page.get_by_test_id("global-admin-sign-in-button").click()
+        platform_button.wait_for(state="visible", timeout=SHORT_TIMEOUT)
+        platform_button.click()
+        return
     except PlaywrightTimeout:
-        redirect_url = f"{base_url.rstrip('/')}/tenants"
-        login_url = (
-            f"{base_url.rstrip('/')}{API_PREFIX}/login"
-            f"?redirect_url={redirect_url}"
-            f"&authentication_identifier={MASTER_REALM_IDENTIFIER}"
+        pass
+
+    try:
+        page.get_by_test_id("tenant-select-form").wait_for(
+            state="visible", timeout=SHORT_TIMEOUT
         )
-        logger.debug(
-            "tenant-select-form not found; navigating directly to master-realm login: %s",
-            login_url,
-        )
-        page.goto(login_url)
+        page.get_by_test_id("global-admin-sign-in-button").click()
+        return
+    except PlaywrightTimeout:
+        pass
+
+    redirect_url = f"{base_url.rstrip('/')}/tenants"
+    login_url = (
+        f"{base_url.rstrip('/')}{API_PREFIX}/login"
+        f"?redirect_url={redirect_url}"
+        f"&authentication_identifier={MASTER_REALM_IDENTIFIER}"
+    )
+    logger.debug(
+        "Platform Sign In button and tenant-select-form not found; "
+        "navigating directly to master-realm login: %s",
+        login_url,
+    )
+    page.goto(login_url)
 
 
 def login_as_global_admin(
@@ -230,12 +251,13 @@ def login_as_global_admin(
 ) -> None:
     """Log in as a platform administrator via the Platform Sign In flow.
 
-    Works in both multi-tenant mode (tenant-select-form → global-admin-sign-in-button)
-    and single-tenant mode (direct navigation to the master-realm login endpoint).
+    From the m8flow-realm Keycloak login page, click the Platform Sign In
+    button (``#m8f-master-login-button``) to reach the master realm, then submit
+    the platform-admin credentials.  Retries the whole flow up to
+    ``MAX_LOGIN_ATTEMPTS`` times.
     """
-    _navigate_to_global_admin_login(page, base_url)
-
     for attempt in range(1, MAX_LOGIN_ATTEMPTS + 1):
+        _navigate_to_global_admin_login(page, base_url)
         _submit_keycloak_form(page, username, password)
         try:
             _wait_for_post_login(page, password)
@@ -243,7 +265,6 @@ def login_as_global_admin(
         except (AssertionError, PlaywrightTimeout):
             if attempt == MAX_LOGIN_ATTEMPTS:
                 raise
-            _navigate_to_global_admin_login(page, base_url)
 
 
 def logout(page: Page, base_url: str = BASE_URL) -> None:

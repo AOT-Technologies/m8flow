@@ -784,6 +784,134 @@ def mock_tasks_api(
 
 
 # ===================================================================
+# Process instance mock data (Process Instances list)
+# ===================================================================
+
+# Columns the backend report metadata returns for the default for-me / all
+# perspective (mirrors the live ``POST /process-instances`` response). The
+# table renders one column per entry and derives headers via translation.
+PROCESS_INSTANCE_DEFAULT_COLUMNS: list[dict[str, Any]] = [
+    {"Header": "Id", "accessor": "id", "filterable": False},
+    {"Header": "Process", "accessor": "process_model_display_name", "filterable": False},
+    {"Header": "Start", "accessor": "start_in_seconds", "filterable": False},
+    {"Header": "End", "accessor": "end_in_seconds", "filterable": False},
+    {"Header": "Started by", "accessor": "process_initiator_username", "filterable": False},
+    {"Header": "Last milestone", "accessor": "last_milestone_bpmn_name", "filterable": False},
+    {"Header": "Status", "accessor": "status", "filterable": False},
+]
+
+MOCK_PROCESS_INSTANCE: dict[str, Any] = {
+    "id": 501,
+    "process_model_identifier": "group-alpha/expense-approval",
+    "process_model_display_name": "Expense Approval",
+    "process_initiator_username": "admin",
+    "start_in_seconds": 1_700_000_000,
+    "end_in_seconds": 1_700_003_600,
+    "updated_at_in_seconds": 1_700_003_600,
+    "task_updated_at_in_seconds": 1_700_003_600,
+    "last_milestone_bpmn_name": "Completed",
+    "status": "complete",
+    "task_id": "",
+    "potential_owner_usernames": "",
+    "bpmn_version_control_identifier": "",
+}
+
+ALL_MOCK_PROCESS_INSTANCES: list[dict[str, Any]] = [copy.deepcopy(MOCK_PROCESS_INSTANCE)]
+
+
+def make_process_instance(overrides: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Create a copy of :data:`MOCK_PROCESS_INSTANCE` with optional overrides."""
+    pi = copy.deepcopy(MOCK_PROCESS_INSTANCE)
+    if overrides:
+        pi.update(overrides)
+    return pi
+
+
+def make_process_instances(
+    count: int, overrides: dict[str, Any] | None = None
+) -> list[dict[str, Any]]:
+    """Generate *count* distinct mock process instances (unique ids / models)."""
+    out: list[dict[str, Any]] = []
+    for i in range(count):
+        pi = make_process_instance({
+            "id": 600 + i,
+            "process_model_identifier": f"group-alpha/model-{i}",
+            "process_model_display_name": f"Process Model {i}",
+            "status": "complete",
+        })
+        if overrides:
+            pi.update(overrides)
+        out.append(pi)
+    return out
+
+
+def mock_process_instances_api(
+    page: Page,
+    all_instances: list[dict[str, Any]] | None = None,
+    for_me_instances: list[dict[str, Any]] | None = None,
+    columns: list[dict[str, Any]] | None = None,
+) -> None:
+    """Intercept the ``POST /process-instances`` (all) and
+    ``POST /process-instances/for-me`` list endpoints.
+
+    Honours the ``per_page`` / ``page`` query params for pagination and returns
+    ``{results, pagination, report_metadata, report_hash}``. Detail GETs,
+    report-metadata, and other paths fall through untouched. Pass ``[]`` to
+    exercise the empty state.
+    """
+    all_src = (
+        all_instances
+        if all_instances is not None
+        else copy.deepcopy(ALL_MOCK_PROCESS_INSTANCES)
+    )
+    forme_src = for_me_instances if for_me_instances is not None else all_src
+    cols = columns if columns is not None else PROCESS_INSTANCE_DEFAULT_COLUMNS
+
+    def _slice(src: list[dict[str, Any]], url: str):
+        qs = parse_qs(urlparse(url).query)
+        per_page = max(1, int(qs.get("per_page", ["50"])[0] or 50))
+        page_num = max(1, int(qs.get("page", ["1"])[0] or 1))
+        total = len(src)
+        pages = max(1, (total + per_page - 1) // per_page)
+        page_num = min(page_num, pages)
+        start = (page_num - 1) * per_page
+        sliced = src[start : start + per_page]
+        return sliced, {
+            "count": len(sliced),
+            "total": total,
+            "pages": pages,
+            "page": page_num,
+            "per_page": per_page,
+        }
+
+    def _handle(route: Route) -> None:
+        if route.request.method != "POST":
+            route.fallback()
+            return
+        path = urlparse(route.request.url).path
+        if path.endswith("/process-instances/for-me"):
+            src = forme_src
+        elif path.endswith("/process-instances"):
+            src = all_src
+        else:
+            route.fallback()
+            return
+        sliced, pagination = _slice(src, route.request.url)
+        _json_response(route, {
+            "results": [copy.deepcopy(r) for r in sliced],
+            "pagination": pagination,
+            "report_metadata": {
+                "columns": copy.deepcopy(cols),
+                "filter_by": [],
+                "order_by": [],
+            },
+            "report_hash": "mock-report-hash",
+        })
+
+    page.route("**/process-instances*", _handle)
+
+
+# ===================================================================
 # Permissions mocking
 # ===================================================================
 
