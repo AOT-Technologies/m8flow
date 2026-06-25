@@ -38,16 +38,14 @@ class TestViewWorkflow:
     """Test view_workflow function."""
 
     @pytest.mark.asyncio
-    async def test_view_workflow_returns_bpmn_content(
-        self, mock_client, mock_auth_token
-    ):
+    async def test_view_workflow_returns_bpmn_content(self, mock_client, mock_auth_token):
         """Test view_workflow returns BPMN XML content."""
         # Mock API responses
         mock_client.get.side_effect = [
             # get_process_model response
             {"id": "test-model"},
             # get_process_model_file response
-            {"file_contents": "<?xml version='1.0'?><bpmn:definitions></bpmn:definitions>"}
+            {"file_contents": "<?xml version='1.0'?><bpmn:definitions></bpmn:definitions>"},
         ]
 
         from src.mcp_tools.visualization import view_workflow
@@ -61,15 +59,10 @@ class TestViewWorkflow:
         assert "bpmn:definitions" in result
 
     @pytest.mark.asyncio
-    async def test_view_workflow_handles_missing_bpmn(
-        self, mock_client, mock_auth_token
-    ):
+    async def test_view_workflow_handles_missing_bpmn(self, mock_client, mock_auth_token):
         """Test view_workflow handles missing BPMN content."""
         # Mock API responses with empty content
-        mock_client.get.side_effect = [
-            {"id": "test-model"},
-            {"file_contents": ""}
-        ]
+        mock_client.get.side_effect = [{"id": "test-model"}, {"file_contents": ""}]
 
         from src.mcp_tools.visualization import view_workflow
 
@@ -88,7 +81,7 @@ class TestViewWorkflowFromTemplate:
         # Mock template response
         mock_client.get.return_value = {
             "name": "Test Template",
-            "bpmnContent": "<?xml version='1.0'?><bpmn:definitions></bpmn:definitions>"
+            "bpmnContent": "<?xml version='1.0'?><bpmn:definitions></bpmn:definitions>",
         }
 
         from src.mcp_tools.visualization import view_workflow_from_template
@@ -121,7 +114,7 @@ class TestViewProcessInstance:
         # Mock instance response
         mock_client.get.return_value = {
             "status": "complete",
-            "bpmn_xml_file_contents": "<?xml version='1.0'?><bpmn:definitions></bpmn:definitions>"
+            "bpmn_xml_file_contents": "<?xml version='1.0'?><bpmn:definitions></bpmn:definitions>",
         }
 
         from src.mcp_tools.visualization import view_process_instance
@@ -140,7 +133,7 @@ class TestViewProcessInstance:
         mock_client.get.side_effect = [
             {"status": "running", "bpmn_xml_file_contents": ""},
             {"id": "test-model"},
-            {"file_contents": "<?xml version='1.0'?><bpmn:definitions></bpmn:definitions>"}
+            {"file_contents": "<?xml version='1.0'?><bpmn:definitions></bpmn:definitions>"},
         ]
 
         from src.mcp_tools.visualization import view_process_instance
@@ -157,11 +150,13 @@ class TestVisualizationTools:
     def test_visualization_tools_module_exists(self):
         """Test that visualization module can be imported."""
         from src.mcp_tools import visualization
+
         assert visualization is not None
 
     def test_visualization_has_register_function(self):
         """Test that register function exists."""
         from src.mcp_tools.visualization import register_visualization_tools
+
         assert callable(register_visualization_tools)
 
 
@@ -169,13 +164,11 @@ class TestEdgeCases:
     """Test edge cases in visualization."""
 
     @pytest.mark.asyncio
-    async def test_view_workflow_with_special_characters(
-        self, mock_client, mock_auth_token
-    ):
+    async def test_view_workflow_with_special_characters(self, mock_client, mock_auth_token):
         """Test workflow ID with special characters."""
         mock_client.get.side_effect = [
             {"id": "test-model"},
-            {"file_contents": "<?xml version='1.0'?><bpmn:definitions></bpmn:definitions>"}
+            {"file_contents": "<?xml version='1.0'?><bpmn:definitions></bpmn:definitions>"},
         ]
 
         from src.mcp_tools.visualization import view_workflow
@@ -185,13 +178,11 @@ class TestEdgeCases:
         assert "BPMN Content Retrieved" in result
 
     @pytest.mark.asyncio
-    async def test_view_workflow_saves_to_temp_file(
-        self, mock_client, mock_auth_token
-    ):
+    async def test_view_workflow_saves_to_temp_file(self, mock_client, mock_auth_token):
         """Test that BPMN is saved to temp file."""
         mock_client.get.side_effect = [
             {"id": "test-model"},
-            {"file_contents": "<?xml version='1.0'?><bpmn:definitions></bpmn:definitions>"}
+            {"file_contents": "<?xml version='1.0'?><bpmn:definitions></bpmn:definitions>"},
         ]
 
         from src.mcp_tools.visualization import view_workflow
