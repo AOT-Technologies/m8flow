@@ -229,7 +229,9 @@ export default function MessageInstanceList({ processInstanceId }: OwnProps) {
               linkLastItem: true,
             },
             [
-              `Process Instance: ${searchParams.get('process_instance_id')}`,
+              t('process_instance_label', {
+                id: searchParams.get('process_instance_id'),
+              }),
               `/process-instances/${searchParams.get(
                 'process_model_id',
               )}/${searchParams.get('process_instance_id')}`,

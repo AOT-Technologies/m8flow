@@ -29,16 +29,9 @@ import TemplateFileList from '../components/TemplateFileList';
 import CreateProcessModelFromTemplateModal from '../components/CreateProcessModelFromTemplateModal';
 import TemplateDeleteConfirmDialog from '../components/TemplateDeleteConfirmDialog';
 import { Template, TemplateVisibility } from '../types/template';
-import { normalizeTemplate } from '../utils/templateHelpers';
+import { normalizeTemplate, VISIBILITY_OPTIONS } from '../utils/templateHelpers';
 import './TemplateModelerPage.css';
 import { usePermissionFetcher } from '@spiffworkflow-frontend/hooks/PermissionService';
-
-
-const VISIBILITY_OPTIONS: { value: TemplateVisibility; label: string }[] = [
-  { value: 'PRIVATE', label: 'private_only_you' },
-  { value: 'TENANT', label: 'tenant_wide' },
-  { value: 'PUBLIC', label: 'public_authenticated_users' },
-];
 
 function TemplateDetailsCard({
   template,
@@ -106,19 +99,20 @@ function TemplateDetailsCard({
         borderRadius: 1,
       }}
     >
-      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, alignItems: 'center' }}>
-        <Typography
-          variant="body2"
-          sx={{
-            fontWeight: 600,
-            flexBasis: '100%',
-            minWidth: 0,
-            overflowWrap: 'anywhere',
-            wordBreak: 'break-word',
-          }}
-        >
-          {template.name}
-        </Typography>
+      <Typography
+        variant="body2"
+        sx={{
+          fontWeight: 600,
+          minWidth: 0,
+          overflowWrap: 'anywhere',
+          wordBreak: 'break-word',
+        }}
+      >
+        {template.name}
+      </Typography>
+
+      {/* Row 1 — status / visibility chips */}
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center', mt: 0.5 }}>
         <Chip size="small" label={`${t('version')}: ${template.version}`} variant="outlined" />
         {template.category && (
           <Chip size="small" label={`${t('category')}: ${template.category}`} variant="outlined" />
@@ -137,7 +131,7 @@ function TemplateDetailsCard({
               >
                 {VISIBILITY_OPTIONS.map((opt) => (
                   <MenuItem key={opt.value} value={opt.value}>
-                    {t(opt.label)}
+                    {t(opt.labelKey)}
                   </MenuItem>
                 ))}
               </Select>
@@ -162,16 +156,40 @@ function TemplateDetailsCard({
           <Chip size="small" label={`${t('status')}: ${template.status}`} variant="outlined" />
         )}
         {template.createdBy && (
-          <Typography variant="caption" color="text.secondary">
-            {t('created_by')}: {template.createdBy}
-          </Typography>
+          <Chip size="small" label={`${t('created_by')}: ${template.createdBy}`} variant="outlined" />
         )}
+      </Box>
+
+      {/* Row 2 — timestamps (muted) */}
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, alignItems: 'center', mt: 0.5 }}>
         <Typography variant="caption" color="text.secondary">
           {t('created')}: {DateAndTimeService.convertSecondsToFormattedDateTime(template.createdAtInSeconds) ?? '—'}
         </Typography>
         <Typography variant="caption" color="text.secondary">
           {t('updated')}: {DateAndTimeService.convertSecondsToFormattedDateTime(template.updatedAtInSeconds) ?? '—'}
         </Typography>
+      </Box>
+
+      {/* Row 3 — actions toolbar (primary → secondary → destructive) */}
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center', mt: 1 }}>
+        {canCreate && !template.isDeleted && (
+          <Tooltip title={disableCreateProcessModel ? createProcessModelDisabledReason : ""}>
+            <span>
+              <Button
+                size="small"
+                variant="contained"
+                color="success"
+                startIcon={<AddIcon />}
+                data-testid="template-create-process-model-button"
+                onClick={onCreateProcessModel}
+                disabled={disableCreateProcessModel}
+              >
+                {t('create_process_model')}
+              </Button>
+            </span>
+          </Tooltip>
+        )}
+
         {!template.isDeleted && (
           <Button
             size="small"
@@ -183,6 +201,21 @@ function TemplateDetailsCard({
             {t('export', { defaultValue: 'Export' })}
           </Button>
         )}
+
+        {canPublish && !template.isPublished && (
+          <Button
+            size="small"
+            variant="contained"
+            color="primary"
+            data-testid="template-publish-button"
+            onClick={onPublish}
+          >
+            {t('publish')}
+          </Button>
+        )}
+
+        {/* Spacer pushes the destructive action to the far right */}
+        <Box sx={{ flexGrow: 1 }} />
 
         {canDelete && !template.isDeleted && (
           <Tooltip
@@ -207,37 +240,6 @@ function TemplateDetailsCard({
             </span>
           </Tooltip>
         )}
-
-        {canCreate && !template.isDeleted && (
-          <Tooltip title={disableCreateProcessModel ? createProcessModelDisabledReason : ""}>
-            <span>
-              <Button
-                size="small"
-                variant="contained"
-                color="success"
-                startIcon={<AddIcon />}
-                data-testid="template-create-process-model-button"
-                onClick={onCreateProcessModel}
-                disabled={disableCreateProcessModel}
-              >
-                {t('create_process_model')}
-              </Button>
-            </span>
-          </Tooltip>
-        )}
-
-        {canPublish && !template.isPublished && (
-          <Button
-            size="small"
-            variant="contained"
-            color="primary"
-            data-testid="template-publish-button"
-            onClick={onPublish}
-          >
-            {t('publish')}
-          </Button>
-        )}
-
       </Box>
       {template.description && (
         <Typography

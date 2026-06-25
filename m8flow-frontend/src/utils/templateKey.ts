@@ -14,3 +14,14 @@ export function nameToTemplateKey(name: string): string {
     .replace(/^-|-$/g, "");
   return slug;
 }
+
+/** Allowed characters in a template display name: letters, numbers, spaces, hyphen, underscore. */
+export const TEMPLATE_NAME_PATTERN = /^[A-Za-z0-9 _-]+$/;
+
+/** Maximum length of a template display name (trimmed). */
+export const TEMPLATE_NAME_MAX_LENGTH = 100;
+
+/** True if the trimmed name contains only allowed characters. */
+export function isValidTemplateName(name: string): boolean {
+  return TEMPLATE_NAME_PATTERN.test(name.trim());
+}

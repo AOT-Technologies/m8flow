@@ -136,3 +136,39 @@ source .venv/bin/activate
 | `BROWSER_TEST_PASSWORD` | `admin` | Login password |
 | `BROWSER_TEST_SAMPLE_TEMPLATE_SUBSTRING` | `Form Driven` | Substring to find the IT Support / form-driven sample card (matches ``_derive_display_name`` from the ZIP filename, not the hyphenated README title) |
 | `BROWSER_TEST_TENANT` | `m8flow` | Tenant slug for `username@tenant` placeholders in sample BPMN scripts |
+
+## Internationalization (i18n) tests
+
+`i18n/test_internationalization.py` covers the multi-language UI: the language
+selector, language switching, and translation of navigation, header/buttons,
+forms, tables, dialogs, validation messages, the login/landing page,
+unsupported-language fallback, and layout integrity under translated text.
+
+Reusable helpers live in [`helpers/i18n.py`](helpers/i18n.py): `change_language`,
+`current_language`, `seed_language`, `login_with_language`, `translation`
+(reads the frontend locale JSON so expected strings are never hardcoded),
+`assert_translated`, and `assert_no_overflow`. The primary non-English
+assertion language is **French (fr-FR)**; the fallback case uses the
+unsupported locale `zz-ZZ`, which must render the `en-US` default.
+
+```bash
+# from extensions/m8flow-frontend/test/browser
+uv run python -m pytest i18n/test_internationalization.py -v            # all i18n tests
+uv run python -m pytest i18n/test_internationalization.py -k fallback -v # one test
+uv run python -m pytest i18n/test_internationalization.py -v --headed    # watch it run
+E2E_URL=http://localhost:6841 uv run python -m pytest i18n -v            # custom URL
+```
+
+> The request referenced `npx playwright test ...`; this repo's Playwright suite
+> is Python, so the commands above are the equivalents. The language selector is
+> in the side nav and only appears **after** login, so these tests need the full
+> local stack running (frontend on :6841, backend, Keycloak). Screenshots and
+> traces on failure are produced automatically (see `pytest.ini`); tests run
+> headless by default.
+
+Notes:
+- Switching language is awaited deterministically (the language button's
+  `aria-label` re-renders via `t('language')`), so there are no fixed sleeps.
+- Table/dialog/import tests need the import permission and at least one template;
+  they `pytest.skip` with a clear reason when those preconditions are absent
+  rather than failing flakily.

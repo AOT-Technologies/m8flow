@@ -188,24 +188,46 @@ After signing in, follow the [How to use m8flow](docs/how-to-use.md) guide to cr
     <div align="center">
         <img src="./docs/images/tenant-creation.png" alt="Tenant Creation Screen"/>
     </div>
+4. Enter a name for the tenant:
+
+    <div align="center">
+        <img src="./docs/images/tenant-creation-2.png" alt="Tenant Creation Screen - Enter a name"/>
+    </div>
+
+5. The new tenant was created and is ready to have members added to it:
+
+    <div align="center">
+        <img src="./docs/images/tenant-creation-3.png" alt="Tenant Creation Screen - Tenant created"/>
+    </div>
 
 <a id="adding-users-to-a-tenant"></a>
 ### Adding a user to a tenant
 
-1. Ensure the person already has a Keycloak account (created in the **Keycloak** Admin Console or via **self-registration** on the m8flow sign-in page, when enabled).
-2. Open **Tenant Management** and click **Manage Tenant Groups** for the tenant.
+1. Ensure there is already has a Keycloak account user (created in the **Keycloak** Admin Console or via **self-registration** on the m8flow sign-in page, when enabled).
+
+2. Click on the tenant name if not selected already. In the **Members** section you can add members and assign groups (Administrators, Designers, Viewers, and so on).
+
+3. Click on **+ Add Member**.
 
 <div align="center">
-        <img src="./docs/images/manage-tenant-group-btn.png" alt="Tenant Creation Screen"/>
+        <img src="./docs/images/tenant-creation-add-member.png" alt="Tenant Creation Screen - Add Member button"/>
 </div>
 
-3. Click **+ Add User** and select the existing user to add them to the tenant.
-4. In the **Members** table, assign group membership (Administrators, Designers, Viewers, and so on).
-5. In the **Groups** table, review which tenant-scoped roles each group grants (Tenant Admin, Editor, Integrator, Reviewer, Submitter, Viewer).
+4. Select an existing user and  groups to add them to the tenant
+<div align="center">
+        <img src="./docs/images/tenant-creation-add-member-2.png" alt="Tenant Creation Screen - Select user and groups"/>
+</div>
 
-   <div align="center">
-       <img src="./docs/images/tenant-group-management.png" alt="Manage Tenant Groups"/>
-   </div>
+5. The user is added as a member of the tenant.
+<div align="center">
+        <img src="./docs/images/tenant-creation-add-member-3.png" alt="Tenant Creation Screen - User added to tenant"/>
+</div>
+
+6. In the **Groups** section you can manage groups for that tenant and assign roles to them (Tenant Admin, Editor, Integrator, Reviewer, Submitter, Viewer).
+
+<div align="center">
+    <img src="./docs/images/tenant-group-management.png" alt="Manage Tenant Groups"/>
+</div>
 
 ---
 

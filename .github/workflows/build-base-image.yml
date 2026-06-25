@@ -1,0 +1,62 @@
+name: Build Base Image
+
+# Builds and pushes the shared m8flow Python/Ubuntu base image consumed by
+# backend-related service images (via the PYTHON_BASE build arg).
+# See docs/docker-base-image.md for purpose, dependency ownership, and rebuild policy.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - docker/m8flow.python-base.Dockerfile
+      - .github/workflows/build-base-image.yml
+  schedule:
+    # Weekly rebuild (Mon 06:00 UTC) to pick up Ubuntu security updates.
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-base-image
+  cancel-in-progress: false
+
+env:
+  REGISTRY: docker.io
+  IMAGE_REPOSITORY: m8flow
+  IMAGE_NAME: m8flow-python-base
+  # Explicit, reproducible tag — never rely on a moving 'latest'.
+  IMAGE_TAG: ubuntu24.04-py3.12
+
+jobs:
+  build:
+    name: Build & Push Base Image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & Push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/m8flow.python-base.Dockerfile
+          push: true
+          # Stable versioned tag + a build-numbered tag for debuggable reproducibility.
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}-${{ github.run_number }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
+          provenance: true
+          sbom: true

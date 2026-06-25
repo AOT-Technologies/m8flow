@@ -120,6 +120,50 @@ MOCK_TEMPLATE_V2: dict[str, Any] = {
     "modifiedBy": "admin",
 }
 
+# Private multi-version family (both drafts) -- key ``test-template-private-multi``.
+# Used to verify version-selector behavior for private/draft templates, where every
+# version shows a "Draft" chip (contrast with the published family above).
+MOCK_TEMPLATE_PRIVATE_V1: dict[str, Any] = {
+    "id": 6,
+    "templateKey": "test-template-private-multi",
+    "version": "V1",
+    "name": "Private Multi-Version Template",
+    "description": "Private template, first version",
+    "tags": ["test"],
+    "category": "Testing",
+    "tenantId": "m8flow",
+    "visibility": "PRIVATE",
+    "files": [
+        {"fileType": "bpmn", "fileName": "process.bpmn"},
+        {"fileType": "json", "fileName": "form.json"},
+    ],
+    "isPublished": False,
+    "status": "DRAFT",
+    "createdAtInSeconds": 1700005000,
+    "createdBy": "admin",
+    "updatedAtInSeconds": 1700005000,
+    "modifiedBy": "admin",
+}
+
+MOCK_TEMPLATE_PRIVATE_V2: dict[str, Any] = {
+    "id": 7,
+    "templateKey": "test-template-private-multi",
+    "version": "V2",
+    "name": "Private Multi-Version Template",
+    "description": "Private template, second version",
+    "tags": ["test"],
+    "category": "Testing",
+    "tenantId": "m8flow",
+    "visibility": "PRIVATE",
+    "files": [{"fileType": "bpmn", "fileName": "process.bpmn"}],
+    "isPublished": False,
+    "status": "DRAFT",
+    "createdAtInSeconds": 1700006000,
+    "createdBy": "admin",
+    "updatedAtInSeconds": 1700006000,
+    "modifiedBy": "admin",
+}
+
 ALL_MOCK_TEMPLATES: list[dict[str, Any]] = [
     MOCK_TEMPLATE_PRIVATE,
     MOCK_TEMPLATE_TENANT,
@@ -494,6 +538,23 @@ def mock_template_detail(
     page.route("**/v1.0/m8flow/templates/*", _handle_detail)
 
 
+def mock_template_detail_not_found(page: Page, missing_id: int) -> None:
+    """Intercept GET .../templates/<missing_id> and return 404.
+
+    Exercises the invalid / non-existent version path on the detail page without
+    a live backend. Register this AFTER the standard detail mock so it takes
+    precedence for the targeted id (later ``page.route`` handlers run first).
+    """
+
+    def _handle(route: Route) -> None:
+        if route.request.method != "GET":
+            route.fallback()
+            return
+        _json_response(route, {"message": "Template not found"}, status=404)
+
+    page.route(f"**/v1.0/m8flow/templates/{missing_id}*", _handle)
+
+
 def mock_template_import_api(
     page: Page,
     response_template: dict[str, Any] | None = None,
@@ -665,6 +726,87 @@ def mock_process_groups_api(
 
 
 # ===================================================================
+# Task mock data (Home tab task list)
+# ===================================================================
+
+_TASKS_LIST_RE = re.compile(r"/v1\.0/tasks(?:\?|$)")
+
+# A single ``ProcessInstanceTask``-shaped record. Field names mirror those read
+# by ``TaskTable`` (``m8flow-frontend/src/components/TaskTable.tsx``).
+MOCK_TASK: dict[str, Any] = {
+    "id": 101,
+    "process_instance_id": 101,
+    "task_id": "Activity_review_0001",
+    "task_name": "review_task",
+    "task_title": "Review request",
+    "process_model_identifier": "group-alpha/expense-approval",
+    "process_model_display_name": "Expense Approval",
+    "process_initiator_username": "initiator-user",
+    "created_at_in_seconds": 1_700_000_000,
+    "updated_at_in_seconds": 1_700_000_500,
+    "last_milestone_bpmn_name": "Submitted",
+    "potential_owner_usernames": "admin",
+    "assigned_user_group_identifier": "",
+    "status": "user_input_required",
+    "summary": "Awaiting reviewer decision",
+}
+
+ALL_MOCK_TASKS: list[dict[str, Any]] = [copy.deepcopy(MOCK_TASK)]
+
+
+def make_task(overrides: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Create a copy of :data:`MOCK_TASK` with optional field overrides."""
+    task = copy.deepcopy(MOCK_TASK)
+    if overrides:
+        task.update(overrides)
+    return task
+
+
+def make_tasks(
+    count: int, overrides: dict[str, Any] | None = None
+) -> list[dict[str, Any]]:
+    """Generate *count* distinct mock tasks (unique ids / titles / models)."""
+    tasks: list[dict[str, Any]] = []
+    for i in range(count):
+        task = make_task({
+            "id": 1000 + i,
+            "process_instance_id": 1000 + i,
+            "task_id": f"Activity_{i:04d}",
+            "task_title": f"Review request #{i}",
+            "process_model_display_name": f"Expense Approval {i}",
+            "process_model_identifier": f"group-alpha/expense-approval-{i}",
+        })
+        if overrides:
+            task.update(overrides)
+        tasks.append(task)
+    return tasks
+
+
+def mock_tasks_api(
+    page: Page,
+    tasks: list[dict[str, Any]] | None = None,
+) -> None:
+    """Intercept ``GET /v1.0/tasks`` (the Home task list) and return *tasks*.
+
+    Only the list endpoint is fulfilled; task-detail navigations and every
+    other backend call fall through untouched. Pass ``[]`` to exercise the
+    empty state. Call ``page.unroute_all()`` to remove the handler.
+    """
+    source = tasks if tasks is not None else copy.deepcopy(ALL_MOCK_TASKS)
+    payload = {"results": [copy.deepcopy(t) for t in source]}
+
+    def _handle(route: Route) -> None:
+        parsed = urlparse(route.request.url)
+        probe = parsed.path + ("?" if parsed.query else "")
+        if route.request.method != "GET" or not _TASKS_LIST_RE.search(probe):
+            route.fallback()
+            return
+        _json_response(route, payload)
+
+    page.route("**/v1.0/tasks*", _handle)
+
+
+# ===================================================================
 # Permissions mocking
 # ===================================================================
 
@@ -819,6 +961,60 @@ def mock_template_files_api(page: Page) -> None:
                 content_type="application/xml",
                 body=_SAMPLE_BPMN,
             )
+        else:
+            route.fulfill(
+                status=200,
+                content_type="application/json",
+                body=_SAMPLE_FORM_JSON,
+            )
+
+    page.route("**/v1.0/m8flow/templates/*/files/*", _handle_file)
+
+
+# Markers embedded in each published-family version's BPMN so tests can prove the
+# served XML changed when the selected version changes. ``MISSING_TEMPLATE_ID`` is
+# the id used by ``mock_template_detail_not_found`` for the non-existent-version case.
+PUBLISHED_V1_MARKER = "Process_published_v1"
+PUBLISHED_V2_MARKER = "Process_published_v2"
+MISSING_TEMPLATE_ID = 99999
+
+
+def bpmn_with_marker(marker: str) -> str:
+    """Return a minimal-but-valid BPMN XML string carrying a unique ``marker``.
+
+    The marker is embedded as the process id (e.g. ``Process_v1``) so a test can
+    assert the served XML actually changed between template versions.
+    """
+    return _SAMPLE_BPMN.replace(
+        'id="Process_sample_process_automation_0m6iyy5"',
+        f'id="{marker}"',
+    ).replace(
+        'bpmnElement="Process_sample_process_automation_0m6iyy5"',
+        f'bpmnElement="{marker}"',
+    )
+
+
+_FILES_ID_RE = re.compile(r"/v1\.0/m8flow/templates/(\d+)/files/")
+
+
+def mock_template_files_versioned(
+    page: Page,
+    content_by_id: dict[int, str],
+) -> None:
+    """Intercept GET .../templates/<id>/files/<filename> with per-version content.
+
+    ``content_by_id`` maps a template id to the BPMN/XML body returned for that
+    version's ``.bpmn``/``.dmn`` files. Ids not present (and all JSON/MD files)
+    fall back to the shared ``_SAMPLE_BPMN`` / ``_SAMPLE_FORM_JSON``.
+    """
+
+    def _handle_file(route: Route) -> None:
+        url = route.request.url
+        if url.endswith(".bpmn") or url.endswith(".dmn"):
+            m = _FILES_ID_RE.search(url)
+            tid = int(m.group(1)) if m else None
+            body = content_by_id.get(tid, _SAMPLE_BPMN) if tid is not None else _SAMPLE_BPMN
+            route.fulfill(status=200, content_type="application/xml", body=body)
         else:
             route.fulfill(
                 status=200,
@@ -1397,3 +1593,204 @@ def mock_tasks_api(
         _json_response(route, {"results": items, "pagination": _make_pagination(items)})
 
     page.route("**/tasks*", _handle)
+
+
+# ===================================================================
+# Connector mock data -- shape returned by GET /v1.0/m8flow/connectors-grouped
+# ===================================================================
+
+MOCK_CONNECTOR_HTTP: dict[str, Any] = {
+    "id": "http",
+    "name": "HTTP",
+    "description": "Make REST API calls from workflows.",
+    "status": "available",
+    "icon": "globe",
+    "operationCount": 3,
+    "docsUrl": "https://github.com/AOT-Technologies/m8flow/tree/main/m8flow-connector-proxy#http-connector",
+    "operations": [
+        {
+            "id": "http/GetRequest",
+            "name": "GET Request",
+            "rawName": "GetRequest",
+            "description": "Perform an HTTP GET request.",
+            "parameters": [
+                {"id": "url", "type": "string", "required": True},
+                {"id": "headers", "type": "object", "required": False},
+            ],
+        },
+        {
+            "id": "http/PostRequest",
+            "name": "POST Request",
+            "rawName": "PostRequest",
+            "description": "Perform an HTTP POST request.",
+            "parameters": [
+                {"id": "url", "type": "string", "required": True},
+                {"id": "body", "type": "object", "required": False},
+            ],
+        },
+        {
+            "id": "http/PutRequest",
+            "name": "PUT Request",
+            "rawName": "PutRequest",
+            "description": "Perform an HTTP PUT request.",
+            "parameters": [
+                {"id": "url", "type": "string", "required": True},
+            ],
+        },
+    ],
+}
+
+# Exactly one operation -> exercises the singular "1 operation" chip.
+# Empty description -> exercises the use_via_service_task fallback text.
+MOCK_CONNECTOR_SLACK: dict[str, Any] = {
+    "id": "slack",
+    "name": "Slack",
+    "description": "",
+    "status": "available",
+    "icon": "slack",
+    "operationCount": 1,
+    "operations": [
+        {
+            "id": "slack/PostMessage",
+            "name": "Post Message",
+            "rawName": "PostMessage",
+            "description": "Send a message to a Slack channel.",
+            "parameters": [
+                {"id": "channel", "type": "string", "required": True},
+                {"id": "text", "type": "string", "required": True},
+            ],
+        },
+    ],
+}
+
+MOCK_CONNECTOR_SMTP: dict[str, Any] = {
+    "id": "smtp",
+    "name": "SMTP Email",
+    "description": "Send emails over SMTP.",
+    "status": "available",
+    "icon": "mail",
+    "operationCount": 2,
+    "operations": [
+        {
+            "id": "smtp/SendEmail",
+            "name": "Send Email",
+            "rawName": "SendEmail",
+            "description": "Send a plain-text email.",
+            "parameters": [
+                {"id": "to", "type": "string", "required": True},
+                {"id": "subject", "type": "string", "required": True},
+                {"id": "body", "type": "string", "required": False},
+            ],
+        },
+        {
+            "id": "smtp/SendTemplatedEmail",
+            "name": "Send Templated Email",
+            "rawName": "SendTemplatedEmail",
+            "description": "",
+            "parameters": [],
+        },
+    ],
+}
+
+ALL_MOCK_CONNECTORS: list[dict[str, Any]] = [
+    MOCK_CONNECTOR_HTTP,
+    MOCK_CONNECTOR_SLACK,
+    MOCK_CONNECTOR_SMTP,
+]
+
+
+def make_connector(overrides: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Create a copy of MOCK_CONNECTOR_HTTP with optional overrides."""
+    connector = copy.deepcopy(MOCK_CONNECTOR_HTTP)
+    if overrides:
+        connector.update(overrides)
+    return connector
+
+
+def generate_connectors(count: int = 9) -> list[dict[str, Any]]:
+    """Generate *count* unique mock connectors (responsive-grid / list tests)."""
+    return [
+        make_connector({
+            "id": f"gen_connector_{i}",
+            "name": f"Generated Connector {i}",
+            "description": f"Auto-generated connector #{i}",
+        })
+        for i in range(count)
+    ]
+
+
+def mock_connectors_api(
+    page: Page,
+    connectors: list[dict[str, Any]] | None = None,
+    status: int = 200,
+    hang: bool = False,
+) -> None:
+    """Intercept GET /v1.0/m8flow/connectors-grouped.
+
+    - ``hang=True`` leaves the request pending forever so the page stays in
+      its loading state (CircularProgress) -- deterministic loading-state test.
+    - ``status >= 400`` returns an error body so the page shows the load-failed
+      alert.
+    - otherwise returns the connector list (defaults to ALL_MOCK_CONNECTORS).
+    """
+    payload = ALL_MOCK_CONNECTORS if connectors is None else connectors
+
+    def _handle(route: Route) -> None:
+        if hang:
+            # Intentionally never fulfill: the in-flight request keeps the
+            # component's `loading` state true so the spinner stays visible.
+            return
+        if status >= 400:
+            _json_response(route, {"message": "connector proxy unavailable"}, status)
+            return
+        _json_response(route, payload, status)
+
+    page.route("**/v1.0/m8flow/connectors-grouped*", _handle)
+
+
+def mock_permissions_api_custom(
+    page: Page,
+    deny_connectors: bool = False,
+    deny_secrets: bool = False,
+) -> None:
+    """Like ``mock_permissions_api`` but can selectively deny permissions.
+
+    - ``deny_connectors`` -> GET on the connectors-grouped URI is denied, so the
+      Connectors page redirects to "/" and the nav item is hidden.
+    - ``deny_secrets`` -> POST on the secrets URI is denied, so the per-card
+      "Configure" button is not rendered.
+    """
+
+    def _allowed(url: str, method: str) -> bool:
+        if deny_connectors and "connectors-grouped" in url and method == "GET":
+            return False
+        if deny_secrets and "secret" in url and method == "POST":
+            return False
+        return True
+
+    def _handle(route: Route) -> None:
+        body = route.request.post_data
+        if not body:
+            _json_response(route, {"results": {}})
+            return
+        data = json.loads(body)
+        reqs = data.get("requests_to_check", {})
+        results: dict[str, Any] = {}
+        for url, methods in reqs.items():
+            if isinstance(methods, (dict, list)):
+                results[url] = {m: _allowed(url, m) for m in methods}
+            else:
+                results[url] = methods
+        _json_response(route, {"results": results})
+
+    page.route("**/permissions-check*", _handle)
+
+
+def mock_connectors_denied_permissions_api(page: Page) -> None:
+    """Deny GET on the connectors-grouped URI (restricted-user test)."""
+    mock_permissions_api_custom(page, deny_connectors=True)
+
+
+def mock_secrets_denied_permissions_api(page: Page) -> None:
+    """Grant connectors access but deny secrets POST (Configure-hidden test)."""
+    mock_permissions_api_custom(page, deny_secrets=True)
