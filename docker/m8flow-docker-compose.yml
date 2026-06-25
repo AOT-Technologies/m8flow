@@ -409,6 +409,7 @@ services:
   m8flow-connector-proxy:
     container_name: m8flow-connector-proxy
     image: m8flow/m8flow-connector-proxy
+    pull_policy: never
     build:
       context: ../m8flow-connector-proxy
     env_file: ../.env
