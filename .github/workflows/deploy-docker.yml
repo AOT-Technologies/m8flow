@@ -126,6 +126,10 @@ jobs:
         with:
           context: ${{ matrix.component == 'connector-proxy' && 'm8flow-connector-proxy' || '.' }}
           file: ${{ matrix.component == 'connector-proxy' && 'm8flow-connector-proxy/Dockerfile' || format('docker/m8flow.{0}.Dockerfile', matrix.component) }}
+          # Pin the shared base explicitly (only consumed by the backend Dockerfile;
+          # ignored as an unused arg by other components).
+          build-args: |
+            PYTHON_BASE=${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/m8flow-python-base:ubuntu24.04-py3.12
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-${{ matrix.component }}:${{ needs.prepare.outputs.tag }}
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-${{ matrix.component }}:buildcache

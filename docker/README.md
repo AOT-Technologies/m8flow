@@ -56,11 +56,17 @@ Run with: `docker compose --profile init -f docker/m8flow-docker-compose.yml up 
 
 ## Dockerfiles (summary)
 
+### m8flow.python-base.Dockerfile
+
+- Shared prebuilt base image (`docker.io/m8flow/m8flow-python-base:ubuntu24.04-py3.12`) carrying the OS toolchain (build-essential, libpq/mysql dev headers, gosu, git/curl/ssl) + Python 3.12 + pinned `uv`. Consumed by `m8flow.backend.Dockerfile` via the `PYTHON_BASE` build arg so service builds don't reinstall the toolchain every time. Built/pushed by `.github/workflows/build-base-image.yml`. **See [docs/docker-base-image.md](../docs/docker-base-image.md)** for dependency ownership, tagging, and the rebuild process.
+
 ### m8flow.backend.Dockerfile
 
-- **builder:** Python 3.12 slim, build deps, copies `spiffworkflow-backend` + `extensions`, creates `/opt/venv`, installs backend non-editable. Used only for `prod`.
-- **prod:** Slim runtime (`libpq5`, `ca-certificates`, `gosu`). Copies venv + app from builder. Creates user `app` (1000:1000). Entrypoint: chown `/app/data/process_models` and `/app/data/templates`, then `gosu app` to run CMD. No build tools.
-- **dev (default):** Full repo, build deps, editable install (`uv pip install -e .`). Same entrypoint and `app` user so volume permissions match prod.
+All three stages start `FROM ${PYTHON_BASE}` (the shared base above), so the OS toolchain and `uv` are inherited rather than reinstalled.
+
+- **builder:** copies `spiffworkflow-backend` + `spiff-arena-common` + `m8flow-backend`, creates `/opt/venv`, installs backend editable. Used only for `prod`.
+- **prod:** Copies venv + app from builder. Creates user `app` (1000:1000). Entrypoint: chown `/app/data/process_models` and `/app/data/templates`, then `gosu app` to run CMD.
+- **dev (default):** Full repo, editable install (`uv pip install --system`), then purges build-essential and CVE-prone packages from the final image. Same entrypoint and `app` user so volume permissions match prod.
 
 ### m8flow.frontend.Dockerfile
 
