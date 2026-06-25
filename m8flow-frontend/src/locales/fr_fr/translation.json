@@ -63,6 +63,7 @@
   "nats_monitoring_description": "Surveillez les flux, consommateurs et messages NATS.",
   "open_in_new_tab": "Ouvrir dans un nouvel onglet",
   "embedded_dashboard_unavailable": "Ce tableau de bord n'a pas pu être intégré. Ouvrez-le dans un nouvel onglet.",
+  "embedded_dashboard_slow_or_blocked": "Le tableau de bord met plus de temps que prévu à se charger. Son intégration est peut-être bloquée — ouvrez-le dans un nouvel onglet.",
   "add_tenant": "Ajouter un locataire",
   "search_by": "Rechercher par",
   "name": "Nom",

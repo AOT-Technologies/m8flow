@@ -63,6 +63,7 @@
   "nats_monitoring_description": "Sledujte streamy, konzumenty a zprávy NATS.",
   "open_in_new_tab": "Otevřít v nové kartě",
   "embedded_dashboard_unavailable": "Tento panel nelze vložit. Otevřete jej v nové kartě.",
+  "embedded_dashboard_slow_or_blocked": "Načítání panelu trvá déle, než se očekávalo. Vložení může být zablokováno — otevřete jej v nové kartě.",
   "add_tenant": "Přidat nájemníka",
   "search_by": "Hledat podle",
   "name": "Jméno",

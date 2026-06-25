@@ -63,6 +63,7 @@
   "nats_monitoring_description": "Seuraa NATS-virtoja, kuluttajia ja viestejä.",
   "open_in_new_tab": "Avaa uudessa välilehdessä",
   "embedded_dashboard_unavailable": "Tätä koontinäyttöä ei voitu upottaa. Avaa se uudessa välilehdessä.",
+  "embedded_dashboard_slow_or_blocked": "Koontinäytön lataus kestää odotettua kauemmin. Upotus saattaa olla estetty — avaa se uudessa välilehdessä.",
   "add_tenant": "Lisää vuokralainen",
   "search_by": "Hakuperuste",
   "name": "Nimi",

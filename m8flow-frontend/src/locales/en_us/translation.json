@@ -68,6 +68,7 @@
   "nats_monitoring_description": "Monitor NATS streams, consumers, and messages.",
   "open_in_new_tab": "Open in new tab",
   "embedded_dashboard_unavailable": "This dashboard could not be embedded. Open it in a new tab instead.",
+  "embedded_dashboard_slow_or_blocked": "The dashboard is taking longer than expected to load. It may be blocked from embedding — open it in a new tab instead.",
   "add_tenant": "Add Tenant",
   "organization_management": "Tenant Management",
   "organization_management_description": "Manage the Keycloak tenants that back access in Keycloak.",
