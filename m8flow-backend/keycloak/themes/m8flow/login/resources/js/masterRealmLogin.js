@@ -23,10 +23,38 @@ const decodeStatePayload = (state) => {
   }
 };
 
+const decodeBase64Url = (value) => {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+    return window.atob(padded);
+  } catch {
+    return null;
+  }
+};
+
+const parseClientData = (currentUrl) => {
+  const decoded = decodeBase64Url(currentUrl.searchParams.get('client_data'));
+  if (!decoded) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(decoded);
+  } catch {
+    return null;
+  }
+};
+
 export const extractBackendBaseUrl = (currentLocationHref) => {
   try {
     const currentUrl = new URL(currentLocationHref);
-    const redirectUri = currentUrl.searchParams.get('redirect_uri');
+    const redirectUri =
+      currentUrl.searchParams.get('redirect_uri') || parseClientData(currentUrl)?.ru;
     if (!redirectUri) {
       return null;
     }
@@ -42,7 +70,9 @@ export const extractBackendBaseUrl = (currentLocationHref) => {
 export const extractFrontendOrigin = (currentLocationHref, referrer = '') => {
   try {
     const currentUrl = new URL(currentLocationHref);
-    const decodedState = decodeStatePayload(currentUrl.searchParams.get('state'));
+    const stateParam =
+      currentUrl.searchParams.get('state') || parseClientData(currentUrl)?.st;
+    const decodedState = decodeStatePayload(stateParam);
     const finalUrl = extractStateValue(decodedState, 'final_url');
     if (finalUrl) {
       return new URL(finalUrl).origin;
@@ -116,4 +146,10 @@ if (typeof window !== 'undefined') {
   } else {
     wireMasterRealmLoginButton();
   }
+
+  window.addEventListener('pageshow', (event) => {
+    if (event.persisted) {
+      wireMasterRealmLoginButton();
+    }
+  });
 }
