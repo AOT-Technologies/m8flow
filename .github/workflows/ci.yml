@@ -192,7 +192,12 @@ jobs:
     name: Docker Build Dry Run
     needs: path_filters
     runs-on: ubuntu-latest
-    if: ${{ (needs.path_filters.outputs.backend == 'true' || needs.path_filters.outputs.frontend == 'true' || needs.path_filters.outputs.docker_m8flow == 'true') && github.event_name == 'pull_request' }}
+    if: >-
+      ${{ (github.event_name == 'pull_request' &&
+            (needs.path_filters.outputs.backend == 'true' ||
+             needs.path_filters.outputs.frontend == 'true' ||
+             needs.path_filters.outputs.docker_m8flow == 'true'))
+          || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
     steps:
       - uses: actions/checkout@v4
       - name: Guard against floating connector refs
@@ -212,33 +217,41 @@ jobs:
           poetry check --lock
       - uses: docker/setup-buildx-action@v3
       - name: Backend image build (no push)
-        run: |
-          docker buildx build \
-            --file docker/m8flow.backend.Dockerfile \
-            --tag backend:pr-test \
-            --load \
-            .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/m8flow.backend.Dockerfile
+          tags: backend:pr-test
+          load: true
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
       - name: Frontend image build (no push)
-        run: |
-          docker buildx build \
-            --file docker/m8flow.frontend.Dockerfile \
-            --tag frontend:pr-test \
-            --load \
-            .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/m8flow.frontend.Dockerfile
+          tags: frontend:pr-test
+          load: true
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
       - name: Keycloak image build (no push)
-        run: |
-          docker buildx build \
-            --file docker/m8flow.keycloak.Dockerfile \
-            --tag keycloak:pr-test \
-            --load \
-            .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/m8flow.keycloak.Dockerfile
+          tags: keycloak:pr-test
+          load: true
+          cache-from: type=gha,scope=keycloak
+          cache-to: type=gha,mode=max,scope=keycloak
       - name: Connector-proxy image build (no push)
-        run: |
-          docker buildx build \
-            --file m8flow-connector-proxy/Dockerfile \
-            --tag connector-proxy:pr-test \
-            --load \
-            m8flow-connector-proxy
+        uses: docker/build-push-action@v6
+        with:
+          context: m8flow-connector-proxy
+          file: m8flow-connector-proxy/Dockerfile
+          tags: connector-proxy:pr-test
+          load: true
+          cache-from: type=gha,scope=connector-proxy
+          cache-to: type=gha,mode=max,scope=connector-proxy
 
   # -------------------------
   # Frontend E2E (Playwright) — non-required soft-launch
