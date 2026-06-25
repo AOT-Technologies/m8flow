@@ -160,13 +160,38 @@ def test_create_tenant_member_returns_created_member(monkeypatch):
     }
 
 
-def test_list_tenant_groups_returns_service_payload(monkeypatch):
+def test_delete_tenant_member_returns_deleted_username(monkeypatch):
     tenant_role_controller = _load_tenant_role_controller(monkeypatch)
     app = Flask(__name__)
     monkeypatch.setattr(
         tenant_role_controller,
+        "remove_tenant_member",
+        lambda tenant_id, username: username,
+    )
+
+    with app.test_request_context("/m8flow/tenants/tenant-it-id/members/editor"):
+        g.user = _mock_user()
+        g._m8flow_super_admin_request = True
+        response = tenant_role_controller.delete_tenant_member("tenant-it-id", "editor")
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "tenant_id": "tenant-it-id",
+        "username": "editor",
+    }
+
+
+def test_list_tenant_groups_returns_service_payload(monkeypatch):
+    tenant_role_controller = _load_tenant_role_controller(monkeypatch)
+    app = Flask(__name__)
+    service_calls: list[tuple[str, str | None, int, int]] = []
+    monkeypatch.setattr(
+        tenant_role_controller,
         "list_tenant_groups_with_members",
-        lambda tenant_id, search=None: [
+        lambda tenant_id, search=None, offset=0, max_results=100: service_calls.append(
+            (tenant_id, search, offset, max_results)
+        )
+        or [
             {
                 "name": "Administrators",
                 "mapped_roles": ["tenant-admin"],
@@ -175,15 +200,21 @@ def test_list_tenant_groups_returns_service_payload(monkeypatch):
         ],
     )
 
-    with app.test_request_context("/m8flow/tenants/tenant-it-id/groups?search=admin"):
+    with app.test_request_context(
+        "/m8flow/tenants/tenant-it-id/groups?search=admin&offset=10&limit=10"
+    ):
         g.user = _mock_user()
         g._m8flow_super_admin_request = True
         response = tenant_role_controller.list_tenant_groups("tenant-it-id")
 
     assert response.status_code == 200
+    assert service_calls == [("tenant-it-id", "admin", 10, 11)]
     assert response.get_json() == {
         "tenant_id": "tenant-it-id",
         "search": "admin",
+        "offset": 10,
+        "limit": 10,
+        "has_more": False,
         "groups": [
             {
                 "name": "Administrators",
@@ -191,6 +222,42 @@ def test_list_tenant_groups_returns_service_payload(monkeypatch):
                 "members": [{"username": "admin"}],
             }
         ],
+    }
+
+
+def test_update_group_returns_updated_group(monkeypatch):
+    tenant_role_controller = _load_tenant_role_controller(monkeypatch)
+    app = Flask(__name__)
+    monkeypatch.setattr(
+        tenant_role_controller,
+        "rename_tenant_group",
+        lambda tenant_id, group_name, new_group_name: {
+            "id": "group-approvers",
+            "name": new_group_name,
+            "mapped_roles": ["reviewer"],
+            "members": [{"username": "reviewer"}],
+        },
+    )
+
+    with app.test_request_context(
+        "/m8flow/tenants/tenant-it-id/groups/Approvers",
+        method="PUT",
+        json={"name": "QA Reviewers"},
+    ):
+        g.user = _mock_user()
+        g._m8flow_super_admin_request = True
+        response = tenant_role_controller.update_group("tenant-it-id", "Approvers")
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "tenant_id": "tenant-it-id",
+        "previous_group_name": "Approvers",
+        "group": {
+            "id": "group-approvers",
+            "name": "QA Reviewers",
+            "mapped_roles": ["reviewer"],
+            "members": [{"username": "reviewer"}],
+        },
     }
 
 
@@ -398,4 +465,25 @@ def test_create_group_returns_created_group(monkeypatch):
             "members": [],
             "path": "/Manager",
         },
+    }
+
+
+def test_remove_group_returns_deleted_group_name(monkeypatch):
+    tenant_role_controller = _load_tenant_role_controller(monkeypatch)
+    app = Flask(__name__)
+    monkeypatch.setattr(
+        tenant_role_controller,
+        "delete_tenant_group",
+        lambda tenant_id, group_name: group_name,
+    )
+
+    with app.test_request_context("/m8flow/tenants/tenant-it-id/groups/Approvers"):
+        g.user = _mock_user()
+        g._m8flow_super_admin_request = True
+        response = tenant_role_controller.remove_group("tenant-it-id", "Approvers")
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "tenant_id": "tenant-it-id",
+        "group_name": "Approvers",
     }

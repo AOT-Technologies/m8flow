@@ -1,6 +1,7 @@
 import HttpService from "@spiffworkflow-frontend/services/HttpService";
 
 const BASE_PATH = "/v1.0/m8flow";
+const MAX_TENANT_GROUP_PAGE_REQUESTS = 1000;
 
 // Shared type definitions
 export type TenantStatus = "ACTIVE" | "INACTIVE" | "DELETED";
@@ -43,6 +44,12 @@ export interface TenantMember {
     email: string | null;
     display_name: string | null;
     roles: TenantMemberRole[];
+    groups: TenantMemberGroup[];
+}
+
+export interface TenantMemberGroup {
+    id: string;
+    name: string;
 }
 
 export interface TenantGroupMember {
@@ -74,6 +81,10 @@ export interface AddTenantMemberRequest {
 }
 
 export interface CreateTenantGroupRequest {
+    name: string;
+}
+
+export interface RenameTenantGroupRequest {
     name: string;
 }
 
@@ -151,12 +162,41 @@ export interface TenantMemberPageRequest {
 interface TenantGroupsResponse {
     tenant_id: string;
     search: string;
+    offset?: number;
+    limit?: number;
+    has_more?: boolean;
     groups: TenantGroup[];
+}
+
+export interface TenantGroupsPage {
+    tenant_id: string;
+    search: string;
+    offset: number;
+    limit: number;
+    has_more: boolean;
+    groups: TenantGroup[];
+}
+
+export interface TenantGroupPageRequest {
+    search?: string;
+    offset?: number;
+    limit?: number;
 }
 
 interface TenantGroupCreateResponse {
     tenant_id: string;
     group: TenantGroup;
+}
+
+interface TenantGroupUpdateResponse {
+    tenant_id: string;
+    previous_group_name: string;
+    group: TenantGroup;
+}
+
+interface TenantGroupDeleteResponse {
+    tenant_id: string;
+    group_name: string;
 }
 
 interface TenantAvailableUsersResponse {
@@ -193,6 +233,11 @@ interface TenantMemberCreateResponse {
     member: TenantMember;
 }
 
+interface TenantMemberDeleteResponse {
+    tenant_id: string;
+    username: string;
+}
+
 interface TenantGroupMembershipMutationResponse {
     tenant_id: string;
     group_name: string;
@@ -206,6 +251,14 @@ interface TenantGroupRoleMutationResponse {
     role_name: TenantMemberRole;
     group: TenantGroup;
 }
+
+const normalizeTenantMember = (member: TenantMember): TenantMember => ({
+    ...member,
+    groups: member.groups ?? [],
+});
+
+const normalizeTenantMembers = (members: TenantMember[] | undefined): TenantMember[] =>
+    (members ?? []).map(normalizeTenantMember);
 
 const TenantService = {
     /**
@@ -342,7 +395,7 @@ const TenantService = {
                         offset: response.offset ?? offset,
                         limit: response.limit ?? limit,
                         has_more: Boolean(response.has_more),
-                        members: response.members ?? [],
+                        members: normalizeTenantMembers(response.members),
                     }),
                 failureCallback: reject,
             });
@@ -420,7 +473,27 @@ const TenantService = {
                     group_names: data.group_names ?? [],
                 },
                 successCallback: (response: TenantMemberCreateResponse) =>
-                    resolve(response.member),
+                    resolve(normalizeTenantMember(response.member)),
+                failureCallback: reject,
+            });
+        });
+    },
+
+    /**
+     * Remove one tenant member from a tenant organization.
+     */
+    removeTenantMember: (
+        tenantId: string,
+        username: string,
+    ): Promise<string> => {
+        return new Promise((resolve, reject) => {
+            HttpService.makeCallToBackend({
+                path: `${BASE_PATH}/tenants/${encodeURIComponent(tenantId)}/members/${encodeURIComponent(
+                    username,
+                )}`,
+                httpMethod: "DELETE",
+                successCallback: (response: TenantMemberDeleteResponse) =>
+                    resolve(response.username),
                 failureCallback: reject,
             });
         });
@@ -429,11 +502,61 @@ const TenantService = {
     /**
      * List tenant organization groups and their members
      */
-    getTenantGroups: (tenantId: string, search = ""): Promise<TenantGroup[]> => {
-        const searchParams = new URLSearchParams();
-        if (search.trim()) {
-            searchParams.set("search", search.trim());
+    getTenantGroups: async (tenantId: string, search = ""): Promise<TenantGroup[]> => {
+        const groups: TenantGroup[] = [];
+        const limit = 100;
+        let offset = 0;
+        let pageRequests = 0;
+        let didComplete = false;
+
+        while (pageRequests < MAX_TENANT_GROUP_PAGE_REQUESTS) {
+            pageRequests += 1;
+            const response = await TenantService.getTenantGroupsPage(tenantId, {
+                search,
+                offset,
+                limit,
+            });
+            groups.push(...response.groups);
+            if (!response.has_more || response.groups.length === 0) {
+                didComplete = true;
+                break;
+            }
+
+            if (response.offset < offset) {
+                throw new Error("Tenant group pagination returned a stale page.");
+            }
+
+            const nextOffset = offset + response.groups.length;
+            if (nextOffset <= offset) {
+                throw new Error("Tenant group pagination did not advance.");
+            }
+
+            offset = nextOffset;
         }
+
+        if (!didComplete) {
+            throw new Error("Tenant group pagination exceeded the maximum number of pages.");
+        }
+
+        return groups;
+    },
+
+    /**
+     * List one page of tenant organization groups and their members
+     */
+    getTenantGroupsPage: (
+        tenantId: string,
+        options: TenantGroupPageRequest = {},
+    ): Promise<TenantGroupsPage> => {
+        const searchParams = new URLSearchParams();
+        const normalizedSearch = options.search?.trim() ?? "";
+        const offset = Math.max(0, options.offset ?? 0);
+        const limit = Math.max(1, options.limit ?? 10);
+        if (normalizedSearch) {
+            searchParams.set("search", normalizedSearch);
+        }
+        searchParams.set("offset", `${offset}`);
+        searchParams.set("limit", `${limit}`);
         const queryString = searchParams.toString();
         const path = `${BASE_PATH}/tenants/${encodeURIComponent(tenantId)}/groups${
             queryString ? `?${queryString}` : ""
@@ -444,7 +567,14 @@ const TenantService = {
                 path,
                 httpMethod: "GET",
                 successCallback: (response: TenantGroupsResponse) =>
-                    resolve(response.groups ?? []),
+                    resolve({
+                        tenant_id: response.tenant_id,
+                        search: response.search ?? normalizedSearch,
+                        offset: response.offset ?? offset,
+                        limit: response.limit ?? limit,
+                        has_more: Boolean(response.has_more),
+                        groups: response.groups ?? [],
+                    }),
                 failureCallback: reject,
             });
         });
@@ -476,6 +606,51 @@ const TenantService = {
     },
 
     /**
+     * Rename one tenant organization group.
+     */
+    renameTenantGroup: (
+        tenantId: string,
+        currentGroupName: string,
+        data: RenameTenantGroupRequest,
+    ): Promise<TenantGroup> => {
+        const name = normalizeTenantGroupName(data.name ?? "");
+        const validationMessage = validateTenantGroupName(name);
+        if (validationMessage) {
+            return Promise.reject(new Error(validationMessage));
+        }
+
+        return new Promise((resolve, reject) => {
+            HttpService.makeCallToBackend({
+                path: `${BASE_PATH}/tenants/${encodeURIComponent(tenantId)}/groups/${encodeURIComponent(
+                    currentGroupName,
+                )}`,
+                httpMethod: "PUT",
+                postBody: { name },
+                successCallback: (response: TenantGroupUpdateResponse) =>
+                    resolve(response.group),
+                failureCallback: reject,
+            });
+        });
+    },
+
+    /**
+     * Delete one tenant organization group.
+     */
+    deleteTenantGroup: (tenantId: string, groupName: string): Promise<string> => {
+        return new Promise((resolve, reject) => {
+            HttpService.makeCallToBackend({
+                path: `${BASE_PATH}/tenants/${encodeURIComponent(tenantId)}/groups/${encodeURIComponent(
+                    groupName,
+                )}`,
+                httpMethod: "DELETE",
+                successCallback: (response: TenantGroupDeleteResponse) =>
+                    resolve(response.group_name),
+                failureCallback: reject,
+            });
+        });
+    },
+
+    /**
      * Assign one tenant member to one organization group.
      */
     addTenantMemberToGroup: (
@@ -490,7 +665,7 @@ const TenantService = {
                 )}/members/${encodeURIComponent(username)}`,
                 httpMethod: "PUT",
                 successCallback: (response: TenantGroupMembershipMutationResponse) =>
-                    resolve(response.member),
+                    resolve(normalizeTenantMember(response.member)),
                 failureCallback: reject,
             });
         });
@@ -511,7 +686,7 @@ const TenantService = {
                 )}/members/${encodeURIComponent(username)}`,
                 httpMethod: "DELETE",
                 successCallback: (response: TenantGroupMembershipMutationResponse) =>
-                    resolve(response.member),
+                    resolve(normalizeTenantMember(response.member)),
                 failureCallback: reject,
             });
         });
@@ -574,7 +749,7 @@ const TenantService = {
                 )}/roles/${encodeURIComponent(roleName)}`,
                 httpMethod: "PUT",
                 successCallback: (response: { member: TenantMember }) =>
-                    resolve(response.member),
+                    resolve(normalizeTenantMember(response.member)),
                 failureCallback: reject,
             });
         });
@@ -595,7 +770,7 @@ const TenantService = {
                 )}/roles/${encodeURIComponent(roleName)}`,
                 httpMethod: "DELETE",
                 successCallback: (response: { member: TenantMember }) =>
-                    resolve(response.member),
+                    resolve(normalizeTenantMember(response.member)),
                 failureCallback: reject,
             });
         });

@@ -3,10 +3,19 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { ThemeProvider, createTheme } from "@mui/material/styles";
 import type React from "react";
 import SaveAsTemplateModal from "./SaveAsTemplateModal";
+import enUs from "../locales/en_us/translation.json";
+
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string, opts?: { defaultValue?: string }) =>
+      (enUs as Record<string, string>)[key] ?? opts?.defaultValue ?? key,
+  }),
+}));
 
 vi.mock("../services/TemplateService", () => ({
   default: {
     createTemplateWithFiles: vi.fn(),
+    templateNameExists: vi.fn(),
   },
 }));
 
@@ -45,6 +54,7 @@ describe("SaveAsTemplateModal", () => {
       version: "V1",
       visibility: "PRIVATE",
     } as any);
+    vi.mocked(TemplateService.templateNameExists).mockResolvedValue(false);
   });
 
   it("renders dialog with title and current form fields when open", () => {
@@ -76,10 +86,37 @@ describe("SaveAsTemplateModal", () => {
 
   it("shows validation error when name cannot produce a template key", async () => {
     renderWithTheme(<SaveAsTemplateModal {...defaultProps} />);
-    typeInField(/Name/i, "!!!");
+    // Only allowed-but-non-alphanumeric chars: passes the character check, fails the key check.
+    typeInField(/Name/i, "---");
     fireEvent.click(screen.getByRole("button", { name: /Create Template/i }));
     await waitFor(() => {
       expect(screen.getByText("Name must contain at least one letter or number.")).toBeInTheDocument();
+    });
+    expect(TemplateService.createTemplateWithFiles).not.toHaveBeenCalled();
+  });
+
+  it("shows validation error when name contains disallowed characters", async () => {
+    renderWithTheme(<SaveAsTemplateModal {...defaultProps} />);
+    typeInField(/Name/i, "Bad@Name");
+    fireEvent.click(screen.getByRole("button", { name: /Create Template/i }));
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          "Template name may only contain letters, numbers, spaces, hyphens and underscores."
+        )
+      ).toBeInTheDocument();
+    });
+    expect(TemplateService.createTemplateWithFiles).not.toHaveBeenCalled();
+  });
+
+  it("shows validation error when name exceeds the max length", async () => {
+    renderWithTheme(<SaveAsTemplateModal {...defaultProps} />);
+    typeInField(/Name/i, "a".repeat(101));
+    fireEvent.click(screen.getByRole("button", { name: /Create Template/i }));
+    await waitFor(() => {
+      expect(
+        screen.getByText("Template name must be 100 characters or fewer.")
+      ).toBeInTheDocument();
     });
     expect(TemplateService.createTemplateWithFiles).not.toHaveBeenCalled();
   });
@@ -122,6 +159,22 @@ describe("SaveAsTemplateModal", () => {
         defaultFiles,
       );
     });
+  });
+
+  it("blocks submit and shows error when template name already exists", async () => {
+    vi.mocked(TemplateService.templateNameExists).mockResolvedValue(true);
+    renderWithTheme(<SaveAsTemplateModal {...defaultProps} />);
+    typeInField(/Name/i, "My Template");
+    fireEvent.click(screen.getByRole("button", { name: /Create Template/i }));
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          "A template with this name already exists. Choose a different name."
+        )
+      ).toBeInTheDocument();
+    });
+    expect(TemplateService.templateNameExists).toHaveBeenCalledWith("my-template");
+    expect(TemplateService.createTemplateWithFiles).not.toHaveBeenCalled();
   });
 
   it("shows error when getFiles returns no bpmn file", async () => {
