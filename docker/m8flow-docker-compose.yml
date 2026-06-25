@@ -388,6 +388,8 @@ services:
         condition: service_started
 
   m8flow-frontend:
+    image: m8flow-frontend
+    pull_policy: never
     build:
       context: ..
       dockerfile: docker/m8flow.frontend.Dockerfile
