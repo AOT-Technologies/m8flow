@@ -15,7 +15,11 @@ import {
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import TemplateService from "../services/TemplateService";
-import { nameToTemplateKey } from "../utils/templateKey";
+import {
+  isValidTemplateName,
+  nameToTemplateKey,
+  TEMPLATE_NAME_MAX_LENGTH,
+} from "../utils/templateKey";
 import { VISIBILITY_OPTIONS } from "../utils/templateHelpers";
 import type { CreateTemplateMetadata, Template, TemplateVisibility } from "../types/template";
 
@@ -67,6 +71,14 @@ export default function SaveAsTemplateModal({
       setError(t("name_required"));
       return;
     }
+    if (trimmedName.length > TEMPLATE_NAME_MAX_LENGTH) {
+      setError(t("template_name_too_long"));
+      return;
+    }
+    if (!isValidTemplateName(trimmedName)) {
+      setError(t("template_name_invalid_chars"));
+      return;
+    }
     const template_key = nameToTemplateKey(trimmedName);
     if (!template_key) {
       setError(t("name_must_contain_letter_or_number"));
@@ -76,6 +88,11 @@ export default function SaveAsTemplateModal({
     setLoading(true);
     setError(null);
     try {
+      if (await TemplateService.templateNameExists(template_key)) {
+        setError(t("template_name_exists"));
+        setLoading(false);
+        return;
+      }
       const files = await getFiles();
       if (!files?.length) {
         setError(t("no_files_to_save"));
@@ -140,6 +157,7 @@ export default function SaveAsTemplateModal({
             value={name}
             onChange={(e) => setName(e.target.value)}
             disabled={loading}
+            inputProps={{ maxLength: TEMPLATE_NAME_MAX_LENGTH }}
             data-testid="save-as-template-name-input"
           />
           <TextField
