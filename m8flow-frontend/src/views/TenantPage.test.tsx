@@ -368,7 +368,7 @@ describe("TenantPage", () => {
     });
     mockCreateTenant.mockResolvedValue({
       alias: "information-technology-3",
-      name: "Information Technology",
+      name: "Information Technology!",
       organization_id: "tenant-uuid",
       id: "tenant-uuid",
     });
@@ -378,7 +378,7 @@ describe("TenantPage", () => {
     fireEvent.click(screen.getByTestId("tenant-add-button"));
     await screen.findByTestId("tenant-modal-dialog");
     fireEvent.change(screen.getByLabelText("Tenant Name"), {
-      target: { value: "Information Technology" },
+      target: { value: "Information Technology!" },
     });
 
     fireEvent.click(screen.getByTestId("tenant-modal-submit-button"));
@@ -386,9 +386,48 @@ describe("TenantPage", () => {
     await waitFor(() => {
       expect(mockCreateTenant).toHaveBeenCalledWith({
         slug: "information-technology-3",
-        name: "Information Technology",
+        name: "Information Technology!",
       });
     });
+  });
+
+  it("blocks creating a tenant whose name duplicates an existing tenant", async () => {
+    mockUseTenants.mockReturnValue({
+      data: [
+        {
+          id: "tenant-1",
+          name: "Information Technology",
+          slug: "information-technology",
+          status: "ACTIVE",
+          createdBy: "system",
+          modifiedBy: "system",
+          createdAtInSeconds: 1,
+          updatedAtInSeconds: 1,
+        },
+      ],
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    mockUsePermissionFetcher.mockReturnValue({
+      ability: { can: () => true },
+      permissionsLoaded: true,
+    });
+
+    render(<TenantPage />);
+
+    fireEvent.click(screen.getByTestId("tenant-add-button"));
+    await screen.findByTestId("tenant-modal-dialog");
+    fireEvent.change(screen.getByLabelText("Tenant Name"), {
+      target: { value: "information technology" },
+    });
+
+    fireEvent.click(screen.getByTestId("tenant-modal-submit-button"));
+
+    expect(
+      await screen.findByText("A tenant with this name already exists."),
+    ).toBeInTheDocument();
+    expect(mockCreateTenant).not.toHaveBeenCalled();
   });
 
   it("opens tenant group management and loads dynamic keycloak groups", async () => {
