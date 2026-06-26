@@ -52,9 +52,21 @@ export function getMasterRealmIdentifier(): string {
   return getRuntimeOrBuildConfig('M8FLOW_KEYCLOAK_MASTER_REALM') || 'master';
 }
 
+export function getCeleryFlowerUrl(): string {
+  return getRuntimeOrBuildConfig('M8FLOW_CELERY_FLOWER_URL') || '';
+}
+
+export function getNatsUiUrl(): string {
+  return getRuntimeOrBuildConfig('M8FLOW_NATS_UI_URL') || '';
+}
+
 const ENABLE_MULTITENANT = getEnableMultitenant();
 const SHARED_REALM_IDENTIFIER = getSharedRealmIdentifier();
 const MASTER_REALM_IDENTIFIER = getMasterRealmIdentifier();
+const CELERY_FLOWER_URL = getCeleryFlowerUrl();
+const NATS_UI_URL = getNatsUiUrl();
+// NATS monitoring is optional/disabled by default; surface it only when a UI URL is configured.
+const NATS_MONITORING_ENABLED = Boolean(NATS_UI_URL);
 
 /**
  * useConfig - Hook to access configuration values
@@ -63,6 +75,7 @@ const MASTER_REALM_IDENTIFIER = getMasterRealmIdentifier();
 export function useConfig() {
   return {
     BACKEND_BASE_URL,
+    CELERY_FLOWER_URL,
     CONFIGURATION_ERRORS,
     DARK_MODE_ENABLED,
     DATE_FORMAT,
@@ -73,6 +86,8 @@ export function useConfig() {
     DOCUMENTATION_URL,
     ENABLE_MULTITENANT,
     MASTER_REALM_IDENTIFIER,
+    NATS_MONITORING_ENABLED,
+    NATS_UI_URL,
     PROCESS_STATUSES,
     SHARED_REALM_IDENTIFIER,
     SPIFF_ENVIRONMENT,

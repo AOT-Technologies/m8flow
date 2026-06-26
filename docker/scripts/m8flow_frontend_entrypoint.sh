@@ -32,6 +32,15 @@ if [[ -n "${M8FLOW_KEYCLOAK_MASTER_REALM:-}" ]] && [[ -z "${M8FLOW_FRONTEND_RUNT
   export M8FLOW_FRONTEND_RUNTIME_CONFIG_M8FLOW_KEYCLOAK_MASTER_REALM="$M8FLOW_KEYCLOAK_MASTER_REALM"
 fi
 
+if [[ -n "${M8FLOW_CELERY_FLOWER_URL:-}" ]] && [[ -z "${M8FLOW_FRONTEND_RUNTIME_CONFIG_M8FLOW_CELERY_FLOWER_URL:-}" ]]; then
+  export M8FLOW_FRONTEND_RUNTIME_CONFIG_M8FLOW_CELERY_FLOWER_URL="$M8FLOW_CELERY_FLOWER_URL"
+fi
+
+# NATS monitoring is optional; when M8FLOW_NATS_UI_URL is unset/empty the NATS section stays hidden.
+if [[ -n "${M8FLOW_NATS_UI_URL:-}" ]] && [[ -z "${M8FLOW_FRONTEND_RUNTIME_CONFIG_M8FLOW_NATS_UI_URL:-}" ]]; then
+  export M8FLOW_FRONTEND_RUNTIME_CONFIG_M8FLOW_NATS_UI_URL="$M8FLOW_NATS_UI_URL"
+fi
+
 # ── Step 2: Inject runtime config into index.html ────────────────────────────
 # Mirrors the upstream boot_server_in_docker logic but reads
 # M8FLOW_FRONTEND_RUNTIME_CONFIG_* instead of SPIFFWORKFLOW_FRONTEND_RUNTIME_CONFIG_*.
