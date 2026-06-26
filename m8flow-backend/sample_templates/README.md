@@ -12,6 +12,7 @@ Pre-built workflow templates that can be loaded into the database on startup.
 | [`Form-Driven Approval with Dynamic Assignee - ( IT Support Complaint Handling ).zip`](#template-4) | IT Support Complaint Handling with dynamic assignee |
 | [`Salesforce Lead Creation with Slack Notification.zip`](#template-5) | Salesforce Lead Creation with Slack Notification |
 | [`PostgreSQL Table Lifecycle Management.zip`](#template-6) | PostgreSQL Table Lifecycle Management |
+| [`Expense Claim with DMN and SMTP Connector.zip`](#template-7) | Expense claim approval combining a form, DMN auto-approval routing, and SMTP email notifications |
 
 
 
@@ -215,3 +216,25 @@ The PostgreSQL database service tasks are unchanged.
 - Make sure the `Administrators` group has members in your tenant (**Administration → Groups**).
 - Add the following secret under **Configuration → Secrets** before starting the process:
   - `POSTGRES_CONNECTION_STRING` — full PostgreSQL connection string, e.g. `dbname=databasename user=username password=password host=hostname port=portnumber`
+
+---
+
+<a id="template-7"></a>
+
+#### 7. `Expense Claim with DMN and SMTP Connector.zip`
+
+This is a complete expense claim approval workflow that combines a user form, a DMN decision table, and the SMTP email connector in a single process. The employee submits an expense claim; a DMN rule (`Check Approval Route`) evaluates the amount and **auto-approves claims of $1000 or less**, while larger claims are routed to a manager for review. In every case an email notification (approved / rejected) is sent to the requester via SMTP.
+
+**Task assignment (Keycloak groups):**
+- **Submit Expense Claim** → `Submitters`
+- **Review Expense Claim** (Manager — only for amounts over $1000) → `Approvers`
+
+DMN routing (`amount <= 1000` → auto-approve) and the approval / rejection email logic are unchanged.
+
+**Prerequisites:**
+- Make sure the `Submitters` and `Approvers` groups have members in your tenant (**Administration → Groups**).
+- Add the following secrets under **Configuration → Secrets** before starting the process:
+  - `SMTP_USER` — your SMTP username / sender email
+  - `SMTP_PASSWORD` — your SMTP password or app-specific password
+  - `SMTP_HOST` — your SMTP host
+  - `SMTP_PORT` — your SMTP port
