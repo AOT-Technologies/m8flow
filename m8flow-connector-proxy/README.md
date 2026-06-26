@@ -16,6 +16,7 @@ Connectors are isolated Python packages that conform to a pre-defined protocol i
 | [**Slack**](#slack-connector) | Sending messages and interacting with Slack APIs. |
 | [**Salesforce**](#salesforce-connector)| Integrating with the Salesforce CRM platform. |
 | [**Stripe**](#stripe-connector) | Payment processing and billing with Stripe. |
+| [**n8n**](#n8n-connector) | Triggering n8n workflows (webhooks) and querying the n8n Public API. |
 
 ## Connector version pinning (release safety)
 
@@ -242,3 +243,61 @@ When you select a Stripe operation in your workflow, you will need to fill in so
 **Preventing Duplicate Charges (idempotency_key):**
 - All actions have an optional `idempotency_key` parameter. This is a unique transaction label (for example, `"order_12345"`). 
 - If your workflow accidentally runs the same task twice, Stripe will check this key. If it sees the same key from earlier that day, it realizes it was already processed and strictly prevents the customer from being charged twice.
+
+---
+
+### n8n Connector
+
+The n8n Connector lets M8Flow Service Tasks orchestrate [n8n](https://n8n.io/) automations. It supports two integration styles:
+![alt text](image.png)
+
+- **Webhook trigger** (`n8n/TriggerWorkflow`) — fire any workflow that starts with a **Webhook** node by calling its webhook URL (works for AI/LLM and document-processing workflows; pass your data in the `payload`).
+- **Public API queries** (`n8n/ListWorkflows`, `n8n/GetWorkflow`, `n8n/ListExecutions`, `n8n/GetExecution`) — read workflows and inspect executions via the n8n Public API.
+
+> **Pre-release note:** This connector is currently pinned in `pyproject.toml` to a feature branch on a fork (`abilpraju-aot/m8flow-connectors`), not to an `m8flow-connectors` release tag. Pin it to a release tag before shipping it in an m8flow release (see [Connector version pinning](#connector-version-pinning-release-safety)).
+
+> **Networking (important):** `base_url` and `webhook_url` must be reachable **from the connector-proxy container**, not from your browser. `localhost`/`127.0.0.1` resolves to the proxy container itself. For an n8n running on the Docker host use `"http://host.docker.internal:5678"`; otherwise use a publicly reachable URL or tunnel host. Do **not** use the n8n editor URL (e.g. `.../workflow/...`).
+
+**Prerequisites (n8n Public API key):**
+The four API-based operators require a Public API key. In n8n, go to **Settings → n8n API**, create a key, and store it securely in M8Flow Secrets (referenced as `"M8FLOW_SECRET:N8N_API_KEY"`). It is sent as the `X-N8N-API-KEY` header and is never logged. The `TriggerWorkflow` (webhook) operator does **not** need an API key.
+
+**Configuration in Service Task:**
+Select an **Operator ID** from the list below and provide its parameters. Strings must be enclosed in double quotes; integers are plain numbers; booleans use standard types (`True`/`False`).
+
+- **`n8n/TriggerWorkflow`** — call a workflow's Webhook node.
+  - `webhook_url` (Required, String): Full webhook URL (e.g. `"http://host.docker.internal:5678/webhook/abc-123"`).
+  - `method` (Optional, String): HTTP method the webhook expects — `"POST"` (default), `"GET"`, `"PUT"`, `"PATCH"`, or `"DELETE"`.
+  - `payload` (Optional, JSON Object): Data to send. Sent as a JSON body for non-GET methods, or as query params for GET.
+  - `auth_type` (Optional, String): `"none"` (default), `"header"` (custom header), or `"basic"` (HTTP basic), matching the n8n Webhook node's auth setting.
+  - `auth_header_name` / `auth_header_value` (String): Used when `auth_type` is `"header"` (e.g. name `"Authorization"`). Store the value via a secret.
+  - `username` / `password` (String): Used when `auth_type` is `"basic"`. Store the password via a secret.
+
+- **`n8n/ListWorkflows`** — list workflows.
+  - `base_url` (Required, String) and `api_key` (Required, String — use a secret).
+  - `active` (Optional, String): `"true"`, `"false"`, or `""` for all (default).
+  - `limit` (Optional, Integer): Max results, 1–250 (default `100`).
+  - `cursor` (Optional, String): Pagination cursor from a previous response's `nextCursor`.
+
+- **`n8n/GetWorkflow`** — fetch one workflow's details.
+  - `base_url`, `api_key`, and `workflow_id` (all Required, String).
+
+- **`n8n/ListExecutions`** — list executions.
+  - `base_url` (Required, String) and `api_key` (Required, String — use a secret).
+  - `workflow_id` (Optional, String): Restrict to a single workflow.
+  - `status` (Optional, String): `"success"`, `"error"`, `"waiting"`, or `""` for all (default).
+  - `limit` (Optional, Integer): Max results, 1–250 (default `100`).
+  - `cursor` (Optional, String): Pagination cursor.
+
+- **`n8n/GetExecution`** — fetch one execution's status/result.
+  - `base_url`, `api_key`, and `execution_id` (all Required, String).
+  - `include_data` (Optional, Boolean): `True` to include the full execution result data; default `False`.
+
+**Handling Responses:**
+All operators return a `command_response_version: 2` envelope. The parsed n8n JSON is available under `command_response.parsed_body`, with the HTTP status under `command_response.http_status`. Use a Script Task or Post-Script to read it:
+```python
+# Extract the n8n payload and status from a Service Task response
+parsed = response.get("command_response", {}).get("parsed_body", {})
+status = response.get("command_response", {}).get("http_status")
+```
+
+> **Errors are returned as data, not raised.** n8n failures (auth, not-found, request errors) are surfaced **inside** `command_response.parsed_body` as `{"error_code": ..., "message": ...}` with the failing `http_status` — the top-level `error` stays `null`. This is deliberate: it lets your workflow branch on or display the failure instead of suspending the process instance (which the UI shows as an infinite spinner). Check `http_status` (or the presence of `error_code` in `parsed_body`) in a gateway to handle failures.
