@@ -35,6 +35,14 @@ const masterRealmIdentifier =
   rootEnv.M8FLOW_KEYCLOAK_MASTER_REALM ??
   process.env.VITE_M8FLOW_KEYCLOAK_MASTER_REALM ??
   'master';
+const celeryFlowerUrl =
+  rootEnv.M8FLOW_CELERY_FLOWER_URL ??
+  process.env.VITE_M8FLOW_CELERY_FLOWER_URL ??
+  'http://localhost:6850';
+const natsUiUrl =
+  rootEnv.M8FLOW_NATS_UI_URL ??
+  process.env.VITE_M8FLOW_NATS_UI_URL ??
+  '';
 
 export default defineConfig({
   base: '/',
@@ -43,6 +51,8 @@ export default defineConfig({
     'import.meta.env.VITE_MULTI_TENANT_ON': JSON.stringify(multiTenantOn),
     'import.meta.env.VITE_M8FLOW_KEYCLOAK_SHARED_REALM': JSON.stringify(sharedRealmIdentifier),
     'import.meta.env.VITE_M8FLOW_KEYCLOAK_MASTER_REALM': JSON.stringify(masterRealmIdentifier),
+    'import.meta.env.VITE_M8FLOW_CELERY_FLOWER_URL': JSON.stringify(celeryFlowerUrl),
+    'import.meta.env.VITE_M8FLOW_NATS_UI_URL': JSON.stringify(natsUiUrl),
   },
   test: {
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],

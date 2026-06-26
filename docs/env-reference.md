@@ -38,6 +38,15 @@ Also align URL-style settings with the above (e.g. `M8FLOW_BACKEND_URL`, `KEYCLO
 - `M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_ALIAS` (optional): Organization alias the Keycloak bootstrap ensures exists inside the shared realm. Default: the shared realm name, usually `m8flow`.
 - `M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_NAME` (optional): Display name used when the bootstrap creates the default shared-realm organization. Default: the default organization alias.
 
+## Frontend monitoring dashboards (super-admin)
+
+The UI embeds the Celery and NATS operations dashboards as super-admin-only sections (sidebar **Celery** / **NATS**) via an iframe, so operators no longer leave the app. URLs must be **browser-reachable** (resolved from the user's browser, not from inside a container).
+
+- `M8FLOW_CELERY_FLOWER_URL` (optional): URL of the Celery Flower dashboard embedded in the **Celery** section. Default `http://localhost:6850` (matches `M8FLOW_BACKEND_CELERY_FLOWER_PORT`). Flower keeps its own basic auth (`M8FLOW_BACKEND_CELERY_FLOWER_BASIC_AUTH`), so a basic-auth prompt may appear inside the embedded frame.
+- `M8FLOW_NATS_UI_URL` (optional): URL of the NATS NUI dashboard embedded in the **NATS** section. **Empty by default**, which hides the NATS section entirely (NATS is disabled by default). When running the optional [m8flow-nats-docker-compose.yml](../docker/m8flow-nats-docker-compose.yml), set e.g. `http://localhost:6852` (matches `M8FLOW_NATS_UI_PORT`).
+
+Both are consumed by the frontend at build time (`VITE_*`) and at runtime in Docker (injected into `window.spiffworkflowFrontendJsenv` by [docker/scripts/m8flow_frontend_entrypoint.sh](../docker/scripts/m8flow_frontend_entrypoint.sh)). If an embedded dashboard refuses framing (e.g. via `X-Frame-Options`), the section shows an "Open in new tab" fallback.
+
 ## Connector attachment paths
 
 For SMTP and Slack connectors:
