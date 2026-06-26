@@ -49,7 +49,9 @@ def test_super_admin_tenant_edit_control_available(super_admin_page: Page) -> No
     page = super_admin_page
     setup_super_admin_session(page, tenants=_TENANTS)
     navigate_to_tenants(page)
-    edit_btn = page.get_by_test_id("tenant-edit-button-t-m8flow-001")
+    # The edit control lives inside the expandable tenant row; open it first.
+    page.get_by_test_id("tenant-accordion-summary-t-m8flow-001").click()
+    edit_btn = page.get_by_test_id("tenant-inline-edit-button-t-m8flow-001")
     expect(edit_btn).to_be_visible(timeout=ELEMENT_TIMEOUT)
     expect(edit_btn).to_be_enabled()
     logger.info("Super-admin sees an enabled tenant edit control.")
@@ -61,11 +63,14 @@ def test_super_admin_tenant_user_group_management_available(
     page = super_admin_page
     setup_super_admin_session(page, tenants=_TENANTS)
     navigate_to_tenants(page)
-    # The "Manage Tenant Groups" / roles control is the entry point for tenant
-    # user and group management -- available (enabled) to super admins.
-    roles_btn = page.get_by_test_id("tenant-roles-button-t-m8flow-001")
-    expect(roles_btn).to_be_visible(timeout=ELEMENT_TIMEOUT)
-    expect(roles_btn).to_be_enabled()
+    # Expanding the tenant row reveals the embedded user/group management panel
+    # (members + groups sections) -- the entry point for super admins.
+    page.get_by_test_id("tenant-accordion-summary-t-m8flow-001").click()
+    roles_panel = page.get_by_test_id("tenant-role-panel")
+    expect(roles_panel).to_be_visible(timeout=ELEMENT_TIMEOUT)
+    expect(
+        page.get_by_test_id("tenant-members-section-header")
+    ).to_be_visible(timeout=ELEMENT_TIMEOUT)
     logger.info("Super-admin sees the tenant user/group management entry point.")
 
 
