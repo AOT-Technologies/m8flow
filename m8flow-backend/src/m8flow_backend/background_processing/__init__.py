@@ -99,8 +99,12 @@ def rebrand_celery_tasks(flask_app: Any) -> None:
     tasks_to_rename = _iter_tasks_to_rebrand(celery_app, old_prefix)
     for old_name, new_name in tasks_to_rename:
         if new_name in celery_app.tasks:
-            # New name already registered (m8flow defines its own version) — just remove the old upstream name.
-            celery_app.tasks.pop(old_name, None)
+            # m8flow already defines its own task under new_name (a thin wrapper). That wrapper
+            # delegates to the upstream task via a Celery lazy Proxy (from @shared_task) that
+            # resolves by old_name at call time (e.g. _upstream_process_instance_run.run(...)).
+            # Popping old_name here would make that proxy raise NotRegistered on every run,
+            # so leave the upstream registration in place. Dispatch still uses the new names
+            # (producer constants are patched below); cosmetic cost is that Flower lists both.
             continue
         task = celery_app.tasks.pop(old_name, None)
         if task is None:
