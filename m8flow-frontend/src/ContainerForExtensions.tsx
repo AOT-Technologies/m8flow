@@ -60,6 +60,8 @@ const ProcessModelShowWithSaveAsTemplate = lazy(
 );
 const ConnectorsPage = lazy(() => import('./views/Connectors'));
 const ConnectorConfigurePage = lazy(() => import('./views/ConnectorConfigure'));
+const MonitoringCeleryPage = lazy(() => import('./views/MonitoringCeleryPage'));
+const MonitoringNatsPage = lazy(() => import('./views/MonitoringNatsPage'));
 
 // M8Flow Extension: clear tenant from localStorage on logout so next visit shows tenant selection
 const originalDoLogout = UserService.doLogout;
@@ -230,7 +232,7 @@ const fadeOutImmediate = 'fadeOutImmediate';
 
 export default function ContainerForExtensions() {
   const { t } = useTranslation();
-  const { ENABLE_MULTITENANT } = useConfig();
+  const { ENABLE_MULTITENANT, NATS_MONITORING_ENABLED } = useConfig();
   const [backendIsUp, setBackendIsUp] = useState<boolean | null>(null);
   const [canAccessFrontend, setCanAccessFrontend] = useState<boolean>(true);
   const [extensionUxElements, setExtensionUxElements] = useState<
@@ -570,6 +572,29 @@ export default function ContainerForExtensions() {
             path="process-models/:process_model_id"
             element={<ProcessModelShowWithSaveAsTemplate />}
           />
+          {/* M8Flow Extension: Super-admin-only monitoring dashboards (Celery / NATS) */}
+          <Route
+            path="monitoring/celery"
+            element={
+              !permissionsLoaded
+                ? null
+                : UserService.isSuperAdmin()
+                  ? <MonitoringCeleryPage />
+                  : <Navigate to="/" replace />
+            }
+          />
+          {NATS_MONITORING_ENABLED && (
+            <Route
+              path="monitoring/nats"
+              element={
+                !permissionsLoaded
+                  ? null
+                  : UserService.isSuperAdmin()
+                    ? <MonitoringNatsPage />
+                    : <Navigate to="/" replace />
+              }
+            />
+          )}
           <Route path="extensions/:page_identifier" element={<Extension />} />
           <Route path="login" element={<TenantAwareLogin />} />
           {/* Route guard: redirect users without process instance read access to home */}

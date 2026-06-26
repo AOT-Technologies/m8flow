@@ -38,6 +38,8 @@ import {
   Hub,
   Business,
   CorporateFare,
+  Speed,
+  Storage,
 } from "@mui/icons-material";
 import { Link, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -59,6 +61,11 @@ import {
   NavItem,
 } from "@spiffworkflow-frontend/interfaces";
 import { usePermissionFetcher } from "@spiffworkflow-frontend/hooks/PermissionService";
+import { useConfig } from "../utils/useConfig";
+
+// Nav items that are visible only to super-admins (e.g. infra monitoring) cannot rely on a
+// backend permission URI, so we gate them with an explicit flag checked against UserService.
+type M8FlowNavItem = NavItem & { superAdminOnly?: boolean };
 
 const drawerWidth = 350;
 const collapsedDrawerWidth = 64;
@@ -84,6 +91,8 @@ const routeIdentifiers = {
   CONNECTORS: "connectors",
   TEMPLATES: "templates",
   TENANT_MANAGEMENT: "tenantManagement",
+  MONITORING_CELERY: "monitoringCelery",
+  MONITORING_NATS: "monitoringNats",
 };
 
 function SideNav({
@@ -102,6 +111,7 @@ function SideNav({
   const { t, i18n } = useTranslation();
 
   const { targetUris } = useUriListForPermissions();
+  const { NATS_MONITORING_ENABLED } = useConfig();
   const permissionRequestData: PermissionsToCheck = {
     [targetUris.messageInstanceListPath]: ["GET"],
     [targetUris.processGroupListPath]: ["GET"],
@@ -136,6 +146,10 @@ function SideNav({
     selectedTab = routeIdentifiers.TEMPLATES;
   } else if (location.pathname.startsWith("/tenant-management")) {
     selectedTab = routeIdentifiers.TENANT_MANAGEMENT;
+  } else if (location.pathname.startsWith("/monitoring/celery")) {
+    selectedTab = routeIdentifiers.MONITORING_CELERY;
+  } else if (location.pathname.startsWith("/monitoring/nats")) {
+    selectedTab = routeIdentifiers.MONITORING_NATS;
   }
 
   const versionInfo = appVersionInfo();
@@ -223,7 +237,7 @@ function SideNav({
     </SpiffTooltip>
   );
 
-  const navItems: NavItem[] = [
+  const navItems: M8FlowNavItem[] = [
     {
       text: t("home"),
       icon: <Home />,
@@ -282,6 +296,24 @@ function SideNav({
       id: routeIdentifiers.TENANT_MANAGEMENT,
       permissionRoutes: [targetUris.m8flowTenantManagementPath],
     },
+    {
+      text: t("celery_monitoring"),
+      icon: <Speed />,
+      route: "/monitoring/celery",
+      id: routeIdentifiers.MONITORING_CELERY,
+      superAdminOnly: true,
+    },
+    ...(NATS_MONITORING_ENABLED
+      ? [
+          {
+            text: t("nats_monitoring"),
+            icon: <Storage />,
+            route: "/monitoring/nats",
+            id: routeIdentifiers.MONITORING_NATS,
+            superAdminOnly: true,
+          },
+        ]
+      : []),
   ];
 
   const extensionHeaderMenuItemElement = (uxElement: UiSchemaUxElement) => {
@@ -324,7 +356,11 @@ function SideNav({
     );
   };
 
-  const checkUserHasAccessToNavItem = (item: NavItem) => {
+  const checkUserHasAccessToNavItem = (item: M8FlowNavItem) => {
+    if (item.superAdminOnly) {
+      return UserService.isSuperAdmin();
+    }
+
     if (!("permissionRoutes" in item)) {
       return true;
     }

@@ -399,6 +399,10 @@ services:
       BACKEND_BASE_URL: "${M8FLOW_FRONTEND_BACKEND_BASE_URL:-http://localhost:6840}"
       M8FLOW_KEYCLOAK_SHARED_REALM: "${M8FLOW_KEYCLOAK_SHARED_REALM:-m8flow}"
       M8FLOW_KEYCLOAK_MASTER_REALM: "${M8FLOW_KEYCLOAK_MASTER_REALM:-master}"
+      # Super-admin monitoring dashboards embedded in the UI (browser-reachable URLs).
+      M8FLOW_CELERY_FLOWER_URL: "${M8FLOW_CELERY_FLOWER_URL:-http://localhost:6850}"
+      # Leave empty to hide the NATS section; set when running the optional NATS compose.
+      M8FLOW_NATS_UI_URL: "${M8FLOW_NATS_UI_URL:-}"
     ports:
       - "${M8FLOW_FRONTEND_PORT:-6841}:8080"
     depends_on:
