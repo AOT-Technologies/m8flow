@@ -8,7 +8,7 @@ Provides tools to:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from src.api_client import M8flowAPIClient
 from src.utils.context import get_auth_token
@@ -32,7 +32,7 @@ CONNECTOR_DESCRIPTIONS = {
 }
 
 
-def register_connector_tools(mcp: "FastMCP") -> None:
+def register_connector_tools(mcp: FastMCP) -> None:
     """Register all connector-related MCP tools.
 
     Args:
@@ -322,7 +322,7 @@ def register_connector_tools(mcp: "FastMCP") -> None:
                     output.append(f"**Description:** {description}\n")
 
                 if match["type"] == "connector":
-                    output.append(f"**Match:** Full connector match\n")
+                    output.append("**Match:** Full connector match\n")
                     output.append(f"**Total Operations:** {conn.get('operationCount', 0)}\n")
                 else:
                     output.append(f"**Matching Operations:** {len(matched_ops)}\n")
