@@ -20,6 +20,54 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 client = M8flowAPIClient()
 
+
+async def _get_grouped_connectors(token: str) -> list[dict]:
+    """Fetch service tasks and group them by connector.
+
+    Args:
+        token: Authentication token
+
+    Returns:
+        List of connectors with their operations
+    """
+    service_tasks = await client.get("/v1.0/service-tasks", token)
+
+    # Group by connector
+    connectors_map = {}
+    for task in service_tasks:
+        task_id = task.get("id", "")
+        if "/" in task_id:
+            connector_id = task_id.split("/")[0]
+            operation_name = task_id.split("/")[1] if len(task_id.split("/")) > 1 else task_id
+
+            if connector_id not in connectors_map:
+                connectors_map[connector_id] = {
+                    "id": connector_id,
+                    "name": connector_id.replace("_", " ").title(),
+                    "description": CONNECTOR_DESCRIPTIONS.get(connector_id, ""),
+                    "operations": [],
+                    "operationCount": 0,
+                }
+
+            # Build operation object
+            import re
+            # Convert camelCase to Title Case (e.g., "GetRequest" -> "Get Request")
+            formatted_name = re.sub(r'([A-Z])', r' \1', operation_name).strip()
+
+            operation = {
+                "id": task_id,
+                "name": formatted_name,
+                "rawName": operation_name,
+                "description": "",
+                "parameters": task.get("parameters", []),
+            }
+
+            connectors_map[connector_id]["operations"].append(operation)
+            connectors_map[connector_id]["operationCount"] += 1
+
+    return list(connectors_map.values())
+
+
 # Connector metadata enrichment
 CONNECTOR_DESCRIPTIONS = {
     "http": "Make REST API calls (GET, POST, PUT, PATCH, DELETE, HEAD) to external services",
@@ -51,7 +99,7 @@ def register_connector_tools(mcp: FastMCP) -> None:
         token = get_auth_token()
 
         try:
-            connectors = await client.get("/connectors-grouped", token)
+            connectors = await _get_grouped_connectors(token)
 
             if not connectors:
                 return "No connectors available"
@@ -101,7 +149,7 @@ def register_connector_tools(mcp: FastMCP) -> None:
         token = get_auth_token()
 
         try:
-            connectors = await client.get("/connectors-grouped", token)
+            connectors = await _get_grouped_connectors(token)
 
             # Find the connector
             connector = None
@@ -167,7 +215,7 @@ def register_connector_tools(mcp: FastMCP) -> None:
         token = get_auth_token()
 
         try:
-            connectors = await client.get("/connectors-grouped", token)
+            connectors = await _get_grouped_connectors(token)
 
             # Find the operation
             operation = None
@@ -253,7 +301,7 @@ def register_connector_tools(mcp: FastMCP) -> None:
         token = get_auth_token()
 
         try:
-            connectors = await client.get("/connectors-grouped", token)
+            connectors = await _get_grouped_connectors(token)
 
             query_lower = query.lower()
             matches = []
