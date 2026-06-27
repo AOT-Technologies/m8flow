@@ -13,6 +13,7 @@ def register_tools(mcp: "FastMCP") -> None:
         mcp: FastMCP server instance
     """
     # Import tool registration functions
+    from src.mcp_tools.connectors import register_connector_tools
     from src.mcp_tools.count_tools import register_count_tools
     from src.mcp_tools.documentation_tool import register_documentation_tool
     from src.mcp_tools.error_management import register_error_tools
@@ -33,6 +34,9 @@ def register_tools(mcp: "FastMCP") -> None:
     register_process_instance_tools(mcp)
     register_task_tools(mcp)
     register_template_tools(mcp)  # Templates: Path is /v1.0/m8flow/templates
+
+    # Register connector tools (43 operations across 7 connectors)
+    register_connector_tools(mcp)
 
     # Register visualization tools (INDUSTRY FIRST - visual BPMN in browser!)
     register_visualization_tools(mcp)
