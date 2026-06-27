@@ -17,13 +17,14 @@ M8Flow MCP enables Claude Desktop to interact with M8Flow's BPMN workflow automa
 
 ## ✨ **Key Features**
 
-### **25 Tools Available:**
+### **29 Tools Available:**
 - **Process Groups** (5 tools) - Organize workflows
 - **Process Models** (5 tools) - Manage BPMN definitions
 - **Process Instances** (5 tools) - Execute & monitor workflows
 - **Tasks** (4 tools) - Handle user tasks
 - **Templates** (3 tools) - Pre-built workflows
 - **Visualization** (3 tools) - Retrieve BPMN XML content
+- **Connectors** (4 tools) - Explore and use 43 connector operations
 
 ### **BPMN Content Retrieval:**
 - Get BPMN XML for workflows, templates, and instances
