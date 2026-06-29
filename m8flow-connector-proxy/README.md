@@ -51,7 +51,7 @@ Connectors are directly integrated into the M8Flow process modeler and are confi
 
 To use a connector in your workflow:
 1. Select a **Service Task** element in your BPMN diagram.
-2. In the properties panel on the right side of the screen, expand the **M8flow Service Properties** section.
+2. In the properties panel on the right side of the screen, expand the **M8flow Connectors** section.
 3. Use the **Operator ID** dropdown to browse and select the specific connector service and operation you wish to execute.
 
 
