@@ -132,6 +132,26 @@ const GITHUB_CONNECTOR = {
   ],
 };
 
+const SMTP_CONNECTOR = {
+  id: 'smtp',
+  name: 'SMTP',
+  description: 'SMTP',
+  status: 'available',
+  icon: 'email',
+  operationCount: 1,
+  operations: [],
+  configFields: [
+    {
+      id: 'port',
+      secretKey: 'SMTP_PORT',
+      label: 'Port',
+      type: 'text',
+      required: true,
+      format: 'port',
+    },
+  ],
+};
+
 const renderPage = () =>
   render(
     <MemoryRouter>
@@ -224,5 +244,77 @@ describe('ConnectorConfigure existence detection', () => {
     ).toBeInTheDocument();
     // Nothing persisted.
     expect(h.calls.some((c) => c.path.startsWith('/secrets/'))).toBe(false);
+  });
+});
+
+describe('ConnectorConfigure input validation', () => {
+  beforeEach(() => {
+    h.connectorsResponse = [SMTP_CONNECTOR];
+    h.params = { connectorId: 'smtp' };
+    h.secretsPages = { '1': { results: [], pagination: { pages: 1 } } };
+  });
+
+  it('shows a format error, disables Save, and blocks submission for an invalid port', async () => {
+    renderPage();
+    const input = (
+      await screen.findByTestId('connector-config-field-port')
+    ).querySelector('input')!;
+
+    fireEvent.change(input, { target: { value: '0' } });
+
+    expect(
+      await screen.findByText('connector_config_invalid_port'),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('connector-config-save')).toBeDisabled();
+
+    // Even forcing a click persists nothing (the load-time GET aside, no write).
+    fireEvent.click(screen.getByTestId('connector-config-save'));
+    expect(
+      h.calls.some(
+        (c) =>
+          (c.httpMethod === 'POST' || c.httpMethod === 'PUT') &&
+          c.path.startsWith('/secrets'),
+      ),
+    ).toBe(false);
+  });
+
+  it('re-enables Save once the value is corrected and persists the trimmed value', async () => {
+    renderPage();
+    const input = (
+      await screen.findByTestId('connector-config-field-port')
+    ).querySelector('input')!;
+
+    fireEvent.change(input, { target: { value: '0' } });
+    expect(screen.getByTestId('connector-config-save')).toBeDisabled();
+
+    // Correct it (with surrounding whitespace that must be trimmed away).
+    fireEvent.change(input, { target: { value: '  587  ' } });
+    await waitFor(() =>
+      expect(screen.getByTestId('connector-config-save')).not.toBeDisabled(),
+    );
+
+    fireEvent.click(screen.getByTestId('connector-config-save'));
+
+    await waitFor(() => {
+      const post = h.calls.find(
+        (c) => c.path === '/secrets' && c.httpMethod === 'POST',
+      );
+      expect(post).toBeTruthy();
+      expect(post.postBody).toEqual({ key: 'SMTP_PORT', value: '587' });
+    });
+  });
+
+  it('rejects a whitespace-only value', async () => {
+    renderPage();
+    const input = (
+      await screen.findByTestId('connector-config-field-port')
+    ).querySelector('input')!;
+
+    fireEvent.change(input, { target: { value: '   ' } });
+
+    expect(
+      await screen.findByText('connector_config_whitespace_only'),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('connector-config-save')).toBeDisabled();
   });
 });
