@@ -21,6 +21,8 @@ import ZoomScrollModule from 'diagram-js/lib/navigation/zoomscroll';
 // @ts-expect-error TS(7016) FIXME
 import spiffworkflow from 'bpmn-js-spiffworkflow/app/spiffworkflow';
 import spiffModdleExtension from 'bpmn-js-spiffworkflow/app/spiffworkflow/moddle/spiffworkflow.json';
+// @ts-expect-error TS(7016) FIXME
+import m8flowExternalForm from './bpmn';
 import BpmnJsScriptIcon from '@spiffworkflow-frontend/icons/bpmn_js_script_icon.svg';
 import { getBpmnProcessIdentifiers } from '@spiffworkflow-frontend/helpers';
 import { TASK_METADATA } from '@spiffworkflow-frontend/config';
@@ -276,6 +278,7 @@ export function useDiagramModeler(options: UseDiagramModelerOptions) {
         propertiesPanel: { parent: `#${panelId}` },
         additionalModules: [
           spiffworkflow,
+          m8flowExternalForm,
           BpmnPropertiesPanelModule,
           BpmnPropertiesProviderModule,
           ZoomScrollModule,

@@ -22,6 +22,7 @@ from m8flow_backend.models.m8flow_tenant import M8flowTenantModel  # noqa: F401
 from m8flow_backend.models.template import TemplateModel  # noqa: F401
 from m8flow_backend.models.process_model_template import ProcessModelTemplateModel  # noqa: F401
 from m8flow_backend.models.nats_token import NatsTokenModel  # noqa: F401
+from m8flow_backend.models.external_form_request import ExternalFormRequestModel  # noqa: F401
 
 
 _PATCHED = False
