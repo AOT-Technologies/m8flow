@@ -142,6 +142,7 @@ vi.mock("../services/UserService", () => ({
   default: {
     rememberTenantDisplayName: (...args: unknown[]) =>
       mockRememberTenantDisplayName(...args),
+    isSuperAdmin: () => false,
   },
 }));
 
