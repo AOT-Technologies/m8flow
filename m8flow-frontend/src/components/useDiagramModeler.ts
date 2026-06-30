@@ -176,7 +176,7 @@ export function useDiagramModeler(options: UseDiagramModelerOptions) {
 
     const propertiesPanelParent = document.getElementById(panelId);
 
-    // Keep 'M8flow Service Properties' open across panel rebuilds triggered by elements.changed.
+    // Keep 'M8flow Connectors' open across panel rebuilds triggered by elements.changed.
     const isGroupOpen = (group: HTMLElement): boolean => {
       if (group.classList.contains('open')) return true;
       const header = group.querySelector(':scope > .bio-properties-panel-group-header');
