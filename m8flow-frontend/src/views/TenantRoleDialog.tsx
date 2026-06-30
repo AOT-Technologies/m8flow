@@ -34,6 +34,7 @@ import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import PersonAddAlt1Icon from "@mui/icons-material/PersonAddAlt1";
 import SearchIcon from "@mui/icons-material/Search";
+import SendIcon from "@mui/icons-material/Send";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { InputHTMLAttributes } from "react";
 import { useTranslation } from "react-i18next";
@@ -48,6 +49,9 @@ import TenantService, {
   TenantMemberRole,
   validateTenantGroupName,
 } from "../services/TenantService";
+import UserService from "../services/UserService";
+import InviteUserDialog from "./InviteUserDialog";
+import PendingInvitationsPanel from "./PendingInvitationsPanel";
 
 interface TenantRoleDialogProps {
   open?: boolean;
@@ -205,6 +209,9 @@ export default function TenantRoleDialog({
   const [memberForm, setMemberForm] = useState<AddTenantMemberFormState>(
     emptyAddMemberForm(),
   );
+  const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
+  const [invitationsRefreshKey, setInvitationsRefreshKey] = useState(0);
+  const canManageInvitations = UserService.isSuperAdmin();
   const skipNextMemberSearchEffectRef = useRef(false);
   const skipNextGroupSearchEffectRef = useRef(false);
   const skipNextAvailableUserSearchEffectRef = useRef(false);
@@ -1240,15 +1247,28 @@ export default function TenantRoleDialog({
                         ),
                       }}
                     />
-                    <Button
-                      variant="contained"
-                      startIcon={<PersonAddAlt1Icon />}
-                      onClick={handleOpenAddMemberDialog}
-                      disabled={!tenant}
-                      data-testid="tenant-member-add-button"
-                    >
-                      {translate("add_tenant_user", "Add Member")}
-                    </Button>
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                      {canManageInvitations && (
+                        <Button
+                          variant="outlined"
+                          startIcon={<SendIcon />}
+                          onClick={() => setIsInviteDialogOpen(true)}
+                          disabled={!tenant}
+                          data-testid="tenant-invite-user-button"
+                        >
+                          {translate("invite_user", "Invite User")}
+                        </Button>
+                      )}
+                      <Button
+                        variant="contained"
+                        startIcon={<PersonAddAlt1Icon />}
+                        onClick={handleOpenAddMemberDialog}
+                        disabled={!tenant}
+                        data-testid="tenant-member-add-button"
+                      >
+                        {translate("add_tenant_user", "Add Member")}
+                      </Button>
+                    </Box>
                   </Box>
                   {isLoadingMembers ? (
                     <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}>
@@ -1445,6 +1465,13 @@ export default function TenantRoleDialog({
                 </Box>
               </Collapse>
             </Box>
+
+            {canManageInvitations && (
+              <PendingInvitationsPanel
+                tenantId={tenant?.id ?? null}
+                refreshKey={invitationsRefreshKey}
+              />
+            )}
 
             <Box sx={SECTION_PANEL_SX}>
               <Box
@@ -2426,6 +2453,15 @@ export default function TenantRoleDialog({
           </Button>
         </DialogActions>
       </Dialog>
+
+      {canManageInvitations && (
+        <InviteUserDialog
+          open={isInviteDialogOpen}
+          tenantId={tenant?.id ?? null}
+          onClose={() => setIsInviteDialogOpen(false)}
+          onInvited={() => setInvitationsRefreshKey((value) => value + 1)}
+        />
+      )}
     </>
   );
 }

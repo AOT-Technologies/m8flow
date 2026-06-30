@@ -183,3 +183,37 @@ def nats_token_salt() -> str:
 def nats_url() -> str:
     """Get the NATS URL from environment variables."""
     return _get("M8FLOW_NATS_URL")
+
+
+def app_frontend_base_url() -> str:
+    """Base URL of the frontend, used to build invitation accept links.
+
+    Prefers an explicit M8FLOW_FRONTEND_BASE_URL, then the shared public base URL,
+    falling back to the local-dev frontend (http://localhost:6841)."""
+    raw = _get("M8FLOW_FRONTEND_BASE_URL") or app_public_base_url()
+    if not raw:
+        return "http://localhost:6841"
+    if "://" not in raw:
+        raw = "https://" + raw
+    return raw.rstrip("/")
+
+
+def smtp_settings() -> dict:
+    """SMTP configuration for outbound invitation email.
+
+    When host is unset, callers fall back to dev mode (log + return the link)."""
+    host = _get("M8FLOW_SMTP_HOST")
+    port_raw = _get("M8FLOW_SMTP_PORT") or "587"
+    try:
+        port = int(port_raw)
+    except (TypeError, ValueError):
+        port = 587
+    use_tls_raw = (_get("M8FLOW_SMTP_USE_TLS") or "true").lower()
+    return {
+        "host": host,
+        "port": port,
+        "username": _get("M8FLOW_SMTP_USERNAME"),
+        "password": _get("M8FLOW_SMTP_PASSWORD"),
+        "from_address": _get("M8FLOW_SMTP_FROM") or "no-reply@m8flow.local",
+        "use_tls": use_tls_raw in ("1", "true", "yes", "on"),
+    }

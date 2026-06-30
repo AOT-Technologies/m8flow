@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -10,6 +11,7 @@ from m8flow_backend.services.keycloak_service import (
     add_organization_group_member,
     create_organization_group,
     delete_organization_group,
+    delete_realm_user,
     get_master_admin_token,
     get_organization_by_id,
     get_organization_by_alias,
@@ -19,6 +21,7 @@ from m8flow_backend.services.keycloak_service import (
     get_realm_user_by_username,
     list_organization_group_members,
     list_organization_groups,
+    list_user_organizations,
     organization_group_role_names,
     rename_organization_group,
     remove_organization_group_member,
@@ -44,6 +47,8 @@ from spiffworkflow_backend.models.db import db
 from spiffworkflow_backend.models.user_group_assignment import UserGroupAssignmentModel
 from spiffworkflow_backend.services.authorization_service import AuthorizationService
 from spiffworkflow_backend.services.user_service import UserService
+
+logger = logging.getLogger(__name__)
 
 TENANT_GROUP_NAME_MAX_LENGTH = 64
 TENANT_GROUP_NAME_ALLOWED_PATTERN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9 _-]*[A-Za-z0-9])?$")
@@ -1269,7 +1274,43 @@ def remove_tenant_member(tenant_id: str, username: str) -> str:
 
     remove_organization_member(organization_id, member_id)
     _clear_local_tenant_assignments(local_user, tenant.id)
+    _delete_realm_user_if_orphaned(member_id, normalized_username)
     return normalized_username
+
+
+def _delete_realm_user_if_orphaned(member_id: str, username: str) -> None:
+    """Delete the shared-realm Keycloak user when they belong to no remaining organization.
+
+    Best-effort cleanup so a freed email can be invited again. Fail-closed: if the user's
+    remaining organizations cannot be determined, the account is left in place. Never raises
+    (the member has already been detached from the tenant by the caller).
+    """
+    try:
+        remaining_organizations = list_user_organizations(member_id)
+    except Exception:
+        logger.warning(
+            "tenant_invitation: could not determine remaining organizations for user %s; "
+            "leaving Keycloak account in place.",
+            username,
+            exc_info=True,
+        )
+        return
+
+    if remaining_organizations:
+        return
+
+    try:
+        delete_realm_user(member_id)
+        logger.info(
+            "tenant_invitation: deleted orphaned Keycloak user %s (no remaining organizations).",
+            username,
+        )
+    except Exception:
+        logger.warning(
+            "tenant_invitation: failed to delete orphaned Keycloak user %s.",
+            username,
+            exc_info=True,
+        )
 
 
 def add_tenant_group_member(tenant_id: str, username: str, group_name: str) -> dict[str, Any]:

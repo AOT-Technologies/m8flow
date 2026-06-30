@@ -306,3 +306,184 @@ describe("TenantService group name validation", () => {
     expect(callCount).toBe(2);
   });
 });
+
+describe("TenantService invitations", () => {
+  beforeEach(() => {
+    vi.mocked(HttpService.makeCallToBackend).mockReset();
+  });
+
+  const mockSuccess = (payload: unknown) => {
+    vi.mocked(HttpService.makeCallToBackend).mockImplementation((options: any) => {
+      options.successCallback?.(payload);
+    });
+  };
+
+  it("rejects creating an invitation with an empty email before any HTTP call", async () => {
+    await expect(
+      TenantService.createInvitation("tenant-1", { email: "  ", roles: ["editor"] }),
+    ).rejects.toThrow("Email cannot be empty");
+    expect(HttpService.makeCallToBackend).not.toHaveBeenCalled();
+  });
+
+  it("rejects creating an invitation with no roles before any HTTP call", async () => {
+    await expect(
+      TenantService.createInvitation("tenant-1", { email: "user@example.com", roles: [] }),
+    ).rejects.toThrow("At least one role is required");
+    expect(HttpService.makeCallToBackend).not.toHaveBeenCalled();
+  });
+
+  it("posts the create-invitation request and includes validity_days when provided", async () => {
+    mockSuccess({
+      tenant_id: "tenant-1",
+      invitation: { id: "inv-1", email: "user@example.com", status: "PENDING" },
+    });
+
+    await expect(
+      TenantService.createInvitation("tenant-1", {
+        email: "  user@example.com  ",
+        roles: ["editor", "viewer"],
+        validity_days: 7,
+      }),
+    ).resolves.toEqual({ id: "inv-1", email: "user@example.com", status: "PENDING" });
+
+    expect(HttpService.makeCallToBackend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/v1.0/m8flow/tenants/tenant-1/invitations",
+        httpMethod: "POST",
+        postBody: {
+          email: "user@example.com",
+          roles: ["editor", "viewer"],
+          validity_days: 7,
+        },
+      }),
+    );
+  });
+
+  it("omits validity_days from the create-invitation body when not provided", async () => {
+    mockSuccess({ tenant_id: "tenant-1", invitation: { id: "inv-1" } });
+
+    await TenantService.createInvitation("tenant-1", {
+      email: "user@example.com",
+      roles: ["editor"],
+    });
+
+    expect(HttpService.makeCallToBackend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        postBody: { email: "user@example.com", roles: ["editor"] },
+      }),
+    );
+  });
+
+  it("builds the list-invitations query with status, offset and clamped limit", async () => {
+    mockSuccess({
+      tenant_id: "tenant-1",
+      results: [{ id: "inv-1", email: "user@example.com", status: "PENDING" }],
+      total: 1,
+      offset: 0,
+      limit: 50,
+    });
+
+    await expect(
+      TenantService.listInvitations("tenant-1", { status: "PENDING", offset: -5, limit: 0 }),
+    ).resolves.toEqual({
+      results: [{ id: "inv-1", email: "user@example.com", status: "PENDING" }],
+      total: 1,
+      offset: 0,
+      limit: 50,
+    });
+
+    expect(HttpService.makeCallToBackend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/v1.0/m8flow/tenants/tenant-1/invitations?status=PENDING&offset=0&limit=1",
+        httpMethod: "GET",
+      }),
+    );
+  });
+
+  it("uses default offset and limit for list-invitations when options are omitted", async () => {
+    mockSuccess({ tenant_id: "tenant-1", results: [], total: 0, offset: 0, limit: 50 });
+
+    await TenantService.listInvitations("tenant-1");
+
+    expect(HttpService.makeCallToBackend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/v1.0/m8flow/tenants/tenant-1/invitations?offset=0&limit=50",
+      }),
+    );
+  });
+
+  it("posts the resend-invitation request to the resend endpoint", async () => {
+    mockSuccess({ tenant_id: "tenant-1", invitation: { id: "inv-1", status: "PENDING" } });
+
+    await expect(
+      TenantService.resendInvitation("tenant-1", "inv-1"),
+    ).resolves.toEqual({ id: "inv-1", status: "PENDING" });
+
+    expect(HttpService.makeCallToBackend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/v1.0/m8flow/tenants/tenant-1/invitations/inv-1/resend",
+        httpMethod: "POST",
+      }),
+    );
+  });
+
+  it("deletes the invitation when revoking", async () => {
+    mockSuccess({ tenant_id: "tenant-1", invitation: { id: "inv-1", status: "REVOKED" } });
+
+    await expect(
+      TenantService.revokeInvitation("tenant-1", "inv-1"),
+    ).resolves.toEqual({ id: "inv-1", status: "REVOKED" });
+
+    expect(HttpService.makeCallToBackend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/v1.0/m8flow/tenants/tenant-1/invitations/inv-1",
+        httpMethod: "DELETE",
+      }),
+    );
+  });
+
+  it("validates an invitation token with a URL-encoded query parameter", async () => {
+    const validation = {
+      email: "user@example.com",
+      tenant_id: "tenant-1",
+      tenant_name: "Acme Corp",
+      roles: ["editor"],
+      expires_at_in_seconds: 123,
+    };
+    mockSuccess(validation);
+
+    await expect(
+      TenantService.validateInvitation("raw token/with+chars"),
+    ).resolves.toEqual(validation);
+
+    expect(HttpService.makeCallToBackend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/v1.0/m8flow/invitations/validate?token=raw%20token%2Fwith%2Bchars",
+        httpMethod: "GET",
+      }),
+    );
+  });
+
+  it("posts the token and password when accepting an invitation", async () => {
+    const result = {
+      email: "user@example.com",
+      tenant_id: "tenant-1",
+      tenant_name: "Acme Corp",
+      roles: ["editor"],
+      smtp_configured: false,
+    };
+    mockSuccess(result);
+
+    await expect(
+      TenantService.acceptInvitation("raw-token", "password123"),
+    ).resolves.toEqual(result);
+
+    expect(HttpService.makeCallToBackend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/v1.0/m8flow/invitations/accept",
+        httpMethod: "POST",
+        postBody: { token: "raw-token", password: "password123" },
+      }),
+    );
+  });
+});

@@ -46,6 +46,8 @@ M8FLOW_AUTH_EXCLUSION_ADDITIONS = [
     "m8flow_backend.routes.keycloak_controller.get_current_user_organization_memberships",
     "m8flow_backend.tenancy.health_check",
     "m8flow_backend.routes.events_controller.m8flow_trigger",
+    "m8flow_backend.routes.tenant_invitation_controller.validate_invitation",
+    "m8flow_backend.routes.tenant_invitation_controller.accept_tenant_invitation",
 ]
 
 # Endpoints that still require authenticated users but must bypass the generic
