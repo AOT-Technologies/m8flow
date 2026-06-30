@@ -15,6 +15,7 @@ vi.mock("../services/UserService", () => ({
   default: {
     getTenantId: () => "tenant-1",
     getTenantName: () => "Tenant One",
+    isSuperAdmin: () => false,
     getOrganizationMemberships: () => [
       {
         alias: "tenant-one",

@@ -1016,7 +1016,7 @@ else
 
   echo "[keycloak-entrypoint] Setting sslRequired=NONE, loginTheme=m8flow, and aligned session timeouts on realms master, ${M8FLOW_REALM_NAME}..."
   for realm in master "${M8FLOW_REALM_NAME}"; do
-    if /opt/keycloak/bin/kcadm.sh update realms/${realm} -s sslRequired=NONE -s loginTheme=m8flow >/dev/null 2>&1 \
+    if /opt/keycloak/bin/kcadm.sh update realms/${realm} -s sslRequired=NONE -s loginTheme=m8flow -s registrationAllowed=false >/dev/null 2>&1 \
       && update_realm_session_timeouts "${realm}"; then
       echo "[keycloak-entrypoint] Realm ${realm}: sslRequired=NONE, loginTheme=m8flow, and session timeouts set successfully."
     else
@@ -1025,9 +1025,10 @@ else
   done
   if /opt/keycloak/bin/kcadm.sh update "realms/${M8FLOW_REALM_NAME}" \
     -s organizationsEnabled=true \
+    -s registrationAllowed=false \
     -s registrationEmailAsUsername=false \
     -s loginWithEmailAllowed=false 2>/dev/null; then
-    echo "[keycloak-entrypoint] Realm ${M8FLOW_REALM_NAME}: organizations and username-only login policy set successfully."
+    echo "[keycloak-entrypoint] Realm ${M8FLOW_REALM_NAME}: organizations, username-only login, and invitation-only registration policy set successfully."
   else
     echo "[keycloak-entrypoint] Realm ${M8FLOW_REALM_NAME}: failed to enforce organizations and username-only login policy." >&2
   fi
