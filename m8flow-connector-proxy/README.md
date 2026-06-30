@@ -91,7 +91,7 @@ data = response.get("command_response", {}).get("body", response)
 
 The SMTP Connector enables BPMN Service Tasks to send emails. It supports plain text, HTML email bodies, file attachments, and authenticated or unauthenticated SMTP configurations.
 
-![smtp](../docs/images/smtp.png)
+![smtp](../docs/images/smtpnew.png)
 
 > **Security Note:** Credentials should never be hardcoded in BPMN models. All sensitive data (such as `smtp_user` and `smtp_password`) must be configured securely via M8Flow Secrets and referenced in your workflow (e.g., `"M8FLOW_SECRET:SMTP_PASSWORD"`).
 
@@ -174,7 +174,7 @@ For rich, structured messages with buttons or complex layouts, you can provide a
 
 The Salesforce Connector integrates your M8Flow workflows with the Salesforce CRM REST API (v58.0), enabling seamless CRUD (Create, Read, Update, Delete) operations for the `Lead` and `Contact` objects.
 
-![salesforce-create-lead](../docs/images/salesforce-create-lead.png)
+![salesforce-create-lead](../docs/images/salesforce-create-leadnew.png)
 
 **Prerequisites (Salesforce Setup):**
 1. Log in to your Salesforce account (Developer Edition or Sandbox environments are highly recommended for testing purposes).
@@ -249,7 +249,7 @@ When you select a Stripe operation in your workflow, you will need to fill in so
 ### n8n Connector
 
 The n8n Connector lets M8Flow Service Tasks orchestrate [n8n](https://n8n.io/) automations. It supports two integration styles:
-![alt text](image.png)
+![alt text](image-1.png)
 
 - **Webhook trigger** (`n8n/TriggerWorkflow`) — fire any workflow that starts with a **Webhook** node by calling its webhook URL (works for AI/LLM and document-processing workflows; pass your data in the `payload`).
 - **Public API queries** (`n8n/ListWorkflows`, `n8n/GetWorkflow`, `n8n/ListExecutions`, `n8n/GetExecution`) — read workflows and inspect executions via the n8n Public API.
