@@ -252,6 +252,64 @@ interface TenantGroupRoleMutationResponse {
     group: TenantGroup;
 }
 
+export type TenantInvitationStatus = "PENDING" | "ACCEPTED" | "REVOKED" | "EXPIRED";
+
+export interface TenantInvitation {
+    id: string;
+    tenant_id: string;
+    email: string;
+    roles: TenantMemberRole[];
+    status: TenantInvitationStatus;
+    expires_at_in_seconds: number;
+    accepted_at_in_seconds: number | null;
+    created_by: string;
+    created_at_in_seconds: number;
+    // Only present in dev mode when SMTP is not configured.
+    invitation_link?: string;
+}
+
+export interface CreateTenantInvitationRequest {
+    email: string;
+    roles: TenantMemberRole[];
+    validity_days?: number;
+}
+
+interface TenantInvitationResponse {
+    tenant_id: string;
+    invitation: TenantInvitation;
+}
+
+interface TenantInvitationListResponse {
+    tenant_id: string;
+    results: TenantInvitation[];
+    total: number;
+    offset: number;
+    limit: number;
+}
+
+export interface TenantInvitationsPage {
+    results: TenantInvitation[];
+    total: number;
+    offset: number;
+    limit: number;
+}
+
+export interface InvitationValidation {
+    email: string;
+    tenant_id: string;
+    tenant_name: string;
+    roles: TenantMemberRole[];
+    expires_at_in_seconds: number;
+}
+
+export interface AcceptInvitationResult {
+    email: string;
+    tenant_id: string;
+    tenant_name: string;
+    roles: TenantMemberRole[];
+    smtp_configured: boolean;
+}
+
 const normalizeTenantMember = (member: TenantMember): TenantMember => ({
     ...member,
     groups: member.groups ?? [],
@@ -771,6 +829,131 @@ const TenantService = {
                 httpMethod: "DELETE",
                 successCallback: (response: { member: TenantMember }) =>
                     resolve(normalizeTenantMember(response.member)),
+                failureCallback: reject,
+            });
+        });
+    },
+
+    /**
+     * Super Admin: invite a new user to a tenant by email and roles.
+     */
+    createInvitation: (
+        tenantId: string,
+        data: CreateTenantInvitationRequest,
+    ): Promise<TenantInvitation> => {
+        const email = data.email?.trim();
+        if (!email) {
+            return Promise.reject(new Error("Email cannot be empty"));
+        }
+        if (!data.roles || data.roles.length === 0) {
+            return Promise.reject(new Error("At least one role is required"));
+        }
+
+        return new Promise((resolve, reject) => {
+            HttpService.makeCallToBackend({
+                path: `${BASE_PATH}/tenants/${encodeURIComponent(tenantId)}/invitations`,
+                httpMethod: "POST",
+                postBody: {
+                    email,
+                    roles: data.roles,
+                    ...(data.validity_days ? { validity_days: data.validity_days } : {}),
+                },
+                successCallback: (response: TenantInvitationResponse) =>
+                    resolve(response.invitation),
+                failureCallback: reject,
+            });
+        });
+    },
+
+    /**
+     * Super Admin: list invitations for a tenant.
+     */
+    listInvitations: (
+        tenantId: string,
+        options: { status?: TenantInvitationStatus; offset?: number; limit?: number } = {},
+    ): Promise<TenantInvitationsPage> => {
+        const searchParams = new URLSearchParams();
+        if (options.status) {
+            searchParams.set("status", options.status);
+        }
+        searchParams.set("offset", `${Math.max(0, options.offset ?? 0)}`);
+        searchParams.set("limit", `${Math.max(1, options.limit ?? 50)}`);
+        const path = `${BASE_PATH}/tenants/${encodeURIComponent(tenantId)}/invitations?${searchParams.toString()}`;
+
+        return new Promise((resolve, reject) => {
+            HttpService.makeCallToBackend({
+                path,
+                httpMethod: "GET",
+                successCallback: (response: TenantInvitationListResponse) =>
+                    resolve({
+                        results: response.results ?? [],
+                        total: response.total ?? 0,
+                        offset: response.offset ?? 0,
+                        limit: response.limit ?? 50,
+                    }),
+                failureCallback: reject,
+            });
+        });
+    },
+
+    /**
+     * Super Admin: rotate the token + expiry of a pending invitation and resend.
+     */
+    resendInvitation: (tenantId: string, invitationId: string): Promise<TenantInvitation> => {
+        return new Promise((resolve, reject) => {
+            HttpService.makeCallToBackend({
+                path: `${BASE_PATH}/tenants/${encodeURIComponent(tenantId)}/invitations/${encodeURIComponent(
+                    invitationId,
+                )}/resend`,
+                httpMethod: "POST",
+                successCallback: (response: TenantInvitationResponse) =>
+                    resolve(response.invitation),
+                failureCallback: reject,
+            });
+        });
+    },
+
+    /**
+     * Super Admin: revoke a pending invitation.
+     */
+    revokeInvitation: (tenantId: string, invitationId: string): Promise<TenantInvitation> => {
+        return new Promise((resolve, reject) => {
+            HttpService.makeCallToBackend({
+                path: `${BASE_PATH}/tenants/${encodeURIComponent(tenantId)}/invitations/${encodeURIComponent(
+                    invitationId,
+                )}`,
+                httpMethod: "DELETE",
+                successCallback: (response: TenantInvitationResponse) =>
+                    resolve(response.invitation),
+                failureCallback: reject,
+            });
+        });
+    },
+
+    /**
+     * Public: validate an invitation token and return safe metadata for the accept page.
+     */
+    validateInvitation: (token: string): Promise<InvitationValidation> => {
+        return new Promise((resolve, reject) => {
+            HttpService.makeCallToBackend({
+                path: `${BASE_PATH}/invitations/validate?token=${encodeURIComponent(token)}`,
+                httpMethod: "GET",
+                successCallback: resolve,
+                failureCallback: reject,
+            });
+        });
+    },
+
+    /**
+     * Public: accept an invitation by setting a password.
+     */
+    acceptInvitation: (token: string, password: string): Promise<AcceptInvitationResult> => {
+        return new Promise((resolve, reject) => {
+            HttpService.makeCallToBackend({
+                path: `${BASE_PATH}/invitations/accept`,
+                httpMethod: "POST",
+                postBody: { token, password },
+                successCallback: resolve,
                 failureCallback: reject,
             });
         });

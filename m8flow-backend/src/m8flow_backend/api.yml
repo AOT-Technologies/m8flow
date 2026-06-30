@@ -1017,6 +1017,230 @@ paths:
         "500":
           description: Internal server error
 
+  /tenants/{tenant_id}/invitations:
+    get:
+      summary: List tenant invitations
+      description: Lists invitations for the selected tenant. Super Admin only.
+      operationId: m8flow_backend.routes.tenant_invitation_controller.list_tenant_invitations
+      tags:
+        - Tenant
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [PENDING, ACCEPTED, REVOKED, EXPIRED]
+          description: Optional status filter
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+      responses:
+        "200":
+          description: Invitations retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantInvitationListResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Forbidden - super admin required
+        "404":
+          description: Tenant not found
+        "500":
+          description: Internal server error
+    post:
+      summary: Create tenant invitation
+      description: Invites a new user to the tenant by email and assigns roles. Super Admin only.
+      operationId: m8flow_backend.routes.tenant_invitation_controller.create_tenant_invitation
+      tags:
+        - Tenant
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TenantInvitationCreateRequest"
+      responses:
+        "201":
+          description: Invitation created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantInvitationResponse"
+        "400":
+          description: Invalid request body
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Forbidden - super admin required
+        "404":
+          description: Tenant not found
+        "409":
+          description: Pending invitation or user already exists
+        "500":
+          description: Internal server error
+
+  /tenants/{tenant_id}/invitations/{invitation_id}/resend:
+    post:
+      summary: Resend tenant invitation
+      description: Rotates the token and expiry of a pending invitation and re-sends the email. Super Admin only.
+      operationId: m8flow_backend.routes.tenant_invitation_controller.resend_tenant_invitation
+      tags:
+        - Tenant
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: invitation_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Invitation resent successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantInvitationResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Forbidden - super admin required
+        "404":
+          description: Invitation not found
+        "409":
+          description: Invitation is not in a resendable state
+        "500":
+          description: Internal server error
+
+  /tenants/{tenant_id}/invitations/{invitation_id}:
+    delete:
+      summary: Revoke tenant invitation
+      description: Revokes a pending invitation so its link can no longer be used. Super Admin only.
+      operationId: m8flow_backend.routes.tenant_invitation_controller.revoke_tenant_invitation
+      tags:
+        - Tenant
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: invitation_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Invitation revoked successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantInvitationResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Forbidden - super admin required
+        "404":
+          description: Invitation not found
+        "409":
+          description: Invitation already accepted
+        "500":
+          description: Internal server error
+
+  /invitations/validate:
+    get:
+      summary: Validate an invitation token
+      description: Public endpoint. Validates an invitation token and returns safe metadata for the accept page.
+      operationId: m8flow_backend.routes.tenant_invitation_controller.validate_invitation
+      security: []
+      tags:
+        - Tenant
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Invitation is valid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvitationValidationResponse"
+        "400":
+          description: Token missing
+        "404":
+          description: Invitation invalid
+        "409":
+          description: Invitation can no longer be used
+        "410":
+          description: Invitation expired
+        "500":
+          description: Internal server error
+
+  /invitations/accept:
+    post:
+      summary: Accept an invitation
+      description: Public endpoint. Sets the password, creates and activates the account, and assigns roles.
+      operationId: m8flow_backend.routes.tenant_invitation_controller.accept_tenant_invitation
+      security: []
+      tags:
+        - Tenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AcceptInvitationRequest"
+      responses:
+        "200":
+          description: Invitation accepted and account activated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AcceptInvitationResponse"
+        "400":
+          description: Invalid token or weak password
+        "404":
+          description: Invitation invalid
+        "409":
+          description: Invitation can no longer be used
+        "410":
+          description: Invitation expired
+        "500":
+          description: Internal server error
+
 
   /templates:
     get:
@@ -2038,6 +2262,121 @@ components:
           type: string
         username:
           type: string
+
+    TenantInvitation:
+      type: object
+      properties:
+        id:
+          type: string
+        tenant_id:
+          type: string
+        email:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [PENDING, ACCEPTED, REVOKED, EXPIRED]
+        expires_at_in_seconds:
+          type: integer
+        accepted_at_in_seconds:
+          type: integer
+          nullable: true
+        created_by:
+          type: string
+        created_at_in_seconds:
+          type: integer
+        invitation_link:
+          type: string
+          description: Only present in dev mode when SMTP is not configured.
+
+    TenantInvitationCreateRequest:
+      type: object
+      required:
+        - email
+        - roles
+      properties:
+        email:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+            enum: [tenant-admin, editor, integrator, reviewer, submitter, viewer]
+        validity_days:
+          type: integer
+          minimum: 1
+          maximum: 30
+          default: 7
+
+    TenantInvitationResponse:
+      type: object
+      properties:
+        tenant_id:
+          type: string
+        invitation:
+          $ref: "#/components/schemas/TenantInvitation"
+
+    TenantInvitationListResponse:
+      type: object
+      properties:
+        tenant_id:
+          type: string
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/TenantInvitation"
+        total:
+          type: integer
+        offset:
+          type: integer
+        limit:
+          type: integer
+
+    InvitationValidationResponse:
+      type: object
+      properties:
+        email:
+          type: string
+        tenant_id:
+          type: string
+        tenant_name:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+        expires_at_in_seconds:
+          type: integer
+
+    AcceptInvitationRequest:
+      type: object
+      required:
+        - token
+        - password
+      properties:
+        token:
+          type: string
+        password:
+          type: string
+
+    AcceptInvitationResponse:
+      type: object
+      properties:
+        email:
+          type: string
+        tenant_id:
+          type: string
+        tenant_name:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+        smtp_configured:
+          type: boolean
 
     TenantMemberRoleMutationResponse:
       type: object

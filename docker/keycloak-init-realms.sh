@@ -927,18 +927,19 @@ fi
 
 echo "[keycloak-init-realms] Setting sslRequired=NONE and aligned session timeouts on realms master, ${SHARED_REALM}..."
 for realm in master "${SHARED_REALM}"; do
-  if /opt/keycloak/bin/kcadm.sh update realms/${realm} -s sslRequired=NONE >/dev/null 2>&1 \
+  if /opt/keycloak/bin/kcadm.sh update realms/${realm} -s sslRequired=NONE -s registrationAllowed=false >/dev/null 2>&1 \
     && update_realm_session_timeouts "${realm}"; then
-    echo "[keycloak-init-realms] Realm ${realm}: sslRequired=NONE and session timeouts set successfully."
+    echo "[keycloak-init-realms] Realm ${realm}: sslRequired=NONE, registration disabled, and session timeouts set successfully."
   else
     echo "[keycloak-init-realms] Realm ${realm}: update failed or realm does not exist." >&2
   fi
 done
 if /opt/keycloak/bin/kcadm.sh update "realms/${SHARED_REALM}" \
   -s organizationsEnabled=true \
+  -s registrationAllowed=false \
   -s registrationEmailAsUsername=false \
   -s loginWithEmailAllowed=false 2>/dev/null; then
-  echo "[keycloak-init-realms] Realm ${SHARED_REALM}: organizations and username-only login policy set successfully."
+  echo "[keycloak-init-realms] Realm ${SHARED_REALM}: organizations, username-only login, and invitation-only registration policy set successfully."
 else
   echo "[keycloak-init-realms] Realm ${SHARED_REALM}: failed to enforce organizations and username-only login policy." >&2
 fi

@@ -27,6 +27,7 @@ import UserService from './services/UserService';
 const queryClient = new QueryClient();
 
 const TenantSelectPage = lazy(() => import('./views/TenantSelectPage'));
+const AcceptInvitationPage = lazy(() => import('./views/AcceptInvitationPage'));
 
 function hasFinalizedTenantSelection(): boolean {
   if (typeof globalThis === 'undefined') return false;
@@ -51,6 +52,7 @@ function isTenantSelectionExemptPath(pathname: string): boolean {
   return (
     pathname === '/login' ||
     pathname === '/tenants' ||
+    pathname === '/accept-invitation' ||
     pathname.startsWith('/public/')
   );
 }
@@ -146,6 +148,14 @@ export default function App() {
   const routeComponents = () => {
     return [
       { path: 'public/*', element: <PublicRoutes /> },
+      {
+        path: 'accept-invitation',
+        element: (
+          <Suspense fallback={<RouteLoadingFallback />}>
+            <AcceptInvitationPage />
+          </Suspense>
+        ),
+      },
       {
         path: '*',
         element: <ContainerForExtensions />,

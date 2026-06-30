@@ -913,6 +913,59 @@ def remove_organization_member(
         response.raise_for_status()
 
 
+def list_user_organizations(
+    user_id: str,
+    realm: str | None = None,
+    admin_token: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return the organizations one shared-realm user is a member of (Keycloak 26 org API)."""
+    if not user_id or not str(user_id).strip():
+        raise ValueError("user_id is required")
+
+    normalized_realm = str(realm).strip() if realm and str(realm).strip() else shared_realm_name()
+    normalized_user_id = str(user_id).strip()
+    token = admin_token or get_master_admin_token()
+
+    response = requests.get(
+        f"{keycloak_url()}/admin/realms/{normalized_realm}/users/{quote(normalized_user_id, safe='')}/organizations",
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    if response.status_code == 404:
+        return []
+    response.raise_for_status()
+
+    organizations = response.json()
+    if not isinstance(organizations, list):
+        return []
+    return [organization for organization in organizations if isinstance(organization, dict)]
+
+
+def delete_realm_user(
+    user_id: str,
+    realm: str | None = None,
+    admin_token: str | None = None,
+) -> None:
+    """Delete one shared-realm Keycloak user. Treats a missing user (404) as success."""
+    if not user_id or not str(user_id).strip():
+        raise ValueError("user_id is required")
+
+    normalized_realm = str(realm).strip() if realm and str(realm).strip() else shared_realm_name()
+    normalized_user_id = str(user_id).strip()
+    token = admin_token or get_master_admin_token()
+
+    response = requests.delete(
+        f"{keycloak_url()}/admin/realms/{normalized_realm}/users/{quote(normalized_user_id, safe='')}",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=30,
+    )
+    if response.status_code == 404:
+        logger.info("Keycloak user %s already deleted or not found in realm %s.", normalized_user_id, normalized_realm)
+        return
+    response.raise_for_status()
+    logger.info("Deleted Keycloak user %s from realm %s.", normalized_user_id, normalized_realm)
+
+
 def list_organization_groups(
     organization_id: str,
     admin_token: str | None = None,
