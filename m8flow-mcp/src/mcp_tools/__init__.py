@@ -13,6 +13,7 @@ def register_tools(mcp: "FastMCP") -> None:
         mcp: FastMCP server instance
     """
     # Import tool registration functions
+    from src.mcp_tools.bpmn_tools import register_bpmn_tools
     from src.mcp_tools.connectors import register_connector_tools
     from src.mcp_tools.count_tools import register_count_tools
     from src.mcp_tools.documentation_tool import register_documentation_tool
@@ -35,6 +36,9 @@ def register_tools(mcp: "FastMCP") -> None:
     register_process_instance_tools(mcp)
     register_task_tools(mcp)
     register_template_tools(mcp)  # Templates: Path is /v1.0/m8flow/templates
+
+    # Register BPMN and template creation tools (NEW!)
+    register_bpmn_tools(mcp)  # Create templates, upload BPMN, Concert Finder workflow
 
     # Register secrets management tools (6 tools for secure connector authentication)
     register_secret_tools(mcp)
