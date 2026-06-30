@@ -124,14 +124,23 @@ permissions:
     groups: ["viewer", "reviewer", "super-admin", "submitter"]
     actions: [read]
     uri: PM:ALL
+    command: process_model.read
   manage-all-process-models:
     groups: ["tenant-admin", "editor"]
     actions: [all]
     uri: PM:ALL
+  # Compatibility-only command targets for future m8flow-bpmn-core integration.
+  # These enrich synced permission targets without changing current URI-based auth behavior.
+  import-process-definitions:
+    groups: ["tenant-admin", "editor"]
+    actions: [create]
+    uri: /process-definitions/*
+    command: process_definition.import
   read-process-model-list:
     groups: ["tenant-admin", "editor", "viewer"]
     actions: [read]
     uri: /process-models
+    command: process_model.list
   read-process-list:
     groups: ["tenant-admin", "editor", "viewer"]
     actions: [read]
@@ -144,10 +153,12 @@ permissions:
     groups: ["tenant-admin", "editor","submitter"]
     actions: [start]
     uri: PM:ALL
+    command: process.start
   read-process-instance-list:
     groups: ["tenant-admin", "editor", "viewer"]
     actions: [read]
     uri: /process-instances
+    command: process_instance.list
   create-process-instance-list-for-me:
     groups: ["tenant-admin", "editor", "viewer"]
     actions: [create]
@@ -164,6 +175,27 @@ permissions:
     groups: ["tenant-admin", "editor", "viewer", "super-admin","submitter"]
     actions: [read]
     uri: /process-instances/*
+    command: process_instance.read
+  suspend-process-instances:
+    groups: ["tenant-admin", "editor"]
+    actions: [create]
+    uri: /process-instances/*
+    command: process.suspend
+  resume-process-instances:
+    groups: ["tenant-admin", "editor"]
+    actions: [create]
+    uri: /process-instances/*
+    command: process.resume
+  retry-process-instances:
+    groups: ["tenant-admin", "editor"]
+    actions: [create]
+    uri: /process-instances/*
+    command: process.retry
+  terminate-process-instances:
+    groups: ["tenant-admin", "editor"]
+    actions: [create]
+    uri: /process-instances/*
+    command: process.terminate
   read-user-search:
     groups: ["tenant-admin", "editor", "viewer", "reviewer", "integrator"]
     actions: [read]
@@ -308,10 +340,12 @@ permissions:
     groups: ["tenant-admin", "editor", "viewer", "reviewer"]
     actions: [read]
     uri: /tasks
+    command: task.list
   read-tasks:
     groups: ["viewer", "super-admin"]
     actions: [read]
     uri: /tasks/*
+    command: task.read
   read-nats-tokens:
     groups: ["integrator", "viewer", "super-admin"]
     actions: [read]
