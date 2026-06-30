@@ -22,6 +22,7 @@ from m8flow_backend.startup.flask_hooks import (
 )
 from m8flow_backend.startup.tenant_resolution import register_tenant_resolution_after_auth
 from m8flow_backend.startup.auth_patches import apply_extension_patches_after_app
+from m8flow_backend.startup.otel_setup import setup_otel
 
 from m8flow_backend.services.asgi_tenant_context_middleware import AsgiTenantContextMiddleware
 from m8flow_backend.startup.guard import set_phase, BootPhase
@@ -113,6 +114,9 @@ def _configure_created_app(cnx_app: Any, db: Any, upgrade_m8flow_db: Callable[[]
     # Load sample templates if enabled (after timestamp listeners + templates dir + migrations).
     from m8flow_backend.services.sample_template_loader import load_sample_templates
     load_sample_templates(flask_app)
+
+    # OpenTelemetry instrumentation (no-op when OTEL_EXPORTER_OTLP_ENDPOINT is absent).
+    setup_otel(flask_app)
 
 
 def _wrap_asgi_if_needed(cnx_app: Any) -> Any:

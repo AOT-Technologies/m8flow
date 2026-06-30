@@ -1,0 +1,537 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "loki" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki" },
+          "editorMode": "code",
+          "expr": "sum(count_over_time({service_name=~\"m8flow-backend|m8flow-celery-worker|m8flow-connector-proxy\"} |~ \"(?i)$log_level\" [$__range]))",
+          "instant": true,
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "OTLP Total Logs",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "loki" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 10 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "id": 2,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki" },
+          "editorMode": "code",
+          "expr": "sum(count_over_time({service_name=~\"m8flow-backend|m8flow-celery-worker|m8flow-connector-proxy\"} |~ \"(?i)error\" [$__range]))",
+          "instant": true,
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "OTLP Errors",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "loki" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "id": 3,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki" },
+          "editorMode": "code",
+          "expr": "sum(count_over_time({compose_service=~\"keycloak|keycloak-proxy|m8flow-celery-flower\"} |~ \"(?i)$log_level\" [$__range]))",
+          "instant": true,
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "Infra Total Logs (Promtail)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "loki" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "purple", "mode": "fixed" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "purple", "value": null }] },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "id": 4,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki" },
+          "editorMode": "code",
+          "expr": "count(sum by (m8flow_connector) (count_over_time({service_name=\"m8flow-connector-proxy\"} | logfmt | m8flow_connector!=\"\" [$__range])))",
+          "instant": true,
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "Active Connector Types",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "loki" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 10, "lineWidth": 2, "spanNulls": true },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "id": 5,
+      "options": {
+        "legend": { "calcs": ["last", "max"], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki" },
+          "editorMode": "code",
+          "expr": "sum by (service_name) (rate({service_name=~\"m8flow-backend|m8flow-celery-worker|m8flow-connector-proxy\"} |~ \"(?i)$log_level\" [2m]))",
+          "legendFormat": "{{service_name}}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Log Rate by Service",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "loki" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 20, "lineWidth": 2, "spanNulls": true },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "id": 6,
+      "options": {
+        "legend": { "calcs": ["last", "max"], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki" },
+          "editorMode": "code",
+          "expr": "sum by (service_name) (rate({service_name=~\"m8flow-backend|m8flow-celery-worker|m8flow-connector-proxy\"} |~ \"(?i)error\" [2m]))",
+          "legendFormat": "{{service_name}}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Error Rate by Service",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 12 },
+      "id": 7,
+      "panels": [],
+      "title": "Application Services (OTLP)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "loki" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 13 },
+      "id": 8,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki" },
+          "editorMode": "code",
+          "expr": "{service_name=~\"m8flow-backend|m8flow-celery-worker|m8flow-connector-proxy\"} |~ \"(?i)$log_level\" |= \"$search\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "All OTLP Services — combined",
+      "type": "logs"
+    },
+    {
+      "datasource": { "type": "loki" },
+      "gridPos": { "h": 9, "w": 8, "x": 0, "y": 23 },
+      "id": 9,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki" },
+          "editorMode": "code",
+          "expr": "{service_name=\"m8flow-backend\"} |~ \"(?i)$log_level\" |= \"$search\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "m8flow-backend",
+      "type": "logs"
+    },
+    {
+      "datasource": { "type": "loki" },
+      "gridPos": { "h": 9, "w": 8, "x": 8, "y": 23 },
+      "id": 10,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki" },
+          "editorMode": "code",
+          "expr": "{service_name=\"m8flow-celery-worker\"} |~ \"(?i)$log_level\" |= \"$search\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "m8flow-celery-worker",
+      "type": "logs"
+    },
+    {
+      "datasource": { "type": "loki" },
+      "gridPos": { "h": 9, "w": 8, "x": 16, "y": 23 },
+      "id": 11,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki" },
+          "editorMode": "code",
+          "expr": "{service_name=\"m8flow-connector-proxy\"} |~ \"(?i)$log_level\" |= \"$search\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "m8flow-connector-proxy",
+      "type": "logs"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 },
+      "id": 12,
+      "panels": [],
+      "title": "Connector Proxy",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "loki" },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 10, "w": 8, "x": 0, "y": 33 },
+      "id": 13,
+      "options": {
+        "displayLabels": ["name", "percent"],
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": ["value", "percent"]
+        },
+        "pieType": "donut",
+        "tooltip": { "mode": "single" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki" },
+          "editorMode": "code",
+          "expr": "sum by (m8flow_connector) (count_over_time({service_name=\"m8flow-connector-proxy\"} | logfmt | m8flow_connector!=\"\" [$__range]))",
+          "instant": true,
+          "legendFormat": "{{m8flow_connector}}",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "Log Volume by Connector Type",
+      "type": "piechart"
+    },
+    {
+      "datasource": { "type": "loki" },
+      "gridPos": { "h": 10, "w": 16, "x": 8, "y": 33 },
+      "id": 14,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki" },
+          "editorMode": "code",
+          "expr": "{service_name=\"m8flow-connector-proxy\"} |~ \"(?i)$log_level\" |= \"$search\" | logfmt | m8flow_connector=~\"$connector\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Connector Proxy Logs",
+      "type": "logs"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 43 },
+      "id": 15,
+      "panels": [],
+      "title": "Infrastructure (Promtail)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "loki" },
+      "gridPos": { "h": 9, "w": 8, "x": 0, "y": 44 },
+      "id": 16,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki" },
+          "editorMode": "code",
+          "expr": "{compose_service=\"keycloak\"} |~ \"(?i)$log_level\" |= \"$search\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "keycloak",
+      "type": "logs"
+    },
+    {
+      "datasource": { "type": "loki" },
+      "gridPos": { "h": 9, "w": 8, "x": 8, "y": 44 },
+      "id": 17,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki" },
+          "editorMode": "code",
+          "expr": "{compose_service=\"keycloak-proxy\"} |~ \"(?i)$log_level\" |= \"$search\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "keycloak-proxy (nginx)",
+      "type": "logs"
+    },
+    {
+      "datasource": { "type": "loki" },
+      "gridPos": { "h": 9, "w": 8, "x": 16, "y": 44 },
+      "id": 18,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki" },
+          "editorMode": "code",
+          "expr": "{compose_service=\"m8flow-celery-flower\"} |~ \"(?i)$log_level\" |= \"$search\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "m8flow-celery-flower",
+      "type": "logs"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["m8flow", "logs"],
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "hide": 0,
+        "includeAll": true,
+        "label": "Log Level",
+        "multi": false,
+        "name": "log_level",
+        "options": [
+          { "selected": false, "text": "ERROR",  "value": "ERROR" },
+          { "selected": false, "text": "WARN",   "value": "WARN"  },
+          { "selected": false, "text": "INFO",   "value": "INFO"  },
+          { "selected": false, "text": "DEBUG",  "value": "DEBUG" }
+        ],
+        "query": "ERROR,WARN,INFO,DEBUG",
+        "skipUrlSync": false,
+        "type": "custom"
+      },
+      {
+        "current": { "selected": false, "text": "", "value": "" },
+        "hide": 0,
+        "label": "Search",
+        "name": "search",
+        "options": [{ "selected": false, "text": "", "value": "" }],
+        "query": "",
+        "skipUrlSync": false,
+        "type": "textbox"
+      },
+      {
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "hide": 0,
+        "includeAll": true,
+        "label": "Connector",
+        "multi": false,
+        "name": "connector",
+        "options": [
+          { "selected": false, "text": "smtp",         "value": "smtp"       },
+          { "selected": false, "text": "slack",        "value": "slack"      },
+          { "selected": false, "text": "salesforce",   "value": "salesforce" },
+          { "selected": false, "text": "stripe",       "value": "stripe"     },
+          { "selected": false, "text": "http",         "value": "http"       },
+          { "selected": false, "text": "postgres",     "value": "postgres"   },
+          { "selected": false, "text": "health",       "value": "health"     },
+          { "selected": false, "text": "none",         "value": "none"       },
+          { "selected": false, "text": "other",        "value": "other"      }
+        ],
+        "query": "smtp,slack,salesforce,stripe,http,postgres,health,none,other",
+        "skipUrlSync": false,
+        "type": "custom"
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "M8Flow Unified Logs",
+  "uid": "m8flow-unified-logs",
+  "version": 2,
+  "weekStart": ""
+}

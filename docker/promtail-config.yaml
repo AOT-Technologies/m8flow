@@ -1,0 +1,35 @@
+# Promtail ships Docker container logs to Loki inside grafana/otel-lgtm.
+# We only scrape services that do NOT duplicate OTLP log export (see relabel keep regex).
+# OTLP apps (m8flow-backend, m8flow-celery-worker, m8flow-connector-proxy) send logs via OTEL → collector → Loki.
+
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://otel-lgtm:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+    relabel_configs:
+      # Avoid duplicate logs: Python services already export logs via OTLP to the same Loki.
+      - source_labels:
+          [__meta_docker_container_label_com_docker_compose_service]
+        regex: keycloak|keycloak-proxy|m8flow-celery-flower
+        action: keep
+      - source_labels:
+          [__meta_docker_container_label_com_docker_compose_service]
+        target_label: compose_service
+      - source_labels: [__meta_docker_container_name]
+        regex: "/(.*)"
+        target_label: container
+      - replacement: promtail-docker
+        target_label: log_source
+    pipeline_stages:
+      - docker: {}

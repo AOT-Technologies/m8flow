@@ -21,6 +21,10 @@ connector-postgres-v2 = { git = "https://github.com/sartography/connector-postgr
 connector-http = { git = "https://github.com/sartography/connector-http.git", tag = "v0.0.1" }
 m8flow-connector-n8n = { git = "https://github.com/AOT-Technologies/m8flow-connectors.git", subdirectory = "connectors/m8flow-connector-n8n", tag = "1.0.1" }
 psycopg2-binary = "^2.9.9"
+opentelemetry-sdk = ">=1.20.0"
+opentelemetry-exporter-otlp-proto-grpc = ">=1.20.0"
+opentelemetry-instrumentation-flask = ">=0.41b0"
+opentelemetry-instrumentation-logging = ">=0.41b0"
 
 [build-system]
 requires = ["poetry-core"]
