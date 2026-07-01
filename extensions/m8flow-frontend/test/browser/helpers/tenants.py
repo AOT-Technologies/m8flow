@@ -46,9 +46,25 @@ def open_tenant_create_modal(page: Page) -> None:
     expect(page.get_by_test_id("tenant-modal-dialog")).to_be_visible(timeout=SHORT_TIMEOUT)
 
 
+def expand_tenant_row(page: Page, tenant_id: str) -> None:
+    """Expand a tenant's accordion row to reveal its edit / member-management controls.
+
+    The tenant list renders each tenant as a collapsed accordion row; the inline
+    "Edit Name" button and the embedded member/group management only mount once
+    the row is expanded.
+    """
+    row = page.get_by_test_id(f"tenant-row-{tenant_id}")
+    expect(row).to_be_visible(timeout=ELEMENT_TIMEOUT)
+    edit_btn = page.get_by_test_id(f"tenant-inline-edit-button-{tenant_id}")
+    if edit_btn.count() == 0 or not edit_btn.first.is_visible():
+        page.get_by_test_id(f"tenant-accordion-summary-{tenant_id}").click()
+        expect(edit_btn).to_be_visible(timeout=ELEMENT_TIMEOUT)
+
+
 def edit_tenant(page: Page, tenant_id: str, new_name: str) -> None:
     """Edit a tenant's name through the edit modal (``tenant_id`` matches API id / row testid suffix)."""
-    edit_btn = page.get_by_test_id(f"tenant-edit-button-{tenant_id}")
+    expand_tenant_row(page, tenant_id)
+    edit_btn = page.get_by_test_id(f"tenant-inline-edit-button-{tenant_id}")
     expect(edit_btn).to_be_visible(timeout=ELEMENT_TIMEOUT)
     edit_btn.click()
     expect(page.get_by_test_id("tenant-modal-dialog")).to_be_visible(timeout=SHORT_TIMEOUT)

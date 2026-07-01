@@ -13,7 +13,7 @@ from playwright.sync_api import Page, expect
 
 from helpers.config import ELEMENT_TIMEOUT, PAGE_DATA_TIMEOUT
 from helpers.mocks import ALL_MOCK_TENANTS
-from helpers.tenants import navigate_to_tenants, search_tenant
+from helpers.tenants import expand_tenant_row, navigate_to_tenants, search_tenant
 from roles._super_admin_utils import setup_super_admin_session
 
 logger = logging.getLogger(__name__)
@@ -49,7 +49,10 @@ def test_super_admin_tenant_edit_control_available(super_admin_page: Page) -> No
     page = super_admin_page
     setup_super_admin_session(page, tenants=_TENANTS)
     navigate_to_tenants(page)
-    edit_btn = page.get_by_test_id("tenant-edit-button-t-m8flow-001")
+    # Each tenant is a collapsed accordion row; expanding it reveals the inline
+    # "Edit Name" control.
+    expand_tenant_row(page, "t-m8flow-001")
+    edit_btn = page.get_by_test_id("tenant-inline-edit-button-t-m8flow-001")
     expect(edit_btn).to_be_visible(timeout=ELEMENT_TIMEOUT)
     expect(edit_btn).to_be_enabled()
     logger.info("Super-admin sees an enabled tenant edit control.")
@@ -61,11 +64,15 @@ def test_super_admin_tenant_user_group_management_available(
     page = super_admin_page
     setup_super_admin_session(page, tenants=_TENANTS)
     navigate_to_tenants(page)
-    # The "Manage Tenant Groups" / roles control is the entry point for tenant
-    # user and group management -- available (enabled) to super admins.
-    roles_btn = page.get_by_test_id("tenant-roles-button-t-m8flow-001")
-    expect(roles_btn).to_be_visible(timeout=ELEMENT_TIMEOUT)
-    expect(roles_btn).to_be_enabled()
+    # Expanding a tenant row embeds the member/group management panel -- the entry
+    # point for tenant user and group management, available to super admins.
+    expand_tenant_row(page, "t-m8flow-001")
+    expect(page.get_by_test_id("tenant-members-section-header")).to_be_visible(
+        timeout=ELEMENT_TIMEOUT
+    )
+    add_member_btn = page.get_by_test_id("tenant-member-add-button")
+    expect(add_member_btn).to_be_visible(timeout=ELEMENT_TIMEOUT)
+    expect(add_member_btn).to_be_enabled()
     logger.info("Super-admin sees the tenant user/group management entry point.")
 
 
