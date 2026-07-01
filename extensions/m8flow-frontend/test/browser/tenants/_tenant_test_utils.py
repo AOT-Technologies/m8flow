@@ -24,10 +24,24 @@ def tenant_display_names_from_rows(rows: Locator) -> list[str]:
     return names
 
 
+_SUMMARY = '[data-testid^="tenant-accordion-summary-"]'
+
+
 def slug_from_row(row: Locator) -> str:
-    return (row.locator("td").nth(1).inner_text() or "").strip()
+    # TenantPage renders a CSS-grid layout (no <td>). Prefer the stable per-tenant
+    # test id; fall back to the second Typography in the accordion summary so the
+    # helper works regardless of frontend build vintage.
+    slug = row.locator('[data-testid^="tenant-slug-"]')
+    if slug.count() == 0:
+        slug = row.locator(f"{_SUMMARY} p").nth(1)
+    return (slug.first.inner_text() or "").strip()
 
 
 def status_from_row(row: Locator) -> str:
-    return (row.locator("td").nth(2).inner_text() or "").strip()
+    # Status is a MUI Chip (not a <td>). Prefer the per-tenant test id; fall back
+    # to the chip label rendered in the accordion summary.
+    status = row.locator('[data-testid^="tenant-status-"]')
+    if status.count() == 0:
+        status = row.locator(f"{_SUMMARY} .MuiChip-label")
+    return (status.first.inner_text() or "").strip()
 

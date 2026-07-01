@@ -145,15 +145,19 @@ def open_language_menu(page: Page, timeout: int = ELEMENT_TIMEOUT) -> Locator:
 
 
 def available_language_options(page: Page) -> list[str]:
-    """Return the locale codes rendered in the language menu."""
+    """Return the locale codes rendered in the language menu.
+
+    Reads every option's ``data-testid`` in a single DOM snapshot
+    (``evaluate_all``) so a re-render between reads cannot invalidate an index
+    mid-loop -- the previous ``count()`` + ``nth(i)`` loop was racy.
+    """
     menu = open_language_menu(page)
     options = menu.locator(f'[data-testid^="{LANGUAGE_OPTION_PREFIX}"]')
-    count = options.count()
-    locales = []
-    for i in range(count):
-        testid = options.nth(i).get_attribute("data-testid") or ""
-        locales.append(testid[len(LANGUAGE_OPTION_PREFIX):])
-    return locales
+    expect(options.first).to_be_visible(timeout=ELEMENT_TIMEOUT)
+    testids: list[str] = options.evaluate_all(
+        "els => els.map((el) => el.getAttribute('data-testid') || '')"
+    )
+    return [t[len(LANGUAGE_OPTION_PREFIX):] for t in testids]
 
 
 def change_language(page: Page, locale: str, timeout: int = ELEMENT_TIMEOUT) -> None:

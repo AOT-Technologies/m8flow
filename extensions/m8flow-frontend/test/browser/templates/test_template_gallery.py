@@ -9,7 +9,7 @@ import pytest
 from playwright.sync_api import Page, TimeoutError as PlaywrightTimeout, expect
 
 from helpers.config import BASE_URL, PAGE_DATA_TIMEOUT, SHORT_TIMEOUT
-from helpers.templates import navigate_to_templates
+from helpers.templates import navigate_to_templates, search_templates
 from helpers.waiters import wait_for_app_ready
 
 logger = logging.getLogger(__name__)
@@ -92,8 +92,7 @@ def test_template_gallery_search(authenticated_page: Page) -> None:
     logger.info("Filter by search text derived from first card: %r", needle)
 
     before = _template_cards(page).count()
-    page.get_by_test_id("template-filters-search-input").locator("input").fill(needle)
-    page.wait_for_timeout(400)
+    search_templates(page, needle)
 
     after = _template_cards(page).count()
     assert after >= 1, "Search should leave at least the matching template visible."

@@ -140,7 +140,9 @@ SHORT_TIMEOUT = 5_000
 # ---------------------------------------------------------------------------
 # Retry
 # ---------------------------------------------------------------------------
-MAX_LOGIN_ATTEMPTS = 2
+# 3 attempts: gives the login flow room to recover from a cold/slow Keycloak
+# under CI's parallel start-up (see helpers/login._wait_for_keycloak_form).
+MAX_LOGIN_ATTEMPTS = 3
 
 # ---------------------------------------------------------------------------
 # Browser context

@@ -498,10 +498,18 @@ export default function TenantPage() {
                           py: 1,
                         }}
                       >
-                        <Typography variant="body2" fontWeight={700}>
+                        <Typography
+                          variant="body2"
+                          fontWeight={700}
+                          data-testid={`tenant-name-${tenant.id}`}
+                        >
                           {tenant.name}
                         </Typography>
-                        <Typography variant="body2" color="text.secondary">
+                        <Typography
+                          variant="body2"
+                          color="text.secondary"
+                          data-testid={`tenant-slug-${tenant.id}`}
+                        >
                           {tenant.slug}
                         </Typography>
                         <Box>
@@ -509,6 +517,7 @@ export default function TenantPage() {
                             label={tenant.status}
                             color={STATUS_COLORS[tenant.status]}
                             size="small"
+                            data-testid={`tenant-status-${tenant.id}`}
                             sx={{
                               fontWeight: 600,
                               minWidth: 85,
