@@ -304,5 +304,12 @@
   "no_parameters": "无参数",
   "no_connectors_available": "此时没有可用的连接器。",
   "no_matching_connectors": "没有与您的搜索匹配的连接器。",
-  "connectors_load_failed": "无法加载连接器。请检查连接器代理是否正在运行并已正确配置。"
+  "connectors_load_failed": "无法加载连接器。请检查连接器代理是否正在运行并已正确配置。",
+  "connector_config_whitespace_only": "此字段不能只包含空格。",
+  "connector_config_invalid_url": "请输入有效的 URL，包括 http:// 或 https://。",
+  "connector_config_invalid_email": "请输入有效的电子邮件地址。",
+  "connector_config_invalid_port": "请输入有效的端口号（1–65535）。",
+  "connector_config_invalid_number": "请输入有效的数字。",
+  "connector_config_min_length": "至少必须为 {{min}} 个字符。",
+  "connector_config_max_length": "最多不能超过 {{max}} 个字符。"
 }
