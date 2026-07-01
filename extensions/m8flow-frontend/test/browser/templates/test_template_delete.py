@@ -37,7 +37,11 @@ from helpers.config import (
     PAGE_DATA_TIMEOUT,
     SHORT_TIMEOUT,
 )
-from helpers.process_group_setup import navigate_into_process_group
+from helpers.process_group_setup import (
+    TEST_PROCESS_GROUP_ID,
+    navigate_into_process_group,
+)
+from helpers.templates import search_templates
 from helpers.waiters import wait_for_app_ready
 
 logger = logging.getLogger(__name__)
@@ -88,22 +92,10 @@ def _is_template_list_response(response) -> bool:  # noqa: ANN001
 def _search_gallery(page: Page, name: str) -> None:
     """Fill the gallery search input and wait for the filtered fetch to land.
 
-    The search input is debounced (300 ms) and useTemplates has no request
-    cancellation, so we must wait for the search-filtered response before any
-    caller inspects rows/cards — otherwise assertions act on stale results.
+    Thin wrapper over the shared ``search_templates`` helper so the debounced
+    search-response wait stays in one place.
     """
-    search_input = page.get_by_test_id("template-filters-search-input").locator("input")
-    search_input.wait_for(state="visible", timeout=PAGE_DATA_TIMEOUT)
-    try:
-        with page.expect_response(
-            lambda r: _is_template_list_response(r) and "search=" in r.url,
-            timeout=PAGE_DATA_TIMEOUT,
-        ):
-            search_input.fill(name)
-    except PlaywrightTimeout:
-        # Same value re-filled (no change event) — results already match.
-        pass
-    wait_for_app_ready(page)
+    search_templates(page, name)
 
 
 def _navigate_to_template_detail(page: Page, template_name: str) -> None:
@@ -358,6 +350,31 @@ def _delete_pm_at_url(page: Page, pm_url: str, label: str = "PM") -> None:
     except Exception as exc:  # noqa: BLE001
         logger.warning("CLEANUP: could not delete %s (%s): %s", label, pm_url, exc)
 
+
+def _delete_test_process_group(page: Page) -> None:
+    """Delete the shared Test Process Group so it doesn't leak across runs.
+
+    A leftover group (its identifier is fixed) makes the next run's setup try to
+    re-create it, hit a duplicate-identifier rejection, and fail. Must run after
+    the process models inside it are removed — the backend refuses to delete a
+    non-empty group. Logs failures without raising.
+    """
+    group_url = f"{BASE_URL.rstrip('/')}/process-groups/{TEST_PROCESS_GROUP_ID}"
+    try:
+        page.goto(group_url)
+        wait_for_app_ready(page)
+        delete_btn = page.get_by_test_id("delete-process-group-button")
+        delete_btn.wait_for(state="visible", timeout=ELEMENT_TIMEOUT)
+        delete_btn.click()
+        dialog = page.get_by_role("dialog")
+        dialog.wait_for(state="visible", timeout=ELEMENT_TIMEOUT)
+        dialog.get_by_role("button", name="Delete").click()
+        wait_for_app_ready(page)
+        logger.info("CLEANUP: Test Process Group deleted (%s).", group_url)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "CLEANUP: could not delete Test Process Group (%s): %s", group_url, exc
+        )
 
 
 def _save_template_from_pm(
@@ -1145,5 +1162,9 @@ def test_cleanup(page: Page) -> None:
 
     # Step 6: admin source process model.
     _delete_source_pm(page)
+
+    # Step 7: the shared Test Process Group is now empty — remove it so it does
+    # not leak across runs and break the next run's setup with a duplicate create.
+    _delete_test_process_group(page)
 
     logger.info("TEST CLEANUP DONE.")
