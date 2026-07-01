@@ -26,7 +26,7 @@ class SampleTemplateReadmeRow(NamedTuple):
     ui_substring: str
 
 
-# Order matches README.md "Templates included" table (template-1 … template-7).
+# Order matches README.md "Templates included" table (template-1 … template-6).
 # ui_substring matches _derive_display_name(zip_filename), not the table description.
 SAMPLE_TEMPLATE_README_ROWS: tuple[SampleTemplateReadmeRow, ...] = (
     SampleTemplateReadmeRow(
@@ -38,11 +38,6 @@ SAMPLE_TEMPLATE_README_ROWS: tuple[SampleTemplateReadmeRow, ...] = (
         "two-step-leave-email",
         # ZIP: Two-Step Leave ... → hyphens become spaces
         "Two Step Leave",
-    ),
-    SampleTemplateReadmeRow(
-        "sequential-approval-rework",
-        # ZIP: Sequential Approval with Rework Loop - ( ... ).zip
-        "Sequential Approval",
     ),
     SampleTemplateReadmeRow(
         "approval-expense-dmn",

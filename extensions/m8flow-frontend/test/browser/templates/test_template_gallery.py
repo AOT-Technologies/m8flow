@@ -92,15 +92,26 @@ def test_template_gallery_search(authenticated_page: Page) -> None:
     logger.info("Filter by search text derived from first card: %r", needle)
 
     before = _template_cards(page).count()
-    page.get_by_test_id("template-filters-search-input").locator("input").fill(needle)
-    page.wait_for_timeout(400)
+    search_input = page.get_by_test_id("template-filters-search-input").locator("input")
+    # The search input debounces (~300ms) and then refetches; the gallery briefly
+    # clears its cards while that request is in flight, so a fixed wait races the
+    # loading state. Wait for the debounced search response, then let the grid
+    # settle on the matching card before counting.
+    with page.expect_response(
+        lambda r: "/m8flow/templates" in r.url
+        and "search=" in r.url
+        and r.request.method == "GET",
+        timeout=PAGE_DATA_TIMEOUT,
+    ):
+        search_input.fill(needle)
 
+    expect(_template_cards(page).first).to_contain_text(
+        re.compile(re.escape(needle[: min(12, len(needle))]), re.I),
+        timeout=PAGE_DATA_TIMEOUT,
+    )
     after = _template_cards(page).count()
     assert after >= 1, "Search should leave at least the matching template visible."
     assert after <= before, "Search should not increase the number of cards."
-    expect(_template_cards(page).first).to_contain_text(
-        re.compile(re.escape(needle[: min(12, len(needle))]), re.I),
-    )
     logger.info("Search narrowed gallery (before=%s after=%s)", before, after)
 
 
@@ -118,9 +129,18 @@ def test_template_gallery_filter_category(authenticated_page: Page) -> None:
     except PlaywrightTimeout:
         pytest.skip("No template categories in this environment.")
     label = opts.nth(1).inner_text().strip()
-    opts.nth(1).click()
-    wait_for_app_ready(page)
+    # Selecting a category refetches; the grid clears while the request is in
+    # flight, so wait for that response before counting (wait_for_app_ready only
+    # covers the app shell, not the gallery fetch).
+    with page.expect_response(
+        lambda r: "/m8flow/templates" in r.url
+        and "category=" in r.url
+        and r.request.method == "GET",
+        timeout=PAGE_DATA_TIMEOUT,
+    ):
+        opts.nth(1).click()
 
+    expect(_template_cards(page).first).to_be_visible(timeout=PAGE_DATA_TIMEOUT)
     before_guess = _template_cards(page).count()
     assert before_guess >= 1, f"Expected at least one template in category {label!r}"
 
@@ -136,10 +156,17 @@ def test_template_gallery_filter_visibility(authenticated_page: Page) -> None:
     navigate_to_templates(page)
 
     page.get_by_test_id("template-filters-visibility-select").click()
-    page.get_by_role("option", name=re.compile(r"^public$", re.I)).click()
-    wait_for_app_ready(page)
-    page.wait_for_timeout(350)
+    # Applying the visibility filter refetches; wait for that response so the
+    # count is read after the grid settles rather than during the loading gap.
+    with page.expect_response(
+        lambda r: "/m8flow/templates" in r.url
+        and "visibility=" in r.url
+        and r.request.method == "GET",
+        timeout=PAGE_DATA_TIMEOUT,
+    ):
+        page.get_by_role("option", name=re.compile(r"^public$", re.I)).click()
 
+    expect(_template_cards(page).first).to_be_visible(timeout=PAGE_DATA_TIMEOUT)
     n = _template_cards(page).count()
     assert n >= 1, "Expected at least one PUBLIC template (common after sample load)."
     for i in range(min(5, n)):

@@ -217,7 +217,13 @@ def _reset_assignee_page(page: Page) -> None:
 
 @pytest.fixture(scope="session")
 def assignee_pages(browser, base_url) -> dict[str, Page]:
-    """Session-scoped pages keyed by complaint type assignee (emma/john)."""
+    """Session-scoped pages keyed by complaint type assignee (emma/john).
+
+    The assignee users are an external Keycloak prerequisite (see module
+    docstring); when they are absent in the target environment their sign-in
+    fails. Treat that as a skipped prerequisite rather than a hard error, matching
+    how the rest of this suite handles missing seed data.
+    """
     users = {
         "Hardware": EMMA,
         "Software": JOHN,
@@ -228,9 +234,21 @@ def assignee_pages(browser, base_url) -> dict[str, Page]:
     for complaint, user in users.items():
         ctx = browser.new_context(base_url=base_url, ignore_https_errors=True)
         pg = ctx.new_page()
-        login(pg, username=user["username"], password=user["password"])
-        wait_for_app_ready(pg)
         contexts[complaint] = ctx
+        try:
+            login(pg, username=user["username"], password=user["password"])
+            wait_for_app_ready(pg)
+        except (AssertionError, PlaywrightTimeout):
+            for created in contexts.values():
+                try:
+                    created.close()
+                except Exception:
+                    pass
+            pytest.skip(
+                f"Assignee user {user['username']!r} could not sign in — seed "
+                "emma/john in Keycloak for this tenant (see module docstring) or "
+                "point BROWSER_TEST_EMMA_*/BROWSER_TEST_JOHN_* at valid users.",
+            )
         pages[complaint] = pg
 
     try:
