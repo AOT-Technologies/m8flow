@@ -304,5 +304,12 @@
   "no_parameters": "Aucun paramètre",
   "no_connectors_available": "Aucun connecteur n'est disponible pour le moment.",
   "no_matching_connectors": "Aucun connecteur ne correspond à votre recherche.",
-  "connectors_load_failed": "Impossible de charger les connecteurs. Vérifiez que le proxy de connecteur est en cours d'exécution et correctement configuré."
+  "connectors_load_failed": "Impossible de charger les connecteurs. Vérifiez que le proxy de connecteur est en cours d'exécution et correctement configuré.",
+  "connector_config_whitespace_only": "Ce champ ne peut pas contenir uniquement des espaces.",
+  "connector_config_invalid_url": "Saisissez une URL valide, y compris http:// ou https://.",
+  "connector_config_invalid_email": "Saisissez une adresse e-mail valide.",
+  "connector_config_invalid_port": "Saisissez un numéro de port valide (1–65535).",
+  "connector_config_invalid_number": "Saisissez un nombre valide.",
+  "connector_config_min_length": "Doit comporter au moins {{min}} caractères.",
+  "connector_config_max_length": "Doit comporter au plus {{max}} caractères."
 }

@@ -34,6 +34,12 @@ class ConnectorConfigField(TypedDict):
     label: str
     type: str  # "text" | "password"
     required: bool
+    # Optional input-format hint the frontend validates against:
+    # "url" | "email" | "port" | "number". Omit for free-form text/secrets.
+    format: NotRequired[str]
+    # Optional length bounds the frontend enforces on the trimmed value.
+    minLength: NotRequired[int]
+    maxLength: NotRequired[int]
     # Canonical Secret key (e.g. GITHUB_PAT_TOKEN). When omitted, the frontend
     # falls back to "{connectorId}_{id}".
     secretKey: NotRequired[str]
@@ -57,9 +63,10 @@ class ConnectorMeta(TypedDict):
 # When a field omits "secretKey", the frontend falls back to "{connectorId}_{fieldId}".
 # Keys must match the runtime resolver M8FLOW_SECRET:(?P<name>\w+), so use only
 # word characters (uppercase letters + underscores, never hyphens). Field "type" is
-# "text" or "password"; "password" fields are masked in the UI. Connectors without a
-# "configFields" entry fall back to redirecting the user to the generic
-# Configuration > Secrets page.
+# "text" or "password"; "password" fields are masked in the UI. An optional "format"
+# ("url" | "email" | "port" | "number") and "minLength"/"maxLength" drive client-side
+# input validation. Connectors without a "configFields" entry fall back to redirecting
+# the user to the generic Configuration > Secrets page.
 CONNECTOR_METADATA: dict[str, ConnectorMeta] = {
     "http": {
         "name": "HTTP",
@@ -112,7 +119,7 @@ CONNECTOR_METADATA: dict[str, ConnectorMeta] = {
             {"id": "client_secret", "secretKey": "SF_CLIENT_SECRET", "label": "Client Secret", "type": "password", "required": True},
             {"id": "access_token", "secretKey": "SF_ACCESS_TOKEN", "label": "Access Token", "type": "password", "required": True},
             {"id": "refresh_token", "secretKey": "SF_REFRESH_TOKEN", "label": "Refresh Token", "type": "password", "required": True},
-            {"id": "instance_url", "secretKey": "SF_INSTANCE_URL", "label": "Instance URL", "type": "text", "required": True},
+            {"id": "instance_url", "secretKey": "SF_INSTANCE_URL", "label": "Instance URL", "type": "text", "required": True, "format": "url"},
         ],
     },
     "smtp": {
@@ -122,10 +129,10 @@ CONNECTOR_METADATA: dict[str, ConnectorMeta] = {
         "docsUrl": f"{_CONNECTOR_DOCS_BASE}#smtp-connector",
         "configFields": [
             {"id": "host", "secretKey": "SMTP_HOST", "label": "Host", "type": "text", "required": True},
-            {"id": "port", "secretKey": "SMTP_PORT", "label": "Port", "type": "text", "required": True},
+            {"id": "port", "secretKey": "SMTP_PORT", "label": "Port", "type": "text", "required": True, "format": "port"},
             {"id": "username", "secretKey": "SMTP_USER", "label": "Username", "type": "text", "required": True},
             {"id": "password", "secretKey": "SMTP_PASSWORD", "label": "Password", "type": "password", "required": True},
-            {"id": "from_email", "secretKey": "SMTP_FROM_EMAIL", "label": "From Email", "type": "text", "required": False},
+            {"id": "from_email", "secretKey": "SMTP_FROM_EMAIL", "label": "From Email", "type": "text", "required": False, "format": "email"},
         ],
     },
     "stripe": {

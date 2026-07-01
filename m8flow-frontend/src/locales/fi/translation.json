@@ -304,5 +304,12 @@
   "no_parameters": "Ei parametreja",
   "no_connectors_available": "Liittimiä ei ole tällä hetkellä saatavilla.",
   "no_matching_connectors": "Hakuasi vastaavia liittimiä ei löytynyt.",
-  "connectors_load_failed": "Liittimiä ei voitu ladata. Tarkista, että liitinvälityspalvelin on käynnissä ja määritetty."
+  "connectors_load_failed": "Liittimiä ei voitu ladata. Tarkista, että liitinvälityspalvelin on käynnissä ja määritetty.",
+  "connector_config_whitespace_only": "Tämä kenttä ei voi sisältää pelkkiä välilyöntejä.",
+  "connector_config_invalid_url": "Anna kelvollinen URL-osoite, mukaan lukien http:// tai https://.",
+  "connector_config_invalid_email": "Anna kelvollinen sähköpostiosoite.",
+  "connector_config_invalid_port": "Anna kelvollinen porttinumero (1–65535).",
+  "connector_config_invalid_number": "Anna kelvollinen numero.",
+  "connector_config_min_length": "Pituuden on oltava vähintään {{min}} merkkiä.",
+  "connector_config_max_length": "Pituus saa olla enintään {{max}} merkkiä."
 }
