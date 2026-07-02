@@ -1,345 +1,349 @@
-# 🚀 M8Flow MCP Server
+# m8flow MCP Server
 
-**Model Context Protocol (MCP) server for M8Flow workflow automation platform**
+A **Model Context Protocol (MCP)** server that exposes **m8flow** workflow capabilities to AI
+assistants such as **Claude Desktop**, **Cursor**, and other MCP-compatible clients.
 
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-27%2F27%20passing-brightgreen.svg)](tests/)
-[![Coverage](https://img.shields.io/badge/coverage-70.59%25%20(visualization)-green.svg)](tests/)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+The server runs in one of **two transport modes**, selected by the `SERVER_TYPE` environment
+variable:
 
----
+- **`remote`** — HTTP transport (`streamable-http`) for Cursor and other HTTP clients, with
+  browser-based **OIDC** login via Keycloak.
+- **`stdio`** — stdio transport for Claude Desktop, authenticated with a bearer token or
+  Keycloak username/password (ROPC).
 
-## 🎯 **Overview**
-
-M8Flow MCP enables Claude Desktop to interact with M8Flow's BPMN workflow automation platform through the Model Context Protocol. This integration allows natural language workflow management, execution, and BPMN content retrieval.
-
----
-
-## ✨ **Key Features**
-
-### **35 Tools Available:**
-- **Process Groups** (5 tools) - Organize workflows
-- **Process Models** (5 tools) - Manage BPMN definitions
-- **Process Instances** (5 tools) - Execute & monitor workflows
-- **Tasks** (4 tools) - Handle user tasks
-- **Templates** (3 tools) - Pre-built workflows
-- **Secrets** (6 tools) - Secure credential management
-- **Connectors** (4 tools) - Explore and use 43 connector operations
-- **Visualization** (3 tools) - Retrieve BPMN XML content
-
-### **BPMN Content Retrieval:**
-- Get BPMN XML for workflows, templates, and instances
-- Save to files for viewing in external BPMN tools
-- Works in local & ECS deployment modes
-
-### **Deployment Modes:**
-- **Local Mode:** Development & testing
-- **ECS Mode:** Production multi-user deployment
+The same entry point (`python -m src.main`) serves both modes — you do not run a different
+script per mode.
 
 ---
 
-## 📦 **Installation**
+## Architecture
 
-### **Prerequisites:**
-- Python 3.8+
-- M8Flow API access (URL + Bearer Token)
-- Claude Desktop (for usage)
-
-### **Setup:**
-
-```bash
-# Clone repository
-git clone <repository-url>
-cd m8flow-mcp
-
-# Install dependencies
-pip install -e .
-
-# Configure environment
-export M8FLOW_API_URL="https://your-m8flow-instance.com/api"
-export M8FLOW_BEARER_TOKEN="your-bearer-token"
-export DEPLOYMENT_MODE="local"  # or "ecs" for production
+```text
+┌──────────────────┐       ┌──────────────────┐       ┌──────────────────┐
+│   MCP Client     │──────▶│    m8flow-mcp    │──────▶│   m8flow Backend │
+│ (Claude/Cursor)  │  MCP  │ (FastMCP+uvicorn)│ HTTP  │      API         │
+└──────────────────┘       └──────────────────┘       └──────────────────┘
+                                    │
+                                    ▼
+                              Keycloak Authentication
 ```
 
 ---
 
-## 🚀 **Quick Start**
+## Quick Start
 
-### **1. Configure Claude Desktop**
+```bash
+cd m8flow-mcp
 
-Add to `claude_desktop_config.json`:
+# 1. Install dependencies
+uv venv
+uv sync
+
+# 2. Create your environment file
+cp sample.env .env        # Windows: copy sample.env .env
+# then edit .env (auth, backend URL, Keycloak) — see Configuration below
+
+# 3. Run the server (mode is chosen by SERVER_TYPE in .env; default is stdio)
+uv run python -m src.main
+```
+
+Prefer `make`? The [Makefile](Makefile) wraps the common commands:
+
+```bash
+make run        # stdio mode
+make run-http   # HTTP mode (sets SERVER_TYPE=remote)
+make docker-run # docker compose up -d
+```
+
+---
+
+## Prerequisites
+
+- Python 3.12 or newer
+- Running **m8flow backend**
+- Running **Keycloak**
+- A configured Keycloak client for MCP authentication
+- **uv** package manager (`pip install uv`)
+
+---
+
+## Configuration
+
+Copy the sample environment file and edit it:
+
+```bash
+cp sample.env .env         # Windows: copy sample.env .env
+```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|-----------|----------|-------------|
+| SERVER_TYPE | stdio | `stdio` (Claude Desktop) or `remote` (Cursor / HTTP) |
+| HOST | 0.0.0.0 | MCP server host (remote mode) |
+| PORT | 8000 | MCP server port (remote mode) |
+| M8FLOW_API_URL | http://localhost:6840 | m8flow backend base URL |
+| M8FLOW_API_TIMEOUT | 30 | Backend API timeout (seconds) |
+| KEYCLOAK_URL | http://localhost:6842 | Keycloak base URL |
+| KEYCLOAK_REALM | m8flow | Keycloak realm |
+| CLIENT_ID | m8flow-backend | Keycloak client used by the MCP server |
+| CLIENT_SECRET | | Client secret (required for browser/OIDC login) |
+| M8FLOW_BEARER_TOKEN | | Static bearer token |
+| KEYCLOAK_USERNAME | | Username for ROPC authentication |
+| KEYCLOAK_PASSWORD | | Password for ROPC authentication |
+| OIDC_CONFIG_URL | | OpenID configuration endpoint (defaults to the realm's well-known URL) |
+| REQUIRED_SCOPES | openid,profile,email | Required OAuth scopes |
+| VERIFY_ID_TOKEN | true | Validate the ID token instead of the access token |
+| MCP_OIDC_BASE_URL | | Public base URL of this MCP server (remote mode) |
+| MCP_OIDC_ISSUER_URL | | Public issuer URL (defaults to base URL) |
+| MCP_OIDC_REDIRECT_PATH | /oauth/callback | OAuth callback path |
+| MCP_OIDC_REQUIRE_CONSENT | false | Require the OAuth consent screen |
+| ALLOW_SECRET_VALUE_READ | false | Allow the `get_secret_value` tool to reveal decrypted secrets |
+| LOG_LEVEL | INFO | `DEBUG` / `INFO` / `WARNING` / `ERROR` / `CRITICAL` |
+| LOG_FORMAT | json | `json` or `text` |
+
+---
+
+## Authentication
+
+Authentication is resolved in the following order.
+
+### 1. Browser Login (remote mode)
+
+Used by Cursor. Requires:
+
+- `CLIENT_SECRET`
+- `MCP_OIDC_BASE_URL`
+- `MCP_OIDC_ISSUER_URL`
+
+The user authenticates through Keycloak in the browser.
+
+### 2. Static Bearer Token
+
+```env
+M8FLOW_BEARER_TOKEN=<ACCESS_TOKEN>
+```
+
+Ideal for Claude Desktop (stdio mode).
+
+### 3. Username / Password (ROPC)
+
+```env
+KEYCLOAK_USERNAME=<USERNAME>
+KEYCLOAK_PASSWORD=<PASSWORD>
+```
+
+The server automatically obtains and refreshes access tokens. Requires **Direct Access
+Grants** to be enabled on the Keycloak client.
+
+---
+
+## Running the Server
+
+The transport mode is controlled entirely by `SERVER_TYPE` in your `.env` — the command is the
+same for both modes.
+
+### Cursor (HTTP / OIDC)
+
+Set `SERVER_TYPE=remote` in `.env`, then:
+
+```bash
+uv run python -m src.main        # or: make run-http
+```
+
+Available endpoints:
+
+| Endpoint | Description |
+|-----------|-------------|
+| GET /health | Health check |
+| /mcp | MCP streamable-HTTP endpoint |
+
+### Claude Desktop (stdio)
+
+Set `SERVER_TYPE=stdio` in `.env` (the default), then:
+
+```bash
+uv run python -m src.main        # or: make run
+```
+
+stdio mode supports bearer-token and ROPC authentication (browser login does not apply).
+
+---
+
+## Getting a Keycloak Access Token
+
+```bash
+curl -X POST \
+  "http://localhost:6842/realms/m8flow/protocol/openid-connect/token" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "client_id=m8flow-backend" \
+  -d "grant_type=password" \
+  -d "username=<USERNAME>" \
+  -d "password=<PASSWORD>"
+```
+
+Copy the returned `access_token` into your `.env`:
+
+```env
+M8FLOW_BEARER_TOKEN=<ACCESS_TOKEN>
+```
+
+---
+
+## MCP Client Configuration
+
+### Cursor (`.cursor/mcp.json`)
 
 ```json
 {
   "mcpServers": {
     "m8flow": {
-      "command": "python",
-      "args": ["-m", "src.server"],
+      "url": "http://localhost:8000/mcp",
+      "transport": "streamable-http"
+    }
+  }
+}
+```
+
+### Claude Desktop
+
+Point the command at this project directory; `uv` runs the server without a pre-activated
+virtualenv:
+
+```json
+{
+  "mcpServers": {
+    "m8flow": {
+      "command": "uv",
+      "args": ["--directory", "/absolute/path/to/m8flow-mcp", "run", "python", "-m", "src.main"],
       "env": {
-        "M8FLOW_API_URL": "https://your-instance.com/api",
-        "M8FLOW_BEARER_TOKEN": "your-token",
-        "DEPLOYMENT_MODE": "local"
+        "M8FLOW_BEARER_TOKEN": "<ACCESS_TOKEN>"
       }
     }
   }
 }
 ```
 
-### **2. Use with Claude Desktop**
-
-Open Claude Desktop and ask:
-
-```
-"Show me all workflows in M8Flow"
-"Get the BPMN content for single-approval"
-"Start an instance of my-workflow"
-```
-
 ---
 
-## 📚 **Documentation**
-
-### **Main Documentation:**
-- **[Claude Instructions](docs/CLAUDE_INSTRUCTIONS.md)** - For Claude AI
-- **[ECS Deployment](docs/ECS_TASK_DEFINITION_UPDATE.md)** - AWS ECS setup
-- **[Complete Documentation](docs/M8Flow-MCP-Complete-Documentation.md)** - Full reference
-
-### **Excel Documentation:**
-- **M8Flow-MCP-Complete-Documentation.xlsx** - 12 sheets with complete details
-  - All 25 tools
-  - All 27 test cases
-  - Architecture diagrams
-  - Deployment guides
-
-### **Additional Docs:**
-- [Architecture](docs/ARCHITECTURE_EXPLAINED.md)
-- [API Reference](docs/API_REFERENCE.md)
-- [Test Status](docs/CI_TEST_STATUS.md)
-- [Features](docs/FEATURES_DETAILED_EXPLANATION.md)
-
----
-
-## 🧪 **Testing**
-
-### **Run All Tests:**
+## Running with Docker
 
 ```bash
-# Run unit tests
-pytest tests/ -v
-
-# Run with coverage
-pytest tests/ --cov=src --cov-report=term-missing
-
-# Run deployment smoke tests
-python test_deployment.py --verbose
+docker compose up -d --build
+curl http://localhost:8000/health
 ```
 
-### **Test Status:**
-- ✅ 27/27 tests passing (100%)
-- ✅ 70.59% visualization coverage
-- ✅ All deployment modes tested
-- ✅ Edge cases covered
+The bundled [docker-compose.yml](docker-compose.yml) runs the server in `remote` (HTTP) mode
+and reads secrets from your `.env`.
 
 ---
 
-## 🏗️ **Architecture**
+## Cursor Authentication Troubleshooting
 
-### **Components:**
+If Cursor reports **"Authorization with the MCP server failed"**, check the following.
 
-```
-┌─────────────────┐
-│ Claude Desktop  │  User requests workflow data
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  M8Flow MCP     │  Fetches data from M8Flow API
-│  Server         │  Returns BPMN XML & workflow info
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Claude AI      │  Displays results to user
-└─────────────────┘
-```
+1. **Base URLs** — `MCP_OIDC_BASE_URL` and `MCP_OIDC_ISSUER_URL` must match the URL configured
+   in Cursor exactly.
+2. **Redirect URI** — register `${MCP_OIDC_BASE_URL}/oauth/callback` as a valid redirect URI in
+   Keycloak.
+3. **Keycloak client** — Standard Flow enabled, confidential client, correct client secret.
+4. **OpenID discovery** — `OIDC_CONFIG_URL` must be reachable by the MCP server.
+5. **Token validation** — if tokens are rejected for missing scopes, keep `VERIFY_ID_TOKEN=true`.
+
+> In Docker, `localhost` refers to the container, not your host. Use
+> `http://host.docker.internal:6842` (or the Keycloak service name) so the container can reach
+> Keycloak.
 
 ---
 
-## 📂 **Project Structure**
+## Available Tools
 
-```
+Tools are grouped by module under [src/mcp_tools/](src/mcp_tools/) and registered through
+`register_tools()`. The main groups are:
+
+| Group | Examples |
+|-------|----------|
+| Process groups | `list_process_groups`, `create_process_group`, `get_process_group` |
+| Process models | `list_process_models`, `create_process_model`, `create_process_model_from_template` |
+| Process instances | `start_process_instance`, `get_process_instance`, `cancel_process_instance` |
+| Tasks | `list_tasks`, `get_task`, `claim_task`, `complete_task` |
+| Templates | `list_templates`, `get_template`, `create_template` |
+| BPMN files | `get_bpmn_file`, `upload_bpmn_file`, `update_bpmn_file` |
+| Connectors | `list_connectors`, `get_connector`, `get_connector_operation` |
+| Secrets | `list_secrets`, `create_secret`, `get_secret`, `get_secret_value` |
+| Error management | `list_process_errors`, `get_error_details`, `diagnose_workflow` |
+| Counts | `count_process_models`, `count_process_instances`, `count_tasks` |
+| Visualization | `view_workflow`, `view_process_instance` |
+| Documentation | `tools_documentation` |
+
+Use the `tools_documentation` tool from any client to get the authoritative, up-to-date list.
+
+---
+
+## Adding New Tools
+
+1. Create a module under [src/mcp_tools/](src/mcp_tools/) (e.g. `my_tools.py`) that exposes a
+   `register_*_tools(mcp)` function. Define each tool with the FastMCP `@mcp.tool` decorator:
+
+   ```python
+   from __future__ import annotations
+
+   from typing import TYPE_CHECKING
+
+   from src.api_client import M8flowAPIClient
+   from src.utils.context import get_auth_token
+
+   if TYPE_CHECKING:
+       from fastmcp import FastMCP
+
+   client = M8flowAPIClient()
+
+
+   def register_my_tools(mcp: "FastMCP") -> None:
+       @mcp.tool(name="list_projects", description="List projects")
+       async def list_projects() -> str:
+           token = get_auth_token()
+           return await client.get("/v1.0/projects", token)
+   ```
+
+2. Import and call your `register_my_tools(mcp)` from
+   [src/mcp_tools/__init__.py](src/mcp_tools/__init__.py) inside `register_tools()`.
+
+3. Restart the server.
+
+---
+
+## Error Responses
+
+| Status | Meaning |
+|---------|---------|
+| 401 | Invalid, expired, or missing token |
+| 403 | User lacks required permissions |
+| 404 | Resource not found |
+| 502 | Backend API unavailable |
+| 504 | Backend API timeout |
+
+---
+
+## Project Structure
+
+```text
 m8flow-mcp/
 ├── src/
-│   ├── server.py              # MCP server entry point
-│   ├── api_client.py          # M8Flow API client
-│   └── mcp_tools/             # MCP tool implementations
-│       ├── process_groups.py
-│       ├── process_models.py
-│       ├── process_instances.py
-│       ├── tasks.py
-│       ├── templates.py
-│       └── visualization.py   # BPMN visualization
-│
-├── tools/                     # Utility tools
-│
-├── tests/
-│   ├── unit/                  # Unit tests (27 tests)
-│   └── manual/                # Manual integration tests
-│
-├── docs/                      # All documentation
-│
-├── pyproject.toml             # Project dependencies
-├── README.md                  # This file
-└── M8Flow-MCP-Complete-Documentation.xlsx  # Excel docs
+│   ├── main.py              # Entry point (python -m src.main)
+│   ├── api_client.py        # m8flow backend HTTP client
+│   ├── config/              # Settings (pydantic-settings)
+│   ├── auth/                # Keycloak / JWT / token services
+│   ├── client/              # Shared HTTP client
+│   ├── errors/              # Exception types
+│   ├── middleware/          # Context, tenant, observability middleware
+│   ├── mcp_tools/           # MCP tool modules + register_tools()
+│   └── utils/               # Logging, request context
+├── Dockerfile
+├── docker-compose.yml
+├── Makefile
+├── pyproject.toml
+├── uv.lock
+├── sample.env
+└── README.md
 ```
-
----
-
-## 📄 **BPMN Content Examples**
-
-### **Get Workflow BPMN:**
-```
-User: "Get the BPMN content for the approval workflow"
-
-Claude calls: view_workflow("approval-group/approval-workflow")
-
-Result: Returns BPMN XML content and saves to temp file
-```
-
-### **Get Template BPMN:**
-```
-User: "Get the BPMN for template 1"
-
-Claude calls: view_workflow_from_template(1)
-
-Result: Returns template BPMN XML content
-```
-
-### **Get Instance BPMN:**
-```
-User: "Get the workflow BPMN for instance 123"
-
-Claude calls: view_process_instance("model-id", 123)
-
-Result: Returns instance BPMN XML with status
-```
-
----
-
-## 🛠️ **Development**
-
-### **Local Development:**
-
-```bash
-# Install in editable mode
-pip install -e ".[dev]"
-
-# Run tests
-pytest tests/ -v
-
-# Run linter
-ruff check src/ tests/
-
-# Type checking
-mypy src/
-```
-
-### **Adding New Tools:**
-
-1. Create tool in `src/mcp_tools/`
-2. Add tests in `tests/unit/`
-3. Update documentation
-4. Run `pytest` to verify
-
----
-
-## 🚢 **Deployment**
-
-### **Local Mode (Development):**
-
-```bash
-# Set environment
-export DEPLOYMENT_MODE=local
-
-# Start server
-python -m src.server
-
-# Start auto-viewer (separate terminal)
-python tools/auto-viewer/auto_viewer.py
-```
-
-### **ECS Mode (Production):**
-
-1. **Update ECS Task Definition:**
-   - Add `DEPLOYMENT_MODE=ecs` environment variable
-   - Deploy updated task definition
-
-**See:** [ECS Deployment Guide](docs/ECS_TASK_DEFINITION_UPDATE.md)
-
----
-
-## 📊 **Statistics**
-
-| Metric | Value |
-|--------|-------|
-| **Total Tools** | 25 |
-| **Test Cases** | 27 |
-| **Test Pass Rate** | 100% |
-| **Content Retrieval Coverage** | 70.59% |
-| **Overall Coverage** | 9.94% |
-| **Deployment Modes** | 2 (Local & ECS) |
-| **Documentation Files** | 20+ |
-
----
-
-## 🏆 **Unique Features**
-
-### **vs Other MCPs:**
-
-| Feature | M8Flow MCP | n8n-MCP | mcp-camunda |
-|---------|------------|---------|-------------|
-| BPMN Content Retrieval | ✅ Yes | ❌ No | ❌ No |
-| Template Management | ✅ Yes | ❌ No | ❌ No |
-| Pure Python | ✅ Yes | ❌ No | ❌ No |
-| Multi-User ECS | ✅ Yes | ❌ No | ❌ No |
-
----
-
-## 🤝 **Contributing**
-
-Contributions welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new features
-4. Ensure all tests pass
-5. Submit a pull request
-
----
-
-## 📝 **License**
-
-MIT License - See LICENSE file for details
-
----
-
-## 📞 **Support**
-
-- **Documentation:** [docs/](docs/)
-- **Issues:** GitHub Issues
-- **API Docs:** [M8Flow API Documentation](https://m8flow.ai/docs)
-
----
-
-## 🎯 **Quick Links**
-
-- [User Guide](docs/USER_GUIDE_VISUALIZATION.md) - Get started with visualization
-- [Test Status](docs/CI_TEST_STATUS.md) - Current test results
-- [Architecture](docs/ARCHITECTURE_EXPLAINED.md) - Technical architecture
-- [Deployment](docs/ECS_TASK_DEFINITION_UPDATE.md) - Production deployment
-
----
-
-**Built with ❤️ for the M8Flow community**
-
-🚀 **Ready for production use!** ✅
