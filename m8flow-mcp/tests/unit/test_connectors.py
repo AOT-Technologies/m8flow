@@ -9,103 +9,57 @@ import pytest
 
 @pytest.fixture
 def mock_connectors_data():
-    """Mock connectors API response."""
+    """Mock raw /v1.0/service-tasks API response.
+
+    This is the flat shape the backend actually returns — each entry's `id`
+    is `{connector}/{OperationName}`, and `_get_grouped_connectors()` groups
+    these by connector prefix at request time.
+    """
     return [
         {
-            "id": "slack",
-            "name": "Slack",
-            "description": "Send messages and notifications",
-            "status": "available",
-            "icon": "chat",
-            "operationCount": 3,
-            "docsUrl": "https://github.com/AOT-Technologies/m8flow/tree/main/m8flow-connector-proxy#slack-connector",
-            "operations": [
-                {
-                    "id": "slack/PostMessage",
-                    "name": "Post Message",
-                    "rawName": "PostMessage",
-                    "description": "Post message to Slack channel",
-                    "parameters": [
-                        {"name": "token", "type": "string", "required": True, "description": "Slack Bot Token"},
-                        {"name": "channel", "type": "string", "required": True, "description": "Channel ID"},
-                        {"name": "message", "type": "string", "required": True, "description": "Message text"},
-                    ],
-                },
-                {
-                    "id": "slack/SendDirectMessage",
-                    "name": "Send Direct Message",
-                    "rawName": "SendDirectMessage",
-                    "description": "Send DM to user",
-                    "parameters": [
-                        {"name": "token", "type": "string", "required": True},
-                        {"name": "user_id", "type": "string", "required": True},
-                        {"name": "message", "type": "string", "required": True},
-                    ],
-                },
-                {
-                    "id": "slack/UploadFile",
-                    "name": "Upload File",
-                    "rawName": "UploadFile",
-                    "description": "Upload file to channel",
-                    "parameters": [
-                        {"name": "token", "type": "string", "required": True},
-                        {"name": "channel", "type": "string", "required": True},
-                        {"name": "filepath", "type": "string", "required": False},
-                    ],
-                },
+            "id": "slack/PostMessage",
+            "parameters": [
+                {"name": "token", "type": "string", "required": True, "description": "Slack Bot Token"},
+                {"name": "channel", "type": "string", "required": True, "description": "Channel ID"},
+                {"name": "message", "type": "string", "required": True, "description": "Message text"},
             ],
         },
         {
-            "id": "http",
-            "name": "HTTP",
-            "description": "Make REST API calls from workflows",
-            "status": "available",
-            "icon": "globe",
-            "operationCount": 2,
-            "docsUrl": "https://github.com/AOT-Technologies/m8flow/tree/main/m8flow-connector-proxy#http-connector",
-            "operations": [
-                {
-                    "id": "http/GetRequestV2",
-                    "name": "GET Request",
-                    "rawName": "GetRequestV2",
-                    "description": "Execute GET request",
-                    "parameters": [
-                        {"name": "url", "type": "string", "required": True, "description": "API endpoint URL"},
-                        {"name": "headers", "type": "object", "required": False},
-                    ],
-                },
-                {
-                    "id": "http/PostRequestV2",
-                    "name": "POST Request",
-                    "rawName": "PostRequestV2",
-                    "description": "Execute POST request",
-                    "parameters": [
-                        {"name": "url", "type": "string", "required": True},
-                        {"name": "data", "type": "object", "required": False},
-                    ],
-                },
+            "id": "slack/SendDirectMessage",
+            "parameters": [
+                {"name": "token", "type": "string", "required": True},
+                {"name": "user_id", "type": "string", "required": True},
+                {"name": "message", "type": "string", "required": True},
             ],
         },
         {
-            "id": "postgres_v2",
-            "name": "PostgreSQL",
-            "description": "Execute PostgreSQL database operations",
-            "status": "available",
-            "icon": "database",
-            "operationCount": 1,
-            "docsUrl": "https://github.com/AOT-Technologies/m8flow/tree/main/m8flow-connector-proxy#postgresql-connector-postgres_v2",
-            "operations": [
-                {
-                    "id": "postgres_v2/SelectValuesV2",
-                    "name": "Select Values",
-                    "rawName": "SelectValuesV2",
-                    "description": "Query and retrieve records",
-                    "parameters": [
-                        {"name": "database_connection_str", "type": "string", "required": True},
-                        {"name": "table_name", "type": "string", "required": True},
-                        {"name": "schema", "type": "object", "required": True},
-                    ],
-                },
+            "id": "slack/UploadFile",
+            "parameters": [
+                {"name": "token", "type": "string", "required": True},
+                {"name": "channel", "type": "string", "required": True},
+                {"name": "filepath", "type": "string", "required": False},
+            ],
+        },
+        {
+            "id": "http/GetRequestV2",
+            "parameters": [
+                {"name": "url", "type": "string", "required": True, "description": "API endpoint URL"},
+                {"name": "headers", "type": "object", "required": False},
+            ],
+        },
+        {
+            "id": "http/PostRequestV2",
+            "parameters": [
+                {"name": "url", "type": "string", "required": True},
+                {"name": "data", "type": "object", "required": False},
+            ],
+        },
+        {
+            "id": "postgres_v2/SelectValuesV2",
+            "parameters": [
+                {"name": "database_connection_str", "type": "string", "required": True},
+                {"name": "table_name", "type": "string", "required": True},
+                {"name": "schema", "type": "object", "required": True},
             ],
         },
     ]
