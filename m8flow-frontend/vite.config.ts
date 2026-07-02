@@ -43,6 +43,10 @@ const natsUiUrl =
   rootEnv.M8FLOW_NATS_UI_URL ??
   process.env.VITE_M8FLOW_NATS_UI_URL ??
   '';
+const mcpServerUrl =
+  rootEnv.M8FLOW_MCP_SERVER_URL ??
+  process.env.VITE_M8FLOW_MCP_SERVER_URL ??
+  '';
 
 export default defineConfig({
   base: '/',
@@ -53,6 +57,7 @@ export default defineConfig({
     'import.meta.env.VITE_M8FLOW_KEYCLOAK_MASTER_REALM': JSON.stringify(masterRealmIdentifier),
     'import.meta.env.VITE_M8FLOW_CELERY_FLOWER_URL': JSON.stringify(celeryFlowerUrl),
     'import.meta.env.VITE_M8FLOW_NATS_UI_URL': JSON.stringify(natsUiUrl),
+    'import.meta.env.VITE_M8FLOW_MCP_SERVER_URL': JSON.stringify(mcpServerUrl),
   },
   test: {
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
