@@ -31,9 +31,7 @@ class TokenService:
     """Fetches and caches a Keycloak access token (ROPC grant)."""
 
     def __init__(self, refresh_margin: int | None = None) -> None:
-        self._refresh_margin = (
-            refresh_margin if refresh_margin is not None else settings.token_refresh_margin
-        )
+        self._refresh_margin = refresh_margin if refresh_margin is not None else settings.token_refresh_margin
         self._access_token: str | None = None
         self._expires_at: float = 0.0
         self._lock = threading.Lock()

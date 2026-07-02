@@ -23,7 +23,7 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "pytest-cov>=5.0",
-    "ruff>=0.3",
+    "ruff==0.15.20",  # pinned: keep in sync with .github/workflows/mcp-server-ci.yml lint job
     "mypy>=1.9",
     "pre-commit>=3.6",
     "types-python-jose>=3.3",

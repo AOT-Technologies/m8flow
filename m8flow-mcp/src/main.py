@@ -92,11 +92,7 @@ def _configure_static_token() -> None:
     When absent, ``get_auth_token`` falls back to OIDCProxy session tokens
     (remote) or ROPC auto-login (KEYCLOAK_USERNAME / KEYCLOAK_PASSWORD).
     """
-    auth_token = (
-        os.getenv("M8FLOW_BEARER_TOKEN")
-        or os.getenv("FORMSFLOW_BEARER_TOKEN")
-        or settings.m8flow_bearer_token
-    )
+    auth_token = os.getenv("M8FLOW_BEARER_TOKEN") or os.getenv("FORMSFLOW_BEARER_TOKEN") or settings.m8flow_bearer_token
 
     if not auth_token:
         if _auth is not None:
@@ -178,12 +174,8 @@ def _register_http_routes(server: object) -> None:
 
     # RFC 9728 discovery documents (root + /mcp-protocol aliases for Cursor/Claude).
     server.add_route("/.well-known/oauth-protected-resource", protected_resource, methods=["GET"])
-    server.add_route(
-        "/.well-known/oauth-protected-resource/mcp-protocol", protected_resource, methods=["GET"]
-    )
-    server.add_route(
-        "/.well-known/oauth-authorization-server", authorization_server, methods=["GET"]
-    )
+    server.add_route("/.well-known/oauth-protected-resource/mcp-protocol", protected_resource, methods=["GET"])
+    server.add_route("/.well-known/oauth-authorization-server", authorization_server, methods=["GET"])
     server.add_route(
         "/.well-known/oauth-authorization-server/mcp-protocol",
         authorization_server,
