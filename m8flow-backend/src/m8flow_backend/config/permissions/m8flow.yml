@@ -149,9 +149,13 @@ permissions:
     actions: [read]
     uri: /process-instances
   create-process-instance-list-for-me:
-    groups: ["tenant-admin", "editor"]
+    groups: ["tenant-admin", "editor", "viewer"]
     actions: [create]
     uri: /process-instances/for-me
+  create-process-instance-list:
+    groups: ["tenant-admin", "editor", "viewer"]
+    actions: [create]
+    uri: /process-instances
   read-process-instance-report-metadata:
     groups: ["tenant-admin", "editor", "viewer"]
     actions: [read]

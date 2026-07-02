@@ -491,6 +491,46 @@ paths:
         "500":
           description: Internal server error
 
+  /tenants/{tenant_id}/members/{username}:
+    delete:
+      summary: Remove tenant organization member
+      description: Removes one Keycloak organization member from the selected tenant and clears local tenant-scoped assignments.
+      operationId: m8flow_backend.routes.tenant_role_controller.delete_tenant_member
+      tags:
+        - Tenant
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique tenant identifier
+        - name: username
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Tenant member username
+      responses:
+        "200":
+          description: Tenant member removed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantMemberDeleteResponse"
+        "400":
+          description: Invalid tenant member data
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Forbidden - insufficient permissions
+        "404":
+          description: Tenant member not found
+        "409":
+          description: Local user synchronization conflict
+        "500":
+          description: Internal server error
+
   /tenants/{tenant_id}/available-users:
     get:
       summary: List existing users available to add to a tenant
@@ -563,7 +603,24 @@ paths:
           required: false
           schema:
             type: string
-          description: Optional filter by group name, mapped role, or member identity
+          description: Optional filter by group name or mapped role
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Zero-based group offset for paginated loading
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+          description: Maximum number of tenant groups to return in one page
       responses:
         "200":
           description: Tenant groups retrieved successfully
@@ -618,6 +675,90 @@ paths:
           description: Tenant or organization not found
         "409":
           description: Group already exists
+        "500":
+          description: Internal server error
+
+  /tenants/{tenant_id}/groups/{group_name}:
+    put:
+      summary: Rename tenant Keycloak group
+      description: Renames one top-level Keycloak organization group for the selected tenant while preserving its members and granted tenant-scoped roles.
+      operationId: m8flow_backend.routes.tenant_role_controller.update_group
+      tags:
+        - Tenant
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique tenant identifier
+        - name: group_name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Current group name to rename
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TenantGroupUpdateRequest"
+      responses:
+        "200":
+          description: Tenant group renamed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantGroupUpdateResponse"
+        "400":
+          description: Invalid request body or group name
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Forbidden - insufficient permissions
+        "404":
+          description: Tenant or organization group not found
+        "409":
+          description: Group already exists or local role sync conflict
+        "500":
+          description: Internal server error
+    delete:
+      summary: Delete tenant Keycloak group
+      description: Deletes one top-level Keycloak organization group for the selected tenant and mirrors the resulting role changes locally for affected members.
+      operationId: m8flow_backend.routes.tenant_role_controller.remove_group
+      tags:
+        - Tenant
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique tenant identifier
+        - name: group_name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Group name to delete
+      responses:
+        "200":
+          description: Tenant group removed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantGroupDeleteResponse"
+        "400":
+          description: Invalid group
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Forbidden - insufficient permissions
+        "404":
+          description: Tenant or organization group not found
+        "409":
+          description: Local role sync conflict
         "500":
           description: Internal server error
 
@@ -1825,6 +1966,10 @@ components:
           items:
             type: string
             enum: [tenant-admin, editor, integrator, reviewer, viewer]
+        groups:
+          type: array
+          items:
+            $ref: "#/components/schemas/TenantMemberGroup"
 
     TenantMemberListResponse:
       type: object
@@ -1886,6 +2031,14 @@ components:
         member:
           $ref: "#/components/schemas/TenantMember"
 
+    TenantMemberDeleteResponse:
+      type: object
+      properties:
+        tenant_id:
+          type: string
+        username:
+          type: string
+
     TenantMemberRoleMutationResponse:
       type: object
       properties:
@@ -1930,6 +2083,32 @@ components:
         group:
           $ref: "#/components/schemas/TenantGroup"
 
+    TenantGroupUpdateRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+
+    TenantGroupUpdateResponse:
+      type: object
+      properties:
+        tenant_id:
+          type: string
+        previous_group_name:
+          type: string
+        group:
+          $ref: "#/components/schemas/TenantGroup"
+
+    TenantGroupDeleteResponse:
+      type: object
+      properties:
+        tenant_id:
+          type: string
+        group_name:
+          type: string
+
     TenantGroupMember:
       type: object
       properties:
@@ -1943,6 +2122,14 @@ components:
         display_name:
           type: string
           nullable: true
+
+    TenantMemberGroup:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
 
     TenantGroup:
       type: object
@@ -1973,6 +2160,12 @@ components:
           type: string
         search:
           type: string
+        offset:
+          type: integer
+        limit:
+          type: integer
+        has_more:
+          type: boolean
         groups:
           type: array
           items:

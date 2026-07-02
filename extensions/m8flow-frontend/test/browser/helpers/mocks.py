@@ -120,6 +120,50 @@ MOCK_TEMPLATE_V2: dict[str, Any] = {
     "modifiedBy": "admin",
 }
 
+# Private multi-version family (both drafts) -- key ``test-template-private-multi``.
+# Used to verify version-selector behavior for private/draft templates, where every
+# version shows a "Draft" chip (contrast with the published family above).
+MOCK_TEMPLATE_PRIVATE_V1: dict[str, Any] = {
+    "id": 6,
+    "templateKey": "test-template-private-multi",
+    "version": "V1",
+    "name": "Private Multi-Version Template",
+    "description": "Private template, first version",
+    "tags": ["test"],
+    "category": "Testing",
+    "tenantId": "m8flow",
+    "visibility": "PRIVATE",
+    "files": [
+        {"fileType": "bpmn", "fileName": "process.bpmn"},
+        {"fileType": "json", "fileName": "form.json"},
+    ],
+    "isPublished": False,
+    "status": "DRAFT",
+    "createdAtInSeconds": 1700005000,
+    "createdBy": "admin",
+    "updatedAtInSeconds": 1700005000,
+    "modifiedBy": "admin",
+}
+
+MOCK_TEMPLATE_PRIVATE_V2: dict[str, Any] = {
+    "id": 7,
+    "templateKey": "test-template-private-multi",
+    "version": "V2",
+    "name": "Private Multi-Version Template",
+    "description": "Private template, second version",
+    "tags": ["test"],
+    "category": "Testing",
+    "tenantId": "m8flow",
+    "visibility": "PRIVATE",
+    "files": [{"fileType": "bpmn", "fileName": "process.bpmn"}],
+    "isPublished": False,
+    "status": "DRAFT",
+    "createdAtInSeconds": 1700006000,
+    "createdBy": "admin",
+    "updatedAtInSeconds": 1700006000,
+    "modifiedBy": "admin",
+}
+
 ALL_MOCK_TEMPLATES: list[dict[str, Any]] = [
     MOCK_TEMPLATE_PRIVATE,
     MOCK_TEMPLATE_TENANT,
@@ -246,6 +290,16 @@ ALL_MOCK_TENANTS: list[dict[str, Any]] = [
     MOCK_TENANT_INACTIVE,
 ]
 
+# Tenant ids -- the global tenant selector keys off ``tenant.id`` and per-page
+# data is filtered by ``tenantId == selectedTenantId``, so every cross-tenant
+# dataset below uses these ids as its ``tenantId``.
+M8FLOW_TENANT_ID: str = MOCK_TENANT_M8FLOW["id"]
+ACME_TENANT_ID: str = MOCK_TENANT_ACME["id"]
+OLD_TENANT_ID: str = MOCK_TENANT_INACTIVE["id"]
+
+# The two active tenants -- the common base for super-admin filter/isolation tests.
+SUPER_ADMIN_ACTIVE_TENANTS: list[dict[str, Any]] = [MOCK_TENANT_M8FLOW, MOCK_TENANT_ACME]
+
 # ===================================================================
 # Process group mock data
 # ===================================================================
@@ -335,6 +389,12 @@ def _filter_templates(
     if "template_key" in qs:
         key = qs["template_key"][0]
         result = [t for t in result if t["templateKey"] == key]
+
+    # Super-admin tenant filter: the gallery sends ``tenantId`` when a tenant is
+    # selected in the global tenant filter.
+    if "tenantId" in qs:
+        tid = qs["tenantId"][0]
+        result = [t for t in result if t.get("tenantId") == tid]
 
     if "published_only" in qs and qs["published_only"][0].lower() == "true":
         result = [t for t in result if t.get("isPublished")]
@@ -476,6 +536,23 @@ def mock_template_detail(
             route.fallback()
 
     page.route("**/v1.0/m8flow/templates/*", _handle_detail)
+
+
+def mock_template_detail_not_found(page: Page, missing_id: int) -> None:
+    """Intercept GET .../templates/<missing_id> and return 404.
+
+    Exercises the invalid / non-existent version path on the detail page without
+    a live backend. Register this AFTER the standard detail mock so it takes
+    precedence for the targeted id (later ``page.route`` handlers run first).
+    """
+
+    def _handle(route: Route) -> None:
+        if route.request.method != "GET":
+            route.fallback()
+            return
+        _json_response(route, {"message": "Template not found"}, status=404)
+
+    page.route(f"**/v1.0/m8flow/templates/{missing_id}*", _handle)
 
 
 def mock_template_import_api(
@@ -633,12 +710,228 @@ def mock_process_groups_api(
             state.append(new_group)
             _json_response(route, new_group)
             return
+        # Super-admin tenant filter: ``useProcessGroups`` appends ``tenantId``
+        # when a tenant is selected in the global tenant filter.
+        visible = state
+        qs = parse_qs(urlparse(req.url).query)
+        if "tenantId" in qs:
+            tid = qs["tenantId"][0]
+            visible = [g for g in state if g.get("tenantId") == tid]
         _json_response(route, {
-            "results": state,
-            "pagination": _make_pagination(state),
+            "results": visible,
+            "pagination": _make_pagination(visible),
         })
 
     page.route("**/process-groups*", _handle_groups)
+
+
+# ===================================================================
+# Task mock data (Home tab task list)
+# ===================================================================
+
+_TASKS_LIST_RE = re.compile(r"/v1\.0/tasks(?:\?|$)")
+
+# A single ``ProcessInstanceTask``-shaped record. Field names mirror those read
+# by ``TaskTable`` (``m8flow-frontend/src/components/TaskTable.tsx``).
+MOCK_TASK: dict[str, Any] = {
+    "id": 101,
+    "process_instance_id": 101,
+    "task_id": "Activity_review_0001",
+    "task_name": "review_task",
+    "task_title": "Review request",
+    "process_model_identifier": "group-alpha/expense-approval",
+    "process_model_display_name": "Expense Approval",
+    "process_initiator_username": "initiator-user",
+    "created_at_in_seconds": 1_700_000_000,
+    "updated_at_in_seconds": 1_700_000_500,
+    "last_milestone_bpmn_name": "Submitted",
+    "potential_owner_usernames": "admin",
+    "assigned_user_group_identifier": "",
+    "status": "user_input_required",
+    "summary": "Awaiting reviewer decision",
+}
+
+ALL_MOCK_TASKS: list[dict[str, Any]] = [copy.deepcopy(MOCK_TASK)]
+
+
+def make_task(overrides: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Create a copy of :data:`MOCK_TASK` with optional field overrides."""
+    task = copy.deepcopy(MOCK_TASK)
+    if overrides:
+        task.update(overrides)
+    return task
+
+
+def make_tasks(
+    count: int, overrides: dict[str, Any] | None = None
+) -> list[dict[str, Any]]:
+    """Generate *count* distinct mock tasks (unique ids / titles / models)."""
+    tasks: list[dict[str, Any]] = []
+    for i in range(count):
+        task = make_task({
+            "id": 1000 + i,
+            "process_instance_id": 1000 + i,
+            "task_id": f"Activity_{i:04d}",
+            "task_title": f"Review request #{i}",
+            "process_model_display_name": f"Expense Approval {i}",
+            "process_model_identifier": f"group-alpha/expense-approval-{i}",
+        })
+        if overrides:
+            task.update(overrides)
+        tasks.append(task)
+    return tasks
+
+
+def mock_tasks_api(
+    page: Page,
+    tasks: list[dict[str, Any]] | None = None,
+) -> None:
+    """Intercept ``GET /v1.0/tasks`` (the Home task list) and return *tasks*.
+
+    Only the list endpoint is fulfilled; task-detail navigations and every
+    other backend call fall through untouched. Pass ``[]`` to exercise the
+    empty state. Call ``page.unroute_all()`` to remove the handler.
+    """
+    source = tasks if tasks is not None else copy.deepcopy(ALL_MOCK_TASKS)
+    payload = {"results": [copy.deepcopy(t) for t in source]}
+
+    def _handle(route: Route) -> None:
+        parsed = urlparse(route.request.url)
+        probe = parsed.path + ("?" if parsed.query else "")
+        if route.request.method != "GET" or not _TASKS_LIST_RE.search(probe):
+            route.fallback()
+            return
+        _json_response(route, payload)
+
+    page.route("**/v1.0/tasks*", _handle)
+
+
+# ===================================================================
+# Process instance mock data (Process Instances list)
+# ===================================================================
+
+# Columns the backend report metadata returns for the default for-me / all
+# perspective (mirrors the live ``POST /process-instances`` response). The
+# table renders one column per entry and derives headers via translation.
+PROCESS_INSTANCE_DEFAULT_COLUMNS: list[dict[str, Any]] = [
+    {"Header": "Id", "accessor": "id", "filterable": False},
+    {"Header": "Process", "accessor": "process_model_display_name", "filterable": False},
+    {"Header": "Start", "accessor": "start_in_seconds", "filterable": False},
+    {"Header": "End", "accessor": "end_in_seconds", "filterable": False},
+    {"Header": "Started by", "accessor": "process_initiator_username", "filterable": False},
+    {"Header": "Last milestone", "accessor": "last_milestone_bpmn_name", "filterable": False},
+    {"Header": "Status", "accessor": "status", "filterable": False},
+]
+
+MOCK_PROCESS_INSTANCE: dict[str, Any] = {
+    "id": 501,
+    "process_model_identifier": "group-alpha/expense-approval",
+    "process_model_display_name": "Expense Approval",
+    "process_initiator_username": "admin",
+    "start_in_seconds": 1_700_000_000,
+    "end_in_seconds": 1_700_003_600,
+    "updated_at_in_seconds": 1_700_003_600,
+    "task_updated_at_in_seconds": 1_700_003_600,
+    "last_milestone_bpmn_name": "Completed",
+    "status": "complete",
+    "task_id": "",
+    "potential_owner_usernames": "",
+    "bpmn_version_control_identifier": "",
+}
+
+ALL_MOCK_PROCESS_INSTANCES: list[dict[str, Any]] = [copy.deepcopy(MOCK_PROCESS_INSTANCE)]
+
+
+def make_process_instance(overrides: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Create a copy of :data:`MOCK_PROCESS_INSTANCE` with optional overrides."""
+    pi = copy.deepcopy(MOCK_PROCESS_INSTANCE)
+    if overrides:
+        pi.update(overrides)
+    return pi
+
+
+def make_process_instances(
+    count: int, overrides: dict[str, Any] | None = None
+) -> list[dict[str, Any]]:
+    """Generate *count* distinct mock process instances (unique ids / models)."""
+    out: list[dict[str, Any]] = []
+    for i in range(count):
+        pi = make_process_instance({
+            "id": 600 + i,
+            "process_model_identifier": f"group-alpha/model-{i}",
+            "process_model_display_name": f"Process Model {i}",
+            "status": "complete",
+        })
+        if overrides:
+            pi.update(overrides)
+        out.append(pi)
+    return out
+
+
+def mock_process_instances_api(
+    page: Page,
+    all_instances: list[dict[str, Any]] | None = None,
+    for_me_instances: list[dict[str, Any]] | None = None,
+    columns: list[dict[str, Any]] | None = None,
+) -> None:
+    """Intercept the ``POST /process-instances`` (all) and
+    ``POST /process-instances/for-me`` list endpoints.
+
+    Honours the ``per_page`` / ``page`` query params for pagination and returns
+    ``{results, pagination, report_metadata, report_hash}``. Detail GETs,
+    report-metadata, and other paths fall through untouched. Pass ``[]`` to
+    exercise the empty state.
+    """
+    all_src = (
+        all_instances
+        if all_instances is not None
+        else copy.deepcopy(ALL_MOCK_PROCESS_INSTANCES)
+    )
+    forme_src = for_me_instances if for_me_instances is not None else all_src
+    cols = columns if columns is not None else PROCESS_INSTANCE_DEFAULT_COLUMNS
+
+    def _slice(src: list[dict[str, Any]], url: str):
+        qs = parse_qs(urlparse(url).query)
+        per_page = max(1, int(qs.get("per_page", ["50"])[0] or 50))
+        page_num = max(1, int(qs.get("page", ["1"])[0] or 1))
+        total = len(src)
+        pages = max(1, (total + per_page - 1) // per_page)
+        page_num = min(page_num, pages)
+        start = (page_num - 1) * per_page
+        sliced = src[start : start + per_page]
+        return sliced, {
+            "count": len(sliced),
+            "total": total,
+            "pages": pages,
+            "page": page_num,
+            "per_page": per_page,
+        }
+
+    def _handle(route: Route) -> None:
+        if route.request.method != "POST":
+            route.fallback()
+            return
+        path = urlparse(route.request.url).path
+        if path.endswith("/process-instances/for-me"):
+            src = forme_src
+        elif path.endswith("/process-instances"):
+            src = all_src
+        else:
+            route.fallback()
+            return
+        sliced, pagination = _slice(src, route.request.url)
+        _json_response(route, {
+            "results": [copy.deepcopy(r) for r in sliced],
+            "pagination": pagination,
+            "report_metadata": {
+                "columns": copy.deepcopy(cols),
+                "filter_by": [],
+                "order_by": [],
+            },
+            "report_hash": "mock-report-hash",
+        })
+
+    page.route("**/process-instances*", _handle)
 
 
 # ===================================================================
@@ -796,6 +1089,60 @@ def mock_template_files_api(page: Page) -> None:
                 content_type="application/xml",
                 body=_SAMPLE_BPMN,
             )
+        else:
+            route.fulfill(
+                status=200,
+                content_type="application/json",
+                body=_SAMPLE_FORM_JSON,
+            )
+
+    page.route("**/v1.0/m8flow/templates/*/files/*", _handle_file)
+
+
+# Markers embedded in each published-family version's BPMN so tests can prove the
+# served XML changed when the selected version changes. ``MISSING_TEMPLATE_ID`` is
+# the id used by ``mock_template_detail_not_found`` for the non-existent-version case.
+PUBLISHED_V1_MARKER = "Process_published_v1"
+PUBLISHED_V2_MARKER = "Process_published_v2"
+MISSING_TEMPLATE_ID = 99999
+
+
+def bpmn_with_marker(marker: str) -> str:
+    """Return a minimal-but-valid BPMN XML string carrying a unique ``marker``.
+
+    The marker is embedded as the process id (e.g. ``Process_v1``) so a test can
+    assert the served XML actually changed between template versions.
+    """
+    return _SAMPLE_BPMN.replace(
+        'id="Process_sample_process_automation_0m6iyy5"',
+        f'id="{marker}"',
+    ).replace(
+        'bpmnElement="Process_sample_process_automation_0m6iyy5"',
+        f'bpmnElement="{marker}"',
+    )
+
+
+_FILES_ID_RE = re.compile(r"/v1\.0/m8flow/templates/(\d+)/files/")
+
+
+def mock_template_files_versioned(
+    page: Page,
+    content_by_id: dict[int, str],
+) -> None:
+    """Intercept GET .../templates/<id>/files/<filename> with per-version content.
+
+    ``content_by_id`` maps a template id to the BPMN/XML body returned for that
+    version's ``.bpmn``/``.dmn`` files. Ids not present (and all JSON/MD files)
+    fall back to the shared ``_SAMPLE_BPMN`` / ``_SAMPLE_FORM_JSON``.
+    """
+
+    def _handle_file(route: Route) -> None:
+        url = route.request.url
+        if url.endswith(".bpmn") or url.endswith(".dmn"):
+            m = _FILES_ID_RE.search(url)
+            tid = int(m.group(1)) if m else None
+            body = content_by_id.get(tid, _SAMPLE_BPMN) if tid is not None else _SAMPLE_BPMN
+            route.fulfill(status=200, content_type="application/xml", body=body)
         else:
             route.fulfill(
                 status=200,
@@ -1006,3 +1353,572 @@ def generate_templates(count: int = 15) -> list[dict[str, Any]]:
         })
         for i in range(count)
     ]
+
+
+# ===================================================================
+# Super Admin cross-tenant fixtures (read-only access model)
+# ===================================================================
+#
+# The Super Admin role has cross-tenant *visibility* but is *read-only* on
+# tenant data (process models/groups, process instances, secrets, connectors,
+# templates -- export only). It retains full management of tenants, tenant
+# users and tenant groups. The mocks below model exactly that so role-gating
+# tests are deterministic regardless of the live QA token.
+
+
+def mock_super_admin_permissions_api(page: Page) -> None:
+    """Grant ``GET`` everywhere; allow writes only on tenant-management URIs.
+
+    Models the new Super Admin permission set: cross-tenant read-only, except
+    POST/PUT/DELETE on the tenant / tenant-realm / tenant-management endpoints
+    (every such URI contains ``tenant``). Use this in restriction tests so the
+    assertions hold even if the QA super-admin token drifts.
+    """
+
+    def _allowed(url: str, method: str) -> bool:
+        if method.upper() == "GET":
+            return True
+        return "tenant" in url.lower()
+
+    def _handle(route: Route) -> None:
+        body = route.request.post_data
+        if not body:
+            _json_response(route, {"results": {}})
+            return
+        data = json.loads(body)
+        reqs = data.get("requests_to_check", {})
+        results: dict[str, Any] = {}
+        for url, methods in reqs.items():
+            if isinstance(methods, (list, dict)):
+                results[url] = {m: _allowed(url, m) for m in methods}
+            else:
+                results[url] = methods
+        _json_response(route, {"results": results})
+
+    page.route("**/permissions-check*", _handle)
+
+
+# ---- Secrets (Configuration) ----------------------------------------------
+# Deliberately NO ``value`` field: the list endpoint never returns secret
+# values, which is what keeps secret values masked in the UI.
+
+MOCK_SECRET_M8FLOW: dict[str, Any] = {
+    "id": 1,
+    "key": "M8FLOW_API_KEY",
+    "username": "admin",
+    "tenantId": M8FLOW_TENANT_ID,
+    "tenantName": "M8Flow",
+}
+
+MOCK_SECRET_ACME: dict[str, Any] = {
+    "id": 2,
+    "key": "ACME_DB_PASSWORD",
+    "username": "acme-admin",
+    "tenantId": ACME_TENANT_ID,
+    "tenantName": "Acme Corp",
+}
+
+ALL_MOCK_SECRETS: list[dict[str, Any]] = [MOCK_SECRET_M8FLOW, MOCK_SECRET_ACME]
+
+_SECRET_DETAIL_RE = re.compile(r"/secrets/[^/?]+")
+
+
+def mock_secrets_api(
+    page: Page,
+    secrets: list[dict[str, Any]] | None = None,
+) -> None:
+    """Intercept GET ``/secrets`` (list) and honor the ``tenantId`` filter.
+
+    Returns records with tenant info but no plaintext value (masking). Detail
+    requests (``/secrets/<key>``) fall through to the real backend.
+    """
+    source = secrets if secrets is not None else ALL_MOCK_SECRETS
+
+    def _handle(route: Route) -> None:
+        url = route.request.url
+        if route.request.method != "GET" or _SECRET_DETAIL_RE.search(urlparse(url).path):
+            route.fallback()
+            return
+        qs = parse_qs(urlparse(url).query)
+        items = list(source)
+        if "tenantId" in qs:
+            tid = qs["tenantId"][0]
+            items = [s for s in items if s.get("tenantId") == tid]
+        page_slice, pagination = _paginate_template_results(items, url)
+        _json_response(route, {"results": page_slice, "pagination": pagination})
+
+    page.route("**/secrets*", _handle)
+
+
+# ---- Connectors ------------------------------------------------------------
+# Connectors are global plugin definitions (not tenant-scoped); the grouped
+# endpoint returns the same catalogue regardless of the selected tenant.
+
+MOCK_CONNECTOR_HTTP: dict[str, Any] = {
+    "id": "http",
+    "name": "HTTP",
+    "description": "Make HTTP requests to external services.",
+    "status": "available",
+    "icon": "",
+    "operationCount": 2,
+    "operations": [
+        {
+            "id": "http/GetRequest",
+            "name": "Get Request",
+            "rawName": "GetRequest",
+            "description": "Perform an HTTP GET request.",
+            "parameters": [{"id": "url", "type": "str", "required": True}],
+        },
+        {
+            "id": "http/PostRequest",
+            "name": "Post Request",
+            "rawName": "PostRequest",
+            "description": "Perform an HTTP POST request.",
+            "parameters": [{"id": "url", "type": "str", "required": True}],
+        },
+    ],
+}
+
+MOCK_CONNECTOR_SLACK: dict[str, Any] = {
+    "id": "slack",
+    "name": "Slack",
+    "description": "Send messages to Slack channels.",
+    "status": "available",
+    "icon": "",
+    "operationCount": 1,
+    "operations": [
+        {
+            "id": "slack/PostMessage",
+            "name": "Post Message",
+            "rawName": "PostMessage",
+            "description": "Post a message to a channel.",
+            "parameters": [{"id": "channel", "type": "str", "required": True}],
+        },
+    ],
+}
+
+ALL_MOCK_CONNECTORS: list[dict[str, Any]] = [MOCK_CONNECTOR_HTTP, MOCK_CONNECTOR_SLACK]
+
+
+def mock_connectors_api(
+    page: Page,
+    connectors: list[dict[str, Any]] | None = None,
+) -> None:
+    """Intercept GET ``/m8flow/connectors-grouped`` and return the catalogue."""
+    source = connectors if connectors is not None else ALL_MOCK_CONNECTORS
+
+    def _handle(route: Route) -> None:
+        if route.request.method != "GET":
+            route.fallback()
+            return
+        _json_response(route, source)
+
+    page.route("**/m8flow/connectors-grouped*", _handle)
+
+
+# ---- Process instances -----------------------------------------------------
+
+MOCK_PROCESS_INSTANCE_M8FLOW: dict[str, Any] = {
+    "id": 5001,
+    "process_model_identifier": "test-group/m8flow-model",
+    "process_model_display_name": "M8Flow Onboarding",
+    "status": "complete",
+    "start_in_seconds": 1700000000,
+    "end_in_seconds": 1700000500,
+    "tenantId": "m8flow",
+    "tenantName": "M8Flow",
+}
+
+MOCK_PROCESS_INSTANCE_ACME: dict[str, Any] = {
+    "id": 5002,
+    "process_model_identifier": "test-group/acme-model",
+    "process_model_display_name": "Acme Invoice",
+    "status": "error",
+    "start_in_seconds": 1700100000,
+    "end_in_seconds": None,
+    "tenantId": "acme",
+    "tenantName": "Acme Corp",
+}
+
+MOCK_PROCESS_INSTANCE_SUSPENDED: dict[str, Any] = {
+    "id": 5003,
+    "process_model_identifier": "test-group/acme-model",
+    "process_model_display_name": "Acme Refund",
+    "status": "suspended",
+    "start_in_seconds": 1700200000,
+    "end_in_seconds": None,
+    "tenantId": "acme",
+    "tenantName": "Acme Corp",
+}
+
+ALL_MOCK_PROCESS_INSTANCES: list[dict[str, Any]] = [
+    MOCK_PROCESS_INSTANCE_M8FLOW,
+    MOCK_PROCESS_INSTANCE_ACME,
+    MOCK_PROCESS_INSTANCE_SUSPENDED,
+]
+
+_PROCESS_INSTANCE_COLUMNS: list[dict[str, Any]] = [
+    {"Header": "Id", "accessor": "id", "filterable": False},
+    {"Header": "Process", "accessor": "process_model_display_name", "filterable": False},
+    {"Header": "Start", "accessor": "start_in_seconds", "filterable": False},
+    {"Header": "Status", "accessor": "status", "filterable": False},
+]
+
+_PROCESS_INSTANCE_LIST_RE = re.compile(r"/process-instances(/for-me)?(\?|$)")
+
+
+def mock_process_instances_api(
+    page: Page,
+    instances: list[dict[str, Any]] | None = None,
+) -> None:
+    """Intercept the process-instance list/report endpoint.
+
+    Returns a paginated report payload. The frontend injects a ``tenantName``
+    column client-side for super admins, so the mock only supplies the data and
+    the base columns. Honors the ``x-m8flow-tenant-id`` request header for
+    cross-tenant isolation assertions.
+    """
+    source = instances if instances is not None else ALL_MOCK_PROCESS_INSTANCES
+
+    def _handle(route: Route) -> None:
+        url = route.request.url
+        path = urlparse(url).path
+        if not _PROCESS_INSTANCE_LIST_RE.search(path):
+            route.fallback()
+            return
+        items = list(source)
+        tid = route.request.headers.get("x-m8flow-tenant-id")
+        if tid:
+            items = [i for i in items if i.get("tenantId") == tid]
+        page_slice, pagination = _paginate_template_results(items, url)
+        _json_response(route, {
+            "results": page_slice,
+            "pagination": pagination,
+            "report_metadata": {
+                "columns": copy.deepcopy(_PROCESS_INSTANCE_COLUMNS),
+                "filter_by": [],
+                "order_by": [],
+            },
+            "report_hash": "mock-process-instance-hash",
+        })
+
+    page.route(re.compile(r".*/process-instances(/for-me)?(\?.*)?$"), _handle)
+
+
+# ---- Cross-tenant process groups / models ---------------------------------
+
+MOCK_PROCESS_GROUP_M8FLOW: dict[str, Any] = {
+    "id": "m8flow-group",
+    "display_name": "M8Flow Operations",
+    "description": "Process group owned by M8Flow",
+    "tenantId": M8FLOW_TENANT_ID,
+    "tenantName": "M8Flow",
+    # A model inside the group so drill-in tests can exercise the model card.
+    "process_models": [
+        {
+            "id": "m8flow-group/onboarding",
+            "display_name": "M8Flow Onboarding",
+            "description": "Onboarding workflow",
+            "tenantId": M8FLOW_TENANT_ID,
+            "tenantName": "M8Flow",
+        }
+    ],
+    "process_groups": [],
+}
+
+MOCK_PROCESS_GROUP_ACME: dict[str, Any] = {
+    "id": "acme-group",
+    "display_name": "Acme Finance",
+    "description": "Process group owned by Acme Corp",
+    "tenantId": ACME_TENANT_ID,
+    "tenantName": "Acme Corp",
+    "process_models": [],
+    "process_groups": [],
+}
+
+ALL_MOCK_CROSS_TENANT_GROUPS: list[dict[str, Any]] = [
+    MOCK_PROCESS_GROUP_M8FLOW,
+    MOCK_PROCESS_GROUP_ACME,
+]
+
+
+# ---- Home (tasks) ----------------------------------------------------------
+
+MOCK_TASK_M8FLOW: dict[str, Any] = {
+    "id": 9001,
+    "process_instance_id": 9001,
+    "task_id": "Task_m8flow_1",
+    "process_model_identifier": "m8flow-group/onboarding",
+    "process_model_display_name": "M8Flow Onboarding Task",
+    "task_title": "Approve M8Flow Onboarding",
+    "task_name": "approve_m8flow",
+    "process_initiator_username": "admin",
+    "potential_owner_usernames": "admin",
+    "last_milestone_bpmn_name": "Started",
+    "created_at_in_seconds": 1700000000,
+    "updated_at_in_seconds": 1700000100,
+    "tenantId": M8FLOW_TENANT_ID,
+    "tenantName": "M8Flow",
+}
+
+MOCK_TASK_ACME: dict[str, Any] = {
+    "id": 9002,
+    "process_instance_id": 9002,
+    "task_id": "Task_acme_1",
+    "process_model_identifier": "acme-group/invoice",
+    "process_model_display_name": "Acme Invoice Task",
+    "task_title": "Review Acme Invoice",
+    "task_name": "review_acme",
+    "process_initiator_username": "acme-admin",
+    "potential_owner_usernames": "acme-admin",
+    "last_milestone_bpmn_name": "Started",
+    "created_at_in_seconds": 1700100000,
+    "updated_at_in_seconds": 1700100100,
+    "tenantId": ACME_TENANT_ID,
+    "tenantName": "Acme Corp",
+}
+
+ALL_MOCK_TASKS: list[dict[str, Any]] = [MOCK_TASK_M8FLOW, MOCK_TASK_ACME]
+
+
+# ---- Templates (cross-tenant) ---------------------------------------------
+
+# Whole catalogue across tenants, for "view templates from all tenants" tests.
+CROSS_TENANT_GALLERY_TEMPLATES: list[dict[str, Any]] = [
+    *ALL_MOCK_TEMPLATES,
+    *ALL_ACME_TEMPLATES,
+]
+
+# Id-keyed pair for per-tenant filter tests (separate from the shared
+# ALL_MOCK_TEMPLATES, which other suites depend on, so we never mutate those).
+CROSS_TENANT_SCOPED_TEMPLATES: list[dict[str, Any]] = [
+    make_template({"id": 7001, "templateKey": "m8flow-tpl", "name": "M8Flow Scoped Template", "tenantId": M8FLOW_TENANT_ID}),
+    make_template({"id": 7002, "templateKey": "acme-tpl", "name": "Acme Scoped Template", "tenantId": ACME_TENANT_ID}),
+]
+
+
+def mock_tasks_api(
+    page: Page,
+    tasks: list[dict[str, Any]] | None = None,
+) -> None:
+    """Intercept GET ``/tasks`` (home page) and honor the ``tenantId`` filter.
+
+    The home page sends ``?tenantId=`` when a super admin selects a tenant in
+    the global tenant filter.
+    """
+    source = tasks if tasks is not None else ALL_MOCK_TASKS
+
+    def _handle(route: Route) -> None:
+        url = route.request.url
+        if route.request.method != "GET":
+            route.fallback()
+            return
+        items = list(source)
+        qs = parse_qs(urlparse(url).query)
+        if "tenantId" in qs:
+            tid = qs["tenantId"][0]
+            items = [task for task in items if task.get("tenantId") == tid]
+        _json_response(route, {"results": items, "pagination": _make_pagination(items)})
+
+    page.route("**/tasks*", _handle)
+
+
+# ===================================================================
+# Connector mock data -- shape returned by GET /v1.0/m8flow/connectors-grouped
+# ===================================================================
+
+MOCK_CONNECTOR_HTTP: dict[str, Any] = {
+    "id": "http",
+    "name": "HTTP",
+    "description": "Make REST API calls from workflows.",
+    "status": "available",
+    "icon": "globe",
+    "operationCount": 3,
+    "docsUrl": "https://github.com/AOT-Technologies/m8flow/tree/main/m8flow-connector-proxy#http-connector",
+    "operations": [
+        {
+            "id": "http/GetRequest",
+            "name": "GET Request",
+            "rawName": "GetRequest",
+            "description": "Perform an HTTP GET request.",
+            "parameters": [
+                {"id": "url", "type": "string", "required": True},
+                {"id": "headers", "type": "object", "required": False},
+            ],
+        },
+        {
+            "id": "http/PostRequest",
+            "name": "POST Request",
+            "rawName": "PostRequest",
+            "description": "Perform an HTTP POST request.",
+            "parameters": [
+                {"id": "url", "type": "string", "required": True},
+                {"id": "body", "type": "object", "required": False},
+            ],
+        },
+        {
+            "id": "http/PutRequest",
+            "name": "PUT Request",
+            "rawName": "PutRequest",
+            "description": "Perform an HTTP PUT request.",
+            "parameters": [
+                {"id": "url", "type": "string", "required": True},
+            ],
+        },
+    ],
+}
+
+# Exactly one operation -> exercises the singular "1 operation" chip.
+# Empty description -> exercises the use_via_service_task fallback text.
+MOCK_CONNECTOR_SLACK: dict[str, Any] = {
+    "id": "slack",
+    "name": "Slack",
+    "description": "",
+    "status": "available",
+    "icon": "slack",
+    "operationCount": 1,
+    "operations": [
+        {
+            "id": "slack/PostMessage",
+            "name": "Post Message",
+            "rawName": "PostMessage",
+            "description": "Send a message to a Slack channel.",
+            "parameters": [
+                {"id": "channel", "type": "string", "required": True},
+                {"id": "text", "type": "string", "required": True},
+            ],
+        },
+    ],
+}
+
+MOCK_CONNECTOR_SMTP: dict[str, Any] = {
+    "id": "smtp",
+    "name": "SMTP Email",
+    "description": "Send emails over SMTP.",
+    "status": "available",
+    "icon": "mail",
+    "operationCount": 2,
+    "operations": [
+        {
+            "id": "smtp/SendEmail",
+            "name": "Send Email",
+            "rawName": "SendEmail",
+            "description": "Send a plain-text email.",
+            "parameters": [
+                {"id": "to", "type": "string", "required": True},
+                {"id": "subject", "type": "string", "required": True},
+                {"id": "body", "type": "string", "required": False},
+            ],
+        },
+        {
+            "id": "smtp/SendTemplatedEmail",
+            "name": "Send Templated Email",
+            "rawName": "SendTemplatedEmail",
+            "description": "",
+            "parameters": [],
+        },
+    ],
+}
+
+ALL_MOCK_CONNECTORS: list[dict[str, Any]] = [
+    MOCK_CONNECTOR_HTTP,
+    MOCK_CONNECTOR_SLACK,
+    MOCK_CONNECTOR_SMTP,
+]
+
+
+def make_connector(overrides: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Create a copy of MOCK_CONNECTOR_HTTP with optional overrides."""
+    connector = copy.deepcopy(MOCK_CONNECTOR_HTTP)
+    if overrides:
+        connector.update(overrides)
+    return connector
+
+
+def generate_connectors(count: int = 9) -> list[dict[str, Any]]:
+    """Generate *count* unique mock connectors (responsive-grid / list tests)."""
+    return [
+        make_connector({
+            "id": f"gen_connector_{i}",
+            "name": f"Generated Connector {i}",
+            "description": f"Auto-generated connector #{i}",
+        })
+        for i in range(count)
+    ]
+
+
+def mock_connectors_api(
+    page: Page,
+    connectors: list[dict[str, Any]] | None = None,
+    status: int = 200,
+    hang: bool = False,
+) -> None:
+    """Intercept GET /v1.0/m8flow/connectors-grouped.
+
+    - ``hang=True`` leaves the request pending forever so the page stays in
+      its loading state (CircularProgress) -- deterministic loading-state test.
+    - ``status >= 400`` returns an error body so the page shows the load-failed
+      alert.
+    - otherwise returns the connector list (defaults to ALL_MOCK_CONNECTORS).
+    """
+    payload = ALL_MOCK_CONNECTORS if connectors is None else connectors
+
+    def _handle(route: Route) -> None:
+        if hang:
+            # Intentionally never fulfill: the in-flight request keeps the
+            # component's `loading` state true so the spinner stays visible.
+            return
+        if status >= 400:
+            _json_response(route, {"message": "connector proxy unavailable"}, status)
+            return
+        _json_response(route, payload, status)
+
+    page.route("**/v1.0/m8flow/connectors-grouped*", _handle)
+
+
+def mock_permissions_api_custom(
+    page: Page,
+    deny_connectors: bool = False,
+    deny_secrets: bool = False,
+) -> None:
+    """Like ``mock_permissions_api`` but can selectively deny permissions.
+
+    - ``deny_connectors`` -> GET on the connectors-grouped URI is denied, so the
+      Connectors page redirects to "/" and the nav item is hidden.
+    - ``deny_secrets`` -> POST on the secrets URI is denied, so the per-card
+      "Configure" button is not rendered.
+    """
+
+    def _allowed(url: str, method: str) -> bool:
+        if deny_connectors and "connectors-grouped" in url and method == "GET":
+            return False
+        if deny_secrets and "secret" in url and method == "POST":
+            return False
+        return True
+
+    def _handle(route: Route) -> None:
+        body = route.request.post_data
+        if not body:
+            _json_response(route, {"results": {}})
+            return
+        data = json.loads(body)
+        reqs = data.get("requests_to_check", {})
+        results: dict[str, Any] = {}
+        for url, methods in reqs.items():
+            if isinstance(methods, (dict, list)):
+                results[url] = {m: _allowed(url, m) for m in methods}
+            else:
+                results[url] = methods
+        _json_response(route, {"results": results})
+
+    page.route("**/permissions-check*", _handle)
+
+
+def mock_connectors_denied_permissions_api(page: Page) -> None:
+    """Deny GET on the connectors-grouped URI (restricted-user test)."""
+    mock_permissions_api_custom(page, deny_connectors=True)
+
+
+def mock_secrets_denied_permissions_api(page: Page) -> None:
+    """Grant connectors access but deny secrets POST (Configure-hidden test)."""
+    mock_permissions_api_custom(page, deny_secrets=True)

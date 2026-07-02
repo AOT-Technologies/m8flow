@@ -4,10 +4,18 @@ import { MemoryRouter } from 'react-router-dom';
 import TemplateCard from '../components/TemplateCard';
 import type { Template } from '../types/template';
 
-// Mock react-i18next
+// Mock react-i18next. Returns the key as the base text (existing assertions match keys),
+// but surfaces interpolation values so interpolated strings like t("owner_label", { owner })
+// still expose the value to the rendered output.
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, opts?: { defaultValue?: string }) => opts?.defaultValue ?? key,
+    t: (key: string, opts?: Record<string, unknown>) => {
+      if (opts?.defaultValue) return opts.defaultValue as string;
+      const values = Object.entries(opts ?? {})
+        .filter(([k]) => k !== 'defaultValue')
+        .map(([, v]) => String(v));
+      return values.length ? `${key} ${values.join(' ')}` : key;
+    },
   }),
 }));
 

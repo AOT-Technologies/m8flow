@@ -642,13 +642,13 @@ export default function ProcessInstanceListTableWithFilters({
 
   const processInstanceReportSaveTag = () => {
     if (processInstanceReportJustSaved) {
-      let titleOperation = 'Updated';
+      let titleOperation = t('updated');
       if (processInstanceReportJustSaved === 'new') {
-        titleOperation = 'Created';
+        titleOperation = t('created');
       }
       return (
         <Notification
-          title={`Perspective: ${titleOperation}`}
+          title={`${t('perspective')}: ${titleOperation}`}
           onClose={() => setProcessInstanceReportJustSaved(null)}
         >
           <span>{`'${
@@ -1100,8 +1100,8 @@ export default function ProcessInstanceListTableWithFilters({
             return null;
           }}
           shouldFilterItem={shouldFilterReportColumn}
-          placeholder="Choose a column to show"
-          titleText="Column"
+          placeholder={t("choose_column_to_show")}
+          titleText={t("column")}
           selectedItem={reportColumnToOperateOn}
         />,
       );
@@ -1111,7 +1111,7 @@ export default function ProcessInstanceListTableWithFilters({
         id="report-column-display-name"
         key="report-column-display-name"
         name="report-column-display-name"
-        labelText="Display Name"
+        labelText={t("display_name")}
         disabled={!reportColumnToOperateOn}
         value={reportColumnToOperateOn ? t(reportColumnToOperateOn.Header.toLowerCase().replace(/ /g, '_'), reportColumnToOperateOn.Header) : ''}
         onChange={(event: any) => {
