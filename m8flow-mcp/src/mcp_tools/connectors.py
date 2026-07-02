@@ -43,7 +43,7 @@ async def _get_grouped_connectors(token: str) -> list[dict]:
             if connector_id not in connectors_map:
                 connectors_map[connector_id] = {
                     "id": connector_id,
-                    "name": connector_id.replace("_", " ").title(),
+                    "name": CONNECTOR_NAMES.get(connector_id, connector_id.replace("_", " ").title()),
                     "description": CONNECTOR_DESCRIPTIONS.get(connector_id, ""),
                     "operations": [],
                     "operationCount": 0,
@@ -67,6 +67,17 @@ async def _get_grouped_connectors(token: str) -> list[dict]:
 
     return list(connectors_map.values())
 
+
+# Connector display names (proper casing that .title() can't derive from the id)
+CONNECTOR_NAMES = {
+    "http": "HTTP",
+    "postgres_v2": "PostgreSQL",
+    "slack": "Slack",
+    "smtp": "SMTP",
+    "salesforce": "Salesforce",
+    "stripe": "Stripe",
+    "github": "GitHub",
+}
 
 # Connector metadata enrichment
 CONNECTOR_DESCRIPTIONS = {
