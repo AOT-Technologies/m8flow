@@ -7,6 +7,22 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _clear_connector_cache():
+    """Clear the module-level connector cache before/after each test.
+
+    ``connectors._get_grouped_connectors`` caches grouped connectors per tenant
+    for 60s. Without clearing it between tests, an earlier test's data leaks into
+    later ones, so their mocked ``client.get`` is never called (the empty-response
+    and API-error branches never run).
+    """
+    from src.mcp_tools import connectors
+
+    connectors._connector_cache.clear()
+    yield
+    connectors._connector_cache.clear()
+
+
 @pytest.fixture
 def mock_connectors_data():
     """Mock raw /v1.0/service-tasks API response.

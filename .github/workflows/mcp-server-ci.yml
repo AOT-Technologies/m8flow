@@ -91,7 +91,10 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install Ruff
-        run: pip install ruff
+        # Pin ruff so a newer release can't silently change formatting rules and
+        # break `ruff format --check` with no code change. Keep in sync with the
+        # `ruff` pin in m8flow-mcp/pyproject.toml [project.optional-dependencies].dev
+        run: pip install ruff==0.15.20
 
       - name: Run Ruff linter
         working-directory: m8flow-mcp
