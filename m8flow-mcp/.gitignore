@@ -42,12 +42,19 @@ env/
 Thumbs.db
 
 # Sensitive Data
-*_TOKEN*
-*token*
-*secret*
-*password*
+# Anchored to repo root (leading /) so these only catch stray credential
+# dumps at the top level and don't blanket-match legitimate nested source
+# modules like src/mcp_tools/secrets.py or src/auth/token_service.py.
+/*_TOKEN*
+/*token*
+/*secret*
+/*password*
 *.pem
 *.key
+
+# Docs known to contain a real embedded bearer token (checked by content, not just name)
+docs/QUICK_START_WITH_YOUR_TOKEN.md
+docs/DEBUG_MCP.md
 
 # Test Output
 .pytest_cache/
