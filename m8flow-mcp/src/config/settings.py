@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     keycloak_username: str | None = None
     keycloak_password: str | None = None
 
+    # Token lifecycle
+    token_refresh_margin: int = 30  # refresh ROPC token this many seconds before expiry
+
     # JWT verification
     authz_server_public_key_path: str | None = None
 
@@ -46,6 +49,15 @@ class Settings(BaseSettings):
     oidc_config_url: str | None = None
     required_scopes: str = "openid,profile,email"
     verify_id_token: bool = True
+
+    # OIDCProxy (browser-based login for remote/HTTP mode)
+    mcp_oidc_base_url: str | None = None  # public base URL of this MCP server
+    mcp_oidc_issuer_url: str | None = None  # defaults to base URL when unset
+    mcp_oidc_redirect_path: str = "/oauth/callback"
+    mcp_oidc_require_consent: bool = False
+
+    # Secrets
+    allow_secret_value_read: bool = False  # gate the show-value tool (UI hides it too)
 
     # Multi-tenancy
     default_tenant_id: str | None = None
@@ -62,6 +74,31 @@ class Settings(BaseSettings):
     def is_remote(self) -> bool:
         """Check if server is running in remote (HTTP) mode."""
         return self.server_type == "remote"
+
+    @property
+    def required_scopes_list(self) -> list[str]:
+        """Parse the comma/space-separated required scopes into a list."""
+        return [s for s in self.required_scopes.replace(",", " ").split() if s]
+
+    @property
+    def oidc_base_url(self) -> str:
+        """Public base URL used by OIDCProxy for OAuth callbacks/metadata."""
+        return (self.mcp_oidc_base_url or f"http://localhost:{self.port}").rstrip("/")
+
+    @property
+    def oidc_issuer_url(self) -> str:
+        """Issuer URL advertised in OAuth metadata (defaults to base URL)."""
+        return (self.mcp_oidc_issuer_url or self.oidc_base_url).rstrip("/")
+
+    @property
+    def has_oidc_client(self) -> bool:
+        """True when a confidential Keycloak client is configured for browser login."""
+        return bool(self.client_id and self.client_secret)
+
+    @property
+    def has_ropc_credentials(self) -> bool:
+        """True when username/password are configured for ROPC auto-login."""
+        return bool(self.keycloak_username and self.keycloak_password)
 
     @property
     def keycloak_token_url(self) -> str:

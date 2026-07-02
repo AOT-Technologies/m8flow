@@ -8,10 +8,12 @@ Provides tools to:
 
 from __future__ import annotations
 
+import re
+import time
 from typing import TYPE_CHECKING
 
 from src.api_client import M8flowAPIClient
-from src.utils.context import get_auth_token
+from src.utils.context import get_auth_token, get_tenant_id
 from src.utils.logging import get_logger
 
 if TYPE_CHECKING:
@@ -20,9 +22,15 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 client = M8flowAPIClient()
 
+# Short-lived cache for grouped connectors, keyed by tenant. The service-task
+# catalogue changes rarely, so caching avoids refetching + re-parsing on every
+# list/get/search/operation call within a session.
+_CONNECTOR_CACHE_TTL = 60.0
+_connector_cache: dict[str, tuple[float, list[dict]]] = {}
+
 
 async def _get_grouped_connectors(token: str) -> list[dict]:
-    """Fetch service tasks and group them by connector.
+    """Fetch service tasks and group them by connector (cached per tenant).
 
     Args:
         token: Authentication token
@@ -30,15 +38,19 @@ async def _get_grouped_connectors(token: str) -> list[dict]:
     Returns:
         List of connectors with their operations
     """
+    cache_key = get_tenant_id() or "_default"
+    cached = _connector_cache.get(cache_key)
+    if cached and (time.time() - cached[0]) < _CONNECTOR_CACHE_TTL:
+        return cached[1]
+
     service_tasks = await client.get("/v1.0/service-tasks", token)
 
     # Group by connector
-    connectors_map = {}
+    connectors_map: dict[str, dict] = {}
     for task in service_tasks:
         task_id = task.get("id", "")
         if "/" in task_id:
-            connector_id = task_id.split("/")[0]
-            operation_name = task_id.split("/")[1] if len(task_id.split("/")) > 1 else task_id
+            connector_id, _, operation_name = task_id.partition("/")
 
             if connector_id not in connectors_map:
                 connectors_map[connector_id] = {
@@ -48,9 +60,6 @@ async def _get_grouped_connectors(token: str) -> list[dict]:
                     "operations": [],
                     "operationCount": 0,
                 }
-
-            # Build operation object
-            import re
 
             # Convert camelCase to Title Case (e.g., "GetRequest" -> "Get Request")
             formatted_name = re.sub(r"([A-Z])", r" \1", operation_name).strip()
@@ -66,7 +75,9 @@ async def _get_grouped_connectors(token: str) -> list[dict]:
             connectors_map[connector_id]["operations"].append(operation)
             connectors_map[connector_id]["operationCount"] += 1
 
-    return list(connectors_map.values())
+    connectors = list(connectors_map.values())
+    _connector_cache[cache_key] = (time.time(), connectors)
+    return connectors
 
 
 # Connector display names (proper casing that .title() can't derive from the id)
