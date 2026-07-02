@@ -8,6 +8,9 @@ import {
 
 const encodeState = (state: string) => Buffer.from(state, 'utf-8').toString('base64');
 
+const encodeClientData = (data: Record<string, string>) =>
+  Buffer.from(JSON.stringify(data), 'utf-8').toString('base64url');
+
 describe('masterRealmLogin theme helper', () => {
   it('derives the backend login base from the redirect_uri on the Keycloak login page', () => {
     const currentLocation =
@@ -58,6 +61,45 @@ describe('masterRealmLogin theme helper', () => {
       }),
     ).toBe(
       'http://localhost:7000/v1.0/login?redirect_url=http%3A%2F%2Flocalhost%3A7001%2F&authentication_identifier=m8flow',
+    );
+  });
+
+  it('derives the backend login base from client_data on a restarted login page (M8F-357)', () => {
+    const currentLocation =
+      'http://localhost:7002/realms/m8flow/login-actions/authenticate?client_id=m8flow-backend&tab_id=abc&client_data=' +
+      encodeURIComponent(
+        encodeClientData({ ru: 'http://localhost:7000/v1.0/login_return' }),
+      );
+
+    expect(extractBackendBaseUrl(currentLocation)).toBe('http://localhost:7000/v1.0');
+  });
+
+  it('recovers the frontend origin from the client_data state after returning from registration (M8F-357)', () => {
+    const state = encodeState(
+      "{'final_url': 'http://localhost:7001/reports', 'authentication_identifier': 'm8flow'}",
+    );
+    const currentLocation =
+      'http://localhost:7002/realms/m8flow/login-actions/authenticate?client_id=m8flow-backend&tab_id=abc&client_data=' +
+      encodeURIComponent(encodeClientData({ st: state }));
+
+    expect(extractFrontendOrigin(currentLocation)).toBe('http://localhost:7001');
+  });
+
+  it('builds the master-realm login URL from client_data on the restarted login page (M8F-357)', () => {
+    const state = encodeState(
+      "{'final_url': 'http://localhost:7001/', 'authentication_identifier': 'm8flow'}",
+    );
+    const currentLocation =
+      'http://localhost:7002/realms/m8flow/login-actions/authenticate?client_id=m8flow-backend&tab_id=abc&client_data=' +
+      encodeURIComponent(
+        encodeClientData({
+          ru: 'http://localhost:7000/v1.0/login_return',
+          st: state,
+        }),
+      );
+
+    expect(buildMasterRealmLoginUrl(currentLocation)).toBe(
+      'http://localhost:7000/v1.0/login?redirect_url=http%3A%2F%2Flocalhost%3A7001%2Ftenants&authentication_identifier=master',
     );
   });
 

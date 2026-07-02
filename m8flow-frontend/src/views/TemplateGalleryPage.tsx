@@ -416,7 +416,7 @@ export default function TemplateGalleryPage() {
                         <TableCell>{t("key")}</TableCell>
                         <TableCell>{t("version")}</TableCell>
                         {isSuperAdmin && <TableCell>{t("tenant")}</TableCell>}
-                        {isSuperAdmin && <TableCell>Owner</TableCell>}
+                        {isSuperAdmin && <TableCell>{t("owner")}</TableCell>}
                         <TableCell>{t("category")}</TableCell>
                         <TableCell>{t("updated")}</TableCell>
                         <TableCell align="right">{t("actions")}</TableCell>

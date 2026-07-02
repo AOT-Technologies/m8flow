@@ -1,4 +1,5 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { Visibility, GetApp } from "@mui/icons-material";
 import {
@@ -38,6 +39,7 @@ interface TemplateFileListProps {
 }
 
 export default function TemplateFileList({ template, templateId }: TemplateFileListProps) {
+  const { t } = useTranslation();
   const files = (template.files ?? []).filter(isSupportedFile);
   const primaryFileName = files.find((f) =>
     f.fileName.toLowerCase().endsWith(".bpmn")
@@ -55,12 +57,19 @@ export default function TemplateFileList({ template, templateId }: TemplateFileL
 
   return (
     <Box sx={{ mt: 1 }}>
+      <Typography
+        variant="overline"
+        color="text.secondary"
+        sx={{ display: "block", mb: 0.5, letterSpacing: "0.08em" }}
+      >
+        {t("files")}
+      </Typography>
       <TableContainer>
         <Table size="medium" className="process-model-file-table" data-testid="template-file-list-table">
           <TableHead>
             <TableRow>
-              <TableCell>Name</TableCell>
-              <TableCell align="right">Actions</TableCell>
+              <TableCell>{t("name")}</TableCell>
+              <TableCell align="right">{t("actions")}</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -80,7 +89,7 @@ export default function TemplateFileList({ template, templateId }: TemplateFileL
                         color="text.secondary"
                         sx={{ ml: 0.5 }}
                       >
-                        – Primary File
+                        – {t("primary_file")}
                       </Typography>
                     )}
                   </TableCell>
@@ -89,16 +98,16 @@ export default function TemplateFileList({ template, templateId }: TemplateFileL
                       component={Link}
                       to={viewPath}
                       size="small"
-                      aria-label="View file"
-                      title="View"
+                      aria-label={t("view_file")}
+                      title={t("view")}
                       data-testid={`template-file-view-button-${f.fileName}`}
                     >
                       <Visibility fontSize="small" />
                     </IconButton>
                     <IconButton
                       size="small"
-                      aria-label="Download file"
-                      title="Download"
+                      aria-label={t("download_file")}
+                      title={t("download")}
                       data-testid={`template-file-download-button-${f.fileName}`}
                       onClick={() => handleDownload(f.fileName)}
                     >

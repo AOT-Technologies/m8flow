@@ -13,15 +13,15 @@ import {
   TextField,
 } from "@mui/material";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import TemplateService from "../services/TemplateService";
 import type { CreateTemplateMetadata, Template, TemplateVisibility } from "../types/template";
-import { nameToTemplateKey } from "../utils/templateKey";
-
-const VISIBILITY_OPTIONS: { value: TemplateVisibility; label: string }[] = [
-  { value: "PRIVATE", label: "Private (only you)" },
-  { value: "TENANT", label: "Tenant-wide (all users in your tenant)" },
-  { value: "PUBLIC", label: "Public (all authenticated users)" },
-];
+import {
+  isValidTemplateName,
+  nameToTemplateKey,
+  TEMPLATE_NAME_MAX_LENGTH,
+} from "../utils/templateKey";
+import { VISIBILITY_OPTIONS } from "../utils/templateHelpers";
 
 export interface CreateTemplateModalProps {
   open: boolean;
@@ -34,6 +34,7 @@ export default function CreateTemplateModal({
   onClose,
   onSuccess,
 }: CreateTemplateModalProps) {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -65,24 +66,37 @@ export default function CreateTemplateModal({
   const handleSubmit = async () => {
     const trimmedName = name.trim();
     if (!trimmedName) {
-      setError("Name is required.");
+      setError(t("name_required"));
+      return;
+    }
+    if (trimmedName.length > TEMPLATE_NAME_MAX_LENGTH) {
+      setError(t("template_name_too_long"));
+      return;
+    }
+    if (!isValidTemplateName(trimmedName)) {
+      setError(t("template_name_invalid_chars"));
       return;
     }
     const template_key = nameToTemplateKey(trimmedName);
     if (!template_key) {
-      setError("Name must contain at least one letter or number.");
+      setError(t("name_must_contain_letter_or_number"));
       return;
     }
     const hasBpmn = files.some(
       (f) => f.name.toLowerCase().endsWith(".bpmn")
     );
     if (!hasBpmn) {
-      setError("At least one BPMN file is required.");
+      setError(t("at_least_one_bpmn_required"));
       return;
     }
     setLoading(true);
     setError(null);
     try {
+      if (await TemplateService.templateNameExists(template_key)) {
+        setError(t("template_name_exists"));
+        setLoading(false);
+        return;
+      }
       const metadata: CreateTemplateMetadata = {
         template_key,
         name: trimmedName,
@@ -105,7 +119,7 @@ export default function CreateTemplateModal({
       onSuccess?.(template);
     } catch (err: unknown) {
       setError(
-        err instanceof Error ? err.message : "Failed to create template."
+        err instanceof Error ? err.message : t("failed_to_create_template")
       );
     } finally {
       setLoading(false);
@@ -114,24 +128,25 @@ export default function CreateTemplateModal({
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth data-testid="create-template-dialog">
-      <DialogTitle>Create template</DialogTitle>
+      <DialogTitle>{t("create_template_title")}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
           {error && (
             <Alert severity="error" sx={{ mb: 1 }} data-testid="create-template-error-alert">{error}</Alert>
           )}
           <TextField
-            label="Name"
+            label={t("name")}
             required
             fullWidth
             value={name}
             onChange={(e) => setName(e.target.value)}
             disabled={loading}
-            placeholder="e.g. Approval Workflow"
+            placeholder={t("eg_approval_workflow")}
+            inputProps={{ maxLength: TEMPLATE_NAME_MAX_LENGTH }}
             data-testid="create-template-name-input"
           />
           <TextField
-            label="Description"
+            label={t("description")}
             fullWidth
             multiline
             minRows={2}
@@ -141,7 +156,7 @@ export default function CreateTemplateModal({
             data-testid="create-template-description-input"
           />
           <TextField
-            label="Category"
+            label={t("category")}
             fullWidth
             value={category}
             onChange={(e) => setCategory(e.target.value)}
@@ -149,19 +164,19 @@ export default function CreateTemplateModal({
             data-testid="create-template-category-input"
           />
           <TextField
-            label="Tags"
+            label={t("tags")}
             fullWidth
-            placeholder="Comma-separated"
+            placeholder={t("comma_separated")}
             value={tags}
             onChange={(e) => setTags(e.target.value)}
             disabled={loading}
             data-testid="create-template-tags-input"
           />
           <FormControl fullWidth disabled={loading}>
-            <InputLabel>Visibility</InputLabel>
+            <InputLabel>{t("visibility")}</InputLabel>
             <Select
               value={visibility}
-              label="Visibility"
+              label={t("visibility")}
               data-testid="create-template-visibility-select"
               onChange={(e) =>
                 setVisibility(e.target.value as TemplateVisibility)
@@ -169,15 +184,15 @@ export default function CreateTemplateModal({
             >
               {VISIBILITY_OPTIONS.map((opt) => (
                 <MenuItem key={opt.value} value={opt.value}>
-                  {opt.label}
+                  {t(opt.labelKey)}
                 </MenuItem>
               ))}
             </Select>
           </FormControl>
           <Button variant="outlined" component="label" disabled={loading} data-testid="create-template-choose-files-button">
             {files.length > 0
-              ? `${files.length} file(s) selected (include .bpmn)`
-              : "Choose files (BPMN required)"}
+              ? t("files_selected_include_bpmn", { count: files.length })
+              : t("choose_files_bpmn_required")}
             <input
               type="file"
               hidden
@@ -190,10 +205,10 @@ export default function CreateTemplateModal({
       </DialogContent>
       <DialogActions>
         <Button data-testid="create-template-cancel-button" onClick={onClose} disabled={loading}>
-          Cancel
+          {t("cancel")}
         </Button>
         <Button data-testid="create-template-submit-button" variant="contained" onClick={handleSubmit} disabled={loading}>
-          {loading ? "Creating..." : "Create"}
+          {loading ? t("creating") : t("create")}
         </Button>
       </DialogActions>
     </Dialog>
