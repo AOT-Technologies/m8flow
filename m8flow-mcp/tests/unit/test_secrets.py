@@ -167,7 +167,7 @@ async def test_list_secrets_pagination():
         mcp = MockFastMCP()
         register_secret_tools(mcp)
 
-        result = await mcp.tools["list_secrets"](page=2, per_page=10)
+        await mcp.tools["list_secrets"](page=2, per_page=10)
 
         mock_get.assert_called_once()
         call_args = mock_get.call_args
