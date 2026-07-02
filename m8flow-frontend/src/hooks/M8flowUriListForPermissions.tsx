@@ -12,6 +12,7 @@ export const useM8flowUriListForPermissions = () => {
       m8flowTemplateListPath: "/m8flow/templates",
       serviceTaskListPath: "/service-tasks",
       connectorsGroupedPath: "/m8flow/connectors-grouped",
+      m8flowMcpConnectionPath: "/m8flow/mcp-connection",
     };
   }, [spiffTargetUris]);
 
