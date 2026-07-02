@@ -37,6 +37,7 @@ import {
   Description,
   Hub,
   Business,
+  Cable,
   CorporateFare,
   Speed,
   Storage,
@@ -89,6 +90,7 @@ const routeIdentifiers = {
   MESSAGES: "messages",
   CONFIGURATION: "configuration",
   CONNECTORS: "connectors",
+  MCP_CONNECTION: "mcpConnection",
   TEMPLATES: "templates",
   TENANT_MANAGEMENT: "tenantManagement",
   MONITORING_CELERY: "monitoringCelery",
@@ -111,7 +113,7 @@ function SideNav({
   const { t, i18n } = useTranslation();
 
   const { targetUris } = useUriListForPermissions();
-  const { NATS_MONITORING_ENABLED } = useConfig();
+  const { NATS_MONITORING_ENABLED, MCP_CONNECTION_ENABLED } = useConfig();
   const permissionRequestData: PermissionsToCheck = {
     [targetUris.messageInstanceListPath]: ["GET"],
     [targetUris.processGroupListPath]: ["GET"],
@@ -119,6 +121,7 @@ function SideNav({
     [targetUris.processInstanceListForMePath]: ["POST"],
     [targetUris.secretListPath]: ["GET"],
     [targetUris.connectorsGroupedPath]: ["GET"],
+    [targetUris.m8flowMcpConnectionPath]: ["GET"],
     "/tasks/*": ["GET", "PUT"],
     [targetUris.m8flowTenantManagementPath]: ["GET"],
     "/m8flow/tenants": ["GET"],
@@ -142,6 +145,8 @@ function SideNav({
     selectedTab = routeIdentifiers.CONFIGURATION;
   } else if (location.pathname.startsWith("/connectors")) {
     selectedTab = routeIdentifiers.CONNECTORS;
+  } else if (location.pathname.startsWith("/mcp-connection")) {
+    selectedTab = routeIdentifiers.MCP_CONNECTION;
   } else if (location.pathname.startsWith("/templates")) {
     selectedTab = routeIdentifiers.TEMPLATES;
   } else if (location.pathname.startsWith("/tenant-management")) {
@@ -282,6 +287,17 @@ function SideNav({
       id: routeIdentifiers.CONNECTORS,
       permissionRoutes: [targetUris.connectorsGroupedPath],
     },
+    ...(MCP_CONNECTION_ENABLED
+      ? [
+          {
+            text: t("mcp_connection"),
+            icon: <Cable />,
+            route: "/mcp-connection",
+            id: routeIdentifiers.MCP_CONNECTION,
+            permissionRoutes: [targetUris.m8flowMcpConnectionPath],
+          },
+        ]
+      : []),
     {
       text: t("templates"),
       icon: <Description />,

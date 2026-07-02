@@ -304,5 +304,22 @@
   "no_parameters": "Žádné parametry",
   "no_connectors_available": "V tuto chvíli nejsou k dispozici žádné konektory.",
   "no_matching_connectors": "Vašemu vyhledávání neodpovídají žádné konektory.",
-  "connectors_load_failed": "Konektory se nepodařilo načíst. Zkontrolujte, zda je proxy konektoru spuštěna a nakonfigurována."
+  "connectors_load_failed": "Konektory se nepodařilo načíst. Zkontrolujte, zda je proxy konektoru spuštěna a nakonfigurována.",
+  "mcp_connection": "Připojení MCP",
+  "mcp_connection_subtitle": "Připojte asistenty AI, jako jsou Cursor a Claude, k m8flow pomocí protokolu Model Context Protocol (MCP).",
+  "mcp_connection_help_tooltip": "Klienti MCP se pomocí této URL připojují k serveru MCP m8flow a po vašem přihlášení mohou vaším jménem spouštět akce m8flow.",
+  "mcp_server_url": "URL serveru MCP",
+  "mcp_server_url_description": "Vložte tuto URL do svého klienta MCP, aby se připojil k m8flow.",
+  "mcp_auth_note": "Když se váš klient připojí poprvé, otevře se okno prohlížeče, ve kterém se můžete přihlásit ke svému účtu m8flow. Nástroje MCP se spouštějí s vašimi vlastními oprávněními m8flow.",
+  "mcp_setup_title": "Nastavit klienta",
+  "mcp_cursor_step_1": "Otevřete Nastavení Cursoru → MCP → \"Add new global MCP server\" (nebo upravte přímo ~/.cursor/mcp.json).",
+  "mcp_cursor_step_2": "Přidejte níže uvedenou konfiguraci a uložte ji.",
+  "mcp_cursor_step_3": "Dokončete přihlášení, až se otevře okno prohlížeče.",
+  "mcp_claude_code_step_1": "Spusťte níže uvedený příkaz v terminálu.",
+  "mcp_claude_code_step_2": "Pokud nebudete automaticky vyzváni k přihlášení, spusťte v Claude Code příkaz /mcp pro ověření.",
+  "mcp_other_clients": "Ostatní klienti MCP",
+  "mcp_other_clients_description": "Klienti bez nativní podpory vzdáleného MCP se mohou připojit přes bridge mcp-remote pomocí stejné URL:",
+  "mcp_not_configured": "URL serveru MCP není pro toto prostředí nakonfigurována. Kontaktujte svého správce.",
+  "copy_to_clipboard": "Kopírovat",
+  "copied_to_clipboard": "Zkopírováno!"
 }

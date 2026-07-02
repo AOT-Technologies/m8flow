@@ -304,5 +304,22 @@
   "no_parameters": "Ei parametreja",
   "no_connectors_available": "Liittimiä ei ole tällä hetkellä saatavilla.",
   "no_matching_connectors": "Hakuasi vastaavia liittimiä ei löytynyt.",
-  "connectors_load_failed": "Liittimiä ei voitu ladata. Tarkista, että liitinvälityspalvelin on käynnissä ja määritetty."
+  "connectors_load_failed": "Liittimiä ei voitu ladata. Tarkista, että liitinvälityspalvelin on käynnissä ja määritetty.",
+  "mcp_connection": "MCP-yhteys",
+  "mcp_connection_subtitle": "Yhdistä tekoälyavustajat, kuten Cursor ja Claude, m8flow'hun Model Context Protocolin (MCP) avulla.",
+  "mcp_connection_help_tooltip": "MCP-asiakkaat muodostavat yhteyden m8flow'n MCP-palvelimeen tällä URL-osoitteella ja voivat suorittaa m8flow-toimintoja puolestasi kirjautumisesi jälkeen.",
+  "mcp_server_url": "MCP-palvelimen URL-osoite",
+  "mcp_server_url_description": "Liitä tämä URL-osoite MCP-asiakkaaseesi, jotta se voi yhdistää m8flow'hun.",
+  "mcp_auth_note": "Kun asiakas muodostaa yhteyden ensimmäisen kerran, selainikkuna avautuu, jotta voit kirjautua sisään m8flow-tililläsi. MCP-työkalut toimivat omilla m8flow-oikeuksillasi.",
+  "mcp_setup_title": "Määritä asiakas",
+  "mcp_cursor_step_1": "Avaa Cursorin asetukset → MCP → \"Add new global MCP server\" (tai muokkaa tiedostoa ~/.cursor/mcp.json suoraan).",
+  "mcp_cursor_step_2": "Lisää alla oleva määritys ja tallenna.",
+  "mcp_cursor_step_3": "Viimeistele kirjautuminen, kun selainikkuna avautuu.",
+  "mcp_claude_code_step_1": "Suorita alla oleva komento päätteessäsi.",
+  "mcp_claude_code_step_2": "Jos sinua ei pyydetä kirjautumaan sisään automaattisesti, suorita /mcp Claude Codessa todennusta varten.",
+  "mcp_other_clients": "Muut MCP-asiakkaat",
+  "mcp_other_clients_description": "Asiakkaat, joissa ei ole natiivia etä-MCP-tukea, voivat muodostaa yhteyden mcp-remote-sillan kautta samalla URL-osoitteella:",
+  "mcp_not_configured": "MCP-palvelimen URL-osoitetta ei ole määritetty tälle ympäristölle. Ota yhteyttä järjestelmänvalvojaasi.",
+  "copy_to_clipboard": "Kopioi",
+  "copied_to_clipboard": "Kopioitu!"
 }

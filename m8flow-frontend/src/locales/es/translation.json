@@ -304,5 +304,22 @@
   "no_parameters": "Sin parámetros",
   "no_connectors_available": "No hay conectores disponibles en este momento.",
   "no_matching_connectors": "Ningún conector coincide con su búsqueda.",
-  "connectors_load_failed": "No se pudieron cargar los conectores. Verifique que el proxy de conectores esté en ejecución y configurado."
+  "connectors_load_failed": "No se pudieron cargar los conectores. Verifique que el proxy de conectores esté en ejecución y configurado.",
+  "mcp_connection": "Conexión MCP",
+  "mcp_connection_subtitle": "Conecte asistentes de IA como Cursor y Claude a m8flow mediante el Protocolo de Contexto de Modelo (MCP).",
+  "mcp_connection_help_tooltip": "Los clientes MCP se conectan al servidor MCP de m8flow con esta URL y pueden ejecutar acciones de m8flow en su nombre después de que inicie sesión.",
+  "mcp_server_url": "URL del servidor MCP",
+  "mcp_server_url_description": "Pegue esta URL en su cliente MCP para conectarlo a m8flow.",
+  "mcp_auth_note": "Cuando su cliente se conecte por primera vez, se abrirá una ventana del navegador para que pueda iniciar sesión con su cuenta de m8flow. Las herramientas MCP se ejecutan con sus propios permisos de m8flow.",
+  "mcp_setup_title": "Configurar su cliente",
+  "mcp_cursor_step_1": "Abra Configuración de Cursor → MCP → \"Add new global MCP server\" (o edite ~/.cursor/mcp.json directamente).",
+  "mcp_cursor_step_2": "Agregue la configuración siguiente y guarde.",
+  "mcp_cursor_step_3": "Complete el inicio de sesión cuando se abra la ventana del navegador.",
+  "mcp_claude_code_step_1": "Ejecute el siguiente comando en su terminal.",
+  "mcp_claude_code_step_2": "Si no se le solicita iniciar sesión automáticamente, ejecute /mcp dentro de Claude Code para autenticarse.",
+  "mcp_other_clients": "Otros clientes MCP",
+  "mcp_other_clients_description": "Los clientes sin compatibilidad nativa con MCP remoto pueden conectarse mediante el puente mcp-remote usando la misma URL:",
+  "mcp_not_configured": "La URL del servidor MCP no está configurada para este entorno. Contacte a su administrador.",
+  "copy_to_clipboard": "Copiar",
+  "copied_to_clipboard": "¡Copiado!"
 }

@@ -41,6 +41,11 @@ if [[ -n "${M8FLOW_NATS_UI_URL:-}" ]] && [[ -z "${M8FLOW_FRONTEND_RUNTIME_CONFIG
   export M8FLOW_FRONTEND_RUNTIME_CONFIG_M8FLOW_NATS_UI_URL="$M8FLOW_NATS_UI_URL"
 fi
 
+# The MCP connection page is optional; when M8FLOW_MCP_SERVER_URL is unset/empty the page stays hidden.
+if [[ -n "${M8FLOW_MCP_SERVER_URL:-}" ]] && [[ -z "${M8FLOW_FRONTEND_RUNTIME_CONFIG_M8FLOW_MCP_SERVER_URL:-}" ]]; then
+  export M8FLOW_FRONTEND_RUNTIME_CONFIG_M8FLOW_MCP_SERVER_URL="$M8FLOW_MCP_SERVER_URL"
+fi
+
 # ── Step 2: Inject runtime config into index.html ────────────────────────────
 # Mirrors the upstream boot_server_in_docker logic but reads
 # M8FLOW_FRONTEND_RUNTIME_CONFIG_* instead of SPIFFWORKFLOW_FRONTEND_RUNTIME_CONFIG_*.
