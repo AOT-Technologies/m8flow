@@ -304,5 +304,22 @@
   "no_parameters": "Keine Parameter",
   "no_connectors_available": "Derzeit sind keine Konnektoren verfügbar.",
   "no_matching_connectors": "Keine Konnektoren entsprechen Ihrer Suche.",
-  "connectors_load_failed": "Konnektoren konnten nicht geladen werden. Stellen Sie sicher, dass der Konnektor-Proxy ausgeführt wird und konfiguriert ist."
+  "connectors_load_failed": "Konnektoren konnten nicht geladen werden. Stellen Sie sicher, dass der Konnektor-Proxy ausgeführt wird und konfiguriert ist.",
+  "mcp_connection": "MCP-Verbindung",
+  "mcp_connection_subtitle": "Verbinden Sie KI-Assistenten wie Cursor und Claude über das Model Context Protocol (MCP) mit m8flow.",
+  "mcp_connection_help_tooltip": "MCP-Clients verbinden sich mit dieser URL mit dem m8flow-MCP-Server und können nach Ihrer Anmeldung m8flow-Aktionen in Ihrem Namen ausführen.",
+  "mcp_server_url": "MCP-Server-URL",
+  "mcp_server_url_description": "Fügen Sie diese URL in Ihren MCP-Client ein, um ihn mit m8flow zu verbinden.",
+  "mcp_auth_note": "Wenn Ihr Client zum ersten Mal eine Verbindung herstellt, wird ein Browserfenster geöffnet, damit Sie sich mit Ihrem m8flow-Konto anmelden können. MCP-Tools werden mit Ihren eigenen m8flow-Berechtigungen ausgeführt.",
+  "mcp_setup_title": "Client einrichten",
+  "mcp_cursor_step_1": "Öffnen Sie Cursor-Einstellungen → MCP → \"Add new global MCP server\" (oder bearbeiten Sie ~/.cursor/mcp.json direkt).",
+  "mcp_cursor_step_2": "Fügen Sie die folgende Konfiguration hinzu und speichern Sie sie.",
+  "mcp_cursor_step_3": "Schließen Sie die Anmeldung ab, wenn das Browserfenster geöffnet wird.",
+  "mcp_claude_code_step_1": "Führen Sie den folgenden Befehl in Ihrem Terminal aus.",
+  "mcp_claude_code_step_2": "Wenn Sie nicht automatisch zur Anmeldung aufgefordert werden, führen Sie /mcp in Claude Code aus, um sich zu authentifizieren.",
+  "mcp_other_clients": "Andere MCP-Clients",
+  "mcp_other_clients_description": "Clients ohne native Remote-MCP-Unterstützung können über die mcp-remote-Bridge mit derselben URL eine Verbindung herstellen:",
+  "mcp_not_configured": "Die MCP-Server-URL ist für diese Umgebung nicht konfiguriert. Wenden Sie sich an Ihren Administrator.",
+  "copy_to_clipboard": "Kopieren",
+  "copied_to_clipboard": "Kopiert!"
 }

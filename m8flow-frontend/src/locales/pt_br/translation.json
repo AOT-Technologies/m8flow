@@ -304,5 +304,22 @@
   "no_parameters": "Nenhum parâmetro",
   "no_connectors_available": "Nenhum conector está disponível no momento.",
   "no_matching_connectors": "Nenhum conector corresponde à sua pesquisa.",
-  "connectors_load_failed": "Não foi possível carregar os conectores. Verifique se o proxy de conectores está em execução e configurado."
+  "connectors_load_failed": "Não foi possível carregar os conectores. Verifique se o proxy de conectores está em execução e configurado.",
+  "mcp_connection": "Conexão MCP",
+  "mcp_connection_subtitle": "Conecte assistentes de IA como Cursor e Claude ao m8flow usando o Model Context Protocol (MCP).",
+  "mcp_connection_help_tooltip": "Os clientes MCP se conectam ao servidor MCP do m8flow com esta URL e podem executar ações do m8flow em seu nome depois que você entrar.",
+  "mcp_server_url": "URL do servidor MCP",
+  "mcp_server_url_description": "Cole esta URL no seu cliente MCP para conectá-lo ao m8flow.",
+  "mcp_auth_note": "Quando seu cliente se conectar pela primeira vez, uma janela do navegador será aberta para você entrar com sua conta do m8flow. As ferramentas MCP são executadas com suas próprias permissões do m8flow.",
+  "mcp_setup_title": "Configurar seu cliente",
+  "mcp_cursor_step_1": "Abra Configurações do Cursor → MCP → \"Add new global MCP server\" (ou edite ~/.cursor/mcp.json diretamente).",
+  "mcp_cursor_step_2": "Adicione a configuração abaixo e salve.",
+  "mcp_cursor_step_3": "Conclua o login quando a janela do navegador abrir.",
+  "mcp_claude_code_step_1": "Execute o comando abaixo no seu terminal.",
+  "mcp_claude_code_step_2": "Se você não for solicitado a entrar automaticamente, execute /mcp dentro do Claude Code para se autenticar.",
+  "mcp_other_clients": "Outros clientes MCP",
+  "mcp_other_clients_description": "Clientes sem suporte nativo a MCP remoto podem se conectar pela ponte mcp-remote usando a mesma URL:",
+  "mcp_not_configured": "A URL do servidor MCP não está configurada para este ambiente. Entre em contato com o administrador.",
+  "copy_to_clipboard": "Copiar",
+  "copied_to_clipboard": "Copiado!"
 }

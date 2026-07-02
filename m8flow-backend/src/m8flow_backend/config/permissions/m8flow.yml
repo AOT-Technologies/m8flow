@@ -200,6 +200,10 @@ permissions:
     groups: ["tenant-admin", "editor", "integrator", "super-admin"]
     actions: [read]
     uri: /m8flow/connectors-grouped
+  read-mcp-connection-page:
+    groups: ["everybody"]
+    actions: [read]
+    uri: /m8flow/mcp-connection
   read-data-stores:
     groups: ["viewer", "super-admin"]
     actions: [read]

@@ -304,5 +304,22 @@
   "no_parameters": "Aucun paramètre",
   "no_connectors_available": "Aucun connecteur n'est disponible pour le moment.",
   "no_matching_connectors": "Aucun connecteur ne correspond à votre recherche.",
-  "connectors_load_failed": "Impossible de charger les connecteurs. Vérifiez que le proxy de connecteur est en cours d'exécution et correctement configuré."
+  "connectors_load_failed": "Impossible de charger les connecteurs. Vérifiez que le proxy de connecteur est en cours d'exécution et correctement configuré.",
+  "mcp_connection": "Connexion MCP",
+  "mcp_connection_subtitle": "Connectez des assistants IA comme Cursor et Claude à m8flow à l'aide du protocole Model Context Protocol (MCP).",
+  "mcp_connection_help_tooltip": "Les clients MCP se connectent au serveur MCP m8flow avec cette URL et peuvent exécuter des actions m8flow en votre nom après votre connexion.",
+  "mcp_server_url": "URL du serveur MCP",
+  "mcp_server_url_description": "Collez cette URL dans votre client MCP pour le connecter à m8flow.",
+  "mcp_auth_note": "Lorsque votre client se connecte pour la première fois, une fenêtre de navigateur s'ouvre pour vous permettre de vous connecter avec votre compte m8flow. Les outils MCP s'exécutent avec vos propres autorisations m8flow.",
+  "mcp_setup_title": "Configurer votre client",
+  "mcp_cursor_step_1": "Ouvrez Paramètres de Cursor → MCP → \"Add new global MCP server\" (ou modifiez directement ~/.cursor/mcp.json).",
+  "mcp_cursor_step_2": "Ajoutez la configuration ci-dessous, puis enregistrez.",
+  "mcp_cursor_step_3": "Terminez la connexion lorsque la fenêtre du navigateur s'ouvre.",
+  "mcp_claude_code_step_1": "Exécutez la commande ci-dessous dans votre terminal.",
+  "mcp_claude_code_step_2": "Si vous n'êtes pas invité automatiquement à vous connecter, exécutez /mcp dans Claude Code pour vous authentifier.",
+  "mcp_other_clients": "Autres clients MCP",
+  "mcp_other_clients_description": "Les clients sans prise en charge native de MCP distant peuvent se connecter via le pont mcp-remote avec la même URL :",
+  "mcp_not_configured": "L'URL du serveur MCP n'est pas configurée pour cet environnement. Contactez votre administrateur.",
+  "copy_to_clipboard": "Copier",
+  "copied_to_clipboard": "Copié !"
 }

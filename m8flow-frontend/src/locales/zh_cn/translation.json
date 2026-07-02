@@ -304,5 +304,22 @@
   "no_parameters": "无参数",
   "no_connectors_available": "此时没有可用的连接器。",
   "no_matching_connectors": "没有与您的搜索匹配的连接器。",
-  "connectors_load_failed": "无法加载连接器。请检查连接器代理是否正在运行并已正确配置。"
+  "connectors_load_failed": "无法加载连接器。请检查连接器代理是否正在运行并已正确配置。",
+  "mcp_connection": "MCP 连接",
+  "mcp_connection_subtitle": "使用模型上下文协议 (MCP) 将 Cursor 和 Claude 等 AI 助手连接到 m8flow。",
+  "mcp_connection_help_tooltip": "MCP 客户端使用此 URL 连接到 m8flow MCP 服务器，并可在您登录后代表您运行 m8flow 操作。",
+  "mcp_server_url": "MCP 服务器 URL",
+  "mcp_server_url_description": "将此 URL 粘贴到您的 MCP 客户端中，以将其连接到 m8flow。",
+  "mcp_auth_note": "当您的客户端首次连接时，浏览器窗口会打开，以便您使用 m8flow 账户登录。MCP 工具会使用您自己的 m8flow 权限运行。",
+  "mcp_setup_title": "设置您的客户端",
+  "mcp_cursor_step_1": "打开 Cursor 设置 → MCP → \"Add new global MCP server\"（或直接编辑 ~/.cursor/mcp.json）。",
+  "mcp_cursor_step_2": "添加下面的配置并保存。",
+  "mcp_cursor_step_3": "浏览器窗口打开后完成登录。",
+  "mcp_claude_code_step_1": "在终端中运行下面的命令。",
+  "mcp_claude_code_step_2": "如果系统没有自动提示您登录，请在 Claude Code 中运行 /mcp 进行身份验证。",
+  "mcp_other_clients": "其他 MCP 客户端",
+  "mcp_other_clients_description": "没有原生远程 MCP 支持的客户端可以使用相同 URL 通过 mcp-remote 桥接连接：",
+  "mcp_not_configured": "此环境未配置 MCP 服务器 URL。请联系您的管理员。",
+  "copy_to_clipboard": "复制",
+  "copied_to_clipboard": "已复制！"
 }

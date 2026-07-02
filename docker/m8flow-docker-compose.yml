@@ -403,6 +403,8 @@ services:
       M8FLOW_CELERY_FLOWER_URL: "${M8FLOW_CELERY_FLOWER_URL:-http://localhost:6850}"
       # Leave empty to hide the NATS section; set when running the optional NATS compose.
       M8FLOW_NATS_UI_URL: "${M8FLOW_NATS_UI_URL:-}"
+      # Browser-reachable URL of the m8flow MCP server; leave empty to hide the MCP connection page.
+      M8FLOW_MCP_SERVER_URL: "${M8FLOW_MCP_SERVER_URL:-}"
     ports:
       - "${M8FLOW_FRONTEND_PORT:-6841}:8080"
     depends_on:
