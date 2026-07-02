@@ -239,7 +239,7 @@ def register_secret_tools(mcp: FastMCP) -> None:
             output += f"**Key:** `{key}`\n"
             output += f"**Value:** `{value}`\n\n"
             output += "---\n"
-            output += "💡 Reference this secret in workflows using: `\"M8FLOW_SECRET:{key}\"`\n"
+            output += '💡 Reference this secret in workflows using: `"M8FLOW_SECRET:{key}"`\n'
 
             logger.info(f"Retrieved secret value for: {key}")
             return output
@@ -299,11 +299,11 @@ def register_secret_tools(mcp: FastMCP) -> None:
             output += "---\n\n"
             output += "## Next Steps:\n\n"
             output += "1. Use in connector configuration:\n"
-            output += f"   - Reference as: `\"M8FLOW_SECRET:{key}\"`\n"
+            output += f'   - Reference as: `"M8FLOW_SECRET:{key}"`\n'
             output += "2. View secret list:\n"
             output += "   - Use: `list_secrets()`\n"
             output += "3. Retrieve value:\n"
-            output += f"   - Use: `get_secret_value(key=\"{key}\")`\n\n"
+            output += f'   - Use: `get_secret_value(key="{key}")`\n\n'
             output += "⚠️  **Security:** Value is encrypted and stored securely.\n"
 
             logger.info(f"Created secret: {key}")
@@ -355,8 +355,8 @@ def register_secret_tools(mcp: FastMCP) -> None:
             output += "---\n\n"
             output += "⚠️  **Note:** Previous value has been overwritten.\n\n"
             output += "## Verification:\n\n"
-            output += f"- View metadata: `get_secret(key=\"{key}\")`\n"
-            output += f"- Verify value: `get_secret_value(key=\"{key}\")`\n"
+            output += f'- View metadata: `get_secret(key="{key}")`\n'
+            output += f'- Verify value: `get_secret_value(key="{key}")`\n'
 
             logger.info(f"Updated secret: {key}")
             return output
@@ -405,7 +405,7 @@ def register_secret_tools(mcp: FastMCP) -> None:
             output += "⚠️  **Warning:** This operation cannot be undone.\n\n"
             output += "## Verification:\n\n"
             output += "- List remaining secrets: `list_secrets()`\n"
-            output += f"- Confirm deletion: `get_secret(key=\"{key}\")` should fail\n"
+            output += f'- Confirm deletion: `get_secret(key="{key}")` should fail\n'
 
             logger.info(f"Deleted secret: {key}")
             return output
