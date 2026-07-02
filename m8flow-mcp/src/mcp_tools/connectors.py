@@ -51,8 +51,9 @@ async def _get_grouped_connectors(token: str) -> list[dict]:
 
             # Build operation object
             import re
+
             # Convert camelCase to Title Case (e.g., "GetRequest" -> "Get Request")
-            formatted_name = re.sub(r'([A-Z])', r' \1', operation_name).strip()
+            formatted_name = re.sub(r"([A-Z])", r" \1", operation_name).strip()
 
             operation = {
                 "id": task_id,
@@ -97,6 +98,7 @@ def register_connector_tools(mcp: FastMCP) -> None:
     Args:
         mcp: FastMCP server instance
     """
+
     @mcp.tool(
         name="list_connectors",
         description="List all available M8Flow connectors with their operations count and metadata",
@@ -144,6 +146,7 @@ def register_connector_tools(mcp: FastMCP) -> None:
         except Exception as e:
             logger.error(f"Failed to list connectors: {e}", exc_info=True)
             return f"❌ Error fetching connectors: {str(e)}"
+
     @mcp.tool(
         name="get_connector",
         description="Get detailed information about a specific connector including all operations and parameters",
@@ -210,6 +213,7 @@ def register_connector_tools(mcp: FastMCP) -> None:
         except Exception as e:
             logger.error(f"Failed to get connector {connector_id}: {e}", exc_info=True)
             return f"❌ Error fetching connector: {str(e)}"
+
     @mcp.tool(
         name="get_connector_operation",
         description="Get detailed parameters and documentation for a specific connector operation",
@@ -288,7 +292,7 @@ def register_connector_tools(mcp: FastMCP) -> None:
             output.append("2. In M8flow Service Properties, set:\n")
             output.append(f"   - Operator ID: {operation_id}\n")
             output.append("3. Configure required parameters\n")
-            output.append("4. Use secrets for sensitive data: \"M8FLOW_SECRET:SECRET_NAME\"\n")
+            output.append('4. Use secrets for sensitive data: "M8FLOW_SECRET:SECRET_NAME"\n')
             output.append("```\n")
 
             return "".join(output)
@@ -296,6 +300,7 @@ def register_connector_tools(mcp: FastMCP) -> None:
         except Exception as e:
             logger.error(f"Failed to get operation {operation_id}: {e}", exc_info=True)
             return f"❌ Error fetching operation: {str(e)}"
+
     @mcp.tool(
         name="search_connectors",
         description="Search connectors by keyword or use case (e.g., 'email', 'database', 'payment')",
@@ -345,11 +350,7 @@ def register_connector_tools(mcp: FastMCP) -> None:
                     op_name = op.get("name", "")
                     op_desc = op.get("description", "")
 
-                    if (
-                        query_lower in op_id.lower()
-                        or query_lower in op_name.lower()
-                        or query_lower in op_desc.lower()
-                    ):
+                    if query_lower in op_id.lower() or query_lower in op_name.lower() or query_lower in op_desc.lower():
                         matching_ops.append(op)
 
                 if matching_ops:

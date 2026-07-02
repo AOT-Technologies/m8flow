@@ -41,10 +41,10 @@ class M8flowAPIClient:
         if self.circuit_breaker_enabled:
             # Create circuit breaker - learns from API failures
             self.breaker = CircuitBreaker(
-                fail_max=5,              # Learn after 5 consecutive failures
-                reset_timeout=60,     # Stay open for 60 seconds
-                name="m8flow-api",       # Name for logging
-                listeners=[self._on_circuit_state_change]
+                fail_max=5,  # Learn after 5 consecutive failures
+                reset_timeout=60,  # Stay open for 60 seconds
+                name="m8flow-api",  # Name for logging
+                listeners=[self._on_circuit_state_change],
             )
             logger.info("🔄 RLFT-Style Adaptation ENABLED - Circuit breaker will learn from API failures")
         else:
@@ -66,13 +66,9 @@ class M8flowAPIClient:
                 f"Will fast-fail for {breaker.timeout_duration}s to protect system."
             )
         elif new_state.name == "half_open":
-            logger.info(
-                "🟡 CIRCUIT HALF-OPEN: Testing if M8Flow API recovered (exploration phase)"
-            )
+            logger.info("🟡 CIRCUIT HALF-OPEN: Testing if M8Flow API recovered (exploration phase)")
         elif new_state.name == "closed":
-            logger.info(
-                "🟢 CIRCUIT CLOSED: M8Flow API learned to be reliable again"
-            )
+            logger.info("🟢 CIRCUIT CLOSED: M8Flow API learned to be reliable again")
 
     def _build_headers(self, token: str, extra_headers: dict[str, str] | None = None) -> dict[str, str]:
         headers = {
@@ -116,8 +112,7 @@ class M8flowAPIClient:
         except CircuitBreakerError as e:
             # Circuit is OPEN - system learned API is unreliable
             logger.error(
-                f"🔴 Circuit breaker is OPEN: API learned to be down. "
-                f"Fast-failing to protect system. Error: {e}"
+                f"🔴 Circuit breaker is OPEN: API learned to be down. Fast-failing to protect system. Error: {e}"
             )
             raise NetworkError(
                 f"M8Flow API is currently unreliable (circuit breaker open after learning from failures). "
@@ -128,7 +123,7 @@ class M8flowAPIClient:
         retry=retry_if_exception_type((NetworkError, TimeoutError)),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
-        reraise=True
+        reraise=True,
     )
     async def _make_request_with_retry(self, method: str, *args, **kwargs) -> Any:
         """
@@ -241,10 +236,7 @@ class M8flowAPIClient:
         """
         if self.circuit_breaker_enabled:
             # Use resilience layer (circuit breaker + retry)
-            return await self._call_with_resilience(
-                self._make_request_with_retry,
-                "GET", path, token, params, headers
-            )
+            return await self._call_with_resilience(self._make_request_with_retry, "GET", path, token, params, headers)
         else:
             # Direct call (existing behavior, fully backward compatible)
             return await self._get_impl(path, token, params, headers)
@@ -295,8 +287,7 @@ class M8flowAPIClient:
         if self.circuit_breaker_enabled:
             # Use resilience layer (circuit breaker + retry)
             return await self._call_with_resilience(
-                self._make_request_with_retry,
-                "POST", path, token, data, params, headers
+                self._make_request_with_retry, "POST", path, token, data, params, headers
             )
         else:
             # Direct call (existing behavior, fully backward compatible)
@@ -341,17 +332,18 @@ class M8flowAPIClient:
 
                 import hashlib
                 import os
-                filename = os.path.basename(path) if '/' in path else 'file.bpmn'
+
+                filename = os.path.basename(path) if "/" in path else "file.bpmn"
 
                 # Use provided hash from params, or calculate if not provided
                 # NOTE: For updates, caller should provide the CURRENT hash from GET
                 # to enable optimistic locking. Calculating hash of NEW content would fail.
                 request_params = params or {}
-                if 'file_contents_hash' not in request_params:
+                if "file_contents_hash" not in request_params:
                     # No hash provided - calculate from new content
                     # This works for initial creation but will cause 409 on updates
-                    file_hash = hashlib.sha256(data.encode('utf-8')).hexdigest()
-                    request_params['file_contents_hash'] = file_hash
+                    file_hash = hashlib.sha256(data.encode("utf-8")).hexdigest()
+                    request_params["file_contents_hash"] = file_hash
                     logger.info(f"Calculated hash from new content: {file_hash}")
                 else:
                     logger.info(f"Using provided hash: {request_params['file_contents_hash']}")
@@ -377,18 +369,15 @@ class M8flowAPIClient:
 
                 # Use requests library for browser-compatible multipart encoding
                 # This format matches what browsers send and is accepted by backend
-                files_dict = {
-                    'file': (filename, data, 'application/octet-stream')
-                }
-                data_dict = {
-                    'fileName': filename
-                }
+                files_dict = {"file": (filename, data, "application/octet-stream")}
+                data_dict = {"fileName": filename}
 
                 # Use synchronous requests library (requests is sync, httpx is async)
                 # Run in executor to avoid blocking async event loop
                 import asyncio
 
                 import requests as req
+
                 loop = asyncio.get_event_loop()
                 sync_response = await loop.run_in_executor(
                     None,
@@ -398,8 +387,8 @@ class M8flowAPIClient:
                         data=data_dict,
                         params=request_params,
                         headers=request_headers,
-                        timeout=self.timeout  # Already in seconds (httpx uses seconds too)
-                    )
+                        timeout=self.timeout,  # Already in seconds (httpx uses seconds too)
+                    ),
                 )
 
                 logger.info(f"Response status: {sync_response.status_code}")
@@ -425,11 +414,7 @@ class M8flowAPIClient:
                 # Handle JSON data (existing behavior)
                 request_headers = self._build_headers(token, headers)
                 response = await client.put(
-                    url,
-                    headers=request_headers,
-                    json=data,
-                    params=params,
-                    timeout=self.timeout
+                    url, headers=request_headers, json=data, params=params, timeout=self.timeout
                 )
 
             return await self._handle_response(response)
@@ -477,8 +462,7 @@ class M8flowAPIClient:
         if self.circuit_breaker_enabled:
             # Use resilience layer (circuit breaker + retry)
             return await self._call_with_resilience(
-                self._make_request_with_retry,
-                "PUT", path, token, data, params, headers
+                self._make_request_with_retry, "PUT", path, token, data, params, headers
             )
         else:
             # Direct call (existing behavior, fully backward compatible)
@@ -518,8 +502,7 @@ class M8flowAPIClient:
         if self.circuit_breaker_enabled:
             # Use resilience layer (circuit breaker + retry)
             return await self._call_with_resilience(
-                self._make_request_with_retry,
-                "DELETE", path, token, params, headers
+                self._make_request_with_retry, "DELETE", path, token, params, headers
             )
         else:
             # Direct call (existing behavior, fully backward compatible)

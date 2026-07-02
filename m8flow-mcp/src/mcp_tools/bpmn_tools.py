@@ -66,11 +66,7 @@ def register_bpmn_tools(mcp: FastMCP) -> None:
             }
 
             # Create template
-            await client.post(
-                "/v1.0/m8flow/templates",
-                token,
-                template_data
-            )
+            await client.post("/v1.0/m8flow/templates", token, template_data)
 
             output = ["# ✓ Template Created Successfully\n\n"]
             output.append(f"**Template ID:** `{template_id}`\n")
@@ -118,8 +114,7 @@ def register_bpmn_tools(mcp: FastMCP) -> None:
             # Check if model already exists
             try:
                 existing = await client.get(
-                    f"/v1.0/process-groups/{process_group_id}/process-models/{process_model_id}",
-                    token
+                    f"/v1.0/process-groups/{process_group_id}/process-models/{process_model_id}", token
                 )
                 # Model exists - return error with helpful message
                 return f"""❌ Model already exists: {process_group_id}/{process_model_id}
@@ -131,9 +126,9 @@ Use the `update_bpmn_file` tool instead.
 Use a different process_model_id that doesn't exist yet.
 
 **Current model info:**
-- Display Name: {existing.get('display_name', 'N/A')}
-- Primary File: {existing.get('primary_file_name', 'N/A')}
-- Executable: {existing.get('is_executable', False)}
+- Display Name: {existing.get("display_name", "N/A")}
+- Primary File: {existing.get("primary_file_name", "N/A")}
+- Executable: {existing.get("is_executable", False)}
 """
             except Exception:
                 # Model doesn't exist - proceed with creation
@@ -143,20 +138,11 @@ Use a different process_model_id that doesn't exist yet.
             model_data = {
                 "id": process_model_id,
                 "display_name": process_model_id.replace("-", " ").replace("_", " ").title(),
-                "files": [
-                    {
-                        "file_name": file_name,
-                        "file_contents": bpmn_content
-                    }
-                ]
+                "files": [{"file_name": file_name, "file_contents": bpmn_content}],
             }
 
             # POST to create model with BPMN
-            result = await client.post(
-                f"/v1.0/process-models/{process_group_id}",
-                token,
-                data=model_data
-            )
+            result = await client.post(f"/v1.0/process-models/{process_group_id}", token, data=model_data)
 
             output = ["# ✓ BPMN File Uploaded Successfully\n\n"]
             output.append(f"**Process Group:** {process_group_id}\n")
@@ -178,12 +164,13 @@ Use a different process_model_id that doesn't exist yet.
             error_output.append(f"**Error Message:** {str(e)}\n\n")
 
             # If it's an API error, show more details
-            if hasattr(e, 'status_code'):
+            if hasattr(e, "status_code"):
                 error_output.append(f"**HTTP Status:** {e.status_code}\n")
 
-            if hasattr(e, 'response') and e.response:
+            if hasattr(e, "response") and e.response:
                 error_output.append("\n**API Response:**\n")
                 import json
+
                 try:
                     formatted = json.dumps(e.error_body, indent=2)
                     error_output.append(f"```json\n{formatted}\n```\n")
@@ -201,7 +188,9 @@ Use a different process_model_id that doesn't exist yet.
             error_output.append("\n**Troubleshooting:**\n")
             if "404" in str(e):
                 error_output.append(f"- Process group '{process_group_id}' may not exist\n")
-                error_output.append(f"- Create it first: `create_process_group('{process_group_id}', 'Display Name')`\n")
+                error_output.append(
+                    f"- Create it first: `create_process_group('{process_group_id}', 'Display Name')`\n"
+                )
             elif "400" in str(e) and "already exists" in str(e).lower():
                 error_output.append(f"- Model '{process_model_id}' already exists\n")
                 error_output.append("- Use `update_bpmn_file()` to update existing model\n")
@@ -249,16 +238,12 @@ Use a different process_model_id that doesn't exist yet.
             model_data = {
                 "id": f"{process_group_id}/{process_model_id}",
                 "display_name": display_name,
-                "description": description
+                "description": description,
                 # NO "files" parameter - backend will create default BPMN
             }
 
             logger.info(f"Step 1: Creating model {process_group_id}/{process_model_id}")
-            create_result = await client.post(
-                f"/v1.0/process-models/{process_group_id}",
-                token,
-                data=model_data
-            )
+            create_result = await client.post(f"/v1.0/process-models/{process_group_id}", token, data=model_data)
 
             primary_file = create_result.get("primary_file_name", f"{process_model_id}.bpmn")
             logger.info(f"Model created with default BPMN, primary file: {primary_file}")
@@ -266,10 +251,9 @@ Use a different process_model_id that doesn't exist yet.
             # STEP 2: Get current file to obtain hash for optimistic locking
             logger.info("Step 2: Getting current file hash")
             file_info = await client.get(
-                f"/v1.0/process-models/{process_group_id}:{process_model_id}/files/{primary_file}",
-                token
+                f"/v1.0/process-models/{process_group_id}:{process_model_id}/files/{primary_file}", token
             )
-            current_hash = file_info.get('file_contents_hash', '')
+            current_hash = file_info.get("file_contents_hash", "")
             logger.info(f"Current file hash: {current_hash}")
 
             # STEP 3: Update BPMN file with custom content
@@ -279,13 +263,13 @@ Use a different process_model_id that doesn't exist yet.
                 f"/v1.0/process-models/{process_group_id}:{process_model_id}/files/{primary_file}",
                 token,
                 data=bpmn_content,  # String triggers multipart mode with requests library
-                params={'file_contents_hash': current_hash}  # Required for optimistic locking
+                params={"file_contents_hash": current_hash},  # Required for optimistic locking
             )
 
             # Return combined result
             result = create_result
-            result['bpmn_uploaded'] = True
-            result['bpmn_size'] = len(bpmn_content)
+            result["bpmn_uploaded"] = True
+            result["bpmn_size"] = len(bpmn_content)
 
             output = ["# ✓ Process Model Created with BPMN\n\n"]
             output.append(f"**Process Group:** {process_group_id}\n")
@@ -311,12 +295,13 @@ Use a different process_model_id that doesn't exist yet.
             error_output.append(f"**Error Message:** {str(e)}\n\n")
 
             # If it's an API error, show more details
-            if hasattr(e, 'status_code'):
+            if hasattr(e, "status_code"):
                 error_output.append(f"**HTTP Status:** {e.status_code}\n")
 
-            if hasattr(e, 'response') and e.response:
+            if hasattr(e, "response") and e.response:
                 error_output.append("\n**API Response:**\n")
                 import json
+
                 try:
                     formatted = json.dumps(e.response, indent=2)
                     error_output.append(f"```json\n{formatted}\n```\n")
@@ -369,8 +354,7 @@ Use a different process_model_id that doesn't exist yet.
             # Get existing model info to preserve metadata
             try:
                 model_info = await client.get(
-                    f"/v1.0/process-groups/{process_group_id}/process-models/{process_model_id}",
-                    token
+                    f"/v1.0/process-groups/{process_group_id}/process-models/{process_model_id}", token
                 )
             except NotFoundError:
                 return f"""❌ Model not found: {process_group_id}/{process_model_id}
@@ -387,8 +371,8 @@ Use the `create_process_model_with_bpmn` or `upload_bpmn_file` tools instead.
                     params={
                         "process_group_identifier": process_group_id,
                         "process_model_identifier": process_model_id,
-                        "process_status": "user_input_required,waiting,complete"
-                    }
+                        "process_status": "user_input_required,waiting,complete",
+                    },
                 )
                 running_count = len(instances.get("results", []))
                 if running_count > 0:
@@ -422,30 +406,18 @@ Cancel all instances first, then run this tool again.
             # Delete existing model first (required for combined creation to work)
             with contextlib.suppress(Exception):
                 # May not have delete permission
-                await client.delete(
-                    f"/v1.0/process-groups/{process_group_id}/process-models/{process_model_id}",
-                    token
-                )
+                await client.delete(f"/v1.0/process-groups/{process_group_id}/process-models/{process_model_id}", token)
 
             # Use combined creation to recreate model with new BPMN
             model_data = {
                 "id": process_model_id,
                 "display_name": model_info.get("display_name", process_model_id),
                 "description": model_info.get("description", ""),
-                "files": [
-                    {
-                        "file_name": file_name,
-                        "file_contents": bpmn_content
-                    }
-                ]
+                "files": [{"file_name": file_name, "file_contents": bpmn_content}],
             }
 
             # Recreate model with new BPMN
-            await client.post(
-                f"/v1.0/process-models/{process_group_id}",
-                token,
-                data=model_data
-            )
+            await client.post(f"/v1.0/process-models/{process_group_id}", token, data=model_data)
 
             output = ["# ✓ BPMN File Updated (Model Recreated)\n\n"]
             output.append(f"**Process:** {process_group_id}/{process_model_id}\n")
@@ -468,12 +440,13 @@ Cancel all instances first, then run this tool again.
             error_output.append(f"**Error Message:** {str(e)}\n\n")
 
             # If it's an API error, show more details
-            if hasattr(e, 'status_code'):
+            if hasattr(e, "status_code"):
                 error_output.append(f"**HTTP Status:** {e.status_code}\n")
 
-            if hasattr(e, 'response') and e.response:
+            if hasattr(e, "response") and e.response:
                 error_output.append("\n**API Response:**\n")
                 import json
+
                 try:
                     formatted = json.dumps(e.error_body, indent=2)
                     error_output.append(f"```json\n{formatted}\n```\n")
@@ -525,15 +498,13 @@ Cancel all instances first, then run this tool again.
             # If no file name provided, get the primary file
             if not file_name:
                 model_info = await client.get(
-                    f"/v1.0/process-groups/{process_group_id}/process-models/{process_model_id}",
-                    token
+                    f"/v1.0/process-groups/{process_group_id}/process-models/{process_model_id}", token
                 )
                 file_name = model_info.get("primary_file_name", f"{process_model_id}.bpmn")
 
             # Get file content
             content = await client.get(
-                f"/v1.0/process-groups/{process_group_id}/process-models/{process_model_id}/files/{file_name}",
-                token
+                f"/v1.0/process-groups/{process_group_id}/process-models/{process_model_id}/files/{file_name}", token
             )
 
             return content

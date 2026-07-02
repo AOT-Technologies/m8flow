@@ -99,7 +99,11 @@ def register_cleanup_tools(mcp: FastMCP) -> None:
             logger.info(f"Creating new model {process_group_id}:{process_model_id}...")
 
             # Step 1: Create model
-            model_data = {"id": f"{process_group_id}/{process_model_id}", "display_name": display_name, "description": description}
+            model_data = {
+                "id": f"{process_group_id}/{process_model_id}",
+                "display_name": display_name,
+                "description": description,
+            }
 
             create_result = await client.post(f"/v1.0/process-models/{process_group_id}", token, data=model_data)
 
@@ -297,7 +301,9 @@ def register_cleanup_tools(mcp: FastMCP) -> None:
                 if not force:
                     try:
                         instances = await client.get(
-                            "/v1.0/process-instances", token, params={"process_model_identifier": workflow_id, "per_page": 1}
+                            "/v1.0/process-instances",
+                            token,
+                            params={"process_model_identifier": workflow_id, "per_page": 1},
                         )
 
                         if instances.get("results"):
@@ -331,7 +337,9 @@ def register_cleanup_tools(mcp: FastMCP) -> None:
         name="create_sandbox_workflow",
         description="Create workflow in sandbox (auto-cleanup enabled, prevents duplicates)",
     )
-    async def create_sandbox_workflow(process_model_id: str, display_name: str, bpmn_content: str, description: str = "") -> str:
+    async def create_sandbox_workflow(
+        process_model_id: str, display_name: str, bpmn_content: str, description: str = ""
+    ) -> str:
         """
         Create workflow in sandbox group (automatically adds timestamp)
 
