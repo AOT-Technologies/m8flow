@@ -28,6 +28,7 @@ __pycache__/
 
 sample-process-models/
 m8flow-frontend/node_modules
+m8flow-frontend/dist
 spiffworkflow-frontend/node_modules
 agent_setup_script_has_completed_successfully
 .venv*
