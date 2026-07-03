@@ -46,11 +46,14 @@ def test_reviewer_redirected_away_from_process_instances(reviewer_page: Page) ->
     logger.info("Reviewer redirected away from /process-instances to %s", reviewer_page.url)
 
 
-def test_viewer_cannot_see_find_by_id_tab(viewer_page: Page) -> None:
-    """A viewer can open the list but does not get the Find By ID tab.
+def test_viewer_sees_find_by_id_tab(viewer_page: Page) -> None:
+    """A viewer can open the list and gets the Find By ID tab.
 
-    The Find By ID tab is gated by ``POST`` on the for-me list path
-    (``ProcessInstanceListTabs``), a permission the viewer role lacks.
+    The Find By ID tab is gated by ``POST`` (``create``) on the for-me list path
+    (``ProcessInstanceListTabs``). The ``viewer`` role is granted this permission
+    in ``m8flow-backend/.../config/permissions/m8flow.yml`` (the
+    ``create-process-instance-list-for-me`` rule lists ``viewer``), so the tab is
+    visible to viewers.
     """
     viewer_page.goto(f"{BASE_URL}/process-instances")
     wait_for_app_ready(viewer_page)
@@ -58,9 +61,9 @@ def test_viewer_cannot_see_find_by_id_tab(viewer_page: Page) -> None:
 
     # Confirm the viewer actually landed on the list (not redirected to home).
     expect(pip.for_me_tab.or_(pip.all_tab).first).to_be_visible(timeout=ELEMENT_TIMEOUT)
-    expect(pip.find_by_id_tab).not_to_be_visible(timeout=ELEMENT_TIMEOUT)
+    expect(pip.find_by_id_tab).to_be_visible(timeout=ELEMENT_TIMEOUT)
     assert "/process-instances" in viewer_page.url
-    logger.info("Viewer is on the list but cannot see the Find By ID tab.")
+    logger.info("Viewer is on the list and can see the Find By ID tab.")
 
 
 def test_super_admin_sees_all_and_find_by_id_but_not_for_me(
