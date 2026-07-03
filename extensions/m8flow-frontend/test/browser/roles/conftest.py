@@ -14,10 +14,8 @@ from helpers.config import (
     VIEWPORT,
 )
 from helpers.login import (
-    _click_platform_sign_in,
-    _submit_keycloak_form,
-    _wait_for_post_login,
     login,
+    login_as_global_admin,
     logout,
 )
 from helpers.waiters import wait_for_app_ready
@@ -103,13 +101,13 @@ def super_admin_page(browser, base_url) -> Page:
     ctx.set_default_timeout(APP_READY_TIMEOUT)
     ctx.set_default_navigation_timeout(NAV_TIMEOUT)
     page = ctx.new_page()
-    # Platform Sign In flow (kept self-contained to the roles suite): from the
-    # m8flow-realm Keycloak login page, click the platform-admin button to reach
-    # the master realm, then submit the platform-admin credentials.
-    page.goto(base_url)
-    _click_platform_sign_in(page)
-    _submit_keycloak_form(page, SUPER_ADMIN_USERNAME, SUPER_ADMIN_PASSWORD)
-    _wait_for_post_login(page, SUPER_ADMIN_PASSWORD)
+    # Platform Sign In flow via the shared helper, which retries the whole flow
+    # and falls back to the direct master-realm login URL when the Platform Sign
+    # In button is unavailable -- more robust than a hand-rolled inline flow
+    # under CI's cold/parallel start-up.
+    login_as_global_admin(
+        page, username=SUPER_ADMIN_USERNAME, password=SUPER_ADMIN_PASSWORD
+    )
     wait_for_app_ready(page)
     try:
         yield page

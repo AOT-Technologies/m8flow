@@ -92,6 +92,22 @@ def create_test_process_group(page: Page) -> None:
     submit = page.locator("form").locator('button[type="submit"]').first
     submit.wait_for(state="visible", timeout=ELEMENT_TIMEOUT)
     submit.click()
+    # A successful create redirects off the /new form onto the group detail page.
+    # If it doesn't -- a slow POST/redirect, or (more commonly) the group already
+    # exists from a prior run so the submit is rejected and stays on the form --
+    # recover by opening the known group directly. Its identifier is fixed and
+    # top-level, so the detail URL is /process-groups/<id> verbatim.
+    try:
+        page.wait_for_url(
+            lambda url: "/process-groups/new" not in url, timeout=PAGE_DATA_TIMEOUT
+        )
+    except PlaywrightTimeout:
+        logger.info(
+            "Create form did not navigate off /new (slow redirect or %r already "
+            "exists); opening the group directly.",
+            TEST_PROCESS_GROUP_ID,
+        )
+        page.goto(f"{BASE_URL.rstrip('/')}/process-groups/{TEST_PROCESS_GROUP_ID}")
     wait_for_app_ready(page)
     normalize_post_create_process_group_url(page)
 
