@@ -37,6 +37,7 @@ import {
   type ConnectorConfigField,
   type ConnectorGroup,
 } from '../components/ConnectorOperationsModal';
+import { validateConnectorField } from '../utils/connectorFieldValidation';
 
 interface FieldState {
   /** Current input value. Empty means "leave unchanged" when the secret already exists. */
@@ -172,6 +173,12 @@ export default function ConnectorConfigure() {
     [connector],
   );
 
+  // Save is disabled while any field shows an active validation error.
+  const hasActiveErrors = useMemo(
+    () => Object.values(fieldStates).some((state) => !!state.error),
+    [fieldStates],
+  );
+
   useEffect(() => {
     setPageTitle([t('connectors'), connectorId ?? '']);
   }, [t, connectorId]);
@@ -223,10 +230,17 @@ export default function ConnectorConfigure() {
   }, [permissionsLoaded, canManageSecrets, connectorId, t]);
 
   const handleValueChange = (fieldId: string, value: string) => {
-    setFieldStates((prev) => ({
-      ...prev,
-      [fieldId]: { ...prev[fieldId], value, error: undefined },
-    }));
+    const field = configFields.find((f) => f.id === fieldId);
+    setFieldStates((prev) => {
+      const prevState = prev[fieldId];
+      const error = field
+        ? validateConnectorField(field, value, !!prevState?.isSet, t)
+        : undefined;
+      return {
+        ...prev,
+        [fieldId]: { ...prevState, value, error },
+      };
+    });
   };
 
   const toggleVisibility = (fieldId: string) => {
@@ -238,17 +252,21 @@ export default function ConnectorConfigure() {
       return;
     }
 
-    // Validate: a required field with no existing secret must be filled in.
+    // Full validation pass over every field (required, whitespace-only, length,
+    // format). Catches untouched-but-empty required fields the live check on
+    // change never ran against.
     let hasError = false;
     const validated = { ...fieldStates };
     configFields.forEach((field) => {
       const state = validated[field.id];
-      const value = state?.value ?? '';
-      if (field.required && !state?.isSet && value.trim() === '') {
-        validated[field.id] = {
-          ...state,
-          error: t('connector_config_required_field'),
-        };
+      const error = validateConnectorField(
+        field,
+        state?.value ?? '',
+        !!state?.isSet,
+        t,
+      );
+      validated[field.id] = { ...state, value: state?.value ?? '', isSet: !!state?.isSet, error };
+      if (error) {
         hasError = true;
       }
     });
@@ -257,12 +275,14 @@ export default function ConnectorConfigure() {
       return;
     }
 
-    // Build one create/update per field that has a value entered.
+    // Build one create/update per field that has a value entered. The trimmed
+    // value is what gets persisted so stray leading/trailing whitespace is never
+    // stored in the secret.
     const tasks = configFields
       .map((field) => {
         const state = fieldStates[field.id];
-        const value = state?.value ?? '';
-        if (value.trim() === '') {
+        const value = (state?.value ?? '').trim();
+        if (value === '') {
           return null; // blank -> leave unchanged
         }
         const key = secretKeyFor(connectorId, field);
@@ -484,7 +504,7 @@ export default function ConnectorConfigure() {
                 <Button
                   variant="contained"
                   onClick={handleSave}
-                  disabled={saving}
+                  disabled={saving || hasActiveErrors}
                   data-testid="connector-config-save"
                 >
                   {saving ? (

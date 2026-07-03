@@ -19,6 +19,28 @@ def navigate_to_templates(page: Page) -> None:
         expect(toggle).to_be_visible(timeout=PAGE_DATA_TIMEOUT)
 
 
+def search_templates(page: Page, needle: str) -> None:
+    """Fill the gallery search input and wait for the filtered fetch to land.
+
+    The search input is debounced (~300 ms) and ``useTemplates`` has no request
+    cancellation, so callers must wait for the search-filtered response before
+    inspecting rows/cards -- a fixed sleep races the fetch + re-render under CI
+    load and yields stale (pre-filter) results.
+    """
+    search_input = page.get_by_test_id("template-filters-search-input").locator("input")
+    search_input.wait_for(state="visible", timeout=PAGE_DATA_TIMEOUT)
+    try:
+        with page.expect_response(
+            lambda r: "/m8flow/templates?" in r.url and "search=" in r.url,
+            timeout=PAGE_DATA_TIMEOUT,
+        ):
+            search_input.fill(needle)
+    except PlaywrightTimeout:
+        # Same value re-filled (no change event) -- results already match.
+        pass
+    wait_for_app_ready(page)
+
+
 def open_import_template_modal(page: Page) -> None:
     """Open the import-template-from-zip modal on the gallery page."""
     page.get_by_test_id("template-gallery-import-button").click()

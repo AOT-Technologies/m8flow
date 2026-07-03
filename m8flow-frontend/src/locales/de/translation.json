@@ -304,5 +304,12 @@
   "no_parameters": "Keine Parameter",
   "no_connectors_available": "Derzeit sind keine Konnektoren verfügbar.",
   "no_matching_connectors": "Keine Konnektoren entsprechen Ihrer Suche.",
-  "connectors_load_failed": "Konnektoren konnten nicht geladen werden. Stellen Sie sicher, dass der Konnektor-Proxy ausgeführt wird und konfiguriert ist."
+  "connectors_load_failed": "Konnektoren konnten nicht geladen werden. Stellen Sie sicher, dass der Konnektor-Proxy ausgeführt wird und konfiguriert ist.",
+  "connector_config_whitespace_only": "Dieses Feld darf nicht nur aus Leerzeichen bestehen.",
+  "connector_config_invalid_url": "Geben Sie eine gültige URL ein, einschließlich http:// oder https://.",
+  "connector_config_invalid_email": "Geben Sie eine gültige E-Mail-Adresse ein.",
+  "connector_config_invalid_port": "Geben Sie eine gültige Portnummer ein (1–65535).",
+  "connector_config_invalid_number": "Geben Sie eine gültige Zahl ein.",
+  "connector_config_min_length": "Muss mindestens {{min}} Zeichen lang sein.",
+  "connector_config_max_length": "Darf höchstens {{max}} Zeichen lang sein."
 }
