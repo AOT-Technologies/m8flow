@@ -75,24 +75,14 @@ beforeEach(() => {
 });
 
 describe('McpConnection', () => {
-  it('shows the configured MCP server URL with client setup sections', () => {
+  it('shows the configured MCP server URL with a client card per supported client', () => {
     renderPage();
     expect(screen.getByTestId('mcp-server-url')).toHaveTextContent(
       'https://qa.m8flow.ai/mcp',
     );
-    expect(screen.getByTestId('mcp-client-cursor')).toBeInTheDocument();
     expect(screen.getByTestId('mcp-client-claude-code')).toBeInTheDocument();
-    expect(screen.getByTestId('mcp-client-other')).toBeInTheDocument();
-  });
-
-  it('interpolates the URL into the client config snippets', () => {
-    renderPage();
-    expect(screen.getByTestId('mcp-snippet-cursor')).toHaveTextContent(
-      '"url": "https://qa.m8flow.ai/mcp"',
-    );
-    expect(screen.getByTestId('mcp-snippet-claude-code')).toHaveTextContent(
-      'claude mcp add --transport http m8flow https://qa.m8flow.ai/mcp',
-    );
+    expect(screen.getByTestId('mcp-client-cursor')).toBeInTheDocument();
+    expect(screen.getByTestId('mcp-client-claude-ai')).toBeInTheDocument();
   });
 
   it('copies the server URL to the clipboard', async () => {
@@ -103,6 +93,35 @@ describe('McpConnection', () => {
         'https://qa.m8flow.ai/mcp',
       ),
     );
+  });
+
+  it('copies the Claude Code command with the URL interpolated', async () => {
+    renderPage();
+    fireEvent.click(screen.getByTestId('mcp-copy-command'));
+    await waitFor(() =>
+      expect(h.clipboardWriteText).toHaveBeenCalledWith(
+        'claude mcp add --transport http m8flow https://qa.m8flow.ai/mcp',
+      ),
+    );
+  });
+
+  it('copies the Cursor JSON config with the URL interpolated', async () => {
+    renderPage();
+    fireEvent.click(screen.getByTestId('mcp-copy-config'));
+    await waitFor(() => expect(h.clipboardWriteText).toHaveBeenCalled());
+    const copied = (h.clipboardWriteText as ReturnType<typeof vi.fn>).mock
+      .calls[0][0];
+    expect(JSON.parse(copied)).toEqual({
+      mcpServers: { m8flow: { url: 'https://qa.m8flow.ai/mcp' } },
+    });
+  });
+
+  it('opens the Claude.ai steps dialog from the client card', async () => {
+    renderPage();
+    expect(screen.queryByText('mcp_claude_ai_step_1')).toBeNull();
+    fireEvent.click(screen.getByTestId('mcp-view-steps'));
+    expect(await screen.findByText('mcp_claude_ai_step_1')).toBeInTheDocument();
+    expect(screen.getByTestId('mcp-dialog-url-copy')).toBeInTheDocument();
   });
 
   it('shows a warning instead of instructions when no URL is configured', () => {
