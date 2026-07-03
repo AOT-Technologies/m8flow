@@ -21,6 +21,8 @@ import ZoomScrollModule from 'diagram-js/lib/navigation/zoomscroll';
 // @ts-expect-error TS(7016) FIXME
 import spiffworkflow from 'bpmn-js-spiffworkflow/app/spiffworkflow';
 import spiffModdleExtension from 'bpmn-js-spiffworkflow/app/spiffworkflow/moddle/spiffworkflow.json';
+// @ts-expect-error TS(7016) FIXME
+import m8flowExternalForm from './bpmn';
 import BpmnJsScriptIcon from '@spiffworkflow-frontend/icons/bpmn_js_script_icon.svg';
 import { getBpmnProcessIdentifiers } from '@spiffworkflow-frontend/helpers';
 import { TASK_METADATA } from '@spiffworkflow-frontend/config';
@@ -176,7 +178,7 @@ export function useDiagramModeler(options: UseDiagramModelerOptions) {
 
     const propertiesPanelParent = document.getElementById(panelId);
 
-    // Keep 'M8flow Service Properties' open across panel rebuilds triggered by elements.changed.
+    // Keep 'M8flow Connectors' open across panel rebuilds triggered by elements.changed.
     const isGroupOpen = (group: HTMLElement): boolean => {
       if (group.classList.contains('open')) return true;
       const header = group.querySelector(':scope > .bio-properties-panel-group-header');
@@ -276,6 +278,7 @@ export function useDiagramModeler(options: UseDiagramModelerOptions) {
         propertiesPanel: { parent: `#${panelId}` },
         additionalModules: [
           spiffworkflow,
+          m8flowExternalForm,
           BpmnPropertiesPanelModule,
           BpmnPropertiesProviderModule,
           ZoomScrollModule,

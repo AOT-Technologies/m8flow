@@ -139,10 +139,30 @@ def is_multi_tenant_mode(
         return False
 
 
+def _wait_for_keycloak_form(page: Page) -> None:
+    """Wait for the Keycloak login form, reloading once if it is slow to render.
+
+    Under CI's parallel start-up a cold Keycloak can be slow to serve the first
+    (theme-compiling) render of the login page, so the ``#username`` field may
+    not appear within ``KC_TIMEOUT``. A single reload lets that transient slow
+    load self-heal without burning a whole login attempt.
+    """
+    try:
+        page.locator("#username").wait_for(state="visible", timeout=KC_TIMEOUT)
+    except PlaywrightTimeout:
+        logger.warning(
+            "Keycloak login form not visible within %dms at %s; reloading once.",
+            KC_TIMEOUT,
+            page.url,
+        )
+        page.reload()
+        page.locator("#username").wait_for(state="visible", timeout=KC_TIMEOUT)
+
+
 def _submit_keycloak_form(page: Page, username: str, password: str) -> None:
     """Fill and submit the Keycloak login form."""
     logger.debug("Waiting for Keycloak login form (current URL: %s).", page.url)
-    page.locator("#username").wait_for(state="visible", timeout=KC_TIMEOUT)
+    _wait_for_keycloak_form(page)
     page.locator("#username").fill(username)
     page.locator("#password").fill(password)
     page.locator("#kc-login").click()
@@ -172,8 +192,11 @@ def login(
 
     login_url = f"{base_url.rstrip('/')}/login"
     for attempt in range(1, MAX_LOGIN_ATTEMPTS + 1):
-        _submit_keycloak_form(page, username, password)
         try:
+            # Kept inside the try so a slow/cold Keycloak login page (the
+            # "#username" never appears) also retries instead of failing the
+            # fixture outright.
+            _submit_keycloak_form(page, username, password)
             _handle_organization_selection(page, organization_alias=tenant)
             _wait_for_post_login(page, password, new_password=new_password)
             return
@@ -265,9 +288,13 @@ def login_as_global_admin(
     ``MAX_LOGIN_ATTEMPTS`` times.
     """
     for attempt in range(1, MAX_LOGIN_ATTEMPTS + 1):
-        _navigate_to_global_admin_login(page, base_url)
-        _submit_keycloak_form(page, username, password)
         try:
+            # Navigation + form submit are inside the try so a flaky Platform
+            # Sign In button or a slow/cold master-realm login page retries the
+            # whole flow (including the direct master-realm URL fallback in
+            # _navigate_to_global_admin_login) instead of failing outright.
+            _navigate_to_global_admin_login(page, base_url)
+            _submit_keycloak_form(page, username, password)
             _wait_for_post_login(page, password)
             return
         except (AssertionError, PlaywrightTimeout):

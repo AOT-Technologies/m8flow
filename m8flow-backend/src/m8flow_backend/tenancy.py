@@ -49,6 +49,10 @@ _BASE_TENANT_CONTEXT_EXEMPT_PATH_PREFIXES: tuple[str, ...] = (
     # Global tenant-management endpoints are authenticated, but they do not belong to a tenant realm.
     "/v1.0/m8flow/tenants",
     "/m8flow/tenants",
+    # Public invitation accept/validate endpoints: unauthenticated and not tenant-scoped at the
+    # request level (the invitation row carries its own tenant id).
+    "/v1.0/m8flow/invitations",
+    "/m8flow/invitations",
 )
 
 # When SPIFFWORKFLOW_BACKEND_WSGI_PATH_PREFIX is set (e.g. "/api"), include both

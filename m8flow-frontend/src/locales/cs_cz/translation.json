@@ -304,5 +304,12 @@
   "no_parameters": "Žádné parametry",
   "no_connectors_available": "V tuto chvíli nejsou k dispozici žádné konektory.",
   "no_matching_connectors": "Vašemu vyhledávání neodpovídají žádné konektory.",
-  "connectors_load_failed": "Konektory se nepodařilo načíst. Zkontrolujte, zda je proxy konektoru spuštěna a nakonfigurována."
+  "connectors_load_failed": "Konektory se nepodařilo načíst. Zkontrolujte, zda je proxy konektoru spuštěna a nakonfigurována.",
+  "connector_config_whitespace_only": "Toto pole nemůže obsahovat pouze mezery.",
+  "connector_config_invalid_url": "Zadejte platnou adresu URL včetně http:// nebo https://.",
+  "connector_config_invalid_email": "Zadejte platnou e-mailovou adresu.",
+  "connector_config_invalid_port": "Zadejte platné číslo portu (1–65535).",
+  "connector_config_invalid_number": "Zadejte platné číslo.",
+  "connector_config_min_length": "Musí mít alespoň {{min}} znaků.",
+  "connector_config_max_length": "Musí mít nejvýše {{max}} znaků."
 }

@@ -42,6 +42,11 @@ export interface ConnectorConfigField {
   label: string;
   type: 'text' | 'password';
   required: boolean;
+  /** Optional input-format hint the configure form validates against. */
+  format?: 'url' | 'email' | 'port' | 'number';
+  /** Optional length bounds enforced on the trimmed value. */
+  minLength?: number;
+  maxLength?: number;
   helpText?: string;
 }
 

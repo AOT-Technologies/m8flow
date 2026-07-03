@@ -868,81 +868,9 @@ def make_process_instances(
     return out
 
 
-def mock_process_instances_api(
-    page: Page,
-    all_instances: list[dict[str, Any]] | None = None,
-    for_me_instances: list[dict[str, Any]] | None = None,
-    columns: list[dict[str, Any]] | None = None,
-    *,
-    instances: list[dict[str, Any]] | None = None,
-) -> None:
-    """Intercept the ``POST /process-instances`` (all) and
-    ``POST /process-instances/for-me`` list endpoints.
-
-    Honours the ``per_page`` / ``page`` query params for pagination and returns
-    ``{results, pagination, report_metadata, report_hash}``. Detail GETs,
-    report-metadata, and other paths fall through untouched. Pass ``[]`` to
-    exercise the empty state.
-
-    ``instances`` is an alias for ``all_instances`` (used by the super-admin
-    helpers). When an ``x-m8flow-tenant-id`` request header is present, results
-    are filtered to that tenant so cross-tenant isolation assertions hold.
-    """
-    if all_instances is None and instances is not None:
-        all_instances = instances
-    all_src = (
-        all_instances
-        if all_instances is not None
-        else copy.deepcopy(ALL_MOCK_PROCESS_INSTANCES)
-    )
-    forme_src = for_me_instances if for_me_instances is not None else all_src
-    cols = columns if columns is not None else PROCESS_INSTANCE_DEFAULT_COLUMNS
-
-    def _slice(src: list[dict[str, Any]], url: str):
-        qs = parse_qs(urlparse(url).query)
-        per_page = max(1, int(qs.get("per_page", ["50"])[0] or 50))
-        page_num = max(1, int(qs.get("page", ["1"])[0] or 1))
-        total = len(src)
-        pages = max(1, (total + per_page - 1) // per_page)
-        page_num = min(page_num, pages)
-        start = (page_num - 1) * per_page
-        sliced = src[start : start + per_page]
-        return sliced, {
-            "count": len(sliced),
-            "total": total,
-            "pages": pages,
-            "page": page_num,
-            "per_page": per_page,
-        }
-
-    def _handle(route: Route) -> None:
-        if route.request.method != "POST":
-            route.fallback()
-            return
-        path = urlparse(route.request.url).path
-        if path.endswith("/process-instances/for-me"):
-            src = forme_src
-        elif path.endswith("/process-instances"):
-            src = all_src
-        else:
-            route.fallback()
-            return
-        tid = route.request.headers.get("x-m8flow-tenant-id")
-        if tid:
-            src = [i for i in src if i.get("tenantId") == tid]
-        sliced, pagination = _slice(src, route.request.url)
-        _json_response(route, {
-            "results": [copy.deepcopy(r) for r in sliced],
-            "pagination": pagination,
-            "report_metadata": {
-                "columns": copy.deepcopy(cols),
-                "filter_by": [],
-                "order_by": [],
-            },
-            "report_hash": "mock-report-hash",
-        })
-
-    page.route("**/process-instances*", _handle)
+# NOTE: ``mock_process_instances_api`` is defined once, further below, alongside
+# the cross-tenant process-instance fixtures (it honours the
+# ``x-m8flow-tenant-id`` header and serves ``PROCESS_INSTANCE_DEFAULT_COLUMNS``).
 
 
 # ===================================================================
@@ -1568,12 +1496,46 @@ ALL_MOCK_PROCESS_INSTANCES: list[dict[str, Any]] = [
     MOCK_PROCESS_INSTANCE_SUSPENDED,
 ]
 
-# NOTE: the process-instance list endpoint is mocked by ``mock_process_instances_api``
-# defined earlier in this module. That single definition serves both the list suite
-# (rich ``PROCESS_INSTANCE_DEFAULT_COLUMNS``) and the super-admin suite (``instances=``
-# alias + ``x-m8flow-tenant-id`` header filtering). A second definition used to live
-# here and silently shadowed the first, dropping columns such as
-# ``process_initiator_username`` from the rendered table.
+_PROCESS_INSTANCE_LIST_RE = re.compile(r"/process-instances(/for-me)?(\?|$)")
+
+
+def mock_process_instances_api(
+    page: Page,
+    instances: list[dict[str, Any]] | None = None,
+) -> None:
+    """Intercept the process-instance list/report endpoint.
+
+    Returns a paginated report payload using ``PROCESS_INSTANCE_DEFAULT_COLUMNS``
+    (id, process, start/end, started-by, last-milestone, status). The frontend
+    injects a ``tenantName`` column client-side for super admins, so the mock
+    only supplies the data and these base columns. Honors the
+    ``x-m8flow-tenant-id`` request header for cross-tenant isolation assertions.
+    """
+    source = instances if instances is not None else ALL_MOCK_PROCESS_INSTANCES
+
+    def _handle(route: Route) -> None:
+        url = route.request.url
+        path = urlparse(url).path
+        if not _PROCESS_INSTANCE_LIST_RE.search(path):
+            route.fallback()
+            return
+        items = list(source)
+        tid = route.request.headers.get("x-m8flow-tenant-id")
+        if tid:
+            items = [i for i in items if i.get("tenantId") == tid]
+        page_slice, pagination = _paginate_template_results(items, url)
+        _json_response(route, {
+            "results": page_slice,
+            "pagination": pagination,
+            "report_metadata": {
+                "columns": copy.deepcopy(PROCESS_INSTANCE_DEFAULT_COLUMNS),
+                "filter_by": [],
+                "order_by": [],
+            },
+            "report_hash": "mock-process-instance-hash",
+        })
+
+    page.route(re.compile(r".*/process-instances(/for-me)?(\?.*)?$"), _handle)
 
 
 # ---- Cross-tenant process groups / models ---------------------------------

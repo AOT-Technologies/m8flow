@@ -183,3 +183,74 @@ def nats_token_salt() -> str:
 def nats_url() -> str:
     """Get the NATS URL from environment variables."""
     return _get("M8FLOW_NATS_URL")
+
+
+def nats_enabled() -> bool:
+    """Whether the NATS event-driven integration is switched on."""
+    return (_get("M8FLOW_NATS_ENABLED") or "false").lower() == "true"
+
+
+def nats_notifications_stream_name() -> str:
+    """JetStream stream for notification events — separate from the
+    trigger stream so the engine consumer never receives notification traffic."""
+    return _get("M8FLOW_NATS_NOTIFICATIONS_STREAM_NAME") or "M8FLOW_NOTIFICATIONS"
+
+
+def nats_notifications_subject() -> str:
+    """Subject wildcard the notifications stream captures."""
+    return _get("M8FLOW_NATS_NOTIFICATIONS_SUBJECT") or "m8flow.notifications.>"
+
+
+def external_form_link_ttl_seconds() -> int:
+    """How long an external-form secure link stays valid, from environment."""
+    return int(_get("M8FLOW_EXTERNAL_FORM_LINK_TTL_SECONDS") or "604800")
+
+
+def notification_max_attempts() -> int:
+    """Give up notifying a request after this many failed email attempts."""
+    return int(_get("M8FLOW_NOTIFICATION_MAX_ATTEMPTS") or "5")
+
+
+def notification_sweep_interval_seconds() -> int:
+    """How often the notification worker sweeps for missed pending requests."""
+    return int(_get("M8FLOW_NOTIFICATION_SWEEP_INTERVAL_SECONDS") or "60")
+
+
+def notification_sweep_grace_seconds() -> int:
+    """Pending rows younger than this are left to the event fast-path before
+    the sweep picks them up, so the two never race on fresh rows."""
+    return int(_get("M8FLOW_NOTIFICATION_SWEEP_GRACE_SECONDS") or "120")
+
+
+def app_frontend_base_url() -> str:
+    """Base URL of the frontend, used to build invitation accept links.
+
+    Prefers an explicit M8FLOW_FRONTEND_BASE_URL, then the shared public base URL,
+    falling back to the local-dev frontend (http://localhost:6841)."""
+    raw = _get("M8FLOW_FRONTEND_BASE_URL") or app_public_base_url()
+    if not raw:
+        return "http://localhost:6841"
+    if "://" not in raw:
+        raw = "https://" + raw
+    return raw.rstrip("/")
+
+
+def smtp_settings() -> dict:
+    """SMTP configuration for outbound invitation email.
+
+    When host is unset, callers fall back to dev mode (log + return the link)."""
+    host = _get("M8FLOW_SMTP_HOST")
+    port_raw = _get("M8FLOW_SMTP_PORT") or "587"
+    try:
+        port = int(port_raw)
+    except (TypeError, ValueError):
+        port = 587
+    use_tls_raw = (_get("M8FLOW_SMTP_USE_TLS") or "true").lower()
+    return {
+        "host": host,
+        "port": port,
+        "username": _get("M8FLOW_SMTP_USERNAME"),
+        "password": _get("M8FLOW_SMTP_PASSWORD"),
+        "from_address": _get("M8FLOW_SMTP_FROM") or "no-reply@m8flow.local",
+        "use_tls": use_tls_raw in ("1", "true", "yes", "on"),
+    }

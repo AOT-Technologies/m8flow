@@ -212,13 +212,16 @@ jobs:
           poetry check --lock
       - uses: docker/setup-buildx-action@v3
       - name: Backend image build (no push)
-        # Read-only registry cache reuse (public images, no creds needed). The
-        # backend pulls the shared base via the PYTHON_BASE arg default in the Dockerfile.
+        # GitHub Actions layer cache (per-image scope, no creds, fork-PR safe) plus a
+        # read-only registry cache seed from production builds. The backend pulls the
+        # shared base via the PYTHON_BASE arg default in the Dockerfile.
         run: |
           docker buildx build \
             --file docker/m8flow.backend.Dockerfile \
             --tag backend:pr-test \
             --cache-from type=registry,ref=docker.io/m8flow/m8flow-backend:buildcache \
+            --cache-from type=gha,scope=backend \
+            --cache-to type=gha,mode=max,scope=backend \
             --load \
             .
       - name: Frontend image build (no push)
@@ -226,6 +229,8 @@ jobs:
           docker buildx build \
             --file docker/m8flow.frontend.Dockerfile \
             --tag frontend:pr-test \
+            --cache-from type=gha,scope=frontend \
+            --cache-to type=gha,mode=max,scope=frontend \
             --load \
             .
       - name: Keycloak image build (no push)
@@ -233,6 +238,8 @@ jobs:
           docker buildx build \
             --file docker/m8flow.keycloak.Dockerfile \
             --tag keycloak:pr-test \
+            --cache-from type=gha,scope=keycloak \
+            --cache-to type=gha,mode=max,scope=keycloak \
             --load \
             .
       - name: Connector-proxy image build (no push)
@@ -240,8 +247,125 @@ jobs:
           docker buildx build \
             --file m8flow-connector-proxy/Dockerfile \
             --tag connector-proxy:pr-test \
+            --cache-from type=gha,scope=connector-proxy \
+            --cache-to type=gha,mode=max,scope=connector-proxy \
             --load \
             m8flow-connector-proxy
+
+  # -------------------------
+  # E2E Tests (Playwright)
+  # -------------------------
+  e2e-tests:
+    name: E2E Tests (Playwright)
+    needs: path_filters
+    # Run on every push and on PRs that touch backend, frontend, or docker/connector
+    # code. Docs-only PRs skip the (expensive) full-stack run.
+    if: ${{ github.event_name == 'push' || needs.path_filters.outputs.backend == 'true' || needs.path_filters.outputs.frontend == 'true' || needs.path_filters.outputs.docker_m8flow == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45            # generous job ceiling; test step is bounded separately
+    env:
+      COMPOSE_FILE: docker/m8flow-docker-compose.yml
+      TEST_DIR: extensions/m8flow-frontend/test/browser
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Prepare env file
+        # Compose services read ../.env (env_file). sample.env carries dev-safe defaults.
+        run: cp sample.env .env
+      # Build each image once with a per-image GitHub Actions layer cache, loading it
+      # under the tag the compose file expects so `compose up` reuses it (pull_policy: never).
+      - name: Build backend image (gha cache)
+        run: |
+          docker buildx build \
+            --file docker/m8flow.backend.Dockerfile \
+            --tag m8flow-backend \
+            --cache-from type=registry,ref=docker.io/m8flow/m8flow-backend:buildcache \
+            --cache-from type=gha,scope=backend \
+            --cache-to type=gha,mode=max,scope=backend \
+            --load \
+            .
+      - name: Build frontend image (gha cache)
+        run: |
+          docker buildx build \
+            --file docker/m8flow.frontend.Dockerfile \
+            --tag m8flow-frontend \
+            --cache-from type=gha,scope=frontend \
+            --cache-to type=gha,mode=max,scope=frontend \
+            --load \
+            .
+      - name: Build keycloak image (gha cache)
+        run: |
+          docker buildx build \
+            --file docker/m8flow.keycloak.Dockerfile \
+            --tag m8flow-keycloak \
+            --cache-from type=gha,scope=keycloak \
+            --cache-to type=gha,mode=max,scope=keycloak \
+            --load \
+            .
+      - name: Build connector-proxy image (gha cache)
+        run: |
+          docker buildx build \
+            --file m8flow-connector-proxy/Dockerfile \
+            --tag m8flow/m8flow-connector-proxy \
+            --cache-from type=gha,scope=connector-proxy \
+            --cache-to type=gha,mode=max,scope=connector-proxy \
+            --load \
+            m8flow-connector-proxy
+      - name: Start full stack
+        # --profile init seeds MinIO buckets, syncs templates/process models, and runs
+        # Keycloak realm/user init. Pre-built images mean no rebuild here.
+        run: docker compose --profile init -f "$COMPOSE_FILE" up -d
+      - name: Wait for stack to be ready
+        run: bash ./.github/scripts/wait-for-e2e-stack.sh
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.1'
+      - name: Install uv
+        run: pip install uv
+      - name: Install E2E suite deps + Chromium
+        working-directory: ${{ env.TEST_DIR }}
+        run: |
+          uv sync
+          uv run playwright install --with-deps chromium
+      - name: Run Playwright E2E (parallel)
+        working-directory: ${{ env.TEST_DIR }}
+        timeout-minutes: 20         # AC2: bound test execution to the 10-20 min budget
+        env:
+          E2E_URL: http://localhost:6841
+        run: |
+          # Parallelize by file (keeps module-scoped login fixtures on one worker),
+          # excluding the stateful live-backend approval flow...
+          uv run python -m pytest -n auto --dist loadfile -k "not form_driven" -v --qa-report
+          # ...then run that heavy E2E serially so it never races parallel files.
+          uv run python -m pytest -k form_driven -v
+      - name: Dump compose logs on failure
+        if: failure()
+        run: |
+          mkdir -p "$TEST_DIR/test-results"
+          docker compose -f "$COMPOSE_FILE" logs --no-color > "$TEST_DIR/test-results/compose-logs.txt" 2>&1 || true
+      - name: Upload E2E report + traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-e2e-report
+          path: ${{ env.TEST_DIR }}/test-results/
+          retention-days: 14
+          if-no-files-found: warn
+      - name: Publish report link to job summary
+        if: always()
+        run: |
+          {
+            echo "## Playwright E2E results"
+            echo ""
+            echo "Detailed HTML report + failure screenshots/traces are in the"
+            echo "**playwright-e2e-report** artifact for this run (QA dashboard at"
+            echo "\`test-results/qa-report/index.html\`)."
+            echo ""
+            echo "Download it from the **Artifacts** section of this workflow run."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Tear down stack
+        if: always()
+        run: docker compose -f "$COMPOSE_FILE" down -v || true
 
   # -------------------------
   # Required Merge Gate
@@ -258,6 +382,7 @@ jobs:
       - trivy
       - migration-check
       - docker-dry-run
+      - e2e-tests
     if: ${{ always() && (github.event_name == 'push' || github.event_name == 'pull_request') }}
     runs-on: ubuntu-latest
     steps:
@@ -274,6 +399,7 @@ jobs:
           echo "trivy result: ${{ needs.trivy.result }}"
           echo "migration-check result: ${{ needs.migration-check.result }}"
           echo "docker-dry-run result: ${{ needs.docker-dry-run.result }}"
+          echo "e2e-tests result: ${{ needs.e2e-tests.result }}"
 
           if [[ "${{ github.event_name }}" == "push" || "${{ needs.path_filters.outputs.backend }}" == "true" ]]; then
             [[ "${{ needs.backend-lint.result }}" == "success" ]] || {
@@ -316,6 +442,15 @@ jobs:
           if [[ "${{ github.event_name }}" == "pull_request" && ( "${{ needs.path_filters.outputs.backend }}" == "true" || "${{ needs.path_filters.outputs.frontend }}" == "true" || "${{ needs.path_filters.outputs.docker_m8flow }}" == "true" ) ]]; then
             [[ "${{ needs.docker-dry-run.result }}" == "success" ]] || {
               echo "::error::Docker build dry run did not succeed."
+              exit 1
+            }
+          fi
+
+          # E2E runs on every push and on PRs touching backend/frontend/docker; it must
+          # pass whenever it was expected to run (matches the e2e-tests job's own `if`).
+          if [[ "${{ github.event_name }}" == "push" || ( "${{ github.event_name }}" == "pull_request" && ( "${{ needs.path_filters.outputs.backend }}" == "true" || "${{ needs.path_filters.outputs.frontend }}" == "true" || "${{ needs.path_filters.outputs.docker_m8flow }}" == "true" ) ) ]]; then
+            [[ "${{ needs.e2e-tests.result }}" == "success" ]] || {
+              echo "::error::E2E (Playwright) tests did not succeed."
               exit 1
             }
           fi
