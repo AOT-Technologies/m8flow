@@ -46,24 +46,27 @@ def test_reviewer_redirected_away_from_process_instances(reviewer_page: Page) ->
     logger.info("Reviewer redirected away from /process-instances to %s", reviewer_page.url)
 
 
-def test_viewer_sees_find_by_id_tab(viewer_page: Page) -> None:
-    """A viewer can open the list and gets the Find By ID tab.
+def test_viewer_sees_read_only_process_instance_tabs(viewer_page: Page) -> None:
+    """A viewer has full read access to process instances and gets every tab.
 
-    The Find By ID tab is gated by ``POST`` (``create``) on the for-me list path
-    (``ProcessInstanceListTabs``). The ``viewer`` role is granted this permission
-    in ``m8flow-backend/.../config/permissions/m8flow.yml`` (the
-    ``create-process-instance-list-for-me`` rule lists ``viewer``), so the tab is
-    visible to viewers.
+    The ``viewer`` group is granted read-only-but-complete process-instance
+    access in the backend permission config (``m8flow.yml``): ``GET
+    /process-instances`` (All), ``POST /process-instances/for-me`` (For Me), and
+    ``GET /process-instances/*`` (find-by-id lookup). ``ProcessInstanceListTabs``
+    gates the For Me tab on lacking tenant-list access, the All tab on ``GET`` of
+    the list path, and the Find By ID tab on ``POST`` of the for-me path — all of
+    which the viewer holds — so all three read tabs render.
     """
     viewer_page.goto(f"{BASE_URL}/process-instances")
     wait_for_app_ready(viewer_page)
     pip = ProcessInstancesPage(viewer_page)
 
     # Confirm the viewer actually landed on the list (not redirected to home).
-    expect(pip.for_me_tab.or_(pip.all_tab).first).to_be_visible(timeout=ELEMENT_TIMEOUT)
+    expect(pip.for_me_tab).to_be_visible(timeout=ELEMENT_TIMEOUT)
+    expect(pip.all_tab).to_be_visible(timeout=ELEMENT_TIMEOUT)
     expect(pip.find_by_id_tab).to_be_visible(timeout=ELEMENT_TIMEOUT)
     assert "/process-instances" in viewer_page.url
-    logger.info("Viewer is on the list and can see the Find By ID tab.")
+    logger.info("Viewer sees For Me, All and Find By ID read tabs.")
 
 
 def test_super_admin_sees_all_and_find_by_id_but_not_for_me(
