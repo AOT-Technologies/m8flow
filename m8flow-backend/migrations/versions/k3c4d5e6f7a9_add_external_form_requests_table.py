@@ -6,7 +6,7 @@ external_form_url is TEXT (the link can embed a full form schema), notified_at_i
 logged by the notification worker / backend instead of stored).
 
 Revision ID: k3c4d5e6f7a9
-Revises: j2b3c4d5e6f8
+Revises: k3c4d5e6f7g8
 Create Date: 2026-06-10 06:00:00.000000
 
 """
@@ -15,7 +15,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = "k3c4d5e6f7a9"
-down_revision = "j2b3c4d5e6f8"
+down_revision = "k3c4d5e6f7g8"
 branch_labels = None
 depends_on = None
 
