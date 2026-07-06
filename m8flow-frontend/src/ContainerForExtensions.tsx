@@ -846,11 +846,11 @@ export default function ContainerForExtensions() {
                 className={`${transitionStage}`}
                 sx={{
                   bgcolor: 'background.default',
-                  width: '100%',
+                  minWidth: 0,
                   height: '100%',
                   display: 'flex',
                   flexDirection: 'column',
-                  flexGrow: 1,
+                  flex: '1 1 0%',
                   overflow: 'auto', // allow scrolling
                 }}
                 onAnimationEnd={(e) => {

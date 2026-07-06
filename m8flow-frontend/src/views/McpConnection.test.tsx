@@ -124,6 +124,32 @@ describe('McpConnection', () => {
     expect(screen.getByTestId('mcp-dialog-url-copy')).toBeInTheDocument();
   });
 
+  it('opens the QR dialog and copies its server URL', async () => {
+    renderPage();
+    fireEvent.click(screen.getByTestId('mcp-qr-button'));
+    expect(await screen.findByTestId('mcp-qr-dialog')).toBeInTheDocument();
+    expect(screen.getByTestId('mcp-qr-code')).toBeInTheDocument();
+    expect(screen.getByTestId('mcp-qr-url')).toHaveTextContent(
+      'https://qa.m8flow.ai/mcp',
+    );
+
+    fireEvent.click(screen.getByTestId('mcp-qr-url-copy'));
+    await waitFor(() =>
+      expect(h.clipboardWriteText).toHaveBeenCalledWith(
+        'https://qa.m8flow.ai/mcp',
+      ),
+    );
+  });
+
+  it('shows the MCP activity panel with metrics and recent tool calls', () => {
+    renderPage();
+    expect(screen.getByTestId('mcp-activity-panel')).toBeInTheDocument();
+    expect(screen.getByText('mcp_activity_tool_calls_today')).toBeInTheDocument();
+    expect(screen.getByText('97%')).toBeInTheDocument();
+    expect(screen.getByText('start_process_instance')).toBeInTheDocument();
+    expect(screen.getByText('Permission denied')).toBeInTheDocument();
+  });
+
   it('shows a warning instead of instructions when no URL is configured', () => {
     h.mcpServerUrl = '';
     renderPage();
