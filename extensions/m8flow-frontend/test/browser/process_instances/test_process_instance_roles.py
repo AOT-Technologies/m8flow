@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from playwright.sync_api import Page, expect
 
@@ -40,8 +41,11 @@ def test_reviewer_redirected_away_from_process_instances(reviewer_page: Page) ->
     expect(reviewer_page.get_by_test_id("process-instance-list-all")).not_to_be_visible(
         timeout=ELEMENT_TIMEOUT
     )
-    assert "/process-instances" not in reviewer_page.url, (
-        f"Reviewer was not redirected away: {reviewer_page.url}"
+    # The guard performs an async client-side redirect once permissions load, so
+    # retry the URL assertion instead of checking it once (matches the
+    # connectors-restricted pattern in test_connectors_tab.py).
+    expect(reviewer_page).not_to_have_url(
+        re.compile(r"/process-instances"), timeout=ELEMENT_TIMEOUT
     )
     logger.info("Reviewer redirected away from /process-instances to %s", reviewer_page.url)
 

@@ -696,7 +696,20 @@ def apply_refresh_token_tenant_patch() -> None:
             except Exception:
                 pass
         with _temporary_request_tenant(tenant_id, force=True):
-            return original_login_return(*args, **kwargs)
+            try:
+                return original_login_return(*args, **kwargs)
+            except Exception:
+                # login_return aborts (ApiError/500) leave the browser stranded on the
+                # backend callback URL instead of redirecting to the frontend. The exact
+                # failing step is otherwise invisible in CI, so log the full traceback and
+                # the resolved identifier/tenant before re-raising (behavior unchanged).
+                logger.exception(
+                    "login_return failed before redirect "
+                    "(authentication_identifier=%s, refresh_token_tenant_id=%s)",
+                    auth_identifier,
+                    tenant_id,
+                )
+                raise
 
     @wraps(original_get_user_model_from_token)
     def patched_get_user_model_from_token(decoded_token: dict):
