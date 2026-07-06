@@ -120,9 +120,9 @@ def apply() -> None:
                 self.raise_if_no_potential_owners(
                     potential_owners,
                     (
-                        "No users found in task data lane owner list for lane:"
-                        f" {task_lane}. The user list used:"
-                        f" {explicit_lane_owners}"
+                        f"No matching users could be found for the lane owners assigned to the "
+                        f"\"{task_lane}\" lane. Please make sure the following lane owner(s) exist "
+                        f"in this organization: {', '.join(explicit_lane_owners) or '(none specified)'}."
                     ),
                 )
             else:
