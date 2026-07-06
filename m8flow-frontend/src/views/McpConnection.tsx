@@ -472,7 +472,7 @@ export default function McpConnection() {
                       testId="mcp-server-url-copy"
                       variant="contained"
                     />
-                    <Button
+                    {/* <Button
                       variant="outlined"
                       size="small"
                       onClick={() => setQrOpen(true)}
@@ -481,7 +481,7 @@ export default function McpConnection() {
                       sx={{ flexShrink: 0, whiteSpace: 'nowrap' }}
                     >
                       {t('mcp_qr')}
-                    </Button>
+                    </Button> */}
                   </>
                 }
               />
@@ -562,7 +562,7 @@ export default function McpConnection() {
               </Grid>
             </Grid>
 
-            <Paper
+            {/* <Paper
               variant="outlined"
               data-testid="mcp-activity-panel"
               sx={{
@@ -644,7 +644,7 @@ export default function McpConnection() {
                   <ActivityRow key={`${row.tool}-${row.time}`} row={row} />
                 ))}
               </Box>
-            </Paper>
+            </Paper> */}
 
             <Dialog
               open={claudeAiStepsOpen}
