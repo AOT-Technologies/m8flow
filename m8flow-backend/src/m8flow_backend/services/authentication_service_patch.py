@@ -647,6 +647,40 @@ def _patched_store_refresh_token(
     tenant_id: str | None = None,
     decoded_token: dict | None = None,
 ) -> None:
+    try:
+        _store_refresh_token_strict(
+            user_id,
+            refresh_token,
+            tenant_id=tenant_id,
+            decoded_token=decoded_token,
+        )
+    except Exception:
+        # Master-realm (platform admin) users have no m8flow_tenant row of their own, so
+        # their refresh token is persisted under a borrowed canonical tenant. A failure in
+        # that write must NOT abort the login callback: the access-token cookie and the
+        # redirect to the frontend are set independently of it, and the refresh token only
+        # enables later silent renewal. Swallow (and log) storage failures ONLY for the
+        # master identifier; shared-realm failures still raise, so their behavior and tenant
+        # isolation are unchanged.
+        effective_tenant_id = _resolve_refresh_token_tenant_id(
+            tenant_id=tenant_id, decoded_token=decoded_token
+        )
+        if effective_tenant_id == _master_realm_identifier():
+            _logger.warning(
+                "Skipping non-fatal refresh-token storage failure for master-realm user_id=%s",
+                user_id,
+                exc_info=True,
+            )
+            return
+        raise
+
+
+def _store_refresh_token_strict(
+    user_id: int,
+    refresh_token: str,
+    tenant_id: str | None = None,
+    decoded_token: dict | None = None,
+) -> None:
     from spiffworkflow_backend.models.db import db
     from spiffworkflow_backend.models.refresh_token import RefreshTokenModel
 
