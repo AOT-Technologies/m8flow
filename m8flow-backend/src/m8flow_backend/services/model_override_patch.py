@@ -26,6 +26,8 @@ _OVERRIDES = {
     "spiffworkflow_backend.models.message_instance_correlation": "m8flow_backend.models.message_instance_correlation",
     "spiffworkflow_backend.models.message_model": "m8flow_backend.models.message_model",
     "spiffworkflow_backend.models.message_triggerable_process_model": "m8flow_backend.models.message_triggerable_process_model",
+    "spiffworkflow_backend.models.permission_assignment": "m8flow_backend.models.permission_assignment",
+    "spiffworkflow_backend.models.permission_target": "m8flow_backend.models.permission_target",
     "spiffworkflow_backend.models.process_caller": "m8flow_backend.models.process_caller",
     "spiffworkflow_backend.models.process_caller_relationship": "m8flow_backend.models.process_caller_relationship",
     "spiffworkflow_backend.models.process_instance": "m8flow_backend.models.process_instance",
@@ -180,7 +182,12 @@ def apply() -> None:
     # register m8flow's UserModel now so it's available before any mapper configuration
     # runs, regardless of test order.  m8flow's UserModel uses keep_existing=True so the
     # re-import is safe even though the table already exists in the metadata.
-    if "spiffworkflow_backend.models.user" in purged:
-        importlib.import_module("spiffworkflow_backend.models.user")
+    for model_module_name in (
+        "spiffworkflow_backend.models.permission_target",
+        "spiffworkflow_backend.models.permission_assignment",
+        "spiffworkflow_backend.models.user",
+    ):
+        if model_module_name in purged:
+            importlib.import_module(model_module_name)
 
     _PATCHED = True
