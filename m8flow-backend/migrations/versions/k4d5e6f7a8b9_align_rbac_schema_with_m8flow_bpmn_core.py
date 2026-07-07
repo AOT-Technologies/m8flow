@@ -1,7 +1,7 @@
 """Align RBAC schema with m8flow_bpmn_core revision 9d3a7f6c2b41.
 
 Revision ID: k4d5e6f7a8b9
-Revises: j2b3c4d5e6f8
+Revises: k3c4d5e6f7a9
 Create Date: 2026-06-19
 """
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 revision = "k4d5e6f7a8b9"
-down_revision = "j2b3c4d5e6f8"
+down_revision = "k3c4d5e6f7a9"
 branch_labels = None
 depends_on = None
 
