@@ -13,6 +13,7 @@ from typing import Any
 import httpx
 from jose import ExpiredSignatureError, JWTError, jwt
 
+from src.auth.jwt_utils import TENANT_ID_CLAIM
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -26,7 +27,7 @@ class UserContext:
     email: str
     roles: list[str]
     groups: list[str]
-    tenant_id: str | None  # m8f_tenant_id from JWT claims
+    tenant_id: str | None  # m8flow_tenant_id from JWT claims
     token: str  # raw bearer token — forwarded to m8flow backend
 
 
@@ -151,7 +152,7 @@ class KeycloakAuth:
         Returns:
             Tenant ID or None
         """
-        tenant_id = payload.get("m8f_tenant_id")
+        tenant_id = payload.get(TENANT_ID_CLAIM)
         return str(tenant_id) if tenant_id else None
 
     async def validate_token(self, token: str) -> UserContext:

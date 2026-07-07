@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 
 from src.api_client import M8flowAPIClient
 from src.utils.context import get_auth_token
+from src.utils.url import quote_path_segment
 
 client = M8flowAPIClient()
 
@@ -34,7 +35,7 @@ async def view_workflow(process_model_id: str) -> str:
         # Returns BPMN XML content
     """
     token = get_auth_token()
-    modified_id = process_model_id.replace("/", ":")
+    modified_id = quote_path_segment(process_model_id.replace("/", ":"), safe=":")
 
     # Get process model to find BPMN file
     model = await client.get(f"/v1.0/process-models/{modified_id}", token)
@@ -43,7 +44,9 @@ async def view_workflow(process_model_id: str) -> str:
     bpmn_filename = f"{model['id']}.bpmn"
 
     # Get BPMN file content
-    file_response = await client.get(f"/v1.0/process-models/{modified_id}/files/{bpmn_filename}", token)
+    file_response = await client.get(
+        f"/v1.0/process-models/{modified_id}/files/{quote_path_segment(bpmn_filename)}", token
+    )
 
     bpmn_xml = file_response.get("file_contents", "")
 
@@ -125,7 +128,7 @@ async def view_process_instance(process_model_id: str, process_instance_id: int)
         # Returns instance BPMN XML content
     """
     token = get_auth_token()
-    modified_id = process_model_id.replace("/", ":")
+    modified_id = quote_path_segment(process_model_id.replace("/", ":"), safe=":")
 
     # Get process instance (includes bpmn_xml_file_contents)
     instance = await client.get(f"/v1.0/process-instances/{modified_id}/{process_instance_id}", token)
@@ -136,7 +139,9 @@ async def view_process_instance(process_model_id: str, process_instance_id: int)
         # Fallback to model BPMN
         model = await client.get(f"/v1.0/process-models/{modified_id}", token)
         bpmn_filename = f"{model['id']}.bpmn"
-        file_response = await client.get(f"/v1.0/process-models/{modified_id}/files/{bpmn_filename}", token)
+        file_response = await client.get(
+            f"/v1.0/process-models/{modified_id}/files/{quote_path_segment(bpmn_filename)}", token
+        )
         bpmn_xml = file_response.get("file_contents", "")
 
     if not bpmn_xml or not bpmn_xml.strip():

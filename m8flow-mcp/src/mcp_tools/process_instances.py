@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from src.api_client import M8flowAPIClient
 from src.utils.context import get_auth_token
 from src.utils.logging import get_logger
+from src.utils.url import quote_path_segment
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
@@ -75,7 +76,7 @@ def register_process_instance_tools(mcp: FastMCP) -> None:
             return {"error": "No authentication token available"}
 
         # Backend expects colons instead of slashes in the URL
-        modified_id = process_model_id.replace("/", ":")
+        modified_id = quote_path_segment(process_model_id.replace("/", ":"), safe=":")
 
         data: dict[str, Any] = {}
         if variables:

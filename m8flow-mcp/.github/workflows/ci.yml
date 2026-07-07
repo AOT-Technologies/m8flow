@@ -2,9 +2,9 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ M8F-345-mcp-server ]
+    branches: [ main, develop, M8F-345-mcp-server ]
   pull_request:
-    branches: [ develop ]
+    branches: [ main, develop ]
   workflow_dispatch:
 
 permissions:

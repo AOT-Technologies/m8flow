@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from src.api_client import M8flowAPIClient
 from src.utils.context import get_auth_token
 from src.utils.logging import get_logger
+from src.utils.url import quote_path_segment
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
@@ -145,7 +146,9 @@ def register_process_group_tools(mcp: FastMCP) -> None:
             data["description"] = description
 
         try:
-            result = await client.put(f"/v1.0/process-groups/{process_group_id}", token, data=data)
+            result = await client.put(
+                f"/v1.0/process-groups/{quote_path_segment(process_group_id, safe=':')}", token, data=data
+            )
             return result
         except Exception as e:
             logger.error(f"Failed to update process group {process_group_id}: {e}")
@@ -166,7 +169,9 @@ def register_process_group_tools(mcp: FastMCP) -> None:
             return {"error": "No authentication token available"}
 
         try:
-            result = await client.delete(f"/v1.0/process-groups/{process_group_id}", token)
+            result = await client.delete(
+                f"/v1.0/process-groups/{quote_path_segment(process_group_id, safe=':')}", token
+            )
             return result or {"status": "deleted", "id": process_group_id}
         except Exception as e:
             logger.error(f"Failed to delete process group {process_group_id}: {e}")

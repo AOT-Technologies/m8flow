@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from src.api_client import M8flowAPIClient
 from src.utils.context import get_auth_token
 from src.utils.logging import get_logger
+from src.utils.url import quote_path_segment
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
@@ -72,8 +73,11 @@ def register_process_model_tools(mcp: FastMCP) -> None:
         if not token:
             return {"error": "No authentication token available"}
 
+        # Backend expects the modified id ("group:model") in URL paths
+        modified_id = quote_path_segment(process_model_id.replace("/", ":"), safe=":")
+
         try:
-            result = await client.get(f"/v1.0/process-models/{process_model_id}", token)
+            result = await client.get(f"/v1.0/process-models/{modified_id}", token)
 
             # Add template provenance if requested
             if include_template_info:
@@ -125,7 +129,7 @@ def register_process_model_tools(mcp: FastMCP) -> None:
 
         # Backend expects group ID in URL path, not body
         # Convert slashes to colons (e.g., "finance/sub" -> "finance:sub")
-        modified_group_id = process_group_id.replace("/", ":")
+        modified_group_id = quote_path_segment(process_group_id.replace("/", ":"), safe=":")
 
         data: dict[str, Any] = {
             "id": identifier,
@@ -168,8 +172,10 @@ def register_process_model_tools(mcp: FastMCP) -> None:
         if description:
             data["description"] = description
 
+        modified_id = quote_path_segment(process_model_id.replace("/", ":"), safe=":")
+
         try:
-            result = await client.put(f"/v1.0/process-models/{process_model_id}", token, data=data)
+            result = await client.put(f"/v1.0/process-models/{modified_id}", token, data=data)
             return result
         except Exception as e:
             logger.error(f"Failed to update process model {process_model_id}: {e}")
@@ -189,8 +195,10 @@ def register_process_model_tools(mcp: FastMCP) -> None:
         if not token:
             return {"error": "No authentication token available"}
 
+        modified_id = quote_path_segment(process_model_id.replace("/", ":"), safe=":")
+
         try:
-            result = await client.delete(f"/v1.0/process-models/{process_model_id}", token)
+            result = await client.delete(f"/v1.0/process-models/{modified_id}", token)
             return result or {"status": "deleted", "id": process_model_id}
         except Exception as e:
             logger.error(f"Failed to delete process model {process_model_id}: {e}")

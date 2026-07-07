@@ -12,6 +12,11 @@ import base64
 import json
 from typing import Any
 
+# JWT claim carrying the m8flow tenant id. Set by the Keycloak realm-info
+# protocol mapper and read by the m8flow backend — keep all readers on this
+# single constant (the backend's ``m8f_tenant_id`` is a DB column, not a claim).
+TENANT_ID_CLAIM = "m8flow_tenant_id"
+
 
 def decode_jwt_claims(token: str) -> dict[str, Any]:
     """Decode a JWT payload without verifying the signature.

@@ -93,16 +93,20 @@ def register_count_tools(mcp: FastMCP) -> None:
             logger.error(f"Failed to count process instances: {e}")
             return {"error": str(e)}
 
-    @mcp.tool(name="count_tasks", description="Count tasks without fetching data (95% faster than list_tasks)")
+    @mcp.tool(
+        name="count_tasks",
+        description="Count ready/waiting user tasks without fetching data (faster than list_tasks)",
+    )
     async def count_tasks(
         process_instance_id: str | None = None,
-        status: str | None = None,
     ) -> dict[str, Any]:
-        """Count tasks efficiently.
+        """Count ready/waiting user tasks efficiently.
+
+        The backend /v1.0/tasks endpoint always returns the current user's
+        ready or waiting tasks; it does not support a status filter.
 
         Args:
             process_instance_id: Filter by workflow instance
-            status: Filter by status (ready, completed, waiting)
 
         Returns:
             {
@@ -130,7 +134,7 @@ def register_count_tools(mcp: FastMCP) -> None:
 
             count = response.get("pagination", {}).get("total", 0)
 
-            return {"count": count, "filters": {"process_instance_id": process_instance_id, "status": status}}
+            return {"count": count, "filters": {"process_instance_id": process_instance_id}}
         except Exception as e:
             logger.error(f"Failed to count tasks: {e}")
             return {"error": str(e)}
