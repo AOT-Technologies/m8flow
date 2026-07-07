@@ -20,7 +20,7 @@ import time
 
 import httpx
 
-from src.auth.jwt_utils import decode_jwt_claims
+from src.auth.jwt_utils import TENANT_ID_CLAIM, decode_jwt_claims
 from src.config import settings
 from src.utils.logging import get_logger
 
@@ -69,7 +69,7 @@ class TokenService:
             data.get("expires_in", 300),
             claims.get("iss"),
             claims.get("aud"),
-            claims.get("m8flow_tenant_id"),
+            claims.get(TENANT_ID_CLAIM),
         )
         return access_token
 

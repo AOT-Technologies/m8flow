@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 from src.api_client import M8flowAPIClient
 from src.utils.context import get_auth_token
 from src.utils.logging import get_logger
+from src.utils.url import quote_path_segment
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
@@ -160,7 +161,7 @@ def register_secret_tools(mcp: FastMCP) -> None:
         token = get_auth_token()
 
         try:
-            result = await client.get(f"/secrets/{key}", token)
+            result = await client.get(f"/secrets/{quote_path_segment(key)}", token)
 
             # Format output
             output = f"# 🔐 Secret: `{key}`\n\n"
@@ -226,7 +227,7 @@ def register_secret_tools(mcp: FastMCP) -> None:
         token = get_auth_token()
 
         try:
-            result = await client.get(f"/secrets/show-value/{key}", token)
+            result = await client.get(f"/secrets/show-value/{quote_path_segment(key)}", token)
 
             value = result.get("value", "")
 
@@ -347,7 +348,7 @@ def register_secret_tools(mcp: FastMCP) -> None:
 
         try:
             data = {"value": value}
-            await client.put(f"/secrets/{key}", token, data=data)
+            await client.put(f"/secrets/{quote_path_segment(key)}", token, data=data)
 
             output = f"# ✅ Secret Updated: `{key}`\n\n"
             output += "**Status:** Successfully updated\n"
@@ -396,7 +397,7 @@ def register_secret_tools(mcp: FastMCP) -> None:
         token = get_auth_token()
 
         try:
-            await client.delete(f"/secrets/{key}", token)
+            await client.delete(f"/secrets/{quote_path_segment(key)}", token)
 
             output = f"# ✅ Secret Deleted: `{key}`\n\n"
             output += "**Status:** Successfully deleted\n"

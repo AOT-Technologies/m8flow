@@ -15,6 +15,7 @@ from fastmcp import FastMCP
 from src.api_client import M8flowAPIClient
 from src.errors import NotFoundError
 from src.utils.context import get_auth_token
+from src.utils.url import quote_path_segment
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,10 @@ def register_cleanup_tools(mcp: FastMCP) -> None:
         # Check if exists
         exists = False
         try:
-            await client.get(f"/v1.0/process-models/{process_group_id}:{process_model_id}", token)
+            await client.get(
+                f"/v1.0/process-models/{quote_path_segment(process_group_id, safe=':')}:{quote_path_segment(process_model_id)}",
+                token,
+            )
             exists = True
         except NotFoundError:
             exists = False
@@ -70,7 +74,9 @@ def register_cleanup_tools(mcp: FastMCP) -> None:
             primary_file = f"{process_model_id}.bpmn"
             try:
                 file_info = await client.get(
-                    f"/v1.0/process-models/{process_group_id}:{process_model_id}/files/{primary_file}", token
+                    f"/v1.0/process-models/{quote_path_segment(process_group_id, safe=':')}:{quote_path_segment(process_model_id)}"
+                    f"/files/{quote_path_segment(primary_file)}",
+                    token,
                 )
                 current_hash = file_info.get("file_contents_hash", "")
             except Exception:
@@ -78,7 +84,8 @@ def register_cleanup_tools(mcp: FastMCP) -> None:
 
             # Update BPMN
             await client.put(
-                f"/v1.0/process-models/{process_group_id}:{process_model_id}/files/{primary_file}",
+                f"/v1.0/process-models/{quote_path_segment(process_group_id, safe=':')}:{quote_path_segment(process_model_id)}"
+                f"/files/{quote_path_segment(primary_file)}",
                 token,
                 data=bpmn_content,
                 params={"file_contents_hash": current_hash} if current_hash else {},
@@ -105,19 +112,24 @@ def register_cleanup_tools(mcp: FastMCP) -> None:
                 "description": description,
             }
 
-            create_result = await client.post(f"/v1.0/process-models/{process_group_id}", token, data=model_data)
+            create_result = await client.post(
+                f"/v1.0/process-models/{quote_path_segment(process_group_id, safe=':')}", token, data=model_data
+            )
 
             primary_file = create_result.get("primary_file_name", f"{process_model_id}.bpmn")
 
             # Step 2: Get file hash
             file_info = await client.get(
-                f"/v1.0/process-models/{process_group_id}:{process_model_id}/files/{primary_file}", token
+                f"/v1.0/process-models/{quote_path_segment(process_group_id, safe=':')}:{quote_path_segment(process_model_id)}"
+                f"/files/{quote_path_segment(primary_file)}",
+                token,
             )
             current_hash = file_info.get("file_contents_hash", "")
 
             # Step 3: Update BPMN
             await client.put(
-                f"/v1.0/process-models/{process_group_id}:{process_model_id}/files/{primary_file}",
+                f"/v1.0/process-models/{quote_path_segment(process_group_id, safe=':')}:{quote_path_segment(process_model_id)}"
+                f"/files/{quote_path_segment(primary_file)}",
                 token,
                 data=bpmn_content,
                 params={"file_contents_hash": current_hash},
@@ -193,7 +205,10 @@ def register_cleanup_tools(mcp: FastMCP) -> None:
             # Safe to delete
             try:
                 group, model_name = model_id.split("/")
-                await client.delete(f"/v1.0/process-models/{group}:{model_name}", token)
+                await client.delete(
+                    f"/v1.0/process-models/{quote_path_segment(group, safe=':')}:{quote_path_segment(model_name)}",
+                    token,
+                )
                 deleted.append(model_id)
                 logger.info(f"Deleted: {model_id}")
             except Exception as e:
@@ -313,7 +328,9 @@ def register_cleanup_tools(mcp: FastMCP) -> None:
                         pass
 
                 # Delete
-                await client.delete(f"/v1.0/process-models/{group}:{model}", token)
+                await client.delete(
+                    f"/v1.0/process-models/{quote_path_segment(group, safe=':')}:{quote_path_segment(model)}", token
+                )
                 deleted.append(workflow_id)
                 logger.info(f"Deleted: {workflow_id}")
 
@@ -362,7 +379,7 @@ def register_cleanup_tools(mcp: FastMCP) -> None:
 
         # Ensure sandbox group exists
         try:
-            await client.get(f"/v1.0/process-groups/{process_group_id}", token)
+            await client.get(f"/v1.0/process-groups/{quote_path_segment(process_group_id, safe=':')}", token)
         except NotFoundError:
             try:
                 await client.post(
@@ -388,17 +405,24 @@ def register_cleanup_tools(mcp: FastMCP) -> None:
             "description": description or "Sandbox workflow - will be auto-deleted after 24h",
         }
 
-        create_result = await client.post(f"/v1.0/process-models/{process_group_id}", token, data=model_data)
+        create_result = await client.post(
+            f"/v1.0/process-models/{quote_path_segment(process_group_id, safe=':')}", token, data=model_data
+        )
 
         primary_file = create_result.get("primary_file_name", f"{unique_id}.bpmn")
 
         # Get file hash
-        file_info = await client.get(f"/v1.0/process-models/{process_group_id}:{unique_id}/files/{primary_file}", token)
+        file_info = await client.get(
+            f"/v1.0/process-models/{quote_path_segment(process_group_id, safe=':')}:{quote_path_segment(unique_id)}"
+            f"/files/{quote_path_segment(primary_file)}",
+            token,
+        )
         current_hash = file_info.get("file_contents_hash", "")
 
         # Update BPMN
         await client.put(
-            f"/v1.0/process-models/{process_group_id}:{unique_id}/files/{primary_file}",
+            f"/v1.0/process-models/{quote_path_segment(process_group_id, safe=':')}:{quote_path_segment(unique_id)}"
+            f"/files/{quote_path_segment(primary_file)}",
             token,
             data=bpmn_content,
             params={"file_contents_hash": current_hash},
@@ -478,7 +502,10 @@ def register_cleanup_tools(mcp: FastMCP) -> None:
                 # Delete
                 try:
                     group, model_name = model_id.split("/")
-                    await client.delete(f"/v1.0/process-models/{group}:{model_name}", token)
+                    await client.delete(
+                        f"/v1.0/process-models/{quote_path_segment(group, safe=':')}:{quote_path_segment(model_name)}",
+                        token,
+                    )
                     deleted.append(model_id)
                 except Exception as e:
                     skipped.append(f"{model_id} (error: {e})")

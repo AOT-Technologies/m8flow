@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 from src.api_client import M8flowAPIClient
 from src.utils.context import get_auth_token
 from src.utils.logging import get_logger
+from src.utils.url import quote_path_segment
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
@@ -31,7 +32,7 @@ async def _get_process_model_template_info(process_model_id: str, token: str) ->
         Template info or None if not found
     """
     # API uses colons instead of slashes in URL
-    modified_id = process_model_id.replace("/", ":")
+    modified_id = quote_path_segment(process_model_id.replace("/", ":"), safe=":")
 
     try:
         result = await client.get(f"/v1.0/m8flow/templates/process-models/{modified_id}/template-info", token)

@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 from src.api_client import M8flowAPIClient
 from src.utils.context import get_auth_token
 from src.utils.logging import get_logger
+from src.utils.url import quote_path_segment
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
@@ -65,7 +66,7 @@ def register_resources(mcp: FastMCP) -> None:
 
         try:
             # Fetch workflow instance details
-            instance = await client.get(f"/v1.0/process-instances/{instance_id}", token)
+            instance = await client.get(f"/v1.0/process-instances/{quote_path_segment(instance_id)}", token)
 
             # Format as readable markdown document
             status_emoji = {"complete": "✅", "running": "🟢", "waiting": "⏳", "error": "❌", "suspended": "⏸️"}.get(
@@ -148,7 +149,11 @@ def register_resources(mcp: FastMCP) -> None:
 
         try:
             # Fetch task details
-            task = await client.get(f"/v1.0/process-instances/{process_instance_id}/tasks/{task_id}", token)
+            task = await client.get(
+                f"/v1.0/process-instances/{quote_path_segment(process_instance_id)}"
+                f"/tasks/{quote_path_segment(task_id)}",
+                token,
+            )
 
             # Format as readable markdown document
             status_emoji = {"ready": "⏳", "completed": "✅", "cancelled": "❌", "waiting": "⏸️"}.get(
@@ -241,7 +246,7 @@ def register_resources(mcp: FastMCP) -> None:
         try:
             # Fetch process model details
             # Note: model_id may contain slashes, needs proper encoding
-            model = await client.get(f"/v1.0/process-models/{model_id}", token)
+            model = await client.get(f"/v1.0/process-models/{quote_path_segment(model_id, safe=':')}", token)
 
             # Format as readable markdown document
             executable_status = "✅ Yes" if model.get("is_executable") else "⚠️ No"
@@ -499,7 +504,7 @@ def register_resources(mcp: FastMCP) -> None:
 
         try:
             # Get model details
-            model = await client.get(f"/v1.0/process-models/{model_id}", token)
+            model = await client.get(f"/v1.0/process-models/{quote_path_segment(model_id, safe=':')}", token)
 
             # Get recent successful instances for examples
             instances_response = await client.post(
@@ -626,7 +631,7 @@ start_process_instance(
 
         try:
             # Get instance
-            instance = await client.get(f"/v1.0/process-instances/{instance_id}", token)
+            instance = await client.get(f"/v1.0/process-instances/{quote_path_segment(instance_id)}", token)
 
             status = instance.get("status", "unknown")
 
@@ -713,6 +718,8 @@ Use these tools for more information:
             logger.error(f"Failed to get workflow errors: {e}")
             return json.dumps({"error": str(e), "instance_id": instance_id}, indent=2)
 
+    _register_template_resources(mcp)
+
 
 def _build_example_data(starter_data: dict[str, list]) -> dict[str, Any]:
     """Build example data from common patterns."""
@@ -797,7 +804,11 @@ def _describe_flow(instances: list[dict[str, Any]]) -> str:
 
     return "\n".join(f"{i + 1}. {name}" for i, name in enumerate(task_names[:5]))
 
-    @mcp.resource("templates://")  # noqa: F821
+
+def _register_template_resources(mcp: FastMCP) -> None:
+    """Register template catalog/detail resources (templates:// and template://)."""
+
+    @mcp.resource("templates://")
     async def get_templates_catalog() -> str:
         """Browse workflow template catalog.
 
@@ -950,7 +961,7 @@ Use `list_templates()` tool to filter by:
             logger.error(f"Failed to get templates catalog: {e}")
             return json.dumps({"error": str(e), "hint": "Check backend connectivity and permissions"}, indent=2)
 
-    @mcp.resource("template://{template_id}")  # noqa: F821
+    @mcp.resource("template://{template_id}")
     async def get_template_resource(template_id: str) -> str:
         """View template details and usage instructions.
 
@@ -989,7 +1000,9 @@ Use `list_templates()` tool to filter by:
         try:
             # Get template details with content
             template = await client.get(
-                f"/v1.0/m8flow/templates/{template_id}", token, params={"include_contents": "true"}
+                f"/v1.0/m8flow/templates/{quote_path_segment(template_id)}",
+                token,
+                params={"include_contents": "true"},
             )
 
             # Format template document

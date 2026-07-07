@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from src.api_client import M8flowAPIClient
 from src.utils.context import get_auth_token
 from src.utils.logging import get_logger
+from src.utils.url import quote_path_segment
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
@@ -76,7 +77,7 @@ def register_task_tools(mcp: FastMCP) -> None:
 
         try:
             result = await client.get(
-                f"/v1.0/process-instances/{process_instance_id}/tasks/{task_id}",
+                f"/v1.0/process-instances/{process_instance_id}/tasks/{quote_path_segment(task_id)}",
                 token,
             )
             return result
@@ -108,7 +109,7 @@ def register_task_tools(mcp: FastMCP) -> None:
 
         try:
             result = await client.post(
-                f"/v1.0/process-instances/{process_instance_id}/tasks/{task_id}",
+                f"/v1.0/process-instances/{process_instance_id}/tasks/{quote_path_segment(task_id)}",
                 token,
                 data=body,
             )
@@ -137,7 +138,7 @@ def register_task_tools(mcp: FastMCP) -> None:
 
         try:
             result = await client.put(
-                f"/v1.0/process-instances/{process_instance_id}/tasks/{task_id}/claim",
+                f"/v1.0/process-instances/{process_instance_id}/tasks/{quote_path_segment(task_id)}/claim",
                 token,
             )
             return result or {"status": "claimed", "task_id": task_id}

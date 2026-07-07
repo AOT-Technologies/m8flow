@@ -8,19 +8,25 @@ Provides tools to:
 
 from __future__ import annotations
 
-import contextlib
 from typing import TYPE_CHECKING
 
 from src.api_client import M8flowAPIClient
 from src.errors.exceptions import NotFoundError
 from src.utils.context import get_auth_token
 from src.utils.logging import get_logger
+from src.utils.url import quote_path_segment
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
 
 logger = get_logger(__name__)
 client = M8flowAPIClient()
+
+
+def _modified_model_id(process_group_id: str, process_model_id: str) -> str:
+    """Build the URL-safe modified process model id (``group:model``) the backend expects."""
+    group = quote_path_segment(process_group_id.replace("/", ":"), safe=":")
+    return f"{group}:{quote_path_segment(process_model_id)}"
 
 
 def register_bpmn_tools(mcp: FastMCP) -> None:
@@ -114,7 +120,8 @@ def register_bpmn_tools(mcp: FastMCP) -> None:
             # Check if model already exists
             try:
                 existing = await client.get(
-                    f"/v1.0/process-groups/{process_group_id}/process-models/{process_model_id}", token
+                    f"/v1.0/process-models/{_modified_model_id(process_group_id, process_model_id)}",
+                    token,
                 )
                 # Model exists - return error with helpful message
                 return f"""❌ Model already exists: {process_group_id}/{process_model_id}
@@ -142,7 +149,9 @@ Use a different process_model_id that doesn't exist yet.
             }
 
             # POST to create model with BPMN
-            result = await client.post(f"/v1.0/process-models/{process_group_id}", token, data=model_data)
+            result = await client.post(
+                f"/v1.0/process-models/{quote_path_segment(process_group_id, safe=':')}", token, data=model_data
+            )
 
             output = ["# ✓ BPMN File Uploaded Successfully\n\n"]
             output.append(f"**Process Group:** {process_group_id}\n")
@@ -243,7 +252,9 @@ Use a different process_model_id that doesn't exist yet.
             }
 
             logger.info(f"Step 1: Creating model {process_group_id}/{process_model_id}")
-            create_result = await client.post(f"/v1.0/process-models/{process_group_id}", token, data=model_data)
+            create_result = await client.post(
+                f"/v1.0/process-models/{quote_path_segment(process_group_id, safe=':')}", token, data=model_data
+            )
 
             primary_file = create_result.get("primary_file_name", f"{process_model_id}.bpmn")
             logger.info(f"Model created with default BPMN, primary file: {primary_file}")
@@ -251,7 +262,9 @@ Use a different process_model_id that doesn't exist yet.
             # STEP 2: Get current file to obtain hash for optimistic locking
             logger.info("Step 2: Getting current file hash")
             file_info = await client.get(
-                f"/v1.0/process-models/{process_group_id}:{process_model_id}/files/{primary_file}", token
+                f"/v1.0/process-models/{quote_path_segment(process_group_id, safe=':')}:{quote_path_segment(process_model_id)}"
+                f"/files/{quote_path_segment(primary_file)}",
+                token,
             )
             current_hash = file_info.get("file_contents_hash", "")
             logger.info(f"Current file hash: {current_hash}")
@@ -260,7 +273,8 @@ Use a different process_model_id that doesn't exist yet.
             # Using requests library which encodes multipart like browsers
             logger.info("Step 3: Updating BPMN file with custom content")
             await client.put(
-                f"/v1.0/process-models/{process_group_id}:{process_model_id}/files/{primary_file}",
+                f"/v1.0/process-models/{quote_path_segment(process_group_id, safe=':')}:{quote_path_segment(process_model_id)}"
+                f"/files/{quote_path_segment(primary_file)}",
                 token,
                 data=bpmn_content,  # String triggers multipart mode with requests library
                 params={"file_contents_hash": current_hash},  # Required for optimistic locking
@@ -323,21 +337,19 @@ Use a different process_model_id that doesn't exist yet.
 
     @mcp.tool(
         name="update_bpmn_file",
-        description="Update existing BPMN file in a process model (DESTRUCTIVE - recreates model)",
+        description="Update a BPMN file in an existing process model (in-place, non-destructive)",
     )
     async def update_bpmn_file(
         process_group_id: str,
         process_model_id: str,
         bpmn_content: str,
-        file_name: str = None,
+        file_name: str | None = None,
     ) -> str:
-        """Update BPMN content in an existing process model.
+        """Update BPMN content in an existing process model in place.
 
-        WARNING: Uses combined creation which DELETES and RECREATES the model.
-        This will:
-        - ❌ Terminate all running process instances
-        - ❌ Delete version history
-        - ✅ Preserve display_name and description (fetched first)
+        Uses the backend file-update endpoint with optimistic locking
+        (file_contents_hash), so the model, its version history, and running
+        instances are all preserved.
 
         Args:
             process_group_id: Process group ID
@@ -349,13 +361,15 @@ Use a different process_model_id that doesn't exist yet.
             Success message
         """
         token = get_auth_token()
+        if not token:
+            return "❌ No authentication token available"
+
+        modified_id = _modified_model_id(process_group_id, process_model_id)
 
         try:
-            # Get existing model info to preserve metadata
+            # Confirm the model exists and resolve the primary file name
             try:
-                model_info = await client.get(
-                    f"/v1.0/process-groups/{process_group_id}/process-models/{process_model_id}", token
-                )
+                model_info = await client.get(f"/v1.0/process-models/{modified_id}", token)
             except NotFoundError:
                 return f"""❌ Model not found: {process_group_id}/{process_model_id}
 
@@ -363,71 +377,34 @@ Use a different process_model_id that doesn't exist yet.
 Use the `create_process_model_with_bpmn` or `upload_bpmn_file` tools instead.
 """
 
-            # Check if there are running instances (warn user)
-            try:
-                instances = await client.get(
-                    "/v1.0/process-instances",
-                    token,
-                    params={
-                        "process_group_identifier": process_group_id,
-                        "process_model_identifier": process_model_id,
-                        "process_status": "user_input_required,waiting,complete",
-                    },
-                )
-                running_count = len(instances.get("results", []))
-                if running_count > 0:
-                    return f"""⚠️ WARNING: Cannot update BPMN - {running_count} process instance(s) running!
-
-**Model:** {process_group_id}/{process_model_id}
-**Running Instances:** {running_count}
-
-**Why this matters:**
-Combined creation will RECREATE the model, which will:
-- Terminate all {running_count} running instances
-- Delete version history
-- Break references from other models
-
-**Recommended actions:**
-1. Wait for instances to complete, OR
-2. Cancel instances: `cancel_process_instance(instance_id)`, OR
-3. Create a new model version with a different ID instead
-
-**If you're sure you want to proceed despite running instances:**
-Cancel all instances first, then run this tool again.
-"""
-            except Exception:
-                # Couldn't check instances - proceed with warning
-                pass
-
-            # Use provided filename or primary file
             if not file_name:
                 file_name = model_info.get("primary_file_name", f"{process_model_id}.bpmn")
 
-            # Delete existing model first (required for combined creation to work)
-            with contextlib.suppress(Exception):
-                # May not have delete permission
-                await client.delete(f"/v1.0/process-groups/{process_group_id}/process-models/{process_model_id}", token)
+            file_path = f"/v1.0/process-models/{modified_id}/files/{quote_path_segment(file_name)}"
 
-            # Use combined creation to recreate model with new BPMN
-            model_data = {
-                "id": process_model_id,
-                "display_name": model_info.get("display_name", process_model_id),
-                "description": model_info.get("description", ""),
-                "files": [{"file_name": file_name, "file_contents": bpmn_content}],
-            }
+            # Fetch the current content hash for optimistic locking
+            try:
+                file_info = await client.get(file_path, token)
+                current_hash = file_info.get("file_contents_hash", "")
+            except NotFoundError:
+                return f"""❌ File not found: {file_name} in {process_group_id}/{process_model_id}
 
-            # Recreate model with new BPMN
-            await client.post(f"/v1.0/process-models/{process_group_id}", token, data=model_data)
+**To add a new file to this model:**
+Use the `upload_process_model_file` tool instead.
+"""
 
-            output = ["# ✓ BPMN File Updated (Model Recreated)\n\n"]
+            await client.put(
+                file_path,
+                token,
+                data=bpmn_content,
+                params={"file_contents_hash": current_hash} if current_hash else {},
+            )
+
+            output = ["# ✓ BPMN File Updated\n\n"]
             output.append(f"**Process:** {process_group_id}/{process_model_id}\n")
             output.append(f"**File:** {file_name}\n")
             output.append(f"**New Size:** {len(bpmn_content)} bytes\n")
-            output.append("\n⚠️ **WARNING:** Model was DELETED and RECREATED\n")
-            output.append("- Previous instances: Terminated\n")
-            output.append("- Version history: Lost\n")
-            output.append("- Metadata: Preserved (display_name, description)\n")
-            output.append("\nThe process model is ready to use with new BPMN.\n")
+            output.append("\nUpdated in place — model, version history, and running instances preserved.\n")
 
             return "".join(output)
 
@@ -463,15 +440,93 @@ Cancel all instances first, then run this tool again.
             if "404" in str(e) or "NotFoundError" in type(e).__name__:
                 error_output.append(f"- Model '{process_group_id}/{process_model_id}' not found\n")
                 error_output.append("- Use `create_process_model_with_bpmn()` to create it first\n")
-            elif "running instances" in str(e).lower():
-                error_output.append("- Cannot update: process instances are running\n")
-                error_output.append("- Wait for them to complete or cancel them\n")
+            elif "409" in str(e):
+                error_output.append("- Content hash conflict: the file changed since it was read\n")
+                error_output.append("- Retry the update (the current hash is re-fetched automatically)\n")
             elif "500" in str(e):
-                error_output.append("- Server error during update\n")
-                error_output.append("- This is a destructive operation (delete+recreate)\n")
-                error_output.append("- Consider creating a new version instead\n")
+                error_output.append("- Server error during update - check BPMN syntax\n")
 
             return "".join(error_output)
+
+    @mcp.tool(
+        name="upload_process_model_file",
+        description=(
+            "Add or update ANY file in a process model (JSON form schemas, DMN, markdown, BPMN). "
+            "Creates the file if missing, updates it in place if it exists."
+        ),
+    )
+    async def upload_process_model_file(
+        process_group_id: str,
+        process_model_id: str,
+        file_name: str,
+        content: str,
+    ) -> str:
+        """Create or update a file in an existing process model.
+
+        Unlike the BPMN-specific tools, this works for any file type — e.g.
+        the form schema files referenced by user tasks
+        (``my-form-schema.json`` / ``my-form-uischema.json``), DMN tables,
+        or documentation.
+
+        Args:
+            process_group_id: Process group ID
+            process_model_id: Process model ID (must exist)
+            file_name: Target file name including extension (e.g. "form-schema.json")
+            content: Raw file content
+
+        Returns:
+            Success message stating whether the file was created or updated
+        """
+        token = get_auth_token()
+        if not token:
+            return "❌ No authentication token available"
+
+        modified_id = _modified_model_id(process_group_id, process_model_id)
+
+        try:
+            # Confirm the model exists (clear error instead of a confusing 404 later)
+            try:
+                await client.get(f"/v1.0/process-models/{modified_id}", token)
+            except NotFoundError:
+                return f"""❌ Model not found: {process_group_id}/{process_model_id}
+
+Create it first with `create_process_model` or `create_process_model_with_bpmn`.
+"""
+
+            file_path = f"/v1.0/process-models/{modified_id}/files/{quote_path_segment(file_name)}"
+
+            try:
+                file_info = await client.get(file_path, token)
+                # File exists — update in place with optimistic locking
+                current_hash = file_info.get("file_contents_hash", "")
+                await client.put(
+                    file_path,
+                    token,
+                    data=content,
+                    params={"file_contents_hash": current_hash} if current_hash else {},
+                )
+                action = "Updated"
+            except NotFoundError:
+                # File doesn't exist — create it
+                await client.upload_file(
+                    "POST",
+                    f"/v1.0/process-models/{modified_id}/files",
+                    token,
+                    content,
+                    file_name=file_name,
+                )
+                action = "Created"
+
+            output = [f"# ✓ File {action}\n\n"]
+            output.append(f"**Process:** {process_group_id}/{process_model_id}\n")
+            output.append(f"**File:** {file_name}\n")
+            output.append(f"**Size:** {len(content)} bytes\n")
+
+            return "".join(output)
+
+        except Exception as e:
+            logger.error(f"Failed to upload file {file_name}: {e}", exc_info=True)
+            return f"❌ Error uploading '{file_name}' to {process_group_id}/{process_model_id}: {type(e).__name__}: {e}"
 
     @mcp.tool(
         name="get_bpmn_file",
@@ -480,7 +535,7 @@ Cancel all instances first, then run this tool again.
     async def get_bpmn_file(
         process_group_id: str,
         process_model_id: str,
-        file_name: str = None,
+        file_name: str | None = None,
     ) -> str:
         """Retrieve BPMN file content from a process model.
 
@@ -493,20 +548,26 @@ Cancel all instances first, then run this tool again.
             BPMN XML content
         """
         token = get_auth_token()
+        if not token:
+            return "❌ No authentication token available"
+
+        modified_id = _modified_model_id(process_group_id, process_model_id)
 
         try:
             # If no file name provided, get the primary file
             if not file_name:
-                model_info = await client.get(
-                    f"/v1.0/process-groups/{process_group_id}/process-models/{process_model_id}", token
-                )
+                model_info = await client.get(f"/v1.0/process-models/{modified_id}", token)
                 file_name = model_info.get("primary_file_name", f"{process_model_id}.bpmn")
 
             # Get file content
-            content = await client.get(
-                f"/v1.0/process-groups/{process_group_id}/process-models/{process_model_id}/files/{file_name}", token
+            file_data = await client.get(
+                f"/v1.0/process-models/{modified_id}/files/{quote_path_segment(file_name)}",
+                token,
             )
 
+            content = file_data.get("file_contents", "")
+            if not content:
+                return f"❌ File '{file_name}' has no contents"
             return content
 
         except Exception as e:

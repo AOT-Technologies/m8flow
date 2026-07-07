@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import logging
 import os
 from typing import Any
+from urllib.parse import unquote
 
 import httpx
+import requests
 from pybreaker import CircuitBreaker, CircuitBreakerError
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
@@ -25,6 +29,23 @@ from src.errors import (
 from src.utils.context import get_tenant_id
 
 logger = logging.getLogger(__name__)
+
+
+class _RequestsResponseAdapter:
+    """Adapt a ``requests.Response`` to the httpx-like shape ``_handle_response`` expects."""
+
+    def __init__(self, req_response: requests.Response) -> None:
+        self.status_code = req_response.status_code
+        self.content = req_response.content
+        self.text = req_response.text
+        self.headers = req_response.headers
+        self._req_response = req_response
+
+    def json(self) -> Any:
+        try:
+            return self._req_response.json() if self.content else {}
+        except Exception:
+            return {}
 
 
 class M8flowAPIClient:
@@ -193,6 +214,88 @@ class M8flowAPIClient:
         # Unexpected status codes
         raise M8flowAPIError(response.status_code, f"Unexpected response: {response.text}", {})
 
+    async def upload_file(
+        self,
+        method: str,
+        path: str,
+        token: str,
+        content: str,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+        file_name: str | None = None,
+    ) -> dict[str, Any]:
+        """Send file content as multipart/form-data.
+
+        Used for the backend's process-model file endpoints:
+        - ``POST /process-models/{id}/files`` creates a new file (any type),
+        - ``PUT /process-models/{id}/files/{name}`` updates an existing one.
+
+        The backend rejects httpx's multipart encoding (415), so this uses the
+        synchronous ``requests`` library (browser-compatible encoding) in an
+        executor to avoid blocking the event loop.
+
+        Args:
+            method: "POST" (create) or "PUT" (update)
+            path: API endpoint path
+            token: Authentication token
+            content: Raw file content (e.g. BPMN XML, JSON schema)
+            params: Query parameters. For PUT, ``file_contents_hash`` should be
+                the CURRENT hash from a prior GET (optimistic locking); when
+                absent it is calculated from the new content, which only works
+                for files whose contents are unchanged server-side.
+            headers: Additional headers
+            file_name: Multipart filename; defaults to the last path segment.
+
+        Returns:
+            Response data as dict
+        """
+        if method not in ("POST", "PUT"):
+            raise ValueError(f"Unsupported upload method: {method}")
+
+        url = f"{self.base_url}{path}"
+
+        if file_name is None:
+            file_name = unquote(path.rsplit("/", 1)[-1]) if "/" in path else "file.bpmn"
+
+        request_params = dict(params or {})
+        if method == "PUT" and "file_contents_hash" not in request_params:
+            request_params["file_contents_hash"] = hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+        request_headers: dict[str, str] = {
+            "Authorization": token if token.startswith("Bearer ") else f"Bearer {token}",
+        }
+        tenant_id = get_tenant_id()
+        if tenant_id:
+            request_headers["x-m8flow-tenant-id"] = tenant_id
+        if headers:
+            request_headers.update(headers)
+
+        files_dict = {"file": (file_name, content, "application/octet-stream")}
+        data_dict = {"fileName": file_name}
+        requester = requests.put if method == "PUT" else requests.post
+
+        logger.info("%s multipart request to %s (file=%s, %d bytes)", method, url, file_name, len(content))
+
+        try:
+            loop = asyncio.get_running_loop()
+            sync_response = await loop.run_in_executor(
+                None,
+                lambda: requester(
+                    url,
+                    files=files_dict,
+                    data=data_dict,
+                    params=request_params,
+                    headers=request_headers,
+                    timeout=self.timeout,
+                ),
+            )
+        except requests.exceptions.ConnectionError as e:
+            raise NetworkError(f"Cannot connect to m8flow at {self.base_url}: {e}") from e
+        except requests.exceptions.Timeout as e:
+            raise TimeoutError(f"Request to {path} timed out after {self.timeout}s") from e
+
+        return await self._handle_response(_RequestsResponseAdapter(sync_response))
+
     async def _get_impl(
         self,
         path: str,
@@ -321,101 +424,12 @@ class M8flowAPIClient:
         client = get_http_client()  # Use shared client with connection pooling
 
         try:
-            logger.info(f"PUT request - data type: {type(data)}, isinstance(data, str): {isinstance(data, str)}")
-
-            # Handle raw content (e.g., BPMN XML files)
+            # Raw string content (e.g. BPMN XML, JSON schemas) is sent as multipart
             if isinstance(data, str):
-                logger.info("Handling as multipart file upload using requests library")
-                # M8Flow expects multipart/form-data for file uploads
-                # httpx encoding is rejected by backend (415 error)
-                # requests library encoding matches browser format and works!
+                return await self.upload_file("PUT", path, token, data, params, headers)
 
-                import hashlib
-                import os
-
-                filename = os.path.basename(path) if "/" in path else "file.bpmn"
-
-                # Use provided hash from params, or calculate if not provided
-                # NOTE: For updates, caller should provide the CURRENT hash from GET
-                # to enable optimistic locking. Calculating hash of NEW content would fail.
-                request_params = params or {}
-                if "file_contents_hash" not in request_params:
-                    # No hash provided - calculate from new content
-                    # This works for initial creation but will cause 409 on updates
-                    file_hash = hashlib.sha256(data.encode("utf-8")).hexdigest()
-                    request_params["file_contents_hash"] = file_hash
-                    logger.info(f"Calculated hash from new content: {file_hash}")
-                else:
-                    logger.info(f"Using provided hash: {request_params['file_contents_hash']}")
-
-                # Build headers
-                request_headers = {}
-                if token.startswith("Bearer "):
-                    request_headers["Authorization"] = token
-                else:
-                    request_headers["Authorization"] = f"Bearer {token}"
-
-                tenant_id = get_tenant_id()
-                if tenant_id:
-                    request_headers["x-m8flow-tenant-id"] = tenant_id
-
-                if headers:
-                    request_headers.update(headers)
-
-                logger.info(f"PUT multipart request to {url} using requests library")
-                logger.info(f"Filename: {filename}")
-                logger.info(f"File hash: {request_params.get('file_contents_hash')}")
-                logger.info(f"Content size: {len(data)} bytes")
-
-                # Use requests library for browser-compatible multipart encoding
-                # This format matches what browsers send and is accepted by backend
-                files_dict = {"file": (filename, data, "application/octet-stream")}
-                data_dict = {"fileName": filename}
-
-                # Use synchronous requests library (requests is sync, httpx is async)
-                # Run in executor to avoid blocking async event loop
-                import asyncio
-
-                import requests as req
-
-                loop = asyncio.get_event_loop()
-                sync_response = await loop.run_in_executor(
-                    None,
-                    lambda: req.put(
-                        url,
-                        files=files_dict,
-                        data=data_dict,
-                        params=request_params,
-                        headers=request_headers,
-                        timeout=self.timeout,  # Already in seconds (httpx uses seconds too)
-                    ),
-                )
-
-                logger.info(f"Response status: {sync_response.status_code}")
-
-                # Convert requests.Response to format compatible with our error handling
-                # Build a mock httpx response for _handle_response
-                class MockResponse:
-                    def __init__(self, req_response):
-                        self.status_code = req_response.status_code
-                        self.content = req_response.content
-                        self.text = req_response.text
-                        self.headers = req_response.headers
-                        self._req_response = req_response
-
-                    def json(self):
-                        try:
-                            return self._req_response.json() if self.content else {}
-                        except Exception:
-                            return {}
-
-                response = MockResponse(sync_response)
-            else:
-                # Handle JSON data (existing behavior)
-                request_headers = self._build_headers(token, headers)
-                response = await client.put(
-                    url, headers=request_headers, json=data, params=params, timeout=self.timeout
-                )
+            request_headers = self._build_headers(token, headers)
+            response = await client.put(url, headers=request_headers, json=data, params=params, timeout=self.timeout)
 
             return await self._handle_response(response)
         except httpx.ConnectError as e:

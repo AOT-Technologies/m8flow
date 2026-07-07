@@ -10,7 +10,7 @@ import sys
 from fastmcp import FastMCP
 from starlette.responses import JSONResponse
 
-from src.auth.jwt_utils import decode_jwt_claims
+from src.auth.jwt_utils import TENANT_ID_CLAIM, decode_jwt_claims
 from src.client.http_client import shutdown_http_client
 from src.config import settings
 from src.mcp_tools import register_tools
@@ -111,7 +111,7 @@ def _configure_static_token() -> None:
     set_auth_token(auth_token)
 
     claims = decode_jwt_claims(auth_token)
-    tenant_id = claims.get("m8flow_tenant_id")
+    tenant_id = claims.get(TENANT_ID_CLAIM)
     if tenant_id:
         set_tenant_id(tenant_id)
         logger.info(
@@ -120,7 +120,7 @@ def _configure_static_token() -> None:
             str(tenant_id)[:20],
         )
     else:
-        logger.warning("No m8flow_tenant_id found in JWT claims")
+        logger.warning("No %s found in JWT claims", TENANT_ID_CLAIM)
 
     logger.info("Static auth token configured (length: %d chars)", len(auth_token))
 
