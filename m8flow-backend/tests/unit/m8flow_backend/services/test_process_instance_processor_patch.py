@@ -385,9 +385,9 @@ def test_get_potential_owners_from_task_raises_when_explicit_lane_owner_users_do
 
     assert group_lookups == []
     assert created_group_identifiers == []
-    assert (
-        raised_message
-        == "No users found in task data lane owner list for lane: Employee. The user list used: ['submitter']"
+    assert raised_message == (
+        'No matching users could be found for the lane owners assigned to the "Employee" lane. '
+        "Please make sure the following lane owner(s) exist in this organization: submitter."
     )
 
 
