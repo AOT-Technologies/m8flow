@@ -1222,18 +1222,6 @@
             "claim.name": "roles",
             "jsonType.label": "String"
           }
-        },
-        {
-          "id": "b6f0a1d2-3c4e-4f5a-9b8c-7d6e5f4a3b21",
-          "name": "m8flow-backend-audience",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.client.audience": "__M8FLOW_SPOKE_CLIENT_ID__",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
-          }
         }
       ],
       "defaultClientScopes": [
