@@ -24,7 +24,6 @@ def register_tools(mcp: "FastMCP") -> None:
     from src.mcp_tools.process_models import register_process_model_tools
     from src.mcp_tools.prompts import register_prompts
     from src.mcp_tools.resources import register_resources
-    from src.mcp_tools.secrets import register_secret_tools
     from src.mcp_tools.tasks import register_task_tools
     from src.mcp_tools.templates import register_template_tools
 
@@ -43,9 +42,6 @@ def register_tools(mcp: "FastMCP") -> None:
 
     # Register cleanup tools (prevents Claude from creating duplicate workflows)
     register_cleanup_tools(mcp)
-
-    # Register secrets management tools (6 tools for secure connector authentication)
-    register_secret_tools(mcp)
 
     # Register connector tools (43 operations across 7 connectors)
     register_connector_tools(mcp)
