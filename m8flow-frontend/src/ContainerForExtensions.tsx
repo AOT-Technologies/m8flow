@@ -251,6 +251,10 @@ export default function ContainerForExtensions() {
   const permissionRequestData: PermissionsToCheck = {
     [targetUris.extensionListPath]: ["GET"],
     [targetUris.processInstanceListForMePath]: ["GET", "POST"],
+    // Requested here (not just by SideNav/ProcessInstanceListTabs) so the
+    // process-instances route guard below resolves deterministically once this
+    // component's permissions load, without depending on sibling fetch ordering.
+    [targetUris.processInstanceListPath]: ["GET"],
     [targetUris.processGroupListPath]: ["GET"],
     [targetUris.dataStoreListPath]: ["GET"],
     [targetUris.messageInstanceListPath]: ["GET"],
