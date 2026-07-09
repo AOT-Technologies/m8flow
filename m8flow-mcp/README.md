@@ -98,7 +98,6 @@ cp sample.env .env         # Windows: copy sample.env .env
 | MCP_OIDC_ISSUER_URL | | Public issuer URL (defaults to base URL) |
 | MCP_OIDC_REDIRECT_PATH | /oauth/callback | OAuth callback path |
 | MCP_OIDC_REQUIRE_CONSENT | false | Require the OAuth consent screen |
-| ALLOW_SECRET_VALUE_READ | false | Allow the `get_secret_value` tool to reveal decrypted secrets |
 | LOG_LEVEL | INFO | `DEBUG` / `INFO` / `WARNING` / `ERROR` / `CRITICAL` |
 | LOG_FORMAT | json | `json` or `text` |
 
@@ -270,7 +269,6 @@ Tools are grouped by module under [src/mcp_tools/](src/mcp_tools/) and registere
 | Templates | `list_templates`, `get_template`, `create_template` |
 | BPMN files | `get_bpmn_file`, `upload_bpmn_file`, `update_bpmn_file` |
 | Connectors | `list_connectors`, `get_connector`, `get_connector_operation` |
-| Secrets | `list_secrets`, `create_secret`, `get_secret`, `get_secret_value` |
 | Error management | `list_process_errors`, `get_error_details`, `diagnose_workflow` |
 | Counts | `count_process_models`, `count_process_instances`, `count_tasks` |
 | Visualization | `view_workflow`, `view_process_instance` |

@@ -56,9 +56,6 @@ class Settings(BaseSettings):
     mcp_oidc_redirect_path: str = "/oauth/callback"
     mcp_oidc_require_consent: bool = False
 
-    # Secrets
-    allow_secret_value_read: bool = False  # gate the show-value tool (UI hides it too)
-
     # Multi-tenancy
     default_tenant_id: str | None = None
 
