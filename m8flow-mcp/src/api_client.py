@@ -348,17 +348,28 @@ class M8flowAPIClient:
         self,
         path: str,
         token: str,
-        data: dict[str, Any] | None = None,
+        data: dict[str, Any] | str | None = None,
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
-        """Internal POST implementation (called by public post() method)"""
+        """Internal POST implementation (called by public post() method).
+
+        A dict ``data`` is sent as JSON; a str ``data`` is sent as a raw body
+        (set the Content-Type via ``headers``, e.g. ``application/xml``).
+        """
         url = f"{self.base_url}{path}"
         request_headers = self._build_headers(token, headers)
         client = get_http_client()  # Use shared client with connection pooling
 
         try:
-            response = await client.post(url, headers=request_headers, json=data, params=params, timeout=self.timeout)
+            if isinstance(data, str):
+                response = await client.post(
+                    url, headers=request_headers, content=data.encode("utf-8"), params=params, timeout=self.timeout
+                )
+            else:
+                response = await client.post(
+                    url, headers=request_headers, json=data, params=params, timeout=self.timeout
+                )
             return await self._handle_response(response)
         except httpx.ConnectError as e:
             raise NetworkError(f"Cannot connect to m8flow at {self.base_url}: {e}") from e
@@ -373,12 +384,15 @@ class M8flowAPIClient:
         self,
         path: str,
         token: str,
-        data: dict[str, Any] | None = None,
+        data: dict[str, Any] | str | None = None,
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         """
         POST request with optional RLFT-style adaptation.
+
+        A dict ``data`` is sent as JSON; a str ``data`` is sent as a raw body
+        (set the Content-Type via ``headers``, e.g. ``application/xml``).
 
         If circuit breaker is enabled (M8FLOW_ENABLE_CIRCUIT_BREAKER=true):
         - Learns from failures and adapts behavior
@@ -493,8 +507,18 @@ class M8flowAPIClient:
         url = f"{self.base_url}{path}"
         request_headers = self._build_headers(token, headers)
         client = get_http_client()  # Use shared client with connection pooling
-        response = await client.delete(url, headers=request_headers, params=params, timeout=self.timeout)
-        return await self._handle_response(response)
+
+        try:
+            response = await client.delete(url, headers=request_headers, params=params, timeout=self.timeout)
+            return await self._handle_response(response)
+        except httpx.ConnectError as e:
+            raise NetworkError(f"Cannot connect to m8flow at {self.base_url}: {e}") from e
+        except httpx.TimeoutException as e:
+            raise TimeoutError(f"Request to {path} timed out after {self.timeout}s") from e
+        except (AuthenticationError, AuthorizationError, NotFoundError, TenantError, ServerError, M8flowAPIError):
+            raise  # Re-raise our custom errors
+        except Exception as e:
+            raise M8flowAPIError(0, f"Unexpected error: {e}", {}) from e
 
     async def delete(
         self,
