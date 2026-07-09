@@ -1,0 +1,166 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import McpConnection from './McpConnection';
+
+const h = vi.hoisted(() => ({
+  mcpServerUrl: 'https://qa.m8flow.ai/mcp',
+  canAccess: true,
+  clipboardWriteText: (() => Promise.resolve()) as (text: string) => Promise<void>,
+}));
+
+vi.mock('../utils/useConfig', () => ({
+  useConfig: () => ({
+    MCP_SERVER_URL: h.mcpServerUrl,
+    MCP_CONNECTION_ENABLED: Boolean(h.mcpServerUrl),
+  }),
+}));
+
+vi.mock('@spiffworkflow-frontend/hooks/PermissionService', () => ({
+  usePermissionFetcher: vi.fn(() => ({
+    ability: { can: () => h.canAccess },
+    permissionsLoaded: true,
+  })),
+}));
+
+vi.mock('../hooks/M8flowUriListForPermissions', () => ({
+  useM8flowUriListForPermissions: vi.fn(() => ({
+    targetUris: {
+      m8flowMcpConnectionPath: '/m8flow/mcp-connection',
+    },
+  })),
+}));
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key: string) => key }),
+}));
+
+vi.mock('../helpers', () => ({ setPageTitle: vi.fn() }));
+
+vi.mock('@mui/icons-material', () => {
+  const Icon = () => null;
+  return new Proxy(
+    { __esModule: true },
+    {
+      get: (_target, prop) => {
+        if (prop === '__esModule') return true;
+        // Must NOT return a function for `then` (or symbols) or the mocked
+        // module namespace looks like a never-resolving thenable and vitest
+        // hangs awaiting it during collection.
+        if (prop === 'then' || typeof prop === 'symbol') return undefined;
+        return Icon;
+      },
+      // vitest validates accessed exports with `prop in module` and throws
+      // "No <name> export is defined" otherwise — report every icon as present.
+      has: () => true,
+    },
+  );
+});
+
+const renderPage = () =>
+  render(
+    <MemoryRouter>
+      <McpConnection />
+    </MemoryRouter>,
+  );
+
+beforeEach(() => {
+  h.mcpServerUrl = 'https://qa.m8flow.ai/mcp';
+  h.canAccess = true;
+  h.clipboardWriteText = vi.fn(() => Promise.resolve());
+  Object.defineProperty(navigator, 'clipboard', {
+    value: { writeText: h.clipboardWriteText },
+    configurable: true,
+  });
+});
+
+describe('McpConnection', () => {
+  it('shows the configured MCP server URL with a client card per supported client', () => {
+    renderPage();
+    expect(screen.getByTestId('mcp-server-url')).toHaveTextContent(
+      'https://qa.m8flow.ai/mcp',
+    );
+    expect(screen.getByTestId('mcp-client-claude-code')).toBeInTheDocument();
+    expect(screen.getByTestId('mcp-client-cursor')).toBeInTheDocument();
+    expect(screen.getByTestId('mcp-client-claude-ai')).toBeInTheDocument();
+  });
+
+  it('copies the server URL to the clipboard', async () => {
+    renderPage();
+    fireEvent.click(screen.getByTestId('mcp-server-url-copy'));
+    await waitFor(() =>
+      expect(h.clipboardWriteText).toHaveBeenCalledWith(
+        'https://qa.m8flow.ai/mcp',
+      ),
+    );
+  });
+
+  it('copies the Claude Code command with the URL interpolated', async () => {
+    renderPage();
+    fireEvent.click(screen.getByTestId('mcp-copy-command'));
+    await waitFor(() =>
+      expect(h.clipboardWriteText).toHaveBeenCalledWith(
+        'claude mcp add --transport http m8flow https://qa.m8flow.ai/mcp',
+      ),
+    );
+  });
+
+  it('copies the Cursor JSON config with the URL interpolated', async () => {
+    renderPage();
+    fireEvent.click(screen.getByTestId('mcp-copy-config'));
+    await waitFor(() => expect(h.clipboardWriteText).toHaveBeenCalled());
+    const copied = (h.clipboardWriteText as ReturnType<typeof vi.fn>).mock
+      .calls[0][0];
+    expect(JSON.parse(copied)).toEqual({
+      mcpServers: { m8flow: { url: 'https://qa.m8flow.ai/mcp' } },
+    });
+  });
+
+  it('opens the Claude.ai steps dialog from the client card', async () => {
+    renderPage();
+    expect(screen.queryByText('mcp_claude_ai_step_1')).toBeNull();
+    fireEvent.click(screen.getByTestId('mcp-view-steps'));
+    expect(await screen.findByText('mcp_claude_ai_step_1')).toBeInTheDocument();
+    expect(screen.getByTestId('mcp-dialog-url-copy')).toBeInTheDocument();
+  });
+
+  // QR button and activity panel are temporarily commented out in the view.
+  // it('opens the QR dialog and copies its server URL', async () => {
+  //   renderPage();
+  //   fireEvent.click(screen.getByTestId('mcp-qr-button'));
+  //   expect(await screen.findByTestId('mcp-qr-dialog')).toBeInTheDocument();
+  //   expect(screen.getByTestId('mcp-qr-code')).toBeInTheDocument();
+  //   expect(screen.getByTestId('mcp-qr-url')).toHaveTextContent(
+  //     'https://qa.m8flow.ai/mcp',
+  //   );
+  //
+  //   fireEvent.click(screen.getByTestId('mcp-qr-url-copy'));
+  //   await waitFor(() =>
+  //     expect(h.clipboardWriteText).toHaveBeenCalledWith(
+  //       'https://qa.m8flow.ai/mcp',
+  //     ),
+  //   );
+  // });
+
+  // it('shows the MCP activity panel with metrics and recent tool calls', () => {
+  //   renderPage();
+  //   expect(screen.getByTestId('mcp-activity-panel')).toBeInTheDocument();
+  //   expect(screen.getByText('mcp_activity_tool_calls_today')).toBeInTheDocument();
+  //   expect(screen.getByText('97%')).toBeInTheDocument();
+  //   expect(screen.getByText('start_process_instance')).toBeInTheDocument();
+  //   expect(screen.getByText('Permission denied')).toBeInTheDocument();
+  // });
+
+  it('shows a warning instead of instructions when no URL is configured', () => {
+    h.mcpServerUrl = '';
+    renderPage();
+    expect(screen.getByTestId('mcp-not-configured')).toBeInTheDocument();
+    expect(screen.queryByTestId('mcp-server-url')).toBeNull();
+  });
+
+  it('redirects away when the user lacks permission', () => {
+    h.canAccess = false;
+    renderPage();
+    expect(screen.queryByTestId('mcp-connection-page')).toBeNull();
+  });
+});

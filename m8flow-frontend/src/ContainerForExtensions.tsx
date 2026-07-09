@@ -60,6 +60,7 @@ const ProcessModelShowWithSaveAsTemplate = lazy(
 );
 const ConnectorsPage = lazy(() => import('./views/Connectors'));
 const ConnectorConfigurePage = lazy(() => import('./views/ConnectorConfigure'));
+const McpConnectionPage = lazy(() => import('./views/McpConnection'));
 const MonitoringCeleryPage = lazy(() => import('./views/MonitoringCeleryPage'));
 const MonitoringNatsPage = lazy(() => import('./views/MonitoringNatsPage'));
 const ExternalFormAwareTaskShow = lazy(
@@ -235,7 +236,7 @@ const fadeOutImmediate = 'fadeOutImmediate';
 
 export default function ContainerForExtensions() {
   const { t } = useTranslation();
-  const { ENABLE_MULTITENANT, NATS_MONITORING_ENABLED } = useConfig();
+  const { ENABLE_MULTITENANT, NATS_MONITORING_ENABLED, MCP_CONNECTION_ENABLED } = useConfig();
   const [backendIsUp, setBackendIsUp] = useState<boolean | null>(null);
   const [canAccessFrontend, setCanAccessFrontend] = useState<boolean>(true);
   const [extensionUxElements, setExtensionUxElements] = useState<
@@ -259,6 +260,7 @@ export default function ContainerForExtensions() {
     [targetUris.m8flowTenantListPath]: ["GET"],
     [targetUris.m8flowTemplateListPath]: ["GET"],
     [targetUris.connectorsGroupedPath]: ["GET"],
+    [targetUris.m8flowMcpConnectionPath]: ["GET"],
   };
   const { ability, permissionsLoaded } = usePermissionFetcher(
     permissionRequestData,
@@ -571,6 +573,10 @@ export default function ContainerForExtensions() {
             element={<ConnectorConfigurePage />}
           />
           <Route path="connectors" element={<ConnectorsPage />} />
+          {/* M8Flow Extension: MCP connection instructions; hidden unless an MCP server URL is configured. Self-guards on permission. */}
+          {MCP_CONNECTION_ENABLED && (
+            <Route path="mcp-connection" element={<McpConnectionPage />} />
+          )}
           <Route
             path="process-models/:process_model_id"
             element={<ProcessModelShowWithSaveAsTemplate />}
@@ -745,6 +751,25 @@ export default function ContainerForExtensions() {
           `}
         </style>
       )}
+      {location.pathname.startsWith("/mcp-connection") && (
+        <style>
+          {`
+            a[href$="/mcp-connection"] {
+              background-color: ${(globalTheme.palette as any).background?.light || "#e3f2fd"} !important;
+              color: ${globalTheme.palette.primary.main} !important;
+              border-left-width: 4px !important;
+              border-style: solid !important;
+              border-color: ${globalTheme.palette.primary.main} !important;
+            }
+            a[href$="/mcp-connection"] .MuiListItemIcon-root {
+              color: ${globalTheme.palette.primary.main} !important;
+            }
+            a[href$="/mcp-connection"] .MuiTypography-root {
+              font-weight: bold !important;
+            }
+          `}
+        </style>
+      )}
       <ErrorBoundary FallbackComponent={ErrorBoundaryFallback}>
         <Container
           id="container-for-extensions-container"
@@ -821,11 +846,11 @@ export default function ContainerForExtensions() {
                 className={`${transitionStage}`}
                 sx={{
                   bgcolor: 'background.default',
-                  width: '100%',
+                  minWidth: 0,
                   height: '100%',
                   display: 'flex',
                   flexDirection: 'column',
-                  flexGrow: 1,
+                  flex: '1 1 0%',
                   overflow: 'auto', // allow scrolling
                 }}
                 onAnimationEnd={(e) => {
