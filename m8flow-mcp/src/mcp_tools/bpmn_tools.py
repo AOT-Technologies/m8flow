@@ -49,10 +49,14 @@ def register_bpmn_tools(mcp: FastMCP) -> None:
     ) -> str:
         """Create a new template from an existing process model.
 
+        Reads the source model's primary BPMN file and posts it to the
+        template endpoint, which expects the BPMN XML as the request body
+        and template metadata in ``X-Template-*`` headers.
+
         Args:
             process_group_id: Source process group ID
             process_model_id: Source process model ID
-            template_id: New template ID
+            template_id: Unique key for the new template (X-Template-Key)
             template_name: Display name for the template
             description: Template description
 
@@ -60,29 +64,58 @@ def register_bpmn_tools(mcp: FastMCP) -> None:
             Success message with template details
         """
         token = get_auth_token()
+        if not token:
+            return "❌ No authentication token available"
+
+        modified_id = _modified_model_id(process_group_id, process_model_id)
 
         try:
-            # Prepare template data
-            template_data = {
-                "id": template_id,
-                "name": template_name,
-                "description": description,
-                "source_process_group_id": process_group_id,
-                "source_process_model_id": process_model_id,
+            # Resolve the source model's primary BPMN file
+            try:
+                model_info = await client.get(f"/v1.0/process-models/{modified_id}", token)
+            except NotFoundError:
+                return f"""❌ Source model not found: {process_group_id}/{process_model_id}
+
+Check the group/model IDs with `list_process_models`, or create the model first.
+"""
+
+            primary_file = model_info.get("primary_file_name", f"{process_model_id}.bpmn")
+            file_data = await client.get(
+                f"/v1.0/process-models/{modified_id}/files/{quote_path_segment(primary_file)}",
+                token,
+            )
+            bpmn_content = file_data.get("file_contents", "")
+            if not bpmn_content:
+                return f"❌ Primary file '{primary_file}' of {process_group_id}/{process_model_id} has no contents"
+
+            # Backend contract: BPMN XML body + metadata in X-Template-* headers
+            template_headers = {
+                "Content-Type": "application/xml",
+                "X-Template-Key": template_id,
+                "X-Template-Name": template_name,
             }
+            if description:
+                template_headers["X-Template-Description"] = description
 
-            # Create template
-            await client.post("/v1.0/m8flow/templates", token, template_data)
+            result = await client.post(
+                "/v1.0/m8flow/templates", token, data=bpmn_content, headers=template_headers
+            )
 
+            created_id = result.get("id")
             output = ["# ✓ Template Created Successfully\n\n"]
-            output.append(f"**Template ID:** `{template_id}`\n")
+            if created_id is not None:
+                output.append(f"**Template ID:** `{created_id}`\n")
+            output.append(f"**Template Key:** `{template_id}`\n")
             output.append(f"**Name:** {template_name}\n")
             if description:
                 output.append(f"**Description:** {description}\n")
-            output.append(f"**Source:** {process_group_id}/{process_model_id}\n")
+            output.append(f"**Source:** {process_group_id}/{process_model_id} ({primary_file})\n")
             output.append("\n**Usage:**\n")
-            output.append("Create process from this template using:\n")
-            output.append(f"`instantiate_template(template_id='{template_id}')`\n")
+            output.append("Create a process model from this template using:\n")
+            output.append(
+                f"`create_process_model_from_template(template_id={created_id if created_id is not None else '<id>'}, "
+                "process_group_id=..., process_model_id=..., display_name=...)`\n"
+            )
 
             return "".join(output)
 

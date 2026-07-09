@@ -146,6 +146,58 @@ async def test_update_bpmn_file_model_not_found():
 
 
 @pytest.mark.asyncio
+async def test_create_template_sends_bpmn_body_with_template_headers():
+    """create_template posts the source BPMN as XML with X-Template-* headers (backend contract)."""
+    with (
+        patch("src.mcp_tools.bpmn_tools.get_auth_token", return_value="Bearer test-token"),
+        patch("src.mcp_tools.bpmn_tools.client.get", new_callable=AsyncMock) as mock_get,
+        patch("src.mcp_tools.bpmn_tools.client.post", new_callable=AsyncMock) as mock_post,
+    ):
+
+        def get_side_effect(path, token, *args, **kwargs):
+            if "/files/" in path:
+                return {"file_contents": "<bpmn:definitions/>"}
+            return {"primary_file_name": "my-model.bpmn"}
+
+        mock_get.side_effect = get_side_effect
+        mock_post.return_value = {"id": 7, "template_key": "my-template"}
+
+        mcp = _register_tools()
+        result = await mcp.tools["create_template"](
+            "my-group", "my-model", "my-template", "My Template", "A description"
+        )
+
+        assert "Template Created Successfully" in result
+        assert "`7`" in result
+        mock_post.assert_awaited_once()
+        args, kwargs = mock_post.await_args
+        assert args[0] == "/v1.0/m8flow/templates"
+        assert kwargs["data"] == "<bpmn:definitions/>"
+        headers = kwargs["headers"]
+        assert headers["X-Template-Key"] == "my-template"
+        assert headers["X-Template-Name"] == "My Template"
+        assert headers["X-Template-Description"] == "A description"
+        assert headers["Content-Type"] == "application/xml"
+
+
+@pytest.mark.asyncio
+async def test_create_template_source_model_missing():
+    """A nonexistent source model yields a helpful message and no POST."""
+    with (
+        patch("src.mcp_tools.bpmn_tools.get_auth_token", return_value="Bearer test-token"),
+        patch("src.mcp_tools.bpmn_tools.client.get", new_callable=AsyncMock) as mock_get,
+        patch("src.mcp_tools.bpmn_tools.client.post", new_callable=AsyncMock) as mock_post,
+    ):
+        mock_get.side_effect = NotFoundError("model not found")
+
+        mcp = _register_tools()
+        result = await mcp.tools["create_template"]("no-group", "no-model", "key", "Name")
+
+        assert "Source model not found" in result
+        mock_post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_get_bpmn_file_uses_modified_id_route():
     """get_bpmn_file reads via /process-models/{group:model} and returns the XML string."""
     with (
