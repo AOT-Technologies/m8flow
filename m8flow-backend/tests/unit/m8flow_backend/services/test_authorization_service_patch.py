@@ -903,6 +903,7 @@ def test_parse_permissions_yaml_into_group_info_preserves_global_super_admin_gro
         "/upsearch-locations",
         "/connector-proxy/typeahead/*",
         "/script-assist/enabled",
+        "/m8flow/mcp-connection",
     }
     super_admin_permission_uris = {p["uri"] for p in super_admin_group["permissions"]}
     assert "/frontend-access" in super_admin_permission_uris
