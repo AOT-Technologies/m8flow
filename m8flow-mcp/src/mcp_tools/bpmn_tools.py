@@ -97,9 +97,7 @@ Check the group/model IDs with `list_process_models`, or create the model first.
             if description:
                 template_headers["X-Template-Description"] = description
 
-            result = await client.post(
-                "/v1.0/m8flow/templates", token, data=bpmn_content, headers=template_headers
-            )
+            result = await client.post("/v1.0/m8flow/templates", token, data=bpmn_content, headers=template_headers)
 
             created_id = result.get("id")
             output = ["# ✓ Template Created Successfully\n\n"]
