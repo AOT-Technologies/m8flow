@@ -191,8 +191,8 @@ def register_resources(mcp: FastMCP) -> None:
 
             # Available actions hint
             doc += "\n## Available Actions\n"
-            doc += "- ✅ Complete: Use `complete_task()` tool\n"
-            doc += "- 🎯 Claim: Use `claim_task()` tool\n"
+            doc += "- ✅ Complete: Use `complete_task()` tool (claiming is implicit in m8flow)\n"
+            doc += "- 🔍 Verify readiness: Use `claim_task()` tool (read-only check; it does NOT reserve the task)\n"
 
             # Metadata
             doc += "\n## Metadata\n"

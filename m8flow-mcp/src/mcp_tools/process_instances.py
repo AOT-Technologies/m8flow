@@ -6,8 +6,9 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from src.api_client import M8flowAPIClient
 from src.utils.context import get_auth_token
+from src.utils.instances import resolve_instance
 from src.utils.logging import get_logger
-from src.utils.url import quote_path_segment
+from src.utils.url import to_modified_id
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
@@ -76,7 +77,7 @@ def register_process_instance_tools(mcp: FastMCP) -> None:
             return {"error": "No authentication token available"}
 
         # Backend expects colons instead of slashes in the URL
-        modified_id = quote_path_segment(process_model_id.replace("/", ":"), safe=":")
+        modified_id = to_modified_id(process_model_id)
 
         data: dict[str, Any] = {}
         if variables:
@@ -211,7 +212,10 @@ def register_process_instance_tools(mcp: FastMCP) -> None:
             return {"error": "No authentication token available"}
 
         try:
-            instance = await client.get(f"/v1.0/process-instances/{process_instance_id}", token)
+            # The backend only exposes a single instance under the
+            # model-qualified path; resolve the model id from the bare id first.
+            _, modified_id = await resolve_instance(client, process_instance_id, token)
+            instance = await client.get(f"/v1.0/process-instances/{modified_id}/{process_instance_id}", token)
 
             # Apply progressive detail filtering
             if detail == "minimal":
@@ -243,9 +247,12 @@ def register_process_instance_tools(mcp: FastMCP) -> None:
             logger.error(f"Failed to get process instance {process_instance_id}: {e}")
             return {"error": str(e)}
 
-    @mcp.tool(name="cancel_process_instance", description="Cancel a running process instance")
+    @mcp.tool(name="cancel_process_instance", description="Cancel (terminate) a running process instance")
     async def cancel_process_instance(process_instance_id: int) -> dict[str, Any]:
-        """Cancel a process instance.
+        """Cancel a process instance by terminating it.
+
+        A running instance cannot be deleted (the delete route requires a
+        terminal status), so "cancel" maps to the backend terminate route.
 
         Args:
             process_instance_id: ID of the process instance to cancel
@@ -258,7 +265,11 @@ def register_process_instance_tools(mcp: FastMCP) -> None:
             return {"error": "No authentication token available"}
 
         try:
-            result = await client.delete(f"/v1.0/process-instances/{process_instance_id}", token)
+            _, modified_id = await resolve_instance(client, process_instance_id, token)
+            result = await client.post(
+                f"/v1.0/process-instance-terminate/{modified_id}/{process_instance_id}",
+                token,
+            )
             return result or {"status": "cancelled", "id": process_instance_id}
         except Exception as e:
             logger.error(f"Failed to cancel process instance {process_instance_id}: {e}")
@@ -279,8 +290,9 @@ def register_process_instance_tools(mcp: FastMCP) -> None:
             return {"error": "No authentication token available"}
 
         try:
+            _, modified_id = await resolve_instance(client, process_instance_id, token)
             result = await client.post(
-                f"/v1.0/process-instances/{process_instance_id}/suspend",
+                f"/v1.0/process-instance-suspend/{modified_id}/{process_instance_id}",
                 token,
             )
             return result or {"status": "suspended", "id": process_instance_id}

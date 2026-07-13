@@ -277,7 +277,8 @@ def register_connector_tools(mcp: FastMCP) -> None:
                 output.append("## Parameters\n\n")
 
                 for param in params:
-                    param_name = param.get("name", "unknown")
+                    # Connector-operation params key their name as "id".
+                    param_name = param.get("id", param.get("name", "unknown"))
                     param_type = param.get("type", "string")
                     param_required = param.get("required", False)
                     param_desc = param.get("description", "")

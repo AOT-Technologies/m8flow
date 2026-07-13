@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from src.api_client import M8flowAPIClient
+from src.mcp_tools.tasks import _instance_ready_tasks
 from src.utils.context import get_auth_token
 from src.utils.logging import get_logger
 
@@ -81,9 +82,11 @@ def register_count_tools(mcp: FastMCP) -> None:
         }
 
         try:
-            # Only fetch 1 item to get pagination total
+            # Only fetch 1 item to get pagination total.
+            # (/process-instances/reports/for-me is not a real route → 404;
+            # use the same /for-me endpoint list_process_instances uses.)
             response = await client.post(
-                "/v1.0/process-instances/reports/for-me", token, data=body, params={"page": 1, "per_page": 1}
+                "/v1.0/process-instances/for-me", token, data=body, params={"page": 1, "per_page": 1}
             )
 
             count = response.get("pagination", {}).get("total", 0)
@@ -124,16 +127,16 @@ def register_count_tools(mcp: FastMCP) -> None:
         if not token:
             return {"error": "No authentication token available"}
 
-        params: dict[str, Any] = {"page": 1, "per_page": 1}
-
-        if process_instance_id:
-            params["process_instance_id"] = process_instance_id
-
         try:
-            response = await client.get("/v1.0/tasks", token, params=params)
+            # When scoped to an instance, count the instance's ready user tasks
+            # via task-info (not ownership-filtered). The tenant-wide
+            # /v1.0/tasks endpoint only counts the caller's own tasks.
+            if process_instance_id:
+                ready = await _instance_ready_tasks(int(process_instance_id), token)
+                return {"count": len(ready), "filters": {"process_instance_id": process_instance_id}}
 
+            response = await client.get("/v1.0/tasks", token, params={"page": 1, "per_page": 1})
             count = response.get("pagination", {}).get("total", 0)
-
             return {"count": count, "filters": {"process_instance_id": process_instance_id}}
         except Exception as e:
             logger.error(f"Failed to count tasks: {e}")

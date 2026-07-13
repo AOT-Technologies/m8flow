@@ -59,6 +59,25 @@ class TestViewWorkflow:
         assert "bpmn:definitions" in result
 
     @pytest.mark.asyncio
+    async def test_view_workflow_uses_primary_file_name_not_model_id(self, mock_client, mock_auth_token):
+        """Regression: the BPMN file path must come from primary_file_name.
+
+        model['id'] is the full "group/model", so building the filename from it
+        produces a bad path (404/400).
+        """
+        mock_client.get.side_effect = [
+            {"id": "test-group/test-model", "primary_file_name": "test-model.bpmn"},
+            {"file_contents": "<?xml version='1.0'?><bpmn:definitions></bpmn:definitions>"},
+        ]
+
+        from src.mcp_tools.visualization import view_workflow
+
+        await view_workflow("test-group/test-model")
+
+        file_call_path = mock_client.get.call_args_list[-1].args[0]
+        assert file_call_path == "/v1.0/process-models/test-group:test-model/files/test-model.bpmn"
+
+    @pytest.mark.asyncio
     async def test_view_workflow_handles_missing_bpmn(self, mock_client, mock_auth_token):
         """Test view_workflow handles missing BPMN content."""
         # Mock API responses with empty content

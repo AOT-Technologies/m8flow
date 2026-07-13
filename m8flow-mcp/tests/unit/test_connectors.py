@@ -415,3 +415,44 @@ async def test_list_connectors_api_error():
         assert isinstance(result, str)
         assert "Error fetching connectors" in result
         assert "API connection failed" in result
+
+
+@pytest.mark.asyncio
+async def test_get_connector_operation_reads_id_keyed_param_names():
+    """Real connector params key their name as `id`, not `name` (minor bug A)."""
+    real_shape = [
+        {
+            "id": "http/GetRequestV2",
+            "parameters": [
+                {"id": "url", "type": "str", "required": True},
+                {"id": "headers", "type": "any", "required": False},
+            ],
+        },
+    ]
+    with (
+        patch("src.utils.context.get_auth_token", return_value="Bearer test-token"),
+        patch("src.mcp_tools.connectors.client.get", new_callable=AsyncMock) as mock_get,
+    ):
+        mock_get.return_value = real_shape
+
+        from src.mcp_tools.connectors import register_connector_tools
+
+        class MockFastMCP:
+            def __init__(self):
+                self.tools = {}
+
+            def tool(self, name, description):
+                def decorator(func):
+                    self.tools[name] = func
+                    return func
+
+                return decorator
+
+        mcp = MockFastMCP()
+        register_connector_tools(mcp)
+
+        result = await mcp.tools["get_connector_operation"](operation_id="http/GetRequestV2")
+
+        assert "`url`" in result
+        assert "`headers`" in result
+        assert "unknown" not in result

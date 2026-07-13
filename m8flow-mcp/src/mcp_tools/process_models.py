@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 from src.api_client import M8flowAPIClient
 from src.utils.context import get_auth_token
 from src.utils.logging import get_logger
-from src.utils.url import quote_path_segment
+from src.utils.url import to_modified_id
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
@@ -74,7 +74,7 @@ def register_process_model_tools(mcp: FastMCP) -> None:
             return {"error": "No authentication token available"}
 
         # Backend expects the modified id ("group:model") in URL paths
-        modified_id = quote_path_segment(process_model_id.replace("/", ":"), safe=":")
+        modified_id = to_modified_id(process_model_id)
 
         try:
             result = await client.get(f"/v1.0/process-models/{modified_id}", token)
@@ -129,14 +129,18 @@ def register_process_model_tools(mcp: FastMCP) -> None:
 
         # Backend expects group ID in URL path, not body
         # Convert slashes to colons (e.g., "finance/sub" -> "finance:sub")
-        modified_group_id = quote_path_segment(process_group_id.replace("/", ":"), safe=":")
+        modified_group_id = to_modified_id(process_group_id)
 
+        # The backend uses the body "id" verbatim as the canonical model
+        # identifier, so it must be nested under the group ("group/model"),
+        # matching create_process_model_with_bpmn / _from_template. And
+        # ProcessModelInfo.description is a required positional, so always send
+        # it (default "") to avoid a backend TypeError when omitted.
         data: dict[str, Any] = {
-            "id": identifier,
+            "id": f"{process_group_id}/{identifier}",
             "display_name": display_name,
+            "description": description or "",
         }
-        if description:
-            data["description"] = description
 
         try:
             # Correct endpoint: POST /v1.0/process-models/{modified_process_group_id}
@@ -172,7 +176,7 @@ def register_process_model_tools(mcp: FastMCP) -> None:
         if description:
             data["description"] = description
 
-        modified_id = quote_path_segment(process_model_id.replace("/", ":"), safe=":")
+        modified_id = to_modified_id(process_model_id)
 
         try:
             result = await client.put(f"/v1.0/process-models/{modified_id}", token, data=data)
@@ -195,7 +199,7 @@ def register_process_model_tools(mcp: FastMCP) -> None:
         if not token:
             return {"error": "No authentication token available"}
 
-        modified_id = quote_path_segment(process_model_id.replace("/", ":"), safe=":")
+        modified_id = to_modified_id(process_model_id)
 
         try:
             result = await client.delete(f"/v1.0/process-models/{modified_id}", token)
