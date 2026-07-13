@@ -318,7 +318,8 @@ class M8flowAPIClient:
         except (AuthenticationError, AuthorizationError, NotFoundError, TenantError, ServerError, M8flowAPIError):
             raise  # Re-raise our custom errors
         except Exception as e:
-            raise M8flowAPIError(0, f"Unexpected error: {e}", {}) from e
+            logger.exception("Unexpected error during request to %s", path)
+            raise M8flowAPIError(0, f"Unexpected error: {type(e).__name__}: {e}", {}) from e
 
     async def get(
         self,
@@ -378,7 +379,8 @@ class M8flowAPIClient:
         except (AuthenticationError, AuthorizationError, NotFoundError, TenantError, ServerError, M8flowAPIError):
             raise  # Re-raise our custom errors
         except Exception as e:
-            raise M8flowAPIError(0, f"Unexpected error: {e}", {}) from e
+            logger.exception("Unexpected error during request to %s", path)
+            raise M8flowAPIError(0, f"Unexpected error: {type(e).__name__}: {e}", {}) from e
 
     async def post(
         self,
@@ -453,7 +455,8 @@ class M8flowAPIClient:
         except (AuthenticationError, AuthorizationError, NotFoundError, TenantError, ServerError, M8flowAPIError):
             raise  # Re-raise our custom errors
         except Exception as e:
-            raise M8flowAPIError(0, f"Unexpected error: {e}", {}) from e
+            logger.exception("Unexpected error during request to %s", path)
+            raise M8flowAPIError(0, f"Unexpected error: {type(e).__name__}: {e}", {}) from e
 
     async def put(
         self,
@@ -518,7 +521,8 @@ class M8flowAPIClient:
         except (AuthenticationError, AuthorizationError, NotFoundError, TenantError, ServerError, M8flowAPIError):
             raise  # Re-raise our custom errors
         except Exception as e:
-            raise M8flowAPIError(0, f"Unexpected error: {e}", {}) from e
+            logger.exception("Unexpected error during request to %s", path)
+            raise M8flowAPIError(0, f"Unexpected error: {type(e).__name__}: {e}", {}) from e
 
     async def delete(
         self,

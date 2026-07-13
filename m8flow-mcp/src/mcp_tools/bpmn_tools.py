@@ -14,7 +14,7 @@ from src.api_client import M8flowAPIClient
 from src.errors.exceptions import NotFoundError
 from src.utils.context import get_auth_token
 from src.utils.logging import get_logger
-from src.utils.url import quote_path_segment
+from src.utils.url import quote_path_segment, to_modified_id
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
@@ -25,8 +25,7 @@ client = M8flowAPIClient()
 
 def _modified_model_id(process_group_id: str, process_model_id: str) -> str:
     """Build the URL-safe modified process model id (``group:model``) the backend expects."""
-    group = quote_path_segment(process_group_id.replace("/", ":"), safe=":")
-    return f"{group}:{quote_path_segment(process_model_id)}"
+    return to_modified_id(f"{process_group_id}/{process_model_id}")
 
 
 def register_bpmn_tools(mcp: FastMCP) -> None:
@@ -79,7 +78,7 @@ def register_bpmn_tools(mcp: FastMCP) -> None:
 Check the group/model IDs with `list_process_models`, or create the model first.
 """
 
-            primary_file = model_info.get("primary_file_name", f"{process_model_id}.bpmn")
+            primary_file = model_info.get("primary_file_name") or f"{process_model_id}.bpmn"
             file_data = await client.get(
                 f"/v1.0/process-models/{modified_id}/files/{quote_path_segment(primary_file)}",
                 token,

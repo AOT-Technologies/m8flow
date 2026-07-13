@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 from src.api_client import M8flowAPIClient
 from src.utils.context import get_auth_token
-from src.utils.url import quote_path_segment
+from src.utils.url import quote_path_segment, to_modified_id
 
 client = M8flowAPIClient()
 
@@ -35,13 +35,14 @@ async def view_workflow(process_model_id: str) -> str:
         # Returns BPMN XML content
     """
     token = get_auth_token()
-    modified_id = quote_path_segment(process_model_id.replace("/", ":"), safe=":")
+    modified_id = to_modified_id(process_model_id)
 
     # Get process model to find BPMN file
     model = await client.get(f"/v1.0/process-models/{modified_id}", token)
 
-    # Get first .bpmn file (usually matches model ID)
-    bpmn_filename = f"{model['id']}.bpmn"
+    # Use the backend-provided primary file name. model["id"] is the full
+    # "group/model" id, so building the filename from it produces a bad path.
+    bpmn_filename = model.get("primary_file_name") or f"{process_model_id.split('/')[-1]}.bpmn"
 
     # Get BPMN file content
     file_response = await client.get(
@@ -128,7 +129,7 @@ async def view_process_instance(process_model_id: str, process_instance_id: int)
         # Returns instance BPMN XML content
     """
     token = get_auth_token()
-    modified_id = quote_path_segment(process_model_id.replace("/", ":"), safe=":")
+    modified_id = to_modified_id(process_model_id)
 
     # Get process instance (includes bpmn_xml_file_contents)
     instance = await client.get(f"/v1.0/process-instances/{modified_id}/{process_instance_id}", token)
@@ -138,7 +139,7 @@ async def view_process_instance(process_model_id: str, process_instance_id: int)
     if not bpmn_xml or not bpmn_xml.strip():
         # Fallback to model BPMN
         model = await client.get(f"/v1.0/process-models/{modified_id}", token)
-        bpmn_filename = f"{model['id']}.bpmn"
+        bpmn_filename = model.get("primary_file_name") or f"{process_model_id.split('/')[-1]}.bpmn"
         file_response = await client.get(
             f"/v1.0/process-models/{modified_id}/files/{quote_path_segment(bpmn_filename)}", token
         )
