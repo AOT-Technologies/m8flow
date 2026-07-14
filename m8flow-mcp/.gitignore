@@ -1,0 +1,83 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+ENV/
+env/
+
+# Environment Variables
+.env
+.env.local
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Sensitive Data
+# Anchored to repo root (leading /) so these only catch stray credential
+# dumps at the top level and don't blanket-match legitimate nested source
+# modules like src/mcp_tools/secrets.py or src/auth/token_service.py.
+/*_TOKEN*
+/*token*
+/*secret*
+/*password*
+*.pem
+*.key
+
+# Docs known to contain a real embedded bearer token (checked by content, not just name)
+docs/QUICK_START_WITH_YOUR_TOKEN.md
+docs/DEBUG_MCP.md
+
+# Test Output
+.pytest_cache/
+.coverage
+htmlcov/
+
+# MCP Specific
+middleware_debug.log
+server_debug.log
+test_write.log
+server.log
+
+# Temporary Files
+*.tmp
+.~lock.*
+*_summary.txt
+*_report.txt
+*_analysis.txt
+
+# Generated Documentation (keep only final versions)
+create_excel_documentation.py
+test_mcp_server.py
+test_remote_mcp.py
+
+# Test Files (keep in tests/ only)
+test_workflow.bpmn
