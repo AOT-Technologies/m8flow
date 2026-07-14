@@ -1,0 +1,67 @@
+# M8Flow MCP Server - Docker Compose
+# Usage: docker compose up -d --build
+
+services:
+  m8flow-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: m8flow/m8flow-mcp:latest
+    container_name: m8flow-mcp
+    restart: unless-stopped
+    env_file:
+      - .env
+
+    environment:
+      # Server
+      SERVER_TYPE: remote
+      HOST: 0.0.0.0
+      PORT: 8000
+      LOG_LEVEL: INFO
+      PYTHONUNBUFFERED: "1"
+      # Keycloak / auth — non-secret settings here; secrets stay in .env
+      # KEYCLOAK_URL, KEYCLOAK_REALM, CLIENT_ID, CLIENT_SECRET,
+      # KEYCLOAK_USERNAME/PASSWORD (ROPC), M8FLOW_BEARER_TOKEN,
+      # MCP_OIDC_BASE_URL, MCP_OIDC_ISSUER_URL are loaded from .env
+      MCP_OIDC_REDIRECT_PATH: /oauth/callback
+      MCP_OIDC_REQUIRE_CONSENT: "false"
+      # M8FLOW_API_URL is loaded from .env
+
+    ports:
+      - "8000:8000"
+
+    # Allow the container to reach a Keycloak / m8flow backend on the host.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          python -c "import os,urllib.request;
+          p=os.environ.get('PORT','8000');
+          urllib.request.urlopen('http://127.0.0.1:'+p+'/health', timeout=5)"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "25m"
+        max-file: "5"
+
+    security_opt:
+      - no-new-privileges:true
+
+    tmpfs:
+      - /tmp:mode=1777,size=128m
+
+    networks:
+      - mcp
+
+networks:
+  mcp:
+    driver: bridge
+    name: m8flow-mcp-net
