@@ -51,7 +51,7 @@ class TokenService:
             "client_id": settings.client_id,
             "username": settings.keycloak_username or "",
             "password": settings.keycloak_password or "",
-            "scope": " ".join(settings.required_scopes_list) or "openid",
+            "scope": " ".join(settings.auth_scopes_list) or "openid",
         }
         if settings.client_secret:
             form["client_secret"] = settings.client_secret

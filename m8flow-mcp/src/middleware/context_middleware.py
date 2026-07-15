@@ -15,7 +15,7 @@ from fastmcp.server.middleware import Middleware, MiddlewareContext
 
 # from simple_auth import get_bearer_token  # Not needed - deprecated middleware
 from src.config import settings
-from src.utils.context import AUTH_TOKEN_KEY, set_tenant_id
+from src.utils.context import AUTH_TOKEN_KEY
 
 
 class ContextExtractionMiddleware(Middleware):
@@ -40,9 +40,9 @@ class ContextExtractionMiddleware(Middleware):
             # Store in context state for tools to retrieve
             await fastmcp_context.set_state(AUTH_TOKEN_KEY, settings.m8flow_bearer_token)
 
-        # Set tenant context (from config)
-        if settings.default_tenant_id:
-            set_tenant_id(settings.default_tenant_id)
+        # Tenant resolution is handled by TenantContextMiddleware, which is
+        # multi-tenant-aware (a blanket DEFAULT_TENANT_ID here would mask the
+        # tenant a multi-tenant user selected during authentication).
 
         # Continue to next middleware or tool
         return await call_next(context)
