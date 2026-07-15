@@ -26,7 +26,6 @@ from src.errors import (
     TenantError,
     TimeoutError,
 )
-from src.utils.context import get_tenant_id
 
 logger = logging.getLogger(__name__)
 
@@ -102,9 +101,9 @@ class M8flowAPIClient:
         else:
             headers["Authorization"] = f"Bearer {token}"
 
-        tenant_id = get_tenant_id()
-        if tenant_id:
-            headers["x-m8flow-tenant-id"] = tenant_id
+        # The token is a finalized, tenant-scoped session token (carrying m8flow_tenant_id
+        # + the active org's groups), so it is authoritative for tenant + RBAC — no extra
+        # tenant header/cookie needed. See TenantContextMiddleware / tenant_selection.
 
         if extra_headers:
             headers.update(extra_headers)
@@ -196,6 +195,14 @@ class M8flowAPIClient:
             elif response.status_code == 404:
                 raise NotFoundError(error_msg or "Resource not found", error_body)
             elif response.status_code == 400 and "tenant" in error_code.lower():
+                # A multi-tenant user has no (valid) tenant selected. Guide them to
+                # re-authenticate and pick a tenant rather than surfacing a raw error.
+                if error_code.lower() in {"tenant_required", "tenant_override_forbidden"}:
+                    raise TenantError(
+                        "No tenant is selected for this session. Re-authenticate to the "
+                        "MCP server and choose the tenant you want to work in.",
+                        error_body,
+                    )
                 raise TenantError(error_msg or "Tenant context error", error_body)
             else:
                 raise M8flowAPIError(response.status_code, str(error_msg), error_body)
@@ -264,9 +271,6 @@ class M8flowAPIClient:
         request_headers: dict[str, str] = {
             "Authorization": token if token.startswith("Bearer ") else f"Bearer {token}",
         }
-        tenant_id = get_tenant_id()
-        if tenant_id:
-            request_headers["x-m8flow-tenant-id"] = tenant_id
         if headers:
             request_headers.update(headers)
 

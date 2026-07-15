@@ -58,6 +58,12 @@ class Settings(BaseSettings):
 
     # Multi-tenancy
     default_tenant_id: str | None = None
+    # Shared-realm identifier used as SpiffWorkflow-Authentication-Identifier when driving the
+    # backend tenant-finalization endpoint. Defaults to keycloak_realm (the shared realm, e.g. "m8flow").
+    shared_realm_identifier: str | None = None
+    # Keycloak "organization" client scope requested at sign-in so the token enumerates the user's
+    # organization memberships (mirrors the web app's shared-realm sign-in). Set empty to disable.
+    organization_scope: str = "organization:*"
 
     # Logging
     log_level: str = "INFO"
@@ -76,6 +82,26 @@ class Settings(BaseSettings):
     def required_scopes_list(self) -> list[str]:
         """Parse the comma/space-separated required scopes into a list."""
         return [s for s in self.required_scopes.replace(",", " ").split() if s]
+
+    @property
+    def auth_scopes_list(self) -> list[str]:
+        """Scopes requested at sign-in: required scopes plus the organization scope.
+
+        Adds the Keycloak ``organization`` client scope so the issued token enumerates the user's
+        organization memberships, enabling multi-tenant selection. Used for OIDC browser login
+        (remote) and ROPC (stdio). Kept separate from ``required_scopes_list`` so the organization
+        scope is not enforced by the token verifier / advertised as a hard requirement.
+        """
+        scopes = list(self.required_scopes_list)
+        org_scope = (self.organization_scope or "").strip()
+        if org_scope and org_scope not in scopes:
+            scopes.append(org_scope)
+        return scopes
+
+    @property
+    def effective_shared_realm_identifier(self) -> str:
+        """Shared-realm auth identifier (defaults to the configured Keycloak realm)."""
+        return (self.shared_realm_identifier or self.keycloak_realm or "").strip()
 
     @property
     def oidc_base_url(self) -> str:
