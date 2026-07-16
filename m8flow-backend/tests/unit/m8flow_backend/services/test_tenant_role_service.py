@@ -759,6 +759,8 @@ def test_list_tenant_groups_with_members_applies_paging_before_member_lookups(mo
 def test_remove_tenant_member_removes_organization_membership_and_clears_local_access(monkeypatch):
     organization_removals: list[tuple[str, str]] = []
     cleared_assignments: list[tuple[int, str]] = []
+    organization_lookup_calls: list[str] = []
+    realm_user_deletions: list[str] = []
 
     monkeypatch.setattr(
         tenant_role_service,
@@ -798,9 +800,23 @@ def test_remove_tenant_member_removes_organization_membership_and_clears_local_a
         "_clear_local_tenant_assignments",
         lambda user, tenant_id: cleared_assignments.append((user.id, tenant_id)),
     )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "list_user_organizations",
+        lambda member_id: organization_lookup_calls.append(member_id) or [],
+        raising=False,
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "delete_realm_user",
+        lambda member_id: realm_user_deletions.append(member_id),
+        raising=False,
+    )
 
     removed_username = tenant_role_service.remove_tenant_member("tenant-1", "editor")
 
     assert removed_username == "editor"
     assert organization_removals == [("org-1", "member-1")]
     assert cleared_assignments == [(11, "tenant-1")]
+    assert organization_lookup_calls == []
+    assert realm_user_deletions == []
