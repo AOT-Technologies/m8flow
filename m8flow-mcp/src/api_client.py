@@ -187,6 +187,19 @@ class M8flowAPIClient:
                 error_body = {}
                 error_code = ""
 
+            # Tenant errors first, keyed off error_code regardless of the exact 4xx status.
+            # The backend may return a tenant code with 400, 401, or 403; guide the user to
+            # re-authenticate and pick a tenant rather than surfacing a raw auth error.
+            code_lower = error_code.lower() if isinstance(error_code, str) else ""
+            if code_lower in {"tenant_required", "tenant_override_forbidden"}:
+                raise TenantError(
+                    "No tenant is selected for this session. Re-authenticate to the "
+                    "MCP server and choose the tenant you want to work in.",
+                    error_body,
+                )
+            if "tenant" in code_lower:
+                raise TenantError(error_msg or "Tenant context error", error_body)
+
             # Specific error types with better messages
             if response.status_code == 401:
                 raise AuthenticationError(error_msg or "Token expired or invalid - please re-authenticate", error_body)
@@ -194,16 +207,6 @@ class M8flowAPIClient:
                 raise AuthorizationError(error_msg or "You don't have permission to access this resource", error_body)
             elif response.status_code == 404:
                 raise NotFoundError(error_msg or "Resource not found", error_body)
-            elif response.status_code == 400 and "tenant" in error_code.lower():
-                # A multi-tenant user has no (valid) tenant selected. Guide them to
-                # re-authenticate and pick a tenant rather than surfacing a raw error.
-                if error_code.lower() in {"tenant_required", "tenant_override_forbidden"}:
-                    raise TenantError(
-                        "No tenant is selected for this session. Re-authenticate to the "
-                        "MCP server and choose the tenant you want to work in.",
-                        error_body,
-                    )
-                raise TenantError(error_msg or "Tenant context error", error_body)
             else:
                 raise M8flowAPIError(response.status_code, str(error_msg), error_body)
 

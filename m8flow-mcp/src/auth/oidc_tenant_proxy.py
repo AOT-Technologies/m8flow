@@ -22,10 +22,15 @@ from __future__ import annotations
 
 import base64
 import json
+import time
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 from fastmcp.server.auth.oidc_proxy import OIDCProxy
+from fastmcp.server.auth.redirect_validation import (
+    _has_dot_segments,
+    validate_redirect_uri,
+)
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse
 from starlette.routing import Route
@@ -42,6 +47,11 @@ from src.utils.logging import get_logger
 logger = get_logger(__name__)
 
 _SELECT_TENANT_PATH = "/select-tenant"
+
+# Signed tenant-selection state older than this is rejected, bounding replay of an
+# intercepted-but-still-validly-signed state to a short window. Generous enough for a
+# human to read the screen and pick a tenant.
+_STATE_TTL_SECONDS = 600
 
 
 class TenantSelectingOIDCProxy(OIDCProxy):
@@ -135,6 +145,13 @@ class TenantSelectingOIDCProxy(OIDCProxy):
         if not client_code or not client_redirect:
             return HTMLResponse("<h1>Invalid or expired tenant selection.</h1>", status_code=400)
 
+        # Never emit an unvalidated redirect target: even though the state is signed, the
+        # resume URL carries an OAuth code, so it must point at a legitimate MCP-client
+        # callback, not an attacker-chosen host.
+        if not self._validate_client_redirect(client_redirect):
+            logger.warning("Rejected tenant-selection redirect to untrusted target: %s", client_redirect)
+            return HTMLResponse("<h1>Invalid redirect target.</h1>", status_code=400)
+
         idp_tokens = await self._idp_tokens_for_client_code(client_code)
         token = _upstream_token(idp_tokens)
         if not token:
@@ -182,9 +199,38 @@ class TenantSelectingOIDCProxy(OIDCProxy):
     def _select_tenant_url(self) -> str:
         return f"{str(self.base_url).rstrip('/')}{_SELECT_TENANT_PATH}"
 
+    def _validate_client_redirect(self, url: str) -> bool:
+        """Return True only for a well-formed, trusted MCP-client callback URL.
+
+        Structural floor (always enforced): an absolute ``http(s)`` URL with a host, no
+        userinfo (``user:pass@host`` bypasses naive host checks), and no ``.``/``..`` path
+        segments (a browser collapses those in a 302 Location and can escape the allowlist).
+        When the parent ``OAuthProxy`` was configured with an explicit redirect-URI
+        allowlist, the target must also match it; when it is unset (fastmcp's DCR allow-all
+        default) the structural floor stands.
+        """
+        parts = urlsplit(url)
+        if parts.scheme.lower() not in ("http", "https") or not parts.netloc:
+            return False
+        if parts.username is not None or parts.password is not None:
+            return False
+        if _has_dot_segments(parts.path):
+            return False
+
+        allowed = getattr(self, "_allowed_client_redirect_uris", None)
+        if allowed is not None:
+            return validate_redirect_uri(url, allowed)
+        return True
+
     def _encode_state(self, *, client_code: str, client_redirect: str) -> str:
         payload = base64.urlsafe_b64encode(
-            json.dumps({"client_code": client_code, "client_redirect": client_redirect}).encode()
+            json.dumps(
+                {
+                    "client_code": client_code,
+                    "client_redirect": client_redirect,
+                    "iat": int(time.time()),
+                }
+            ).encode()
         ).decode()
         return self._sign_cookie(payload)
 
@@ -199,6 +245,10 @@ class TenantSelectingOIDCProxy(OIDCProxy):
         except Exception:
             return None
         if not isinstance(data, dict):
+            return None
+        # Reject stale (but still validly signed) state to bound replay.
+        iat = data.get("iat")
+        if not isinstance(iat, (int, float)) or (time.time() - iat) > _STATE_TTL_SECONDS:
             return None
         client_code = data.get("client_code")
         client_redirect = data.get("client_redirect")

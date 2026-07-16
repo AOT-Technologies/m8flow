@@ -36,6 +36,10 @@ logger = get_logger(__name__)
 # Bounded so we never hang the MCP stdio handshake indefinitely.
 _SELECTION_TIMEOUT_SECONDS = 120
 
+# Cap the accepted POST body; the form only carries a short tenant alias, so anything
+# larger is malformed/hostile. Loopback-only, but bound it anyway.
+_MAX_POST_BODY_BYTES = 64 * 1024
+
 
 def run_stdio_tenant_selection() -> None:
     """Resolve the active tenant for a stdio session before serving requests."""
@@ -115,7 +119,11 @@ def _prompt_via_loopback(memberships: list[dict[str, Any]]) -> str | None:
                 length = int(self.headers.get("Content-Length", 0))
             except (TypeError, ValueError):
                 length = 0
-            body = self.rfile.read(length).decode("utf-8") if length else ""
+            if length < 0 or length > _MAX_POST_BODY_BYTES:
+                self._send_html("<h1>Invalid tenant selection.</h1>", status=400)
+                return
+            # errors="replace": malformed bytes on the socket must not raise here.
+            body = self.rfile.read(length).decode("utf-8", errors="replace") if length else ""
             tenant = urllib.parse.parse_qs(body).get("tenant", [""])[0].strip()
             if tenant and tenant in valid_aliases:
                 selected["alias"] = tenant
