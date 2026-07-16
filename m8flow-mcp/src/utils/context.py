@@ -16,6 +16,10 @@ COMPANY_ID_KEY = "company_id"  # For compatibility
 _auth_token_var: ContextVar[str | None] = ContextVar(AUTH_TOKEN_KEY, default=None)
 _tenant_id_var: ContextVar[str | None] = ContextVar(TENANT_ID_KEY, default=None)
 _company_id_var: ContextVar[str | None] = ContextVar(COMPANY_ID_KEY, default=None)
+# Per-request tenant-scoped ("finalized") token set by TenantContextMiddleware. When present it is
+# forwarded to the backend instead of the broad shared-realm session token, so tenant + RBAC resolve
+# exactly like a finalized web session.
+_finalized_token_var: ContextVar[str | None] = ContextVar("finalized_token", default=None)
 
 
 def _oidc_session_token() -> str | None:
@@ -35,14 +39,17 @@ def _oidc_session_token() -> str | None:
         return None
 
 
-def get_auth_token() -> str | None:
-    """Resolve the authentication token for outbound m8flow API calls.
+def get_session_token() -> str | None:
+    """Resolve the shared-realm session token identifying the authenticated user.
 
     Resolution order:
       1. OIDCProxy per-user session token (remote/browser login).
       2. Explicit bearer token set at startup (env / settings).
       3. ROPC token auto-fetched (and refreshed) from Keycloak using
          KEYCLOAK_USERNAME / KEYCLOAK_PASSWORD.
+
+    This is the *identity* token (used to look up / refresh the tenant selection). Tools
+    should call :func:`get_auth_token`, which prefers the finalized tenant-scoped token.
 
     Returns:
         A usable access token, or None if none can be resolved.
@@ -69,6 +76,21 @@ def get_auth_token() -> str | None:
             logger.warning("ROPC token acquisition failed: %s", exc)
 
     return None
+
+
+def get_auth_token() -> str | None:
+    """Return the token to forward to the m8flow backend for the current request.
+
+    Prefers the finalized, tenant-scoped token set by ``TenantContextMiddleware`` (so the
+    backend resolves tenant + RBAC like a finalized web session); falls back to the raw
+    session token for single-tenant / service identities.
+    """
+    return _finalized_token_var.get() or get_session_token()
+
+
+def set_finalized_token(token: str | None) -> None:
+    """Set (or clear) the tenant-scoped token forwarded to the backend this request."""
+    _finalized_token_var.set(token)
 
 
 def set_auth_token(token: str) -> None:
@@ -121,3 +143,4 @@ def clear_context() -> None:
     _auth_token_var.set(None)
     _tenant_id_var.set(None)
     _company_id_var.set(None)
+    _finalized_token_var.set(None)

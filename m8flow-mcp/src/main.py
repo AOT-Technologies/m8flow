@@ -37,7 +37,7 @@ def _build_auth() -> object | None:
     if not (settings.is_remote and settings.has_oidc_client):
         return None
     try:
-        from fastmcp.server.auth.oidc_proxy import OIDCProxy
+        from src.auth.oidc_tenant_proxy import TenantSelectingOIDCProxy
     except Exception as exc:  # pragma: no cover - depends on fastmcp version
         logger.warning("OIDCProxy unavailable (%s); falling back to token-based auth", exc)
         return None
@@ -53,13 +53,15 @@ def _build_auth() -> object | None:
         # fastmcp fetches the OIDC discovery document here, so an unreachable
         # Keycloak raises at construction time. Fail gracefully instead of
         # crash-looping the container; token-based auth still works.
-        return OIDCProxy(
+        return TenantSelectingOIDCProxy(
             config_url=config_url,
             client_id=settings.client_id,
             client_secret=settings.client_secret,
             base_url=settings.oidc_base_url,
             issuer_url=settings.oidc_issuer_url,
-            required_scopes=settings.required_scopes_list,
+            # Request the organization scope so the token enumerates the user's tenants,
+            # enabling the multi-tenant selection screen.
+            required_scopes=settings.auth_scopes_list,
             verify_id_token=settings.verify_id_token,
             require_authorization_consent=settings.mcp_oidc_require_consent,
             redirect_path=settings.mcp_oidc_redirect_path,
@@ -225,6 +227,14 @@ def main() -> int:
         else:
             # stdio mode for Claude Desktop
             logger.info("Starting m8flow MCP server in stdio mode")
+            # Multi-tenant users pick a tenant (loopback page) before serving requests;
+            # single-tenant users are finalized automatically with no prompt.
+            try:
+                from src.auth.stdio_tenant_login import run_stdio_tenant_selection
+
+                run_stdio_tenant_selection()
+            except Exception as exc:  # pragma: no cover - selection is best-effort
+                logger.warning("stdio tenant selection skipped: %s", exc)
             try:
                 mcp.run(transport="stdio")
             finally:
