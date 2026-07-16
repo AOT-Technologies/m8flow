@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import threading
 import time
+from typing import NoReturn
 
 import httpx
 
@@ -40,7 +41,7 @@ class TokenService:
     def _is_expired(self) -> bool:
         return time.time() >= (self._expires_at - self._refresh_margin)
 
-    def _build_form(self) -> dict[str, str]:
+    def _build_form(self, scopes: list[str]) -> dict[str, str]:
         if not settings.has_ropc_credentials:
             raise RuntimeError(
                 "KEYCLOAK_USERNAME and KEYCLOAK_PASSWORD must be set for automatic "
@@ -51,11 +52,36 @@ class TokenService:
             "client_id": settings.client_id,
             "username": settings.keycloak_username or "",
             "password": settings.keycloak_password or "",
-            "scope": " ".join(settings.required_scopes_list) or "openid",
+            "scope": " ".join(scopes) or "openid",
         }
         if settings.client_secret:
             form["client_secret"] = settings.client_secret
         return form
+
+    @staticmethod
+    def _org_scope_fallback(scopes: list[str]) -> list[str] | None:
+        """Return the scope list minus the organization scope, or None if unavailable.
+
+        Used to retry ROPC once when the IdP rejects the ``organization`` scope
+        (``400 invalid_scope``): the org scope only enables multi-tenant enumeration, so a
+        single-tenant/stdio identity can still get a usable token without it.
+        """
+        required = settings.required_scopes_list
+        if scopes != required and set(scopes) != set(required):
+            return required
+        return None
+
+    @staticmethod
+    def _is_scope_rejection(exc: httpx.HTTPStatusError) -> bool:
+        """True when Keycloak rejected the request specifically because of a bad scope."""
+        if exc.response.status_code != 400:
+            return False
+        body = exc.response.text or ""
+        try:
+            error = exc.response.json().get("error", "")
+        except Exception:
+            error = ""
+        return "invalid_scope" in error.lower() or "invalid_scope" in body.lower()
 
     def _store(self, data: dict) -> str:
         access_token = data["access_token"]
@@ -73,12 +99,7 @@ class TokenService:
         )
         return access_token
 
-    async def get_token(self) -> str:
-        """Return a valid access token, refreshing via async HTTP if necessary."""
-        if self._access_token and not self._is_expired:
-            return self._access_token
-
-        form = self._build_form()
+    async def _post_form(self, form: dict[str, str]) -> dict:
         try:
             async with httpx.AsyncClient(timeout=15) as client:
                 resp = await client.post(
@@ -87,14 +108,45 @@ class TokenService:
                     headers={"Content-Type": "application/x-www-form-urlencoded"},
                 )
                 resp.raise_for_status()
-                data = resp.json()
-        except httpx.HTTPStatusError as exc:
+                return resp.json()
+        except httpx.HTTPError as exc:
+            self._raise_token_error(exc)
+
+    def _post_form_sync(self, form: dict[str, str]) -> dict:
+        try:
+            with httpx.Client(timeout=15) as client:
+                resp = client.post(
+                    settings.keycloak_token_url,
+                    data=form,
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
+                )
+                resp.raise_for_status()
+                return resp.json()
+        except httpx.HTTPError as exc:
+            self._raise_token_error(exc)
+
+    @staticmethod
+    def _raise_token_error(exc: httpx.HTTPError) -> NoReturn:
+        if isinstance(exc, httpx.HTTPStatusError):
             body = exc.response.text[:300]
             logger.error("Keycloak token request failed (%s): %s", exc.response.status_code, body)
             raise RuntimeError(f"Keycloak token request failed ({exc.response.status_code}): {body}") from exc
-        except httpx.HTTPError as exc:
-            logger.error("Failed to reach Keycloak token endpoint: %s", exc)
-            raise RuntimeError(f"Keycloak token request failed: {exc}") from exc
+        logger.error("Failed to reach Keycloak token endpoint: %s", exc)
+        raise RuntimeError(f"Keycloak token request failed: {exc}") from exc
+
+    async def get_token(self) -> str:
+        """Return a valid access token, refreshing via async HTTP if necessary."""
+        if self._access_token and not self._is_expired:
+            return self._access_token
+
+        scopes = settings.auth_scopes_list
+        try:
+            data = await self._post_form(self._build_form(scopes))
+        except RuntimeError as exc:
+            fallback = self._scope_fallback_on_error(exc, scopes)
+            if fallback is None:
+                raise
+            data = await self._post_form(self._build_form(fallback))
 
         return self._store(data)
 
@@ -112,25 +164,35 @@ class TokenService:
             if self._access_token and not self._is_expired:
                 return self._access_token
 
-            form = self._build_form()
+            scopes = settings.auth_scopes_list
             try:
-                with httpx.Client(timeout=15) as client:
-                    resp = client.post(
-                        settings.keycloak_token_url,
-                        data=form,
-                        headers={"Content-Type": "application/x-www-form-urlencoded"},
-                    )
-                    resp.raise_for_status()
-                    data = resp.json()
-            except httpx.HTTPStatusError as exc:
-                body = exc.response.text[:300]
-                logger.error("Keycloak token request failed (%s): %s", exc.response.status_code, body)
-                raise RuntimeError(f"Keycloak token request failed ({exc.response.status_code}): {body}") from exc
-            except httpx.HTTPError as exc:
-                logger.error("Failed to reach Keycloak token endpoint: %s", exc)
-                raise RuntimeError(f"Keycloak token request failed: {exc}") from exc
+                data = self._post_form_sync(self._build_form(scopes))
+            except RuntimeError as exc:
+                fallback = self._scope_fallback_on_error(exc, scopes)
+                if fallback is None:
+                    raise
+                data = self._post_form_sync(self._build_form(fallback))
 
             return self._store(data)
+
+    def _scope_fallback_on_error(self, exc: RuntimeError, scopes: list[str]) -> list[str] | None:
+        """Return a reduced scope list to retry with, when the org scope was rejected.
+
+        The IdP may not grant the ``organization`` scope to every ROPC client/user. In that
+        case we retry once without it so single-tenant / stdio identities still authenticate
+        (they simply won't enumerate multiple tenants). Returns None when the error is
+        unrelated to scope or there is no org scope to drop.
+        """
+        cause = exc.__cause__
+        if not isinstance(cause, httpx.HTTPStatusError) or not self._is_scope_rejection(cause):
+            return None
+        fallback = self._org_scope_fallback(scopes)
+        if fallback is not None:
+            logger.warning(
+                "Keycloak rejected the 'organization' scope for ROPC; retrying without it. "
+                "Multi-tenant enumeration will be unavailable for this identity."
+            )
+        return fallback
 
 
 # Module-level singleton — initialised from settings on first import.
