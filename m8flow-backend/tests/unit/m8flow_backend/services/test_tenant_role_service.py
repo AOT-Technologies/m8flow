@@ -756,6 +756,101 @@ def test_list_tenant_groups_with_members_applies_paging_before_member_lookups(mo
     ]
 
 
+def test_add_tenant_member_reuses_existing_shared_realm_user(monkeypatch):
+    organization_member_additions: list[tuple[str, str]] = []
+    group_member_additions: list[tuple[str, str, str]] = []
+    sync_calls: list[tuple[str, str, str]] = []
+
+    monkeypatch.setattr(
+        tenant_role_service,
+        "_organization_for_tenant",
+        lambda tenant_id, admin_token=None: (
+            SimpleNamespace(id=tenant_id, slug="tenant-slug"),
+            {"id": "org-1"},
+            "org-1",
+        ),
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "_validated_group_names",
+        lambda organization_id, group_names: ["Editors"]
+        if organization_id == "org-1" and group_names == ["Editors"]
+        else pytest.fail("unexpected group validation arguments"),
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "get_organization_member_by_username",
+        lambda organization_id, username: None
+        if organization_id == "org-1" and username == "restored@example.com"
+        else pytest.fail("unexpected organization member lookup arguments"),
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "get_realm_user_by_username",
+        lambda realm_name, username: {
+            "id": "realm-user-1",
+            "username": username,
+            "email": username,
+        }
+        if realm_name == tenant_role_service.shared_realm_name()
+        and username == "restored@example.com"
+        else pytest.fail("unexpected shared-realm user lookup arguments"),
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "add_organization_member",
+        lambda organization_id, user_id: organization_member_additions.append(
+            (organization_id, user_id)
+        ),
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "_tenant_member_or_error",
+        lambda organization_id, tenant_slug, username: {
+            "id": "member-1",
+            "username": username,
+            "email": username,
+        }
+        if organization_id == "org-1"
+        and tenant_slug == "tenant-slug"
+        and username == "restored@example.com"
+        else pytest.fail("unexpected tenant member reload arguments"),
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "add_organization_group_member",
+        lambda organization_id, group_name, member_id: group_member_additions.append(
+            (organization_id, group_name, member_id)
+        ),
+    )
+    monkeypatch.setattr(
+        tenant_role_service,
+        "_sync_local_member_from_keycloak_member",
+        lambda tenant, organization_id, member, group_role_lookup=None: sync_calls.append(
+            (tenant.id, organization_id, str(member.get("username") or ""))
+        )
+        or (SimpleNamespace(id=11), ["editor"]),
+    )
+
+    member = tenant_role_service.add_tenant_member(
+        "tenant-1",
+        username="restored@example.com",
+        group_names=["Editors"],
+    )
+
+    assert organization_member_additions == [("org-1", "realm-user-1")]
+    assert group_member_additions == [("org-1", "Editors", "member-1")]
+    assert sync_calls == [("tenant-1", "org-1", "restored@example.com")]
+    assert member == {
+        "id": "member-1",
+        "username": "restored@example.com",
+        "email": "restored@example.com",
+        "display_name": None,
+        "roles": ["editor"],
+        "groups": [],
+    }
+
+
 def test_remove_tenant_member_removes_organization_membership_and_clears_local_access(monkeypatch):
     organization_removals: list[tuple[str, str]] = []
     cleared_assignments: list[tuple[int, str]] = []
