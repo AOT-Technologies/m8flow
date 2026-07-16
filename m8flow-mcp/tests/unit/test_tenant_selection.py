@@ -241,6 +241,21 @@ async def test_apply_single_org_finalizes_and_installs_token(monkeypatch, middle
     assert context.get_tenant_id() == "t1"
 
 
+async def test_apply_single_org_finalization_failure_leaves_tenant_unresolved(monkeypatch, middleware):
+    """An org member whose finalization fails must NOT fall back to a default tenant."""
+    from src.middleware import tenant_context as mw
+    from src.utils import context
+
+    _set_mode(monkeypatch, "stdio")
+    # Single org membership AND a tenant claim: the claim must be ignored on failure.
+    session_token = _jwt({"organization": {"acme": {"id": "t1"}}, "m8flow_tenant_id": "claim-tenant", "sub": "u"})
+    with patch.object(mw, "finalize_tenant", new=AsyncMock(return_value=None)):
+        await middleware._apply_tenant_context(session_token)
+    # No finalized token, and crucially no tenant id from the claim / default fallback.
+    assert context._finalized_token_var.get() is None
+    assert context.get_tenant_id() is None
+
+
 async def test_apply_multi_org_without_selection_installs_nothing(monkeypatch, middleware):
     from src.utils import context
 
@@ -348,3 +363,79 @@ def test_proxy_state_roundtrip_and_tamper_rejected():
     assert decoded == {"client_code": "code-1", "client_redirect": "https://client/cb?code=code-1"}
     assert TenantSelectingOIDCProxy._decode_state(stub, "garbage") is None
     assert TenantSelectingOIDCProxy._decode_state(stub, None) is None
+
+
+def test_proxy_state_expires_after_ttl(monkeypatch):
+    from src.auth import oidc_tenant_proxy as otp
+    from src.auth.oidc_tenant_proxy import TenantSelectingOIDCProxy
+
+    stub = _StubSigner()
+    encoded = TenantSelectingOIDCProxy._encode_state(
+        stub, client_code="code-1", client_redirect="https://client/cb"
+    )
+    # Fast-forward past the TTL: a still-validly-signed state must be rejected as stale.
+    real_time = otp.time.time()
+    monkeypatch.setattr(otp.time, "time", lambda: real_time + otp._STATE_TTL_SECONDS + 1)
+    assert TenantSelectingOIDCProxy._decode_state(stub, encoded) is None
+
+
+def test_proxy_state_without_iat_rejected():
+    import base64
+    import json
+
+    from src.auth.oidc_tenant_proxy import TenantSelectingOIDCProxy
+
+    stub = _StubSigner()
+    # Hand-craft a signed payload with no iat (e.g. an older state format).
+    payload = base64.urlsafe_b64encode(
+        json.dumps({"client_code": "c", "client_redirect": "https://client/cb"}).encode()
+    ).decode()
+    assert TenantSelectingOIDCProxy._decode_state(stub, stub._sign_cookie(payload)) is None
+
+
+def test_validate_client_redirect_accepts_and_rejects():
+    from src.auth.oidc_tenant_proxy import TenantSelectingOIDCProxy
+
+    # No configured allowlist -> structural floor only.
+    proxy = TenantSelectingOIDCProxy.__new__(TenantSelectingOIDCProxy)
+    validate = TenantSelectingOIDCProxy._validate_client_redirect
+
+    assert validate(proxy, "http://127.0.0.1:6274/oauth/callback?code=abc")
+    assert validate(proxy, "https://client.example.com/cb")
+    # Non-http scheme, userinfo bypass, dot-segments, and malformed URLs are rejected.
+    assert not validate(proxy, "javascript:alert(1)")
+    assert not validate(proxy, "http://localhost@evil.com/cb")
+    assert not validate(proxy, "https://client.example.com/cb/../../steal")
+    assert not validate(proxy, "/relative/only")
+
+    # With an explicit allowlist, off-allowlist hosts are rejected even if well-formed.
+    proxy._allowed_client_redirect_uris = ["http://127.0.0.1:*"]
+    assert validate(proxy, "http://127.0.0.1:6274/cb")
+    assert not validate(proxy, "https://client.example.com/cb")
+
+
+class _FakeFormRequest:
+    """Minimal POST request stand-in for _handle_select_tenant."""
+
+    def __init__(self, form: dict[str, str]):
+        self.method = "POST"
+        self._form = form
+
+    async def form(self):
+        return self._form
+
+
+async def test_handle_select_tenant_rejects_untrusted_redirect():
+    from src.auth.oidc_tenant_proxy import TenantSelectingOIDCProxy
+
+    proxy = TenantSelectingOIDCProxy.__new__(TenantSelectingOIDCProxy)
+    # Decode returns a validly-formed state but an untrusted redirect target.
+    proxy._decode_state = lambda _signed: {
+        "client_code": "code-1",
+        "client_redirect": "http://localhost@evil.com/cb",
+    }
+    request = _FakeFormRequest({"tenant": "acme", "state": "signed"})
+
+    response = await proxy._handle_select_tenant(request)
+    assert response.status_code == 400
+    # Must fail before any token/finalization lookup (no _idp_tokens_for_client_code call).

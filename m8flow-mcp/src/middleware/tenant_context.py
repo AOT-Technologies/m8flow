@@ -55,14 +55,24 @@ class TenantContextMiddleware(Middleware):
                 return
             logger.warning("Stored tenant selection could not be refreshed; re-selection required")
 
-        # 2. No selection yet: single-org users are finalized automatically.
+        # 2. No selection yet: single-org users are finalized automatically. This branch is
+        #    terminal for org members — on failure we leave the tenant UNRESOLVED rather than
+        #    falling through to the JWT-claim / default-tenant fallback below. Forwarding the
+        #    shared-realm token under a default tenant the user never selected would break
+        #    tenant isolation (an org member must never run under a blanket default).
         memberships = organization_memberships(session_token)
         if len(memberships) == 1:
             finalized = await finalize_tenant(session_token, memberships[0]["alias"])
             if finalized is not None:
                 await self._store_selection(subject, finalized)
                 self._install(finalized)
-                return
+            else:
+                logger.warning(
+                    "Single-org tenant finalization failed; leaving tenant unresolved instead "
+                    "of falling back to a default tenant. Tenant-scoped tools will ask the user "
+                    "to re-authenticate rather than run under a tenant they did not select."
+                )
+            return
 
         if len(memberships) > 1:
             # Multi-tenant with no selection: leave the token/tenant unset so tenant-scoped
@@ -70,7 +80,7 @@ class TenantContextMiddleware(Middleware):
             logger.debug("Multi-tenant user without a selected tenant; tenant left unresolved")
             return
 
-        # 3. No organization memberships (single-org / service token): fall back to the
+        # 3. No organization memberships (service / global-realm token): fall back to the
         #    JWT tenant claim (forwarding the session token as-is).
         claim_tenant = decode_jwt_claims(session_token).get(TENANT_ID_CLAIM)
         if claim_tenant:
