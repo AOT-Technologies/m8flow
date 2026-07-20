@@ -354,7 +354,15 @@ permissions:
     groups: ["integrator", "viewer", "super-admin"]
     actions: [read]
     uri: /m8flow/nats-tokens
+  read-nats-tokens-by-id:
+    groups: ["integrator", "viewer", "super-admin"]
+    actions: [read]
+    uri: /m8flow/nats-tokens/*
   manage-nats-tokens:
-    groups: ["tenant-admin", "integrator"]
+    groups: ["tenant-admin"]
     actions: [all]
     uri: /m8flow/nats-tokens
+  manage-nats-tokens-by-id:
+    groups: ["tenant-admin"]
+    actions: [all]
+    uri: /m8flow/nats-tokens/*
