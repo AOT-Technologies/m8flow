@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 import logging
-
 from flask import g, request
 from spiffworkflow_backend.exceptions.api_error import ApiError
 
+from m8flow_backend.config import nats_events_stream_name
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
 
-from m8flow_backend.services.nats_token_service import NatsTokenService
+from m8flow_backend.services.nats_token_service import AuthenticatedKey, NatsTokenService
 
 from m8flow_backend.services.nats_service import NatsService
-from m8flow_backend.services.tenant_service import TenantService
+from m8flow_backend.services.tenant_identity_helpers import tenant_slug_for_identifier
 from m8flow_backend.tenancy import get_context_tenant_id, set_context_tenant_id
 
 logger = logging.getLogger("m8flow.events.controller")
@@ -22,24 +22,16 @@ def _set_validated_tenant_context(tenant_id: str) -> None:
         g._m8flow_ctx_token = set_context_tenant_id(tenant_id)
 
 
-def _resolve_tenant_and_validate_key() -> tuple[str, str, str]:
+def _authenticate_api_key() -> AuthenticatedKey:
     """
-    1. Extract X-M8FLOW-Tenant-Slug and X-M8FLOW-NATS-API-Key from headers.
-    2. Resolve the slug to a tenant UUID via TenantService.
-    3. Verify the API key against that tenant using NatsTokenService.verify_token.
-    Returns (tenant_id, tenant_slug, api_key) on success; raises ApiError on failure.
+    Authenticate the caller purely from the X-M8FLOW-NATS-API-Key header.
+
+    The key alone resolves the tenant, the owning identity, and the key's scope;
+    no JWT is required for this machine-to-machine trigger endpoint.
+
+    Returns the resolved identity; raises ApiError (401/403) on failure.
     """
-    tenant_slug = request.headers.get("X-M8FLOW-Tenant-Slug")
     api_key = request.headers.get("X-M8FLOW-NATS-API-Key")
-
-    if not tenant_slug:
-        logger.warning("m8flow-trigger: missing tenant slug header")
-        raise ApiError(
-            error_code="missing_tenant_slug",
-            message="Required header X-M8FLOW-Tenant-Slug is missing.",
-            status_code=400,
-        )
-
     if not api_key:
         logger.warning("m8flow-trigger: missing API key header")
         raise ApiError(
@@ -48,20 +40,32 @@ def _resolve_tenant_and_validate_key() -> tuple[str, str, str]:
             status_code=401,
         )
 
-    # Step 1: Resolve slug → tenant UUID (TenantService handles 404 if not found)
-    tenant = TenantService.get_tenant_by_slug(tenant_slug)
-    tenant_id = tenant.id
-
-    # Step 2: Verify the API key against the resolved tenant
-    if not NatsTokenService.verify_token(tenant_id, api_key):
-        logger.warning("m8flow-trigger: invalid API key for tenant slug=%s", tenant_slug)
+    authenticated = NatsTokenService.authenticate_key(api_key)
+    if authenticated is None:
+        logger.warning("m8flow-trigger: invalid, expired, or revoked API key")
         raise ApiError(
             error_code="invalid_api_key",
-            message="The provided X-M8FLOW-NATS-API-Key is invalid for this tenant.",
+            message="The provided X-M8FLOW-NATS-API-Key is invalid, expired, or revoked.",
             status_code=403,
         )
 
-    return tenant_id, tenant_slug, api_key
+    return authenticated
+
+
+def _process_identifier_from_request(body: dict) -> str:
+    """Resolve the process identifier from the JSON body, falling back to the
+    deprecated X-M8FLOW-Process-Identifier header for backwards compatibility."""
+    process_identifier = body.get("processIdentifier")
+    if not isinstance(process_identifier, str) or not process_identifier.strip():
+        process_identifier = request.headers.get("X-M8FLOW-Process-Identifier")
+
+    if not isinstance(process_identifier, str) or not process_identifier.strip():
+        raise ApiError(
+            error_code="missing_process_identifier",
+            message="A processIdentifier is required in the request body.",
+            status_code=400,
+        )
+    return process_identifier.strip()
 
 
 @handle_api_errors
@@ -71,39 +75,59 @@ def m8flow_trigger() -> tuple:
 
     Receive an external trigger event, publish to NATS, and acknowledge.
 
-    Required headers
-    ----------------
+    Authentication / identity
+    -------------------------
     X-M8FLOW-NATS-API-Key : str
-        A valid tenant API key generated via POST /api/nats-tokens.
-    X-M8FLOW-Process-Identifier : str
-        The identifier of the process to trigger.
-    X-M8FLOW-Username : str
-        The username on whose behalf the process is triggered.
+        A valid tenant API key generated via POST /api/nats-tokens. The key alone
+        authenticates the caller: the tenant, the owning identity, and the key's
+        scope are all derived from it. No JWT is required.
 
     Request body (JSON)
     -------------------
     {
-        "data": { ... }   # arbitrary caller-supplied payload
+        "processIdentifier": "group/process",  # which process to trigger
+        "data": { ... }                        # arbitrary caller-supplied payload
     }
+
+    ``processIdentifier`` may also be supplied via the deprecated
+    X-M8FLOW-Process-Identifier header for backwards compatibility.
     """
-    tenant_id, tenant_slug, api_key = _resolve_tenant_and_validate_key()
-    _set_validated_tenant_context(tenant_id)
+    authenticated = _authenticate_api_key()
+    tenant_id = authenticated.tenant_id
 
-    process_identifier = request.headers.get("X-M8FLOW-Process-Identifier")
-    username = request.headers.get("X-M8FLOW-Username")
-    provided_stream_name = request.headers.get("X-M8FLOW-Stream-Name")
-
-    if not all([process_identifier, username, provided_stream_name]):
+    tenant_slug = tenant_slug_for_identifier(tenant_id)
+    if not tenant_slug:
+        logger.warning("m8flow-trigger: unable to resolve tenant slug for tenant=%s", tenant_id)
         raise ApiError(
-            error_code="missing_required_headers",
-            message="Required headers X-M8FLOW-Process-Identifier, X-M8FLOW-Username, and X-M8FLOW-Stream-Name are missing.",
+            error_code="tenant_slug_unresolved",
+            message="Could not resolve the tenant slug for the API key's tenant.",
             status_code=400,
         )
 
-    body = request.get_json(silent=True) or {}
-    data = body.get("data")
+    username = authenticated.created_by
+    _set_validated_tenant_context(tenant_id)
 
-    # We use the provided_stream_name from the header for the NATS publish as requested.
+    body = request.get_json(silent=True) or {}
+    process_identifier = _process_identifier_from_request(body)
+
+    # Enforce the key's scope: a scoped key may only trigger its allowed processes.
+    if not NatsTokenService.scope_allows(authenticated.scope, process_identifier):
+        logger.warning(
+            "m8flow-trigger: key %s not scoped for process %s",
+            authenticated.key_id,
+            process_identifier,
+        )
+        raise ApiError(
+            error_code="process_not_in_scope",
+            message="This API key is not authorized to trigger the requested process.",
+            status_code=403,
+        )
+
+    data = body.get("data")
+    provided_stream_name = nats_events_stream_name()
+    # Forward the validated raw key to the consumer, preserving existing downstream behavior.
+    raw_api_key = request.headers.get("X-M8FLOW-NATS-API-Key")
+
     try:
         event_data = NatsService.publish_event(
             tenant_id=tenant_id,
@@ -111,7 +135,7 @@ def m8flow_trigger() -> tuple:
             process_identifier=process_identifier,
             username=username,
             payload=data,
-            api_key=api_key,
+            api_key=raw_api_key,
             stream_name=provided_stream_name
         )
 
@@ -128,7 +152,7 @@ def m8flow_trigger() -> tuple:
     event_data.pop("tenant_id", None)
     event_data.pop("tenant_slug", None)
     event_data.pop("username", None)
-    
+
     # Process instance is returned separately
     process_instance_details = event_data.pop("process_instance", None)
 

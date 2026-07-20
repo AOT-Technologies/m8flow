@@ -430,13 +430,41 @@ def goto_process_model(page: Page, encoded_model_id: str) -> None:
 
 
 def _click_start_process(page: Page) -> None:
-    inst = page.get_by_test_id("start-process-instance")
-    if inst.count() and inst.first.is_visible():
-        inst.first.click()
-    else:
-        start = page.get_by_role("button", name=re.compile(r"^start\b", re.I))
-        expect(start).to_be_visible(timeout=PAGE_DATA_TIMEOUT)
-        start.click()
+    """Click the process Start control, tolerating a slow model/permission load.
+
+    The Start button renders only after BOTH the process-model fetch and the
+    POST-permission check resolve, which can lag behind ``wait_for_app_ready``
+    (that waits only for the app shell -- nav + logo). The previous logic read
+    ``inst.count()`` synchronously and, when the button had not rendered yet,
+    fell through to a single 15s wait on a weaker role locator -- too tight under
+    CI load, producing an ``element(s) not found`` flake.
+
+    Wait on the canonical ``start-process-instance`` test-id, reloading the page
+    between attempts to shake out a slow/late permission fetch, and only fall back
+    to the role-based lookup as a last resort.
+    """
+    start_button = page.get_by_test_id("start-process-instance")
+    attempts = 3
+    for attempt in range(1, attempts + 1):
+        try:
+            expect(start_button.first).to_be_visible(timeout=PAGE_DATA_TIMEOUT)
+            start_button.first.click()
+            wait_for_app_ready(page)
+            return
+        except (AssertionError, PlaywrightTimeout):
+            if attempt < attempts:
+                logger.warning(
+                    "Start control not visible (attempt %d/%d); reloading process-model page.",
+                    attempt,
+                    attempts,
+                )
+                page.reload()
+                wait_for_app_ready(page)
+
+    # Last resort: a build that renders the control with only a generic role/name.
+    start = page.get_by_role("button", name=re.compile(r"^start\b", re.I))
+    expect(start.first).to_be_visible(timeout=PAGE_DATA_TIMEOUT)
+    start.first.click()
     wait_for_app_ready(page)
 
 

@@ -13,14 +13,12 @@ import {
   DialogTitle,
   Grid,
   Paper,
-  Tooltip,
   Typography,
 } from '@mui/material';
 import {
   Cable as CableIcon,
   Check as CheckIcon,
   Close as CloseIcon,
-  ContentCopy as ContentCopyIcon,
   DataObject as DataObjectIcon,
   ExpandMore as ExpandMoreIcon,
   Language as LanguageIcon,
@@ -35,18 +33,7 @@ import { usePermissionFetcher } from '@spiffworkflow-frontend/hooks/PermissionSe
 import { setPageTitle } from '../helpers';
 import { useM8flowUriListForPermissions as useUriListForPermissions } from '../hooks/M8flowUriListForPermissions';
 import { useConfig } from '../utils/useConfig';
-
-const srOnly = {
-  position: 'absolute',
-  width: '1px',
-  height: '1px',
-  p: 0,
-  m: '-1px',
-  overflow: 'hidden',
-  clip: 'rect(0 0 0 0)',
-  whiteSpace: 'nowrap',
-  border: 0,
-} as const;
+import CopyActionButton from '../components/CopyActionButton';
 
 const monospaceUrl = {
   fontFamily: 'monospace',
@@ -89,70 +76,6 @@ const mcpActivityRows = [
     time: 'now',
   },
 ] as const;
-
-function CopyActionButton({
-  value,
-  label,
-  testId,
-  variant = 'outlined',
-  fullWidth,
-}: {
-  value: string;
-  label: string;
-  testId: string;
-  variant?: 'outlined' | 'contained';
-  fullWidth?: boolean;
-}) {
-  const { t } = useTranslation();
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(value).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  };
-
-  return (
-    <>
-      <Tooltip
-        title={t('copied_to_clipboard')}
-        open={copied}
-        arrow
-        disableHoverListener
-        disableFocusListener
-        disableTouchListener
-      >
-        <Button
-          variant={variant}
-          size="small"
-          color="primary"
-          fullWidth={fullWidth}
-          onClick={handleCopy}
-          startIcon={
-            copied ? (
-              <CheckIcon
-                fontSize="small"
-                color={variant === 'contained' ? 'inherit' : 'success'}
-              />
-            ) : (
-              <ContentCopyIcon fontSize="small" />
-            )
-          }
-          data-testid={testId}
-          // Constant label + fixed min-width: swapping the icon (not the text)
-          // gives feedback without reflowing the row.
-          sx={{ flexShrink: 0, whiteSpace: 'nowrap', minWidth: fullWidth ? undefined : 96 }}
-        >
-          {label}
-        </Button>
-      </Tooltip>
-      <Box component="span" role="status" aria-live="polite" sx={srOnly}>
-        {copied ? t('copied_to_clipboard') : ''}
-      </Box>
-    </>
-  );
-}
 
 function ServerUrlRow({
   url,
