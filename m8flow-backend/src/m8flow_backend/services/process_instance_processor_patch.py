@@ -8,6 +8,7 @@ from flask import current_app
 from m8flow_backend.services.tenant_identity_helpers import find_users_for_current_tenant_by_identifier
 from m8flow_backend.services.tenant_identity_helpers import normalize_organizational_group_identifier
 from m8flow_backend.services.tenant_identity_helpers import qualify_group_identifier
+from m8flow_backend.services.tenant_identity_helpers import realm_from_service
 
 _PATCHED = False
 
@@ -73,6 +74,140 @@ def _candidate_lane_group_identifiers(task_lane: str) -> list[str]:
     return candidates
 
 
+def _user_recency_key(user: object) -> tuple[int, int, int]:
+    """Sort users by most recently updated, then created, then id."""
+    return (
+        int(getattr(user, "updated_at_in_seconds", 0) or 0),
+        int(getattr(user, "created_at_in_seconds", 0) or 0),
+        int(getattr(user, "id", 0) or 0),
+    )
+
+
+def _shared_realm_service_issuer() -> str | None:
+    """Return the configured shared-realm issuer URL used for local user rows."""
+    try:
+        from m8flow_backend.config import keycloak_url
+        from m8flow_backend.config import shared_realm_name
+
+        return f"{keycloak_url().rstrip('/')}/realms/{shared_realm_name().strip()}"
+    except Exception:
+        return None
+
+
+def _materialize_lane_owner_users_for_identifier(
+    username_or_email: str,
+    *,
+    user_model_cls: object,
+    user_service_cls: object,
+) -> list[object]:
+    """
+    Resolve explicit lane owners for the current tenant, creating a placeholder when needed.
+
+    Explicit lane-owner assignments are per-user, not per-group. When a valid shared-realm
+    user has not been mirrored into the local DB yet, keep the task bound to that username by
+    creating or reusing a shared-realm local placeholder row instead of broadening ownership to
+    the lane group.
+    """
+    normalized_identifier = username_or_email.strip()
+    if not normalized_identifier:
+        return []
+
+    tenant_matches = find_users_for_current_tenant_by_identifier(normalized_identifier)
+    if tenant_matches:
+        return tenant_matches
+
+    shared_realm_service = _shared_realm_service_issuer()
+    if not shared_realm_service:
+        return []
+
+    shared_realm = realm_from_service(shared_realm_service)
+    same_username_matches = user_model_cls.query.filter_by(username=normalized_identifier).all()
+    same_realm_matches = [
+        user for user in same_username_matches if realm_from_service(getattr(user, "service", None)) == shared_realm
+    ]
+    if same_realm_matches:
+        same_realm_matches.sort(key=_user_recency_key, reverse=True)
+        if len(same_realm_matches) > 1:
+            current_app.logger.warning(
+                "lane_owner_placeholder_match: found %s local shared-realm users for username=%s; reusing id=%s",
+                len(same_realm_matches),
+                normalized_identifier,
+                getattr(same_realm_matches[0], "id", None),
+            )
+        return [same_realm_matches[0]]
+
+    placeholder_service_id = f"lane-owner-placeholder:{normalized_identifier}"
+    try:
+        created_user = user_service_cls.create_user(
+            normalized_identifier,
+            shared_realm_service,
+            placeholder_service_id,
+            email="",
+            display_name=normalized_identifier,
+        )
+    except Exception:
+        fallback_matches = user_model_cls.query.filter_by(username=normalized_identifier).all()
+        fallback_same_realm_matches = [
+            user for user in fallback_matches if realm_from_service(getattr(user, "service", None)) == shared_realm
+        ]
+        if not fallback_same_realm_matches:
+            return []
+        fallback_same_realm_matches.sort(key=_user_recency_key, reverse=True)
+        current_app.logger.warning(
+            "lane_owner_placeholder_fallback: reusing username=%s after create_user failure",
+            normalized_identifier,
+        )
+        return [fallback_same_realm_matches[0]]
+
+    if created_user is None:
+        return []
+    return [created_user]
+
+
+def _lane_assignment_for_task_lane(
+    task_lane: str,
+    *,
+    group_model_cls: object,
+    user_service_cls: object,
+    human_task_user_added_by: object,
+    processor: object,
+) -> tuple[list[dict[str, object]], int | None]:
+    """Resolve the tenant-scoped lane group and its current members for one BPMN lane."""
+    group_model = None
+    fallback_group_model = None
+    candidate_group_identifiers = _candidate_lane_group_identifiers(task_lane)
+    for group_identifier in candidate_group_identifiers:
+        candidate_group_model = group_model_cls.query.filter_by(identifier=group_identifier).first()
+        if candidate_group_model is None:
+            continue
+
+        if fallback_group_model is None:
+            fallback_group_model = candidate_group_model
+
+        if getattr(candidate_group_model, "user_group_assignments", []):
+            group_model = candidate_group_model
+            break
+
+    if group_model is None:
+        group_model = fallback_group_model
+
+    if group_model is None:
+        if not candidate_group_identifiers:
+            processor.raise_if_no_potential_owners(
+                [],
+                f"No usable BPMN lane group identifier could be derived from lane: {task_lane}",
+            )
+            return [], None
+        group_model = user_service_cls.find_or_create_group(candidate_group_identifiers[0])
+
+    lane_assignment_id = group_model.id
+    potential_owners = [
+        {"added_by": human_task_user_added_by.lane_assignment.value, "user_id": assignment.user_id}
+        for assignment in group_model.user_group_assignments
+    ]
+    return potential_owners, lane_assignment_id
+
+
 def apply() -> None:
     """Patch lane-owner resolution so task potential owners stay tenant-aware."""
     global _PATCHED
@@ -83,6 +218,7 @@ def apply() -> None:
     from spiffworkflow_backend.interfaces import PotentialOwnerIdList
     from spiffworkflow_backend.models.group import GroupModel
     from spiffworkflow_backend.models.human_task_user import HumanTaskUserAddedBy
+    from spiffworkflow_backend.models.user import UserModel
     from spiffworkflow_backend.services.process_instance_processor import CustomBpmnScriptEngine
     from spiffworkflow_backend.services.process_instance_processor import ProcessInstanceProcessor
     from spiffworkflow_backend.services.user_service import UserService
@@ -112,51 +248,40 @@ def apply() -> None:
         else:
             explicit_lane_owners = _lane_owner_identifiers_for_task(task, task_lane)
             if explicit_lane_owners is not None:
+                seen_user_ids: set[object] = set()
                 for username_or_email in explicit_lane_owners:
-                    for lane_owner_user in find_users_for_current_tenant_by_identifier(username_or_email):
+                    for lane_owner_user in _materialize_lane_owner_users_for_identifier(
+                        username_or_email,
+                        user_model_cls=UserModel,
+                        user_service_cls=UserService,
+                    ):
+                        user_id = getattr(lane_owner_user, "id", None)
+                        if user_id in seen_user_ids:
+                            continue
+                        seen_user_ids.add(user_id)
                         potential_owners.append(
-                            {"added_by": HumanTaskUserAddedBy.lane_owner.value, "user_id": lane_owner_user.id}
+                            {"added_by": HumanTaskUserAddedBy.lane_owner.value, "user_id": user_id}
                         )
                 self.raise_if_no_potential_owners(
                     potential_owners,
                     (
-                        f"No matching users could be found for the lane owners assigned to the "
-                        f"\"{task_lane}\" lane. Please make sure the following lane owner(s) exist "
-                        f"in this organization: {', '.join(explicit_lane_owners) or '(none specified)'}."
+                        "No users found in task data lane owner list for lane:"
+                        f" {task_lane}. The user list used:"
+                        f" {explicit_lane_owners}"
                     ),
                 )
+                return {
+                    "potential_owners": potential_owners,
+                    "lane_assignment_id": None,
+                }
             else:
-                group_model = None
-                fallback_group_model = None
-                candidate_group_identifiers = _candidate_lane_group_identifiers(task_lane)
-                for group_identifier in candidate_group_identifiers:
-                    candidate_group_model = GroupModel.query.filter_by(identifier=group_identifier).first()
-                    if candidate_group_model is None:
-                        continue
-
-                    if fallback_group_model is None:
-                        fallback_group_model = candidate_group_model
-
-                    if getattr(candidate_group_model, "user_group_assignments", []):
-                        group_model = candidate_group_model
-                        break
-
-                if group_model is None:
-                    group_model = fallback_group_model
-
-                if group_model is None:
-                    if not candidate_group_identifiers:
-                        self.raise_if_no_potential_owners(
-                            [],
-                            f"No usable BPMN lane group identifier could be derived from lane: {task_lane}",
-                        )
-                    group_model = UserService.find_or_create_group(candidate_group_identifiers[0])
-
-                lane_assignment_id = group_model.id
-                potential_owners = [
-                    {"added_by": HumanTaskUserAddedBy.lane_assignment.value, "user_id": assignment.user_id}
-                    for assignment in group_model.user_group_assignments
-                ]
+                potential_owners, lane_assignment_id = _lane_assignment_for_task_lane(
+                    task_lane,
+                    group_model_cls=GroupModel,
+                    user_service_cls=UserService,
+                    human_task_user_added_by=HumanTaskUserAddedBy,
+                    processor=self,
+                )
 
         return {
             "potential_owners": potential_owners,
