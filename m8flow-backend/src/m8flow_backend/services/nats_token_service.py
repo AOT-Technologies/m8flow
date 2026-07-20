@@ -40,7 +40,18 @@ class AuthenticatedKey:
 class NatsTokenService:
     @staticmethod
     def _hash_token(raw_token: str, salt: str) -> str:
-        """Hash a raw token using HMAC-SHA256 with the provided salt."""
+        """Hash a high-entropy API secret using HMAC-SHA256 with a server pepper.
+
+        ``raw_token`` is the secret segment of a NATS API key: a 256-bit value from
+        ``secrets.token_urlsafe(32)`` (see ``create_named_key``), NOT a user-chosen
+        password. The hash exists so the raw secret is never stored and can be
+        compared in constant time, not to resist password brute-force. Because the
+        secret is not brute-forceable, a slow password KDF (bcrypt/scrypt/argon2)
+        would add cost on every webhook auth with no security benefit. HMAC-SHA256
+        with a secret pepper is the standard construction for high-entropy API keys.
+        """
+        # codeql[py/weak-sensitive-data-hashing]: the input is a 256-bit random
+        # secret, not a password, so a slow KDF adds no value here (see docstring).
         mac = hmac.new(
             key=salt.encode('utf-8'),
             msg=raw_token.encode('utf-8'),
