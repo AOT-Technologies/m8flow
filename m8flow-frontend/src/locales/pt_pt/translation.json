@@ -376,5 +376,6 @@
   "manage_token_revoke_confirm_body": "Revogar \"{{label}}\" invalida-a imediatamente. Qualquer integração que a utilize deixará de funcionar. Esta ação não pode ser anulada.",
   "manage_token_your_key_named": "A sua chave de API: {{label}}",
   "copy_to_clipboard": "Copiar",
-  "copied_to_clipboard": "Copiado!"
+  "copied_to_clipboard": "Copiado!",
+  "copy_failed": "Falha ao copiar"
 }

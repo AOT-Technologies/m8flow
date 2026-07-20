@@ -379,6 +379,7 @@
   "manage_token_your_key_named": "Your API key: {{label}}",
   "copy_to_clipboard": "Copy",
   "copied_to_clipboard": "Copied!",
+  "copy_failed": "Copy failed",
   "toggle_visibility": "Toggle visibility",
   "tasks": "Tasks",
   "create_template_title": "Create template",

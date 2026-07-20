@@ -376,5 +376,6 @@
   "manage_token_revoke_confirm_body": "吊销“{{label}}”将立即使其失效。任何使用它的集成都将停止工作。此操作无法撤消。",
   "manage_token_your_key_named": "您的 API 密钥：{{label}}",
   "copy_to_clipboard": "复制",
-  "copied_to_clipboard": "已复制！"
+  "copied_to_clipboard": "已复制！",
+  "copy_failed": "复制失败"
 }
