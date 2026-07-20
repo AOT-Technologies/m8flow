@@ -376,5 +376,6 @@
   "manage_token_revoke_confirm_body": "La révocation de « {{label}} » l'invalide immédiatement. Toute intégration l'utilisant cessera de fonctionner. Cette action est irréversible.",
   "manage_token_your_key_named": "Votre clé d'API : {{label}}",
   "copy_to_clipboard": "Copier",
-  "copied_to_clipboard": "Copié !"
+  "copied_to_clipboard": "Copié !",
+  "copy_failed": "Échec de la copie"
 }

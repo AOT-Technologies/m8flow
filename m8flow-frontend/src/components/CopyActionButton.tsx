@@ -27,6 +27,38 @@ export type CopyActionButtonProps = {
 };
 
 /**
+ * Copy text to the clipboard, resolving to whether it succeeded (never throws).
+ * Prefers the async Clipboard API (secure contexts) and falls back to a hidden
+ * textarea + execCommand for HTTP/non-secure or older browsers where
+ * navigator.clipboard is undefined or rejects.
+ */
+async function copyText(value: string): Promise<boolean> {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return true;
+    } catch {
+      // fall through to the legacy fallback below
+    }
+  }
+
+  try {
+    const textarea = document.createElement('textarea');
+    textarea.value = value;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(textarea);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Copy-to-clipboard button with transient "copied" feedback. The label stays constant
  * (only the icon swaps) so the row does not reflow, and an aria-live region announces
  * the copy for screen readers.
@@ -40,19 +72,26 @@ export default function CopyActionButton({
 }: CopyActionButtonProps) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
+  const [failed, setFailed] = useState(false);
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(value).then(() => {
+  const handleCopy = async () => {
+    const succeeded = await copyText(value);
+    if (succeeded) {
+      setFailed(false);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    });
+    } else {
+      setCopied(false);
+      setFailed(true);
+      setTimeout(() => setFailed(false), 2000);
+    }
   };
 
   return (
     <>
       <Tooltip
-        title={t('copied_to_clipboard')}
-        open={copied}
+        title={failed ? t('copy_failed') : t('copied_to_clipboard')}
+        open={copied || failed}
         arrow
         disableHoverListener
         disableFocusListener
@@ -83,7 +122,7 @@ export default function CopyActionButton({
         </Button>
       </Tooltip>
       <Box component="span" role="status" aria-live="polite" sx={srOnly}>
-        {copied ? t('copied_to_clipboard') : ''}
+        {copied ? t('copied_to_clipboard') : failed ? t('copy_failed') : ''}
       </Box>
     </>
   );

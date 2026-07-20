@@ -376,5 +376,6 @@
   "manage_token_revoke_confirm_body": "Odvolání klíče „{{label}}“ jej okamžitě zneplatní. Všechny integrace, které jej používají, přestanou fungovat. Tuto akci nelze vrátit zpět.",
   "manage_token_your_key_named": "Váš klíč API: {{label}}",
   "copy_to_clipboard": "Kopírovat",
-  "copied_to_clipboard": "Zkopírováno!"
+  "copied_to_clipboard": "Zkopírováno!",
+  "copy_failed": "Kopírování selhalo"
 }
