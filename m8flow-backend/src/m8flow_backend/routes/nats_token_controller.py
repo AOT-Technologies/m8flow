@@ -100,7 +100,23 @@ def _resolve_scope(body: dict) -> str | None:
     if scope is None:
         return None
     if isinstance(scope, list):
-        entries = [str(entry).strip() for entry in scope if str(entry).strip()]
+        # Every entry must be a string; reject non-strings rather than coercing
+        # them (e.g. None -> "None") into a valid-looking process identifier.
+        for entry in scope:
+            if not isinstance(entry, str):
+                raise ApiError(
+                    error_code="invalid_scope",
+                    message="Each scope entry must be a string process identifier.",
+                    status_code=400,
+                )
+        # Deduplicate while preserving first-seen order.
+        seen: set[str] = set()
+        entries: list[str] = []
+        for entry in scope:
+            stripped = entry.strip()
+            if stripped and stripped not in seen:
+                seen.add(stripped)
+                entries.append(stripped)
         return ",".join(entries) if entries else None
     if isinstance(scope, str):
         stripped = scope.strip()
@@ -143,7 +159,7 @@ def generate_token():
 
 
 @handle_api_errors
-def get_token():
+def list_tokens():
     """
     List metadata for the current tenant's NATS API keys, WITHOUT any token values.
 

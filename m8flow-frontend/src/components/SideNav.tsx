@@ -124,7 +124,7 @@ function SideNav({
     [targetUris.secretListPath]: ["GET"],
     [targetUris.connectorsGroupedPath]: ["GET"],
     [targetUris.m8flowMcpConnectionPath]: ["GET"],
-    // POST first so the nav filter gates on manage-nats-tokens (tenant-admin, integrator)
+    // Gate on POST so the nav filter checks manage-nats-tokens (tenant-admin only)
     // rather than defaulting to a never-requested GET, which hid the item for everyone.
     [targetUris.m8flowNatsTokensPath]: ["POST"],
     "/tasks/*": ["GET", "PUT"],
