@@ -41,6 +41,7 @@ import {
   CorporateFare,
   Speed,
   Storage,
+  VpnKey,
 } from "@mui/icons-material";
 import { Link, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -91,6 +92,7 @@ const routeIdentifiers = {
   CONFIGURATION: "configuration",
   CONNECTORS: "connectors",
   MCP_CONNECTION: "mcpConnection",
+  MANAGE_TOKEN: "manageToken",
   TEMPLATES: "templates",
   TENANT_MANAGEMENT: "tenantManagement",
   MONITORING_CELERY: "monitoringCelery",
@@ -122,6 +124,9 @@ function SideNav({
     [targetUris.secretListPath]: ["GET"],
     [targetUris.connectorsGroupedPath]: ["GET"],
     [targetUris.m8flowMcpConnectionPath]: ["GET"],
+    // POST first so the nav filter gates on manage-nats-tokens (tenant-admin, integrator)
+    // rather than defaulting to a never-requested GET, which hid the item for everyone.
+    [targetUris.m8flowNatsTokensPath]: ["POST"],
     "/tasks/*": ["GET", "PUT"],
     [targetUris.m8flowTenantManagementPath]: ["GET"],
     "/m8flow/tenants": ["GET"],
@@ -147,6 +152,8 @@ function SideNav({
     selectedTab = routeIdentifiers.CONNECTORS;
   } else if (location.pathname.startsWith("/mcp-connection")) {
     selectedTab = routeIdentifiers.MCP_CONNECTION;
+  } else if (location.pathname.startsWith("/manage-token")) {
+    selectedTab = routeIdentifiers.MANAGE_TOKEN;
   } else if (location.pathname.startsWith("/templates")) {
     selectedTab = routeIdentifiers.TEMPLATES;
   } else if (location.pathname.startsWith("/tenant-management")) {
@@ -298,6 +305,13 @@ function SideNav({
           },
         ]
       : []),
+    {
+      text: t("manage_token"),
+      icon: <VpnKey />,
+      route: "/manage-token",
+      id: routeIdentifiers.MANAGE_TOKEN,
+      permissionRoutes: [targetUris.m8flowNatsTokensPath],
+    },
     {
       text: t("templates"),
       icon: <Description />,
