@@ -376,5 +376,6 @@
   "manage_token_revoke_confirm_body": "Durch das Widerrufen von „{{label}}“ wird er sofort ungültig. Alle Integrationen, die ihn verwenden, funktionieren nicht mehr. Dies kann nicht rückgängig gemacht werden.",
   "manage_token_your_key_named": "Ihr API-Schlüssel: {{label}}",
   "copy_to_clipboard": "Kopieren",
-  "copied_to_clipboard": "Kopiert!"
+  "copied_to_clipboard": "Kopiert!",
+  "copy_failed": "Kopieren fehlgeschlagen"
 }

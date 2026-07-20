@@ -376,5 +376,6 @@
   "manage_token_revoke_confirm_body": "Avaimen ”{{label}}” mitätöinti tekee siitä välittömästi kelvottoman. Kaikki sitä käyttävät integraatiot lakkaavat toimimasta. Tätä ei voi kumota.",
   "manage_token_your_key_named": "API-avaimesi: {{label}}",
   "copy_to_clipboard": "Kopioi",
-  "copied_to_clipboard": "Kopioitu!"
+  "copied_to_clipboard": "Kopioitu!",
+  "copy_failed": "Kopiointi epäonnistui"
 }
