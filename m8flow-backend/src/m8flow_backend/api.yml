@@ -1972,9 +1972,8 @@ paths:
       description: >
         Returns metadata for all of the tenant's NATS API keys (id, label, scope,
         expiry, last-used and revocation timestamps) WITHOUT ever exposing the key
-        value. Restricted to integrator, viewer, super-admin (read) and tenant-admin
-        (manage).
-      operationId: m8flow_backend.routes.nats_token_controller.get_token
+        value. Restricted to tenant-admin (manage) and super-admin (read).
+      operationId: m8flow_backend.routes.nats_token_controller.list_tokens
       tags:
         - NATS
       responses:

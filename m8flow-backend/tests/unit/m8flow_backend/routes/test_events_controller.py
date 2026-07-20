@@ -83,12 +83,19 @@ def _install_common_mocks(
     return captured
 
 
-def _headers(*, api_key: str | None = API_KEY, process: str | None = None) -> dict:
+def _headers(
+    *,
+    api_key: str | None = API_KEY,
+    process: str | None = None,
+    stream: str | None = None,
+) -> dict:
     headers = {}
     if api_key is not None:
         headers["X-M8FLOW-NATS-API-Key"] = api_key
     if process is not None:
         headers["X-M8FLOW-Process-Identifier"] = process
+    if stream is not None:
+        headers["X-M8FLOW-Stream-Name"] = stream
     return headers
 
 
@@ -219,3 +226,45 @@ def test_process_in_scope_publishes(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert captured["process_identifier"] == "group-a/flow-b"
+
+
+def test_client_stream_name_header_is_ignored(monkeypatch) -> None:
+    """A caller-supplied X-M8FLOW-Stream-Name must never override the configured stream.
+
+    The controller always publishes to nats_events_stream_name(); the header is
+    inert, so an attacker cannot redirect events onto an arbitrary stream.
+    """
+    app = _make_app()
+    captured = _install_common_mocks(monkeypatch)
+
+    with app.test_client() as client:
+        response = client.post(
+            "/v1.0/m8flow/events/m8flow-trigger",
+            headers=_headers(stream="attacker-controlled-stream"),
+            json={"processIdentifier": "group-a/flow-a", "data": {}},
+        )
+
+    assert response.status_code == 200
+    # The configured stream is used, not the header value.
+    assert captured["stream_name"] == "M8FLOW_EVENTS"
+    assert captured["stream_name"] != "attacker-controlled-stream"
+
+
+def test_unresolvable_tenant_slug_returns_400(monkeypatch) -> None:
+    """If the tenant slug cannot be resolved for the key's tenant, return 400."""
+    app = _make_app()
+    _install_common_mocks(monkeypatch)
+    # Override the slug helper to simulate an unresolvable tenant.
+    monkeypatch.setattr(
+        events_controller, "tenant_slug_for_identifier", lambda tenant_id: None
+    )
+
+    with app.test_client() as client:
+        response = client.post(
+            "/v1.0/m8flow/events/m8flow-trigger",
+            headers=_headers(),
+            json={"processIdentifier": "group-a/flow-a", "data": {}},
+        )
+
+    assert response.status_code == 400
+    assert response.get_json()["error_code"] == "tenant_slug_unresolved"

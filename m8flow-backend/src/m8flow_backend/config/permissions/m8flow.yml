@@ -350,12 +350,15 @@ permissions:
     actions: [read]
     uri: /tasks/*
     command: task.read
+  # NATS API key management is tenant-admin only. Read is scoped to the same
+  # audience (plus super-admin for platform visibility) so there is no
+  # read-without-manage confusion.
   read-nats-tokens:
-    groups: ["integrator", "viewer", "super-admin"]
+    groups: ["tenant-admin", "super-admin"]
     actions: [read]
     uri: /m8flow/nats-tokens
   read-nats-tokens-by-id:
-    groups: ["integrator", "viewer", "super-admin"]
+    groups: ["tenant-admin", "super-admin"]
     actions: [read]
     uri: /m8flow/nats-tokens/*
   manage-nats-tokens:
