@@ -26,7 +26,10 @@ for path in (extension_src, backend_src):
 
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel, TenantStatus  # noqa: E402
 from m8flow_backend.models.nats_api_key import M8flowNatsApiKeyModel  # noqa: E402
-from m8flow_backend.services.nats_token_service import NatsTokenService  # noqa: E402
+from m8flow_backend.services.nats_token_service import (  # noqa: E402
+    LAST_USED_STAMP_THROTTLE_SECONDS,
+    NatsTokenService,
+)
 from spiffworkflow_backend.models.db import add_listeners, db  # noqa: E402
 
 SECONDS_PER_DAY = 24 * 60 * 60
@@ -116,6 +119,34 @@ class TestAuthenticateKey:
         NatsTokenService.authenticate_key(raw)
         refreshed = M8flowNatsApiKeyModel.query.filter_by(id=model.id).first()
         assert refreshed.last_used_at_in_seconds is not None
+
+    def test_last_used_not_restamped_within_throttle_window(self, app, tenant):
+        model, raw = NatsTokenService.create_named_key(tenant.id, "alice", "CI")
+        NatsTokenService.authenticate_key(raw)  # first auth stamps last_used
+
+        # Simulate a recent stamp inside the throttle window.
+        recent = int(time.time()) - 5
+        refreshed = M8flowNatsApiKeyModel.query.filter_by(id=model.id).first()
+        refreshed.last_used_at_in_seconds = recent
+        db.session.commit()
+
+        NatsTokenService.authenticate_key(raw)  # within window -> no write
+        again = M8flowNatsApiKeyModel.query.filter_by(id=model.id).first()
+        assert again.last_used_at_in_seconds == recent
+
+    def test_last_used_restamped_after_throttle_window(self, app, tenant):
+        model, raw = NatsTokenService.create_named_key(tenant.id, "alice", "CI")
+        NatsTokenService.authenticate_key(raw)
+
+        # Push the stamp outside the throttle window.
+        stale = int(time.time()) - (LAST_USED_STAMP_THROTTLE_SECONDS + 5)
+        refreshed = M8flowNatsApiKeyModel.query.filter_by(id=model.id).first()
+        refreshed.last_used_at_in_seconds = stale
+        db.session.commit()
+
+        NatsTokenService.authenticate_key(raw)  # past window -> restamped
+        again = M8flowNatsApiKeyModel.query.filter_by(id=model.id).first()
+        assert again.last_used_at_in_seconds > stale
 
     def test_unknown_key_id_returns_none(self, app, tenant):
         assert NatsTokenService.authenticate_key("m8f_deadbeef.whatever") is None

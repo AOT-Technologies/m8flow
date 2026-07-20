@@ -16,6 +16,11 @@ LOGGER = logging.getLogger("m8flow.nats.token_service")
 
 # Raw key format: ``m8f_<id>.<secret>``.
 KEY_PREFIX = "m8f_"
+# Minimum interval between ``last_used_at_in_seconds`` writes for a single key.
+# Auth happens on every webhook call; without throttling that is one DB write per
+# request. Stamping at most once per window keeps last-used useful while avoiding
+# write amplification under load.
+LAST_USED_STAMP_THROTTLE_SECONDS = 60
 # The delimiter separating the public key id from the secret. It is deliberately
 # outside the base64url alphabet used by ``secrets.token_urlsafe``/``token_hex``,
 # so it never appears inside either segment.
@@ -95,11 +100,14 @@ class NatsTokenService:
         try:
             db.session.commit()
             return api_key, raw_key
-        except Exception as e:
+        except Exception:
             db.session.rollback()
+            # Log the underlying DB detail server-side only; never surface it to the
+            # client (it can expose schema/internal details).
+            LOGGER.exception("create_named_key: failed to save NATS API key")
             raise ApiError(
                 error_code="database_error",
-                message=f"Error saving NATS API key: {str(e)}",
+                message="Could not save the NATS API key.",
                 status_code=500,
             )
 
@@ -138,11 +146,14 @@ class NatsTokenService:
         try:
             db.session.commit()
             return True
-        except Exception as e:
+        except Exception:
             db.session.rollback()
+            # Log the underlying DB detail server-side only; never surface it to the
+            # client (it can expose schema/internal details).
+            LOGGER.exception("revoke_key: failed to revoke NATS API key")
             raise ApiError(
                 error_code="database_error",
-                message=f"Error revoking NATS API key: {str(e)}",
+                message="Could not revoke the NATS API key.",
                 status_code=500,
             )
 
@@ -173,7 +184,7 @@ class NatsTokenService:
             return None
 
         if api_key.revoked_at_in_seconds is not None:
-            LOGGER.warning("authenticate_key: key %s is revoked", key_id)
+            LOGGER.warning("authenticate_key: key %s is revoked", api_key.id)
             return None
 
         now = int(time.time())
@@ -181,15 +192,19 @@ class NatsTokenService:
             api_key.expires_at_in_seconds is not None
             and now > api_key.expires_at_in_seconds
         ):
-            LOGGER.warning("authenticate_key: key %s is expired", key_id)
+            LOGGER.warning("authenticate_key: key %s is expired", api_key.id)
             return None
 
-        # Best-effort last-used stamp; never fail auth because the stamp fails.
-        try:
-            api_key.last_used_at_in_seconds = now
-            db.session.commit()
-        except Exception:
-            db.session.rollback()
+        # Best-effort, throttled last-used stamp; never fail auth because the stamp
+        # fails. Only write when unset or the previous stamp is older than the
+        # throttle window, so a busy key does not issue a DB write per request.
+        last_used = api_key.last_used_at_in_seconds
+        if last_used is None or now - last_used >= LAST_USED_STAMP_THROTTLE_SECONDS:
+            try:
+                api_key.last_used_at_in_seconds = now
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
 
         return AuthenticatedKey(
             tenant_id=api_key.m8f_tenant_id,
