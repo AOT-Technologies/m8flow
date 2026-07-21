@@ -1,0 +1,136 @@
+name: m8flow-observability-stack
+
+services:
+  m8flow-obs-minio:
+    container_name: m8flow-obs-minio
+    image: minio/minio:RELEASE.2025-01-20T14-49-07Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${M8FLOW_OBS_MINIO_USER:-m8flow-obs}
+      MINIO_ROOT_PASSWORD: ${M8FLOW_OBS_MINIO_PASSWORD:-m8flow-obs-secret}
+    volumes:
+      - m8flow_obs_minio_data:/data
+    ports:
+      - "${M8FLOW_OBS_MINIO_API_PORT:-6860}:9000"
+      - "${M8FLOW_OBS_MINIO_CONSOLE_PORT:-6861}:9001"
+    networks:
+      - default
+    restart: unless-stopped
+
+  m8flow-loki:
+    container_name: m8flow-loki
+    image: grafana/loki:3.4.2
+    command: ["-config.file=/etc/loki/loki-config.yml"]
+    volumes:
+      - ./observability/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - m8flow_loki_data:/loki
+    ports:
+      - "${M8FLOW_LOKI_PORT:-6862}:3100"
+    networks:
+      - default
+      - m8flow_default
+    restart: unless-stopped
+
+  m8flow-tempo:
+    container_name: m8flow-tempo
+    image: grafana/tempo:2.7.2
+    command: ["-config.file=/etc/tempo/tempo-config.yml"]
+    volumes:
+      - ./observability/tempo/tempo-config.yml:/etc/tempo/tempo-config.yml:ro
+      - m8flow_tempo_data:/var/tempo
+    ports:
+      - "${M8FLOW_TEMPO_PORT:-6863}:3200"
+    networks:
+      - default
+      - m8flow_default
+    restart: unless-stopped
+
+  m8flow-prometheus:
+    container_name: m8flow-prometheus
+    image: prom/prometheus:v3.2.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --web.enable-remote-write-receiver
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - m8flow_prometheus_data:/prometheus
+    ports:
+      - "${M8FLOW_PROMETHEUS_PORT:-6864}:9090"
+    networks:
+      - default
+      - m8flow_default
+    restart: unless-stopped
+
+  m8flow-alloy:
+    container_name: m8flow-alloy
+    image: grafana/alloy:v1.7.5
+    command: ["run", "/etc/alloy/config.alloy", "--storage.path=/var/lib/alloy/data"]
+    volumes:
+      - ./observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - m8flow_alloy_data:/var/lib/alloy/data
+    ports:
+      - "${M8FLOW_ALLOY_OTLP_GRPC_PORT:-4317}:4317"
+      - "${M8FLOW_ALLOY_OTLP_HTTP_PORT:-4318}:4318"
+      - "${M8FLOW_ALLOY_FARO_PORT:-6865}:12347"
+      - "${M8FLOW_ALLOY_SELF_METRICS_PORT:-6866}:12345"
+    networks:
+      - default
+      - m8flow_default
+    depends_on:
+      - m8flow-loki
+      - m8flow-tempo
+      - m8flow-prometheus
+    restart: unless-stopped
+
+  m8flow-cadvisor:
+    container_name: m8flow-cadvisor
+    image: gcr.io/cadvisor/cadvisor:v0.51.0
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    ports:
+      - "${M8FLOW_CADVISOR_PORT:-6867}:8080"
+    networks:
+      - default
+      - m8flow_default
+    restart: unless-stopped
+
+  m8flow-grafana:
+    container_name: m8flow-grafana
+    image: grafana/grafana:11.5.2
+    environment:
+      GF_SECURITY_ADMIN_USER: ${M8FLOW_GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${M8FLOW_GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - m8flow_grafana_data:/var/lib/grafana
+    ports:
+      - "${M8FLOW_GRAFANA_PORT:-6868}:3000"
+    networks:
+      - default
+      - m8flow_default
+    depends_on:
+      - m8flow-loki
+      - m8flow-tempo
+      - m8flow-prometheus
+    restart: unless-stopped
+
+volumes:
+  m8flow_obs_minio_data:
+  m8flow_loki_data:
+  m8flow_tempo_data:
+  m8flow_prometheus_data:
+  m8flow_alloy_data:
+  m8flow_grafana_data:
+
+networks:
+  m8flow_default:
+    external: true

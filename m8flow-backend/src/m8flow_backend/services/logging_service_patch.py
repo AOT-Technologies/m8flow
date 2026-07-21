@@ -117,8 +117,26 @@ def apply() -> None:
         def patched_setup_logger_for_app(app, primary_logger, force_run_with_celery: bool = False) -> None:
             _ORIGINAL_SETUP(app, primary_logger, force_run_with_celery=force_run_with_celery)
             _apply_formatter_to_all_handlers(logging_service.get_log_formatter(app))
+            _ensure_otel_telemetry(app)
 
         logging_service.setup_logger_for_app = patched_setup_logger_for_app  # type: ignore[assignment]
 
     logging_service.get_log_formatter = _get_log_formatter  # type: ignore[assignment]
+
+    _ensure_otel_telemetry()
     _PATCHED = True
+
+
+def _ensure_otel_telemetry(app=None) -> None:
+    try:
+        from m8flow_telemetry.bootstrap import instrument_flask_app, setup
+        from m8flow_telemetry.logging_bridge import record_resolver_from_log_record
+
+        setup(
+            "m8flow-backend",
+            tenant_resolver=record_resolver_from_log_record(_resolve_tenant_id_for_logging),
+        )
+        if app is not None:
+            instrument_flask_app(app)
+    except ImportError:
+        return

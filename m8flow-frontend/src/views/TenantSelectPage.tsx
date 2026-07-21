@@ -18,6 +18,7 @@ import {
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import UserService, { type OrganizationMembership } from '../services/UserService';
 import TenantService from '../services/TenantService';
+import { syncFaroTenantFromCookie } from '../faro';
 import { useConfig } from '../utils/useConfig';
 
 export const M8FLOW_TENANT_STORAGE_KEY = 'm8flow_tenant';
@@ -50,6 +51,7 @@ const rememberSelectedTenant = (organization: OrganizationMembership) => {
   localStorage.setItem(M8FLOW_TENANT_STORAGE_KEY, organization.alias);
   localStorage.setItem('m8f_tenant_id', tenantId);
   document.cookie = `m8flow_selected_tenant=${encodeURIComponent(tenantId)}; Path=/`;
+  syncFaroTenantFromCookie();
   UserService.rememberTenantDisplayName({
     id: organization.id,
     alias: organization.alias,

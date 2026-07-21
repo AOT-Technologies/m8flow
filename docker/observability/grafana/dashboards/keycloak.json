@@ -1,0 +1,140 @@
+{
+  "uid": "keycloak",
+  "title": "Keycloak Overview",
+  "tags": ["m8flow", "keycloak"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 2,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 10,
+      "type": "text",
+      "title": "Scope",
+      "gridPos": { "h": 2, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "**Realm-wide** Keycloak metrics — not tenant/organization-scoped. **HTTP error rate** counts 4xx/5xx from Keycloak's `/metrics` (Micrometer). **Log ERROR** lines (startup, DB, duplicate user, etc.) are separate and appear in the log panel below."
+      }
+    },
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "HTTP request rate",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 2 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(http_server_requests_seconds_count{service_name=\"keycloak\"}[$__rate_interval]))",
+          "legendFormat": "req/s"
+        }
+      ],
+      "options": {},
+      "fieldConfig": { "defaults": {}, "overrides": [] }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "HTTP error rate %",
+      "description": "Share of HTTP requests with Micrometer outcome CLIENT_ERROR or SERVER_ERROR (includes 4xx such as 409). Does not include ERROR log lines that never hit the HTTP metrics layer.",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 2 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * sum(rate(http_server_requests_seconds_count{service_name=\"keycloak\", outcome=~\"CLIENT_ERROR|SERVER_ERROR\"}[$__rate_interval])) / clamp_min(sum(rate(http_server_requests_seconds_count{service_name=\"keycloak\"}[$__rate_interval])), 1e-9)",
+          "legendFormat": "HTTP errors"
+        }
+      ],
+      "options": {},
+      "fieldConfig": { "defaults": { "unit": "percent" }, "overrides": [] }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Keycloak scrape healthy",
+      "description": "1 = Prometheus can scrape Keycloak's management /metrics endpoint.",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 2 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(up{service_name=\"keycloak\"})",
+          "legendFormat": "scrape up"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN" }, "1": { "text": "UP" } } }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "HTTP requests by outcome",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(http_server_requests_seconds_count{service_name=\"keycloak\"}[$__rate_interval]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ],
+      "options": {},
+      "fieldConfig": { "defaults": {}, "overrides": [] }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Log error lines (Loki)",
+      "description": "Count of log lines matching ERROR / Exception — includes startup and admin-init issues not reflected in HTTP error rate.",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 6 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({service_name=\"keycloak\"} |~ \"(?i)(error|exception|failed)\" [$__interval]))",
+          "legendFormat": "error-ish lines",
+          "queryType": "range"
+        }
+      ],
+      "options": {},
+      "fieldConfig": { "defaults": {}, "overrides": [] }
+    },
+    {
+      "id": 5,
+      "type": "logs",
+      "title": "Keycloak logs",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 13 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{service_name=\"keycloak\"}",
+          "queryType": "range"
+        }
+      ],
+      "options": {},
+      "fieldConfig": { "defaults": {}, "overrides": [] }
+    }
+  ],
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "links": [
+    {
+      "title": "Tempo Service Graph",
+      "url": "/a/grafana-explore-app/explore?schemaVersion=1&panes=%7B%22tempo%22:%7B%22datasource%22:%22tempo%22%7D%7D",
+      "type": "link"
+    }
+  ]
+}

@@ -196,6 +196,18 @@ def apply() -> None:
                     exc_info=True,
                 )
 
+        try:
+            from m8flow_telemetry.metrics import (
+                record_process_instance_active_delta,
+                record_process_instance_created,
+            )
+
+            tenant_metric_id = str(tenant_id) if tenant_id else None
+            record_process_instance_created(tenant_metric_id)
+            record_process_instance_active_delta(tenant_metric_id, 1)
+        except ImportError:
+            pass
+
         return process_instance_model, start_config
 
     @classmethod
@@ -252,6 +264,17 @@ def apply() -> None:
 
         ProcessInstanceService.update_form_task_data(processor.process_instance_model, spiff_task, data, user)
         processor.complete_task(spiff_task, human_task, user=user)
+
+        try:
+            from m8flow_telemetry.metrics import record_task_completed
+
+            tenant_metric_id = getattr(processor.process_instance_model, "m8f_tenant_id", None)
+            task_type = getattr(getattr(human_task, "task_type", None), "value", None) or getattr(
+                human_task, "task_type", "unknown"
+            )
+            record_task_completed(str(tenant_metric_id) if tenant_metric_id else None, task_type=str(task_type))
+        except ImportError:
+            pass
 
         if should_queue_process_instance(execution_mode):
             _validate_queued_follow_up_work(processor, handle_error=False)

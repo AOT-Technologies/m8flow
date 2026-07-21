@@ -1,0 +1,159 @@
+{
+  "uid": "m8flow-connector-proxy",
+  "title": "M8Flow Connector Proxy Overview",
+  "tags": ["m8flow", "connector"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 2,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "m8flow_tenant_id",
+        "type": "textbox",
+        "label": "m8flow_tenant_id",
+        "query": "",
+        "current": { "text": "", "value": "" },
+        "options": []
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 10,
+      "type": "text",
+      "title": "Metrics vs logs",
+      "gridPos": { "h": 2, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "**Connector error rate** = failed connector *calls* (domain metric), not HTTP 5xx. **HTTP RED** panels use OTel when exported. Use log panels for stack traces and SMTP/Slack failures."
+      }
+    },
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "HTTP request rate",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 2 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(http_server_request_duration_seconds_count{service_name=\"m8flow-connector-proxy\"}[$__rate_interval]))",
+          "legendFormat": "req/s"
+        }
+      ],
+      "options": {},
+      "fieldConfig": { "defaults": {}, "overrides": [] }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Connector call failure %",
+      "description": "Failed connector_call_total / connector_call_total. Stays 0 if no connector traffic or metrics not exported yet.",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 2 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * sum(rate(connector_call_failure_total[$__rate_interval])) / clamp_min(sum(rate(connector_call_total[$__rate_interval])), 1e-9)",
+          "legendFormat": "failures"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent" }, "overrides": [] },
+      "options": {}
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "HTTP 5xx rate %",
+      "description": "OTel HTTP server 5xx only.",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 2 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * sum(rate(http_server_request_duration_seconds_count{service_name=\"m8flow-connector-proxy\", http_response_status_code=~\"5..\"}[$__rate_interval])) / clamp_min(sum(rate(http_server_request_duration_seconds_count{service_name=\"m8flow-connector-proxy\"}[$__rate_interval])), 1e-9)",
+          "legendFormat": "5xx"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent" }, "overrides": [] },
+      "options": {}
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "p99 connector duration",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 2 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.99, sum(rate(connector_call_duration_milliseconds_bucket[$__rate_interval])) by (le))",
+          "legendFormat": "p99 ms"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "options": {}
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Calls by connector",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (connector) (rate(connector_call_total{m8flow_tenant_id=~\"$m8flow_tenant_id|.*\"}[$__rate_interval]))",
+          "legendFormat": "{{connector}}"
+        }
+      ],
+      "options": {},
+      "fieldConfig": { "defaults": {}, "overrides": [] }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Log error lines",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 6 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({service_name=\"m8flow-connector-proxy\"} |~ \"(?i)(error|exception|traceback)\" [$__interval]))",
+          "legendFormat": "error-ish lines",
+          "queryType": "range"
+        }
+      ],
+      "options": {},
+      "fieldConfig": { "defaults": {}, "overrides": [] }
+    },
+    {
+      "id": 5,
+      "type": "logs",
+      "title": "Connector logs",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 13 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{service_name=\"m8flow-connector-proxy\"}",
+          "queryType": "range"
+        }
+      ],
+      "options": {},
+      "fieldConfig": { "defaults": {}, "overrides": [] }
+    }
+  ],
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "links": [
+    {
+      "title": "Tempo Service Graph",
+      "url": "/a/grafana-explore-app/explore?schemaVersion=1&panes=%7B%22tempo%22:%7B%22datasource%22:%22tempo%22%7D%7D",
+      "type": "link"
+    }
+  ]
+}

@@ -1,0 +1,126 @@
+{
+  "uid": "m8flow-frontend",
+  "title": "M8Flow Frontend (Faro) Overview",
+  "tags": ["m8flow", "frontend"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 2,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "m8flow_tenant_id",
+        "type": "textbox",
+        "label": "m8flow_tenant_id",
+        "query": "",
+        "current": { "text": "", "value": "" },
+        "options": []
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 10,
+      "type": "text",
+      "title": "About logs",
+      "gridPos": { "h": 2, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "**Faro events** use label `telemetry_source=faro` (JSON lines from the browser SDK). **Nginx access logs** for the frontend container are plain text — do not run `| json` on them (that causes `JSONParserErr`). Enable `M8FLOW_FRONTEND_FARO_COLLECTOR_URL=http://localhost:6865/collect` and rebuild/restart the frontend for Faro data."
+      }
+    },
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Error rate",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 2 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(faro_errors_total[$__rate_interval])) or vector(0)",
+          "legendFormat": "errors/s"
+        }
+      ],
+      "options": {},
+      "fieldConfig": { "defaults": {}, "overrides": [] }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Session count",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 2 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(faro_sessions) or vector(0)",
+          "legendFormat": "sessions"
+        }
+      ],
+      "options": {},
+      "fieldConfig": { "defaults": {}, "overrides": [] }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Web Vitals",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 2 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.75, sum(rate(faro_web_vital_bucket[$__rate_interval])) by (le)) or vector(0)",
+          "legendFormat": "p75"
+        }
+      ],
+      "options": {},
+      "fieldConfig": { "defaults": {}, "overrides": [] }
+    },
+    {
+      "id": 4,
+      "type": "logs",
+      "title": "Faro browser events",
+      "description": "Only telemetry from the Faro collector (JSON). Tenant filter applies when user attributes are present.",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 6 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{telemetry_source=\"faro\"} | json | __error__=\"\" | m8flow_tenant_id=~`$m8flow_tenant_id|.*`",
+          "queryType": "range"
+        }
+      ],
+      "options": {},
+      "fieldConfig": { "defaults": {}, "overrides": [] }
+    },
+    {
+      "id": 5,
+      "type": "logs",
+      "title": "Frontend container (nginx) access logs",
+      "description": "Docker stdout from the frontend image — not Faro. Shown without JSON parsing.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{service_name=\"m8flow-frontend\", telemetry_source!=\"faro\"}",
+          "queryType": "range"
+        }
+      ],
+      "options": {},
+      "fieldConfig": { "defaults": {}, "overrides": [] }
+    }
+  ],
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "links": [
+    {
+      "title": "Tempo Service Graph",
+      "url": "/a/grafana-explore-app/explore?schemaVersion=1&panes=%7B%22tempo%22:%7B%22datasource%22:%22tempo%22%7D%7D",
+      "type": "link"
+    }
+  ]
+}

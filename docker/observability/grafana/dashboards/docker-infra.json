@@ -1,0 +1,90 @@
+{
+  "uid": "docker-infra",
+  "title": "Docker / Infra (cAdvisor)",
+  "tags": ["m8flow", "infra"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 2,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 10,
+      "type": "text",
+      "title": "About this dashboard",
+      "gridPos": { "h": 3, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "Container CPU/memory from **cAdvisor**. On Docker Desktop, series are labeled by **container ID suffix** (match with `docker ps -a --format '{{.ID}} {{.Names}}'`). This is host/container resource usage, not application HTTP health."
+      }
+    },
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "CPU cores used by container",
+      "description": "100% ≈ one full CPU core. Values above 100% mean multiple cores in use.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 3 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (short_id) (label_replace(rate(container_cpu_usage_seconds_total{job=\"cadvisor\", id=~\"/docker/[0-9a-f]{64}\"}[$__rate_interval]), \"short_id\", \"$1\", \"id\", \".*/([0-9a-f]{12})$\")) * 100",
+          "legendFormat": "{{short_id}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent" }, "overrides": [] },
+      "options": {}
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Memory by container",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 3 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (short_id) (label_replace(container_memory_usage_bytes{job=\"cadvisor\", id=~\"/docker/[0-9a-f]{64}\"}, \"short_id\", \"$1\", \"id\", \".*/([0-9a-f]{12})$\"))",
+          "legendFormat": "{{short_id}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "options": {}
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "cAdvisor scrape healthy",
+      "description": "1 = Prometheus can scrape cAdvisor (the container metrics collector). This does not mean every app container is healthy.",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 11 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(up{job=~\"cadvisor|prometheus.scrape.cadvisor\"})",
+          "legendFormat": "scrape up"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN" }, "1": { "text": "UP" } } }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {}
+    }
+  ],
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "links": [
+    {
+      "title": "Tempo Service Graph",
+      "url": "/a/grafana-explore-app/explore?schemaVersion=1&panes=%7B%22tempo%22:%7B%22datasource%22:%22tempo%22%7D%7D",
+      "type": "link"
+    }
+  ]
+}
