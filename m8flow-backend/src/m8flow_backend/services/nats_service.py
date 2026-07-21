@@ -1,5 +1,6 @@
 from __future__ import annotations
 import asyncio
+import contextlib
 import json
 import logging
 import uuid
@@ -7,6 +8,12 @@ from m8flow_backend.config import nats_notifications_stream_name
 from m8flow_backend.config import nats_notifications_subject
 from m8flow_backend.config import nats_url
 from spiffworkflow_backend.exceptions.api_error import ApiError
+
+try:
+    from m8flow_telemetry.nats_propagate import inject_trace_context, start_nats_publish_span
+except ImportError:  # pragma: no cover
+    inject_trace_context = None
+    start_nats_publish_span = None
 
 logger = logging.getLogger("m8flow.nats.service")
 
@@ -79,15 +86,29 @@ class NatsService:
         }
 
         try:
-            ack = await js.publish(
-                subject,
-                json.dumps(event_data).encode("utf-8"),
-                headers={
+            headers = inject_trace_context(
+                {
                     "Nats-Msg-Id": event_id,
                     "tenant_slug": tenant_slug,
-                    "stream_name": stream_name,
-                },
+                    "stream_name": stream_name or "",
+                }
+            ) if inject_trace_context else {
+                "Nats-Msg-Id": event_id,
+                "tenant_slug": tenant_slug,
+                "stream_name": stream_name,
+            }
+            publish_ctx = (
+                start_nats_publish_span(subject, tenant_id=tenant_id)
+                if start_nats_publish_span
+                else contextlib.nullcontext()
             )
+
+            with publish_ctx:
+                ack = await js.publish(
+                    subject,
+                    json.dumps(event_data).encode("utf-8"),
+                    headers=headers,
+                )
             logger.info("Published to NATS: subject=%s stream=%s seq=%s", subject, ack.stream, ack.seq)
 
             # Wait for the consumer to reply with process instance details
@@ -147,11 +168,22 @@ class NatsService:
 
             subject = f"m8flow.notifications.{tenant_slug}.external-form"
             message_id = f"extform-{tenant_slug}-{payload.get('process_instance_id')}-{payload.get('task_guid')}"
-            ack = await js.publish(
-                subject,
-                json.dumps(payload).encode("utf-8"),
-                headers={"Nats-Msg-Id": message_id, "tenant_slug": tenant_slug},
+            headers = (
+                inject_trace_context({"Nats-Msg-Id": message_id, "tenant_slug": tenant_slug})
+                if inject_trace_context
+                else {"Nats-Msg-Id": message_id, "tenant_slug": tenant_slug}
             )
+            publish_ctx = (
+                start_nats_publish_span(subject, tenant_id=payload.get("tenant_id"))
+                if start_nats_publish_span
+                else contextlib.nullcontext()
+            )
+            with publish_ctx:
+                ack = await js.publish(
+                    subject,
+                    json.dumps(payload).encode("utf-8"),
+                    headers=headers,
+                )
             logger.info(
                 "Published notification to NATS: subject=%s stream=%s seq=%s", subject, ack.stream, ack.seq
             )

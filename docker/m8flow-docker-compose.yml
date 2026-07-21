@@ -1,5 +1,9 @@
 name: m8flow
 
+x-otel-environment: &otel-environment
+  OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-http://m8flow-alloy:4317}"
+  OTEL_SDK_DISABLED: "${OTEL_SDK_DISABLED:-true}"
+
 services:
   m8flow-db:
     image: postgres:15
@@ -37,8 +41,9 @@ services:
       dockerfile: docker/m8flow.keycloak.Dockerfile
     image: m8flow-keycloak
     pull_policy: never
-    command: ["start-dev", "--import-realm", "--features=organization,token-exchange,admin-fine-grained-authz", "--spi-theme-static-max-age=-1", "--spi-theme-cache-themes=false", "--spi-theme-cache-templates=false"]
+    command: ["start-dev", "--import-realm", "--log-console-output=json", "--features=organization,token-exchange,admin-fine-grained-authz", "--spi-theme-static-max-age=-1", "--spi-theme-cache-themes=false", "--spi-theme-cache-templates=false"]
     environment:
+      KC_METRICS_ENABLED: "true"
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       KC_DB: postgres
@@ -150,6 +155,8 @@ services:
       m8flow-backend:
         condition: service_started
     environment:
+      <<: *otel-environment
+      OTEL_SERVICE_NAME: m8flow-nats-consumer
       M8FLOW_NATS_URL: "nats://${M8FLOW_NATS_USER:-admin}:${M8FLOW_NATS_PASSWORD:-admin}@nats:4222"
       M8FLOW_BACKEND_DATABASE_URI: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
       SPIFFWORKFLOW_BACKEND_DATABASE_URI: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
@@ -185,6 +192,8 @@ services:
       m8flow-backend:
         condition: service_started
     environment:
+      <<: *otel-environment
+      OTEL_SERVICE_NAME: m8flow-nats-notification-worker
       M8FLOW_NATS_URL: "nats://${M8FLOW_NATS_USER:-admin}:${M8FLOW_NATS_PASSWORD:-admin}@nats:4222"
       M8FLOW_BACKEND_DATABASE_URI: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
       SPIFFWORKFLOW_BACKEND_DATABASE_URI: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
@@ -268,9 +277,9 @@ services:
     entrypoint:
       - /bin/sh
       - /smtp_attachments_sync.sh
-      - ${M8FLOW_CONNECTOR_SMTP_ATTACHMENTS_USER_ACCESS_DIR:-/app/data/email_attachments}
+      - /app/data/email_attachments
     volumes:
-      - smtp_attachments:${M8FLOW_CONNECTOR_SMTP_ATTACHMENTS_USER_ACCESS_DIR:-/app/data/email_attachments}
+      - smtp_attachments:/app/data/email_attachments
       - ${M8FLOW_CONNECTOR_SMTP_ATTACHMENTS_DIR:-../data/email_attachments}:/host_attachments:ro
       - ../m8flow-backend/bin/smtp_attachments_sync.sh:/smtp_attachments_sync.sh:ro
     restart: "no"
@@ -281,9 +290,9 @@ services:
     entrypoint:
       - /bin/sh
       - /slack_attachments_sync.sh
-      - ${M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_USER_ACCESS_DIR:-/app/data/slack_attachments}
+      - /app/data/slack_attachments
     volumes:
-      - slack_attachments:${M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_USER_ACCESS_DIR:-/app/data/slack_attachments}
+      - slack_attachments:/app/data/slack_attachments
       - ${M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_DIR:-../data/slack_attachments}:/host_attachments:ro
       - ../m8flow-backend/bin/slack_attachments_sync.sh:/slack_attachments_sync.sh:ro
     restart: "no"
@@ -305,6 +314,8 @@ services:
     user: "0"
     env_file: ../.env
     environment:
+      <<: *otel-environment
+      OTEL_SERVICE_NAME: m8flow-backend
       M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: "${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-/app/data/process_models}"
       M8FLOW_BACKEND_DATABASE_URI: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
       M8FLOW_BACKEND_UPGRADE_DB: "${M8FLOW_BACKEND_UPGRADE_DB:-true}"
@@ -329,6 +340,8 @@ services:
         source: ../data/process_models
         target: /app/data/process_models
       - templates_cache:/app/data/templates
+      # Dev image bakes /app/.env at build time; mount host .env so OTEL and other toggles apply without rebuild.
+      - ../.env:/app/.env:ro
     depends_on:
       m8flow-db:
         condition: service_healthy
@@ -350,6 +363,8 @@ services:
     command: ["bash", "./m8flow-backend/bin/run_m8flow_celery_worker.sh"]
     env_file: ../.env
     environment:
+      <<: *otel-environment
+      OTEL_SERVICE_NAME: m8flow-celery-worker
       M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: "${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-/data/process_models}"
       M8FLOW_BACKEND_DATABASE_URI: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
       M8FLOW_BACKEND_CONNECTOR_PROXY_URL: "http://m8flow-connector-proxy:${CONNECTOR_PROXY_PORT:-6844}"
@@ -370,6 +385,7 @@ services:
       - type: bind
         source: ../data/process_models
         target: /data/process_models
+      - ../.env:/app/.env:ro
     depends_on:
       m8flow-db:
         condition: service_started
@@ -389,6 +405,8 @@ services:
     command: ["bash", "./m8flow-backend/bin/run_m8flow_celery_worker.sh", "flower"]
     env_file: ../.env
     environment:
+      <<: *otel-environment
+      OTEL_SERVICE_NAME: m8flow-celery-flower
       M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: "${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-/data/process_models}"
       M8FLOW_BACKEND_DATABASE_URI: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
       KEYCLOAK_URL: "http://keycloak-proxy:6842"
@@ -442,6 +460,8 @@ services:
       M8FLOW_NATS_UI_URL: "${M8FLOW_NATS_UI_URL:-}"
       # Browser-reachable URL of the m8flow MCP server; leave empty to hide the MCP connection page.
       M8FLOW_MCP_SERVER_URL: "${M8FLOW_MCP_SERVER_URL:-}"
+      M8FLOW_FRONTEND_FARO_COLLECTOR_URL: "${M8FLOW_FRONTEND_FARO_COLLECTOR_URL:-}"
+      M8FLOW_FRONTEND_FARO_TRACING_SAMPLE_RATE: "${M8FLOW_FRONTEND_FARO_TRACING_SAMPLE_RATE:-0.2}"
     ports:
       - "${M8FLOW_FRONTEND_PORT:-6841}:8080"
     depends_on:
@@ -452,18 +472,24 @@ services:
     image: m8flow/m8flow-connector-proxy
     pull_policy: never
     build:
-      context: ../m8flow-connector-proxy
+      context: ..
+      dockerfile: m8flow-connector-proxy/Dockerfile
     env_file: ../.env
+    environment:
+      <<: *otel-environment
+      OTEL_SERVICE_NAME: m8flow-connector-proxy
+      M8FLOW_CONNECTOR_SMTP_ATTACHMENTS_USER_ACCESS_DIR: /app/data/email_attachments
+      M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_USER_ACCESS_DIR: /app/data/slack_attachments
     ports:
       - "${CONNECTOR_PROXY_PORT:-6844}:${CONNECTOR_PROXY_PORT:-6844}/tcp"
     volumes:
       - type: volume
         source: "smtp_attachments"
-        target: "${M8FLOW_CONNECTOR_SMTP_ATTACHMENTS_USER_ACCESS_DIR:-/app/data/email_attachments}"
+        target: /app/data/email_attachments
         read_only: true
       - type: volume
         source: "slack_attachments"
-        target: "${M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_USER_ACCESS_DIR:-/app/data/slack_attachments}"
+        target: /app/data/slack_attachments
         read_only: true
     healthcheck:
       test:

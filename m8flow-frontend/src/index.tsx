@@ -2,6 +2,9 @@ import React from 'react';
 import * as ReactDOMClient from 'react-dom/client';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
 import App from './App';
+import { initFaro } from './faro';
+
+initFaro();
 
 // Import styles and i18n from core
 // Note: These imports use the @spiffworkflow-frontend alias configured in vite.config.ts
