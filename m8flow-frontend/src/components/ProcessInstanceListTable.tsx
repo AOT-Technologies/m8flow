@@ -45,6 +45,16 @@ import {
 } from './ErrorDisplay';
 import SpiffTooltip from './SpiffTooltip';
 
+// Accessors the backend cannot order by (not real ProcessInstanceModel columns
+// and not metadata aliases), so we do not render a sort affordance for them.
+// See generate_order_by_query_array in process_instance_report_service.py.
+const NON_SORTABLE_ACCESSORS = [
+  'tenantName',
+  'waiting_for',
+  'task_title',
+  'process_initiator_username',
+];
+
 type OwnProps = {
   additionalReportFilters?: ReportFilter[];
   autoReload?: boolean;
@@ -87,7 +97,44 @@ export default function ProcessInstanceListTable({
   const navigate = useNavigate();
   const { t } = useTranslation();
   const [pagination, setPagination] = useState<PaginationObject | null>(null);
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Query-param key that holds the active sort token, prefixed the same way as
+  // page/per_page so multiple tables on one page do not collide.
+  const orderByQueryParam = paginationQueryParamPrefix
+    ? `${paginationQueryParamPrefix}_order_by`
+    : 'order_by';
+
+  // Active sort resolved from the URL first (survives refresh / pagination), then
+  // falling back to the report metadata order so a saved report lights up the
+  // correct indicator. A leading '-' means descending.
+  const orderByFromUrl = searchParams.get(orderByQueryParam);
+  const activeOrderByToken =
+    orderByFromUrl ?? reportMetadata?.order_by?.[0] ?? null;
+  const activeSortField = activeOrderByToken
+    ? activeOrderByToken.replace(/^-/, '')
+    : null;
+  const activeSortDirection: 'asc' | 'desc' =
+    activeOrderByToken && activeOrderByToken.startsWith('-') ? 'desc' : 'asc';
+
+  const isColumnSortable = (accessor: string) =>
+    !NON_SORTABLE_ACCESSORS.includes(accessor);
+
+  const handleSort = (accessor: string) => {
+    // First click -> ascending, second click on the same column -> descending.
+    const nextToken =
+      activeSortField === accessor && activeSortDirection === 'asc'
+        ? `-${accessor}`
+        : accessor;
+    const newSearchParams = new URLSearchParams(searchParams);
+    newSearchParams.set(orderByQueryParam, nextToken);
+    // Sorting should return to the first page.
+    const pageParam = paginationQueryParamPrefix
+      ? `${paginationQueryParamPrefix}_page`
+      : 'page';
+    newSearchParams.set(pageParam, '1');
+    setSearchParams(newSearchParams);
+  };
 
   const [processInstances, setProcessInstances] = useState<ProcessInstance[]>(
     [],
@@ -180,6 +227,17 @@ export default function ProcessInstanceListTable({
         });
       }
 
+      // Apply the active sort from the URL (set by clicking a column header) so
+      // the backend orders the displayed dataset. Overrides any order_by that
+      // came in via report metadata.
+      const orderByToken = searchParams.get(orderByQueryParam);
+      if (orderByToken) {
+        reportMetadataToUse = {
+          ...reportMetadataToUse,
+          order_by: [orderByToken],
+        };
+      }
+
       const queryParamString = `per_page=${perPageToUse}&page=${page}`;
       HttpService.makeCallToBackend({
         path: `${processInstanceApiSearchPath}?${queryParamString}`,
@@ -194,6 +252,7 @@ export default function ProcessInstanceListTable({
     },
     [
       additionalReportFilters,
+      orderByQueryParam,
       paginationQueryParamPrefix,
       perPageOptions,
       processInstanceApiSearchPath,
@@ -484,13 +543,14 @@ export default function ProcessInstanceListTable({
   };
 
   const buildTable = () => {
-    const headers = reportColumns().map((column: ReportColumn) => {
+    const headerColumns = reportColumns().map((column: ReportColumn) => {
       const translationKey = column.Header.toLowerCase().replace(/ /g, '_');
-      return t(translationKey, column.Header);
+      return {
+        accessor: column.accessor,
+        label: t(translationKey, column.Header),
+        sortable: isColumnSortable(column.accessor),
+      };
     });
-    if (showActionsColumn) {
-      headers.push(t('action_column'));
-    }
 
     const rows = processInstances.map((processInstance: ProcessInstance) => {
       const currentRow = reportColumns().map((column: ReportColumn) => {
@@ -584,18 +644,40 @@ export default function ProcessInstanceListTable({
         <Table size="medium" {...tableProps} className="process-instance-list">
           <TableHead>
             <TableRow>
-              {headers.map((tableRowHeader: any) => (
-                <TableCell
-                  key={tableRowHeader}
-                  title={
-                    tableRowHeader === 'Id'
-                      ? t('process_id_tooltip')
-                      : undefined
-                  }
-                >
-                  <TableSortLabel>{tableRowHeader}</TableSortLabel>
-                </TableCell>
-              ))}
+              {headerColumns.map((headerColumn) => {
+                const isActive = activeSortField === headerColumn.accessor;
+                return (
+                  <TableCell
+                    key={headerColumn.accessor}
+                    title={
+                      headerColumn.accessor === 'id'
+                        ? t('process_id_tooltip')
+                        : undefined
+                    }
+                    sortDirection={
+                      headerColumn.sortable && isActive
+                        ? activeSortDirection
+                        : false
+                    }
+                  >
+                    {headerColumn.sortable ? (
+                      <TableSortLabel
+                        active={isActive}
+                        direction={isActive ? activeSortDirection : 'asc'}
+                        onClick={() => handleSort(headerColumn.accessor)}
+                        data-testid={`sort-header-${headerColumn.accessor}`}
+                      >
+                        {headerColumn.label}
+                      </TableSortLabel>
+                    ) : (
+                      headerColumn.label
+                    )}
+                  </TableCell>
+                );
+              })}
+              {showActionsColumn ? (
+                <TableCell key="actions-column">{t('action_column')}</TableCell>
+              ) : null}
             </TableRow>
           </TableHead>
           <TableBody>{rows}</TableBody>
