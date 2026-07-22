@@ -14,6 +14,18 @@ on:
         description: "Docker image tag to deploy (e.g. 1.2.3-rc)"
         required: true
         type: string
+      component:
+        description: 'Component to deploy (choose "all" to deploy everything)'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - backend
+          - frontend
+          - keycloak
+          - connector-proxy
+          - mcp
 
 permissions:
   contents: read
@@ -68,7 +80,22 @@ jobs:
         run: |
           TAG="${{ inputs.image_tag }}"
           NAMESPACE="m8flow"
-          REPOS="m8flow-backend m8flow-frontend m8flow-keycloak m8flow-connector-proxy"
+
+          # Explicit mapping: component → Docker Hub repo name.
+          # Avoids silent breakage if any name drifts from the m8flow-<component> convention.
+          case "${{ inputs.component }}" in
+            all)
+              REPOS="m8flow-backend m8flow-frontend m8flow-keycloak m8flow-connector-proxy m8flow-mcp" ;;
+            backend)         REPOS="m8flow-backend" ;;
+            frontend)        REPOS="m8flow-frontend" ;;
+            keycloak)        REPOS="m8flow-keycloak" ;;
+            connector-proxy) REPOS="m8flow-connector-proxy" ;;
+            mcp)             REPOS="m8flow-mcp" ;;
+            *)
+              echo "::error::Unknown component: '${{ inputs.component }}'"
+              exit 1 ;;
+          esac
+
           MISSING=""
           for REPO in $REPOS; do
             URL="https://hub.docker.com/v2/repositories/${NAMESPACE}/${REPO}/tags?page_size=1&name=${TAG}"
@@ -104,26 +131,44 @@ jobs:
       CONNECTOR_PROXY_TASK_DEF_FAMILY: ${{ secrets.CONNECTOR_PROXY_TASK_DEF_FAMILY }}
       CONNECTOR_PROXY_CONTAINER_NAME: ${{ secrets.CONNECTOR_PROXY_CONTAINER_NAME }}
       CONNECTOR_PROXY_SERVICE_NAME: ${{ secrets.CONNECTOR_PROXY_SERVICE_NAME }}
+      MCP_TASK_DEF_FAMILY: ${{ secrets.MCP_TASK_DEF_FAMILY }}
+      MCP_CONTAINER_NAME: ${{ secrets.MCP_CONTAINER_NAME }}
+      MCP_SERVICE_NAME: ${{ secrets.MCP_SERVICE_NAME }}
     steps:
       - name: Validate required environment variables
         shell: bash
         run: |
+          # Always required
           required=(
             AWS_REGION
             ECS_CLUSTER
-            BACKEND_TASK_DEF_FAMILY
-            BACKEND_CONTAINER_NAME
-            BACKEND_SERVICE_NAME
-            FRONTEND_TASK_DEF_FAMILY
-            FRONTEND_CONTAINER_NAME
-            FRONTEND_SERVICE_NAME
-            KEYCLOAK_TASK_DEF_FAMILY
-            KEYCLOAK_CONTAINER_NAME
-            KEYCLOAK_SERVICE_NAME
-            CONNECTOR_PROXY_TASK_DEF_FAMILY
-            CONNECTOR_PROXY_CONTAINER_NAME
-            CONNECTOR_PROXY_SERVICE_NAME
           )
+
+          # Component-specific secrets
+          case "${{ inputs.component }}" in
+            all)
+              required+=(
+                BACKEND_TASK_DEF_FAMILY BACKEND_CONTAINER_NAME BACKEND_SERVICE_NAME
+                FRONTEND_TASK_DEF_FAMILY FRONTEND_CONTAINER_NAME FRONTEND_SERVICE_NAME
+                KEYCLOAK_TASK_DEF_FAMILY KEYCLOAK_CONTAINER_NAME KEYCLOAK_SERVICE_NAME
+                CONNECTOR_PROXY_TASK_DEF_FAMILY CONNECTOR_PROXY_CONTAINER_NAME CONNECTOR_PROXY_SERVICE_NAME
+                MCP_TASK_DEF_FAMILY MCP_CONTAINER_NAME MCP_SERVICE_NAME
+              )
+              ;;
+            backend)
+              required+=(BACKEND_TASK_DEF_FAMILY BACKEND_CONTAINER_NAME BACKEND_SERVICE_NAME) ;;
+            frontend)
+              required+=(FRONTEND_TASK_DEF_FAMILY FRONTEND_CONTAINER_NAME FRONTEND_SERVICE_NAME) ;;
+            keycloak)
+              required+=(KEYCLOAK_TASK_DEF_FAMILY KEYCLOAK_CONTAINER_NAME KEYCLOAK_SERVICE_NAME) ;;
+            connector-proxy)
+              required+=(CONNECTOR_PROXY_TASK_DEF_FAMILY CONNECTOR_PROXY_CONTAINER_NAME CONNECTOR_PROXY_SERVICE_NAME) ;;
+            mcp)
+              required+=(MCP_TASK_DEF_FAMILY MCP_CONTAINER_NAME MCP_SERVICE_NAME) ;;
+            *)
+              echo "::error::Unknown component: '${{ inputs.component }}'. Valid values: all, backend, frontend, keycloak, connector-proxy, mcp"
+              exit 1 ;;
+          esac
 
           missing=()
           for key in "${required[@]}"; do
@@ -146,6 +191,7 @@ jobs:
       # Backend
       - name: Render backend task definition
         id: render-backend
+        if: ${{ inputs.component == 'all' || inputs.component == 'backend' }}
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition-family: ${{ env.BACKEND_TASK_DEF_FAMILY }}
@@ -153,6 +199,7 @@ jobs:
           image: ${{ env.IMAGE_BASE }}-backend:${{ inputs.image_tag }}
 
       - name: Deploy backend to ECS
+        if: ${{ inputs.component == 'all' || inputs.component == 'backend' }}
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           task-definition: ${{ steps.render-backend.outputs.task-definition }}
@@ -163,6 +210,7 @@ jobs:
       # Frontend
       - name: Render frontend task definition
         id: render-frontend
+        if: ${{ inputs.component == 'all' || inputs.component == 'frontend' }}
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition-family: ${{ env.FRONTEND_TASK_DEF_FAMILY }}
@@ -170,6 +218,7 @@ jobs:
           image: ${{ env.IMAGE_BASE }}-frontend:${{ inputs.image_tag }}
 
       - name: Deploy frontend to ECS
+        if: ${{ inputs.component == 'all' || inputs.component == 'frontend' }}
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           task-definition: ${{ steps.render-frontend.outputs.task-definition }}
@@ -180,6 +229,7 @@ jobs:
       # Keycloak
       - name: Render keycloak task definition
         id: render-keycloak
+        if: ${{ inputs.component == 'all' || inputs.component == 'keycloak' }}
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition-family: ${{ env.KEYCLOAK_TASK_DEF_FAMILY }}
@@ -187,6 +237,7 @@ jobs:
           image: ${{ env.IMAGE_BASE }}-keycloak:${{ inputs.image_tag }}
 
       - name: Deploy keycloak to ECS
+        if: ${{ inputs.component == 'all' || inputs.component == 'keycloak' }}
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           task-definition: ${{ steps.render-keycloak.outputs.task-definition }}
@@ -197,6 +248,7 @@ jobs:
       # Connector Proxy
       - name: Render connector-proxy task definition
         id: render-connector-proxy
+        if: ${{ inputs.component == 'all' || inputs.component == 'connector-proxy' }}
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition-family: ${{ env.CONNECTOR_PROXY_TASK_DEF_FAMILY }}
@@ -204,10 +256,30 @@ jobs:
           image: ${{ env.IMAGE_BASE }}-connector-proxy:${{ inputs.image_tag }}
 
       - name: Deploy connector-proxy to ECS
+        if: ${{ inputs.component == 'all' || inputs.component == 'connector-proxy' }}
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           task-definition: ${{ steps.render-connector-proxy.outputs.task-definition }}
           service: ${{ env.CONNECTOR_PROXY_SERVICE_NAME }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          force-new-deployment: true
+
+      # MCP Server
+      - name: Render mcp task definition
+        id: render-mcp
+        if: ${{ inputs.component == 'all' || inputs.component == 'mcp' }}
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition-family: ${{ env.MCP_TASK_DEF_FAMILY }}
+          container-name: ${{ env.MCP_CONTAINER_NAME }}
+          image: ${{ env.IMAGE_BASE }}-mcp:${{ inputs.image_tag }}
+
+      - name: Deploy mcp to ECS
+        if: ${{ inputs.component == 'all' || inputs.component == 'mcp' }}
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-mcp.outputs.task-definition }}
+          service: ${{ env.MCP_SERVICE_NAME }}
           cluster: ${{ env.ECS_CLUSTER }}
           force-new-deployment: true
 
@@ -228,6 +300,7 @@ jobs:
           echo "| Field       | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|-------------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| Environment | \`${ENV}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Component   | \`${{ inputs.component }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Image Tag   | \`${TAG}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Status      | **${DEPLOY_STATUS}** |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
