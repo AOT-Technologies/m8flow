@@ -114,6 +114,14 @@ export default defineConfig({
     host,
     port,
   },
+  optimizeDeps: {
+    // Force pre-bundling of CommonJS deps that leak through raw-served source.
+    // `bpmn-js-spiffworkflow` ships as raw source and imports `@bpmn-io/properties-panel`,
+    // which in turn does `import classnames from 'classnames'`. Served un-optimized, Vite
+    // hands the browser raw CJS `classnames` (no ESM `default` export), breaking local dev
+    // with: "does not provide an export named 'default'". Pre-bundling converts CJS->ESM.
+    include: ['classnames', '@bpmn-io/properties-panel'],
+  },
   resolve: {
     alias: [
       // -- m8flow component overrides (must come BEFORE generic @spiffworkflow-frontend alias) --
