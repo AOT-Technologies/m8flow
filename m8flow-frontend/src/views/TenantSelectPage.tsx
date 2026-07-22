@@ -13,6 +13,7 @@ import {
   Button,
   Container,
   Stack,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -281,18 +282,56 @@ export default function TenantSelectPage() {
           {t("multi_tenant_choose_description")}
         </Typography>
         <Stack spacing={2}>
-          {organizations.map((organization) => (
-            <Button
-              key={organization.alias}
-              variant="outlined"
-              onClick={() => finalizeTenantLogin(organization)}
-              data-testid={`organization-option-${organization.alias}`}
-              sx={{ justifyContent: 'space-between', textTransform: 'none' }}
-            >
-              <span>{organization.name || organization.alias}</span>
-              <span>{organization.alias}</span>
-            </Button>
-          ))}
+          {organizations.map((organization) => {
+            const displayName = organization.name || organization.alias;
+            const showAlias = displayName !== organization.alias;
+            return (
+              <Tooltip
+                key={organization.alias}
+                title={showAlias ? `${displayName} (${organization.alias})` : displayName}
+                placement="top"
+                enterDelay={500}
+                enterNextDelay={300}
+              >
+                <Button
+                  variant="outlined"
+                  onClick={() => finalizeTenantLogin(organization)}
+                  data-testid={`organization-option-${organization.alias}`}
+                  sx={{
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: 2,
+                    textTransform: 'none',
+                    textAlign: 'left',
+                    py: 1.25,
+                  }}
+                >
+                  <Typography
+                    component="span"
+                    noWrap
+                    sx={{ fontWeight: 600, minWidth: 0, flex: '1 1 auto' }}
+                  >
+                    {displayName}
+                  </Typography>
+                  {showAlias && (
+                    <Typography
+                      component="span"
+                      variant="body2"
+                      noWrap
+                      sx={{
+                        color: 'text.secondary',
+                        minWidth: 0,
+                        maxWidth: '45%',
+                        flex: '0 1 auto',
+                      }}
+                    >
+                      {organization.alias}
+                    </Typography>
+                  )}
+                </Button>
+              </Tooltip>
+            );
+          })}
         </Stack>
       </Box>
     </Container>
