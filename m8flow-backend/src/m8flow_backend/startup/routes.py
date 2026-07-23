@@ -15,15 +15,21 @@ def register_root_route(app) -> None:
     from m8flow_backend.routes.root_controller import root
 
     rules = [("/", "m8flow_root")]
-    wsgi_path_prefix = (os.environ.get("SPIFFWORKFLOW_BACKEND_WSGI_PATH_PREFIX") or "").strip()
-    if wsgi_path_prefix and wsgi_path_prefix != "/":
-        rules.append((f"{wsgi_path_prefix.rstrip('/')}/", "m8flow_root_prefixed"))
+    # Normalize the WSGI prefix: strip whitespace and trailing slashes so values
+    # like "/", "//", or "/api/" cannot produce a duplicate or malformed rule.
+    wsgi_path_prefix = (os.environ.get("SPIFFWORKFLOW_BACKEND_WSGI_PATH_PREFIX") or "").strip().rstrip("/")
+    if wsgi_path_prefix:
+        if not wsgi_path_prefix.startswith("/"):
+            wsgi_path_prefix = f"/{wsgi_path_prefix}"
+        rules.append((f"{wsgi_path_prefix}/", "m8flow_root_prefixed"))
 
     for rule, endpoint in rules:
-        try:
-            app.add_url_rule(rule, endpoint, root, methods=["GET"])
-        except Exception:
-            logger.warning("Failed to register root route %s – may already exist", rule, exc_info=True)
+        # Idempotency is handled explicitly; any other registration error is a
+        # real startup problem and must propagate loudly.
+        if endpoint in app.view_functions:
+            logger.debug("Root route %s (endpoint %s) already registered; skipping.", rule, endpoint)
+            continue
+        app.add_url_rule(rule, endpoint, root, methods=["GET"])
 
 def register_template_file_fallback_routes(app) -> None:
     from m8flow_backend.routes.templates_controller import template_put_file, template_delete_file
