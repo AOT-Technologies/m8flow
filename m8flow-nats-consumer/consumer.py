@@ -248,17 +248,36 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
                 with flask_app.app_context():
                     token = set_context_tenant_id(tenant_id)
                     try:
-                        return NatsTokenService.verify_token(tenant_id, api_key)
+                        return NatsTokenService.authenticate_key(api_key)
                     finally:
                         reset_context_tenant_id(token)
 
-            is_valid = await asyncio.to_thread(_verify)
-            if not is_valid:
+            authenticated = await asyncio.to_thread(_verify)
+            if authenticated is None:
+                # Missing / malformed / unknown / expired / revoked key.
                 raise ValueError(f"Rejecting event: Invalid api_key for tenant {tenant_id}")
+
+            if authenticated.tenant_id != tenant_id:
+                # The key belongs to a different tenant than the event claims.
+                raise ValueError(
+                    f"Rejecting event: api_key tenant {authenticated.tenant_id} does not match event tenant {tenant_id}"
+                )
+
+            def _scope_allows():
+                from m8flow_backend.services.nats_token_service import NatsTokenService
+                return NatsTokenService.scope_allows(authenticated.scope, process_identifier)
+
+            # Defense in depth: the publish path already enforces scope, but re-check here so a
+            # scoped key can never trigger a process outside its allow-list.
+            if not await asyncio.to_thread(_scope_allows):
+                raise ValueError(
+                    f"Rejecting event: api_key not scoped for process {process_identifier}"
+                )
 
             if event_id and tenant_id:
                 dedup_key = await check_idempotency(kv, tenant_id, event_id)
                 if dedup_key is None:
+                    # Duplicate event, already logged in check_idempotency
                     await msg.ack()
                     return
             else:
@@ -279,6 +298,7 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
             )
             await msg.ack()
 
+            # Reply to the publisher with process instance details
             if reply_to:
                 try:
                     await nc.publish(reply_to, json.dumps(instance_id).encode("utf-8"))

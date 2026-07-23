@@ -190,6 +190,12 @@ def nats_enabled() -> bool:
     return (_get("M8FLOW_NATS_ENABLED") or "false").lower() == "true"
 
 
+def nats_events_stream_name() -> str:
+    """JetStream stream for external trigger events published by the
+    m8flow-trigger webhook."""
+    return _get("M8FLOW_NATS_EVENTS_STREAM_NAME") or "M8FLOW_EVENTS"
+
+
 def nats_notifications_stream_name() -> str:
     """JetStream stream for notification events — separate from the
     trigger stream so the engine consumer never receives notification traffic."""
