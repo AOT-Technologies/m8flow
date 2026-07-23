@@ -62,6 +62,7 @@ const ProcessModelShowWithSaveAsTemplate = lazy(
 const ConnectorsPage = lazy(() => import('./views/Connectors'));
 const ConnectorConfigurePage = lazy(() => import('./views/ConnectorConfigure'));
 const McpConnectionPage = lazy(() => import('./views/McpConnection'));
+const ManageTokenPage = lazy(() => import('./views/ManageToken'));
 const MonitoringCeleryPage = lazy(() => import('./views/MonitoringCeleryPage'));
 const MonitoringNatsPage = lazy(() => import('./views/MonitoringNatsPage'));
 const ExternalFormAwareTaskShow = lazy(
@@ -582,6 +583,8 @@ export default function ContainerForExtensions() {
           {MCP_CONNECTION_ENABLED && (
             <Route path="mcp-connection" element={<McpConnectionPage />} />
           )}
+          {/* M8Flow Extension: API token management. Self-guards on the nats-tokens permission. */}
+          <Route path="manage-token" element={<ManageTokenPage />} />
           <Route
             path="process-models/:process_model_id"
             element={<ProcessModelShowWithSaveAsTemplate />}
