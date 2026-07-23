@@ -121,6 +121,29 @@ def test_register_root_route_registers_wsgi_prefixed_variant(monkeypatch) -> Non
     assert response.get_json()["docs"] == "/v1.0/ui/"
 
 
+def test_register_root_route_normalizes_prefix_without_leading_slash(monkeypatch) -> None:
+    monkeypatch.setenv("SPIFFWORKFLOW_BACKEND_WSGI_PATH_PREFIX", "api")
+    app = Flask(__name__)
+    app.config["TESTING"] = True
+
+    register_root_route(app)
+
+    rules = {rule.rule for rule in app.url_map.iter_rules()}
+    assert "/api/" in rules
+
+
+def test_register_root_route_skips_prefix_variant_for_root_like_prefixes(monkeypatch) -> None:
+    for degenerate_prefix in ("/", "//", "   ", "  /  "):
+        monkeypatch.setenv("SPIFFWORKFLOW_BACKEND_WSGI_PATH_PREFIX", degenerate_prefix)
+        app = Flask(__name__)
+        app.config["TESTING"] = True
+
+        register_root_route(app)
+
+        assert "m8flow_root" in app.view_functions
+        assert "m8flow_root_prefixed" not in app.view_functions
+
+
 def test_register_root_route_is_idempotent() -> None:
     app = _make_app()
 

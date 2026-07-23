@@ -137,6 +137,7 @@ def root() -> Response:
     api_prefix = _api_path_prefix()
     swagger_ui_url = f"{api_prefix}/ui/"
     ping_url = f"{api_prefix}/ping"
+    openapi_url = f"{api_prefix}/openapi.json"
     status_url = f"{api_prefix}/status"
 
     if _request_prefers_html():
@@ -150,6 +151,7 @@ def root() -> Response:
         "name": "m8flow-backend",
         "message": "M8Flow backend API is running.",
         "docs": swagger_ui_url,
+        "openapi": openapi_url,
         "health": ping_url,
         "status": status_url,
     }
