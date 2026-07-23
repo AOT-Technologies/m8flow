@@ -16,6 +16,32 @@ services:
     networks:
       - default
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  # One-shot: creates the buckets Loki/Tempo need on the dedicated MinIO
+  # above. Loki/Tempo don't auto-create S3 buckets on first write.
+  m8flow-obs-minio-init:
+    container_name: m8flow-obs-minio-init
+    image: minio/mc:RELEASE.2025-01-17T23-25-50Z
+    depends_on:
+      m8flow-obs-minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${M8FLOW_OBS_MINIO_USER:-m8flow-obs}
+      MINIO_ROOT_PASSWORD: ${M8FLOW_OBS_MINIO_PASSWORD:-m8flow-obs-secret}
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set obsminio http://m8flow-obs-minio:9000 \"$$MINIO_ROOT_USER\" \"$$MINIO_ROOT_PASSWORD\" &&
+      mc mb --ignore-existing obsminio/loki-data &&
+      mc mb --ignore-existing obsminio/tempo-traces
+      "
+    networks:
+      - default
+    restart: "no"
 
   m8flow-loki:
     container_name: m8flow-loki
@@ -29,6 +55,9 @@ services:
     networks:
       - default
       - m8flow_default
+    depends_on:
+      m8flow-obs-minio-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   m8flow-tempo:
@@ -43,6 +72,9 @@ services:
     networks:
       - default
       - m8flow_default
+    depends_on:
+      m8flow-obs-minio-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   m8flow-prometheus:

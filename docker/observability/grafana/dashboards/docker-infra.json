@@ -29,7 +29,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (short_id) (label_replace(rate(container_cpu_usage_seconds_total{job=\"cadvisor\", id=~\"/docker/[0-9a-f]{64}\"}[$__rate_interval]), \"short_id\", \"$1\", \"id\", \".*/([0-9a-f]{12})$\")) * 100",
+          "expr": "sum by (short_id) (label_replace(rate(container_cpu_usage_seconds_total{job=\"prometheus.scrape.cadvisor\", id=~\"/docker/[0-9a-f]{64}\"}[$__rate_interval]), \"short_id\", \"$1\", \"id\", \"/docker/([0-9a-f]{12}).*\")) * 100",
           "legendFormat": "{{short_id}}"
         }
       ],
@@ -45,7 +45,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (short_id) (label_replace(container_memory_usage_bytes{job=\"cadvisor\", id=~\"/docker/[0-9a-f]{64}\"}, \"short_id\", \"$1\", \"id\", \".*/([0-9a-f]{12})$\"))",
+          "expr": "sum by (short_id) (label_replace(container_memory_usage_bytes{job=\"prometheus.scrape.cadvisor\", id=~\"/docker/[0-9a-f]{64}\"}, \"short_id\", \"$1\", \"id\", \"/docker/([0-9a-f]{12}).*\"))",
           "legendFormat": "{{short_id}}"
         }
       ],
@@ -56,13 +56,13 @@
       "id": 3,
       "type": "stat",
       "title": "cAdvisor scrape healthy",
-      "description": "1 = Prometheus can scrape cAdvisor (the container metrics collector). This does not mean every app container is healthy.",
+      "description": "1 = Alloy can scrape cAdvisor (the container metrics collector) and forward it to Prometheus. This does not mean every app container is healthy.",
       "gridPos": { "h": 4, "w": 6, "x": 0, "y": 11 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
           "refId": "A",
-          "expr": "max(up{job=~\"cadvisor|prometheus.scrape.cadvisor\"})",
+          "expr": "max(up{job=\"prometheus.scrape.cadvisor\"})",
           "legendFormat": "scrape up"
         }
       ],

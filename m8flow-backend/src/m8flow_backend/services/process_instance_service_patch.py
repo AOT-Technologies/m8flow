@@ -124,6 +124,8 @@ def apply() -> None:
     original_create_process_instance = ProcessInstanceService.create_process_instance
     original_spiff_task_to_api_task = getattr(ProcessInstanceService, "spiff_task_to_api_task", None)
     original_update_form_task_data = ProcessInstanceService.update_form_task_data
+    original_schedule_next_process_model_cycle = ProcessInstanceService.schedule_next_process_model_cycle
+    original_terminate = getattr(ProcessInstanceProcessor, "terminate", None)
 
     @classmethod  # type: ignore[misc]
     def patched_create_process_instance(cls, process_model, user, start_configuration=None, load_bpmn_process_model: bool = True):
@@ -289,6 +291,38 @@ def apply() -> None:
             processor.do_engine_steps(save=True, execution_strategy_name=execution_strategy_name)
 
     @classmethod
+    def patched_schedule_next_process_model_cycle(cls, process_instance_model) -> None:
+        # ProcessInstanceProcessor.save() invokes this as the workflow_completed_handler
+        # exactly once, at the moment a process instance transitions to completed —
+        # the only central hook point across every call site that constructs a
+        # ProcessInstanceProcessor with this handler.
+        original_schedule_next_process_model_cycle(process_instance_model)
+
+        try:
+            from m8flow_telemetry.metrics import record_process_instance_terminal
+
+            tenant_metric_id = getattr(process_instance_model, "m8f_tenant_id", None)
+            record_process_instance_terminal(
+                str(tenant_metric_id) if tenant_metric_id else None, outcome="completed"
+            )
+        except ImportError:
+            pass
+
+    def patched_terminate(self) -> None:
+        if callable(original_terminate):
+            original_terminate(self)
+
+        try:
+            from m8flow_telemetry.metrics import record_process_instance_terminal
+
+            tenant_metric_id = getattr(self.process_instance_model, "m8f_tenant_id", None)
+            record_process_instance_terminal(
+                str(tenant_metric_id) if tenant_metric_id else None, outcome="terminated"
+            )
+        except ImportError:
+            pass
+
+    @classmethod
     def patched_run_process_instance_with_processor(
         cls,
         process_instance,
@@ -426,4 +460,6 @@ def apply() -> None:
     ProcessInstanceService.spiff_task_to_api_task = patched_spiff_task_to_api_task
     ProcessInstanceService.update_form_task_data = patched_update_form_task_data
     ProcessInstanceService.run_process_instance_with_processor = patched_run_process_instance_with_processor
+    ProcessInstanceService.schedule_next_process_model_cycle = patched_schedule_next_process_model_cycle
+    ProcessInstanceProcessor.terminate = patched_terminate
     _PATCHED = True

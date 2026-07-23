@@ -172,7 +172,9 @@ async def main() -> None:
 
     logger.info("Initializing M8Flow core application context...")
     from m8flow_backend.app import app as asgi_app
-    flask_app = asgi_app.app.app
+    flask_app = asgi_app.app
+    while not hasattr(flask_app, "app_context"):
+        flask_app = flask_app.app
 
     logger.info("Starting M8Flow notification worker...")
     nc = NATS()

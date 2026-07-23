@@ -34,7 +34,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "nats_consumer_pending or vector(0)",
+          "expr": "nats_consumer_lag or vector(0)",
           "legendFormat": "{{job}}"
         }
       ],
@@ -62,7 +62,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(nats_message_processed_total[$__rate_interval])) or vector(0)",
+          "expr": "sum(rate(nats_consumer_processing_duration_milliseconds_count[$__rate_interval])) or vector(0)",
           "legendFormat": "{{job}}"
         }
       ],
@@ -89,7 +89,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "100 * (sum(rate(nats_message_failure_total[$__rate_interval])) or vector(0)) / clamp_min(sum(rate(nats_message_processed_total[$__rate_interval])) or vector(1), 1)",
+          "expr": "100 * (sum(rate(nats_consumer_processing_failures_total[$__rate_interval])) or vector(0)) / clamp_min(sum(rate(nats_consumer_processing_duration_milliseconds_count[$__rate_interval])) or vector(1), 1)",
           "legendFormat": "{{job}}"
         }
       ],
@@ -116,7 +116,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "nats_consumer_pending or vector(0)",
+          "expr": "nats_consumer_lag or vector(0)",
           "legendFormat": "{{job}}"
         }
       ],
@@ -143,7 +143,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{service_name=\"m8flow-nats-consumer\"} | json",
+          "expr": "{service_name=\"m8flow-nats-consumer\"}",
           "queryType": "range"
         }
       ],

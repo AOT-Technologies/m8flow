@@ -95,7 +95,7 @@ class NatsService:
             ) if inject_trace_context else {
                 "Nats-Msg-Id": event_id,
                 "tenant_slug": tenant_slug,
-                "stream_name": stream_name,
+                "stream_name": stream_name or "",
             }
             publish_ctx = (
                 start_nats_publish_span(subject, tenant_id=tenant_id)

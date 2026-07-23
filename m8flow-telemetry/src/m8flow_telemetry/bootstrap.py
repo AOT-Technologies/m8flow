@@ -32,13 +32,14 @@ def _env_truthy(name: str) -> bool:
 
 
 def _otlp_endpoint() -> str | None:
-    endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "").strip()
-    if endpoint:
-        return endpoint
     if _env_truthy("OTEL_SDK_DISABLED"):
         return None
-    # Default when observability stack is running on the shared docker network.
-    return os.getenv("M8FLOW_OTEL_EXPORTER_OTLP_ENDPOINT", "http://m8flow-alloy:4317")
+    # No implicit default endpoint: telemetry must be opt-in via an explicit
+    # OTEL_EXPORTER_OTLP_ENDPOINT (as sample.env always sets, alongside
+    # OTEL_SDK_DISABLED). Environments that source neither (bare `pytest`
+    # runs, CI, ad-hoc scripts) must stay fully inert rather than silently
+    # instrumenting Flask/Requests/HTTPX and exporting to a guessed host.
+    return os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "").strip() or None
 
 
 def is_telemetry_enabled() -> bool:
@@ -117,19 +118,35 @@ def setup(
     return True
 
 
-def instrument_flask_app(app: Any) -> None:
+def instrument_flask_app(app: Any, *, suppress_metrics: bool = False) -> None:
+    """Instrument a Flask app for tracing (+ metrics, unless suppress_metrics).
+
+    suppress_metrics=True is for services that also wrap an outer ASGI layer
+    with instrument_asgi_app() (currently just m8flow-backend) — that outer
+    layer becomes the canonical http.server.* metrics source, since it covers
+    the whole request including middleware Flask never sees, and recording
+    metrics at both layers double-counts every request. Standalone Flask/WSGI
+    services with no ASGI layer (e.g. m8flow-connector-proxy) must keep the
+    default False, or they lose their only source of baseline RED metrics.
+    """
     if not is_telemetry_enabled():
         return
     try:
         from opentelemetry.instrumentation.flask import FlaskInstrumentor
         from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
         from opentelemetry.instrumentation.requests import RequestsInstrumentor
-        from opentelemetry.instrumentation.wsgi import WSGIInstrumentor
     except ImportError:
         return
 
-    FlaskInstrumentor().instrument_app(app)
-    WSGIInstrumentor().instrument()
+    # FlaskInstrumentor covers the WSGI layer for Flask apps on its own; there is
+    # no separate WSGIInstrumentor class (opentelemetry-instrumentation-wsgi only
+    # exposes the OpenTelemetryMiddleware class, for use with non-Flask WSGI apps).
+    meter_provider = None
+    if suppress_metrics:
+        from opentelemetry.metrics import NoOpMeterProvider
+
+        meter_provider = NoOpMeterProvider()
+    FlaskInstrumentor().instrument_app(app, meter_provider=meter_provider)
     RequestsInstrumentor().instrument()
     HTTPXClientInstrumentor().instrument()
 

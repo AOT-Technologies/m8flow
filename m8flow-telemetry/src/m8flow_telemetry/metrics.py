@@ -105,7 +105,7 @@ class DomainMetrics:
             "nats.consumer.processing.failures",
             description="NATS message processing failures",
         )
-        self.nats_consumer_lag = meter.create_up_down_counter(
+        self.nats_consumer_lag = meter.create_gauge(
             "nats.consumer.lag",
             description="JetStream pending messages for consumer",
         )
@@ -205,4 +205,4 @@ def set_nats_consumer_lag(pending: int) -> None:
     domain_metrics._ensure_nats()
     if domain_metrics.nats_consumer_lag is None:
         return
-    domain_metrics.nats_consumer_lag.add(pending, {})
+    domain_metrics.nats_consumer_lag.set(pending, {})

@@ -34,12 +34,13 @@
       "id": 1,
       "type": "stat",
       "title": "Error rate",
+      "description": "Faro exception events (browser errors) per second. Computed directly from the Faro JSON logs via LogQL — Alloy's faro.receiver only emits logs and traces, never Prometheus metrics, so there is no faro_errors_total (or any faro_* metric) to query.",
       "gridPos": { "h": 4, "w": 4, "x": 0, "y": 2 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(faro_errors_total[$__rate_interval])) or vector(0)",
+          "expr": "sum(rate({telemetry_source=\"faro\"} | json | kind=\"exception\" [$__rate_interval])) or vector(0)",
           "legendFormat": "errors/s"
         }
       ],
@@ -50,12 +51,13 @@
       "id": 2,
       "type": "stat",
       "title": "Session count",
+      "description": "Distinct Faro session_id values seen in the selected time range. Computed from Faro JSON logs via LogQL (see Error rate panel note).",
       "gridPos": { "h": 4, "w": 4, "x": 4, "y": 2 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(faro_sessions) or vector(0)",
+          "expr": "count(count by (session_id) (count_over_time({telemetry_source=\"faro\"} | json [$__range]))) or vector(0)",
           "legendFormat": "sessions"
         }
       ],
@@ -65,18 +67,19 @@
     {
       "id": 3,
       "type": "stat",
-      "title": "Web Vitals",
+      "title": "Web Vitals: LCP p75",
+      "description": "p75 Largest Contentful Paint (ms) from Faro web-vitals measurements, via LogQL unwrap + quantile_over_time (see Error rate panel note). Picked LCP specifically since other vitals (CLS, INP, etc.) use different units and can't be quantiled together meaningfully.",
       "gridPos": { "h": 4, "w": 4, "x": 8, "y": 2 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.75, sum(rate(faro_web_vital_bucket[$__rate_interval])) by (le)) or vector(0)",
+          "expr": "quantile_over_time(0.75, {telemetry_source=\"faro\"} | json | kind=\"measurement\" | unwrap value_LCP [$__range]) or vector(0)",
           "legendFormat": "p75"
         }
       ],
       "options": {},
-      "fieldConfig": { "defaults": {}, "overrides": [] }
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] }
     },
     {
       "id": 4,
@@ -88,7 +91,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{telemetry_source=\"faro\"} | json | __error__=\"\" | m8flow_tenant_id=~`$m8flow_tenant_id|.*`",
+          "expr": "{telemetry_source=\"faro\"} | json | __error__=\"\" | user_attr_m8flow_tenant_id=~`$m8flow_tenant_id|.*`",
           "queryType": "range"
         }
       ],

@@ -2,7 +2,7 @@ import os
 import time
 
 from spiffworkflow_proxy.blueprint import proxy_blueprint
-from flask import Flask, g, request
+from flask import Flask, g, has_app_context, request
 
 app = Flask(__name__)
 app.config.from_pyfile("config.py", silent=True)
@@ -13,12 +13,23 @@ if app.config.get("ENV", "development") != "production":
 record_connector_call = None
 _telemetry_set_tenant = None
 
+
+def _resolve_connector_tenant_id() -> str | None:
+    # The OTel log processor/filter can fire outside any Flask app or request
+    # context (e.g. startup-time logging) — touching `g` there raises
+    # RuntimeError, which getattr(..., default) does NOT swallow (it only
+    # catches AttributeError), so this must check has_app_context() first.
+    if not has_app_context():
+        return None
+    return getattr(g, "m8flow_tenant_id", None)
+
+
 try:
     from m8flow_telemetry.bootstrap import instrument_flask_app, setup
     from m8flow_telemetry.context import set_tenant_id as _telemetry_set_tenant
     from m8flow_telemetry.metrics import record_connector_call as _record_connector_call
 
-    setup("m8flow-connector-proxy", tenant_resolver=lambda: getattr(g, "m8flow_tenant_id", None))
+    setup("m8flow-connector-proxy", tenant_resolver=_resolve_connector_tenant_id)
     instrument_flask_app(app)
     record_connector_call = _record_connector_call
 except ImportError:  # pragma: no cover
