@@ -27,7 +27,7 @@ def start_nats_publish_span(subject: str, *, tenant_id: str | None = None):
         attrs["m8flow_tenant_id"] = tenant_id
     return TRACER.start_as_current_span(
         "nats.publish",
-        kind=SpanKind.PROducer,
+        kind=SpanKind.PRODUCER,
         attributes={**attrs, "messaging.system": "nats", "messaging.destination.name": subject},
     )
 
@@ -40,6 +40,6 @@ def start_nats_consume_span(subject: str, *, tenant_id: str | None = None, heade
     return TRACER.start_as_current_span(
         "nats.process",
         context=parent,
-        kind=SpanKind.Consumer,
+        kind=SpanKind.CONSUMER,
         attributes={**attrs, "messaging.system": "nats", "messaging.destination.name": subject},
     )

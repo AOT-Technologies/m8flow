@@ -19,9 +19,14 @@ compactor:
 
 storage:
   trace:
-    backend: local
-    local:
-      path: /var/tempo/traces
+    backend: s3
+    s3:
+      endpoint: m8flow-obs-minio:9000
+      bucket: tempo-traces
+      access_key: m8flow-obs
+      secret_key: m8flow-obs-secret
+      insecure: true
+      forcepathstyle: true
     wal:
       path: /var/tempo/wal
 

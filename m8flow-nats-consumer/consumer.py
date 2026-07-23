@@ -1,9 +1,11 @@
 import asyncio
+import contextlib
 import json
 import logging
 import os
 import signal
 import sys
+import time
 from typing import Any
 
 from dotenv import load_dotenv
@@ -191,6 +193,7 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
     dedup_key = None
     tenant_id = None
     process_identifier = None
+    started: float | None = None
 
     try:
         try:
@@ -223,9 +226,6 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
         username           = data.get("username")
         event_id           = data.get("id")
         api_key            = data.get("api_key")
-
-        import contextlib
-        import time
 
         started = time.perf_counter()
         msg_headers = dict(getattr(msg, "headers", None) or {})
@@ -297,8 +297,9 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
             tenant_id, process_identifier, error_msg, type(e).__name__,
         )
 
-        if record_nats_processing is not None and tenant_id:
-            record_nats_processing(tenant_id, duration_ms=0.0, failed=True)
+        if record_nats_processing is not None:
+            duration_ms = (time.perf_counter() - started) * 1000 if started is not None else 0.0
+            record_nats_processing(tenant_id, duration_ms=duration_ms, failed=True)
         
         if dedup_key and kv:
             try:
@@ -318,10 +319,12 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
 
 async def main() -> None:
     global flask_app
-    
+
     logger.info("Initializing M8Flow core application context...")
     from m8flow_backend.app import app as asgi_app
-    flask_app = asgi_app.app.app
+    flask_app = asgi_app.app
+    while not hasattr(flask_app, "app_context"):
+        flask_app = flask_app.app
 
     logger.info("Starting M8Flow NATS Consumer...")
     nc = NATS()
@@ -378,19 +381,28 @@ async def main() -> None:
         await nc.close()
         sys.exit(1)
 
+    async def _report_consumer_lag() -> None:
+        if set_nats_consumer_lag is None:
+            return
+        try:
+            info = await sub.consumer_info()
+            set_nats_consumer_lag(getattr(info, "num_pending", 0))
+        except Exception:
+            pass
+
     logger.info("Consumer loop started.")
     while running:
         try:
             msgs = await sub.fetch(batch=FETCH_BATCH, timeout=FETCH_TIMEOUT)
             for msg in msgs:
                 await process_message(msg, kv, nc)
+            # Report current lag every iteration, not just on idle timeout —
+            # under sustained backlog, fetch never times out, so a
+            # timeout-only update would leave the gauge stale exactly when
+            # the backlog is worst.
+            await _report_consumer_lag()
         except TimeoutError:
-            if set_nats_consumer_lag is not None:
-                try:
-                    info = await sub.consumer_info()
-                    set_nats_consumer_lag(getattr(info, "num_pending", 0))
-                except Exception:
-                    pass
+            await _report_consumer_lag()
         except ConnectionClosedError:
             logger.warning("NATS connection closed, exiting loop.")
             break

@@ -511,7 +511,7 @@ optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 files = []
-develop = true
+develop = false
 
 [package.dependencies]
 opentelemetry-api = ">=1.27.0"
@@ -1231,4 +1231,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12.1,<3.13"
-content-hash = "f44752e99ced7e8b250e89b29708e57033aeda085ee0db2dcba3ea95b5de5c45"
+content-hash = "d830e0f63ea94a0d16418a024da67aff6919544c5a4e2495c4eaffef8bff9f9d"

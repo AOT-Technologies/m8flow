@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 
 from flask import g, has_request_context
 
@@ -132,11 +133,20 @@ def _ensure_otel_telemetry(app=None) -> None:
         from m8flow_telemetry.bootstrap import instrument_flask_app, setup
         from m8flow_telemetry.logging_bridge import record_resolver_from_log_record
 
+        # setup_logger_for_app runs identically for the API server and the Celery
+        # worker (celery_worker.py calls it too), but Resource.create() takes an
+        # explicit service_name over OTEL_SERVICE_NAME from the environment — a
+        # hardcoded "m8flow-backend" here would mistag every worker process's
+        # telemetry as the API server's, merging them in Loki/Tempo/Prometheus.
+        # Compose already sets OTEL_SERVICE_NAME correctly per process.
         setup(
-            "m8flow-backend",
+            os.environ.get("OTEL_SERVICE_NAME", "m8flow-backend"),
             tenant_resolver=record_resolver_from_log_record(_resolve_tenant_id_for_logging),
         )
         if app is not None:
-            instrument_flask_app(app)
+            # startup/sequence.py also wraps the ASGI entrypoint with instrument_asgi_app(),
+            # which is the canonical RED-metrics source here (see instrument_flask_app's
+            # docstring) — suppress Flask's own metrics to avoid double-counting.
+            instrument_flask_app(app, suppress_metrics=True)
     except ImportError:
         return

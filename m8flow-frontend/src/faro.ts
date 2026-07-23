@@ -7,12 +7,6 @@ import {
 } from '@grafana/faro-web-sdk';
 import { TracingInstrumentation } from '@grafana/faro-web-tracing';
 
-declare global {
-  interface Window {
-    spiffworkflowFrontendJsenv?: Record<string, string | undefined>;
-  }
-}
-
 const SENSITIVE_KEY_PATTERN =
   /authorization|token|password|secret|cookie|email|username|m8flow_selected_tenant/i;
 

@@ -163,6 +163,15 @@ services:
       M8FLOW_BACKEND_UPGRADE_DB: "false"
       M8FLOW_BACKEND_SW_UPGRADE_DB: "false"
       M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: "/data/process_models"
+      # Without these, both fall through to .env's host-facing default
+      # (http://localhost:6842), which resolves to this container itself, not
+      # the real Keycloak proxy — hangs the shared backend bootstrap sequence
+      # indefinitely on an unreachable OIDC/JWKS call. Mirrors m8flow-backend's
+      # own override below.
+      KEYCLOAK_URL: "http://keycloak-proxy:6842"
+      M8FLOW_KEYCLOAK_URL: "http://keycloak-proxy:6842"
+      SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__internal_uri: "http://keycloak-proxy:6842/realms/${M8FLOW_KEYCLOAK_SHARED_REALM:-m8flow}"
+      SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__1__internal_uri: "http://keycloak-proxy:6842/realms/${M8FLOW_KEYCLOAK_MASTER_REALM:-master}"
     volumes:
       - type: bind
         source: ../data/process_models
@@ -201,6 +210,15 @@ services:
       M8FLOW_BACKEND_SW_UPGRADE_DB: "false"
       M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: "/data/process_models"
       # SMTP is resolved per-tenant from encrypted tenant secrets, not from env.
+      # Without these, both fall through to .env's host-facing default
+      # (http://localhost:6842), which resolves to this container itself, not
+      # the real Keycloak proxy — hangs the shared backend bootstrap sequence
+      # indefinitely on an unreachable OIDC/JWKS call. Mirrors m8flow-backend's
+      # own override below.
+      KEYCLOAK_URL: "http://keycloak-proxy:6842"
+      M8FLOW_KEYCLOAK_URL: "http://keycloak-proxy:6842"
+      SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__internal_uri: "http://keycloak-proxy:6842/realms/${M8FLOW_KEYCLOAK_SHARED_REALM:-m8flow}"
+      SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__1__internal_uri: "http://keycloak-proxy:6842/realms/${M8FLOW_KEYCLOAK_MASTER_REALM:-master}"
     volumes:
       - type: bind
         source: ../data/process_models

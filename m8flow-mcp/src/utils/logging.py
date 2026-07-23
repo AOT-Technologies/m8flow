@@ -9,10 +9,11 @@ from typing import Any
 from src.config import settings
 
 try:
-    from m8flow_telemetry.bootstrap import setup
+    from m8flow_telemetry.bootstrap import is_telemetry_enabled, setup
     from src.utils.context import get_tenant_id
 except ImportError:  # pragma: no cover
     setup = None
+    is_telemetry_enabled = None
     get_tenant_id = lambda: None  # type: ignore[assignment,misc]
 
 
@@ -34,6 +35,18 @@ def setup_logging() -> None:
 
     if setup is not None:
         setup("m8flow-mcp", tenant_resolver=get_tenant_id)
+
+        # m8flow-mcp always calls out to m8flow-backend over the shared httpx
+        # client (both stdio and remote transports) — without this, the trace
+        # started per tool call in ObservabilityMiddleware never propagates
+        # onward via traceparent, breaking cross-service correlation entirely.
+        if is_telemetry_enabled is not None and is_telemetry_enabled():
+            try:
+                from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+
+                HTTPXClientInstrumentor().instrument()
+            except ImportError:
+                pass
 
 
 def get_logger(name: str | None = None) -> logging.Logger:

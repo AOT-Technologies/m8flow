@@ -35,21 +35,19 @@ class ObservabilityMiddleware(Middleware):
         start_time = time.time()
         tool_name = getattr(context, "name", None) or getattr(context, "method", None) or "unknown"
         transport = "streamable-http" if settings.is_remote else "stdio"
-        tenant_id = get_tenant_id()
         failed = False
 
-        with (
+        span_cm = (
             TRACER.start_as_current_span(
                 "mcp.tool",
                 kind=SpanKind.SERVER,
-                attributes={
-                    "mcp.tool.name": str(tool_name),
-                    "m8flow_tenant_id": tenant_id or "",
-                },
+                attributes={"mcp.tool.name": str(tool_name)},
             )
             if TRACER is not None and SpanKind is not None
             else contextlib.nullcontext()
-        ):
+        )
+
+        with span_cm as span:
             try:
                 logger.info("MCP Request received", extra=with_params({"tool_name": tool_name, "transport": transport}))
                 result = await call_next(context)
@@ -71,6 +69,14 @@ class ObservabilityMiddleware(Middleware):
                 )
                 raise
             finally:
+                # Tenant resolution (ContextExtractionMiddleware / TenantContextMiddleware)
+                # happens inside call_next, nested below this middleware (registered
+                # outermost so it wraps everything) — read it now, not before call_next,
+                # or every span/metric here would carry a stale or empty tenant_id.
+                tenant_id = get_tenant_id()
+                if span is not None and tenant_id:
+                    span.set_attribute("m8flow_tenant_id", tenant_id)
+
                 duration_ms = (time.time() - start_time) * 1000
                 if record_mcp_tool_call is not None:
                     record_mcp_tool_call(

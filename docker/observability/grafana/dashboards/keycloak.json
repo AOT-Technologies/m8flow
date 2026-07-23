@@ -56,7 +56,7 @@
       "id": 3,
       "type": "stat",
       "title": "Keycloak scrape healthy",
-      "description": "1 = Prometheus can scrape Keycloak's management /metrics endpoint.",
+      "description": "1 = Alloy can scrape Keycloak's management /metrics endpoint and forward it to Prometheus.",
       "gridPos": { "h": 4, "w": 4, "x": 8, "y": 2 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [

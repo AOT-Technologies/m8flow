@@ -6,9 +6,14 @@ server:
 common:
   path_prefix: /loki
   storage:
-    filesystem:
-      chunks_directory: /loki/chunks
-      rules_directory: /loki/rules
+    s3:
+      endpoint: m8flow-obs-minio:9000
+      region: us-east-1
+      access_key_id: m8flow-obs
+      secret_access_key: m8flow-obs-secret
+      s3forcepathstyle: true
+      insecure: true
+      bucketnames: loki-data
   replication_factor: 1
   ring:
     kvstore:
@@ -18,7 +23,7 @@ schema_config:
   configs:
     - from: 2024-01-01
       store: tsdb
-      object_store: filesystem
+      object_store: s3
       schema: v13
       index:
         prefix: index_
@@ -32,7 +37,7 @@ compactor:
   working_directory: /loki/compactor
   compaction_interval: 10m
   retention_enabled: true
-  delete_request_store: filesystem
+  delete_request_store: s3
 
 ruler:
   alertmanager_url: http://localhost:9093
