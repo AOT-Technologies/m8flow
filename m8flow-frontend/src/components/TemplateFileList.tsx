@@ -56,11 +56,11 @@ export default function TemplateFileList({ template, templateId }: TemplateFileL
   };
 
   return (
-    <Box sx={{ mt: 1 }}>
+    <Box sx={{ mt: 2.5, pt: 2.5, borderTop: "1px solid", borderColor: "divider" }}>
       <Typography
-        variant="overline"
+        variant="subtitle2"
         color="text.secondary"
-        sx={{ display: "block", mb: 0.5, letterSpacing: "0.08em" }}
+        sx={{ display: "block", mb: 1, fontWeight: 600 }}
       >
         {t("files")}
       </Typography>
