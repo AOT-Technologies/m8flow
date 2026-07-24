@@ -61,6 +61,18 @@ describe("MonitoringCeleryPage", () => {
     expect(iframe?.getAttribute("src")).toBe("/flower/workers");
   });
 
+  it("collapses multiple trailing slashes when building the Workers URL", () => {
+    mockIsSuperAdmin.mockReturnValue(true);
+    mockUseConfig.mockReturnValue({ CELERY_FLOWER_URL: "/flower///" });
+
+    const { container } = renderAt();
+
+    const iframe = container.querySelector(
+      '[data-testid="embedded-dashboard-iframe"]',
+    );
+    expect(iframe?.getAttribute("src")).toBe("/flower/workers");
+  });
+
   it("redirects non-super-admins to home", () => {
     mockIsSuperAdmin.mockReturnValue(false);
     mockUseConfig.mockReturnValue({ CELERY_FLOWER_URL: "http://localhost:6850" });
