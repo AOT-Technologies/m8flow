@@ -350,6 +350,15 @@ permissions:
     actions: [read]
     uri: /tasks/*
     command: task.read
+  # Task data (form values) shown on the Process Instance page when a task is clicked.
+  # Mirrors read-tasks' audience so super-admins/viewers can inspect task data across tenants.
+  # READ ONLY by design -- do NOT add update/PUT: super-admin RLS bypass is SELECT-only, and
+  # cross-tenant task-data must stay read-only. (tenant-admin/editor still get read+update via
+  # the PM:ALL/PG:ALL "all" macro expansion.)
+  read-task-data:
+    groups: ["viewer", "super-admin"]
+    actions: [read]
+    uri: /task-data/*
   # NATS API key management is tenant-admin only. Read is scoped to the same
   # audience (plus super-admin for platform visibility) so there is no
   # read-without-manage confusion.
