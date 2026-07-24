@@ -6,6 +6,7 @@ import {
   Button,
   Chip,
   CircularProgress,
+  Divider,
   Alert,
   Typography,
   Paper,
@@ -92,160 +93,194 @@ function TemplateDetailsCard({
     <Paper
       elevation={0}
       sx={{
-        p: 1.5,
-        mb: 1,
+        p: 2.5,
+        mb: 2,
         border: '1px solid',
         borderColor: 'divider',
         borderRadius: 1,
       }}
     >
-      <Typography
-        variant="body2"
+      {/* Header — identity + metadata (left) | actions cluster (top-right) */}
+      <Box
         sx={{
-          fontWeight: 600,
-          minWidth: 0,
-          overflowWrap: 'anywhere',
-          wordBreak: 'break-word',
+          display: 'flex',
+          flexDirection: { xs: 'column', md: 'row' },
+          justifyContent: 'space-between',
+          alignItems: { xs: 'stretch', md: 'flex-start' },
+          gap: 2,
         }}
       >
-        {template.name}
-      </Typography>
+        {/* Left column — name, status chips, timestamps */}
+        <Box sx={{ minWidth: 0, flexGrow: 1 }}>
+          <Typography
+            variant="h6"
+            component="h1"
+            sx={{
+              // SpiffTheme shrinks h6 to 10px (smaller than body text), so set an
+              // explicit size to make the template name read as a clear heading.
+              fontSize: '1.25rem',
+              fontWeight: 700,
+              lineHeight: 1.3,
+              minWidth: 0,
+              overflowWrap: 'anywhere',
+              wordBreak: 'break-word',
+            }}
+          >
+            {template.name}
+          </Typography>
 
-      {/* Row 1 — status / visibility chips */}
-      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center', mt: 0.5 }}>
-        <Chip size="small" label={`${t('version')}: ${template.version}`} variant="outlined" />
-        {template.category && (
-          <Chip size="small" label={`${t('category')}: ${template.category}`} variant="outlined" />
-        )}
-        {canPublish && !template.isPublished ? (
-          <>
-            <FormControl size="small" sx={{ minWidth: 140 }}>
-              <Select
-                data-testid="template-visibility-select"
-                value={pendingVisibility ?? template.visibility}
-                onChange={(e: SelectChangeEvent) =>
-                  onVisibilityChange(e.target.value as TemplateVisibility)
-                }
-                variant="outlined"
-                sx={{ height: 24, fontSize: '0.8125rem' }}
-              >
-                {VISIBILITY_OPTIONS.map((opt) => (
-                  <MenuItem key={opt.value} value={opt.value}>
-                    {t(opt.labelKey)}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            {pendingVisibility && pendingVisibility !== template.visibility && (
-              <Button
-                size="small"
-                variant="contained"
-                color="primary"
-                data-testid="template-save-visibility-button"
-                onClick={onSaveVisibility}
-                disabled={isSaving}
-              >
-                {isSaving ? t('saving') : t('save')}
-              </Button>
+          {/* Row 1 — status / visibility chips */}
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center', mt: 1 }}>
+            <Chip size="small" label={`${t('version')}: ${template.version}`} variant="outlined" />
+            {template.category && (
+              <Chip size="small" label={`${t('category')}: ${template.category}`} variant="outlined" />
             )}
-          </>
-        ) : (
-          <Chip size="small" label={`${t('visibility')}: ${template.visibility}`} variant="outlined" />
-        )}
-        {template.status && (
-          <Chip size="small" label={`${t('status')}: ${template.status}`} variant="outlined" />
-        )}
-        {template.createdBy && (
-          <Chip size="small" label={`${t('created_by')}: ${template.createdBy}`} variant="outlined" />
-        )}
-      </Box>
+            {canPublish && !template.isPublished ? (
+              <>
+                <FormControl size="small" sx={{ minWidth: 140 }}>
+                  <Select
+                    data-testid="template-visibility-select"
+                    value={pendingVisibility ?? template.visibility}
+                    onChange={(e: SelectChangeEvent) =>
+                      onVisibilityChange(e.target.value as TemplateVisibility)
+                    }
+                    variant="outlined"
+                    sx={{ height: 24, fontSize: '0.8125rem' }}
+                  >
+                    {VISIBILITY_OPTIONS.map((opt) => (
+                      <MenuItem key={opt.value} value={opt.value}>
+                        {t(opt.labelKey)}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                {pendingVisibility && pendingVisibility !== template.visibility && (
+                  <Button
+                    size="small"
+                    variant="contained"
+                    color="primary"
+                    data-testid="template-save-visibility-button"
+                    onClick={onSaveVisibility}
+                    disabled={isSaving}
+                  >
+                    {isSaving ? t('saving') : t('save')}
+                  </Button>
+                )}
+              </>
+            ) : (
+              <Chip size="small" label={`${t('visibility')}: ${template.visibility}`} variant="outlined" />
+            )}
+            {template.status && (
+              <Chip size="small" label={`${t('status')}: ${template.status}`} variant="outlined" />
+            )}
+            {template.createdBy && (
+              <Chip size="small" label={`${t('created_by')}: ${template.createdBy}`} variant="outlined" />
+            )}
+          </Box>
 
-      {/* Row 2 — timestamps (muted) */}
-      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, alignItems: 'center', mt: 0.5 }}>
-        <Typography variant="caption" color="text.secondary">
-          {t('created')}: {DateAndTimeService.convertSecondsToFormattedDateTime(template.createdAtInSeconds) ?? '—'}
-        </Typography>
-        <Typography variant="caption" color="text.secondary">
-          {t('updated')}: {DateAndTimeService.convertSecondsToFormattedDateTime(template.updatedAtInSeconds) ?? '—'}
-        </Typography>
-      </Box>
+          {/* Row 2 — timestamps (muted) */}
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center', mt: 1 }}>
+            <Typography variant="caption" color="text.secondary">
+              {t('created')}: {DateAndTimeService.convertSecondsToFormattedDateTime(template.createdAtInSeconds) ?? '—'}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {t('updated')}: {DateAndTimeService.convertSecondsToFormattedDateTime(template.updatedAtInSeconds) ?? '—'}
+            </Typography>
+          </Box>
+        </Box>
 
-      {/* Row 3 — actions toolbar (primary → secondary → destructive) */}
-      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center', mt: 1 }}>
-        {canCreate && !template.isDeleted && (
-          <Tooltip title={disableCreateProcessModel ? createProcessModelDisabledReason : ""}>
-            <span>
-              <Button
-                size="small"
-                variant="contained"
-                color="success"
-                startIcon={<AddIcon />}
-                data-testid="template-create-process-model-button"
-                onClick={onCreateProcessModel}
-                disabled={disableCreateProcessModel}
+        {/* Right column — actions cluster, pinned top-right (wraps below on xs) */}
+        <Box
+          sx={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            gap: 1,
+            flexShrink: 0,
+            justifyContent: { xs: 'flex-start', md: 'flex-end' },
+          }}
+        >
+          {canCreate && !template.isDeleted && (
+            <Tooltip title={disableCreateProcessModel ? createProcessModelDisabledReason : ""}>
+              <span>
+                <Button
+                  size="small"
+                  variant="contained"
+                  color="success"
+                  startIcon={<AddIcon />}
+                  data-testid="template-create-process-model-button"
+                  onClick={onCreateProcessModel}
+                  disabled={disableCreateProcessModel}
+                >
+                  {t('create_process_model')}
+                </Button>
+              </span>
+            </Tooltip>
+          )}
+
+          {!template.isDeleted && (
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<FileDownloadIcon />}
+              data-testid="template-export-button"
+              onClick={onExport}
+            >
+              {t('export', { defaultValue: 'Export' })}
+            </Button>
+          )}
+
+          {canPublish && !template.isPublished && (
+            <Button
+              size="small"
+              variant="contained"
+              color="primary"
+              data-testid="template-publish-button"
+              onClick={onPublish}
+            >
+              {t('publish')}
+            </Button>
+          )}
+
+          {/* Destructive action, set apart from the constructive ones */}
+          {canDelete && !template.isDeleted && (
+            <>
+              <Divider
+                orientation="vertical"
+                flexItem
+                sx={{ mx: 0.5, display: { xs: 'none', md: 'block' } }}
+              />
+              <Tooltip
+                title={
+                  canDelete && !canDeleteThisTemplate
+                    ? deleteThisTemplateDeniedReason
+                    : ""
+                }
               >
-                {t('create_process_model')}
-              </Button>
-            </span>
-          </Tooltip>
-        )}
-
-        {!template.isDeleted && (
-          <Button
-            size="small"
-            variant="outlined"
-            startIcon={<FileDownloadIcon />}
-            data-testid="template-export-button"
-            onClick={onExport}
-          >
-            {t('export', { defaultValue: 'Export' })}
-          </Button>
-        )}
-
-        {canPublish && !template.isPublished && (
-          <Button
-            size="small"
-            variant="contained"
-            color="primary"
-            data-testid="template-publish-button"
-            onClick={onPublish}
-          >
-            {t('publish')}
-          </Button>
-        )}
-
-        {/* Spacer pushes the destructive action to the far right */}
-        <Box sx={{ flexGrow: 1 }} />
-
-        {canDelete && !template.isDeleted && (
-          <Tooltip
-            title={
-              canDelete && !canDeleteThisTemplate
-                ? deleteThisTemplateDeniedReason
-                : ""
-            }
-          >
-            <span>
-              <Button
-                size="small"
-                variant="outlined"
-                color="error"
-                startIcon={<DeleteIcon />}
-                data-testid="template-delete-button"
-                onClick={onDelete}
-                disabled={!canDeleteThisTemplate}
-              >
-                {t('delete')}
-              </Button>
-            </span>
-          </Tooltip>
-        )}
+                <span>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    color="error"
+                    startIcon={<DeleteIcon />}
+                    data-testid="template-delete-button"
+                    onClick={onDelete}
+                    disabled={!canDeleteThisTemplate}
+                  >
+                    {t('delete')}
+                  </Button>
+                </span>
+              </Tooltip>
+            </>
+          )}
+        </Box>
       </Box>
+
       {template.description && (
         <Typography
-          variant="caption"
+          variant="body2"
           color="text.secondary"
-          sx={{ display: 'block', mt: 0.5, maxWidth: '100%' }}
+          sx={{ display: 'block', mt: 2, maxWidth: '100%' }}
         >
           {template.description.length > 120
             ? `${template.description.slice(0, 120)}...`
@@ -482,16 +517,16 @@ export default function TemplateModelerPage() {
   ];
 
   return (
-    <Box sx={{ px: 2, pl: 3, pb: 3 }}>
-      <Box sx={{ mb: 1 }}>
+    <Box sx={{ p: 3 }}>
+      <Box sx={{ mb: 2 }}>
         <ProcessBreadcrumb hotCrumbs={breadcrumbs} />
       </Box>
       {allVersions.length > 1 && (
         <Paper
           elevation={0}
           sx={{
-            p: 1.5,
-            mb: 1,
+            p: 2.5,
+            mb: 2,
             border: '1px solid',
             borderColor: 'divider',
             borderRadius: 1,
