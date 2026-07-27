@@ -123,7 +123,9 @@ faro.receiver "frontend" {
   server {
     listen_address = "0.0.0.0"
     listen_port    = 12347
-    cors_allowed_origins = ["*"]
+    // Local-dev default only; set M8FLOW_ALLOY_FARO_CORS_ORIGINS (comma-separated)
+    // to the real frontend origin(s) before reusing this stack outside localhost.
+    cors_allowed_origins = string.split(",", sys.env("M8FLOW_ALLOY_FARO_CORS_ORIGINS"))
   }
   output {
     logs   = [loki.write.default.receiver]

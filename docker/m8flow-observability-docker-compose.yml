@@ -46,7 +46,10 @@ services:
   m8flow-loki:
     container_name: m8flow-loki
     image: grafana/loki:3.4.2
-    command: ["-config.file=/etc/loki/loki-config.yml"]
+    command: ["-config.file=/etc/loki/loki-config.yml", "-config.expand-env=true"]
+    environment:
+      M8FLOW_OBS_MINIO_USER: ${M8FLOW_OBS_MINIO_USER:-m8flow-obs}
+      M8FLOW_OBS_MINIO_PASSWORD: ${M8FLOW_OBS_MINIO_PASSWORD:-m8flow-obs-secret}
     volumes:
       - ./observability/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
       - m8flow_loki_data:/loki
@@ -63,7 +66,10 @@ services:
   m8flow-tempo:
     container_name: m8flow-tempo
     image: grafana/tempo:2.7.2
-    command: ["-config.file=/etc/tempo/tempo-config.yml"]
+    command: ["-config.file=/etc/tempo/tempo-config.yml", "-config.expand-env=true"]
+    environment:
+      M8FLOW_OBS_MINIO_USER: ${M8FLOW_OBS_MINIO_USER:-m8flow-obs}
+      M8FLOW_OBS_MINIO_PASSWORD: ${M8FLOW_OBS_MINIO_PASSWORD:-m8flow-obs-secret}
     volumes:
       - ./observability/tempo/tempo-config.yml:/etc/tempo/tempo-config.yml:ro
       - m8flow_tempo_data:/var/tempo
@@ -98,6 +104,8 @@ services:
     container_name: m8flow-alloy
     image: grafana/alloy:v1.7.5
     command: ["run", "/etc/alloy/config.alloy", "--storage.path=/var/lib/alloy/data"]
+    environment:
+      M8FLOW_ALLOY_FARO_CORS_ORIGINS: ${M8FLOW_ALLOY_FARO_CORS_ORIGINS:-http://localhost:6841}
     volumes:
       - ./observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
