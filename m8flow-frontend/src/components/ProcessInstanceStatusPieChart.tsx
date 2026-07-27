@@ -79,6 +79,10 @@ export default function ProcessInstanceStatusPieChart({
 
   useEffect(() => {
     if (!reportMetadata) {
+      // No metadata to constrain the distribution — render a deterministic
+      // empty state rather than leaving stale counts or a stuck spinner.
+      setLoading(false);
+      setStatusCounts([]);
       return;
     }
     requestGenerationRef.current += 1;
