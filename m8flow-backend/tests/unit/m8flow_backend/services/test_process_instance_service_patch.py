@@ -191,7 +191,10 @@ def test_apply_forces_completed_task_data_when_rehydrating_process_instance(monk
     assert FakeProcessInstanceMigrator.run_calls == [process_instance]
     assert fake_db_module.db.session.refresh_calls == [process_instance]
     assert FakeProcessInstanceProcessor.init_calls[0]["process_instance_model"] is process_instance
-    assert FakeProcessInstanceProcessor.init_calls[0]["workflow_completed_handler"] is (
+    # `schedule_next_process_model_cycle` is now wrapped as a classmethod (to add
+    # telemetry) rather than a plain staticmethod, so each attribute access yields
+    # a distinct-but-equal bound method object; compare by equality, not identity.
+    assert FakeProcessInstanceProcessor.init_calls[0]["workflow_completed_handler"] == (
         FakeProcessInstanceService.schedule_next_process_model_cycle
     )
     assert FakeProcessInstanceProcessor.init_calls[0]["include_task_data_for_completed_tasks"] is True

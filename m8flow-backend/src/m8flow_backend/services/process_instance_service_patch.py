@@ -124,6 +124,8 @@ def apply() -> None:
     original_create_process_instance = ProcessInstanceService.create_process_instance
     original_spiff_task_to_api_task = getattr(ProcessInstanceService, "spiff_task_to_api_task", None)
     original_update_form_task_data = ProcessInstanceService.update_form_task_data
+    original_schedule_next_process_model_cycle = ProcessInstanceService.schedule_next_process_model_cycle
+    original_terminate = getattr(ProcessInstanceProcessor, "terminate", None)
 
     @classmethod  # type: ignore[misc]
     def patched_create_process_instance(cls, process_model, user, start_configuration=None, load_bpmn_process_model: bool = True):
@@ -196,6 +198,18 @@ def apply() -> None:
                     exc_info=True,
                 )
 
+        try:
+            from m8flow_telemetry.metrics import (
+                record_process_instance_active_delta,
+                record_process_instance_created,
+            )
+
+            tenant_metric_id = str(tenant_id) if tenant_id else None
+            record_process_instance_created(tenant_metric_id)
+            record_process_instance_active_delta(tenant_metric_id, 1)
+        except ImportError:
+            pass
+
         return process_instance_model, start_config
 
     @classmethod
@@ -253,6 +267,17 @@ def apply() -> None:
         ProcessInstanceService.update_form_task_data(processor.process_instance_model, spiff_task, data, user)
         processor.complete_task(spiff_task, human_task, user=user)
 
+        try:
+            from m8flow_telemetry.metrics import record_task_completed
+
+            tenant_metric_id = getattr(processor.process_instance_model, "m8f_tenant_id", None)
+            task_type = getattr(getattr(human_task, "task_type", None), "value", None) or getattr(
+                human_task, "task_type", "unknown"
+            )
+            record_task_completed(str(tenant_metric_id) if tenant_metric_id else None, task_type=str(task_type))
+        except ImportError:
+            pass
+
         if should_queue_process_instance(execution_mode):
             _validate_queued_follow_up_work(processor, handle_error=False)
             processor.bpmn_process_instance.refresh_waiting_tasks()
@@ -264,6 +289,38 @@ def apply() -> None:
                 execution_strategy_name = "greedy"
 
             processor.do_engine_steps(save=True, execution_strategy_name=execution_strategy_name)
+
+    @classmethod
+    def patched_schedule_next_process_model_cycle(cls, process_instance_model) -> None:
+        # ProcessInstanceProcessor.save() invokes this as the workflow_completed_handler
+        # exactly once, at the moment a process instance transitions to completed —
+        # the only central hook point across every call site that constructs a
+        # ProcessInstanceProcessor with this handler.
+        original_schedule_next_process_model_cycle(process_instance_model)
+
+        try:
+            from m8flow_telemetry.metrics import record_process_instance_terminal
+
+            tenant_metric_id = getattr(process_instance_model, "m8f_tenant_id", None)
+            record_process_instance_terminal(
+                str(tenant_metric_id) if tenant_metric_id else None, outcome="completed"
+            )
+        except ImportError:
+            pass
+
+    def patched_terminate(self) -> None:
+        if callable(original_terminate):
+            original_terminate(self)
+
+        try:
+            from m8flow_telemetry.metrics import record_process_instance_terminal
+
+            tenant_metric_id = getattr(self.process_instance_model, "m8f_tenant_id", None)
+            record_process_instance_terminal(
+                str(tenant_metric_id) if tenant_metric_id else None, outcome="terminated"
+            )
+        except ImportError:
+            pass
 
     @classmethod
     def patched_run_process_instance_with_processor(
@@ -403,4 +460,6 @@ def apply() -> None:
     ProcessInstanceService.spiff_task_to_api_task = patched_spiff_task_to_api_task
     ProcessInstanceService.update_form_task_data = patched_update_form_task_data
     ProcessInstanceService.run_process_instance_with_processor = patched_run_process_instance_with_processor
+    ProcessInstanceService.schedule_next_process_model_cycle = patched_schedule_next_process_model_cycle
+    ProcessInstanceProcessor.terminate = patched_terminate
     _PATCHED = True
