@@ -35,7 +35,8 @@ const COUNTS: { [status: string]: number } = {
   running: 3,
 };
 
-const makeCallToBackend = vi.fn((opts: any) => {
+// Default: return a per-status total based on the process_status filter.
+const defaultImpl = (opts: any) => {
   const filterBy = opts?.postBody?.report_metadata?.filter_by || [];
   const statusFilter = filterBy.find(
     (f: any) => f.field_name === 'process_status',
@@ -47,7 +48,9 @@ const makeCallToBackend = vi.fn((opts: any) => {
   );
   const total = hasModelConstraint ? 0 : COUNTS[status] || 0;
   opts.successCallback({ pagination: { total }, results: [] });
-});
+};
+
+const makeCallToBackend = vi.fn(defaultImpl);
 
 vi.mock('../services/HttpService', () => ({
   default: {
@@ -60,6 +63,9 @@ const reportMetadata = { columns: [], filter_by: [], order_by: [] } as any;
 describe('ProcessInstanceStatusPieChart', () => {
   afterEach(() => {
     vi.clearAllMocks();
+    // clearAllMocks resets call history but not the implementation, so restore
+    // the default so a test that overrides it does not leak into later tests.
+    makeCallToBackend.mockImplementation(defaultImpl);
   });
 
   it('renders the total and one legend row per non-zero status', async () => {
@@ -98,9 +104,73 @@ describe('ProcessInstanceStatusPieChart', () => {
       />,
     );
 
-    const errorRow = await screen.findByText('error');
-    fireEvent.click(errorRow);
+    // Select the legend control by role/name so the assertion is stable even
+    // if the status label text appears elsewhere on the page later.
+    await screen.findByText('error');
+    fireEvent.click(screen.getByRole('button', { name: /error/i }));
     expect(onStatusClick).toHaveBeenCalledWith('error');
+  });
+
+  it('forwards non-status base filters verbatim to each count query', async () => {
+    render(
+      <ProcessInstanceStatusPieChart
+        variant="all"
+        reportMetadata={
+          {
+            columns: [],
+            filter_by: [
+              // a non-status filter with a non-equals operator must be preserved
+              {
+                field_name: 'start_from',
+                field_value: '123',
+                operator: 'greater_than',
+              },
+              // an incoming process_status filter must be stripped (the chart
+              // shows the full distribution, adding its own per-status equals)
+              {
+                field_name: 'process_status',
+                field_value: 'complete',
+                operator: 'equals',
+              },
+            ],
+            order_by: [],
+          } as any
+        }
+      />,
+    );
+
+    await waitFor(() => expect(makeCallToBackend).toHaveBeenCalled());
+    const sentFilters =
+      makeCallToBackend.mock.calls[0][0].postBody.report_metadata.filter_by;
+    // base filter kept unchanged, including its operator
+    expect(sentFilters).toContainEqual({
+      field_name: 'start_from',
+      field_value: '123',
+      operator: 'greater_than',
+    });
+    // exactly one process_status filter, and it is the chart's own equals query
+    const statusFilters = sentFilters.filter(
+      (f: any) => f.field_name === 'process_status',
+    );
+    expect(statusFilters).toHaveLength(1);
+    expect(statusFilters[0].operator).toBe('equals');
+  });
+
+  it('exits loading and renders the empty state when every count query fails', async () => {
+    makeCallToBackend.mockImplementation((opts: any) => {
+      opts.failureCallback({ message: 'boom' });
+    });
+
+    render(
+      <ProcessInstanceStatusPieChart
+        variant="all"
+        reportMetadata={reportMetadata}
+      />,
+    );
+
+    expect(
+      await screen.findByText('No process instances to display.'),
+    ).toBeInTheDocument();
   });
 
   it('uses the for-me endpoint for the for-me variant', async () => {
