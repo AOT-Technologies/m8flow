@@ -23,8 +23,8 @@ storage:
     s3:
       endpoint: m8flow-obs-minio:9000
       bucket: tempo-traces
-      access_key: m8flow-obs
-      secret_key: m8flow-obs-secret
+      access_key: ${M8FLOW_OBS_MINIO_USER:-m8flow-obs}
+      secret_key: ${M8FLOW_OBS_MINIO_PASSWORD:-m8flow-obs-secret}
       insecure: true
       forcepathstyle: true
     wal:

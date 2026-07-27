@@ -86,17 +86,6 @@ class NatsService:
         }
 
         try:
-            headers = inject_trace_context(
-                {
-                    "Nats-Msg-Id": event_id,
-                    "tenant_slug": tenant_slug,
-                    "stream_name": stream_name or "",
-                }
-            ) if inject_trace_context else {
-                "Nats-Msg-Id": event_id,
-                "tenant_slug": tenant_slug,
-                "stream_name": stream_name or "",
-            }
             publish_ctx = (
                 start_nats_publish_span(subject, tenant_id=tenant_id)
                 if start_nats_publish_span
@@ -104,6 +93,17 @@ class NatsService:
             )
 
             with publish_ctx:
+                headers = inject_trace_context(
+                    {
+                        "Nats-Msg-Id": event_id,
+                        "tenant_slug": tenant_slug,
+                        "stream_name": stream_name or "",
+                    }
+                ) if inject_trace_context else {
+                    "Nats-Msg-Id": event_id,
+                    "tenant_slug": tenant_slug,
+                    "stream_name": stream_name or "",
+                }
                 ack = await js.publish(
                     subject,
                     json.dumps(event_data).encode("utf-8"),
@@ -168,17 +168,17 @@ class NatsService:
 
             subject = f"m8flow.notifications.{tenant_slug}.external-form"
             message_id = f"extform-{tenant_slug}-{payload.get('process_instance_id')}-{payload.get('task_guid')}"
-            headers = (
-                inject_trace_context({"Nats-Msg-Id": message_id, "tenant_slug": tenant_slug})
-                if inject_trace_context
-                else {"Nats-Msg-Id": message_id, "tenant_slug": tenant_slug}
-            )
             publish_ctx = (
                 start_nats_publish_span(subject, tenant_id=payload.get("tenant_id"))
                 if start_nats_publish_span
                 else contextlib.nullcontext()
             )
             with publish_ctx:
+                headers = (
+                    inject_trace_context({"Nats-Msg-Id": message_id, "tenant_slug": tenant_slug})
+                    if inject_trace_context
+                    else {"Nats-Msg-Id": message_id, "tenant_slug": tenant_slug}
+                )
                 ack = await js.publish(
                     subject,
                     json.dumps(payload).encode("utf-8"),

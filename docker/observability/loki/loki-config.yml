@@ -9,8 +9,8 @@ common:
     s3:
       endpoint: m8flow-obs-minio:9000
       region: us-east-1
-      access_key_id: m8flow-obs
-      secret_access_key: m8flow-obs-secret
+      access_key_id: ${M8FLOW_OBS_MINIO_USER:-m8flow-obs}
+      secret_access_key: ${M8FLOW_OBS_MINIO_PASSWORD:-m8flow-obs-secret}
       s3forcepathstyle: true
       insecure: true
       bucketnames: loki-data
