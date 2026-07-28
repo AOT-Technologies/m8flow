@@ -359,6 +359,16 @@ permissions:
     groups: ["viewer", "super-admin"]
     actions: [read]
     uri: /task-data/*
+  # Process Instance Events + Milestones tabs are gated on read access to /logs/*.
+  # super-admin/viewer have only `read` on PM:ALL/PG:ALL, which expands to
+  # /process-models/* and /process-groups/* but NOT /logs (the /logs segment is
+  # "all"-only in PATH_SEGMENTS_FOR_PERMISSION_ALL). Grant explicit read here so the
+  # Events/Milestones tabs render and the log/events list loads cross-tenant.
+  # READ ONLY by design -- super-admin RLS bypass is SELECT-only. (M8F-449)
+  read-logs:
+    groups: ["viewer", "super-admin"]
+    actions: [read]
+    uri: /logs/*
   # NATS API key management is tenant-admin only. Read is scoped to the same
   # audience (plus super-admin for platform visibility) so there is no
   # read-without-manage confusion.
