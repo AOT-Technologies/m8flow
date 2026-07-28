@@ -57,7 +57,7 @@ export default function GlobalTenantSelector({ isCollapsed }: Props) {
           anchorOrigin={{ vertical: 'center', horizontal: 'right' }}
           transformOrigin={{ vertical: 'center', horizontal: 'left' }}
         >
-          <List dense sx={{ minWidth: 160 }}>
+          <List dense sx={{ minWidth: 160, maxWidth: 320 }}>
             <ListItemButton
               selected={selectedTenantId === ''}
               onClick={() => { setSelectedTenantId(''); setAnchorEl(null); }}
@@ -69,8 +69,12 @@ export default function GlobalTenantSelector({ isCollapsed }: Props) {
                 key={tenant.id}
                 selected={selectedTenantId === tenant.id}
                 onClick={() => { setSelectedTenantId(tenant.id); setAnchorEl(null); }}
+                title={tenant.name}
               >
-                <ListItemText primary={tenant.name} />
+                <ListItemText
+                  primary={tenant.name}
+                  primaryTypographyProps={{ noWrap: true }}
+                />
               </ListItemButton>
             ))}
           </List>
@@ -101,6 +105,9 @@ export default function GlobalTenantSelector({ isCollapsed }: Props) {
             </Box>
           }
           onChange={(e) => setSelectedTenantId(e.target.value as string)}
+          MenuProps={{
+            PaperProps: { sx: { maxWidth: 320 } },
+          }}
           sx={{
             fontSize: '0.75rem',
             '& .MuiSelect-select': {
@@ -114,7 +121,18 @@ export default function GlobalTenantSelector({ isCollapsed }: Props) {
             <em>{t('all_tenants', 'All Tenants')}</em>
           </MenuItem>
           {tenants.map((tenant) => (
-            <MenuItem key={tenant.id} value={tenant.id} sx={{ fontSize: '0.75rem' }}>
+            <MenuItem
+              key={tenant.id}
+              value={tenant.id}
+              title={tenant.name}
+              sx={{
+                fontSize: '0.75rem',
+                display: 'block',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
               {tenant.name}
             </MenuItem>
           ))}
