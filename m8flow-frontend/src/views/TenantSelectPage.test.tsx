@@ -175,6 +175,37 @@ describe('TenantSelectPage', () => {
     expect(document.cookie).toContain('m8flow_selected_tenant=tenant-b-id');
   });
 
+  it('renders long tenant names without dropping the display name or alias', () => {
+    const longName =
+      'VeryVeryVeryVeryVeryVeryVeryVeryVeryVeryVeryVeryLongTenantDisplayName';
+    mockUseConfig.mockReturnValue({
+      ENABLE_MULTITENANT: true,
+      BACKEND_BASE_URL: '/v1.0',
+      MASTER_REALM_IDENTIFIER: 'ops-admin',
+      SHARED_REALM_IDENTIFIER: 'shared-users',
+    });
+    mockIsLoggedIn.mockReturnValue(true);
+    mockGetOrganizationMemberships.mockReturnValue([
+      { alias: 'long-tenant', id: 'long-tenant-id', name: longName },
+      { alias: 'tenant-b', id: 'tenant-b-id', name: 'Tenant B' },
+    ]);
+
+    vi.stubGlobal('location', {
+      origin: 'http://localhost',
+      pathname: '/',
+      search: '',
+      assign: vi.fn(),
+      replace: vi.fn(),
+      href: 'http://localhost/',
+    });
+
+    render(<TenantSelectPage />);
+
+    const option = screen.getByTestId('organization-option-long-tenant');
+    expect(option).toHaveTextContent(longName);
+    expect(option).toHaveTextContent('long-tenant');
+  });
+
   it('resolves missing organization names before rendering tenant choices', async () => {
     mockUseConfig.mockReturnValue({
       ENABLE_MULTITENANT: true,

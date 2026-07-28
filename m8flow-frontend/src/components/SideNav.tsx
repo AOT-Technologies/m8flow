@@ -692,22 +692,41 @@ function SideNav({
               bgcolor: "background.paper",
             }}
           >
-            <Typography variant="subtitle1" sx={{ fontWeight: 600 }} data-testid="nav-username">{username}</Typography>
+            <Tooltip title={username} placement="top" enterDelay={500}>
+              <Typography
+                variant="subtitle1"
+                noWrap
+                sx={{ fontWeight: 600 }}
+                data-testid="nav-username"
+              >
+                {username}
+              </Typography>
+            </Tooltip>
             {username !== userEmail && (
-              <Typography variant="body2" color="text.secondary" data-testid="nav-user-email">{userEmail}</Typography>
-            )}
-            {tenantId && (
               <Typography
                 variant="body2"
-                data-testid="nav-tenant-id"
-                sx={{
-                  color: "text.secondary",
-                  fontWeight: 600,
-                  mt: 0.5,
-                }}
+                color="text.secondary"
+                noWrap
+                data-testid="nav-user-email"
               >
-                {tenantId}
+                {userEmail}
               </Typography>
+            )}
+            {tenantId && (
+              <Tooltip title={tenantId} placement="top" enterDelay={500}>
+                <Typography
+                  variant="body2"
+                  noWrap
+                  data-testid="nav-tenant-id"
+                  sx={{
+                    color: "text.secondary",
+                    fontWeight: 600,
+                    mt: 0.5,
+                  }}
+                >
+                  {tenantId}
+                </Typography>
+              </Tooltip>
             )}
             {/* <hr />
             {aboutLinkElement}
