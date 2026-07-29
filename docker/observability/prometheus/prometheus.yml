@@ -1,0 +1,15 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Alloy is the single unified collector (see config.alloy) — it already scrapes
+  # its own self-metrics, cadvisor, and Keycloak, forwarding all of them here via
+  # remote_write. Prometheus must not also scrape those targets directly: doing so
+  # duplicates every series under a second, differently-named job (confirmed via
+  # a live query — cadvisor/keycloak/alloy were each showing up twice, once as
+  # "prometheus.scrape.<name>" from Alloy and once under a plain job_name here).
+  # Prometheus scraping itself is the one legitimate exception (standard practice).
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

@@ -214,9 +214,10 @@ export PYTHONPATH="$repo_root:${PYTHONPATH:-}"
 export PYTHONPATH="$repo_root/spiffworkflow-backend:$PYTHONPATH"
 export PYTHONPATH="$repo_root/spiffworkflow-backend/src:$PYTHONPATH"
 export PYTHONPATH="$repo_root/m8flow-backend/src:$PYTHONPATH"
+export PYTHONPATH="$repo_root/m8flow-telemetry/src:$PYTHONPATH"
 
 env_file="$repo_root/.env"
-if [[ -f "$env_file" ]]; then
+if [[ -f "$env_file" ]] && ! is_running_in_container; then
   while IFS= read -r line || [[ -n "$line" ]]; do
     line="${line#"${line%%[![:space:]]*}"}"
     line="${line%"${line##*[![:space:]]}"}"
@@ -280,9 +281,11 @@ log_config="$repo_root/uvicorn-log.yaml"
 default_backend_port="6840"
 backend_port="${port_arg:-${M8FLOW_BACKEND_PORT:-$default_backend_port}}"
 
-# Only pass --env-file when the file exists (ECS/task definition inject env; no .env in container).
+# In Docker, Compose already injects env; avoid uvicorn --env-file overriding OTEL_* and other vars.
 uvicorn_args=(--host 0.0.0.0 --port "$backend_port" --app-dir "$repo_root" --log-config "$log_config")
-[[ -f "$env_file" ]] && uvicorn_args+=(--env-file "$env_file")
+if [[ -f "$env_file" ]] && ! is_running_in_container; then
+  uvicorn_args+=(--env-file "$env_file")
+fi
 [[ -n "${UVICORN_LOG_LEVEL:-}" ]] && uvicorn_args+=(--log-level "$UVICORN_LOG_LEVEL")
 if [[ "$reload_mode" == "true" ]]; then
   uvicorn_args+=(--reload)
