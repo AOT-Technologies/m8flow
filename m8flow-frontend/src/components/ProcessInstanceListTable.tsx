@@ -45,14 +45,22 @@ import {
 } from './ErrorDisplay';
 import SpiffTooltip from './SpiffTooltip';
 
-// Accessors the backend cannot order by (not real ProcessInstanceModel columns
-// and not metadata aliases), so we do not render a sort affordance for them.
-// See generate_order_by_query_array in process_instance_report_service.py.
-const NON_SORTABLE_ACCESSORS = [
-  'tenantName',
-  'waiting_for',
-  'task_title',
-  'process_initiator_username',
+// Real process_instance table columns, which generate_order_by_query_array can
+// always ORDER BY. Mirrors ProcessInstanceModel.__table__.columns; revisit if the
+// backend ever exposes per-column sortability of its own. Metadata columns are
+// handled separately, via column.filterable in isColumnSortable below.
+const SORTABLE_STOCK_ACCESSORS = [
+  'id',
+  'process_model_identifier',
+  'process_model_display_name',
+  'summary',
+  'start_in_seconds',
+  'end_in_seconds',
+  'task_updated_at_in_seconds',
+  'status',
+  'created_at_in_seconds',
+  'updated_at_in_seconds',
+  'last_milestone_bpmn_name',
 ];
 
 type OwnProps = {
@@ -132,18 +140,28 @@ export default function ProcessInstanceListTable({
   const activeSortDirection: 'asc' | 'desc' =
     activeOrderByToken && activeOrderByToken.startsWith('-') ? 'desc' : 'asc';
 
-  const isColumnSortable = (accessor: string) =>
-    !NON_SORTABLE_ACCESSORS.includes(accessor);
+  // Fail closed: a column is sortable only if it is a real process_instance
+  // column, or a metadata column (filterable === true), for which the backend
+  // registers an orderable alias in
+  // add_where_clauses_for_process_instance_metadata_filters. Anything else --
+  // derived, joined or injected client-side -- gets no sort affordance rather
+  // than one that silently does nothing.
+  const isColumnSortable = (column: ReportColumn) =>
+    SORTABLE_STOCK_ACCESSORS.includes(column.accessor) ||
+    column.filterable === true;
 
   const handleSort = (accessor: string) => {
-    // First click -> ascending, second click on the same column -> descending.
-    const nextToken =
-      activeSortField === accessor && activeSortDirection === 'asc'
-        ? `-${accessor}`
-        : accessor;
+    // asc -> desc -> none, based on what the user currently sees. Clearing drops
+    // the param so ordering falls back to the report/backend default.
     const newSearchParams = new URLSearchParams(searchParams);
-    newSearchParams.set(orderByQueryParam, nextToken);
-    // Sorting should return to the first page.
+    if (activeSortField === accessor && activeSortDirection === 'asc') {
+      newSearchParams.set(orderByQueryParam, `-${accessor}`);
+    } else if (activeSortField === accessor && activeSortDirection === 'desc') {
+      newSearchParams.delete(orderByQueryParam);
+    } else {
+      newSearchParams.set(orderByQueryParam, accessor);
+    }
+    // Any sort change should return to the first page.
     const pageParam = paginationQueryParamPrefix
       ? `${paginationQueryParamPrefix}_page`
       : 'page';
@@ -235,12 +253,18 @@ export default function ProcessInstanceListTable({
 
       // Apply the active sort from the URL (set by clicking a column header) so
       // the backend orders the displayed dataset. Overrides any order_by that
-      // came in via report metadata.
+      // came in via report metadata. The -id tiebreaker keeps paging
+      // deterministic for equal-valued rows, and guarantees the query keeps an
+      // ORDER BY even if the leading term is not recognised server-side.
       const orderByToken = searchParams.get(orderByQueryParam);
       if (orderByToken) {
+        const orderByTerms = [orderByToken];
+        if (orderByToken.replace(/^-/, '') !== 'id') {
+          orderByTerms.push('-id');
+        }
         reportMetadataToUse = {
           ...reportMetadataToUse,
-          order_by: [orderByToken],
+          order_by: orderByTerms,
         };
       }
 
@@ -554,7 +578,7 @@ export default function ProcessInstanceListTable({
       return {
         accessor: column.accessor,
         label: t(translationKey, column.Header),
-        sortable: isColumnSortable(column.accessor),
+        sortable: isColumnSortable(column),
       };
     });
 
