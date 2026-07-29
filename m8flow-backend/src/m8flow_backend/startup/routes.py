@@ -1,7 +1,43 @@
 # extensions/startup/routes.py
 import logging
+import os
 
 logger = logging.getLogger(__name__)
+
+
+def register_root_route(app) -> None:
+    """Register the public backend root landing page (M8F-409).
+
+    The view function from root_controller is registered directly (not wrapped)
+    so AuthorizationService.get_fully_qualified_api_function_from_request resolves
+    it to m8flow_backend.routes.root_controller.root, which is auth-excluded.
+    """
+    from m8flow_backend.routes.root_controller import root
+
+    rules = [("/", "m8flow_root")]
+    # Normalize the WSGI prefix: strip whitespace and trailing slashes so values
+    # like "/", "//", or "/api/" cannot produce a duplicate or malformed rule.
+    wsgi_path_prefix = (os.environ.get("SPIFFWORKFLOW_BACKEND_WSGI_PATH_PREFIX") or "").strip().rstrip("/")
+    if wsgi_path_prefix:
+        if not wsgi_path_prefix.startswith("/"):
+            wsgi_path_prefix = f"/{wsgi_path_prefix}"
+        rules.append((f"{wsgi_path_prefix}/", "m8flow_root_prefixed"))
+
+    existing_rule_paths = {url_rule.rule for url_rule in app.url_map.iter_rules()}
+    for rule, endpoint in rules:
+        # Idempotency is handled explicitly; any other registration error is a
+        # real startup problem and must propagate loudly.
+        if endpoint in app.view_functions:
+            logger.debug("Root route %s (endpoint %s) already registered; skipping.", rule, endpoint)
+            continue
+        # Defensive: if the URL path itself is already owned by a different endpoint
+        # (e.g. an upstream/base app registered it), do not attempt to add a second
+        # rule for the same path — that would raise a hard add_url_rule conflict at
+        # startup. Leave the existing route in place and log instead.
+        if rule in existing_rule_paths:
+            logger.info("Root path %s already registered by another endpoint; leaving it untouched.", rule)
+            continue
+        app.add_url_rule(rule, endpoint, root, methods=["GET"])
 
 def register_template_file_fallback_routes(app) -> None:
     from m8flow_backend.routes.templates_controller import template_put_file, template_delete_file
