@@ -910,6 +910,16 @@ def test_parse_permissions_yaml_into_group_info_preserves_global_super_admin_gro
     assert "/m8flow/tenants*" in super_admin_permission_uris
     assert "/m8flow/templates/*" in super_admin_permission_uris
     assert "/authentications/*" in super_admin_permission_uris
+    # M8F-358: super-admin must have read access to /task-data/* so the Process Instance
+    # "Task Data" panel loads (ability.can('GET', ...)) and the GET is authorized. This is
+    # NOT covered by super-admin's read grant on PM:ALL/PG:ALL, which only expands to
+    # /process-models/* and /process-groups/* (the /task-data segment is "all"-only).
+    assert "/task-data/*" in super_admin_permission_uris
+    # M8F-449: super-admin must have read access to /logs/* so the Process Instance
+    # "Events" and "Milestones" tabs render (both gated on ability.can('GET', logs path))
+    # and the log/events list loads. Same read-vs-all asymmetry as /task-data above:
+    # the /logs segment is only added for the "all" permission set, not plain "read".
+    assert "/logs/*" in super_admin_permission_uris
     assert "/secrets/*" in super_admin_permission_uris
     assert "/process-instances/for-me" in super_admin_permission_uris
     assert "/process-instances" in super_admin_permission_uris

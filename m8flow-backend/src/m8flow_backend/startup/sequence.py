@@ -142,7 +142,13 @@ def _wrap_asgi_if_needed(cnx_app: Any) -> Any:
             x_prefix=proxy_count,
         )
 
-    return AsgiTenantContextMiddleware(app)
+    wrapped = AsgiTenantContextMiddleware(app)
+    try:
+        from m8flow_telemetry.bootstrap import instrument_asgi_app
+
+        return instrument_asgi_app(wrapped)
+    except ImportError:
+        return wrapped
 
 
 def create_application() -> Any:
