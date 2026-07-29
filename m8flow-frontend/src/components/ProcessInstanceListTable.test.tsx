@@ -112,11 +112,33 @@ vi.mock('@mui/icons-material', () => {
   );
 });
 
+// Mixes every sortability case the backend distinguishes:
+//   - real process_instance columns (id, start_in_seconds, end_in_seconds)
+//   - a metadata column, which the backend gives an orderable alias (filterable: true)
+//   - derived/joined accessors the backend cannot meaningfully order by
+//     (waiting_for and task_title come from the HumanTaskModel join,
+//     process_initiator_username is derived from process_initiator_id)
+//   - tenantName, which m8flow injects client-side after the query has run
+//   - an accessor the frontend has never heard of, which must fail closed
 const COLUMNS = [
   { Header: 'Id', accessor: 'id', filterable: false },
   { Header: 'Start', accessor: 'start_in_seconds', filterable: false },
   { Header: 'End', accessor: 'end_in_seconds', filterable: false },
+  { Header: 'Region', accessor: 'region', filterable: true },
   { Header: 'Waiting for', accessor: 'waiting_for', filterable: false },
+  { Header: 'Task', accessor: 'task_title', filterable: false },
+  { Header: 'Started by', accessor: 'process_initiator_username', filterable: false },
+  { Header: 'Tenant', accessor: 'tenantName', filterable: false },
+  { Header: 'Derived', accessor: 'some_derived_thing', filterable: false },
+];
+
+const SORTABLE_ACCESSORS = ['id', 'start_in_seconds', 'end_in_seconds', 'region'];
+const NON_SORTABLE_ACCESSORS = [
+  'waiting_for',
+  'task_title',
+  'process_initiator_username',
+  'tenantName',
+  'some_derived_thing',
 ];
 
 const reportMetadata = () => ({
@@ -185,10 +207,30 @@ describe('ProcessInstanceListTable sorting', () => {
   it('renders sort affordance only for sortable columns', async () => {
     renderTable();
     await screen.findByTestId('sort-header-id');
-    expect(screen.getByTestId('sort-header-start_in_seconds')).toBeTruthy();
-    expect(screen.getByTestId('sort-header-end_in_seconds')).toBeTruthy();
-    // waiting_for is not orderable server-side, so no sort affordance.
-    expect(screen.queryByTestId('sort-header-waiting_for')).toBeNull();
+    SORTABLE_ACCESSORS.forEach((accessor) => {
+      expect(screen.getByTestId(`sort-header-${accessor}`)).toBeTruthy();
+    });
+    // Derived, joined, client-injected and unrecognised accessors are not
+    // orderable server-side, so they get no sort affordance.
+    NON_SORTABLE_ACCESSORS.forEach((accessor) => {
+      expect(screen.queryByTestId(`sort-header-${accessor}`)).toBeNull();
+    });
+  });
+
+  it('still renders the label for columns that are not sortable', async () => {
+    renderTable();
+    await screen.findByTestId('sort-header-id');
+    expect(screen.getByText('Derived')).toBeTruthy();
+    expect(screen.getByText('Tenant')).toBeTruthy();
+  });
+
+  it('sorts by a metadata column, which the backend can order by', async () => {
+    renderTable();
+    const regionHeader = await screen.findByTestId('sort-header-region');
+    fireEvent.click(regionHeader);
+    await waitFor(() =>
+      expect(lastBody().report_metadata.order_by).toEqual(['region', '-id']),
+    );
   });
 
   it('does not apply an order_by override on first load without a sort param', async () => {
@@ -203,28 +245,76 @@ describe('ProcessInstanceListTable sorting', () => {
 
     fireEvent.click(startHeader);
     await waitFor(() =>
-      expect(lastBody().report_metadata.order_by).toEqual(['start_in_seconds']),
+      expect(lastBody().report_metadata.order_by).toEqual([
+        'start_in_seconds',
+        '-id',
+      ]),
     );
-    expect(
-      screen
-        .getByTestId('sort-header-start_in_seconds')
-        .closest('th')
-        ?.getAttribute('aria-sort'),
-    ).toBe('ascending');
+    expect(ariaSortFor('start_in_seconds')).toBe('ascending');
 
     fireEvent.click(screen.getByTestId('sort-header-start_in_seconds'));
     await waitFor(() =>
-      expect(lastBody().report_metadata.order_by).toEqual(['-start_in_seconds']),
+      expect(lastBody().report_metadata.order_by).toEqual([
+        '-start_in_seconds',
+        '-id',
+      ]),
     );
-    expect(
-      screen
-        .getByTestId('sort-header-start_in_seconds')
-        .closest('th')
-        ?.getAttribute('aria-sort'),
-    ).toBe('descending');
+    expect(ariaSortFor('start_in_seconds')).toBe('descending');
   });
 
-  it('sorts by the id column ascending on first click', async () => {
+  it('clears the sort on the third click, falling back to default ordering', async () => {
+    renderTable();
+    const startHeader = await screen.findByTestId('sort-header-start_in_seconds');
+
+    fireEvent.click(startHeader);
+    await waitFor(() => expect(ariaSortFor('start_in_seconds')).toBe('ascending'));
+    fireEvent.click(screen.getByTestId('sort-header-start_in_seconds'));
+    await waitFor(() => expect(ariaSortFor('start_in_seconds')).toBe('descending'));
+
+    // Third click drops the order_by param entirely, so the backend applies its
+    // own default ordering and the UI stops claiming a sort.
+    fireEvent.click(screen.getByTestId('sort-header-start_in_seconds'));
+    await waitFor(() =>
+      expect(lastBody().report_metadata.order_by).toEqual([]),
+    );
+    await waitFor(() => expect(ariaSortFor('start_in_seconds')).toBeNull());
+  });
+
+  it('starts a fresh ascending cycle after the sort has been cleared', async () => {
+    renderTable();
+    const startHeader = await screen.findByTestId('sort-header-start_in_seconds');
+    fireEvent.click(startHeader);
+    await waitFor(() => expect(ariaSortFor('start_in_seconds')).toBe('ascending'));
+    fireEvent.click(screen.getByTestId('sort-header-start_in_seconds'));
+    await waitFor(() => expect(ariaSortFor('start_in_seconds')).toBe('descending'));
+    fireEvent.click(screen.getByTestId('sort-header-start_in_seconds'));
+    await waitFor(() => expect(ariaSortFor('start_in_seconds')).toBeNull());
+
+    fireEvent.click(screen.getByTestId('sort-header-start_in_seconds'));
+    await waitFor(() =>
+      expect(lastBody().report_metadata.order_by).toEqual([
+        'start_in_seconds',
+        '-id',
+      ]),
+    );
+    expect(ariaSortFor('start_in_seconds')).toBe('ascending');
+  });
+
+  it('switching to another column starts that column at ascending', async () => {
+    renderTable(['/?order_by=-start_in_seconds']);
+    const endHeader = await screen.findByTestId('sort-header-end_in_seconds');
+    fireEvent.click(endHeader);
+    await waitFor(() =>
+      expect(lastBody().report_metadata.order_by).toEqual([
+        'end_in_seconds',
+        '-id',
+      ]),
+    );
+    expect(ariaSortFor('end_in_seconds')).toBe('ascending');
+    expect(ariaSortFor('start_in_seconds')).toBeNull();
+  });
+
+  it('does not duplicate the tiebreaker when sorting by id itself', async () => {
     renderTable();
     const idHeader = await screen.findByTestId('sort-header-id');
     fireEvent.click(idHeader);
@@ -238,21 +328,22 @@ describe('ProcessInstanceListTable sorting', () => {
     const endHeader = await screen.findByTestId('sort-header-end_in_seconds');
     fireEvent.click(endHeader);
     await waitFor(() =>
-      expect(lastBody().report_metadata.order_by).toEqual(['end_in_seconds']),
+      expect(lastBody().report_metadata.order_by).toEqual([
+        'end_in_seconds',
+        '-id',
+      ]),
     );
   });
 
   it('restores the sort from the URL on load (refresh / pagination persistence)', async () => {
     renderTable(['/?order_by=-end_in_seconds&page=2']);
     await screen.findByTestId('sort-header-end_in_seconds');
-    expect(lastBody().report_metadata.order_by).toEqual(['-end_in_seconds']);
+    expect(lastBody().report_metadata.order_by).toEqual([
+      '-end_in_seconds',
+      '-id',
+    ]);
     // the descending indicator reflects the URL state
-    expect(
-      screen
-        .getByTestId('sort-header-end_in_seconds')
-        .closest('th')
-        ?.getAttribute('aria-sort'),
-    ).toBe('descending');
+    expect(ariaSortFor('end_in_seconds')).toBe('descending');
   });
 
   it("shows the saved report's sort indicator without a click when opened via reportIdentifier", async () => {
@@ -269,6 +360,23 @@ describe('ProcessInstanceListTable sorting', () => {
     await waitFor(() => expect(ariaSortFor('start_in_seconds')).toBe('descending'));
     // only the leading order_by term drives the indicator
     expect(ariaSortFor('id')).toBeNull();
+  });
+
+  it("clearing the sort reverts to the saved report's own order", async () => {
+    // Cycling a column back to "none" removes the URL param, so ordering falls
+    // back to the report metadata rather than to no order at all. Give the report
+    // a different sort column so the fallback is unambiguous.
+    h.report.report_metadata.order_by = ['-end_in_seconds'];
+    renderTableForSavedReport(['/?order_by=-start_in_seconds']);
+    const startHeader = await screen.findByTestId('sort-header-start_in_seconds');
+    await waitFor(() => expect(ariaSortFor('start_in_seconds')).toBe('descending'));
+
+    fireEvent.click(startHeader);
+    await waitFor(() =>
+      expect(lastBody().report_metadata.order_by).toEqual(['-end_in_seconds']),
+    );
+    await waitFor(() => expect(ariaSortFor('end_in_seconds')).toBe('descending'));
+    expect(ariaSortFor('start_in_seconds')).toBeNull();
   });
 
   it('lets an explicit URL sort win over the saved report order', async () => {
