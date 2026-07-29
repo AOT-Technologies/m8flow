@@ -69,6 +69,52 @@ def test_root_honors_configured_api_path_prefix() -> None:
     assert response.get_json()["docs"] == "/v2.0/ui/"
 
 
+@pytest.mark.parametrize(
+    ("configured_prefix", "expected_prefix"),
+    [
+        ("   ", "/v1.0"),   # whitespace-only -> default (no malformed "   /ui/")
+        ("/", "/v1.0"),     # bare slash -> default
+        ("//", "/v1.0"),    # collapses to empty -> default
+        ("", "/v1.0"),      # empty -> default
+        ("v2", "/v2"),      # missing leading slash -> normalized
+        ("/v2/", "/v2"),    # trailing slash stripped
+        ("  /v2  ", "/v2"),  # surrounding whitespace stripped
+    ],
+)
+def test_root_normalizes_malformed_api_path_prefix(configured_prefix, expected_prefix) -> None:
+    app = _make_app()
+    app.config["SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"] = configured_prefix
+
+    payload = app.test_client().get("/", headers={"Accept": "application/json"}).get_json()
+
+    assert payload["docs"] == f"{expected_prefix}/ui/"
+    assert payload["openapi"] == f"{expected_prefix}/openapi.json"
+    assert payload["health"] == f"{expected_prefix}/ping"
+    assert payload["status"] == f"{expected_prefix}/status"
+    # No generated link may contain whitespace or be relative.
+    for link in payload.values():
+        if link.startswith("/v"):
+            assert " " not in link
+            assert link.startswith("/")
+
+
+@pytest.mark.parametrize(
+    "accept_header",
+    [
+        "text/html,application/json",  # tied q-values, html listed first
+        "application/json,text/html",  # tied q-values, json listed first
+    ],
+)
+def test_root_returns_json_for_tied_accept_qvalues(accept_header) -> None:
+    # Ties must resolve to JSON (safer default for programmatic callers), regardless
+    # of client ordering. Locks in behavior against accidental flips in refactors.
+    app = _make_app()
+
+    response = app.test_client().get("/", headers={"Accept": accept_header})
+
+    assert response.mimetype == "application/json"
+
+
 def test_root_rejects_non_get_methods() -> None:
     app = _make_app()
 
@@ -156,6 +202,27 @@ def test_register_root_route_is_idempotent() -> None:
 
     response = app.test_client().get("/", headers={"Accept": "application/json"})
     assert response.status_code == 200
+
+
+def test_register_root_route_does_not_collide_with_preexisting_root_rule() -> None:
+    # An upstream/base app may already own "/" under a different endpoint. Registering
+    # our root route must NOT raise an add_url_rule conflict at startup.
+    app = Flask(__name__)
+    app.config["TESTING"] = True
+
+    def preexisting_root() -> str:
+        return "upstream root"
+
+    app.add_url_rule("/", "upstream_root", preexisting_root, methods=["GET"])
+
+    # Must not raise despite "/" already being registered by another endpoint.
+    register_root_route(app)
+
+    # The pre-existing route is left untouched; our endpoint was not force-added.
+    assert "m8flow_root" not in app.view_functions
+    response = app.test_client().get("/")
+    assert response.status_code == 200
+    assert response.get_data(as_text=True) == "upstream root"
 
 
 @pytest.mark.parametrize(

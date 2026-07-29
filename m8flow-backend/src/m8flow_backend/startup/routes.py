@@ -23,11 +23,19 @@ def register_root_route(app) -> None:
             wsgi_path_prefix = f"/{wsgi_path_prefix}"
         rules.append((f"{wsgi_path_prefix}/", "m8flow_root_prefixed"))
 
+    existing_rule_paths = {url_rule.rule for url_rule in app.url_map.iter_rules()}
     for rule, endpoint in rules:
         # Idempotency is handled explicitly; any other registration error is a
         # real startup problem and must propagate loudly.
         if endpoint in app.view_functions:
             logger.debug("Root route %s (endpoint %s) already registered; skipping.", rule, endpoint)
+            continue
+        # Defensive: if the URL path itself is already owned by a different endpoint
+        # (e.g. an upstream/base app registered it), do not attempt to add a second
+        # rule for the same path — that would raise a hard add_url_rule conflict at
+        # startup. Leave the existing route in place and log instead.
+        if rule in existing_rule_paths:
+            logger.info("Root path %s already registered by another endpoint; leaving it untouched.", rule)
             continue
         app.add_url_rule(rule, endpoint, root, methods=["GET"])
 

@@ -15,9 +15,7 @@ is listed in ``M8FLOW_AUTH_EXCLUSION_ADDITIONS`` so upstream auth skips it.
 """
 from __future__ import annotations
 
-import json
-
-from flask import Response, current_app, request
+from flask import Response, current_app, jsonify, request
 
 _API_PATH_PREFIX_CONFIG_KEY = "SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"
 _DEFAULT_API_PATH_PREFIX = "/v1.0"
@@ -119,15 +117,33 @@ _LANDING_PAGE_TEMPLATE = """<!doctype html>
 
 
 def _api_path_prefix() -> str:
+    """Resolve the API path prefix used to build discoverable links.
+
+    Normalizes malformed config values so generated URLs are always absolute and
+    well-formed: whitespace-only, ``/`` and ``//`` collapse to the default, and a
+    value missing a leading slash (e.g. ``v2``) is normalized to ``/v2``.
+    """
     try:
-        prefix = current_app.config.get(_API_PATH_PREFIX_CONFIG_KEY) or _DEFAULT_API_PATH_PREFIX
+        raw = current_app.config.get(_API_PATH_PREFIX_CONFIG_KEY)
     except Exception:
-        prefix = _DEFAULT_API_PATH_PREFIX
-    prefix = prefix.rstrip("/")
-    return prefix or _DEFAULT_API_PATH_PREFIX
+        raw = None
+    prefix = (raw or "").strip().rstrip("/")
+    if not prefix:
+        return _DEFAULT_API_PATH_PREFIX
+    if not prefix.startswith("/"):
+        prefix = f"/{prefix}"
+    return prefix
 
 
 def _request_prefers_html() -> bool:
+    """Return True only when the client explicitly prefers HTML over JSON.
+
+    Browsers send ``Accept: text/html,...`` and get the landing page. Everything
+    else — ``curl`` (``*/*``), scripts, and explicit ``application/json`` — falls
+    through to the JSON payload. The strict ``>`` comparison means a tie (e.g.
+    ``*/*`` matching both equally) resolves to JSON, which is the safer default
+    for programmatic callers.
+    """
     best = request.accept_mimetypes.best_match(["text/html", "application/json"])
     return best == "text/html" and request.accept_mimetypes[best] > request.accept_mimetypes["application/json"]
 
@@ -155,7 +171,9 @@ def root() -> Response:
         "health": ping_url,
         "status": status_url,
     }
-    return Response(json.dumps(payload), status=200, mimetype="application/json")
+    # jsonify sets the correct application/json content-type + charset and avoids
+    # manual json.dumps serialization footguns.
+    return jsonify(payload)
 
 
 # The root endpoint is public and global; the tenant resolver must not demand a
