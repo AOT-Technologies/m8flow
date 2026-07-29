@@ -105,12 +105,27 @@ export default function ProcessInstanceListTable({
     ? `${paginationQueryParamPrefix}_order_by`
     : 'order_by';
 
+  const [processInstances, setProcessInstances] = useState<ProcessInstance[]>(
+    [],
+  );
+  const [
+    reportMetadataFromProcessInstances,
+    setReportMetadataFromProcessInstances,
+  ] = useState<ReportMetadata | null>(null);
+
+  const [reportHash, setReportHash] = useState<string | null>(null);
+
   // Active sort resolved from the URL first (survives refresh / pagination), then
-  // falling back to the report metadata order so a saved report lights up the
-  // correct indicator. A leading '-' means descending.
+  // the report metadata prop, then the order_by the backend echoed back with the
+  // last result set. The echo is what makes a saved report opened via
+  // reportIdentifier light up the correct column: that report's metadata is
+  // fetched and POSTed but never held in state here. A leading '-' means descending.
   const orderByFromUrl = searchParams.get(orderByQueryParam);
   const activeOrderByToken =
-    orderByFromUrl ?? reportMetadata?.order_by?.[0] ?? null;
+    orderByFromUrl ??
+    reportMetadata?.order_by?.[0] ??
+    reportMetadataFromProcessInstances?.order_by?.[0] ??
+    null;
   const activeSortField = activeOrderByToken
     ? activeOrderByToken.replace(/^-/, '')
     : null;
@@ -136,15 +151,6 @@ export default function ProcessInstanceListTable({
     setSearchParams(newSearchParams);
   };
 
-  const [processInstances, setProcessInstances] = useState<ProcessInstance[]>(
-    [],
-  );
-  const [
-    reportMetadataFromProcessInstances,
-    setReportMetadataFromProcessInstances,
-  ] = useState<ReportMetadata | null>(null);
-
-  const [reportHash, setReportHash] = useState<string | null>(null);
   const preferredUsername = UserService.getPreferredUsername();
   const userEmail = UserService.getUserEmail();
   const processInstanceShowPathPrefix =
