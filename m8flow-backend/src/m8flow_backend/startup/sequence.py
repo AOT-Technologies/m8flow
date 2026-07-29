@@ -14,7 +14,7 @@ from m8flow_backend.startup.config import (
     configure_templates_dir,
     configure_permissions_yml,
 )
-from m8flow_backend.startup.routes import register_template_file_fallback_routes
+from m8flow_backend.startup.routes import register_root_route, register_template_file_fallback_routes
 from m8flow_backend.startup.flask_hooks import (
     register_request_active_hooks,
     register_request_tenant_context_hooks,
@@ -83,6 +83,9 @@ def _configure_created_app(cnx_app: Any, db: Any, upgrade_m8flow_db: Callable[[]
 
     # Register fallback routes (defensive).
     register_template_file_fallback_routes(flask_app)
+
+    # Public backend root landing page (M8F-409).
+    register_root_route(flask_app)
 
     # Identity guard + db engine bound after create_app.
     assert_model_identity()

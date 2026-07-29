@@ -52,6 +52,8 @@ M8FLOW_AUTH_EXCLUSION_ADDITIONS = [
     "m8flow_backend.routes.external_forms_controller.external_form_submit",
     "m8flow_backend.routes.tenant_invitation_controller.validate_invitation",
     "m8flow_backend.routes.tenant_invitation_controller.accept_tenant_invitation",
+    # Public backend root landing page (M8F-409): no tenant data, browser-facing.
+    "m8flow_backend.routes.root_controller.root",
 ]
 
 # Endpoints that still require authenticated users but must bypass the generic
