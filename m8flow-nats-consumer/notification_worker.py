@@ -33,6 +33,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger("m8flow.nats.notification_worker")
 
+try:
+    from m8flow_telemetry.bootstrap import setup
+
+    setup("m8flow-nats-notification-worker")
+except ImportError:  # pragma: no cover
+    pass
+
 NATS_URL      = os.environ["M8FLOW_NATS_URL"]
 STREAM_NAME   = os.getenv("M8FLOW_NATS_NOTIFICATIONS_STREAM_NAME", "M8FLOW_NOTIFICATIONS")
 SUBJECT       = os.getenv("M8FLOW_NATS_NOTIFICATIONS_SUBJECT", "m8flow.notifications.>")
@@ -165,7 +172,9 @@ async def main() -> None:
 
     logger.info("Initializing M8Flow core application context...")
     from m8flow_backend.app import app as asgi_app
-    flask_app = asgi_app.app.app
+    flask_app = asgi_app.app
+    while not hasattr(flask_app, "app_context"):
+        flask_app = flask_app.app
 
     logger.info("Starting M8Flow notification worker...")
     nc = NATS()
