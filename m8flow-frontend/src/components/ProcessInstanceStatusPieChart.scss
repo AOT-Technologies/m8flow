@@ -1,0 +1,181 @@
+.process-status-chart {
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 16px 20px 20px;
+  margin-bottom: 16px;
+}
+
+.process-status-chart__title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #525252;
+  margin: 0 0 12px;
+}
+
+.process-status-chart__body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 24px 48px;
+}
+
+.process-status-chart__donut {
+  position: relative;
+  flex: 0 0 200px;
+  width: 200px;
+  height: 200px;
+}
+
+.process-status-chart__donut-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.process-status-chart__donut-svg circle {
+  transition:
+    stroke-width 0.12s ease,
+    stroke-opacity 0.12s ease;
+}
+
+.process-status-chart__center {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.process-status-chart__center-value {
+  font-size: 1.75rem;
+  font-weight: 600;
+  color: #161616;
+  line-height: 1.1;
+}
+
+.process-status-chart__center-label {
+  font-size: 0.75rem;
+  color: #6f6f6f;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+// Legend fills the remaining width of the card so the row spans edge-to-edge,
+// reading as a compact table (like the process instance table below it).
+.process-status-chart__legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.process-status-chart__legend-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 8px;
+  padding: 8px 8px;
+  border: none;
+  border-bottom: 1px solid #f0f0f0;
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: #393939;
+  text-align: left;
+}
+
+.process-status-chart__legend li:last-child .process-status-chart__legend-item {
+  border-bottom: none;
+}
+
+.process-status-chart__legend-item:hover {
+  background: #f4f4f4;
+}
+
+.process-status-chart__legend-item--selected {
+  background: #e8e8e8;
+  font-weight: 600;
+}
+
+.process-status-chart__legend-swatch {
+  flex: 0 0 12px;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+}
+
+.process-status-chart__legend-label {
+  flex: 1 1 auto;
+}
+
+.process-status-chart__legend-count {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: #161616;
+}
+
+.process-status-chart__loading,
+.process-status-chart__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+  color: #6f6f6f;
+}
+
+.process-status-chart__tooltip {
+  background: #393939;
+  color: #ffffff;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 0.8125rem;
+}
+
+// Dark mode — mirrors the app's Carbon g100 surface so the card blends in
+// with the dark dashboard instead of showing a white block.
+.process-status-chart--dark {
+  background: #262626;
+  border-color: #393939;
+
+  .process-status-chart__title {
+    color: #c6c6c6;
+  }
+
+  .process-status-chart__center-value {
+    color: #f4f4f4;
+  }
+
+  .process-status-chart__center-label {
+    color: #a8a8a8;
+  }
+
+  .process-status-chart__legend-item {
+    color: #c6c6c6;
+    border-bottom-color: #393939;
+  }
+
+  .process-status-chart__legend-item:hover {
+    background: #353535;
+  }
+
+  .process-status-chart__legend-item--selected {
+    background: #4c4c4c;
+  }
+
+  .process-status-chart__legend-count {
+    color: #f4f4f4;
+  }
+
+  .process-status-chart__loading,
+  .process-status-chart__empty {
+    color: #a8a8a8;
+  }
+}
