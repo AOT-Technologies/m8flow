@@ -19,6 +19,7 @@ jobs:
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
+      mcp: ${{ steps.filter.outputs.mcp }}
       migrations: ${{ steps.filter.outputs.migrations }}
       docker_m8flow: ${{ steps.filter.outputs.docker_m8flow }}
     steps:
@@ -34,6 +35,8 @@ jobs:
             migrations:
               - 'm8flow-backend/migrations/versions/*.py'
               - 'spiffworkflow-backend/migrations/versions/*.py'
+            mcp:
+              - 'm8flow-mcp/**'
             docker_m8flow:
               - 'docker/**'
               - 'm8flow-connector-proxy/**'
@@ -370,6 +373,51 @@ jobs:
         run: docker compose -f "$COMPOSE_FILE" down -v || true
 
   # -------------------------
+  # MCP Server Lint
+  # -------------------------
+  mcp-lint:
+    name: MCP Lint
+    needs: path_filters
+    if: ${{ github.event_name == 'push' || needs.path_filters.outputs.mcp == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.1'
+      - name: Install Ruff
+        # Pin ruff so a newer release can't silently change formatting rules.
+        # Keep in sync with the `ruff` pin in m8flow-mcp/pyproject.toml [dev].
+        run: python -m pip install ruff==0.15.20
+      - name: Run M8Flow MCP lint
+        working-directory: m8flow-mcp
+        run: |
+          ruff check .
+          ruff format --check .
+
+  # -------------------------
+  # MCP Server Unit Tests
+  # -------------------------
+  mcp:
+    name: MCP Unit Tests
+    needs: path_filters
+    if: ${{ github.event_name == 'push' || needs.path_filters.outputs.mcp == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.1'
+      - name: Install M8Flow MCP dependencies
+        working-directory: m8flow-mcp
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: Test M8Flow MCP
+        working-directory: m8flow-mcp
+        run: pytest tests/ --cov=src --cov-report=term-missing
+
+  # -------------------------
   # Required Merge Gate
   # -------------------------
   required-ci:
@@ -380,6 +428,8 @@ jobs:
       - backend
       - frontend-lint
       - frontend-build-unit
+      - mcp-lint
+      - mcp
       - codeql
       - trivy
       - migration-check
@@ -397,6 +447,8 @@ jobs:
           echo "backend-lint result: ${{ needs.backend-lint.result }}"
           echo "frontend-lint result: ${{ needs.frontend-lint.result }}"
           echo "frontend-build-unit result: ${{ needs.frontend-build-unit.result }}"
+          echo "mcp-lint result: ${{ needs.mcp-lint.result }}"
+          echo "mcp result: ${{ needs.mcp.result }}"
           echo "codeql result: ${{ needs.codeql.result }}"
           echo "trivy result: ${{ needs.trivy.result }}"
           echo "migration-check result: ${{ needs.migration-check.result }}"
@@ -421,6 +473,17 @@ jobs:
             }
             [[ "${{ needs.frontend-build-unit.result }}" == "success" ]] || {
               echo "::error::Frontend build/unit CI did not succeed."
+              exit 1
+            }
+          fi
+
+          if [[ "${{ github.event_name }}" == "push" || "${{ needs.path_filters.outputs.mcp }}" == "true" ]]; then
+            [[ "${{ needs.mcp-lint.result }}" == "success" ]] || {
+              echo "::error::MCP lint CI did not succeed."
+              exit 1
+            }
+            [[ "${{ needs.mcp.result }}" == "success" ]] || {
+              echo "::error::MCP unit tests did not succeed."
               exit 1
             }
           fi
