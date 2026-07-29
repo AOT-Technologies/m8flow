@@ -26,11 +26,12 @@ RUN apt-get update \
   && apt-get install -y -q gcc git libssl-dev pkg-config libsqlite3-0=3.40.1-2+deb12u2 \
   && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml poetry.lock README.md /app/
+COPY m8flow-telemetry /m8flow-telemetry
+COPY m8flow-connector-proxy/pyproject.toml m8flow-connector-proxy/poetry.lock m8flow-connector-proxy/README.md /app/
 RUN poetry check --lock \
   && poetry install --no-interaction --no-root --sync
 
-COPY . /app
+COPY m8flow-connector-proxy/ /app/
 RUN chmod +x bin/*
 RUN poetry install --no-interaction --no-root
 

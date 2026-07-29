@@ -91,6 +91,7 @@ import { Can } from '../contexts/Can';
 import Filters from './Filters';
 import DateAndTimeService from '../services/DateAndTimeService';
 import ProcessInstanceListTable from './ProcessInstanceListTable';
+import ProcessInstanceStatusPieChart from './ProcessInstanceStatusPieChart';
 
 type OwnProps = {
   filtersEnabled?: boolean;
@@ -108,6 +109,7 @@ type OwnProps = {
   showLinkToReport?: boolean;
   header?: SpiffTableHeader;
   tableHtmlId?: string;
+  showStatusChart?: boolean;
 };
 
 interface DateParameters {
@@ -130,6 +132,7 @@ export default function ProcessInstanceListTableWithFilters({
   showLinkToReport = false,
   header,
   tableHtmlId,
+  showStatusChart = true,
 }: OwnProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -1804,12 +1807,39 @@ export default function ProcessInstanceListTableWithFilters({
     );
   };
 
+  // Clicking a chart slice/legend row toggles a single-status filter on the table.
+  // Reuses the same report-metadata plumbing as the status MultiSelect so the table
+  // re-queries automatically.
+  const applyStatusFilterFromChart = (status: string) => {
+    if (!reportMetadata) {
+      return;
+    }
+    const isOnlySelected =
+      processStatusSelection.length === 1 &&
+      processStatusSelection[0] === status;
+    const newValue = isOnlySelected ? '' : status;
+    insertOrUpdateFieldInReportMetadata(
+      reportMetadata,
+      'process_status',
+      newValue,
+    );
+    setProcessStatusSelection(newValue ? [status] : []);
+  };
+
   let resultsTable = null;
   if (reportMetadata) {
     const refilterTextComponent = null;
     resultsTable = (
       <>
         {refilterTextComponent}
+        {showStatusChart ? (
+          <ProcessInstanceStatusPieChart
+            variant={variant}
+            reportMetadata={reportMetadata}
+            selectedStatuses={processStatusSelection}
+            onStatusClick={applyStatusFilterFromChart}
+          />
+        ) : null}
         <ProcessInstanceListTable
           autoReload={autoReloadEnabled}
           canCompleteAllTasks={canCompleteAllTasks}

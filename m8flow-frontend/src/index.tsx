@@ -2,6 +2,14 @@ import React from 'react';
 import * as ReactDOMClient from 'react-dom/client';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
 import App from './App';
+import { initFaro, syncFaroTenantFromCookie } from './faro';
+
+initFaro();
+// Tags Faro with the tenant from an already-set m8flow_selected_tenant cookie —
+// covers returning users and the post-redirect landing page after tenant
+// finalization, not just the in-app selection flow (TenantSelectPage also
+// calls this directly when a tenant is newly selected).
+syncFaroTenantFromCookie();
 
 // Import styles and i18n from core
 // Note: These imports use the @spiffworkflow-frontend alias configured in vite.config.ts

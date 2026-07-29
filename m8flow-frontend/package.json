@@ -9,6 +9,8 @@
     "@carbon/react": "^1.89.0",
     "@casl/ability": "^6.7.1",
     "@casl/react": "^4.0.0",
+    "@grafana/faro-web-sdk": "^1.19.0",
+    "@grafana/faro-web-tracing": "^1.19.0",
     "@microsoft/fetch-event-source": "^2.0.1",
     "@monaco-editor/react": "^4.7.0",
     "@mui/icons-material": "^7.0.0",
