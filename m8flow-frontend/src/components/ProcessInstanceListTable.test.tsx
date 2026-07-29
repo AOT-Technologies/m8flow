@@ -6,18 +6,35 @@ import ProcessInstanceListTable from './ProcessInstanceListTable';
 const h = vi.hoisted(() => ({
   postBodies: [] as any[],
   result: null as any,
+  report: null as any,
 }));
 
 vi.mock('../services/HttpService', () => ({
   default: {
     HttpMethods: { GET: 'GET', POST: 'POST' },
     makeCallToBackend: vi.fn((opts: any) => {
+      // The saved-report path fetches the report metadata first, then feeds it
+      // into the search call. Dispatch on path so both can be exercised.
+      if (opts.path.startsWith('/process-instances/report-metadata')) {
+        setTimeout(() => opts.successCallback(h.report), 0);
+        return;
+      }
       if (opts.path.startsWith('/process-instances')) {
         h.postBodies.push(opts.postBody);
+        // Mirror the backend, which echoes the POSTed report_metadata back on
+        // the response and only ever overwrites filter_by server-side.
+        // See run_process_instance_report in process_instance_report_service.py.
+        const response = {
+          ...h.result,
+          report_metadata: {
+            ...h.result.report_metadata,
+            order_by: opts.postBody?.report_metadata?.order_by ?? [],
+          },
+        };
         // Resolve asynchronously, mirroring a real HTTP call. This ensures the
         // success callback runs after the component's mount effects (including
         // the effect that clears stale rows) have flushed.
-        setTimeout(() => opts.successCallback(h.result), 0);
+        setTimeout(() => opts.successCallback(response), 0);
       }
     }),
   },
@@ -108,14 +125,35 @@ const reportMetadata = () => ({
   order_by: [] as string[],
 });
 
-const renderTable = (initialEntries: string[] = ['/']) =>
+const renderTable = (
+  initialEntries: string[] = ['/'],
+  orderBy: string[] = [],
+) =>
   render(
     <MemoryRouter initialEntries={initialEntries}>
-      <ProcessInstanceListTable variant="all" reportMetadata={reportMetadata()} />
+      <ProcessInstanceListTable
+        variant="all"
+        reportMetadata={{ ...reportMetadata(), order_by: orderBy }}
+      />
+    </MemoryRouter>,
+  );
+
+// The saved-report path: only reportIdentifier is passed, so the reportMetadata
+// prop is necessarily undefined (the two are mutually exclusive).
+const renderTableForSavedReport = (initialEntries: string[] = ['/']) =>
+  render(
+    <MemoryRouter initialEntries={initialEntries}>
+      <ProcessInstanceListTable variant="all" reportIdentifier="my_report" />
     </MemoryRouter>,
   );
 
 const lastBody = () => h.postBodies[h.postBodies.length - 1];
+
+const ariaSortFor = (accessor: string) =>
+  screen
+    .getByTestId(`sort-header-${accessor}`)
+    .closest('th')
+    ?.getAttribute('aria-sort');
 
 beforeEach(() => {
   h.postBodies = [];
@@ -128,6 +166,18 @@ beforeEach(() => {
       order_by: [],
     },
     report_hash: 'hash-1',
+  };
+  // Shape returned by /process-instances/report-metadata for a saved report.
+  // Every built-in system report ships this order_by.
+  h.report = {
+    id: 1,
+    identifier: 'my_report',
+    name: 'My Report',
+    report_metadata: {
+      columns: COLUMNS,
+      filter_by: [],
+      order_by: ['-start_in_seconds', '-id'],
+    },
   };
 });
 
@@ -203,5 +253,48 @@ describe('ProcessInstanceListTable sorting', () => {
         .closest('th')
         ?.getAttribute('aria-sort'),
     ).toBe('descending');
+  });
+
+  it("shows the saved report's sort indicator without a click when opened via reportIdentifier", async () => {
+    // The report metadata is fetched over the network and POSTed, never held in
+    // the reportMetadata prop, so the indicator has to come from the response.
+    renderTableForSavedReport();
+    await screen.findByTestId('sort-header-start_in_seconds');
+    await waitFor(() =>
+      expect(lastBody().report_metadata.order_by).toEqual([
+        '-start_in_seconds',
+        '-id',
+      ]),
+    );
+    await waitFor(() => expect(ariaSortFor('start_in_seconds')).toBe('descending'));
+    // only the leading order_by term drives the indicator
+    expect(ariaSortFor('id')).toBeNull();
+  });
+
+  it('lets an explicit URL sort win over the saved report order', async () => {
+    renderTableForSavedReport(['/?order_by=id']);
+    await screen.findByTestId('sort-header-id');
+    await waitFor(() =>
+      expect(lastBody().report_metadata.order_by).toEqual(['id']),
+    );
+    await waitFor(() => expect(ariaSortFor('id')).toBe('ascending'));
+    expect(ariaSortFor('start_in_seconds')).toBeNull();
+  });
+
+  it('shows the sort indicator from the reportMetadata prop without a click', async () => {
+    renderTable(['/'], ['-end_in_seconds']);
+    await screen.findByTestId('sort-header-end_in_seconds');
+    await waitFor(() => expect(ariaSortFor('end_in_seconds')).toBe('descending'));
+  });
+
+  it('shows no sort indicator when no order is requested', async () => {
+    // The backend applies its own default ordering in this case, but the UI does
+    // not claim a sort it never asked for.
+    renderTable();
+    await screen.findByTestId('sort-header-id');
+    expect(lastBody().report_metadata.order_by).toEqual([]);
+    ['id', 'start_in_seconds', 'end_in_seconds'].forEach((accessor) => {
+      expect(ariaSortFor(accessor)).toBeNull();
+    });
   });
 });
