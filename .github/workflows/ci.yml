@@ -312,7 +312,7 @@ jobs:
             --cache-from type=gha,scope=connector-proxy \
             --cache-to type=gha,mode=max,scope=connector-proxy \
             --load \
-            m8flow-connector-proxy
+            .
       - name: Start full stack
         # --profile init seeds MinIO buckets, syncs templates/process models, and runs
         # Keycloak realm/user init. Pre-built images mean no rebuild here.

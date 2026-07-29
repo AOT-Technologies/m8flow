@@ -26,11 +26,17 @@ export default function MonitoringCeleryPage() {
     );
   }
 
+  // Flower serves its pages under a URL prefix, so the bare base (e.g. "/flower")
+  // is not a real route and 404s ("Error, page not found"), while "/flower/workers"
+  // is valid. Land the iframe directly on the Workers view so the first load always
+  // resolves, regardless of whether the configured URL has a trailing slash.
+  const flowerSrc = `${CELERY_FLOWER_URL.replace(/\/+$/, "")}/workers`;
+
   return (
     <EmbeddedDashboard
       title={t("celery_monitoring")}
       description={t("celery_monitoring_description")}
-      src={CELERY_FLOWER_URL}
+      src={flowerSrc}
     />
   );
 }
