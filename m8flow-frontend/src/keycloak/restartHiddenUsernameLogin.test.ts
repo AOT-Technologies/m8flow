@@ -1,9 +1,21 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
   handleManualHiddenUsernameRestart,
   restartHiddenUsernameLogin,
 } from '../../../m8flow-backend/keycloak/themes/m8flow/login/resources/js/restartHiddenUsernameLogin.js';
+
+// Resolved from the Vitest root (m8flow-frontend), matching how the theme JS above is
+// imported across the repo boundary.
+const LOGIN_USERNAME_TEMPLATE = readFileSync(
+  resolve(
+    process.cwd(),
+    '../m8flow-backend/keycloak/themes/m8flow/login/login-username.ftl',
+  ),
+  'utf8',
+);
 
 const createStorage = (initialValues: Record<string, string> = {}) => {
   const values = new Map(Object.entries(initialValues));
@@ -44,6 +56,26 @@ describe('restartHiddenUsernameLogin theme helper', () => {
     expect(restartHiddenUsernameLogin(marker as unknown as Element, locationObject, storage)).toBe(false);
     expect(locationObject.replace).toHaveBeenCalledTimes(2);
     expect(fallback.hidden).toBe(false);
+  });
+
+  it('leaves the manual fallback hidden while auto-restart attempts remain', () => {
+    document.body.innerHTML =
+      '<div id="m8f-hidden-username-login-fallback" hidden></div>';
+    const marker = {
+      getAttribute: vi.fn((attribute: string) => {
+        if (attribute === 'data-login-restart-url') {
+          return 'http://localhost:7002/realms/m8flow/login-actions/restart';
+        }
+        if (attribute === 'data-login-restart-fallback-id') {
+          return 'm8f-hidden-username-login-fallback';
+        }
+        return null;
+      }),
+    };
+    const fallback = document.getElementById('m8f-hidden-username-login-fallback') as HTMLDivElement;
+
+    expect(restartHiddenUsernameLogin(marker as unknown as Element, { replace: vi.fn() }, createStorage())).toBe(true);
+    expect(fallback.hidden).toBe(true);
   });
 
   it('auto-detects the username-only login marker rendered by the theme fallback page', () => {
@@ -137,5 +169,25 @@ describe('restartHiddenUsernameLogin theme helper', () => {
     ).toBe(true);
     expect(storage.getItem('m8flow-hidden-username-login-restart-url')).toBeNull();
     expect(locationObject.replace).toHaveBeenCalledWith(restartUrl);
+  });
+});
+
+describe('login-username.ftl theme template', () => {
+  // The fixtures above render the fallback with `hidden`, so they cannot catch the template
+  // shipping it visible. It did: the "sign-in form did not fully load" message then painted
+  // on every username-only render and showFallback()'s `fallback.hidden = false` was a no-op.
+  it('renders the manual fallback hidden so it only appears once showFallback runs', () => {
+    const openingTag = LOGIN_USERNAME_TEMPLATE.match(
+      /<div\b[^>]*\bid="m8f-hidden-username-login-fallback"[^>]*>/,
+    );
+
+    expect(openingTag).not.toBeNull();
+    // Standalone `hidden` attribute only -- `\bhidden\b` would also match inside the
+    // element's own id/class, which would make this assertion vacuous.
+    expect(openingTag?.[0]).toMatch(/\shidden(?=[\s>])/);
+  });
+
+  it('keeps a non-module reveal guard for when the ES module cannot load', () => {
+    expect(LOGIN_USERNAME_TEMPLATE).toContain('fallback.hidden = false;');
   });
 });

@@ -14,6 +14,7 @@
                 <div
                     id="m8f-hidden-username-login-fallback"
                     class="m8f-hidden-username-login-fallback"
+                    hidden
                 >
                     <p class="instruction">${msg("hiddenUsernameLoginFallback")}</p>
                     <div class="${properties.kcFormGroupClass!}">
@@ -37,5 +38,17 @@
             </div>
         </div>
         <script type="module" src="${url.resourcesPath}/js/restartHiddenUsernameLogin.js"></script>
+        <script>
+            // Classic script: runs even when the ES module above is blocked or fails to
+            // load. The module normally navigates away via location.replace() long before
+            // this fires; if it never ran, surface the manual restart link rather than
+            // leaving an empty form. The <noscript> block only covers JS being disabled.
+            setTimeout(function () {
+                var fallback = document.getElementById('m8f-hidden-username-login-fallback');
+                if (fallback) {
+                    fallback.hidden = false;
+                }
+            }, 5000);
+        </script>
     </#if>
 </@layout.registrationLayout>
