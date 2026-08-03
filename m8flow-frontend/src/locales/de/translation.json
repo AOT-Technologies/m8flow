@@ -61,6 +61,7 @@
   "celery_monitoring_not_configured": "Die Celery-Überwachung ist nicht konfiguriert.",
   "nats_monitoring": "NATS",
   "nats_monitoring_description": "NATS-Streams, Consumer und Nachrichten überwachen.",
+  "nats_monitoring_dashboard_pending": "Das integrierte NATS-Überwachungs-Dashboard folgt in Kürze. Metriken zu Streams, Consumern und Nachrichten erscheinen hier.",
   "open_in_new_tab": "In neuem Tab öffnen",
   "embedded_dashboard_unavailable": "Dieses Dashboard konnte nicht eingebettet werden. Öffnen Sie es stattdessen in einem neuen Tab.",
   "embedded_dashboard_slow_or_blocked": "Das Dashboard lädt länger als erwartet. Möglicherweise ist das Einbetten blockiert — öffnen Sie es in einem neuen Tab.",

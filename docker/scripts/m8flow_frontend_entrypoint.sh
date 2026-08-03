@@ -36,9 +36,9 @@ if [[ -n "${M8FLOW_CELERY_FLOWER_URL:-}" ]] && [[ -z "${M8FLOW_FRONTEND_RUNTIME_
   export M8FLOW_FRONTEND_RUNTIME_CONFIG_M8FLOW_CELERY_FLOWER_URL="$M8FLOW_CELERY_FLOWER_URL"
 fi
 
-# NATS monitoring is optional; when M8FLOW_NATS_UI_URL is unset/empty the NATS section stays hidden.
-if [[ -n "${M8FLOW_NATS_UI_URL:-}" ]] && [[ -z "${M8FLOW_FRONTEND_RUNTIME_CONFIG_M8FLOW_NATS_UI_URL:-}" ]]; then
-  export M8FLOW_FRONTEND_RUNTIME_CONFIG_M8FLOW_NATS_UI_URL="$M8FLOW_NATS_UI_URL"
+# NATS monitoring is optional; unless M8FLOW_NATS_MONITORING_ENABLED is "true" the section stays hidden.
+if [[ -n "${M8FLOW_NATS_MONITORING_ENABLED:-}" ]] && [[ -z "${M8FLOW_FRONTEND_RUNTIME_CONFIG_M8FLOW_NATS_MONITORING_ENABLED:-}" ]]; then
+  export M8FLOW_FRONTEND_RUNTIME_CONFIG_M8FLOW_NATS_MONITORING_ENABLED="$M8FLOW_NATS_MONITORING_ENABLED"
 fi
 
 # The MCP connection page is optional; when M8FLOW_MCP_SERVER_URL is unset/empty the page stays hidden.

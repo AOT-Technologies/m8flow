@@ -35,27 +35,32 @@ function renderAt() {
 describe("MonitoringNatsPage", () => {
   afterEach(() => vi.clearAllMocks());
 
-  it("embeds the NATS dashboard for super-admins when enabled", () => {
+  it("renders the NATS monitoring section for super-admins when enabled", () => {
     mockIsSuperAdmin.mockReturnValue(true);
-    mockUseConfig.mockReturnValue({
-      NATS_UI_URL: "http://localhost:6852",
-      NATS_MONITORING_ENABLED: true,
-    });
+    mockUseConfig.mockReturnValue({ NATS_MONITORING_ENABLED: true });
+
+    renderAt();
+
+    expect(
+      screen.getByTestId("nats-monitoring-placeholder"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("nats_monitoring")).toBeInTheDocument();
+  });
+
+  it("no longer embeds a third-party dashboard iframe", () => {
+    mockIsSuperAdmin.mockReturnValue(true);
+    mockUseConfig.mockReturnValue({ NATS_MONITORING_ENABLED: true });
 
     const { container } = renderAt();
 
-    const iframe = container.querySelector(
-      '[data-testid="embedded-dashboard-iframe"]',
-    );
-    expect(iframe?.getAttribute("src")).toBe("http://localhost:6852");
+    expect(
+      container.querySelector('[data-testid="embedded-dashboard-iframe"]'),
+    ).toBeNull();
   });
 
   it("redirects to home when NATS monitoring is disabled", () => {
     mockIsSuperAdmin.mockReturnValue(true);
-    mockUseConfig.mockReturnValue({
-      NATS_UI_URL: "",
-      NATS_MONITORING_ENABLED: false,
-    });
+    mockUseConfig.mockReturnValue({ NATS_MONITORING_ENABLED: false });
 
     renderAt();
 
@@ -64,10 +69,7 @@ describe("MonitoringNatsPage", () => {
 
   it("redirects non-super-admins to home even when enabled", () => {
     mockIsSuperAdmin.mockReturnValue(false);
-    mockUseConfig.mockReturnValue({
-      NATS_UI_URL: "http://localhost:6852",
-      NATS_MONITORING_ENABLED: true,
-    });
+    mockUseConfig.mockReturnValue({ NATS_MONITORING_ENABLED: true });
 
     renderAt();
 

@@ -17,7 +17,7 @@ This directory contains the Docker setup for running M8Flow: Compose files, Dock
 | **m8flow.keycloak.Dockerfile** | Builds Keycloak 26 with the realm-info-mapper provider and baked-in realm imports. |
 | **nginx-keycloak-proxy.conf** | Nginx config for the keycloak-proxy service: listen **6842** (container), proxy to keycloak:8080. |
 | **minio.local-dev.docker-compose.yml** | Standalone MinIO for local dev (host ports `${MINIO_LOCAL_DEV_API_PORT:-16846}` / `${MINIO_LOCAL_DEV_CONSOLE_PORT:-16847}`, mounts local BPMN/templates dirs). |
-| **m8flow-nats-docker-compose.yml** | NATS infrastructure: NATS server (with JetStream) and NATS UI. |
+| **m8flow-nats-docker-compose.yml** | NATS infrastructure: NATS server (with JetStream) and its monitoring endpoints. |
 
 ---
 
@@ -156,7 +156,7 @@ The NATS stack expects the `m8flow_default` network (created when you start the 
 
 ### Running NATS
 
-1. **Start NATS and NATS UI**:
+1. **Start NATS**:
 
    ```bash
    docker compose -f docker/m8flow-nats-docker-compose.yml up -d
@@ -173,7 +173,9 @@ The NATS stack expects the `m8flow_default` network (created when you start the 
 
 NATS Client: `nats://${M8FLOW_NATS_USER:-admin}:${M8FLOW_NATS_PASSWORD:-admin}@localhost:${M8FLOW_NATS_PORT:-6845}`
 NATS Monitoring: `http://localhost:${M8FLOW_NATS_MONITORING_PORT:-6851}`
-NATS UI (NUI): `http://localhost:${M8FLOW_NATS_UI_PORT:-6852}`
+
+The third-party NUI dashboard has been removed. Set `M8FLOW_NATS_MONITORING_ENABLED=true` to
+surface the built-in **NATS** section in the m8flow UI (super-admin only).
 
 **NATS Credentials**:
 The default username/password is `admin:admin`. You can customize these in your `.env` file via `M8FLOW_NATS_USER` and `M8FLOW_NATS_PASSWORD`.

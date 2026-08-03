@@ -39,10 +39,10 @@ const celeryFlowerUrl =
   rootEnv.M8FLOW_CELERY_FLOWER_URL ??
   process.env.VITE_M8FLOW_CELERY_FLOWER_URL ??
   'http://localhost:6850';
-const natsUiUrl =
-  rootEnv.M8FLOW_NATS_UI_URL ??
-  process.env.VITE_M8FLOW_NATS_UI_URL ??
-  '';
+const natsMonitoringEnabled =
+  rootEnv.M8FLOW_NATS_MONITORING_ENABLED ??
+  process.env.VITE_M8FLOW_NATS_MONITORING_ENABLED ??
+  'false';
 const mcpServerUrl =
   rootEnv.M8FLOW_MCP_SERVER_URL ??
   process.env.VITE_M8FLOW_MCP_SERVER_URL ??
@@ -56,7 +56,7 @@ export default defineConfig({
     'import.meta.env.VITE_M8FLOW_KEYCLOAK_SHARED_REALM': JSON.stringify(sharedRealmIdentifier),
     'import.meta.env.VITE_M8FLOW_KEYCLOAK_MASTER_REALM': JSON.stringify(masterRealmIdentifier),
     'import.meta.env.VITE_M8FLOW_CELERY_FLOWER_URL': JSON.stringify(celeryFlowerUrl),
-    'import.meta.env.VITE_M8FLOW_NATS_UI_URL': JSON.stringify(natsUiUrl),
+    'import.meta.env.VITE_M8FLOW_NATS_MONITORING_ENABLED': JSON.stringify(natsMonitoringEnabled),
     'import.meta.env.VITE_M8FLOW_MCP_SERVER_URL': JSON.stringify(mcpServerUrl),
   },
   test: {

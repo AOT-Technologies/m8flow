@@ -20,7 +20,6 @@ These control what **your machine** listens on when you run [docker/m8flow-docke
 | `REDIS_HOST_PORT` | `6848` | Redis on host |
 | `M8FLOW_BACKEND_CELERY_FLOWER_PORT` | `6850` | Celery Flower (host and in-container bind) |
 | `M8FLOW_NATS_MONITORING_PORT` | `6851` | NATS monitoring (host → container 8222) |
-| `M8FLOW_NATS_UI_PORT` | `6852` | NATS UI (host → container 31311) |
 | `MINIO_LOCAL_DEV_API_PORT` | `16846` | Standalone MinIO dev API ([minio.local-dev.docker-compose.yml](../docker/minio.local-dev.docker-compose.yml)) |
 | `MINIO_LOCAL_DEV_CONSOLE_PORT` | `16847` | Standalone MinIO dev console |
 
@@ -43,7 +42,7 @@ Also align URL-style settings with the above (e.g. `M8FLOW_BACKEND_URL`, `KEYCLO
 The UI embeds the Celery and NATS operations dashboards as super-admin-only sections (sidebar **Celery** / **NATS**) via an iframe, so operators no longer leave the app. URLs must be **browser-reachable** (resolved from the user's browser, not from inside a container).
 
 - `M8FLOW_CELERY_FLOWER_URL` (optional): URL of the Celery Flower dashboard embedded in the **Celery** section. Default `http://localhost:6850` (matches `M8FLOW_BACKEND_CELERY_FLOWER_PORT`). Flower keeps its own basic auth (`M8FLOW_BACKEND_CELERY_FLOWER_BASIC_AUTH`), so a basic-auth prompt may appear inside the embedded frame.
-- `M8FLOW_NATS_UI_URL` (optional): URL of the NATS NUI dashboard embedded in the **NATS** section. **Empty by default**, which hides the NATS section entirely (NATS is disabled by default). When running the optional [m8flow-nats-docker-compose.yml](../docker/m8flow-nats-docker-compose.yml), set e.g. `http://localhost:6852` (matches `M8FLOW_NATS_UI_PORT`).
+- `M8FLOW_NATS_MONITORING_ENABLED` (optional): shows the **NATS** monitoring section, served by the built-in dashboard rather than an embedded third-party UI. **`false` by default**, matching `M8FLOW_NATS_ENABLED`; set to `true` when running the optional [m8flow-nats-docker-compose.yml](../docker/m8flow-nats-docker-compose.yml). (Replaces the removed `M8FLOW_NATS_UI_URL`, which pointed at the third-party NUI dashboard.)
 
 Both are consumed by the frontend at build time (`VITE_*`) and at runtime in Docker (injected into `window.spiffworkflowFrontendJsenv` by [docker/scripts/m8flow_frontend_entrypoint.sh](../docker/scripts/m8flow_frontend_entrypoint.sh)). If an embedded dashboard refuses framing (e.g. via `X-Frame-Options`), the section shows an "Open in new tab" fallback.
 

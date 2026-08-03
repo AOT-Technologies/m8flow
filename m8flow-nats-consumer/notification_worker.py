@@ -106,7 +106,37 @@ async def sweep_loop() -> None:
             await asyncio.to_thread(_run_sweep)
         except Exception:
             logger.exception("Sweep pass failed; retrying on next interval.")
+        try:
+            await asyncio.to_thread(_prune_audit)
+        except Exception:
+            logger.exception("Audit prune failed; retrying on next interval.")
         await asyncio.sleep(interval)
+
+
+def _record_audit(**fields: Any) -> None:
+    """Write one audit row for a notification message outcome.
+
+    Never raises: recording what happened must not change what happens.
+    """
+    from m8flow_backend.models.nats_event_audit import NatsEventWorker
+    from m8flow_backend.services.nats_event_audit_service import NatsEventAuditService
+
+    try:
+        with flask_app.app_context():
+            NatsEventAuditService.record_outcome(
+                worker=NatsEventWorker.notification_worker.value, **fields
+            )
+    except Exception:
+        logger.exception("Failed to record NATS audit row (message handling unaffected).")
+
+
+def _prune_audit() -> None:
+    """Drop audit rows past the retention window. Runs on the existing sweep cadence."""
+    from m8flow_backend.config import nats_audit_retention_days
+    from m8flow_backend.services.nats_event_audit_service import NatsEventAuditService
+
+    with flask_app.app_context():
+        NatsEventAuditService.prune(nats_audit_retention_days())
 
 
 def _extract_tenant_slug_from_subject(subject: str) -> str | None:
@@ -123,16 +153,49 @@ async def process_message(msg: Any) -> None:
     Always ACKs: a send failure is recorded on the tracking row (status=failed) and
     retried by the sweep, which avoids NATS redelivery storms and keeps the claim
     column the single dedup authority."""
+    from m8flow_backend.models.nats_event_audit import NatsEventOutcome
+
+    stream_seq = None
+    try:
+        stream_seq = msg.metadata.sequence.stream
+    except Exception:
+        pass
+
     try:
         try:
             data = json.loads(msg.data.decode("utf-8"))
         except Exception as e:
             logger.error("Failed to parse message data: %s", e)
+            await asyncio.to_thread(
+                _record_audit,
+                tenant_id=None,
+                event_id=None,
+                outcome=NatsEventOutcome.invalid_payload.value,
+                error_message=f"could not parse message body: {e}",
+                stream_seq=stream_seq,
+            )
             return
+
+        # Notification events carry no publisher-generated id, so the message is keyed by
+        # the instance/task it refers to — the same identity the deterministic Nats-Msg-Id
+        # is built from on the publish side.
+        event_id = (
+            f"extform-{data.get('process_instance_id')}-{data.get('task_guid')}"
+            if data.get("process_instance_id")
+            else None
+        )
 
         subject_slug = _extract_tenant_slug_from_subject(msg.subject)
         if not subject_slug:
             logger.error("Unexpected subject format, discarding: %s", msg.subject)
+            await asyncio.to_thread(
+                _record_audit,
+                tenant_id=data.get("tenant_id"),
+                event_id=event_id,
+                outcome=NatsEventOutcome.invalid_payload.value,
+                error_message=f"unexpected subject format: {msg.subject}",
+                stream_seq=stream_seq,
+            )
             return
 
         payload_slug = data.get("tenant_slug")
@@ -140,14 +203,31 @@ async def process_message(msg: Any) -> None:
             logger.error(
                 "Tenant slug mismatch (subject '%s' != payload '%s'), discarding.", subject_slug, payload_slug
             )
+            await asyncio.to_thread(
+                _record_audit,
+                tenant_id=data.get("tenant_id"),
+                event_id=event_id,
+                outcome=NatsEventOutcome.tenant_mismatch.value,
+                error_message=f"subject slug '{subject_slug}' != payload slug '{payload_slug}'",
+                stream_seq=stream_seq,
+            )
             return
 
         tenant_id = data.get("tenant_id")
         reference_ids = data.get("reference_ids") or []
         if not tenant_id or not reference_ids:
             logger.error("Event missing tenant_id or reference_ids, discarding.")
+            await asyncio.to_thread(
+                _record_audit,
+                tenant_id=tenant_id,
+                event_id=event_id,
+                outcome=NatsEventOutcome.invalid_payload.value,
+                error_message="event missing tenant_id or reference_ids",
+                stream_seq=stream_seq,
+            )
             return
 
+        failures: list[str] = []
         for reference_id in reference_ids:
             try:
                 result = await asyncio.to_thread(_notify_one, tenant_id, reference_id)
@@ -157,12 +237,29 @@ async def process_message(msg: Any) -> None:
                     data.get("process_instance_id"),
                     result,
                 )
-            except Exception:
+            except Exception as e:
+                failures.append(f"{str(reference_id)[:8]}: {e}")
                 logger.exception(
                     "Notify failed for reference=%s… (tenant=%s); the sweep will retry.",
                     str(reference_id)[:8],
                     tenant_id,
                 )
+
+        # A partial failure is still a failure worth seeing: the sweep will retry, but
+        # without this row the only trace is a log line.
+        await asyncio.to_thread(
+            _record_audit,
+            tenant_id=tenant_id,
+            event_id=event_id,
+            outcome=(
+                NatsEventOutcome.transient_error.value
+                if failures
+                else NatsEventOutcome.instantiated.value
+            ),
+            error_message="; ".join(failures) if failures else None,
+            stream_seq=stream_seq,
+            process_instance_id=data.get("process_instance_id"),
+        )
     finally:
         await msg.ack()
 
