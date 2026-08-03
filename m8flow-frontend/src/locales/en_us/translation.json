@@ -66,6 +66,7 @@
   "celery_monitoring_not_configured": "Celery monitoring is not configured.",
   "nats_monitoring": "NATS",
   "nats_monitoring_description": "Monitor NATS streams, consumers, and messages.",
+  "nats_monitoring_dashboard_pending": "The built-in NATS monitoring dashboard is coming soon. Stream, consumer, and message metrics will appear here.",
   "open_in_new_tab": "Open in new tab",
   "embedded_dashboard_unavailable": "This dashboard could not be embedded. Open it in a new tab instead.",
   "embedded_dashboard_slow_or_blocked": "The dashboard is taking longer than expected to load. It may be blocked from embedding — open it in a new tab instead.",

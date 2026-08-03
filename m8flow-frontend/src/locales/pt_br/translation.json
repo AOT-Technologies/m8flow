@@ -61,6 +61,7 @@
   "celery_monitoring_not_configured": "O monitoramento do Celery não está configurado.",
   "nats_monitoring": "NATS",
   "nats_monitoring_description": "Monitore os streams, consumidores e mensagens do NATS.",
+  "nats_monitoring_dashboard_pending": "O painel de monitoramento NATS integrado chegará em breve. As métricas de streams, consumidores e mensagens aparecerão aqui.",
   "open_in_new_tab": "Abrir em nova aba",
   "embedded_dashboard_unavailable": "Não foi possível incorporar este painel. Abra-o em uma nova aba.",
   "embedded_dashboard_slow_or_blocked": "O painel está demorando mais do que o esperado para carregar. A incorporação pode estar bloqueada — abra-o em uma nova aba.",

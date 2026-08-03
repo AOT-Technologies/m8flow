@@ -474,8 +474,9 @@ services:
       M8FLOW_KEYCLOAK_MASTER_REALM: "${M8FLOW_KEYCLOAK_MASTER_REALM:-master}"
       # Super-admin monitoring dashboards embedded in the UI (browser-reachable URLs).
       M8FLOW_CELERY_FLOWER_URL: "${M8FLOW_CELERY_FLOWER_URL:-http://localhost:6850}"
-      # Leave empty to hide the NATS section; set when running the optional NATS compose.
-      M8FLOW_NATS_UI_URL: "${M8FLOW_NATS_UI_URL:-}"
+      # Set to "true" to surface the built-in NATS monitoring section; leave false when the
+      # optional NATS compose is not running.
+      M8FLOW_NATS_MONITORING_ENABLED: "${M8FLOW_NATS_MONITORING_ENABLED:-false}"
       # Browser-reachable URL of the m8flow MCP server; leave empty to hide the MCP connection page.
       M8FLOW_MCP_SERVER_URL: "${M8FLOW_MCP_SERVER_URL:-}"
       M8FLOW_FRONTEND_FARO_COLLECTOR_URL: "${M8FLOW_FRONTEND_FARO_COLLECTOR_URL:-}"

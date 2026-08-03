@@ -61,6 +61,7 @@
   "celery_monitoring_not_configured": "尚未配置 Celery 监控。",
   "nats_monitoring": "NATS",
   "nats_monitoring_description": "监控 NATS 流、消费者和消息。",
+  "nats_monitoring_dashboard_pending": "内置的 NATS 监控面板即将推出。流、消费者和消息指标将显示在此处。",
   "open_in_new_tab": "在新标签页中打开",
   "embedded_dashboard_unavailable": "无法嵌入此仪表板。请在新标签页中打开。",
   "embedded_dashboard_slow_or_blocked": "仪表板加载时间超出预期，可能被阻止嵌入——请在新标签页中打开。",

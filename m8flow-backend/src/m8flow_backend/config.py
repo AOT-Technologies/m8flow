@@ -217,6 +217,14 @@ def notification_max_attempts() -> int:
     return int(_get("M8FLOW_NOTIFICATION_MAX_ATTEMPTS") or "5")
 
 
+def nats_audit_retention_days() -> int:
+    """How long terminal NATS event-audit rows are kept before the sweep prunes them.
+
+    0 (or negative) disables pruning entirely.
+    """
+    return int(_get("M8FLOW_NATS_AUDIT_RETENTION_DAYS") or "90")
+
+
 def notification_sweep_interval_seconds() -> int:
     """How often the notification worker sweeps for missed pending requests."""
     return int(_get("M8FLOW_NOTIFICATION_SWEEP_INTERVAL_SECONDS") or "60")

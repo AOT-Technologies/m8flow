@@ -92,11 +92,77 @@ def _resolve_tenant_initiator(username: str, tenant_id: str) -> Any | None:
     return None
 
 
+class InitiatorNotFoundError(ValueError):
+    """The initiating username did not resolve to a user in the target tenant."""
+
+
+class ProcessModelNotFoundError(ValueError):
+    """The requested process model does not exist."""
+
+
+def _record_audit(**fields: Any) -> None:
+    """Write one audit row for a message outcome.
+
+    Never raises. Recording what happened must not change what happens: a monitoring
+    write that failed must not turn a processed event into a retry, or a rejection into
+    a crash.
+    """
+    from m8flow_backend.services.nats_event_audit_service import NatsEventAuditService
+
+    try:
+        with flask_app.app_context():
+            NatsEventAuditService.record_outcome(**fields)
+    except Exception:
+        logger.exception("Failed to record NATS audit row (message handling unaffected).")
+
+
+def _record_duplicate(**fields: Any) -> None:
+    """Count one suppressed duplicate delivery. Never raises, for the same reason."""
+    from m8flow_backend.services.nats_event_audit_service import NatsEventAuditService
+
+    try:
+        with flask_app.app_context():
+            NatsEventAuditService.record_duplicate(**fields)
+    except Exception:
+        logger.exception("Failed to record NATS duplicate (message handling unaffected).")
+
+
+def _tenant_id_from_subject(subject: str) -> str | None:
+    """Best-effort tenant UUID for a message whose payload could not be trusted.
+
+    The subject carries the tenant *slug*; the audit table stores the tenant UUID. Returns
+    None when the subject is malformed or the slug matches no tenant, which is exactly the
+    un-attributable case the audit table records with a NULL tenant.
+    """
+    slug = _extract_tenant_from_subject(subject)
+    if not slug:
+        return None
+
+    from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
+
+    try:
+        with flask_app.app_context():
+            tenant = M8flowTenantModel.query.filter_by(slug=slug).one_or_none()
+            return tenant.id if tenant else None
+    except Exception:
+        logger.exception("Failed to resolve tenant for subject '%s' while auditing.", subject)
+        return None
+
+
+def _stream_seq(msg: Any) -> int | None:
+    """JetStream sequence of this message — the pointer used to fetch its payload later."""
+    try:
+        return msg.metadata.sequence.stream
+    except Exception:
+        return None
+
+
 def instantiate_process(
     tenant_id: str,
     process_identifier: str,
     username: str,
     payload: dict,
+    audit: dict | None = None,
 ) -> int | None:
     """
     Resolve user + process model, then create and run a process instance.
@@ -121,14 +187,14 @@ def instantiate_process(
             if user is None:
                 err = f"User '{username}' not found in the database for tenant '{tenant_id}'."
                 logger.error(err)
-                raise ValueError(err)
+                raise InitiatorNotFoundError(err)
 
             try:
                 process_model = ProcessModelService.get_process_model(process_identifier)
             except Exception as e:
                 err = f"Process model '{process_identifier}' not found: {e}"
                 logger.error(err)
-                raise ValueError(err)
+                raise ProcessModelNotFoundError(err)
 
             data_to_inject = {**payload, "_nats_initiator_username": username}
 
@@ -139,6 +205,26 @@ def instantiate_process(
                 user=user,
             )
             instance = processor.process_instance_model
+
+            if audit is not None:
+                # Recorded inside this transaction (commit=False) so the audit row and the
+                # process instance land together — an instance can never exist without its
+                # row. The service wraps it in a SAVEPOINT, so an unwritable audit row
+                # rolls back alone and still lets the instance commit below.
+                from m8flow_backend.models.nats_event_audit import NatsEventOutcome
+                from m8flow_backend.services.nats_event_audit_service import NatsEventAuditService
+
+                NatsEventAuditService.record_outcome(
+                    tenant_id=tenant_id,
+                    event_id=audit.get("event_id"),
+                    outcome=NatsEventOutcome.instantiated.value,
+                    stream_seq=audit.get("stream_seq"),
+                    process_identifier=process_identifier,
+                    username=username,
+                    process_instance_id=instance.id,
+                    commit=False,
+                )
+
             db.session.commit()
             return {
                 "id": instance.id,
@@ -187,13 +273,19 @@ def _extract_tenant_from_subject(subject: str) -> str | None:
 async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
     """Authenticate and process a single NATS event."""
     from spiffworkflow_backend.exceptions.api_error import ApiError
-    
+    from m8flow_backend.models.nats_event_audit import NatsEventOutcome
+
     data = {}
     reply_to = None
     dedup_key = None
     tenant_id = None
     process_identifier = None
+    username = None
+    event_id = None
     started: float | None = None
+    # Classified explicitly at each raise site rather than by matching on the exception
+    # message, which would silently mis-classify the moment a message string is reworded.
+    failure_outcome = NatsEventOutcome.transient_error.value
 
     try:
         try:
@@ -201,12 +293,26 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
             reply_to = data.get("reply_to")
         except Exception as e:
             logger.error("Failed to parse message data: %s", e)
+            # Previously the most invisible path in the consumer: acked with no log-level
+            # metric and no record at all. The payload is unreadable, so the tenant can
+            # only come from the subject — and NULL when even that is malformed.
+            await asyncio.to_thread(
+                _record_audit,
+                tenant_id=_tenant_id_from_subject(msg.subject),
+                event_id=None,
+                outcome=NatsEventOutcome.invalid_payload.value,
+                error_message=f"could not parse message body: {e}",
+                stream_seq=_stream_seq(msg),
+            )
             await msg.ack()
             return
+
+        event_id = data.get("id")
 
         # Authoritative tenant_id comes from the NATS subject, not the payload
         subject_tenant_id = _extract_tenant_from_subject(msg.subject)
         if not subject_tenant_id:
+            failure_outcome = NatsEventOutcome.invalid_payload.value
             raise ValueError(f"Event subject has unexpected format — cannot determine tenant: {msg.subject}")
 
         # The NATS subject carries the slug for routing (e.g. m8flow.events.zoro.trigger).
@@ -215,16 +321,17 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
         payload_tenant_slug = data.get("tenant_slug")
 
         if not payload_tenant_id:
+            failure_outcome = NatsEventOutcome.invalid_payload.value
             raise ValueError("Event payload missing 'tenant_id' (UUID).")
 
         # Optional: validate that the slug in the subject matches what the publisher sent
         if payload_tenant_slug and payload_tenant_slug != subject_tenant_id:
+            failure_outcome = NatsEventOutcome.tenant_mismatch.value
             raise ValueError(f"Tenant slug mismatch: subject slug '{subject_tenant_id}' != payload slug '{payload_tenant_slug}'")
 
         tenant_id = payload_tenant_id  # UUID
         process_identifier = data.get("process_identifier")
         username           = data.get("username")
-        event_id           = data.get("id")
         api_key            = data.get("api_key")
 
         started = time.perf_counter()
@@ -237,9 +344,11 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
 
         with span_ctx:
             if not all([process_identifier, username]):
+                failure_outcome = NatsEventOutcome.invalid_payload.value
                 raise ValueError("Message missing required fields (process_identifier, username).")
 
             if not api_key:
+                failure_outcome = NatsEventOutcome.rejected_auth.value
                 raise ValueError(f"Rejecting event: 'api_key' is missing for tenant {tenant_id}")
 
             def _verify():
@@ -255,10 +364,12 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
             authenticated = await asyncio.to_thread(_verify)
             if authenticated is None:
                 # Missing / malformed / unknown / expired / revoked key.
+                failure_outcome = NatsEventOutcome.rejected_auth.value
                 raise ValueError(f"Rejecting event: Invalid api_key for tenant {tenant_id}")
 
             if authenticated.tenant_id != tenant_id:
                 # The key belongs to a different tenant than the event claims.
+                failure_outcome = NatsEventOutcome.tenant_mismatch.value
                 raise ValueError(
                     f"Rejecting event: api_key tenant {authenticated.tenant_id} does not match event tenant {tenant_id}"
                 )
@@ -270,6 +381,7 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
             # Defense in depth: the publish path already enforces scope, but re-check here so a
             # scoped key can never trigger a process outside its allow-list.
             if not await asyncio.to_thread(_scope_allows):
+                failure_outcome = NatsEventOutcome.rejected_scope.value
                 raise ValueError(
                     f"Rejecting event: api_key not scoped for process {process_identifier}"
                 )
@@ -277,20 +389,38 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
             if event_id and tenant_id:
                 dedup_key = await check_idempotency(kv, tenant_id, event_id)
                 if dedup_key is None:
-                    # Duplicate event, already logged in check_idempotency
+                    # Duplicate event, already logged in check_idempotency. Bumps the
+                    # original row's duplicate_count rather than overwriting its outcome —
+                    # this delivery carries the same event id as the run that succeeded.
+                    await asyncio.to_thread(
+                        _record_duplicate,
+                        tenant_id=tenant_id,
+                        event_id=event_id,
+                        stream_seq=_stream_seq(msg),
+                        process_identifier=process_identifier,
+                        username=username,
+                    )
                     await msg.ack()
                     return
             else:
                 if not event_id:
                     logger.warning("Event has no 'id' field — idempotency cannot be guaranteed.")
 
-            instance_id = await asyncio.to_thread(
-                instantiate_process,
-                tenant_id,
-                process_identifier,
-                username,
-                data.get("payload") or {},
-            )
+            try:
+                instance_id = await asyncio.to_thread(
+                    instantiate_process,
+                    tenant_id,
+                    process_identifier,
+                    username,
+                    data.get("payload") or {},
+                    {"event_id": event_id, "stream_seq": _stream_seq(msg)},
+                )
+            except InitiatorNotFoundError:
+                failure_outcome = NatsEventOutcome.user_not_found.value
+                raise
+            except ProcessModelNotFoundError:
+                failure_outcome = NatsEventOutcome.model_not_found.value
+                raise
 
             logger.info(
                 "Process instance created | tenant=%s identifier=%s instance_id=%s",
@@ -320,6 +450,19 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
         if record_nats_processing is not None:
             duration_ms = (time.perf_counter() - started) * 1000 if started is not None else 0.0
             record_nats_processing(tenant_id, duration_ms=duration_ms, failed=True)
+
+        # The message is about to be ACKed away, so this row is the only lasting record of
+        # why it never became a process instance.
+        await asyncio.to_thread(
+            _record_audit,
+            tenant_id=tenant_id or _tenant_id_from_subject(msg.subject),
+            event_id=event_id,
+            outcome=failure_outcome,
+            error_message=error_msg,
+            stream_seq=_stream_seq(msg),
+            process_identifier=process_identifier,
+            username=username,
+        )
         
         if dedup_key and kv:
             try:
