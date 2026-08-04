@@ -2097,6 +2097,394 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /nats/overview:
+    get:
+      summary: NATS server health and throughput
+      description: >
+        Server health, uptime, connection and message counters, slow-consumer count, and
+        JetStream totals, read from the NATS server's own monitoring endpoints. Broker-wide
+        state is reported per account rather than per tenant, so this is restricted to
+        super-admin. Read-only.
+      operationId: m8flow_backend.routes.nats_monitoring_controller.overview
+      tags:
+        - NATS
+      responses:
+        "200":
+          description: Server overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NatsOverviewResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - super-admin only
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: NATS monitoring disabled or the broker is unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /nats/streams:
+    get:
+      summary: Streams and consumers with pending, lag and delivery figures
+      description: >
+        Per stream: message and byte counts, sequence range and subject count. Per consumer:
+        pending (undelivered), unacked, sequence lag, redelivery and waiting counts.
+        KV and object-store buckets are flagged via `isInternal` because JetStream exposes
+        them as ordinary `KV_`/`OBJ_`-prefixed streams. Super-admin only. Read-only.
+      operationId: m8flow_backend.routes.nats_monitoring_controller.streams
+      tags:
+        - NATS
+      responses:
+        "200":
+          description: Streams and consumers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NatsStreamsResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - super-admin only
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: NATS monitoring disabled or the broker is unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /nats/tenants:
+    get:
+      summary: Event backlog and outcome counts per tenant
+      description: >
+        Queued, succeeded and failed event counts per tenant, from the event audit trail.
+        JetStream reports pending messages per consumer and a single durable serves every
+        tenant, so the broker cannot break the backlog down this way. Rows that could not be
+        attributed to a tenant (malformed subject) are surfaced under a null tenant rather
+        than dropped. Super-admin only.
+      operationId: m8flow_backend.routes.nats_monitoring_controller.tenants
+      tags:
+        - NATS
+      responses:
+        "200":
+          description: Per-tenant event counts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NatsTenantsResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - super-admin only
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /nats/events:
+    get:
+      summary: Event history for the active tenant
+      description: >
+        Paged history of NATS events and what became of each one - the outcome, the failure
+        reason, and the process instance it created. Scoped to the caller's active tenant.
+        A super-admin may pass `allTenants=true` for a cross-tenant view or `tenantId` to
+        inspect one tenant; for everyone else the active tenant is enforced.
+      operationId: m8flow_backend.routes.nats_monitoring_controller.list_events
+      tags:
+        - NATS
+      parameters:
+        - name: outcome
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter to a single outcome (e.g. instantiated, rejected_auth).
+        - name: failuresOnly
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Return only events that never produced a process instance.
+        - name: processIdentifier
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: username
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: eventId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: worker
+          in: query
+          required: false
+          schema:
+            type: string
+          description: consumer, notification_worker or manual.
+        - name: since
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Only events queued at or after this epoch-seconds timestamp.
+        - name: until
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: allTenants
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Super-admin only; ignored for other callers.
+        - name: tenantId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Super-admin only; inspect a single named tenant.
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+        - name: perPage
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+          description: Capped at 200 server-side.
+      responses:
+        "200":
+          description: Paged event history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NatsEventListResponse"
+        "400":
+          description: Bad request - no active tenant, or an unknown outcome/parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /nats/events/summary:
+    get:
+      summary: Event counts by outcome
+      description: >
+        Counts by outcome plus totals for queued, succeeded, failed and suppressed duplicate
+        deliveries. Same tenant scoping as GET /nats/events.
+      operationId: m8flow_backend.routes.nats_monitoring_controller.events_summary
+      tags:
+        - NATS
+      parameters:
+        - name: allTenants
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Super-admin only; ignored for other callers.
+        - name: tenantId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Super-admin only.
+      responses:
+        "200":
+          description: Counts by outcome
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NatsEventSummaryResponse"
+        "400":
+          description: Bad request - no active tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /nats/events/{event_id}:
+    get:
+      summary: History for a single event
+      description: >
+        One event's audit record. With `includePayload=true` the raw message is also fetched
+        from JetStream using the stream sequence stored on the row - the payload is never
+        copied into the database. That fetch additionally requires super-admin and
+        `M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED`, and never acknowledges the message.
+        A record belonging to another tenant returns 404 rather than 403, so this cannot be
+        used to probe for other tenants' event ids.
+      operationId: m8flow_backend.routes.nats_monitoring_controller.get_event
+      tags:
+        - NATS
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: includePayload
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: streamName
+          in: query
+          required: false
+          schema:
+            type: string
+            default: M8FLOW_EVENTS
+          description: Stream to read the payload from when includePayload is set.
+        - name: allTenants
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Super-admin only.
+        - name: tenantId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Super-admin only.
+      responses:
+        "200":
+          description: Event record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NatsEventResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - payload inspection disabled or not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found - no such event for this tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /nats/streams/{stream_name}/messages:
+    get:
+      summary: Browse raw messages in a stream
+      description: >
+        Reads messages by sequence via the JetStream direct-get API. Read-only - messages are
+        never acknowledged, so browsing a stream cannot consume it. Payloads are truncated to
+        `M8FLOW_NATS_MESSAGE_PREVIEW_MAX_BYTES` and non-UTF-8 bodies are base64-encoded with
+        the encoding stated. Requires super-admin and
+        `M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED`, which is off by default because m8flow's
+        streams retain every payload indefinitely.
+      operationId: m8flow_backend.routes.nats_monitoring_controller.stream_messages
+      tags:
+        - NATS
+      parameters:
+        - name: stream_name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: startSeq
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 10
+          description: Capped at 25 server-side.
+      responses:
+        "200":
+          description: Messages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NatsStreamMessagesResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - inspection disabled or not super-admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: NATS monitoring disabled or the broker is unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /events/m8flow-trigger:
     post:
       summary: Receive an external trigger event
@@ -2971,6 +3359,313 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/NatsApiKeyMetadata"
+
+    NatsJetStreamTotals:
+      type: object
+      properties:
+        memoryBytes:
+          type: integer
+        storageBytes:
+          type: integer
+        totalStreams:
+          type: integer
+        totalConsumers:
+          type: integer
+        totalMessages:
+          type: integer
+        totalBytes:
+          type: integer
+
+    NatsOverviewResponse:
+      type: object
+      properties:
+        healthy:
+          type: boolean
+          description: True when /healthz reports "ok".
+        status:
+          type: string
+        serverName:
+          type: string
+        serverId:
+          type: string
+        version:
+          type: string
+        uptime:
+          type: string
+        startedAt:
+          type: string
+        connections:
+          type: integer
+        totalConnections:
+          type: integer
+        subscriptions:
+          type: integer
+        inMsgs:
+          type: integer
+        outMsgs:
+          type: integer
+        inBytes:
+          type: integer
+        outBytes:
+          type: integer
+        slowConsumers:
+          type: integer
+        memoryBytes:
+          type: integer
+        cpuPercent:
+          type: integer
+        jetstream:
+          $ref: "#/components/schemas/NatsJetStreamTotals"
+
+    NatsConsumer:
+      type: object
+      properties:
+        name:
+          type: string
+        streamName:
+          type: string
+        filterSubject:
+          type: string
+          nullable: true
+        pending:
+          type: integer
+          description: >
+            Messages this consumer still owes work on (num_pending). The authoritative
+            backlog figure.
+        unacked:
+          type: integer
+          description: Delivered but not yet acknowledged (num_ack_pending).
+        streamLag:
+          type: integer
+          description: >
+            Sequence distance from the head of the stream. For a consumer with a filter
+            subject this OVERSTATES the backlog because it counts messages on subjects the
+            consumer will never receive - prefer `pending`. Retained because it is the only
+            signal that reveals a consumer parked far behind the head while its own filtered
+            backlog is empty.
+        ackLag:
+          type: integer
+        redelivered:
+          type: integer
+        waiting:
+          type: integer
+        deliveredStreamSeq:
+          type: integer
+        deliveredConsumerSeq:
+          type: integer
+        ackFloorStreamSeq:
+          type: integer
+        lastActive:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          nullable: true
+
+    NatsStream:
+      type: object
+      properties:
+        name:
+          type: string
+        account:
+          type: string
+          nullable: true
+        subjects:
+          type: array
+          items:
+            type: string
+        isInternal:
+          type: boolean
+          description: >
+            True for JetStream plumbing exposed as a stream - KV buckets (`KV_*`) and object
+            stores (`OBJ_*`). Excluded from the totals so they do not inflate the dashboard.
+        messages:
+          type: integer
+        bytes:
+          type: integer
+        firstSeq:
+          type: integer
+        lastSeq:
+          type: integer
+        numSubjects:
+          type: integer
+        numDeleted:
+          type: integer
+          description: Absent from the broker response unless deletions have occurred; 0 then.
+        consumerCount:
+          type: integer
+        createdAt:
+          type: string
+          nullable: true
+        consumers:
+          type: array
+          items:
+            $ref: "#/components/schemas/NatsConsumer"
+
+    NatsStreamsResponse:
+      type: object
+      properties:
+        streams:
+          type: array
+          items:
+            $ref: "#/components/schemas/NatsStream"
+        totals:
+          type: object
+          description: Event-traffic totals; internal KV/object streams are excluded.
+        jetstream:
+          $ref: "#/components/schemas/NatsJetStreamTotals"
+
+    NatsTenantEventCounts:
+      type: object
+      properties:
+        tenantId:
+          type: string
+          nullable: true
+          description: Null for events that could not be attributed to any tenant.
+        tenantSlug:
+          type: string
+          nullable: true
+        queued:
+          type: integer
+        instantiated:
+          type: integer
+        failed:
+          type: integer
+        total:
+          type: integer
+        lastActivityInSeconds:
+          type: integer
+
+    NatsTenantsResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/NatsTenantEventCounts"
+
+    NatsEventRecord:
+      type: object
+      properties:
+        id:
+          type: integer
+        tenantId:
+          type: string
+          nullable: true
+        eventId:
+          type: string
+          nullable: true
+        worker:
+          type: string
+        streamSeq:
+          type: integer
+          nullable: true
+          description: >
+            JetStream sequence of the message. Used as a pointer to fetch the payload on
+            demand; payloads are never copied into the database.
+        processIdentifier:
+          type: string
+          nullable: true
+        username:
+          type: string
+          nullable: true
+        outcome:
+          type: string
+        duplicateCount:
+          type: integer
+          description: Extra deliveries of this same event id suppressed by the dedup guard.
+        errorMessage:
+          type: string
+          nullable: true
+        processInstanceId:
+          type: integer
+          nullable: true
+        queuedAtInSeconds:
+          type: integer
+        completedAtInSeconds:
+          type: integer
+          nullable: true
+        updatedAtInSeconds:
+          type: integer
+
+    NatsEventResponse:
+      allOf:
+        - $ref: "#/components/schemas/NatsEventRecord"
+        - type: object
+          properties:
+            payload:
+              $ref: "#/components/schemas/NatsStreamMessage"
+
+    NatsEventListResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/NatsEventRecord"
+        pagination:
+          type: object
+          properties:
+            page:
+              type: integer
+            perPage:
+              type: integer
+            total:
+              type: integer
+            pages:
+              type: integer
+
+    NatsEventSummaryResponse:
+      type: object
+      properties:
+        byOutcome:
+          type: object
+          additionalProperties:
+            type: integer
+        total:
+          type: integer
+        queued:
+          type: integer
+        instantiated:
+          type: integer
+        failed:
+          type: integer
+        duplicateDeliveries:
+          type: integer
+
+    NatsStreamMessage:
+      type: object
+      nullable: true
+      properties:
+        seq:
+          type: integer
+        subject:
+          type: string
+          nullable: true
+        time:
+          type: string
+          nullable: true
+        sizeBytes:
+          type: integer
+        payload:
+          type: string
+        encoding:
+          type: string
+          description: utf-8, or base64 for a binary payload.
+        truncated:
+          type: boolean
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+
+    NatsStreamMessagesResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/NatsStreamMessage"
 
     NatsApiKeyRevokeResponse:
       type: object
