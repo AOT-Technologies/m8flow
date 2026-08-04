@@ -217,6 +217,41 @@ def notification_max_attempts() -> int:
     return int(_get("M8FLOW_NOTIFICATION_MAX_ATTEMPTS") or "5")
 
 
+def nats_monitoring_url() -> str:
+    """Base URL of the NATS server's monitoring endpoints (/varz, /jsz, /healthz).
+
+    Read by the backend over the internal network, so this port never needs to be
+    reachable from a browser.
+    """
+    return _get("M8FLOW_NATS_MONITORING_URL") or "http://nats:8222"
+
+
+def nats_monitoring_enabled() -> bool:
+    """Whether the NATS monitoring dashboard is switched on.
+
+    Follows M8FLOW_NATS_ENABLED unless overridden: monitoring a disabled subsystem is
+    never useful.
+    """
+    raw = _get("M8FLOW_NATS_MONITORING_ENABLED")
+    if raw is None or str(raw).strip() == "":
+        return nats_enabled()
+    return str(raw).strip().lower() == "true"
+
+
+def nats_message_inspection_enabled() -> bool:
+    """Whether raw message payloads may be read through the monitoring API.
+
+    Off by default: payloads carry tenant business data and notification recipients, and
+    m8flow's streams retain them indefinitely.
+    """
+    return (_get("M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED") or "false").lower() == "true"
+
+
+def nats_message_preview_max_bytes() -> int:
+    """Cap on how much of a message payload a preview returns."""
+    return int(_get("M8FLOW_NATS_MESSAGE_PREVIEW_MAX_BYTES") or "4096")
+
+
 def nats_audit_retention_days() -> int:
     """How long terminal NATS event-audit rows are kept before the sweep prunes them.
 
