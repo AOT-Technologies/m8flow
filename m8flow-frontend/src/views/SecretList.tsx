@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
+  Box,
   Button,
   Dialog,
   DialogActions,
@@ -165,17 +166,28 @@ export default function SecretList() {
   if (pagination) {
     return (
       <div>
-        <Typography variant="h1">{t('secrets')}</Typography>
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: { xs: 'flex-start', sm: 'center' },
+            justifyContent: 'space-between',
+            gap: 2,
+            flexDirection: { xs: 'column', sm: 'row' },
+            mb: 2,
+          }}
+        >
+          <Typography variant="h1">{t('secrets')}</Typography>
+          <Can I="POST" a={targetUris.secretListPath} ability={ability}>
+            <Button
+              component={Link}
+              variant="contained"
+              to="/configuration/secrets/new"
+            >
+              {t('add_a_secret')}
+            </Button>
+          </Can>
+        </Box>
         {SecretsDisplayArea()}
-        <Can I="POST" a={targetUris.secretListPath} ability={ability}>
-          <Button
-            component={Link}
-            variant="contained"
-            to="/configuration/secrets/new"
-          >
-            {t('add_a_secret')}
-          </Button>
-        </Can>
         <Dialog
           open={!!secretToDelete}
           onClose={() => setSecretToDelete(null)}
