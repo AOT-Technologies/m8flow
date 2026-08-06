@@ -3,6 +3,19 @@
 # Start Keycloak, then set sslRequired=NONE on realms for HTTP access (e.g. behind a reverse proxy without HTTPS termination at Keycloak).
 set -e
 
+# kcadm defaults its token store to ~/.keycloak/kcadm.config. Anything else that runs kcadm
+# in this container (`docker exec`, a kcadm-based healthcheck) is the same `keycloak` user
+# and truncates that same file, which silently breaks whichever realm-configuration command
+# below happens to be reading it. Point the entrypoint at a private store instead.
+# Note: an env HOME override does NOT work here -- the JVM resolves user.home from the
+# passwd entry, not $HOME -- so the token path must be passed explicitly via --config.
+# --config is accepted in trailing position, including alongside `-f -` and `-s` args.
+M8FLOW_KCADM_HOME="/opt/keycloak/.m8flow-entrypoint"
+M8FLOW_KCADM_CONFIG="${M8FLOW_KCADM_HOME}/kcadm.config"
+M8FLOW_READY_MARKER="/tmp/m8flow-keycloak-ready"
+mkdir -p "${M8FLOW_KCADM_HOME}"
+kcadm() { /opt/keycloak/bin/kcadm.sh "$@" --config "${M8FLOW_KCADM_CONFIG}"; }
+
 BOOTSTRAP_USER="${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}"
 M8FLOW_REALM_IMPORT_FILE="/opt/keycloak/data/import/m8flow-tenant-template.json"
 M8FLOW_TEMPLATE_REALM_NAME="m8flow"
@@ -67,7 +80,7 @@ resolve_client_internal_id() {
   local realm_name="$1"
   local client_name="$2"
 
-  /opt/keycloak/bin/kcadm.sh get clients -r "${realm_name}" -q clientId="${client_name}" --fields id,clientId \
+  kcadm get clients -r "${realm_name}" -q clientId="${client_name}" --fields id,clientId \
     | sed -n 's/.*"id" : "\([^"]*\)".*/\1/p' \
     | head -n 1
 }
@@ -76,7 +89,7 @@ resolve_client_scope_internal_id() {
   local realm_name="$1"
   local scope_name="$2"
 
-  /opt/keycloak/bin/kcadm.sh get client-scopes -r "${realm_name}" --fields id,name \
+  kcadm get client-scopes -r "${realm_name}" --fields id,name \
     | grep -B1 "\"name\" : \"${scope_name}\"" \
     | sed -n 's/.*"id" : "\([^"]*\)".*/\1/p' \
     | head -n 1
@@ -87,7 +100,7 @@ resolve_client_scope_protocol_mapper_internal_id() {
   local scope_id="$2"
   local protocol_mapper_name="$3"
 
-  /opt/keycloak/bin/kcadm.sh get "client-scopes/${scope_id}/protocol-mappers/models" -r "${realm_name}" 2>/dev/null \
+  kcadm get "client-scopes/${scope_id}/protocol-mappers/models" -r "${realm_name}" 2>/dev/null \
     | grep -B8 "\"protocolMapper\" : \"${protocol_mapper_name}\"" \
     | sed -n 's/.*"id" : "\([^"]*\)".*/\1/p' \
     | tail -n 1
@@ -98,7 +111,7 @@ resolve_resource_protocol_mapper_id_by_name() {
   local realm_name="$2"
   local mapper_name="$3"
 
-  /opt/keycloak/bin/kcadm.sh get "${resource_path}/protocol-mappers/models" -r "${realm_name}" 2>/dev/null \
+  kcadm get "${resource_path}/protocol-mappers/models" -r "${realm_name}" 2>/dev/null \
     | grep -B6 "\"name\" : \"${mapper_name}\"" \
     | sed -n 's/.*"id" : "\([^"]*\)".*/\1/p' \
     | head -n 1
@@ -114,7 +127,7 @@ remove_legacy_root_groups_mapper() {
     return 0
   fi
 
-  if /opt/keycloak/bin/kcadm.sh delete "${resource_path}/protocol-mappers/models/${mapper_id}" -r "${realm_name}" >/dev/null 2>&1; then
+  if kcadm delete "${resource_path}/protocol-mappers/models/${mapper_id}" -r "${realm_name}" >/dev/null 2>&1; then
     echo "[keycloak-entrypoint] Realm ${realm_name}: removed legacy root groups mapper from ${resource_path}."
     return 0
   fi
@@ -145,7 +158,7 @@ ensure_shared_realm_organization_scope() {
 
   scope_id="$(resolve_client_scope_internal_id "${M8FLOW_REALM_NAME}" "organization")"
   if [ -z "${scope_id}" ]; then
-    if /opt/keycloak/bin/kcadm.sh create client-scopes -r "${M8FLOW_REALM_NAME}" \
+    if kcadm create client-scopes -r "${M8FLOW_REALM_NAME}" \
       -s name=organization \
       -s protocol=openid-connect \
       -s 'attributes."include.in.token.scope"=true' \
@@ -170,7 +183,7 @@ ensure_shared_realm_organization_scope() {
       "oidc-organization-membership-mapper"
   )"
   if [ -z "${organization_membership_mapper_id}" ]; then
-    if /opt/keycloak/bin/kcadm.sh create "client-scopes/${scope_id}/protocol-mappers/models" -r "${M8FLOW_REALM_NAME}" \
+    if kcadm create "client-scopes/${scope_id}/protocol-mappers/models" -r "${M8FLOW_REALM_NAME}" \
       -s name=organization \
       -s protocol=openid-connect \
       -s protocolMapper=oidc-organization-membership-mapper \
@@ -201,7 +214,7 @@ ensure_shared_realm_organization_scope() {
     return 1
   fi
 
-  if ! /opt/keycloak/bin/kcadm.sh update \
+  if ! kcadm update \
     "client-scopes/${scope_id}/protocol-mappers/models/${organization_membership_mapper_id}" \
     -r "${M8FLOW_REALM_NAME}" \
     -s name=organization \
@@ -236,7 +249,7 @@ ensure_shared_realm_organization_scope() {
   fi
 
   if [ -z "${organization_group_membership_mapper_id}" ]; then
-    if /opt/keycloak/bin/kcadm.sh create "client-scopes/${scope_id}/protocol-mappers/models" -r "${M8FLOW_REALM_NAME}" \
+    if kcadm create "client-scopes/${scope_id}/protocol-mappers/models" -r "${M8FLOW_REALM_NAME}" \
       -s name=organization-groups \
       -s protocol=openid-connect \
       -s protocolMapper=oidc-organization-group-membership-mapper \
@@ -264,7 +277,7 @@ ensure_shared_realm_organization_scope() {
     return 1
   fi
 
-  if ! /opt/keycloak/bin/kcadm.sh update \
+  if ! kcadm update \
     "client-scopes/${scope_id}/protocol-mappers/models/${organization_group_membership_mapper_id}" \
     -r "${M8FLOW_REALM_NAME}" \
     -s name=organization-groups \
@@ -287,7 +300,7 @@ ensure_shared_realm_organization_scope() {
       "oidc-normalized-organization-membership-mapper"
   )"
   if [ -z "${normalized_organization_membership_mapper_id}" ]; then
-    if /opt/keycloak/bin/kcadm.sh create "client-scopes/${scope_id}/protocol-mappers/models" -r "${M8FLOW_REALM_NAME}" \
+    if kcadm create "client-scopes/${scope_id}/protocol-mappers/models" -r "${M8FLOW_REALM_NAME}" \
       -s name=normalized-organization \
       -s protocol=openid-connect \
       -s protocolMapper=oidc-normalized-organization-membership-mapper \
@@ -315,7 +328,7 @@ ensure_shared_realm_organization_scope() {
     return 1
   fi
 
-  if ! /opt/keycloak/bin/kcadm.sh update \
+  if ! kcadm update \
     "client-scopes/${scope_id}/protocol-mappers/models/${normalized_organization_membership_mapper_id}" \
     -r "${M8FLOW_REALM_NAME}" \
     -s name=normalized-organization \
@@ -352,7 +365,7 @@ ensure_shared_realm_spoke_client_scope() {
     return 1
   fi
 
-  if /opt/keycloak/bin/kcadm.sh update "clients/${client_internal_id}/optional-client-scopes/${scope_id}" -r "${M8FLOW_REALM_NAME}" -n >/dev/null 2>&1; then
+  if kcadm update "clients/${client_internal_id}/optional-client-scopes/${scope_id}" -r "${M8FLOW_REALM_NAME}" -n >/dev/null 2>&1; then
     echo "[keycloak-entrypoint] Client ${M8FLOW_SPOKE_CLIENT_ID}: organization optional scope ensured."
   else
     echo "[keycloak-entrypoint] Client ${M8FLOW_SPOKE_CLIENT_ID}: failed to ensure organization optional scope." >&2
@@ -366,7 +379,7 @@ organization_alias_exists() {
 
   [ -n "${organization_alias}" ] || return 1
 
-  /opt/keycloak/bin/kcadm.sh get organizations -r "${realm_name}" -q search="${organization_alias}" 2>/dev/null \
+  kcadm get organizations -r "${realm_name}" -q search="${organization_alias}" 2>/dev/null \
     | grep -q "\"alias\" : \"${organization_alias}\""
 }
 
@@ -378,7 +391,7 @@ resolve_organization_id_by_alias() {
 
   # Match by alias, not Keycloak's exact= filter (which matches name). sed holds
   # the last "id" and prints it at the matching "alias" line (no awk/jq in image).
-  /opt/keycloak/bin/kcadm.sh get organizations -r "${realm_name}" -q search="${organization_alias}" 2>/dev/null \
+  kcadm get organizations -r "${realm_name}" -q search="${organization_alias}" 2>/dev/null \
     | sed -n "/\"id\" : \"/ { s/.*\"id\" : \"\([^\"]*\)\".*/\1/; h; }; /\"alias\" : \"${organization_alias}\"/ { x; p; q; }"
 }
 
@@ -388,7 +401,7 @@ resolve_user_id_by_username() {
 
   [ -n "${username}" ] || return 1
 
-  /opt/keycloak/bin/kcadm.sh get users -r "${realm_name}" -q username="${username}" -q exact=true --fields id,username 2>/dev/null \
+  kcadm get users -r "${realm_name}" -q username="${username}" -q exact=true --fields id,username 2>/dev/null \
     | grep -B2 "\"username\" : \"${username}\"" \
     | sed -n 's/.*"id" : "\([^"]*\)".*/\1/p' \
     | head -n 1
@@ -402,7 +415,7 @@ organization_has_member() {
   [ -n "${organization_id}" ] || return 1
   [ -n "${username}" ] || return 1
 
-  /opt/keycloak/bin/kcadm.sh get "organizations/${organization_id}/members" -r "${realm_name}" -q search="${username}" -q exact=true -q max=100 2>/dev/null \
+  kcadm get "organizations/${organization_id}/members" -r "${realm_name}" -q search="${username}" -q exact=true -q max=100 2>/dev/null \
     | grep -q "\"username\" : \"${username}\""
 }
 
@@ -415,7 +428,7 @@ add_user_to_organization() {
   payload_file="$(mktemp)"
   printf '"%s"\n' "${user_id}" > "${payload_file}"
 
-  if /opt/keycloak/bin/kcadm.sh create "organizations/${organization_id}/members" -r "${realm_name}" -f "${payload_file}" >/dev/null 2>&1; then
+  if kcadm create "organizations/${organization_id}/members" -r "${realm_name}" -f "${payload_file}" >/dev/null 2>&1; then
     rm -f "${payload_file}"
     return 0
   fi
@@ -427,7 +440,7 @@ add_user_to_organization() {
 list_organization_ids() {
   local realm_name="$1"
 
-  /opt/keycloak/bin/kcadm.sh get organizations -r "${realm_name}" 2>/dev/null \
+  kcadm get organizations -r "${realm_name}" 2>/dev/null \
     | sed -n 's/.*"id" : "\([^"]*\)".*/\1/p'
 }
 
@@ -439,7 +452,7 @@ organization_group_exists() {
   [ -n "${organization_id}" ] || return 1
   [ -n "${group_name}" ] || return 1
 
-  /opt/keycloak/bin/kcadm.sh get "organizations/${organization_id}/groups" -r "${realm_name}" \
+  kcadm get "organizations/${organization_id}/groups" -r "${realm_name}" \
     -q search="${group_name}" \
     -q exact=true \
     -q briefRepresentation=true \
@@ -457,7 +470,7 @@ resolve_organization_group_id_by_name() {
   [ -n "${organization_id}" ] || return 1
   [ -n "${group_name}" ] || return 1
 
-  /opt/keycloak/bin/kcadm.sh get "organizations/${organization_id}/groups" -r "${realm_name}" \
+  kcadm get "organizations/${organization_id}/groups" -r "${realm_name}" \
     -q search="${group_name}" \
     -q exact=true \
     -q briefRepresentation=true \
@@ -474,7 +487,7 @@ create_organization_group() {
   local organization_id="$2"
   local group_name="$3"
 
-  /opt/keycloak/bin/kcadm.sh create "organizations/${organization_id}/groups" -r "${realm_name}" \
+  kcadm create "organizations/${organization_id}/groups" -r "${realm_name}" \
     -s name="${group_name}" >/dev/null 2>&1
 }
 
@@ -484,7 +497,7 @@ resolve_realm_role_id_by_name() {
 
   [ -n "${role_name}" ] || return 1
 
-  /opt/keycloak/bin/kcadm.sh get "roles/${role_name}" -r "${realm_name}" 2>/dev/null \
+  kcadm get "roles/${role_name}" -r "${realm_name}" 2>/dev/null \
     | sed -n 's/.*"id" : "\([^"]*\)".*/\1/p' \
     | head -n 1
 }
@@ -502,7 +515,7 @@ organization_group_has_realm_role() {
   # Keycloak 26+ rejects /groups/{id}/role-mappings/realm on organization-
   # owned groups with "Cannot manage organization related group via non
   # Organization API." Use the Organization-scoped endpoint instead.
-  /opt/keycloak/bin/kcadm.sh get \
+  kcadm get \
     "organizations/${organization_id}/groups/${group_id}/role-mappings/realm/composite" \
     -r "${realm_name}" 2>/dev/null \
     | grep -q "\"name\" : \"${role_name}\""
@@ -530,7 +543,7 @@ add_realm_role_to_organization_group() {
   role_payload_file="$(mktemp)"
   payload_file="$(mktemp)"
 
-  if ! /opt/keycloak/bin/kcadm.sh get "roles/${role_name}" -r "${realm_name}" > "${role_payload_file}" 2>/dev/null; then
+  if ! kcadm get "roles/${role_name}" -r "${realm_name}" > "${role_payload_file}" 2>/dev/null; then
     echo "[keycloak-entrypoint] Realm ${realm_name}: failed to fetch role payload for ${role_name}." >&2
     rm -f "${role_payload_file}" "${payload_file}"
     return 1
@@ -545,7 +558,7 @@ add_realm_role_to_organization_group() {
   # requires this for groups created under /organizations/{org-id}/groups —
   # the standard /groups/{gid}/role-mappings/realm path returns
   # "Cannot manage organization related group via non Organization API."
-  kcadm_output="$(/opt/keycloak/bin/kcadm.sh create \
+  kcadm_output="$(kcadm create \
     "organizations/${organization_id}/groups/${group_id}/role-mappings/realm" \
     -r "${realm_name}" -f "${payload_file}" 2>&1)"
   kcadm_rc=$?
@@ -565,7 +578,7 @@ list_organization_member_ids() {
 
   [ -n "${organization_id}" ] || return 1
 
-  /opt/keycloak/bin/kcadm.sh get "organizations/${organization_id}/members" -r "${realm_name}" -q max=500 2>/dev/null \
+  kcadm get "organizations/${organization_id}/members" -r "${realm_name}" -q max=500 2>/dev/null \
     | sed -n 's/.*"id" : "\([^"]*\)".*/\1/p'
 }
 
@@ -579,7 +592,7 @@ remove_user_from_organization_group() {
   [ -n "${group_id}" ] || return 1
   [ -n "${member_id}" ] || return 1
 
-  /opt/keycloak/bin/kcadm.sh delete "organizations/${organization_id}/groups/${group_id}/members/${member_id}" \
+  kcadm delete "organizations/${organization_id}/groups/${group_id}/members/${member_id}" \
     -r "${realm_name}" >/dev/null 2>&1
 }
 
@@ -681,7 +694,7 @@ organization_member_has_group() {
   [ -n "${member_id}" ] || return 1
   [ -n "${group_name}" ] || return 1
 
-  /opt/keycloak/bin/kcadm.sh get "organizations/${organization_id}/members/${member_id}/groups" -r "${realm_name}" \
+  kcadm get "organizations/${organization_id}/members/${member_id}/groups" -r "${realm_name}" \
     -q briefRepresentation=true \
     -q max=100 2>/dev/null \
     | grep -q "\"name\" : \"${group_name}\""
@@ -697,7 +710,7 @@ add_user_to_organization_group() {
   [ -n "${group_id}" ] || return 1
   [ -n "${member_id}" ] || return 1
 
-  /opt/keycloak/bin/kcadm.sh update "organizations/${organization_id}/groups/${group_id}/members/${member_id}" \
+  kcadm update "organizations/${organization_id}/groups/${group_id}/members/${member_id}" \
     -r "${realm_name}" \
     -n >/dev/null 2>&1
 }
@@ -712,7 +725,7 @@ ensure_default_organization() {
     return 0
   fi
 
-  if /opt/keycloak/bin/kcadm.sh create organizations -r "${M8FLOW_REALM_NAME}" \
+  if kcadm create organizations -r "${M8FLOW_REALM_NAME}" \
     -s name="${M8FLOW_DEFAULT_ORGANIZATION_NAME}" \
     -s alias="${M8FLOW_DEFAULT_ORGANIZATION_ALIAS}" >/dev/null 2>&1; then
     echo "[keycloak-entrypoint] Realm ${M8FLOW_REALM_NAME}: created default organization ${M8FLOW_DEFAULT_ORGANIZATION_ALIAS}."
@@ -815,7 +828,7 @@ user_has_realm_role() {
   [ -n "${user_id}" ] || return 1
   [ -n "${role_name}" ] || return 1
 
-  /opt/keycloak/bin/kcadm.sh get "users/${user_id}/role-mappings/realm/composite" -r "${realm_name}" 2>/dev/null \
+  kcadm get "users/${user_id}/role-mappings/realm/composite" -r "${realm_name}" 2>/dev/null \
     | grep -q "\"name\" : \"${role_name}\""
 }
 
@@ -846,7 +859,7 @@ remove_default_organization_seed_user_realm_roles() {
       continue
     fi
 
-    kcadm_output="$(/opt/keycloak/bin/kcadm.sh remove-roles -r "${realm_name}" --uid "${user_id}" --rolename "${role_name}" 2>&1)"
+    kcadm_output="$(kcadm remove-roles -r "${realm_name}" --uid "${user_id}" --rolename "${role_name}" 2>&1)"
     kcadm_rc=$?
     if [ "${kcadm_rc}" -eq 0 ]; then
       echo "[keycloak-entrypoint] Realm ${realm_name}: removed direct realm role ${role_name} from user ${username}."
@@ -861,7 +874,7 @@ resolve_browser_execution_id_by_name() {
   local realm_name="$1"
   local display_name="$2"
 
-  /opt/keycloak/bin/kcadm.sh get authentication/flows/browser/executions -r "${realm_name}" 2>/dev/null \
+  kcadm get authentication/flows/browser/executions -r "${realm_name}" 2>/dev/null \
     | grep -B4 "\"displayName\" : \"${display_name}\"" \
     | sed -n 's/.*"id" : "\([^"]*\)".*/\1/p' \
     | tail -n 1
@@ -881,7 +894,7 @@ update_browser_execution_requirement() {
 }
 EOF
 
-  if /opt/keycloak/bin/kcadm.sh update authentication/flows/browser/executions -r "${realm_name}" -f "${payload_file}" >/dev/null 2>&1; then
+  if kcadm update authentication/flows/browser/executions -r "${realm_name}" -f "${payload_file}" >/dev/null 2>&1; then
     rm -f "${payload_file}"
     return 0
   fi
@@ -934,7 +947,7 @@ ensure_shared_realm_single_page_login() {
 update_realm_session_timeouts() {
   local realm_name="$1"
 
-  /opt/keycloak/bin/kcadm.sh update "realms/${realm_name}" \
+  kcadm update "realms/${realm_name}" \
     -s revokeRefreshToken="${KEYCLOAK_REVOKE_REFRESH_TOKEN}" \
     -s accessTokenLifespan="${KEYCLOAK_ACCESS_TOKEN_LIFESPAN}" \
     -s accessTokenLifespanForImplicitFlow="${KEYCLOAK_ACCESS_TOKEN_LIFESPAN_FOR_IMPLICIT_FLOW}" \
@@ -956,6 +969,11 @@ fi
 
 prepare_m8flow_realm_import
 
+# Clear any readiness marker left over in the container filesystem: `docker restart` keeps
+# /tmp, and a stale marker would make the healthcheck report healthy before this run has
+# re-applied the realm configuration.
+rm -f "${M8FLOW_READY_MARKER}"
+
 # Start Keycloak in background so we can run kcadm to set sslRequired=NONE after it is ready
 echo "[keycloak-entrypoint] Starting Keycloak in background..."
 /opt/keycloak/bin/kc.sh "$@" &
@@ -971,7 +989,7 @@ TIMEOUT=180
 ELAPSED=0
 echo "[keycloak-entrypoint] Waiting for Keycloak admin API at ${BASE} (up to ${TIMEOUT}s)..."
 while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
-  if /opt/keycloak/bin/kcadm.sh config credentials --server "$BASE" --realm master \
+  if kcadm config credentials --server "$BASE" --realm master \
     --user "$USER" --password "$PASS" >/dev/null 2>&1; then
     echo "[keycloak-entrypoint] Keycloak admin API ready after ${ELAPSED}s."
     break
@@ -983,7 +1001,7 @@ if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
   echo "[keycloak-entrypoint] WARNING: Keycloak did not become ready within ${TIMEOUT}s; skipping realm sslRequired=NONE updates." >&2
 else
   # Assign master realm 'admin' role to bootstrap user so partialImport (and other manage-realm ops) are allowed
-  if /opt/keycloak/bin/kcadm.sh add-roles -r master --rolename admin --uusername "$USER" 2>/dev/null; then
+  if kcadm add-roles -r master --rolename admin --uusername "$USER" 2>/dev/null; then
     echo "[keycloak-entrypoint] Assigned master realm admin role to user ${USER}."
   else
     echo "[keycloak-entrypoint] add-roles skipped or failed (user may already have admin role)." >&2
@@ -992,23 +1010,23 @@ else
   # Create permanent admin user with full privileges (idempotent: create may fail if user exists)
   SUPERADMIN_USER="${KEYCLOAK_SUPER_ADMIN_USER:-super-admin}"
   SUPERADMIN_PASS="${KEYCLOAK_SUPER_ADMIN_PASSWORD:-super-admin}"
-  if /opt/keycloak/bin/kcadm.sh create users -r master -s username="${SUPERADMIN_USER}" -s enabled=true 2>/dev/null; then
+  if kcadm create users -r master -s username="${SUPERADMIN_USER}" -s enabled=true 2>/dev/null; then
     echo "[keycloak-entrypoint] Created permanent admin user ${SUPERADMIN_USER}."
   else
     echo "[keycloak-entrypoint] Create user ${SUPERADMIN_USER} skipped (may already exist)." >&2
   fi
-  if /opt/keycloak/bin/kcadm.sh set-password -r master --username "${SUPERADMIN_USER}" --new-password "${SUPERADMIN_PASS}" 2>/dev/null; then
+  if kcadm set-password -r master --username "${SUPERADMIN_USER}" --new-password "${SUPERADMIN_PASS}" 2>/dev/null; then
     echo "[keycloak-entrypoint] Set password for ${SUPERADMIN_USER}."
   else
     echo "[keycloak-entrypoint] set-password for ${SUPERADMIN_USER} skipped or failed." >&2
   fi
   # Grant full access for realm creation and partial import: master realm 'admin' and 'create-realm'
-  if /opt/keycloak/bin/kcadm.sh add-roles -r master --uusername "${SUPERADMIN_USER}" --rolename admin 2>/dev/null; then
+  if kcadm add-roles -r master --uusername "${SUPERADMIN_USER}" --rolename admin 2>/dev/null; then
     echo "[keycloak-entrypoint] Assigned realm role admin to ${SUPERADMIN_USER}."
   else
     echo "[keycloak-entrypoint] add-roles (admin) for ${SUPERADMIN_USER} skipped or failed." >&2
   fi
-  if /opt/keycloak/bin/kcadm.sh add-roles -r master --uusername "${SUPERADMIN_USER}" --rolename create-realm 2>/dev/null; then
+  if kcadm add-roles -r master --uusername "${SUPERADMIN_USER}" --rolename create-realm 2>/dev/null; then
     echo "[keycloak-entrypoint] Assigned realm role create-realm to ${SUPERADMIN_USER}."
   else
     echo "[keycloak-entrypoint] add-roles (create-realm) for ${SUPERADMIN_USER} skipped or failed." >&2
@@ -1016,14 +1034,14 @@ else
 
   echo "[keycloak-entrypoint] Setting sslRequired=NONE, loginTheme=m8flow, and aligned session timeouts on realms master, ${M8FLOW_REALM_NAME}..."
   for realm in master "${M8FLOW_REALM_NAME}"; do
-    if /opt/keycloak/bin/kcadm.sh update realms/${realm} -s sslRequired=NONE -s loginTheme=m8flow -s registrationAllowed=false >/dev/null 2>&1 \
+    if kcadm update realms/${realm} -s sslRequired=NONE -s loginTheme=m8flow -s registrationAllowed=false >/dev/null 2>&1 \
       && update_realm_session_timeouts "${realm}"; then
       echo "[keycloak-entrypoint] Realm ${realm}: sslRequired=NONE, loginTheme=m8flow, and session timeouts set successfully."
     else
       echo "[keycloak-entrypoint] Realm ${realm}: update skipped or failed (realm may not exist yet)." >&2
     fi
   done
-  if /opt/keycloak/bin/kcadm.sh update "realms/${M8FLOW_REALM_NAME}" \
+  if kcadm update "realms/${M8FLOW_REALM_NAME}" \
     -s organizationsEnabled=true \
     -s registrationAllowed=false \
     -s registrationEmailAsUsername=false \
@@ -1032,6 +1050,23 @@ else
   else
     echo "[keycloak-entrypoint] Realm ${M8FLOW_REALM_NAME}: failed to enforce organizations and username-only login policy." >&2
   fi
+  # Single-page login is a hard requirement (see AGENTS.md): the browser flow must never
+  # fall back to the identity-first / username-only page. Enforce it first and retry, rather
+  # than leaving it as the last best-effort step where a transient failure is silently lost.
+  M8FLOW_LOGIN_FLOW_OK=0
+  for attempt in 1 2 3; do
+    if disable_shared_realm_identity_first_login && ensure_shared_realm_single_page_login; then
+      M8FLOW_LOGIN_FLOW_OK=1
+      echo "[keycloak-entrypoint] Realm ${M8FLOW_REALM_NAME}: single-page login enforced."
+      break
+    fi
+    echo "[keycloak-entrypoint] Realm ${M8FLOW_REALM_NAME}: single-page login enforcement attempt ${attempt} failed; retrying." >&2
+    sleep 5
+  done
+  if [ "${M8FLOW_LOGIN_FLOW_OK}" != "1" ]; then
+    echo "[keycloak-entrypoint] ERROR: Realm ${M8FLOW_REALM_NAME}: could not enforce single-page login." >&2
+  fi
+
   # Best-effort seeding: a failing step must not abort the entrypoint (set -e)
   # before `wait $KC_PID`, which would kill Keycloak. Log and continue.
   for step in \
@@ -1041,14 +1076,21 @@ else
     "ensure_all_organization_role_groups ${M8FLOW_REALM_NAME}" \
     ensure_default_organization_seed_members \
     ensure_default_organization_seed_roles \
-    "remove_default_organization_seed_user_realm_roles ${M8FLOW_REALM_NAME}" \
-    disable_shared_realm_identity_first_login \
-    ensure_shared_realm_single_page_login; do
+    "remove_default_organization_seed_user_realm_roles ${M8FLOW_REALM_NAME}"; do
     if ! eval "${step}"; then
       echo "[keycloak-entrypoint] Realm seeding step '${step}' failed (non-fatal); continuing." >&2
     fi
   done
-  echo "[keycloak-entrypoint] Realm configuration complete."
+
+  # The healthcheck gates on this marker, so `service_healthy` means "up AND configured".
+  # Withhold it when single-page login could not be enforced: dependents should fail loudly
+  # rather than come up against a realm that serves the identity-first sign-in page.
+  if [ "${M8FLOW_LOGIN_FLOW_OK}" = "1" ]; then
+    : > "${M8FLOW_READY_MARKER}"
+    echo "[keycloak-entrypoint] Realm configuration complete."
+  else
+    echo "[keycloak-entrypoint] Realm configuration incomplete; not marking ready." >&2
+  fi
 fi
 
 wait $KC_PID
