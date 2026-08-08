@@ -12,6 +12,13 @@ This directory contains the Docker setup for running M8Flow: Compose files, Dock
 |------|--------|
 | **m8flow-docker-compose.yml** | Main stack: Postgres, Keycloak, Redis, MinIO, backend, frontend, and optional init jobs. |
 | **m8flow-docker-compose.prod.yml** | Override for production: Keycloak `start`, backend `prod` build target, `linux/amd64` platform. |
+| **vault/config/vault.hcl** | Repo-owned local Vault server configuration (single-node Raft, built-in UI enabled, HTTP local-only listener). |
+| **vault/policies/m8flow-policy.hcl.tpl** | Template for the narrow m8flow Vault policy used by both the manual bootstrap helpers and the demo AppRole flow. |
+| **vault/scripts/configure-m8flow-vault.sh / .ps1** | Manual local bootstrap helpers for KV v2 enablement and policy creation after Vault is initialized and unsealed. |
+| **vault/demo/bootstrap_vault_demo.py** | Dev-only Vault bootstrap: initialize, unseal, enable `kv`, configure AppRole, seed YAML secrets, and verify the backend Vault wrapper. |
+| **vault/demo/seed_vault_demo_metadata.py** | Dev-only follow-up seeder that waits for the backend, resolves the seeded shared-realm tenant, and mirrors `vault_metadata` rows as the shared-realm `admin` user. |
+| **vault/demo/secrets.yml** | Editable development-only Vault seed data keyed by tenant alias and secret name. The default seed set targets the shared-realm `m8flow` tenant. |
+| **vault/demo/verify_backend_vault_demo.py** | Small verifier that proves the backend/Celery Vault wrapper can read a seeded secret through AppRole auth and that `vault_metadata` was mirrored for it. |
 | **m8flow.backend.Dockerfile** | Builds the Python backend (SpiffWorkflow + m8flow extensions). Stages: `builder`, `prod`, `dev` (default). |
 | **m8flow.frontend.Dockerfile** | Builds the frontend: Node build stages, final nginx:alpine serving static assets. |
 | **m8flow.keycloak.Dockerfile** | Builds Keycloak 26 with the realm-info-mapper provider and baked-in realm imports. |
@@ -33,6 +40,9 @@ This directory contains the Docker setup for running M8Flow: Compose files, Dock
 | **keycloak-proxy** | nginx:alpine | Reverse proxy so browser and backend use one URL for Keycloak. | `${KEYCLOAK_PROXY_PORT:-6842}` -> 6842 | Uses `nginx-keycloak-proxy.conf`: listen 6842, `proxy_pass` to keycloak:8080. |
 | **keycloak-init** | m8flow-keycloak (same image) | One-off: wait for Keycloak, then set `sslRequired=NONE`, enforce shared-realm org policy, and ensure the default shared-realm organization exists. | - | Depends on keycloak. `restart: "no"`. |
 | **redis** | redis:6-alpine | Celery broker/result backend (optional). | 6379 -> 6379 | Persistence: `redis-data`. |
+| **vault** | hashicorp/vault:1.18.5 | Optional local Vault server with built-in UI for Vault-backed secret storage. | `127.0.0.1:${M8FLOW_VAULT_PORT:-8200}` -> 8200 | Profile `vault`. Local Compose starts as `root`, `chown`s `/vault/data`, then drops to the image's `vault` user via `su-exec` before running `vault server -config=/vault/config/vault.hcl`. Persistence: `vault-data`. Built-in UI: `http://127.0.0.1:${M8FLOW_VAULT_PORT:-8200}/ui/`. |
+| **vault-demo** | m8flow-backend | Dev-only Vault bootstrap helper that depends on `vault`, initializes/unseals it when needed, creates the `kv` mount plus `m8flow` AppRole, seeds [vault/demo/secrets.yml](./vault/demo/secrets.yml), and writes runtime files into the `vault-demo-state` volume. | - | Profile `vault-demo`. Exits successfully after verification. |
+| **vault-demo-seed** | m8flow-backend | Dev-only post-backend seeder that waits for migrations/startup, resolves the seeded `m8flow` tenant to its canonical UUID, ensures the local shared-realm `admin` user exists, and upserts `vault_metadata` rows for the demo secrets. | - | Profile `vault-demo`. Exits successfully after metadata verification. |
 | **minio** | minio/minio (pinned) | S3-compatible object store for process models and templates. | 9000, 9001 (console) | `MINIO_ROOT_USER/PASSWORD` from `.env`. Data: volume `minio_data`. |
 
 ### Init jobs (profile `init`)
@@ -44,6 +54,28 @@ This directory contains the Docker setup for running M8Flow: Compose files, Dock
 | **templates-sync** | rclone/rclone | One-off: sync templates into MinIO (uses `templates_sync.sh`, `rclone.conf`). | Uses volume `templates_cache`. |
 
 Run with: `docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build`.
+
+For local Vault setup, see [docs/vault-local-development.md](../docs/vault-local-development.md). Start only the base Vault service with:
+
+```bash
+docker compose --profile vault -f docker/m8flow-docker-compose.yml up -d vault
+```
+
+For the full development-only bootstrap and seed flow:
+
+```bash
+docker compose -f docker/m8flow-docker-compose.yml --profile vault --profile vault-demo up -d --build
+```
+
+If you want the backend, Celery worker, and Flower to actually switch into Vault-backed secret mode during local development, set `M8FLOW_VAULT_ENABLED=true` in your local `.env`. The `vault-demo` profile now supplies the Vault connection and AppRole files through `/vault/demo/runtime.env`, but it does not force the enable flag anymore.
+
+To fully rebuild the local stack, including `vault`, `vault-demo`, and the profile-gated init jobs:
+
+```bash
+docker compose -f docker/m8flow-docker-compose.yml down --volumes
+docker compose --profile init --profile vault --profile vault-demo -f docker/m8flow-docker-compose.yml build
+docker compose --profile init --profile vault --profile vault-demo -f docker/m8flow-docker-compose.yml up -d
+```
 
 ### App services
 
@@ -131,6 +163,9 @@ docker compose -f docker/m8flow-docker-compose.yml up -d --build
 
 # Full stack + first-time init (MinIO buckets, process-models and templates sync)
 docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build
+
+# Start only the local Vault service and its built-in UI
+docker compose --profile vault -f docker/m8flow-docker-compose.yml up -d vault
 
 # Production
 docker compose -f docker/m8flow-docker-compose.yml -f docker/m8flow-docker-compose.prod.yml up -d --build

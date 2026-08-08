@@ -10,8 +10,6 @@ from sqlalchemy import event, tuple_
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import with_loader_criteria
 
-from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin
-from m8flow_backend.models.tenant_scoped import TenantScoped
 from m8flow_backend.services.tenant_identity_helpers import current_tenant_id_or_none
 from m8flow_backend.tenancy import (
     LOGGER,
@@ -22,6 +20,18 @@ from m8flow_backend.tenancy import (
 
 _ORIGINALS: dict[str, Any] = {}
 _PATCHED = False
+
+
+def _tenant_scoped_base() -> type:
+    from m8flow_backend.models.tenant_scoped import TenantScoped
+
+    return TenantScoped
+
+
+def _tenant_scoped_mixin() -> type:
+    from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin
+
+    return M8fTenantScopedMixin
 
 
 def _require_tenant_scope_id() -> str:
@@ -114,6 +124,7 @@ def _patch_insert_or_ignore_duplicate() -> None:
         postgres_conflict_index_elements: list[str],
     ) -> Any:
         """Insert record(s), ignoring duplicates, with tenant scoping."""
+        TenantScoped = _tenant_scoped_base()
         if isinstance(model_class, type) and issubclass(model_class, TenantScoped):
             if is_tenant_context_exempt_request() and not _locked_tenant_id_for_writes():
                 return _ORIGINALS["insert_or_ignore_duplicate"](
@@ -381,6 +392,7 @@ def _tenant_scope_queries(execute_state: Any) -> None:
         tenant_id = _resolve_tenant_id_for_db()
     except RuntimeError:
         return
+    M8fTenantScopedMixin = _tenant_scoped_mixin()
     execute_state.statement = execute_state.statement.options(
         with_loader_criteria(
             M8fTenantScopedMixin,

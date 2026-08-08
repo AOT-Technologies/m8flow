@@ -150,7 +150,7 @@ function Test-HasM8FlowBackendRuntimeDependencies {
   $oldPreference = $ErrorActionPreference
   $ErrorActionPreference = 'Continue'
   try {
-    Invoke-UvPython @('-c', 'import nats') 2>&1 > $null
+    Invoke-UvPython @('-c', 'import hvac; import nats') 2>&1 > $null
     if ($LASTEXITCODE -ne 0) {
       return $false
     }
@@ -170,7 +170,7 @@ function Sync-LocalBackendEnvironment {
     & uv @uvSyncArgs
 
     if (-not (Test-HasM8FlowBackendRuntimeDependencies)) {
-      $uvPipArgs = @('pip', 'install', 'nats-py>=2.6.0')
+      $uvPipArgs = @('pip', 'install', 'hvac', 'nats-py>=2.6.0')
       & uv @uvPipArgs
     }
   } finally {

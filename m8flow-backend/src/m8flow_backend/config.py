@@ -17,6 +17,34 @@ def _get(key: str, default: str | None = None) -> str | None:
     return default
 
 
+def _read_env_value_from_file(path_value: str | None) -> str | None:
+    if not path_value:
+        return None
+
+    path = Path(path_value)
+    if not path.is_absolute():
+        path = Path.cwd() / path_value
+
+    try:
+        value = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+
+    return value or None
+
+
+def _get_secret_env_value(*keys: str) -> str | None:
+    for key in keys:
+        value = _get(key)
+        if value is not None:
+            return value
+    return None
+
+
+def _env_truthy(value: str | None) -> bool:
+    return bool(value and value.strip().lower() in {"1", "true", "yes", "on"})
+
+
 def keycloak_url() -> str:
     """Keycloak base URL (no trailing slash)."""
     url = _get("KEYCLOAK_URL") or _get("M8FLOW_KEYCLOAK_URL") or "http://localhost:6842"
@@ -174,6 +202,95 @@ def redirect_uri_frontend_host() -> str | None:
     if not parsed.netloc:
         return None
     return parsed.netloc
+
+
+def vault_addr() -> str | None:
+    """Vault base URL for API requests."""
+    return _get("M8FLOW_VAULT_ADDR") or _get("VAULT_ADDR")
+
+
+def vault_token() -> str | None:
+    """Vault token used for secret operations."""
+    return _get_secret_env_value(
+        "M8FLOW_VAULT_TOKEN",
+        "VAULT_TOKEN",
+    ) or _read_env_value_from_file(
+        _get_secret_env_value("M8FLOW_VAULT_TOKEN_FILE", "VAULT_TOKEN_FILE")
+    )
+
+
+def vault_role_id() -> str | None:
+    """Vault AppRole role ID used for secret operations."""
+    return _get_secret_env_value(
+        "M8FLOW_VAULT_ROLE_ID",
+        "VAULT_ROLE_ID",
+    ) or _read_env_value_from_file(
+        _get_secret_env_value("M8FLOW_VAULT_ROLE_ID_FILE", "VAULT_ROLE_ID_FILE")
+    )
+
+
+def vault_secret_id() -> str | None:
+    """Vault AppRole secret ID used for secret operations."""
+    return _get_secret_env_value(
+        "M8FLOW_VAULT_SECRET_ID",
+        "VAULT_SECRET_ID",
+    ) or _read_env_value_from_file(
+        _get_secret_env_value("M8FLOW_VAULT_SECRET_ID_FILE", "VAULT_SECRET_ID_FILE")
+    )
+
+
+def vault_namespace() -> str | None:
+    """Vault Enterprise namespace, when required."""
+    return _get("M8FLOW_VAULT_NAMESPACE") or _get("VAULT_NAMESPACE")
+
+
+def vault_mount_point() -> str:
+    """KV mount point used for M8Flow-managed secrets."""
+    return _get("M8FLOW_VAULT_MOUNT_POINT") or "kv"
+
+
+def vault_secret_path_prefix() -> str:
+    """Path prefix inside the KV mount where M8Flow stores secrets."""
+    return _get("M8FLOW_VAULT_SECRET_PATH_PREFIX") or "m8flow"
+
+
+def vault_timeout_seconds() -> float:
+    """Timeout used for Vault API calls."""
+    raw = _get("M8FLOW_VAULT_TIMEOUT_SECONDS") or "5"
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return 5.0
+
+
+def vault_verify() -> bool | str:
+    """TLS verification setting for Vault requests.
+
+    Returns a CA bundle path when configured, ``False`` when verification is
+    explicitly disabled, otherwise ``True``.
+    """
+    ca_cert_path = _get("M8FLOW_VAULT_CACERT") or _get("VAULT_CACERT")
+    if ca_cert_path:
+        path = Path(ca_cert_path)
+        if not path.is_absolute():
+            path = Path.cwd() / ca_cert_path
+        return str(path)
+
+    if _env_truthy(_get("M8FLOW_VAULT_SKIP_VERIFY") or _get("VAULT_SKIP_VERIFY")):
+        return False
+
+    return True
+
+
+def vault_config_requested() -> bool:
+    """Whether any explicit Vault connection settings were supplied."""
+    return any((vault_addr(), vault_token(), vault_role_id(), vault_secret_id(), vault_namespace()))
+
+
+def vault_enabled() -> bool:
+    """Whether Vault-backed secret storage is enabled."""
+    return _env_truthy(_get("M8FLOW_VAULT_ENABLED"))
+
 
 def nats_token_salt() -> str:
     """Get the NATS token salt from environment variables."""

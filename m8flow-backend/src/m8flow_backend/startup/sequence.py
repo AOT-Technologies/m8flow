@@ -13,6 +13,7 @@ from m8flow_backend.startup.config import (
     configure_sql_echo,
     configure_templates_dir,
     configure_permissions_yml,
+    configure_vault,
 )
 from m8flow_backend.startup.routes import register_root_route, register_template_file_fallback_routes
 from m8flow_backend.startup.flask_hooks import (
@@ -103,6 +104,7 @@ def _configure_created_app(cnx_app: Any, db: Any, upgrade_m8flow_db: Callable[[]
     configure_permissions_yml(flask_app)
     configure_templates_dir(flask_app)
     configure_sql_echo(flask_app, db)
+    configure_vault(flask_app)
 
     # Tenant resolution ordering (after omni_auth when present).
     register_tenant_resolution_after_auth(flask_app)

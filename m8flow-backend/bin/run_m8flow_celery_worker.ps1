@@ -38,6 +38,20 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
   exit 1
 }
 
+function Test-HasM8FlowBackendRuntimeDependencies {
+  $oldPreference = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    uv run --active python -c "import hvac; import nats" 2>&1 > $null
+    if ($LASTEXITCODE -ne 0) {
+      return $false
+    }
+    return $true
+  } finally {
+    $ErrorActionPreference = $oldPreference
+  }
+}
+
 $extraPaths = @(
   (Join-Path $repoRoot "spiffworkflow-backend"),
   (Join-Path $repoRoot "spiffworkflow-backend\src"),
@@ -114,6 +128,9 @@ if ($Mode -eq "worker") {
 
 Push-Location (Join-Path $repoRoot "spiffworkflow-backend")
 uv sync --all-groups --active
+if (-not (Test-HasM8FlowBackendRuntimeDependencies)) {
+  uv pip install hvac "nats-py>=2.6.0"
+}
 if ($env:M8FLOW_BACKEND_SW_UPGRADE_DB -eq "true") {
   python -m flask db upgrade
 }

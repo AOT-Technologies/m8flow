@@ -445,6 +445,96 @@ def test_validate_queued_follow_up_work_turns_explicit_lane_owner_failure_into_a
     )
 
 
+def test_validate_queued_follow_up_work_reraises_nested_api_error(monkeypatch) -> None:
+    fake_api_error_module = ModuleType("spiffworkflow_backend.exceptions.api_error")
+    fake_db_module = ModuleType("spiffworkflow_backend.models.db")
+    fake_error_handling_module = ModuleType("spiffworkflow_backend.services.error_handling_service")
+    fake_processor_module = ModuleType("spiffworkflow_backend.services.process_instance_processor")
+
+    class FakeApiError(Exception):
+        def __init__(self, error_code: str, message: str, status_code: int) -> None:
+            super().__init__(message)
+            self.error_code = error_code
+            self.message = message
+            self.status_code = status_code
+
+    class FakeNoPotentialOwnersForTaskError(Exception):
+        pass
+
+    class FakeWorkflowTaskException(Exception):
+        pass
+
+    class FakeWorkflowExecutionServiceError(Exception):
+        pass
+
+    rollback_calls: list[None] = []
+    handle_error_calls: list[tuple[object, Exception]] = []
+
+    class FakeDbSession:
+        def rollback(self) -> None:
+            rollback_calls.append(None)
+
+    class FakeErrorHandlingService:
+        @staticmethod
+        def handle_error(process_instance, error: Exception) -> None:
+            handle_error_calls.append((process_instance, error))
+
+    fake_api_error_module.ApiError = FakeApiError
+    fake_db_module.db = SimpleNamespace(session=FakeDbSession())
+    fake_error_handling_module.ErrorHandlingService = FakeErrorHandlingService
+    fake_processor_module.NoPotentialOwnersForTaskError = FakeNoPotentialOwnersForTaskError
+
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.exceptions.api_error", fake_api_error_module)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.models.db", fake_db_module)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.services.error_handling_service", fake_error_handling_module)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.services.process_instance_processor", fake_processor_module)
+
+    process_instance = SimpleNamespace(id=45)
+    do_engine_steps_calls: list[dict[str, object]] = []
+    api_error = FakeApiError(
+        "vault_secret_value_missing",
+        "Unable to locate the Vault secret value for key: SMTP_USER.",
+        404,
+    )
+
+    def fake_do_engine_steps(*, save: bool, execution_strategy_name: str, should_schedule_waiting_timer_events: bool) -> None:
+        do_engine_steps_calls.append(
+            {
+                "save": save,
+                "execution_strategy_name": execution_strategy_name,
+                "should_schedule_waiting_timer_events": should_schedule_waiting_timer_events,
+            }
+        )
+        workflow_task_error = FakeWorkflowTaskException("Error executing Service Task")
+        workflow_task_error.exception = api_error
+        wrapped_error = FakeWorkflowExecutionServiceError("Unexpected Workflow Error")
+        wrapped_error.exception = workflow_task_error
+        raise wrapped_error
+
+    processor = SimpleNamespace(
+        process_instance_model=process_instance,
+        do_engine_steps=fake_do_engine_steps,
+    )
+
+    try:
+        process_instance_service_patch._validate_queued_follow_up_work(processor)
+        raised_error = None
+    except FakeApiError as exc:
+        raised_error = exc
+
+    assert do_engine_steps_calls == [
+        {
+            "save": True,
+            "execution_strategy_name": "run_until_user_message",
+            "should_schedule_waiting_timer_events": False,
+        }
+    ]
+    assert rollback_calls == [None]
+    assert handle_error_calls == []
+    assert raised_error is api_error
+    assert raised_error.status_code == 404
+
+
 def test_validate_queued_process_start_turns_missing_lane_assignment_into_api_error(monkeypatch) -> None:
     fake_api_error_module = ModuleType("spiffworkflow_backend.exceptions.api_error")
     fake_db_module = ModuleType("spiffworkflow_backend.models.db")

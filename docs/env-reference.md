@@ -14,6 +14,7 @@ These control what **your machine** listens on when you run [docker/m8flow-docke
 | `KEYCLOAK_MGMT_PORT` | `6849` | Keycloak management / health on host |
 | `POSTGRES_HOST_PORT` | `6843` | `m8flow-db` PostgreSQL on host |
 | `CONNECTOR_PROXY_PORT` | `6844` | Connector proxy |
+| `M8FLOW_VAULT_PORT` | `8200` | Vault API and built-in UI on host (`/ui/`) |
 | `M8FLOW_NATS_PORT` | `6845` | NATS client port ([m8flow-nats-docker-compose.yml](../docker/m8flow-nats-docker-compose.yml)) |
 | `MINIO_API_PORT` | `6846` | MinIO S3 API on host |
 | `MINIO_CONSOLE_PORT` | `6847` | MinIO console on host |
@@ -60,6 +61,35 @@ Examples:
 - `M8FLOW_CONNECTOR_SMTP_ATTACHMENTS_USER_ACCESS_DIR=/data/email_attachments`
 - `M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_DIR=../data/slack_attachments`
 - `M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_USER_ACCESS_DIR=/data/slack_attachments`
+
+## Vault
+
+- `M8FLOW_VAULT_ENABLED` (optional): When `true`, the backend switches completely to Vault-backed secrets plus the `vault_metadata` table. Legacy database secrets are not read or written in this mode.
+- `M8FLOW_VAULT_ADDR` / `VAULT_ADDR` (optional): Base URL of the Vault API, for example `https://vault.example.com`.
+- `M8FLOW_VAULT_TOKEN` / `VAULT_TOKEN` (optional): Token used by backend Vault operations. Use this for manual token-based runtime auth.
+- `M8FLOW_VAULT_TOKEN_FILE` / `VAULT_TOKEN_FILE` (optional): File containing a Vault token. Useful when the runtime token is mounted into the container instead of injected directly as an env var.
+- `M8FLOW_VAULT_ROLE_ID` / `VAULT_ROLE_ID` (optional): Vault AppRole role ID used by backend Vault operations.
+- `M8FLOW_VAULT_ROLE_ID_FILE` / `VAULT_ROLE_ID_FILE` (optional): File containing the Vault AppRole role ID.
+- `M8FLOW_VAULT_SECRET_ID` / `VAULT_SECRET_ID` (optional): Vault AppRole secret ID used by backend Vault operations.
+- `M8FLOW_VAULT_SECRET_ID_FILE` / `VAULT_SECRET_ID_FILE` (optional): File containing the Vault AppRole secret ID.
+- `M8FLOW_VAULT_NAMESPACE` / `VAULT_NAMESPACE` (optional): Vault Enterprise namespace when your deployment uses namespaced auth and KV mounts.
+- `M8FLOW_VAULT_MOUNT_POINT` (optional): KV v2 mount used for M8Flow-managed secrets. Default: `kv`.
+- `M8FLOW_VAULT_SECRET_PATH_PREFIX` (optional): Prefix within the KV mount used as the root namespace for derived secret paths such as `m8flow/tenants/{tenant_id}/secrets/{secret_name}`. Default: `m8flow`.
+- `M8FLOW_VAULT_TIMEOUT_SECONDS` (optional): Request timeout for Vault API calls. Default: `5`.
+- `M8FLOW_VAULT_SKIP_VERIFY` / `VAULT_SKIP_VERIFY` (optional): Set to `true` only when TLS certificate verification must be disabled for a non-production environment.
+- `M8FLOW_VAULT_CACERT` / `VAULT_CACERT` (optional): CA bundle path used to verify Vault TLS certificates. When set, it takes precedence over `*_SKIP_VERIFY`.
+- `M8FLOW_VAULT_PORT` (optional, Docker Compose local dev): Host port that publishes the local Vault API and built-in UI. Default: `8200`.
+- `M8FLOW_VAULT_DEMO_OVERWRITE` (optional, Docker Compose local dev): When `true`, the `vault-demo` bootstrap overwrites secrets defined in `docker/vault/demo/secrets.yml`. Default: `false`.
+
+Local Docker Compose notes:
+
+- Browser and host-side CLI URL: `http://127.0.0.1:${M8FLOW_VAULT_PORT:-8200}`
+- Backend and Celery in Compose use the service DNS name: `http://vault:8200`
+- Set `M8FLOW_VAULT_ENABLED=true` in your local `.env` when you want the Compose backend/Celery services to use Vault-backed secrets. The `vault-demo` profile supplies connection and AppRole runtime files, but it does not force the enable flag.
+- The `vault-demo` profile writes AppRole credentials, `runtime.env`, and verification artifacts into the named Docker volume mounted at `/vault/demo`.
+- The follow-up `vault-demo-seed` service uses that same state volume after backend startup to mirror `vault_metadata` for the seeded shared-realm `m8flow` tenant as the local `admin` user.
+- Do not point containerized backend/Celery startup at `http://localhost:8200`; inside those containers, `localhost` is the container itself.
+- See [vault-local-development.md](./vault-local-development.md) for init, unseal, policy bootstrap, and reset steps.
 
 ## Advanced Keycloak auth configs
 

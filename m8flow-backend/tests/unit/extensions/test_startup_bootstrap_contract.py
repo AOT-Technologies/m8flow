@@ -118,6 +118,7 @@ def test_configure_created_app_runs_shared_realm_reconciliation_before_permissio
     monkeypatch.setattr(sequence, "configure_permissions_yml", lambda flask_app: calls.append("configure_permissions_yml"))
     monkeypatch.setattr(sequence, "configure_templates_dir", lambda flask_app: calls.append("configure_templates_dir"))
     monkeypatch.setattr(sequence, "configure_sql_echo", lambda flask_app, db: calls.append("configure_sql_echo"))
+    monkeypatch.setattr(sequence, "configure_vault", lambda flask_app: calls.append("configure_vault"))
     monkeypatch.setattr(
         sequence,
         "register_tenant_resolution_after_auth",

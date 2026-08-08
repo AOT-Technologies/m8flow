@@ -13,6 +13,23 @@ command_exists() {
   command -v "$1" >/dev/null 2>&1
 }
 
+has_m8flow_backend_runtime_dependencies() {
+  run_uv_python -c "import hvac; import nats" >/dev/null 2>&1
+}
+
+sync_m8flow_backend_runtime_dependencies() {
+  local packages=(
+    "hvac"
+    "nats-py>=2.6.0"
+  )
+
+  if has_m8flow_backend_runtime_dependencies; then
+    return
+  fi
+
+  uv pip install "${packages[@]}"
+}
+
 uv_has_active_environment() {
   [[ -n "${VIRTUAL_ENV:-}" ]]
 }
@@ -66,28 +83,12 @@ normalize_bpmn_spec_dir() {
   resolve_repo_relative_path "$path_value"
 }
 
-mode="${1:-worker}"
-if [[ "$mode" == "worker" || "$mode" == "flower" ]]; then
-  shift
-fi
+load_env_file_if_present() {
+  local file_path="$1"
+  local override_existing="${2:-false}"
 
-use_uv_runner="false"
-if ! is_running_in_container && command_exists uv && [[ "${M8FLOW_BACKEND_USE_UV:-auto}" != "false" ]]; then
-  use_uv_runner="true"
-fi
-if [[ "${M8FLOW_BACKEND_USE_UV:-auto}" == "true" && "$use_uv_runner" != "true" ]]; then
-  echo >&2 "M8FLOW_BACKEND_USE_UV=true was requested but 'uv' is not available."
-  exit 1
-fi
+  [[ -f "$file_path" ]] || return 0
 
-export PYTHONPATH="$repo_root:${PYTHONPATH:-}"
-export PYTHONPATH="$repo_root/spiffworkflow-backend:$PYTHONPATH"
-export PYTHONPATH="$repo_root/spiffworkflow-backend/src:$PYTHONPATH"
-export PYTHONPATH="$repo_root/m8flow-backend/src:$PYTHONPATH"
-export PYTHONPATH="$repo_root/m8flow-telemetry/src:$PYTHONPATH"
-
-env_file="$repo_root/.env"
-if [[ -f "$env_file" ]] && ! is_running_in_container; then
   while IFS= read -r line || [[ -n "$line" ]]; do
     line="${line#"${line%%[![:space:]]*}"}"
     line="${line%"${line##*[![:space:]]}"}"
@@ -107,11 +108,47 @@ if [[ -f "$env_file" ]] && ! is_running_in_container; then
       value="${value%%$'\t'#*}"
       value="${value%"${value##*[![:space:]]}"}"
     fi
-    if [[ -z "${!key+x}" ]]; then
+
+    if [[ "$override_existing" == "true" || -z "${!key+x}" ]]; then
       export "$key=$value"
     fi
-  done < "$env_file"
+  done < "$file_path"
+}
+
+mode="${1:-worker}"
+if [[ "$mode" == "worker" || "$mode" == "flower" ]]; then
+  shift
 fi
+
+use_uv_runner="false"
+if ! is_running_in_container && command_exists uv && [[ "${M8FLOW_BACKEND_USE_UV:-auto}" != "false" ]]; then
+  use_uv_runner="true"
+fi
+if [[ "${M8FLOW_BACKEND_USE_UV:-auto}" == "true" && "$use_uv_runner" != "true" ]]; then
+  echo >&2 "M8FLOW_BACKEND_USE_UV=true was requested but 'uv' is not available."
+  exit 1
+fi
+
+if [[ "$use_uv_runner" == "true" && "${M8FLOW_BACKEND_SYNC_DEPS:-true}" != "false" ]]; then
+  (
+    cd "$repo_root/spiffworkflow-backend"
+    sync_m8flow_backend_runtime_dependencies
+  )
+fi
+
+export PYTHONPATH="$repo_root:${PYTHONPATH:-}"
+export PYTHONPATH="$repo_root/spiffworkflow-backend:$PYTHONPATH"
+export PYTHONPATH="$repo_root/spiffworkflow-backend/src:$PYTHONPATH"
+export PYTHONPATH="$repo_root/m8flow-backend/src:$PYTHONPATH"
+export PYTHONPATH="$repo_root/m8flow-telemetry/src:$PYTHONPATH"
+
+env_file="$repo_root/.env"
+if [[ -f "$env_file" ]] && ! is_running_in_container; then
+  load_env_file_if_present "$env_file"
+fi
+
+demo_env_file="${M8FLOW_VAULT_DEMO_ENV_FILE:-/vault/demo/runtime.env}"
+load_env_file_if_present "$demo_env_file" true
 
 resolved_bpmn_spec_dir="$(normalize_bpmn_spec_dir "${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-}")"
 if [[ -n "$resolved_bpmn_spec_dir" ]]; then

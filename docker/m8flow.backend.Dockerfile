@@ -62,7 +62,7 @@ RUN uv venv /opt/venv \
   && uv pip install --python /opt/venv/bin/python setuptools wheel lxml \
   && uv pip install --python /opt/venv/bin/python --no-build-isolation-package spiffworkflow -e /app/spiffworkflow-backend \
   && uv pip install --python /opt/venv/bin/python "/app/m8flow-telemetry[flask,asgi]" \
-  && uv pip install --python /opt/venv/bin/python flower "flask>=3.1.3"
+  && uv pip install --python /opt/venv/bin/python flower hvac "flask>=3.1.3"
 
 # -----------------------------------------------------------------------------
 # Stage: prod - minimal runtime image for Linux / production (non-root)
@@ -131,7 +131,7 @@ COPY --from=fetch-upstream /upstream/spiff-arena-common /app/spiff-arena-common
 #     CVE-2025-66418, CVE-2025-66471, CVE-2026-21441) - not needed since we use uv
 RUN uv pip install --system --break-system-packages setuptools wheel lxml \
   && cd /app/spiffworkflow-backend && uv pip install --system --break-system-packages --no-build-isolation-package spiffworkflow -e . --group dev \
-  && uv pip install --system --break-system-packages flower nats-py httpx python-dotenv "flask>=3.1.3" \
+  && uv pip install --system --break-system-packages flower hvac nats-py httpx python-dotenv "flask>=3.1.3" \
   && uv pip install --system --break-system-packages "/app/m8flow-telemetry[flask,asgi]" \
   && uv cache clean \
   && apt-get purge -y build-essential python3-dev default-libmysqlclient-dev patch python3-pip-whl \
