@@ -31,8 +31,11 @@ Apache-2.0 m8flow trees (`m8flow-backend/`, `m8flow-frontend/`, …) is a copy o
 its gitignored LGPL-2.1 upstream (spiff-arena) counterpart.
 
 **Runs on:** PRs touching `m8flow-backend/**` or `m8flow-frontend/**`. It fetches
-the upstream trees via `bin/fetch-upstream.sh`, then runs
-`bin/check-upstream-copying.py --diff origin/<base>` over just the changed files.
+the upstream trees via `bin/fetch-upstream.sh`, then a gate-specific
+`bin/fetch-upstream-extra.sh connector-proxy-demo connector-proxies` (extra trees the
+default pull omits, so `m8flow-connector-proxy/` can be compared; does not change the
+default pull), then runs `bin/check-upstream-copying.py --diff origin/<base>` over
+just the changed files.
 
 **What fails it (layered detection):**
 1. Whole-file line similarity ≥ 50% vs the upstream counterpart
@@ -45,7 +48,11 @@ the upstream trees via `bin/fetch-upstream.sh`, then runs
 already exists, so the gate only blocks *new* copying and *regressions*. Files
 drop out as they are remediated. Regenerate after an intentional, reviewed change
 with `bin/check-upstream-copying.py --all --write-baseline bin/upstream-copy-baseline.json`.
-Remediation status is tracked in `docs/upstream-license-compliance.md`.
+
+**Findings output:** the job always writes a markdown table of findings to the
+GitHub **job summary**, and on failure **upserts a PR comment** with the same table
+(same-repo PRs only — fork PRs get a read-only token, so they rely on the job
+summary). See `--summary-md` in `bin/check-upstream-copying.py`.
 
 ---
 
@@ -71,6 +78,8 @@ then runs `bin/check-upstream-cpd.py` over the whole tree.
   blocks). Regenerate with `bin/check-upstream-cpd.py --write-baseline bin/upstream-cpd-baseline.json`.
 - **Fail-closed:** missing upstream trees, CPD parse/launch errors, or recovering
   fewer than half of on-disk baseline pairs fail the job (no silent empty PASS).
+- **Findings output:** like `upstream-copy-check`, it always writes a markdown clone
+  table to the job summary and upserts a PR comment on failure (same-repo PRs only).
 
 ---
 
