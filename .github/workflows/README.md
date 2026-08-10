@@ -16,6 +16,8 @@ These workflows handle CI, Docker builds, AWS deployments, release tagging, and 
 `run_upstream_copy_gates` (default **true**) runs both duplicate-code license
 gates (`upstream-copy-check` + `upstream-cpd-check`) without needing a PR. The
 raw-line gate uses `--all` (full tree) on manual runs; PR runs still use `--diff`.
+Both gates also run on every **push** to `main` (same reliability pattern as
+backend/frontend), so `required-ci` never depends on a skipped copy-gate job.
 
 **Jobs (path-filtered):**
 - **extensions-backend** — Ruff lint, MyPy type check, Pytest for `m8flow-backend/`
@@ -35,14 +37,15 @@ raw-line gate uses `--all` (full tree) on manual runs; PR runs still use `--diff
 Apache-2.0 m8flow trees (`m8flow-backend/`, `m8flow-frontend/`, …) is a copy of
 its gitignored LGPL-2.1 upstream (spiff-arena) counterpart.
 
-**Runs on:** PRs touching `m8flow-backend/**`, `m8flow-frontend/**`, or the gate
-scripts/baselines; also on **manual CI dispatch** when `run_upstream_copy_gates`
-is true. It fetches the upstream trees via `bin/fetch-upstream.sh`, then a
-gate-specific `bin/fetch-upstream-extra.sh connector-proxy-demo connector-proxies`
+**Runs on:** Every **push** to `main`; PRs touching `m8flow-backend/**`,
+`m8flow-frontend/**`, or the gate scripts/baselines; and **manual CI dispatch**
+when `run_upstream_copy_gates` is true. It fetches the upstream trees via
+`bin/fetch-upstream.sh`, then a gate-specific
+`bin/fetch-upstream-extra.sh connector-proxy-demo connector-proxies`
 (extra trees the default pull omits, so `m8flow-connector-proxy/` can be compared;
 does not change the default pull). PRs run
-`bin/check-upstream-copying.py --diff origin/<base>` over changed files; manual
-runs use `--all`.
+`bin/check-upstream-copying.py --diff origin/<base>` over changed files; push and
+manual runs use `--all`.
 
 **What fails it (layered detection):**
 1. Whole-file line similarity ≥ 50% vs the upstream counterpart
@@ -70,9 +73,16 @@ find cross-tree token clones (owned m8flow file ↔ upstream file). Because it
 tokenizes source, it catches copies that were reformatted, reindented, or had
 identifiers renamed — evasion that the raw-line gate misses.
 
-**Runs on:** Same path filters / manual dispatch as `upstream-copy-check`.
-Installs Java 17 + PMD (pinned `PMD_VERSION`), fetches upstream via
-`bin/fetch-upstream.sh`, then runs `bin/check-upstream-cpd.py` over the whole tree.
+**Scope (narrower than the raw-line gate):** only `m8flow-backend/src` and
+`m8flow-frontend/src` vs their spiff-arena counterparts. It does **not** scan
+`m8flow-connector-proxy/` (or fetch `connector-proxy-demo` /
+`connector-proxies`); connector-proxy copying is covered by `upstream-copy-check`
+only.
+
+**Runs on:** Same events as `upstream-copy-check` (every push, path-filtered PRs,
+manual dispatch). Installs Java 17 + PMD (pinned `PMD_VERSION`), fetches upstream
+via `bin/fetch-upstream.sh` only (no `fetch-upstream-extra.sh`), then runs
+`bin/check-upstream-cpd.py` over the scoped trees.
 
 **Details:**
 - Python is scanned directly; frontend `.tsx`/`.jsx` are staged into a `.ts`-named

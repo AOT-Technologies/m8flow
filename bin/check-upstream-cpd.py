@@ -11,7 +11,10 @@ replaces the other.
 
 Scope: cross-tree clones only — a duplicated token block that appears in BOTH an
 Apache-2.0 owned tree AND a gitignored upstream tree. Intra-repo duplication is out
-of scope. A checked-in baseline (bin/upstream-cpd-baseline.json) grandfathers the
+of scope. Owned trees scanned today are m8flow-backend/src and m8flow-frontend/src
+only; m8flow-connector-proxy is intentionally out of CPD scope (covered by the
+raw-line gate in bin/check-upstream-copying.py, which fetches connector-proxy
+extras). A checked-in baseline (bin/upstream-cpd-baseline.json) grandfathers the
 clones that already exist so the gate blocks only NEW cross-tree clones and
 regressions (a bigger duplicated block against the same counterpart). Clones drop
 out of the baseline as files are remediated.
@@ -58,6 +61,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # Apache-2.0 owned trees that have a gitignored upstream counterpart.
+# Intentionally narrower than check-upstream-copying.py: connector-proxy is not
+# scanned here (raw-line gate + fetch-upstream-extra.sh cover that tree).
 OWNED_TREES = {
     "python": ["m8flow-backend/src"],
     "typescript": ["m8flow-frontend/src"],
