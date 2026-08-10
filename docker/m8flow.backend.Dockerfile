@@ -50,6 +50,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 COPY --from=fetch-upstream /upstream/spiffworkflow-backend /app/spiffworkflow-backend
 COPY --from=fetch-upstream /upstream/spiff-arena-common /app/spiff-arena-common
 COPY m8flow-backend /app/m8flow-backend
+COPY m8flow-telemetry /app/m8flow-telemetry
 COPY uvicorn-log.yaml /app/uvicorn-log.yaml
 
 # Create venv and install backend into it (prod). Use editable install so
@@ -60,6 +61,7 @@ COPY uvicorn-log.yaml /app/uvicorn-log.yaml
 RUN uv venv /opt/venv \
   && uv pip install --python /opt/venv/bin/python setuptools wheel lxml \
   && uv pip install --python /opt/venv/bin/python --no-build-isolation-package spiffworkflow -e /app/spiffworkflow-backend \
+  && uv pip install --python /opt/venv/bin/python "/app/m8flow-telemetry[flask,asgi]" \
   && uv pip install --python /opt/venv/bin/python flower "flask>=3.1.3"
 
 # -----------------------------------------------------------------------------
@@ -130,6 +132,7 @@ COPY --from=fetch-upstream /upstream/spiff-arena-common /app/spiff-arena-common
 RUN uv pip install --system --break-system-packages setuptools wheel lxml \
   && cd /app/spiffworkflow-backend && uv pip install --system --break-system-packages --no-build-isolation-package spiffworkflow -e . --group dev \
   && uv pip install --system --break-system-packages flower nats-py httpx python-dotenv "flask>=3.1.3" \
+  && uv pip install --system --break-system-packages "/app/m8flow-telemetry[flask,asgi]" \
   && uv cache clean \
   && apt-get purge -y build-essential python3-dev default-libmysqlclient-dev patch python3-pip-whl \
   && apt-get autoremove -y \

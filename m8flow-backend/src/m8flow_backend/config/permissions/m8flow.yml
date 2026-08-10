@@ -350,11 +350,41 @@ permissions:
     actions: [read]
     uri: /tasks/*
     command: task.read
+  # Task data (form values) shown on the Process Instance page when a task is clicked.
+  # Mirrors read-tasks' audience so super-admins/viewers can inspect task data across tenants.
+  # READ ONLY by design -- do NOT add update/PUT: super-admin RLS bypass is SELECT-only, and
+  # cross-tenant task-data must stay read-only. (tenant-admin/editor still get read+update via
+  # the PM:ALL/PG:ALL "all" macro expansion.)
+  read-task-data:
+    groups: ["viewer", "super-admin"]
+    actions: [read]
+    uri: /task-data/*
+  # Process Instance Events + Milestones tabs are gated on read access to /logs/*.
+  # super-admin/viewer have only `read` on PM:ALL/PG:ALL, which expands to
+  # /process-models/* and /process-groups/* but NOT /logs (the /logs segment is
+  # "all"-only in PATH_SEGMENTS_FOR_PERMISSION_ALL). Grant explicit read here so the
+  # Events/Milestones tabs render and the log/events list loads cross-tenant.
+  # READ ONLY by design -- super-admin RLS bypass is SELECT-only. (M8F-449)
+  read-logs:
+    groups: ["viewer", "super-admin"]
+    actions: [read]
+    uri: /logs/*
+  # NATS API key management is tenant-admin only. Read is scoped to the same
+  # audience (plus super-admin for platform visibility) so there is no
+  # read-without-manage confusion.
   read-nats-tokens:
-    groups: ["integrator", "viewer", "super-admin"]
+    groups: ["tenant-admin", "super-admin"]
     actions: [read]
     uri: /m8flow/nats-tokens
+  read-nats-tokens-by-id:
+    groups: ["tenant-admin", "super-admin"]
+    actions: [read]
+    uri: /m8flow/nats-tokens/*
   manage-nats-tokens:
-    groups: ["tenant-admin", "integrator"]
+    groups: ["tenant-admin"]
     actions: [all]
     uri: /m8flow/nats-tokens
+  manage-nats-tokens-by-id:
+    groups: ["tenant-admin"]
+    actions: [all]
+    uri: /m8flow/nats-tokens/*

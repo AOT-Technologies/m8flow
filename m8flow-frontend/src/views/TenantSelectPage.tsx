@@ -13,11 +13,13 @@ import {
   Button,
   Container,
   Stack,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import UserService, { type OrganizationMembership } from '../services/UserService';
 import TenantService from '../services/TenantService';
+import { syncFaroTenantFromCookie } from '../faro';
 import { useConfig } from '../utils/useConfig';
 
 export const M8FLOW_TENANT_STORAGE_KEY = 'm8flow_tenant';
@@ -50,6 +52,7 @@ const rememberSelectedTenant = (organization: OrganizationMembership) => {
   localStorage.setItem(M8FLOW_TENANT_STORAGE_KEY, organization.alias);
   localStorage.setItem('m8f_tenant_id', tenantId);
   document.cookie = `m8flow_selected_tenant=${encodeURIComponent(tenantId)}; Path=/`;
+  syncFaroTenantFromCookie();
   UserService.rememberTenantDisplayName({
     id: organization.id,
     alias: organization.alias,
@@ -281,18 +284,56 @@ export default function TenantSelectPage() {
           {t("multi_tenant_choose_description")}
         </Typography>
         <Stack spacing={2}>
-          {organizations.map((organization) => (
-            <Button
-              key={organization.alias}
-              variant="outlined"
-              onClick={() => finalizeTenantLogin(organization)}
-              data-testid={`organization-option-${organization.alias}`}
-              sx={{ justifyContent: 'space-between', textTransform: 'none' }}
-            >
-              <span>{organization.name || organization.alias}</span>
-              <span>{organization.alias}</span>
-            </Button>
-          ))}
+          {organizations.map((organization) => {
+            const displayName = organization.name || organization.alias;
+            const showAlias = displayName !== organization.alias;
+            return (
+              <Tooltip
+                key={organization.alias}
+                title={showAlias ? `${displayName} (${organization.alias})` : displayName}
+                placement="top"
+                enterDelay={500}
+                enterNextDelay={300}
+              >
+                <Button
+                  variant="outlined"
+                  onClick={() => finalizeTenantLogin(organization)}
+                  data-testid={`organization-option-${organization.alias}`}
+                  sx={{
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: 2,
+                    textTransform: 'none',
+                    textAlign: 'left',
+                    py: 1.25,
+                  }}
+                >
+                  <Typography
+                    component="span"
+                    noWrap
+                    sx={{ fontWeight: 600, minWidth: 0, flex: '1 1 auto' }}
+                  >
+                    {displayName}
+                  </Typography>
+                  {showAlias && (
+                    <Typography
+                      component="span"
+                      variant="body2"
+                      noWrap
+                      sx={{
+                        color: 'text.secondary',
+                        minWidth: 0,
+                        maxWidth: '45%',
+                        flex: '0 1 auto',
+                      }}
+                    >
+                      {organization.alias}
+                    </Typography>
+                  )}
+                </Button>
+              </Tooltip>
+            );
+          })}
         </Stack>
       </Box>
     </Container>

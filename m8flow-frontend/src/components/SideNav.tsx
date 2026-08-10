@@ -41,6 +41,7 @@ import {
   CorporateFare,
   Speed,
   Storage,
+  VpnKey,
 } from "@mui/icons-material";
 import { Link, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -91,6 +92,7 @@ const routeIdentifiers = {
   CONFIGURATION: "configuration",
   CONNECTORS: "connectors",
   MCP_CONNECTION: "mcpConnection",
+  MANAGE_TOKEN: "manageToken",
   TEMPLATES: "templates",
   TENANT_MANAGEMENT: "tenantManagement",
   MONITORING_CELERY: "monitoringCelery",
@@ -122,6 +124,9 @@ function SideNav({
     [targetUris.secretListPath]: ["GET"],
     [targetUris.connectorsGroupedPath]: ["GET"],
     [targetUris.m8flowMcpConnectionPath]: ["GET"],
+    // Gate on POST so the nav filter checks manage-nats-tokens (tenant-admin only)
+    // rather than defaulting to a never-requested GET, which hid the item for everyone.
+    [targetUris.m8flowNatsTokensPath]: ["POST"],
     "/tasks/*": ["GET", "PUT"],
     [targetUris.m8flowTenantManagementPath]: ["GET"],
     "/m8flow/tenants": ["GET"],
@@ -147,6 +152,8 @@ function SideNav({
     selectedTab = routeIdentifiers.CONNECTORS;
   } else if (location.pathname.startsWith("/mcp-connection")) {
     selectedTab = routeIdentifiers.MCP_CONNECTION;
+  } else if (location.pathname.startsWith("/manage-token")) {
+    selectedTab = routeIdentifiers.MANAGE_TOKEN;
   } else if (location.pathname.startsWith("/templates")) {
     selectedTab = routeIdentifiers.TEMPLATES;
   } else if (location.pathname.startsWith("/tenant-management")) {
@@ -298,6 +305,13 @@ function SideNav({
           },
         ]
       : []),
+    {
+      text: t("manage_token"),
+      icon: <VpnKey />,
+      route: "/manage-token",
+      id: routeIdentifiers.MANAGE_TOKEN,
+      permissionRoutes: [targetUris.m8flowNatsTokensPath],
+    },
     {
       text: t("templates"),
       icon: <Description />,
@@ -678,22 +692,41 @@ function SideNav({
               bgcolor: "background.paper",
             }}
           >
-            <Typography variant="subtitle1" sx={{ fontWeight: 600 }} data-testid="nav-username">{username}</Typography>
+            <Tooltip title={username} placement="top" enterDelay={500}>
+              <Typography
+                variant="subtitle1"
+                noWrap
+                sx={{ fontWeight: 600 }}
+                data-testid="nav-username"
+              >
+                {username}
+              </Typography>
+            </Tooltip>
             {username !== userEmail && (
-              <Typography variant="body2" color="text.secondary" data-testid="nav-user-email">{userEmail}</Typography>
-            )}
-            {tenantId && (
               <Typography
                 variant="body2"
-                data-testid="nav-tenant-id"
-                sx={{
-                  color: "text.secondary",
-                  fontWeight: 600,
-                  mt: 0.5,
-                }}
+                color="text.secondary"
+                noWrap
+                data-testid="nav-user-email"
               >
-                {tenantId}
+                {userEmail}
               </Typography>
+            )}
+            {tenantId && (
+              <Tooltip title={tenantId} placement="top" enterDelay={500}>
+                <Typography
+                  variant="body2"
+                  noWrap
+                  data-testid="nav-tenant-id"
+                  sx={{
+                    color: "text.secondary",
+                    fontWeight: 600,
+                    mt: 0.5,
+                  }}
+                >
+                  {tenantId}
+                </Typography>
+              </Tooltip>
             )}
             {/* <hr />
             {aboutLinkElement}

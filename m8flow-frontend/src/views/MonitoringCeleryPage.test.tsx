@@ -35,7 +35,7 @@ function renderAt() {
 describe("MonitoringCeleryPage", () => {
   afterEach(() => vi.clearAllMocks());
 
-  it("embeds the Flower dashboard for super-admins", () => {
+  it("embeds the Flower Workers view for super-admins", () => {
     mockIsSuperAdmin.mockReturnValue(true);
     mockUseConfig.mockReturnValue({ CELERY_FLOWER_URL: "http://localhost:6850" });
 
@@ -45,7 +45,32 @@ describe("MonitoringCeleryPage", () => {
       '[data-testid="embedded-dashboard-iframe"]',
     );
     expect(iframe).not.toBeNull();
-    expect(iframe?.getAttribute("src")).toBe("http://localhost:6850");
+    // Lands on the Workers view -- the bare Flower base (e.g. "/flower") 404s.
+    expect(iframe?.getAttribute("src")).toBe("http://localhost:6850/workers");
+  });
+
+  it("normalizes a trailing slash when building the Workers URL", () => {
+    mockIsSuperAdmin.mockReturnValue(true);
+    mockUseConfig.mockReturnValue({ CELERY_FLOWER_URL: "/flower/" });
+
+    const { container } = renderAt();
+
+    const iframe = container.querySelector(
+      '[data-testid="embedded-dashboard-iframe"]',
+    );
+    expect(iframe?.getAttribute("src")).toBe("/flower/workers");
+  });
+
+  it("collapses multiple trailing slashes when building the Workers URL", () => {
+    mockIsSuperAdmin.mockReturnValue(true);
+    mockUseConfig.mockReturnValue({ CELERY_FLOWER_URL: "/flower///" });
+
+    const { container } = renderAt();
+
+    const iframe = container.querySelector(
+      '[data-testid="embedded-dashboard-iframe"]',
+    );
+    expect(iframe?.getAttribute("src")).toBe("/flower/workers");
   });
 
   it("redirects non-super-admins to home", () => {

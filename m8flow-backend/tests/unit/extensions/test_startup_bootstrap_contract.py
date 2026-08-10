@@ -103,6 +103,11 @@ def test_configure_created_app_runs_shared_realm_reconciliation_before_permissio
         "register_template_file_fallback_routes",
         lambda flask_app: calls.append("register_template_file_fallback_routes"),
     )
+    monkeypatch.setattr(
+        sequence,
+        "register_root_route",
+        lambda flask_app: calls.append("register_root_route"),
+    )
     monkeypatch.setattr(sequence, "assert_model_identity", lambda: calls.append("assert_model_identity"))
     monkeypatch.setattr(sequence, "assert_db_engine_bound", lambda flask_app: calls.append("assert_db_engine_bound"))
     monkeypatch.setattr(sequence, "run_migrations_if_enabled", lambda flask_app, upgrade: calls.append("run_migrations_if_enabled"))
