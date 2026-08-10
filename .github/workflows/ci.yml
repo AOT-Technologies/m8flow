@@ -157,9 +157,12 @@ jobs:
   upstream-copy-check:
     name: Upstream Copy Check
     needs: path_filters
+    # Run on every push (same pattern as backend/frontend) so required-ci never
+    # depends on a skipped job. On PRs, path-filter; on manual dispatch, input-gated.
     if: >-
       ${{
-      (github.event_name == 'pull_request' && (needs.path_filters.outputs.backend == 'true' || needs.path_filters.outputs.frontend == 'true' || needs.path_filters.outputs.copy_gate == 'true'))
+      github.event_name == 'push'
+      || (github.event_name == 'pull_request' && (needs.path_filters.outputs.backend == 'true' || needs.path_filters.outputs.frontend == 'true' || needs.path_filters.outputs.copy_gate == 'true'))
       || (github.event_name == 'workflow_dispatch' && inputs.run_upstream_copy_gates)
       }}
     runs-on: ubuntu-latest
@@ -189,17 +192,17 @@ jobs:
           python-version: '3.12.1'
       - name: Detect new copying of upstream source
         id: copycheck
-        # PR: only files changed vs the base. Manual dispatch: full-tree --all (no
-        # base ref). Fails on new copying, regressions, or LGPL/attribution markers.
+        # PR: only files changed vs the base. Push / manual dispatch: full-tree --all.
+        # Fails on new copying, regressions, or LGPL/attribution markers.
         # Captures the exit code so the summary/comment steps can run before fail.
         run: |
           set +e
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            python3 bin/check-upstream-copying.py --all --summary-md copy-gate-summary.md
-          else
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
             python3 bin/check-upstream-copying.py --diff "origin/${{ github.base_ref }}" \
               --summary-md copy-gate-summary.md
+          else
+            python3 bin/check-upstream-copying.py --all --summary-md copy-gate-summary.md
           fi
           echo "exit_code=$?" >> "$GITHUB_OUTPUT"
           set -e
@@ -238,9 +241,14 @@ jobs:
   upstream-cpd-check:
     name: Upstream Copy Check (CPD)
     needs: path_filters
+    # Run on every push (same pattern as backend/frontend) so required-ci never
+    # depends on a skipped job. On PRs, path-filter; on manual dispatch, input-gated.
+    # Scope: m8flow-backend/src + m8flow-frontend/src only (see check-upstream-cpd.py).
+    # Does not fetch connector-proxy extras — that coverage is raw-line gate only.
     if: >-
       ${{
-      (github.event_name == 'pull_request' && (needs.path_filters.outputs.backend == 'true' || needs.path_filters.outputs.frontend == 'true' || needs.path_filters.outputs.copy_gate == 'true'))
+      github.event_name == 'push'
+      || (github.event_name == 'pull_request' && (needs.path_filters.outputs.backend == 'true' || needs.path_filters.outputs.frontend == 'true' || needs.path_filters.outputs.copy_gate == 'true'))
       || (github.event_name == 'workflow_dispatch' && inputs.run_upstream_copy_gates)
       }}
     runs-on: ubuntu-latest
@@ -256,6 +264,8 @@ jobs:
       - name: Install jq (required by fetch-upstream)
         run: sudo apt-get update && sudo apt-get install -y jq
       - name: Fetch upstream folders
+        # Default pull is enough: CPD scans backend/frontend src trees only, not
+        # connector-proxy (raw-line gate covers that via fetch-upstream-extra.sh).
         run: ./bin/fetch-upstream.sh
       - uses: actions/setup-python@v5
         with:
@@ -275,9 +285,9 @@ jobs:
           echo "PMD_BIN=/tmp/pmd/pmd-bin-${PMD_VERSION}/bin/pmd" >> "$GITHUB_ENV"
       - name: Detect reformatted/renamed upstream copies (token-level)
         id: cpdcheck
-        # Whole-tree scan for cross-tree token clones (owned <-> upstream). Fails on
-        # new clones / regressions vs bin/upstream-cpd-baseline.json. Captures the
-        # exit code so the summary/comment steps can run before the job is failed.
+        # Cross-tree token clones for backend/frontend src only. Fails on new clones /
+        # regressions vs bin/upstream-cpd-baseline.json. Captures the exit code so the
+        # summary/comment steps can run before the job is failed.
         run: |
           set +e
           python3 bin/check-upstream-cpd.py --summary-md cpd-gate-summary.md
@@ -652,7 +662,9 @@ jobs:
             }
           fi
 
-          if [[ "${{ github.event_name }}" == "pull_request" && ( "${{ needs.path_filters.outputs.backend }}" == "true" || "${{ needs.path_filters.outputs.frontend }}" == "true" || "${{ needs.path_filters.outputs.copy_gate }}" == "true" ) ]]; then
+          # Matches the upstream-*-check job `if`s: every push, and PRs that touch
+          # backend/frontend/copy-gate paths. (workflow_dispatch is not gated here.)
+          if [[ "${{ github.event_name }}" == "push" || ( "${{ github.event_name }}" == "pull_request" && ( "${{ needs.path_filters.outputs.backend }}" == "true" || "${{ needs.path_filters.outputs.frontend }}" == "true" || "${{ needs.path_filters.outputs.copy_gate }}" == "true" ) ) ]]; then
             [[ "${{ needs.upstream-copy-check.result }}" == "success" ]] || {
               echo "::error::Upstream copy / license boundary check did not succeed."
               exit 1
