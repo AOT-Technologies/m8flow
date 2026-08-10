@@ -5,6 +5,11 @@ on:
   pull_request:
     branches: [ main ]
   workflow_dispatch:
+    inputs:
+      run_upstream_copy_gates:
+        description: Run upstream copy / CPD (duplicate-code) license gates
+        type: boolean
+        default: true
 
 # Default: safe for fork PRs
 permissions:
@@ -149,7 +154,11 @@ jobs:
   upstream-copy-check:
     name: Upstream Copy Check
     needs: path_filters
-    if: ${{ github.event_name == 'pull_request' && (needs.path_filters.outputs.backend == 'true' || needs.path_filters.outputs.frontend == 'true' || needs.path_filters.outputs.copy_gate == 'true') }}
+    if: >-
+      ${{
+      (github.event_name == 'pull_request' && (needs.path_filters.outputs.backend == 'true' || needs.path_filters.outputs.frontend == 'true' || needs.path_filters.outputs.copy_gate == 'true'))
+      || (github.event_name == 'workflow_dispatch' && inputs.run_upstream_copy_gates)
+      }}
     runs-on: ubuntu-latest
     # pull-requests: write so the gate can post/update its findings comment on
     # same-repo PRs. Job-level perms replace the default set, so restate contents: read.
@@ -177,16 +186,18 @@ jobs:
           python-version: '3.12.1'
       - name: Detect new copying of upstream source
         id: copycheck
-        # Compares only files changed vs the PR base against their upstream
-        # counterpart. Fails on new copying, regressions beyond the checked-in
-        # baseline, or LGPL/attribution markers (markers are never grandfathered).
-        # Captures the exit code so the summary/comment steps can run before the
-        # job is failed at the end.
+        # PR: only files changed vs the base. Manual dispatch: full-tree --all (no
+        # base ref). Fails on new copying, regressions, or LGPL/attribution markers.
+        # Captures the exit code so the summary/comment steps can run before fail.
         run: |
-          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
           set +e
-          python3 bin/check-upstream-copying.py --diff "origin/${{ github.base_ref }}" \
-            --summary-md copy-gate-summary.md
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            python3 bin/check-upstream-copying.py --all --summary-md copy-gate-summary.md
+          else
+            git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+            python3 bin/check-upstream-copying.py --diff "origin/${{ github.base_ref }}" \
+              --summary-md copy-gate-summary.md
+          fi
           echo "exit_code=$?" >> "$GITHUB_OUTPUT"
           set -e
       - name: Publish findings to job summary
@@ -195,7 +206,8 @@ jobs:
       - name: Comment findings on PR (on failure, same-repo only)
         # Fork PRs get a read-only token, so commenting is skipped there; the job
         # summary above still carries the table. Upserts a single marker comment.
-        if: ${{ always() && steps.copycheck.outputs.exit_code != '0' && github.event.pull_request.head.repo.fork == false }}
+        # Skipped on workflow_dispatch (no PR to comment on).
+        if: ${{ always() && github.event_name == 'pull_request' && steps.copycheck.outputs.exit_code != '0' && github.event.pull_request.head.repo.fork == false }}
         uses: actions/github-script@v7
         with:
           script: |
@@ -223,7 +235,11 @@ jobs:
   upstream-cpd-check:
     name: Upstream Copy Check (CPD)
     needs: path_filters
-    if: ${{ github.event_name == 'pull_request' && (needs.path_filters.outputs.backend == 'true' || needs.path_filters.outputs.frontend == 'true' || needs.path_filters.outputs.copy_gate == 'true') }}
+    if: >-
+      ${{
+      (github.event_name == 'pull_request' && (needs.path_filters.outputs.backend == 'true' || needs.path_filters.outputs.frontend == 'true' || needs.path_filters.outputs.copy_gate == 'true'))
+      || (github.event_name == 'workflow_dispatch' && inputs.run_upstream_copy_gates)
+      }}
     runs-on: ubuntu-latest
     # pull-requests: write so the gate can post/update its findings comment on
     # same-repo PRs. Job-level perms replace the default set, so restate contents: read.
@@ -270,7 +286,8 @@ jobs:
       - name: Comment findings on PR (on failure, same-repo only)
         # Fork PRs get a read-only token, so commenting is skipped there; the job
         # summary above still carries the table. Upserts a single marker comment.
-        if: ${{ always() && steps.cpdcheck.outputs.exit_code != '0' && github.event.pull_request.head.repo.fork == false }}
+        # Skipped on workflow_dispatch (no PR to comment on).
+        if: ${{ always() && github.event_name == 'pull_request' && steps.cpdcheck.outputs.exit_code != '0' && github.event.pull_request.head.repo.fork == false }}
         uses: actions/github-script@v7
         with:
           script: |
