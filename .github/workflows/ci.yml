@@ -169,6 +169,43 @@ jobs:
           python3 bin/check-upstream-copying.py --diff "origin/${{ github.base_ref }}"
 
   # -------------------------
+  # Upstream Copy — token-level (PMD CPD)
+  # -------------------------
+  upstream-cpd-check:
+    name: Upstream Copy Check (CPD)
+    needs: path_filters
+    if: ${{ github.event_name == 'pull_request' && (needs.path_filters.outputs.backend == 'true' || needs.path_filters.outputs.frontend == 'true') }}
+    runs-on: ubuntu-latest
+    env:
+      PMD_VERSION: 7.26.0
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install jq (required by fetch-upstream)
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Fetch upstream folders
+        run: ./bin/fetch-upstream.sh
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.1'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install PMD
+        # Token-based detector: resists reformatting/reindentation and (with
+        # --ignore-identifiers/--ignore-literals) identifier renaming, catching
+        # copies the raw-line gate misses. Pinned for reproducible baselines.
+        run: |
+          curl -sSL -o /tmp/pmd.zip \
+            "https://github.com/pmd/pmd/releases/download/pmd_releases%2F${PMD_VERSION}/pmd-dist-${PMD_VERSION}-bin.zip"
+          unzip -q /tmp/pmd.zip -d /tmp/pmd
+          echo "PMD_BIN=/tmp/pmd/pmd-bin-${PMD_VERSION}/bin/pmd" >> "$GITHUB_ENV"
+      - name: Detect reformatted/renamed upstream copies (token-level)
+        # Whole-tree scan for cross-tree token clones (owned <-> upstream). Fails on
+        # new clones / regressions vs bin/upstream-cpd-baseline.json.
+        run: python3 bin/check-upstream-cpd.py
+
+  # -------------------------
   # Security: CodeQL
   # -------------------------
   codeql:
@@ -409,6 +446,7 @@ jobs:
       - frontend-lint
       - frontend-build-unit
       - upstream-copy-check
+      - upstream-cpd-check
       - codeql
       - trivy
       - migration-check
@@ -427,6 +465,7 @@ jobs:
           echo "frontend-lint result: ${{ needs.frontend-lint.result }}"
           echo "frontend-build-unit result: ${{ needs.frontend-build-unit.result }}"
           echo "upstream-copy-check result: ${{ needs.upstream-copy-check.result }}"
+          echo "upstream-cpd-check result: ${{ needs.upstream-cpd-check.result }}"
           echo "codeql result: ${{ needs.codeql.result }}"
           echo "trivy result: ${{ needs.trivy.result }}"
           echo "migration-check result: ${{ needs.migration-check.result }}"
@@ -458,6 +497,10 @@ jobs:
           if [[ "${{ github.event_name }}" == "pull_request" && ( "${{ needs.path_filters.outputs.backend }}" == "true" || "${{ needs.path_filters.outputs.frontend }}" == "true" ) ]]; then
             [[ "${{ needs.upstream-copy-check.result }}" == "success" ]] || {
               echo "::error::Upstream copy / license boundary check did not succeed."
+              exit 1
+            }
+            [[ "${{ needs.upstream-cpd-check.result }}" == "success" ]] || {
+              echo "::error::Upstream copy token-level (CPD) check did not succeed."
               exit 1
             }
           fi

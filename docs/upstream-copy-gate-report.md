@@ -1,23 +1,27 @@
 # Upstream-Copy CI Gate — Report
 
-**Component:** `upstream-copy-check` job in `.github/workflows/ci.yml`
-**Detector:** `bin/check-upstream-copying.py`
-**Baseline:** `bin/upstream-copy-baseline.json`
-**Tracking map:** `docs/upstream-license-compliance.md`
+**Components:** `upstream-copy-check` and `upstream-cpd-check` jobs in `.github/workflows/ci.yml`
+**Detectors:** `bin/check-upstream-copying.py` (raw-line) + `bin/check-upstream-cpd.py` (PMD CPD, token-level)
+**Baselines (source of truth for currently-flagged files):** `bin/upstream-copy-baseline.json`, `bin/upstream-cpd-baseline.json`
 **Status:** active, enforced (blocking) on PRs to `main`
 
 ---
 
 ## 1. What it is
 
-A CI gate that inspects the files a pull request changes and fails the build when
-an Apache-2.0-licensed m8flow file is a copy of its gitignored, LGPL-2.1 upstream
-(spiff-arena) counterpart. It is a **licensing-boundary guard**, not a general
-code-quality or duplication linter.
+Two complementary CI gates that fail the build when an Apache-2.0-licensed m8flow
+file is a copy of its gitignored, LGPL-2.1 upstream (spiff-arena) counterpart. They
+are **licensing-boundary guards**, not general code-quality or duplication linters.
 
-It is deliberately zero-dependency (Python standard library only — `difflib`) and
-runs against the real upstream source, which CI fetches at the pinned ref via
-`bin/fetch-upstream.sh` before the check.
+- **`upstream-copy-check`** — a zero-dependency raw-line detector (Python stdlib
+  `difflib`). Cross-language, comment-aware, fast; runs over the files a PR changes.
+- **`upstream-cpd-check`** — a token-level detector using **PMD CPD**. Because it
+  tokenizes source, it catches copies that were reformatted, reindented, or had
+  identifiers renamed to dodge the raw-line gate. Runs a whole-tree cross-tree
+  clone scan. Requires Java + PMD (installed in CI).
+
+Both run against the real upstream source, which CI fetches at the pinned ref via
+`bin/fetch-upstream.sh` before the checks.
 
 ---
 
@@ -72,10 +76,23 @@ threshold **and** moves beyond its baseline (small drift allowed: ±0.02 ratio,
 out of the baseline. **C1 markers are never grandfathered** — a license header or
 attribution comment fails even if the file is in the baseline.
 
-**Where it runs.** Only on `pull_request` events targeting `main` that change
-`m8flow-backend/**` or `m8flow-frontend/**`, and it is wired into the `required-ci`
-merge gate. It is skipped on plain pushes, `workflow_dispatch`, and PRs that do
-not touch backend/frontend code.
+**Token-level gate (`upstream-cpd-check`).** In parallel, PMD CPD scans both trees
+and reports **cross-tree token clones** — a duplicated token block present in both
+an owned m8flow tree and an upstream tree. It runs with `--ignore-identifiers
+--ignore-literals` (minimum 75 tokens), so a copy that was reformatted, reindented,
+or had identifiers/literals renamed is still matched. Python is scanned directly;
+frontend `.tsx`/`.jsx` are staged into a `.ts`-named temp tree first, because CPD's
+`typescript` language only reads `.ts` (its lexer tokenizes JSX fine once the
+extension is `.ts`). It has its own baseline, `bin/upstream-cpd-baseline.json`, and
+fails on new cross-tree clones or regressions (a larger duplicated block). It is
+**fail-closed**: missing upstream trees, CPD parse/launch errors, or recovering
+fewer than half of on-disk baseline pairs all fail the job instead of reporting
+a clean PASS.
+
+**Where they run.** Only on `pull_request` events targeting `main` that change
+`m8flow-backend/**` or `m8flow-frontend/**`, and both are wired into the
+`required-ci` merge gate. They are skipped on plain pushes, `workflow_dispatch`,
+and PRs that do not touch backend/frontend code.
 
 ---
 
@@ -93,40 +110,42 @@ not touch backend/frontend code.
 - Hard-fail on upstream attribution left in comments (author handles,
   `sartography/` repo URLs) regardless of similarity score.
 - Flag verbatim copied comments even in otherwise-original files.
+- **Catch a copy that was reformatted, reindented, or had identifiers/literals
+  renamed** to dodge the raw-line gate — via the token-level CPD gate. Verified: a
+  copy of an upstream model with `Group`→`Squad` renaming, blank lines removed, and
+  4→2-space reindentation drops to 0.24 raw-line similarity (missed by the line
+  gate) but is still caught by CPD.
+- Cover frontend `.tsx`/`.jsx` at the token level (via `.ts` staging), not just
+  Python.
 - Distinguish **new copying / regressions** from **pre-existing** copies via the
-  checked-in baseline, so it does not block unrelated work on already-flagged files.
-- Run with zero new dependencies, against the exact pinned upstream version.
-- Support local use and re-baselining: `--all` (full-tree report),
-  `--diff <ref>` (PR mode), `--write-baseline`, `--report-only`, `--json`.
+  checked-in baselines, so it does not block unrelated work on already-flagged files.
+- Run the raw-line gate with zero dependencies; the CPD gate adds only Java + PMD
+  in CI. Both run against the exact pinned upstream version.
+- Support local use and re-baselining: raw-line gate `--all` / `--diff <ref>` /
+  `--write-baseline` / `--report-only` / `--json`; CPD gate `--write-baseline` /
+  `--report-only` / `--min-tokens`.
 
 ---
 
 ## 5. What it cannot currently do
 
-- **Resist deliberate evasion by heavy reformatting + identifier renaming.**
-  All layers (and the content-addressed search) compare raw/whitespace-stripped
-  lines, so reflowing *and* renaming identifiers together can lower the scores
-  below the thresholds. Renaming the *file* alone no longer evades (the content
-  search handles that), and reindentation alone is largely tolerated, but a
-  determined line-level rewrite can still slip under. A token/AST-based tool
-  (e.g. jscpd) would resist this; it was evaluated and intentionally left out
-  because it does not fit the 1-to-1 external comparison, cannot see attribution
-  comments, and would require rebuilding the baseline. It remains a possible
-  future *code-health* add-on, not part of this gate.
-- **Catch a copy diluted below the thresholds.** The content search only attaches
-  a counterpart that already clears the ratio or contiguous-block bar. A small
-  snippet lifted into a large, otherwise-original, differently-named file can stay
-  under both bars and go unflagged (unless it carries a C1 marker).
-- **Detect internal (m8flow-to-m8flow) duplication.** The gate only compares
-  against upstream; it is not a general copy-paste detector.
-- **Make a legal determination.** It is a static heuristic that flags likely
-  license-boundary violations for human review; it does not assert infringement.
-- **Run outside a pull request.** It needs the PR base ref for the diff, so it does
-  not run on pushes or manual dispatch.
-- **Remediate anything.** It only detects. Rewriting flagged files (preserving the
-  functional contract — column names/types, exported API — while re-expressing
-  boilerplate independently) is a separate effort tracked in
-  `docs/upstream-license-compliance.md`.
+- **Catch a small, heavily-obfuscated snippet below the token/line floors.** The
+  CPD gate needs ≥ 75 duplicated tokens (~12–18 lines); the raw-line gate needs
+  ≥ 50% similarity or a ≥ 40-line block. A short fragment that is both reworded and
+  reindented can fall under both floors. Lowering the floors trades this for more
+  false positives on structurally-similar boilerplate.
+- **Resist a full structural rewrite.** Token-level detection survives reformatting
+  and renaming, but rewriting the control flow / statement structure (not just
+  names and whitespace) defeats it. Only semantic/AST-equivalence analysis would
+  catch that, and it is out of scope.
+- **Detect internal (m8flow-to-m8flow) duplication.** Both gates only compare
+  against upstream; they are not general copy-paste detectors.
+- **Make a legal determination.** They are static heuristics that flag likely
+  license-boundary violations for human review; they do not assert infringement.
+- **Run outside a pull request.** They run only on PRs touching backend/frontend
+  (the raw-line gate additionally needs the PR base ref for its diff).
+- **Remediate anything.** It only detects. Rewriting flagged files is a separate
+  effort — see §7.
 - **Judge whether copying is legally permissible.** It treats functional contracts
   (schema column names/types) the same as expressive code for scoring; humans must
   decide what is acceptable to keep.
@@ -145,12 +164,54 @@ bin/check-upstream-copying.py --diff origin/main
 # Full-tree audit (report only, no fail semantics beyond markers):
 bin/check-upstream-copying.py --all
 
-# Regenerate the baseline after an intentional, reviewed change to a flagged file:
+# Regenerate the raw-line baseline after an intentional, reviewed change:
 bin/check-upstream-copying.py --all --write-baseline bin/upstream-copy-baseline.json
+
+# Token-level gate (needs PMD 7: set $PMD_BIN or put `pmd` on PATH):
+bin/check-upstream-cpd.py                                             # gate
+bin/check-upstream-cpd.py --report-only                              # see everything
+bin/check-upstream-cpd.py --write-baseline bin/upstream-cpd-baseline.json  # re-baseline
 ```
 
-**Tuning knobs:** `--threshold` (default 0.50), `--block-lines` (default 40),
-`--report-only` (print but never fail — the rollout/rollback lever). Marker
-patterns for C1 live in `MARKER_PATTERNS` in the script and are meant to be
-extended conservatively (a marker must be something that should never legitimately
-appear in m8flow-owned code).
+**Tuning knobs (raw-line):** `--threshold` (default 0.50), `--block-lines`
+(default 40), `--report-only`. Marker patterns for C1 live in `MARKER_PATTERNS`
+and should be extended conservatively (a marker must be something that should never
+legitimately appear in m8flow-owned code).
+
+**Tuning knobs (CPD):** `--min-tokens` (default 75), `--no-ignore-identifiers` /
+`--no-ignore-literals` (less rename-resistant, fewer false positives),
+`--report-only`. PMD version is pinned in `.github/workflows/ci.yml`.
+
+---
+
+## 7. Remediation & tracking
+
+The gates block *new* copying and *regressions*; the copies that already exist are
+grandfathered so no immediate mass rewrite is forced. Paying that debt down is a
+separate, ongoing effort.
+
+**Where the flagged files live.** The two baseline JSONs are the source of truth
+for what is currently flagged — `bin/upstream-copy-baseline.json` (raw-line: per
+file, ratio / longest block / comment matches) and `bin/upstream-cpd-baseline.json`
+(token-level: owned ↔ upstream clone pairs and token counts). A file drops out of a
+baseline automatically once it no longer trips that gate, so the baselines shrink as
+remediation lands. Track the work itself through issues/PRs rather than a separate
+checklist.
+
+**How to remediate.**
+- **Backend models** cannot be deleted (no fallback). Preserve the *functional
+  contract* — column names/types, table names, exported API (these are not
+  copyrightable expression) — but re-express the surrounding boilerplate
+  independently (own structure and comments). Route changes through the non-admin
+  regression check in `AGENTS.md` (`editor`/`reviewer` → `GET /v1.0/onboarding`,
+  `GET /v1.0/tasks`).
+- **Frontend files** should shrink to only the tenant/RBAC delta and wrap the
+  upstream component through the override resolver, instead of forking its full body.
+- **Attribution/markers first.** The `jasquat/burnettk` comment in
+  `ProcessInstanceListTableWithFilters.tsx` is a C1 marker: it hard-fails any PR
+  that touches the file until removed, and is never grandfathered.
+
+**Intentional, reviewed changes to a flagged file.** If a change legitimately alters
+an already-flagged file, regenerate the relevant baseline (`--write-baseline`) and
+get that diff reviewed alongside the code change, so the grandfathered numbers move
+deliberately, not silently.
