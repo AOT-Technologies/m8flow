@@ -156,13 +156,35 @@ def _goto_process_model(page: Page, encoded_id: str) -> None:
 
 
 def _click_start_process(page: Page) -> None:
-    inst = page.get_by_test_id("start-process-instance")
-    if inst.count() and inst.first.is_visible():
-        inst.first.click()
-    else:
-        start = page.get_by_role("button", name=re.compile(r"^start\b", re.I))
-        expect(start).to_be_visible(timeout=PAGE_DATA_TIMEOUT)
-        start.click()
+    """Click the Start control, tolerating a slow model/permission load.
+
+    The Start button renders only after both the process-model fetch and the
+    POST-permission check resolve, which can lag behind ``wait_for_app_ready``.
+    Wait on the canonical ``start-process-instance`` test-id, reloading between
+    attempts, and fall back to a role-based lookup only as a last resort. This
+    removes the synchronous ``count()`` race that could flake under CI load.
+    """
+    start_button = page.get_by_test_id("start-process-instance")
+    attempts = 3
+    for attempt in range(1, attempts + 1):
+        try:
+            expect(start_button.first).to_be_visible(timeout=PAGE_DATA_TIMEOUT)
+            start_button.first.click()
+            wait_for_app_ready(page)
+            return
+        except (AssertionError, PlaywrightTimeout):
+            if attempt < attempts:
+                logger.warning(
+                    "Start control not visible (attempt %d/%d); reloading process-model page.",
+                    attempt,
+                    attempts,
+                )
+                page.reload()
+                wait_for_app_ready(page)
+
+    start = page.get_by_role("button", name=re.compile(r"^start\b", re.I))
+    expect(start.first).to_be_visible(timeout=PAGE_DATA_TIMEOUT)
+    start.first.click()
     wait_for_app_ready(page)
 
 

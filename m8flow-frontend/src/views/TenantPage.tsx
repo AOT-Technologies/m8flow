@@ -19,6 +19,7 @@ import {
   Alert,
   Button,
   Snackbar,
+  Tooltip,
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 import EditIcon from "@mui/icons-material/Edit";
@@ -493,25 +494,34 @@ export default function TenantPage() {
                           justifyItems: "start",
                           textAlign: "left",
                           width: "100%",
+                          minWidth: 0,
                           borderRadius: 1,
                           px: 0,
                           py: 1,
                         }}
                       >
-                        <Typography
-                          variant="body2"
-                          fontWeight={700}
-                          data-testid={`tenant-name-${tenant.id}`}
-                        >
-                          {tenant.name}
-                        </Typography>
-                        <Typography
-                          variant="body2"
-                          color="text.secondary"
-                          data-testid={`tenant-slug-${tenant.id}`}
-                        >
-                          {tenant.slug}
-                        </Typography>
+                        <Tooltip title={tenant.name} placement="top-start" enterDelay={500}>
+                          <Typography
+                            variant="body2"
+                            fontWeight={700}
+                            noWrap
+                            data-testid={`tenant-name-${tenant.id}`}
+                            sx={{ minWidth: 0, maxWidth: "100%" }}
+                          >
+                            {tenant.name}
+                          </Typography>
+                        </Tooltip>
+                        <Tooltip title={tenant.slug} placement="top-start" enterDelay={500}>
+                          <Typography
+                            variant="body2"
+                            color="text.secondary"
+                            noWrap
+                            data-testid={`tenant-slug-${tenant.id}`}
+                            sx={{ minWidth: 0, maxWidth: "100%" }}
+                          >
+                            {tenant.slug}
+                          </Typography>
+                        </Tooltip>
                         <Box>
                           <Chip
                             label={tenant.status}

@@ -7,6 +7,18 @@ on:
         description: "RC tag name (e.g. 1.2.3-rc)"
         required: true
         type: string
+      component:
+        description: 'Component to build & push (choose "all" to build everything)'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - backend
+          - frontend
+          - keycloak
+          - connector-proxy
+          - mcp
   workflow_run:
     workflows: ["Create Release Tag"]
     types: [completed]
@@ -23,7 +35,7 @@ env:
   REGISTRY: docker.io
   IMAGE_REPOSITORY: m8flow
   PROJECT: m8flow
-  COMPONENTS: '["backend", "frontend", "keycloak", "connector-proxy"]'
+  COMPONENTS: '["backend", "frontend", "keycloak", "connector-proxy", "mcp"]'
 
 jobs:
   prepare:
@@ -35,7 +47,7 @@ jobs:
     outputs:
       ref: ${{ steps.meta.outputs.ref }}
       tag: ${{ steps.meta.outputs.tag }}
-      components: ${{ env.COMPONENTS }}
+      components: ${{ steps.components.outputs.list }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -57,6 +69,15 @@ jobs:
           fi
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
           echo "ref=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Compute component list
+        id: components
+        run: |
+          if [[ -z "${{ inputs.component }}" || "${{ inputs.component }}" == "all" ]]; then
+            echo "list=${{ env.COMPONENTS }}" >> $GITHUB_OUTPUT
+          else
+            echo "list=[\"${{ inputs.component }}\"]" >> $GITHUB_OUTPUT
+          fi
 
   backup-existing-tags:
     name: Backup Tags
@@ -124,8 +145,8 @@ jobs:
         id: build
         uses: docker/build-push-action@v5
         with:
-          context: ${{ matrix.component == 'connector-proxy' && 'm8flow-connector-proxy' || '.' }}
-          file: ${{ matrix.component == 'connector-proxy' && 'm8flow-connector-proxy/Dockerfile' || format('docker/m8flow.{0}.Dockerfile', matrix.component) }}
+          context: ${{ matrix.component == 'mcp' && 'm8flow-mcp' || '.' }}
+          file: ${{ matrix.component == 'connector-proxy' && 'm8flow-connector-proxy/Dockerfile' || matrix.component == 'mcp' && 'm8flow-mcp/Dockerfile' || format('docker/m8flow.{0}.Dockerfile', matrix.component) }}
           # Pin the shared base explicitly (only consumed by the backend Dockerfile;
           # ignored as an unused arg by other components).
           build-args: |

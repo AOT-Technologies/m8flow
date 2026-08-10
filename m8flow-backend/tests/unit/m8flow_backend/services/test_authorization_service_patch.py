@@ -910,6 +910,16 @@ def test_parse_permissions_yaml_into_group_info_preserves_global_super_admin_gro
     assert "/m8flow/tenants*" in super_admin_permission_uris
     assert "/m8flow/templates/*" in super_admin_permission_uris
     assert "/authentications/*" in super_admin_permission_uris
+    # M8F-358: super-admin must have read access to /task-data/* so the Process Instance
+    # "Task Data" panel loads (ability.can('GET', ...)) and the GET is authorized. This is
+    # NOT covered by super-admin's read grant on PM:ALL/PG:ALL, which only expands to
+    # /process-models/* and /process-groups/* (the /task-data segment is "all"-only).
+    assert "/task-data/*" in super_admin_permission_uris
+    # M8F-449: super-admin must have read access to /logs/* so the Process Instance
+    # "Events" and "Milestones" tabs render (both gated on ability.can('GET', logs path))
+    # and the log/events list loads. Same read-vs-all asymmetry as /task-data above:
+    # the /logs segment is only added for the "all" permission set, not plain "read".
+    assert "/logs/*" in super_admin_permission_uris
     assert "/secrets/*" in super_admin_permission_uris
     assert "/process-instances/for-me" in super_admin_permission_uris
     assert "/process-instances" in super_admin_permission_uris
@@ -1559,6 +1569,93 @@ def test_tenant_admin_permissions_from_yaml_only_grant_page_access_and_tenant_up
     assert tenant_list_allowed is False
     assert tenant_update_allowed is True
     assert tenant_delete_allowed is False
+
+
+def test_nats_tokens_item_route_authz_admin_allowed_non_admin_denied(monkeypatch) -> None:
+    """End-to-end authz for the NATS API-key routes, including the item route.
+
+    Proves the wildcard grant ``/m8flow/nats-tokens/*`` actually resolves against a
+    concrete key id at runtime: a tenant-admin may DELETE
+    ``/v1.0/m8flow/nats-tokens/<id>`` (and read the collection) while a non-admin
+    (reviewer) is denied on both. This guards against a URI/prefix drift silently
+    opening or closing the per-key route that the config-only test cannot catch.
+    """
+    app = Flask(__name__)  # NOSONAR - unit test
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SQLALCHEMY_EXPIRE_ON_COMMIT"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"] = "/v1.0"
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP"] = "spiff_public"
+    app.config["SPIFFWORKFLOW_BACKEND_PERMISSIONS_FILE_ABSOLUTE_PATH"] = str(
+        Path(__file__).resolve().parents[4] / "src" / "m8flow_backend" / "config" / "permissions" / "m8flow.yml"
+    )
+
+    from spiffworkflow_backend.models.db import db
+
+    db.init_app(app)
+
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_id_or_none", lambda: "tenant-a")
+    monkeypatch.setattr(
+        authorization_service_patch,
+        "current_tenant_identifiers",
+        lambda tenant_id=None: {"tenant-a", "tenant-a-slug"},
+    )
+
+    # A concrete per-key path as it arrives at runtime (extension paths are mounted
+    # under /m8flow by openapi_merge; Spiff strips the /v1.0 prefix before matching).
+    item_uri = "/v1.0/m8flow/nats-tokens/abc123def456"
+    collection_uri = "/v1.0/m8flow/nats-tokens"
+
+    with app.app_context():
+        model_override_patch.apply()
+        from spiffworkflow_backend.models.group import GroupModel
+        from spiffworkflow_backend.models.permission_assignment import PermissionAssignmentModel
+        from spiffworkflow_backend.models.permission_target import PermissionTargetModel
+        from spiffworkflow_backend.models.principal import PrincipalModel
+        from spiffworkflow_backend.models.user import UserModel
+        from spiffworkflow_backend.models.user_group_assignment import UserGroupAssignmentModel
+        from spiffworkflow_backend.services.authorization_service import AuthorizationService
+        from spiffworkflow_backend.services.user_service import UserService
+
+        _ = (
+            GroupModel,
+            PermissionAssignmentModel,
+            PermissionTargetModel,
+            PrincipalModel,
+            UserModel,
+            UserGroupAssignmentModel,
+        )
+
+        db.create_all()
+
+        authorization_service_patch.apply()
+
+        everybody_group = UserService.find_or_create_group("tenant-a:everybody")
+
+        admin = UserService.create_user(username="tenant-admin", service="service", service_id="admin-id")
+        admin_group = UserService.find_or_create_group("tenant-a:tenant-admin")
+        UserService.add_user_to_group(admin, admin_group)
+        UserService.add_user_to_group(admin, everybody_group)
+
+        reviewer = UserService.create_user(username="reviewer", service="service", service_id="reviewer-id")
+        reviewer_group = UserService.find_or_create_group("tenant-a:reviewer")
+        UserService.add_user_to_group(reviewer, reviewer_group)
+        UserService.add_user_to_group(reviewer, everybody_group)
+
+        # Group-scoped assignments are created for every group in the yaml; a single
+        # import covers both users via their group principals.
+        AuthorizationService.import_permissions_from_yaml_file()
+
+        admin_item_delete = AuthorizationService.user_has_permission(admin, "delete", item_uri)
+        admin_collection_read = AuthorizationService.user_has_permission(admin, "read", collection_uri)
+        reviewer_item_delete = AuthorizationService.user_has_permission(reviewer, "delete", item_uri)
+        reviewer_collection_read = AuthorizationService.user_has_permission(reviewer, "read", collection_uri)
+
+    assert admin_item_delete is True
+    assert admin_collection_read is True
+    assert reviewer_item_delete is False
+    assert reviewer_collection_read is False
 
 
 def test_user_service_all_principals_for_user_includes_global_super_admin_without_tenant_context(monkeypatch) -> None:

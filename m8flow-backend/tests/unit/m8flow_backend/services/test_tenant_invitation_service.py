@@ -110,6 +110,31 @@ class TestCreateInvitation:
             # Clamped to MAX_VALIDITY_DAYS.
             assert result["expires_at_in_seconds"] <= int(time.time()) + svc.MAX_VALIDITY_DAYS * 86400 + 5
 
+    def test_rejects_existing_shared_realm_user_and_requires_add_member_flow(
+        self,
+        app,
+        monkeypatch,
+    ):
+        monkeypatch.setattr(
+            svc,
+            "get_realm_user_by_username",
+            lambda realm, username: {
+                "id": "realm-user-1",
+                "username": username,
+                "email": username,
+            }
+            if realm == "m8flow" and username == "user@example.com"
+            else None,
+        )
+
+        with app.app_context():
+            with pytest.raises(ApiError) as exc:
+                svc.create_invitation(TENANT_ID, "user@example.com", ["editor"], 7, "admin")
+
+        assert exc.value.status_code == 409
+        assert exc.value.error_code == "user_exists"
+        assert exc.value.message == "A user with email 'user@example.com' already exists."
+
 
 def _raw_token_for(app):
     """Create an invitation and return its raw token by re-deriving via monkeypatch-free flow."""

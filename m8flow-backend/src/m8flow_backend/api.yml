@@ -1967,19 +1967,69 @@ paths:
                   - $ref: "#/components/schemas/ProcessModelTemplateInfo"
 
   /nats-tokens:
-    post:
-      summary: Generate a NATS event token
-      description: Generates a new unique token for a tenant to use when publishing NATS events. Restricted to tenant-admin, integrator, and super-admin.
-      operationId: m8flow_backend.routes.nats_token_controller.generate_token
+    get:
+      summary: List NATS API keys for the current tenant
+      description: >
+        Returns metadata for all of the tenant's NATS API keys (id, label, scope,
+        expiry, last-used and revocation timestamps) WITHOUT ever exposing the key
+        value. Restricted to tenant-admin (manage) and super-admin (read).
+      operationId: m8flow_backend.routes.nats_token_controller.list_tokens
       tags:
         - NATS
       responses:
-        "201":
-          description: Token generated successfully
+        "200":
+          description: API key metadata (never includes any key value)
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/NatsTokenResponse"
+                $ref: "#/components/schemas/NatsApiKeyListResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      summary: Create a named NATS API key
+      description: >
+        Creates a new named API key for the current tenant to use when publishing NATS
+        trigger events. Each key is independent, so it can be rotated or revoked without
+        affecting other integrations. The key value is returned in this response ONCE and
+        can never be retrieved again. Restricted to tenant-admin.
+      operationId: m8flow_backend.routes.nats_token_controller.generate_token
+      tags:
+        - NATS
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NatsApiKeyCreateRequest"
+      responses:
+        "201":
+          description: API key created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NatsApiKeyResponse"
+        "400":
+          description: Bad request - missing label or unsupported expiry/scope value
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Unauthorized - user not authenticated
           content:
@@ -1999,15 +2049,64 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /nats-tokens/{key_id}:
+    delete:
+      summary: Revoke a single NATS API key
+      description: >
+        Revokes one NATS API key owned by the current tenant, immediately invalidating it
+        while leaving all other keys active. Restricted to tenant-admin.
+      operationId: m8flow_backend.routes.nats_token_controller.delete_token
+      tags:
+        - NATS
+      parameters:
+        - name: key_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The public id of the API key to revoke.
+      responses:
+        "200":
+          description: Key revoked (or was already revoked)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NatsApiKeyRevokeResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found - no key with that id exists for the tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /events/m8flow-trigger:
     post:
       summary: Receive an external trigger event
       description: >
-        Public webhook endpoint that accepts an external trigger payload, publishes
-        a NATS event, and synchronously waits for the process instance to be created.
-        Returns the created process instance details. The caller must supply a valid
-        tenant API key (generated via POST /api/nats-tokens) in the X-M8FLOW-NATS-API-Key header.
-        No Keycloak JWT is required.
+        Webhook endpoint that accepts an external trigger payload, publishes a NATS
+        event, and synchronously waits for the process instance to be created.
+        Returns the created process instance details. The caller authenticates purely
+        with a valid tenant API key (created via POST /api/nats-tokens) in the
+        X-M8FLOW-NATS-API-Key header — no JWT is required. The key alone resolves the
+        tenant, the owning identity, and the key's scope.
       operationId: m8flow_backend.routes.events_controller.m8flow_trigger
       tags:
         - Events
@@ -2019,33 +2118,20 @@ paths:
           schema:
             type: string
           description: >
-            A valid tenant API key obtained from POST /api/nats-tokens.
-            The key is validated via HMAC-SHA256 against the stored hash.
+            A valid tenant API key obtained from POST /api/nats-tokens. Its secret is
+            validated via HMAC-SHA256; the tenant, owning identity, and scope are all
+            derived from the key.
 
         - name: X-M8FLOW-Process-Identifier
           in: header
-          required: true
+          required: false
+          deprecated: true
           schema:
             type: string
-          description: The identifier of the process to trigger.
-        - name: X-M8FLOW-Username
-          in: header
-          required: true
-          schema:
-            type: string
-          description: The username on whose behalf the process is triggered.
-        - name: X-M8FLOW-Tenant-Slug
-          in: header
-          required: true
-          schema:
-            type: string
-          description: The human-readable slug of the tenant.
-        - name: X-M8FLOW-Stream-Name
-          in: header
-          required: true
-          schema:
-            type: string
-          description: The NATS stream name to publish the event to.
+          description: >
+            DEPRECATED: the identifier of the process to trigger. Prefer
+            ``processIdentifier`` in the request body. Used only as a fallback when the
+            body does not carry ``processIdentifier``.
 
       requestBody:
         required: false
@@ -2073,13 +2159,14 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
-          description: Unauthorized – X-M8FLOW-NATS-API-Key header is absent
+          description: >
+            Unauthorized – the X-M8FLOW-NATS-API-Key header is absent.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: Forbidden – X-M8FLOW-NATS-API-Key is invalid or revoked
+          description: Forbidden – X-M8FLOW-NATS-API-Key is invalid, expired, or revoked, or the key is not scoped for the requested process
           content:
             application/json:
               schema:
@@ -2808,14 +2895,57 @@ components:
           description: The created process model info
         template_info:
           $ref: "#/components/schemas/ProcessModelTemplateInfo"
-    NatsTokenResponse:
+    NatsApiKeyCreateRequest:
+      type: object
+      required:
+        - label
+      properties:
+        label:
+          type: string
+          description: A human-friendly name for the key, e.g. "CI pipeline".
+        expiresInDays:
+          type: integer
+          nullable: true
+          enum: [30, 90, 365]
+          description: >
+            Key lifetime in days. Supported values are 30, 90, and 365. Omit the field
+            or send null for a key that never expires.
+        scope:
+          nullable: true
+          description: >
+            Optional allow-list of process identifiers this key may trigger. Provide a
+            comma-separated string or an array of identifiers. Omit, send null, or use
+            "*" to allow any process in the tenant.
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+
+    NatsApiKeyMetadata:
       type: object
       properties:
-        token:
+        id:
           type: string
-          description: The generated token (key)
+          description: The public key id.
+        label:
+          type: string
         tenantId:
           type: string
+        scope:
+          type: string
+          nullable: true
+        expiresAtInSeconds:
+          type: integer
+          nullable: true
+          description: Epoch seconds at which the key expires. Null means it never expires.
+        lastUsedAtInSeconds:
+          type: integer
+          nullable: true
+        revokedAtInSeconds:
+          type: integer
+          nullable: true
+          description: Epoch seconds at which the key was revoked. Null means active.
         createdAtInSeconds:
           type: integer
         createdBy:
@@ -2824,6 +2954,33 @@ components:
           type: integer
         modifiedBy:
           type: string
+
+    NatsApiKeyResponse:
+      allOf:
+        - $ref: "#/components/schemas/NatsApiKeyMetadata"
+        - type: object
+          properties:
+            token:
+              type: string
+              description: The generated key value. Returned only once, on creation.
+
+    NatsApiKeyListResponse:
+      type: object
+      properties:
+        keys:
+          type: array
+          items:
+            $ref: "#/components/schemas/NatsApiKeyMetadata"
+
+    NatsApiKeyRevokeResponse:
+      type: object
+      properties:
+        revoked:
+          type: boolean
+          description: True if the key was revoked by this call, false if already revoked.
+        id:
+          type: string
+          description: The id of the key that was targeted.
 
     ExternalFormContextResponse:
       type: object
@@ -2882,6 +3039,11 @@ components:
       type: object
 
       properties:
+        processIdentifier:
+          type: string
+          description: >
+            The identifier of the process to trigger (e.g. "group/process"). May also be
+            supplied via the deprecated X-M8FLOW-Process-Identifier header.
         data:
           description: >
             Arbitrary caller-supplied payload. Can be any JSON value

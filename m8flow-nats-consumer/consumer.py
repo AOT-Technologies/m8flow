@@ -1,9 +1,11 @@
 import asyncio
+import contextlib
 import json
 import logging
 import os
 import signal
 import sys
+import time
 from typing import Any
 
 from dotenv import load_dotenv
@@ -22,6 +24,17 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger("m8flow.nats.consumer")
+
+try:
+    from m8flow_telemetry.bootstrap import setup
+    from m8flow_telemetry.metrics import record_nats_processing, set_nats_consumer_lag
+    from m8flow_telemetry.nats_propagate import start_nats_consume_span
+
+    setup("m8flow-nats-consumer")
+except ImportError:  # pragma: no cover
+    record_nats_processing = None
+    set_nats_consumer_lag = None
+    start_nats_consume_span = None
 logging.getLogger("m8flow.nats.token_service").setLevel(os.getenv("M8FLOW_NATS_TOKEN_SERVICE_LOG_LEVEL", "DEBUG"))
 
 NATS_URL          = os.environ["M8FLOW_NATS_URL"]
@@ -180,6 +193,7 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
     dedup_key = None
     tenant_id = None
     process_identifier = None
+    started: float | None = None
 
     try:
         try:
@@ -213,56 +227,86 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
         event_id           = data.get("id")
         api_key            = data.get("api_key")
 
-        if not all([process_identifier, username]):
-            raise ValueError("Message missing required fields (process_identifier, username).")
+        started = time.perf_counter()
+        msg_headers = dict(getattr(msg, "headers", None) or {})
+        span_ctx = (
+            start_nats_consume_span(msg.subject, tenant_id=tenant_id, headers=msg_headers)
+            if start_nats_consume_span
+            else contextlib.nullcontext()
+        )
 
-        if not api_key:
-            raise ValueError(f"Rejecting event: 'api_key' is missing for tenant {tenant_id}")
+        with span_ctx:
+            if not all([process_identifier, username]):
+                raise ValueError("Message missing required fields (process_identifier, username).")
 
-        def _verify():
-            from m8flow_backend.services.nats_token_service import NatsTokenService
-            from m8flow_backend.tenancy import set_context_tenant_id, reset_context_tenant_id
-            with flask_app.app_context():
-                token = set_context_tenant_id(tenant_id)
+            if not api_key:
+                raise ValueError(f"Rejecting event: 'api_key' is missing for tenant {tenant_id}")
+
+            def _verify():
+                from m8flow_backend.services.nats_token_service import NatsTokenService
+                from m8flow_backend.tenancy import set_context_tenant_id, reset_context_tenant_id
+                with flask_app.app_context():
+                    token = set_context_tenant_id(tenant_id)
+                    try:
+                        return NatsTokenService.authenticate_key(api_key)
+                    finally:
+                        reset_context_tenant_id(token)
+
+            authenticated = await asyncio.to_thread(_verify)
+            if authenticated is None:
+                # Missing / malformed / unknown / expired / revoked key.
+                raise ValueError(f"Rejecting event: Invalid api_key for tenant {tenant_id}")
+
+            if authenticated.tenant_id != tenant_id:
+                # The key belongs to a different tenant than the event claims.
+                raise ValueError(
+                    f"Rejecting event: api_key tenant {authenticated.tenant_id} does not match event tenant {tenant_id}"
+                )
+
+            def _scope_allows():
+                from m8flow_backend.services.nats_token_service import NatsTokenService
+                return NatsTokenService.scope_allows(authenticated.scope, process_identifier)
+
+            # Defense in depth: the publish path already enforces scope, but re-check here so a
+            # scoped key can never trigger a process outside its allow-list.
+            if not await asyncio.to_thread(_scope_allows):
+                raise ValueError(
+                    f"Rejecting event: api_key not scoped for process {process_identifier}"
+                )
+
+            if event_id and tenant_id:
+                dedup_key = await check_idempotency(kv, tenant_id, event_id)
+                if dedup_key is None:
+                    # Duplicate event, already logged in check_idempotency
+                    await msg.ack()
+                    return
+            else:
+                if not event_id:
+                    logger.warning("Event has no 'id' field — idempotency cannot be guaranteed.")
+
+            instance_id = await asyncio.to_thread(
+                instantiate_process,
+                tenant_id,
+                process_identifier,
+                username,
+                data.get("payload") or {},
+            )
+
+            logger.info(
+                "Process instance created | tenant=%s identifier=%s instance_id=%s",
+                tenant_id, process_identifier, instance_id.get("id"),
+            )
+            await msg.ack()
+
+            # Reply to the publisher with process instance details
+            if reply_to:
                 try:
-                    return NatsTokenService.verify_token(tenant_id, api_key)
-                finally:
-                    reset_context_tenant_id(token)
+                    await nc.publish(reply_to, json.dumps(instance_id).encode("utf-8"))
+                except Exception as e:
+                    logger.warning("Failed to send reply to %s: %s", reply_to, e)
 
-        is_valid = await asyncio.to_thread(_verify)
-        if not is_valid:
-            raise ValueError(f"Rejecting event: Invalid api_key for tenant {tenant_id}")
-
-        if event_id and tenant_id:
-            dedup_key = await check_idempotency(kv, tenant_id, event_id)
-            if dedup_key is None:
-                # Duplicate event, already logged in check_idempotency
-                await msg.ack()
-                return
-        else:
-            if not event_id:
-                logger.warning("Event has no 'id' field — idempotency cannot be guaranteed.")
-
-        instance_id = await asyncio.to_thread(
-            instantiate_process,
-            tenant_id,
-            process_identifier,
-            username,
-            data.get("payload") or {},
-        )
-
-        logger.info(
-            "Process instance created | tenant=%s identifier=%s instance_id=%s",
-            tenant_id, process_identifier, instance_id.get("id"),
-        )
-        await msg.ack()
-
-        # Reply to the publisher with process instance details
-        if reply_to:
-            try:
-                await nc.publish(reply_to, json.dumps(instance_id).encode("utf-8"))
-            except Exception as e:
-                logger.warning("Failed to send reply to %s: %s", reply_to, e)
+            if record_nats_processing is not None:
+                record_nats_processing(tenant_id, duration_ms=(time.perf_counter() - started) * 1000, failed=False)
 
     except Exception as e:
         # Most failures are PERMANENT (validation, missing models, auth).
@@ -272,6 +316,10 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
             "Event processing failed (ACKing message): tenant=%s identifier=%s error=%s type=%s",
             tenant_id, process_identifier, error_msg, type(e).__name__,
         )
+
+        if record_nats_processing is not None:
+            duration_ms = (time.perf_counter() - started) * 1000 if started is not None else 0.0
+            record_nats_processing(tenant_id, duration_ms=duration_ms, failed=True)
         
         if dedup_key and kv:
             try:
@@ -291,10 +339,12 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
 
 async def main() -> None:
     global flask_app
-    
+
     logger.info("Initializing M8Flow core application context...")
     from m8flow_backend.app import app as asgi_app
-    flask_app = asgi_app.app.app
+    flask_app = asgi_app.app
+    while not hasattr(flask_app, "app_context"):
+        flask_app = flask_app.app
 
     logger.info("Starting M8Flow NATS Consumer...")
     nc = NATS()
@@ -351,14 +401,28 @@ async def main() -> None:
         await nc.close()
         sys.exit(1)
 
+    async def _report_consumer_lag() -> None:
+        if set_nats_consumer_lag is None:
+            return
+        try:
+            info = await sub.consumer_info()
+            set_nats_consumer_lag(getattr(info, "num_pending", 0))
+        except Exception:
+            pass
+
     logger.info("Consumer loop started.")
     while running:
         try:
             msgs = await sub.fetch(batch=FETCH_BATCH, timeout=FETCH_TIMEOUT)
             for msg in msgs:
                 await process_message(msg, kv, nc)
+            # Report current lag every iteration, not just on idle timeout —
+            # under sustained backlog, fetch never times out, so a
+            # timeout-only update would leave the gauge stale exactly when
+            # the backlog is worst.
+            await _report_consumer_lag()
         except TimeoutError:
-            pass
+            await _report_consumer_lag()
         except ConnectionClosedError:
             logger.warning("NATS connection closed, exiting loop.")
             break
