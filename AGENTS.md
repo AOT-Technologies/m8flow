@@ -74,8 +74,8 @@ Do not copy upstream source into the Apache-2.0-tracked trees.
     `bin/upstream-cpd-baseline.json`.
   Both block *new* copying and *regressions* of already-flagged files; neither
   forces an immediate rewrite of pre-existing copies. License/attribution markers
-  are never grandfathered. How the gates work and how to remediate is documented in
-  `docs/upstream-copy-gate-report.md`; the flagged files themselves are listed in
+  are never grandfathered. Job wiring and usage are documented in
+  `.github/workflows/README.md`; the flagged files themselves are listed in
   the two baseline JSONs.
 - If you intentionally and reviewably change an already-flagged file, regenerate
   the relevant baseline (`--write-baseline`) and have the diff reviewed.
