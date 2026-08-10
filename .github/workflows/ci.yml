@@ -5,6 +5,11 @@ on:
   pull_request:
     branches: [ main ]
   workflow_dispatch:
+    inputs:
+      run_upstream_copy_gates:
+        description: Run upstream copy / CPD (duplicate-code) license gates
+        type: boolean
+        default: true
 
 # Default: safe for fork PRs
 permissions:
@@ -22,6 +27,7 @@ jobs:
       mcp: ${{ steps.filter.outputs.mcp }}
       migrations: ${{ steps.filter.outputs.migrations }}
       docker_m8flow: ${{ steps.filter.outputs.docker_m8flow }}
+      copy_gate: ${{ steps.filter.outputs.copy_gate }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v2
@@ -40,6 +46,10 @@ jobs:
             docker_m8flow:
               - 'docker/**'
               - 'm8flow-connector-proxy/**'
+            copy_gate:
+              - 'bin/check-upstream-*.py'
+              - 'bin/upstream-*-baseline.json'
+              - 'bin/fetch-upstream*.sh'
 
   # -------------------------
   # Backend Lint
@@ -140,6 +150,177 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=4096
         run: npm run test:ci
+
+  # -------------------------
+  # Upstream Copy / License Boundary Gate
+  # -------------------------
+  upstream-copy-check:
+    name: Upstream Copy Check
+    needs: path_filters
+    # Run on every push (same pattern as backend/frontend) so required-ci never
+    # depends on a skipped job. On PRs, path-filter; on manual dispatch, input-gated.
+    if: >-
+      ${{
+      github.event_name == 'push'
+      || (github.event_name == 'pull_request' && (needs.path_filters.outputs.backend == 'true' || needs.path_filters.outputs.frontend == 'true' || needs.path_filters.outputs.copy_gate == 'true'))
+      || (github.event_name == 'workflow_dispatch' && inputs.run_upstream_copy_gates)
+      }}
+    runs-on: ubuntu-latest
+    # pull-requests: write so the gate can post/update its findings comment on
+    # same-repo PRs. Job-level perms replace the default set, so restate contents: read.
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so the PR base ref is reachable for the diff comparison.
+          fetch-depth: 0
+      - name: Install jq (required by fetch-upstream)
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Fetch upstream folders
+        # Provides the gitignored spiff-arena trees to compare against, at the
+        # exact ref pinned in upstream.sources.json.
+        run: ./bin/fetch-upstream.sh
+      - name: Fetch extra upstream folders for the copy gate
+        # Gate-specific: pulls connector-proxy trees the default fetch omits, so
+        # m8flow-connector-proxy/ can be compared. Does not change fetch-upstream.sh
+        # or the default pull.
+        run: ./bin/fetch-upstream-extra.sh connector-proxy-demo connector-proxies
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.1'
+      - name: Detect new copying of upstream source
+        id: copycheck
+        # PR: only files changed vs the base. Push / manual dispatch: full-tree --all.
+        # Fails on new copying, regressions, or LGPL/attribution markers.
+        # Captures the exit code so the summary/comment steps can run before fail.
+        run: |
+          set +e
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+            python3 bin/check-upstream-copying.py --diff "origin/${{ github.base_ref }}" \
+              --summary-md copy-gate-summary.md
+          else
+            python3 bin/check-upstream-copying.py --all --summary-md copy-gate-summary.md
+          fi
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+          set -e
+      - name: Publish findings to job summary
+        if: always()
+        run: cat copy-gate-summary.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+      - name: Comment findings on PR (on failure, same-repo only)
+        # Fork PRs get a read-only token, so commenting is skipped there; the job
+        # summary above still carries the table. Upserts a single marker comment.
+        # Skipped on workflow_dispatch (no PR to comment on).
+        if: ${{ always() && github.event_name == 'pull_request' && steps.copycheck.outputs.exit_code != '0' && github.event.pull_request.head.repo.fork == false }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- upstream-copy-gate -->';
+            const body = marker + '\n' + fs.readFileSync('copy-gate-summary.md', 'utf8');
+            const { data: comments } = await github.rest.issues.listComments({
+              ...context.repo, issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: context.issue.number, body });
+            }
+      - name: Fail the job if the copy gate failed
+        if: ${{ steps.copycheck.outputs.exit_code != '0' }}
+        run: |
+          echo "::error::Upstream copy gate found new/regressed copying (see summary/PR comment)."
+          exit 1
+
+  # -------------------------
+  # Upstream Copy — token-level (PMD CPD)
+  # -------------------------
+  upstream-cpd-check:
+    name: Upstream Copy Check (CPD)
+    needs: path_filters
+    # Run on every push (same pattern as backend/frontend) so required-ci never
+    # depends on a skipped job. On PRs, path-filter; on manual dispatch, input-gated.
+    # Scope: m8flow-backend/src + m8flow-frontend/src only (see check-upstream-cpd.py).
+    # Does not fetch connector-proxy extras — that coverage is raw-line gate only.
+    if: >-
+      ${{
+      github.event_name == 'push'
+      || (github.event_name == 'pull_request' && (needs.path_filters.outputs.backend == 'true' || needs.path_filters.outputs.frontend == 'true' || needs.path_filters.outputs.copy_gate == 'true'))
+      || (github.event_name == 'workflow_dispatch' && inputs.run_upstream_copy_gates)
+      }}
+    runs-on: ubuntu-latest
+    # pull-requests: write so the gate can post/update its findings comment on
+    # same-repo PRs. Job-level perms replace the default set, so restate contents: read.
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      PMD_VERSION: 7.26.0
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install jq (required by fetch-upstream)
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Fetch upstream folders
+        # Default pull is enough: CPD scans backend/frontend src trees only, not
+        # connector-proxy (raw-line gate covers that via fetch-upstream-extra.sh).
+        run: ./bin/fetch-upstream.sh
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.1'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install PMD
+        # Token-based detector: resists reformatting/reindentation and (with
+        # --ignore-identifiers/--ignore-literals) identifier renaming, catching
+        # copies the raw-line gate misses. Pinned for reproducible baselines.
+        run: |
+          curl -sSL -o /tmp/pmd.zip \
+            "https://github.com/pmd/pmd/releases/download/pmd_releases%2F${PMD_VERSION}/pmd-dist-${PMD_VERSION}-bin.zip"
+          unzip -q /tmp/pmd.zip -d /tmp/pmd
+          echo "PMD_BIN=/tmp/pmd/pmd-bin-${PMD_VERSION}/bin/pmd" >> "$GITHUB_ENV"
+      - name: Detect reformatted/renamed upstream copies (token-level)
+        id: cpdcheck
+        # Cross-tree token clones for backend/frontend src only. Fails on new clones /
+        # regressions vs bin/upstream-cpd-baseline.json. Captures the exit code so the
+        # summary/comment steps can run before the job is failed.
+        run: |
+          set +e
+          python3 bin/check-upstream-cpd.py --summary-md cpd-gate-summary.md
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+          set -e
+      - name: Publish findings to job summary
+        if: always()
+        run: cat cpd-gate-summary.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+      - name: Comment findings on PR (on failure, same-repo only)
+        # Fork PRs get a read-only token, so commenting is skipped there; the job
+        # summary above still carries the table. Upserts a single marker comment.
+        # Skipped on workflow_dispatch (no PR to comment on).
+        if: ${{ always() && github.event_name == 'pull_request' && steps.cpdcheck.outputs.exit_code != '0' && github.event.pull_request.head.repo.fork == false }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- upstream-cpd-gate -->';
+            const body = marker + '\n' + fs.readFileSync('cpd-gate-summary.md', 'utf8');
+            const { data: comments } = await github.rest.issues.listComments({
+              ...context.repo, issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: context.issue.number, body });
+            }
+      - name: Fail the job if the CPD gate failed
+        if: ${{ steps.cpdcheck.outputs.exit_code != '0' }}
+        run: |
+          echo "::error::Upstream CPD gate found new/regressed cross-tree clones (see summary/PR comment)."
+          exit 1
 
   # -------------------------
   # Security: CodeQL
@@ -428,6 +609,8 @@ jobs:
       - backend
       - frontend-lint
       - frontend-build-unit
+      - upstream-copy-check
+      - upstream-cpd-check
       - mcp-lint
       - mcp
       - codeql
@@ -447,6 +630,8 @@ jobs:
           echo "backend-lint result: ${{ needs.backend-lint.result }}"
           echo "frontend-lint result: ${{ needs.frontend-lint.result }}"
           echo "frontend-build-unit result: ${{ needs.frontend-build-unit.result }}"
+          echo "upstream-copy-check result: ${{ needs.upstream-copy-check.result }}"
+          echo "upstream-cpd-check result: ${{ needs.upstream-cpd-check.result }}"
           echo "mcp-lint result: ${{ needs.mcp-lint.result }}"
           echo "mcp result: ${{ needs.mcp.result }}"
           echo "codeql result: ${{ needs.codeql.result }}"
@@ -473,6 +658,19 @@ jobs:
             }
             [[ "${{ needs.frontend-build-unit.result }}" == "success" ]] || {
               echo "::error::Frontend build/unit CI did not succeed."
+              exit 1
+            }
+          fi
+
+          # Matches the upstream-*-check job `if`s: every push, and PRs that touch
+          # backend/frontend/copy-gate paths. (workflow_dispatch is not gated here.)
+          if [[ "${{ github.event_name }}" == "push" || ( "${{ github.event_name }}" == "pull_request" && ( "${{ needs.path_filters.outputs.backend }}" == "true" || "${{ needs.path_filters.outputs.frontend }}" == "true" || "${{ needs.path_filters.outputs.copy_gate }}" == "true" ) ) ]]; then
+            [[ "${{ needs.upstream-copy-check.result }}" == "success" ]] || {
+              echo "::error::Upstream copy / license boundary check did not succeed."
+              exit 1
+            }
+            [[ "${{ needs.upstream-cpd-check.result }}" == "success" ]] || {
+              echo "::error::Upstream copy token-level (CPD) check did not succeed."
               exit 1
             }
           fi

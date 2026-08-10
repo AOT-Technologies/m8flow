@@ -45,3 +45,9 @@ data/*
 process_models/*
 extensions/m8flow-frontend/test/browser/test-results*
 m8flow-frontend/dist
+
+# PMD/CPD download used to run bin/check-upstream-cpd.py locally (CI fetches its own
+# pinned copy). Never commit the binary.
+pmd-bin-*/
+pmd-dist-*.zip
+pmd*.zip
