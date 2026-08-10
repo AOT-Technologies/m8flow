@@ -2232,16 +2232,19 @@ paths:
           required: false
           schema:
             type: string
+          description: Case-insensitive substring match, e.g. "group" matches "group-a/flow-a".
         - name: username
           in: query
           required: false
           schema:
             type: string
+          description: Case-insensitive substring match.
         - name: eventId
           in: query
           required: false
           schema:
             type: string
+          description: Case-insensitive substring match. Exact lookup is GET /nats/events/{event_id}.
         - name: worker
           in: query
           required: false

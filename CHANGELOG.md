@@ -5,6 +5,7 @@
 `Added`
 
 * Global tenant selector for super-admins that scopes process-instance and task lists by the selected tenant.
+* Built-in **NATS** monitoring dashboard, replacing the removed third-party NUI embed. Super-admins get server health and throughput, per-stream metrics, and per-consumer queued/unacked/lag/redelivery figures read live from the broker's own monitoring endpoints. Tenant-admins get an event-history tab scoped to their own tenant showing what became of each NATS event — the outcome, the failure reason, and the process instance it created — which was previously logged and discarded. Raw message payloads can be inspected when `M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED` is set (off by default, super-admin only, read-only).
 * Named, multi-key-per-tenant NATS API keys (Manage Token page). Each key has its own name, optional process scope, optional expiry (30/90/365 days or never), and can be revoked independently, so an integration can rotate or revoke its key without affecting others. Key values are shown once at creation and never stored in plaintext.
 
 `Changed`
@@ -12,7 +13,8 @@
 * Super-admin tenant filtering on the Template Library now also includes PUBLIC templates from other tenants (tenant-owned OR public), mirroring regular tenant scoping. Filtering by a tenant therefore returns that tenant's templates plus all public templates.
 * NATS API key management (create/revoke) is now restricted to `tenant-admin` only; read access is `tenant-admin` and `super-admin`. (Previously `integrator` could also manage tokens.)
 
-* The third-party NUI dashboard is no longer embedded in the **NATS** monitoring section. It could not be extended with the metrics we need (queued/pending counts, consumer lag, stream detail), had no m8flow authentication or tenant scoping, and could only be shown as an opaque cross-origin iframe. A built-in NATS dashboard replaces it; the section shows a placeholder until that lands.
+* The third-party NUI dashboard is no longer embedded in the **NATS** monitoring section. It could not be extended with the metrics we need (queued/pending counts, consumer lag, stream detail), had no m8flow authentication or tenant scoping, and could only be shown as an opaque cross-origin iframe. The built-in dashboard above replaces it.
+* The **NATS** nav item and route are no longer super-admin-only. Visibility now follows the `read-nats-events` permission so tenant-admins can reach their own event history; the page still hides broker-wide tabs from non-super-admins, because `/varz` and `/jsz` report per account and cannot be scoped per tenant.
 
 `Breaking`
 

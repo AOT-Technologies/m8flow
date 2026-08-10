@@ -44,7 +44,16 @@ The UI embeds the Celery and NATS operations dashboards as super-admin-only sect
 - `M8FLOW_CELERY_FLOWER_URL` (optional): URL of the Celery Flower dashboard embedded in the **Celery** section. Default `http://localhost:6850` (matches `M8FLOW_BACKEND_CELERY_FLOWER_PORT`). Flower keeps its own basic auth (`M8FLOW_BACKEND_CELERY_FLOWER_BASIC_AUTH`), so a basic-auth prompt may appear inside the embedded frame.
 - `M8FLOW_NATS_MONITORING_ENABLED` (optional): shows the **NATS** monitoring section, served by the built-in dashboard rather than an embedded third-party UI. **`false` by default**, matching `M8FLOW_NATS_ENABLED`; set to `true` when running the optional [m8flow-nats-docker-compose.yml](../docker/m8flow-nats-docker-compose.yml). (Replaces the removed `M8FLOW_NATS_UI_URL`, which pointed at the third-party NUI dashboard.)
 
-Both are consumed by the frontend at build time (`VITE_*`) and at runtime in Docker (injected into `window.spiffworkflowFrontendJsenv` by [docker/scripts/m8flow_frontend_entrypoint.sh](../docker/scripts/m8flow_frontend_entrypoint.sh)). If an embedded dashboard refuses framing (e.g. via `X-Frame-Options`), the section shows an "Open in new tab" fallback.
+- `M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED` (optional): allows raw message payloads to be read through the monitoring API and shown in the UI. **`false` by default** — payloads carry tenant business data and notification recipients, and m8flow's streams retain them indefinitely. Super-admin only even when enabled; reads never acknowledge a message.
+- `M8FLOW_GRAFANA_URL` (optional): browser-reachable Grafana URL, linked from the NATS **Overview** tab for metric history. Empty hides the link. Grafana runs with anonymous auth disabled, so it is linked to rather than embedded.
+
+These are consumed by the frontend at build time (`VITE_*`) and at runtime in Docker (injected into `window.spiffworkflowFrontendJsenv` by [docker/scripts/m8flow_frontend_entrypoint.sh](../docker/scripts/m8flow_frontend_entrypoint.sh)). If an embedded dashboard refuses framing (e.g. via `X-Frame-Options`), the section shows an "Open in new tab" fallback.
+
+Backend-side NATS monitoring settings:
+
+- `M8FLOW_NATS_MONITORING_URL` (optional): base URL of the NATS server's monitoring endpoints. Default `http://nats:8222`, reached over the internal docker network, so the monitoring port never needs publishing to a browser.
+- `M8FLOW_NATS_MESSAGE_PREVIEW_MAX_BYTES` (optional): cap on how much of a payload a preview returns. Default `4096`.
+- `M8FLOW_NATS_AUDIT_RETENTION_DAYS` (optional): how long terminal event-audit rows are kept before the notification worker's sweep prunes them. Default `90`; `0` disables pruning. In-flight (`queued`) rows are never pruned.
 
 ## Connector attachment paths
 

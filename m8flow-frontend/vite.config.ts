@@ -44,6 +44,14 @@ const natsMonitoringEnabled =
   rootEnv.M8FLOW_NATS_MONITORING_ENABLED ??
   process.env.VITE_M8FLOW_NATS_MONITORING_ENABLED ??
   'false';
+const natsMessageInspectionEnabled =
+  rootEnv.M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED ??
+  process.env.VITE_M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED ??
+  'false';
+const grafanaUrl =
+  rootEnv.M8FLOW_GRAFANA_URL ??
+  process.env.VITE_M8FLOW_GRAFANA_URL ??
+  '';
 const mcpServerUrl =
   rootEnv.M8FLOW_MCP_SERVER_URL ??
   process.env.VITE_M8FLOW_MCP_SERVER_URL ??
@@ -58,6 +66,10 @@ export default defineConfig({
     'import.meta.env.VITE_M8FLOW_KEYCLOAK_MASTER_REALM': JSON.stringify(masterRealmIdentifier),
     'import.meta.env.VITE_M8FLOW_CELERY_FLOWER_URL': JSON.stringify(celeryFlowerUrl),
     'import.meta.env.VITE_M8FLOW_NATS_MONITORING_ENABLED': JSON.stringify(natsMonitoringEnabled),
+    'import.meta.env.VITE_M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED': JSON.stringify(
+      natsMessageInspectionEnabled,
+    ),
+    'import.meta.env.VITE_M8FLOW_GRAFANA_URL': JSON.stringify(grafanaUrl),
     'import.meta.env.VITE_M8FLOW_MCP_SERVER_URL': JSON.stringify(mcpServerUrl),
   },
   test: {

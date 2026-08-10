@@ -14,6 +14,10 @@ export const useM8flowUriListForPermissions = () => {
       connectorsGroupedPath: "/m8flow/connectors-grouped",
       m8flowMcpConnectionPath: "/m8flow/mcp-connection",
       m8flowNatsTokensPath: "/m8flow/nats-tokens",
+      // Event history is the one NATS monitoring view a tenant-admin may read (rows carry a
+      // tenant; /varz and /jsz do not), so this is what gates the page and nav item rather
+      // than a super-admin flag.
+      m8flowNatsEventsPath: "/m8flow/nats/events",
     };
   }, [spiffTargetUris]);
 
