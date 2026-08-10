@@ -20,8 +20,8 @@
     },
     "m8flow-backend/keycloak/realm_exports/m8flow-tenant-template.json": {
       "upstream": "spiffworkflow-backend/keycloak/realm_exports/spiffworkflow-realm.json",
-      "ratio": 0.8886,
-      "containment": 0.8723,
+      "ratio": 0.8861,
+      "containment": 0.8687,
       "longest_block": 641,
       "comment_matches": 0
     },
@@ -354,13 +354,6 @@
       "longest_block": 12,
       "comment_matches": 0
     },
-    "m8flow-backend/src/m8flow_backend/services/process_instance_service_patch.py": {
-      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/services/process_instance_service.py",
-      "ratio": 0.1576,
-      "containment": 0.2779,
-      "longest_block": 18,
-      "comment_matches": 0
-    },
     "m8flow-backend/src/m8flow_backend/services/process_instances_controller_patch.py": {
       "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/routes/process_instances_controller.py",
       "ratio": 0.1199,
@@ -375,13 +368,6 @@
       "longest_block": 9,
       "comment_matches": 0
     },
-    "m8flow-connector-proxy/app.py": {
-      "upstream": "connector-proxy-demo/app.py",
-      "ratio": 0.8696,
-      "containment": 1.0,
-      "longest_block": 7,
-      "comment_matches": 0
-    },
     "m8flow-connector-proxy/dev.docker-compose.yml": {
       "upstream": "connector-proxy-demo/dev.docker-compose.yml",
       "ratio": 0.8,
@@ -391,16 +377,16 @@
     },
     "m8flow-connector-proxy/pyproject.toml": {
       "upstream": "connector-proxy-demo/pyproject.toml",
-      "ratio": 0.4815,
-      "containment": 0.4483,
+      "ratio": 0.4727,
+      "containment": 0.4333,
       "longest_block": 7,
       "comment_matches": 0
     },
     "m8flow-frontend/package.json": {
       "upstream": "spiffworkflow-frontend/package.json",
-      "ratio": 0.7404,
-      "containment": 0.8652,
-      "longest_block": 47,
+      "ratio": 0.7333,
+      "containment": 0.8462,
+      "longest_block": 39,
       "comment_matches": 0
     },
     "m8flow-frontend/public/keycloak.json": {
@@ -440,8 +426,8 @@
     },
     "m8flow-frontend/src/ContainerForExtensions.tsx": {
       "upstream": "spiffworkflow-frontend/src/ContainerForExtensions.tsx",
-      "ratio": 0.5413,
-      "containment": 0.3867,
+      "ratio": 0.5378,
+      "containment": 0.3837,
       "longest_block": 66,
       "comment_matches": 14
     },
@@ -475,17 +461,17 @@
     },
     "m8flow-frontend/src/components/ProcessInstanceListTable.tsx": {
       "upstream": "spiffworkflow-frontend/src/components/ProcessInstanceListTable.tsx",
-      "ratio": 0.9735,
-      "containment": 0.9543,
-      "longest_block": 225,
+      "ratio": 0.8828,
+      "containment": 0.8051,
+      "longest_block": 224,
       "comment_matches": 0
     },
     "m8flow-frontend/src/components/ProcessInstanceListTableWithFilters.tsx": {
       "upstream": "spiffworkflow-frontend/src/components/ProcessInstanceListTableWithFilters.tsx",
-      "ratio": 0.9789,
-      "containment": 0.9679,
-      "longest_block": 602,
-      "comment_matches": 39
+      "ratio": 0.969,
+      "containment": 0.9509,
+      "longest_block": 567,
+      "comment_matches": 35
     },
     "m8flow-frontend/src/components/ProcessInstanceListTabs.tsx": {
       "upstream": "spiffworkflow-frontend/src/components/ProcessInstanceListTabs.tsx",
@@ -545,8 +531,8 @@
     },
     "m8flow-frontend/src/components/SideNav.tsx": {
       "upstream": "spiffworkflow-frontend/src/components/SideNav.tsx",
-      "ratio": 0.619,
-      "containment": 0.5366,
+      "ratio": 0.6037,
+      "containment": 0.514,
       "longest_block": 18,
       "comment_matches": 9
     },
@@ -615,8 +601,8 @@
     },
     "m8flow-frontend/src/index.tsx": {
       "upstream": "spiffworkflow-frontend/src/index.tsx",
-      "ratio": 0.9184,
-      "containment": 0.9,
+      "ratio": 0.8571,
+      "containment": 0.7895,
       "longest_block": 40,
       "comment_matches": 3
     },
@@ -655,6 +641,13 @@
       "longest_block": 83,
       "comment_matches": 0
     },
+    "m8flow-frontend/src/views/ProcessInstanceShow.tsx": {
+      "upstream": "spiffworkflow-frontend/src/views/ProcessInstanceShow.tsx",
+      "ratio": 0.9905,
+      "containment": 0.9854,
+      "longest_block": 1311,
+      "comment_matches": 18
+    },
     "m8flow-frontend/src/views/ProcessModelEditDiagram.tsx": {
       "upstream": "spiffworkflow-frontend/src/views/ProcessModelEditDiagram.tsx",
       "ratio": 0.8875,
@@ -671,9 +664,9 @@
     },
     "m8flow-frontend/src/views/SecretList.tsx": {
       "upstream": "spiffworkflow-frontend/src/views/SecretList.tsx",
-      "ratio": 0.763,
-      "containment": 0.6502,
-      "longest_block": 30,
+      "ratio": 0.7318,
+      "containment": 0.6093,
+      "longest_block": 28,
       "comment_matches": 0
     },
     "m8flow-frontend/src/views/SecretShow.tsx": {

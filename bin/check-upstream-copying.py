@@ -52,6 +52,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import hashlib
 import json
 import os
 import re
@@ -281,10 +282,15 @@ def extract_comments(lines: list[str], suffix: str) -> set[str]:
     return out
 
 
+def _line_hash(s: str) -> int:
+    """Stable content hash for line-index keys (not Python's process-randomized hash())."""
+    return int.from_bytes(hashlib.blake2b(s.encode("utf-8"), digest_size=8).digest(), "big")
+
+
 def _meaningful_hashes(lines: list[str]) -> list[int]:
     """Hashes of substantive lines only, used for the content-addressed index.
     Short/boilerplate lines are skipped so the index stays discriminating."""
-    return [hash(s) for ln in lines if len(s := ln.strip()) >= MEANINGFUL_LINE_MINLEN]
+    return [_line_hash(s) for ln in lines if len(s := ln.strip()) >= MEANINGFUL_LINE_MINLEN]
 
 
 # Lazily built once per process — only when a basename/content fallback is needed.
@@ -374,16 +380,19 @@ def resolve_upstream(apache_path: str, thr: float, ct: float, blk: int) -> Path 
 
     _, base_index = get_upstream_index()
     best: Path | None = None
-    best_score = (0.0, 0.0, 0)
+    best_score = (0.0, 0.0, 0)  # (containment, ratio, block)
     for rel in base_index.get(Path(apache_path).name, []):
-        score = compare_code(a_code, code_lines(_read_lines(REPO_ROOT / rel)))
-        score = (score[1], score[0], score[2])  # (containment, ratio, block)
+        ratio, containment, block = compare_code(a_code, code_lines(_read_lines(REPO_ROOT / rel)))
+        score = (containment, ratio, block)
         if score > best_score:
             best_score, best = score, REPO_ROOT / rel
-    if best is not None:
+    # Only accept a basename hit that clears a real copy bar — a shared name like
+    # conftest.py / __init__.py / main.py must not block content fallback or pin an
+    # unrelated upstream file as the counterpart.
+    if best is not None and _accepts(best_score[1], best_score[0], best_score[2], thr, ct, blk):
         return best
 
-    # No path/basename counterpart -> search by content across the upstream tree.
+    # No strong path/basename counterpart -> search by content across the upstream tree.
     return content_fallback(a_lines, thr, ct, blk)
 
 
