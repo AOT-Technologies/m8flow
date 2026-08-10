@@ -51,6 +51,31 @@ Changes should preserve the patch-based architecture:
 - Prefer small, targeted patches over broad rewrites.
 - Preserve compatibility with upstream SpiffArena where practical.
 
+## Upstream Copy / License Boundary
+
+The imported SpiffArena folders (`spiffworkflow-backend/`, `spiffworkflow-frontend/`,
+`spiff-arena-common/`) are LGPL-2.1 and gitignored. The m8flow-owned trees
+(`m8flow-backend/`, `m8flow-frontend/`, `extensions/`, etc.) are Apache-2.0.
+Do not copy upstream source into the Apache-2.0-tracked trees.
+
+- Do not paste upstream file bodies into m8flow-owned files. A frontend override
+  must carry only the tenant/RBAC delta and wrap the upstream component via the
+  override resolver, not fork the whole upstream file.
+- For backend models, preserve the functional contract (column names/types,
+  table names, exported API — these are not copyrightable expression) but
+  re-express the surrounding boilerplate independently (own structure/comments).
+- Never carry over upstream attribution comments (author handles, `sartography/`
+  URLs) or LGPL/GPL license header text into the Apache-2.0 trees.
+- CI enforces this via `bin/check-upstream-copying.py` (see
+  `.github/workflows/ci.yml`), gated against `bin/upstream-copy-baseline.json`.
+  The gate blocks *new* copying and *regressions* of already-flagged files; it
+  does not force an immediate rewrite of pre-existing copies. License/attribution
+  markers are never grandfathered. Track remediation in
+  `docs/upstream-license-compliance.md`.
+- If you intentionally and reviewably change an already-flagged file, regenerate
+  the baseline with `bin/check-upstream-copying.py --all --write-baseline
+  bin/upstream-copy-baseline.json` and have the diff reviewed.
+
 ## Keycloak Login UX
 
 - Do not change the Keycloak login experience to a two-step username-then-password flow.

@@ -1,0 +1,397 @@
+{
+  "_comment": "Grandfathered upstream-copy signals. The gate blocks NEW copying and REGRESSIONS beyond these values; files drop out as they are remediated. Regenerate with: bin/check-upstream-copying.py --all --write-baseline bin/upstream-copy-baseline.json",
+  "threshold": 0.5,
+  "block_lines": 40,
+  "files": {
+    "m8flow-backend/src/m8flow_backend/models/api_log_model.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/api_log_model.py",
+      "ratio": 0.9167,
+      "longest_block": 13,
+      "comment_matches": 1
+    },
+    "m8flow-backend/src/m8flow_backend/models/bpmn_process.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/bpmn_process.py",
+      "ratio": 0.9278,
+      "longest_block": 23,
+      "comment_matches": 1
+    },
+    "m8flow-backend/src/m8flow_backend/models/bpmn_process_definition.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/bpmn_process_definition.py",
+      "ratio": 0.8824,
+      "longest_block": 19,
+      "comment_matches": 9
+    },
+    "m8flow-backend/src/m8flow_backend/models/bpmn_process_definition_relationship.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/bpmn_process_definition_relationship.py",
+      "ratio": 0.9143,
+      "longest_block": 20,
+      "comment_matches": 0
+    },
+    "m8flow-backend/src/m8flow_backend/models/configuration.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/configuration.py",
+      "ratio": 0.9032,
+      "longest_block": 7,
+      "comment_matches": 0
+    },
+    "m8flow-backend/src/m8flow_backend/models/future_task.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/future_task.py",
+      "ratio": 0.9531,
+      "longest_block": 45,
+      "comment_matches": 0
+    },
+    "m8flow-backend/src/m8flow_backend/models/human_task.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/human_task.py",
+      "ratio": 0.9429,
+      "longest_block": 79,
+      "comment_matches": 4
+    },
+    "m8flow-backend/src/m8flow_backend/models/human_task_user.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/human_task_user.py",
+      "ratio": 0.9263,
+      "longest_block": 20,
+      "comment_matches": 0
+    },
+    "m8flow-backend/src/m8flow_backend/models/json_data_store.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/json_data_store.py",
+      "ratio": 0.7547,
+      "longest_block": 10,
+      "comment_matches": 0
+    },
+    "m8flow-backend/src/m8flow_backend/models/kkv_data_store.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/kkv_data_store.py",
+      "ratio": 0.7692,
+      "longest_block": 11,
+      "comment_matches": 0
+    },
+    "m8flow-backend/src/m8flow_backend/models/kkv_data_store_entry.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/kkv_data_store_entry.py",
+      "ratio": 0.8846,
+      "longest_block": 12,
+      "comment_matches": 0
+    },
+    "m8flow-backend/src/m8flow_backend/models/message_instance.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/message_instance.py",
+      "ratio": 0.9615,
+      "longest_block": 115,
+      "comment_matches": 12
+    },
+    "m8flow-backend/src/m8flow_backend/models/message_instance_correlation.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/message_instance_correlation.py",
+      "ratio": 0.8,
+      "longest_block": 21,
+      "comment_matches": 0
+    },
+    "m8flow-backend/src/m8flow_backend/models/message_model.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/message_model.py",
+      "ratio": 0.8367,
+      "longest_block": 15,
+      "comment_matches": 0
+    },
+    "m8flow-backend/src/m8flow_backend/models/message_triggerable_process_model.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/message_triggerable_process_model.py",
+      "ratio": 0.6486,
+      "longest_block": 5,
+      "comment_matches": 0
+    },
+    "m8flow-backend/src/m8flow_backend/models/permission_assignment.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/permission_assignment.py",
+      "ratio": 0.6892,
+      "longest_block": 18,
+      "comment_matches": 0
+    },
+    "m8flow-backend/src/m8flow_backend/models/permission_target.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/permission_target.py",
+      "ratio": 0.6889,
+      "longest_block": 15,
+      "comment_matches": 0
+    },
+    "m8flow-backend/src/m8flow_backend/models/pkce_code_verifier.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/pkce_code_verifier.py",
+      "ratio": 0.75,
+      "longest_block": 8,
+      "comment_matches": 1
+    },
+    "m8flow-backend/src/m8flow_backend/models/process_caller.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/process_caller.py",
+      "ratio": 0.8,
+      "longest_block": 5,
+      "comment_matches": 0
+    },
+    "m8flow-backend/src/m8flow_backend/models/process_caller_relationship.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/process_caller_relationship.py",
+      "ratio": 0.9391,
+      "longest_block": 36,
+      "comment_matches": 1
+    },
+    "m8flow-backend/src/m8flow_backend/models/process_instance.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/process_instance.py",
+      "ratio": 0.9421,
+      "longest_block": 111,
+      "comment_matches": 1
+    },
+    "m8flow-backend/src/m8flow_backend/models/process_instance_error_detail.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/process_instance_error_detail.py",
+      "ratio": 0.9259,
+      "longest_block": 15,
+      "comment_matches": 0
+    },
+    "m8flow-backend/src/m8flow_backend/models/process_instance_event.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/process_instance_event.py",
+      "ratio": 0.9394,
+      "longest_block": 26,
+      "comment_matches": 4
+    },
+    "m8flow-backend/src/m8flow_backend/models/process_instance_file_data.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/process_instance_file_data.py",
+      "ratio": 0.9545,
+      "longest_block": 48,
+      "comment_matches": 1
+    },
+    "m8flow-backend/src/m8flow_backend/models/process_instance_metadata.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/process_instance_metadata.py",
+      "ratio": 0.8636,
+      "longest_block": 10,
+      "comment_matches": 0
+    },
+    "m8flow-backend/src/m8flow_backend/models/process_instance_migration_detail.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/process_instance_migration_detail.py",
+      "ratio": 0.918,
+      "longest_block": 10,
+      "comment_matches": 0
+    },
+    "m8flow-backend/src/m8flow_backend/models/process_instance_queue.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/process_instance_queue.py",
+      "ratio": 0.9091,
+      "longest_block": 20,
+      "comment_matches": 5
+    },
+    "m8flow-backend/src/m8flow_backend/models/process_instance_report.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/process_instance_report.py",
+      "ratio": 0.9544,
+      "longest_block": 60,
+      "comment_matches": 1
+    },
+    "m8flow-backend/src/m8flow_backend/models/process_model_cycle.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/process_model_cycle.py",
+      "ratio": 0.8889,
+      "longest_block": 9,
+      "comment_matches": 0
+    },
+    "m8flow-backend/src/m8flow_backend/models/reference_cache.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/reference_cache.py",
+      "ratio": 0.9392,
+      "longest_block": 97,
+      "comment_matches": 8
+    },
+    "m8flow-backend/src/m8flow_backend/models/refresh_token.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/refresh_token.py",
+      "ratio": 0.5909,
+      "longest_block": 3,
+      "comment_matches": 0
+    },
+    "m8flow-backend/src/m8flow_backend/models/secret_model.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/secret_model.py",
+      "ratio": 0.8767,
+      "longest_block": 19,
+      "comment_matches": 0
+    },
+    "m8flow-backend/src/m8flow_backend/models/service_account.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/service_account.py",
+      "ratio": 0.8908,
+      "longest_block": 30,
+      "comment_matches": 6
+    },
+    "m8flow-backend/src/m8flow_backend/models/task.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/task.py",
+      "ratio": 0.9187,
+      "longest_block": 43,
+      "comment_matches": 6
+    },
+    "m8flow-backend/src/m8flow_backend/models/task_definition.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/task_definition.py",
+      "ratio": 0.8991,
+      "longest_block": 25,
+      "comment_matches": 0
+    },
+    "m8flow-backend/src/m8flow_backend/models/task_draft_data.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/task_draft_data.py",
+      "ratio": 0.9524,
+      "longest_block": 45,
+      "comment_matches": 1
+    },
+    "m8flow-backend/src/m8flow_backend/models/task_instructions_for_end_user.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/task_instructions_for_end_user.py",
+      "ratio": 0.9697,
+      "longest_block": 48,
+      "comment_matches": 2
+    },
+    "m8flow-backend/src/m8flow_backend/models/typeahead.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/typeahead.py",
+      "ratio": 0.9091,
+      "longest_block": 8,
+      "comment_matches": 0
+    },
+    "m8flow-backend/src/m8flow_backend/models/user.py": {
+      "upstream": "spiffworkflow-backend/src/spiffworkflow_backend/models/user.py",
+      "ratio": 0.9309,
+      "longest_block": 41,
+      "comment_matches": 0
+    },
+    "m8flow-frontend/src/App.tsx": {
+      "upstream": "spiffworkflow-frontend/src/App.tsx",
+      "ratio": 0.4176,
+      "longest_block": 18,
+      "comment_matches": 2
+    },
+    "m8flow-frontend/src/ContainerForExtensions.tsx": {
+      "upstream": "spiffworkflow-frontend/src/ContainerForExtensions.tsx",
+      "ratio": 0.5313,
+      "longest_block": 72,
+      "comment_matches": 14
+    },
+    "m8flow-frontend/src/components/HeaderTabs.tsx": {
+      "upstream": "spiffworkflow-frontend/src/components/HeaderTabs.tsx",
+      "ratio": 0.5606,
+      "longest_block": 13,
+      "comment_matches": 0
+    },
+    "m8flow-frontend/src/components/ProcessInstanceListTable.tsx": {
+      "upstream": "spiffworkflow-frontend/src/components/ProcessInstanceListTable.tsx",
+      "ratio": 0.9726,
+      "longest_block": 237,
+      "comment_matches": 0
+    },
+    "m8flow-frontend/src/components/ProcessInstanceListTableWithFilters.tsx": {
+      "upstream": "spiffworkflow-frontend/src/components/ProcessInstanceListTableWithFilters.tsx",
+      "ratio": 0.9794,
+      "longest_block": 614,
+      "comment_matches": 39
+    },
+    "m8flow-frontend/src/components/ProcessInstanceListTabs.tsx": {
+      "upstream": "spiffworkflow-frontend/src/components/ProcessInstanceListTabs.tsx",
+      "ratio": 0.5695,
+      "longest_block": 12,
+      "comment_matches": 0
+    },
+    "m8flow-frontend/src/components/ProcessModelForm.tsx": {
+      "upstream": "spiffworkflow-frontend/src/components/ProcessModelForm.tsx",
+      "ratio": 0.8943,
+      "longest_block": 58,
+      "comment_matches": 0
+    },
+    "m8flow-frontend/src/components/ProcessModelImportButton.tsx": {
+      "upstream": "spiffworkflow-frontend/src/components/ProcessModelImportButton.tsx",
+      "ratio": 0.5833,
+      "longest_block": 12,
+      "comment_matches": 0
+    },
+    "m8flow-frontend/src/components/ProcessModelImportDialog.tsx": {
+      "upstream": "spiffworkflow-frontend/src/components/ProcessModelImportDialog.tsx",
+      "ratio": 0.7961,
+      "longest_block": 19,
+      "comment_matches": 4
+    },
+    "m8flow-frontend/src/components/ProcessModelTabs.tsx": {
+      "upstream": "spiffworkflow-frontend/src/components/ProcessModelTabs.tsx",
+      "ratio": 0.8551,
+      "longest_block": 97,
+      "comment_matches": 0
+    },
+    "m8flow-frontend/src/components/SideNav.tsx": {
+      "upstream": "spiffworkflow-frontend/src/components/SideNav.tsx",
+      "ratio": 0.6279,
+      "longest_block": 22,
+      "comment_matches": 9
+    },
+    "m8flow-frontend/src/components/TaskTable.tsx": {
+      "upstream": "spiffworkflow-frontend/src/components/TaskTable.tsx",
+      "ratio": 0.9797,
+      "longest_block": 67,
+      "comment_matches": 0
+    },
+    "m8flow-frontend/src/components/messages/MessageInstanceList.tsx": {
+      "upstream": "spiffworkflow-frontend/src/components/messages/MessageInstanceList.tsx",
+      "ratio": 0.936,
+      "longest_block": 50,
+      "comment_matches": 0
+    },
+    "m8flow-frontend/src/hooks/useProcessGroups.tsx": {
+      "upstream": "spiffworkflow-frontend/src/hooks/useProcessGroups.tsx",
+      "ratio": 0.6977,
+      "longest_block": 11,
+      "comment_matches": 0
+    },
+    "m8flow-frontend/src/index.tsx": {
+      "upstream": "spiffworkflow-frontend/src/index.tsx",
+      "ratio": 0.9259,
+      "longest_block": 43,
+      "comment_matches": 3
+    },
+    "m8flow-frontend/src/services/HttpService.ts": {
+      "upstream": "spiffworkflow-frontend/src/services/HttpService.ts",
+      "ratio": 0.7111,
+      "longest_block": 57,
+      "comment_matches": 3
+    },
+    "m8flow-frontend/src/services/UserService.ts": {
+      "upstream": "spiffworkflow-frontend/src/services/UserService.ts",
+      "ratio": 0.3585,
+      "longest_block": 62,
+      "comment_matches": 13
+    },
+    "m8flow-frontend/src/views/Configuration.tsx": {
+      "upstream": "spiffworkflow-frontend/src/views/Configuration.tsx",
+      "ratio": 0.8818,
+      "longest_block": 20,
+      "comment_matches": 0
+    },
+    "m8flow-frontend/src/views/Homepage.tsx": {
+      "upstream": "spiffworkflow-frontend/src/views/Homepage.tsx",
+      "ratio": 0.8803,
+      "longest_block": 86,
+      "comment_matches": 0
+    },
+    "m8flow-frontend/src/views/ProcessModelEditDiagram.tsx": {
+      "upstream": "spiffworkflow-frontend/src/views/ProcessModelEditDiagram.tsx",
+      "ratio": 0.8866,
+      "longest_block": 116,
+      "comment_matches": 1
+    },
+    "m8flow-frontend/src/views/ProcessModelShow.tsx": {
+      "upstream": "spiffworkflow-frontend/src/views/ProcessModelShow.tsx",
+      "ratio": 0.952,
+      "longest_block": 229,
+      "comment_matches": 3
+    },
+    "m8flow-frontend/src/views/SecretList.tsx": {
+      "upstream": "spiffworkflow-frontend/src/views/SecretList.tsx",
+      "ratio": 0.7377,
+      "longest_block": 32,
+      "comment_matches": 0
+    },
+    "m8flow-frontend/src/views/SecretShow.tsx": {
+      "upstream": "spiffworkflow-frontend/src/views/SecretShow.tsx",
+      "ratio": 0.8136,
+      "longest_block": 62,
+      "comment_matches": 0
+    },
+    "m8flow-frontend/src/views/StartProcess/ProcessGroupCard.tsx": {
+      "upstream": "spiffworkflow-frontend/src/views/StartProcess/ProcessGroupCard.tsx",
+      "ratio": 0.7717,
+      "longest_block": 29,
+      "comment_matches": 0
+    },
+    "m8flow-frontend/src/views/StartProcess/ProcessModelCard.tsx": {
+      "upstream": "spiffworkflow-frontend/src/views/StartProcess/ProcessModelCard.tsx",
+      "ratio": 0.7325,
+      "longest_block": 39,
+      "comment_matches": 3
+    },
+    "m8flow-frontend/src/views/StartProcess/ProcessModelTreePage.tsx": {
+      "upstream": "spiffworkflow-frontend/src/views/StartProcess/ProcessModelTreePage.tsx",
+      "ratio": 0.9251,
+      "longest_block": 181,
+      "comment_matches": 29
+    }
+  }
+}
