@@ -15,10 +15,36 @@ These workflows handle CI, Docker builds, AWS deployments, release tagging, and 
 **Jobs (path-filtered):**
 - **extensions-backend** — Ruff lint, MyPy type check, Pytest for `m8flow-backend/`
 - **extensions-frontend** — Lint, typecheck, and tests for `m8flow-frontend/`
+- **upstream-copy-check** — Fails PRs that copy gitignored LGPL upstream (spiff-arena) source into the Apache-2.0 m8flow trees (see below)
 - **codeql** — CodeQL security scan (Python + JS) on PRs
 - **trivy** — Filesystem vulnerability scan (CRITICAL/HIGH) on PRs
 - **migration-check** — Calls `check-migrations.yml` when migration files change on PRs
 - **docker-dry-run** — Builds all Docker images without pushing on PRs
+
+---
+
+### `upstream-copy-check` (job in `ci.yml`)
+
+**Purpose:** License-boundary guard. Fails a PR when a changed file in the
+Apache-2.0 m8flow trees (`m8flow-backend/`, `m8flow-frontend/`, …) is a copy of
+its gitignored LGPL-2.1 upstream (spiff-arena) counterpart.
+
+**Runs on:** PRs touching `m8flow-backend/**` or `m8flow-frontend/**`. It fetches
+the upstream trees via `bin/fetch-upstream.sh`, then runs
+`bin/check-upstream-copying.py --diff origin/<base>` over just the changed files.
+
+**What fails it (layered detection):**
+1. Whole-file line similarity ≥ 50% vs the upstream counterpart
+2. A run of ≥ 40 contiguous identical lines (catches partial copies under 50%)
+3. Verbatim distinctive comments matching upstream
+4. LGPL/GPL license header text or upstream attribution (author handles,
+   `sartography/` URLs) — **never grandfathered**
+
+**Baseline:** `bin/upstream-copy-baseline.json` grandfathers the copying that
+already exists, so the gate only blocks *new* copying and *regressions*. Files
+drop out as they are remediated. Regenerate after an intentional, reviewed change
+with `bin/check-upstream-copying.py --all --write-baseline bin/upstream-copy-baseline.json`.
+Remediation status is tracked in `docs/upstream-license-compliance.md`.
 
 ---
 
