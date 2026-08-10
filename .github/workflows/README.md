@@ -15,7 +15,8 @@ These workflows handle CI, Docker builds, AWS deployments, release tagging, and 
 **Jobs (path-filtered):**
 - **extensions-backend** — Ruff lint, MyPy type check, Pytest for `m8flow-backend/`
 - **extensions-frontend** — Lint, typecheck, and tests for `m8flow-frontend/`
-- **upstream-copy-check** — Fails PRs that copy gitignored LGPL upstream (spiff-arena) source into the Apache-2.0 m8flow trees (see below)
+- **upstream-copy-check** — Fails PRs that copy gitignored LGPL upstream (spiff-arena) source into the Apache-2.0 m8flow trees (raw-line similarity; see below)
+- **upstream-cpd-check** — Token-level (PMD CPD) copy detection that also catches reformatted/renamed copies (see below)
 - **codeql** — CodeQL security scan (Python + JS) on PRs
 - **trivy** — Filesystem vulnerability scan (CRITICAL/HIGH) on PRs
 - **migration-check** — Calls `check-migrations.yml` when migration files change on PRs
@@ -45,6 +46,31 @@ already exists, so the gate only blocks *new* copying and *regressions*. Files
 drop out as they are remediated. Regenerate after an intentional, reviewed change
 with `bin/check-upstream-copying.py --all --write-baseline bin/upstream-copy-baseline.json`.
 Remediation status is tracked in `docs/upstream-license-compliance.md`.
+
+---
+
+### `upstream-cpd-check` (job in `ci.yml`)
+
+**Purpose:** Token-level companion to `upstream-copy-check`. Uses **PMD CPD** to
+find cross-tree token clones (owned m8flow file ↔ upstream file). Because it
+tokenizes source, it catches copies that were reformatted, reindented, or had
+identifiers renamed — evasion that the raw-line gate misses.
+
+**Runs on:** PRs touching `m8flow-backend/**` or `m8flow-frontend/**`. Installs
+Java 17 + PMD (pinned `PMD_VERSION`), fetches upstream via `bin/fetch-upstream.sh`,
+then runs `bin/check-upstream-cpd.py` over the whole tree.
+
+**Details:**
+- Python is scanned directly; frontend `.tsx`/`.jsx` are staged into a `.ts`-named
+  temp tree first (CPD's `typescript` language only reads `.ts`, though its lexer
+  handles JSX once the extension is `.ts`).
+- Runs with `--ignore-identifiers --ignore-literals` (rename/literal resistant),
+  minimum 75 tokens.
+- **Baseline:** `bin/upstream-cpd-baseline.json` grandfathers existing cross-tree
+  clones; the gate blocks only new clones and regressions (larger duplicated
+  blocks). Regenerate with `bin/check-upstream-cpd.py --write-baseline bin/upstream-cpd-baseline.json`.
+- **Fail-closed:** missing upstream trees, CPD parse/launch errors, or recovering
+  fewer than half of on-disk baseline pairs fail the job (no silent empty PASS).
 
 ---
 

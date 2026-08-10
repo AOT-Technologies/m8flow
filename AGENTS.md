@@ -66,15 +66,19 @@ Do not copy upstream source into the Apache-2.0-tracked trees.
   re-express the surrounding boilerplate independently (own structure/comments).
 - Never carry over upstream attribution comments (author handles, `sartography/`
   URLs) or LGPL/GPL license header text into the Apache-2.0 trees.
-- CI enforces this via `bin/check-upstream-copying.py` (see
-  `.github/workflows/ci.yml`), gated against `bin/upstream-copy-baseline.json`.
-  The gate blocks *new* copying and *regressions* of already-flagged files; it
-  does not force an immediate rewrite of pre-existing copies. License/attribution
-  markers are never grandfathered. Track remediation in
-  `docs/upstream-license-compliance.md`.
+- CI enforces this with two complementary gates (see `.github/workflows/ci.yml`):
+  - `bin/check-upstream-copying.py` — raw-line similarity, cross-language and
+    comment-aware, gated against `bin/upstream-copy-baseline.json`.
+  - `bin/check-upstream-cpd.py` — PMD CPD token-level detection that resists
+    reformatting and identifier renaming, gated against
+    `bin/upstream-cpd-baseline.json`.
+  Both block *new* copying and *regressions* of already-flagged files; neither
+  forces an immediate rewrite of pre-existing copies. License/attribution markers
+  are never grandfathered. How the gates work and how to remediate is documented in
+  `docs/upstream-copy-gate-report.md`; the flagged files themselves are listed in
+  the two baseline JSONs.
 - If you intentionally and reviewably change an already-flagged file, regenerate
-  the baseline with `bin/check-upstream-copying.py --all --write-baseline
-  bin/upstream-copy-baseline.json` and have the diff reviewed.
+  the relevant baseline (`--write-baseline`) and have the diff reviewed.
 
 ## Keycloak Login UX
 
