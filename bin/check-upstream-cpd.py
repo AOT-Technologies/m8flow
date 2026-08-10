@@ -312,6 +312,44 @@ def baseline_recovery(pairs: dict[str, dict[str, int]], base: dict) -> tuple[int
     return expected, found
 
 
+def render_markdown(viol: list[tuple], total: int, grandfathered: int, min_tokens: int,
+                    ignore_identifiers: bool, ignore_literals: bool, error: str | None = None) -> str:
+    """Render the CPD gate result as a GitHub-flavored-markdown summary/PR comment."""
+    if error:
+        return f"### ⚠️ Upstream-copy (CPD) gate error\n\n{error}\n"
+    if not viol:
+        out = [
+            "### ✅ Upstream-copy (CPD) gate passed",
+            "",
+            f"{total} cross-tree token clone pair(s) at ≥ {min_tokens} tokens — all grandfathered.",
+        ]
+        if grandfathered:
+            out.append(f"\n_{grandfathered} grandfathered clone pair(s) still present "
+                       "(tracked, not blocking)._")
+        return "\n".join(out) + "\n"
+
+    out = [
+        f"### ❌ Upstream-copy (CPD) gate: {len(viol)} new/regressed cross-tree clone(s)",
+        "",
+        f"Token-level (PMD CPD, `--ignore-identifiers`={ignore_identifiers}, "
+        f"`--ignore-literals`={ignore_literals}), minimum {min_tokens} tokens.",
+        "",
+        "| Owned file | Upstream | Tokens | Kind |",
+        "|---|---|---|---|",
+    ]
+    for owned, upstream, tokens, kind, base_tokens in viol:
+        tok = f"{tokens}" if kind == "new clone" else f"{tokens} (baseline {base_tokens})"
+        out.append(f"| `{owned}` | `{upstream}` | {tok} | {kind} |")
+    out += [
+        "",
+        "**Remediation:** token-level duplication survived reformatting/renaming — "
+        "re-express the copied logic independently, or (for a reviewed, intentional "
+        "change) regenerate the baseline (`bin/check-upstream-cpd.py --write-baseline "
+        "bin/upstream-cpd-baseline.json`).",
+    ]
+    return "\n".join(out) + "\n"
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--baseline", default=str(REPO_ROOT / "bin" / "upstream-cpd-baseline.json"))
@@ -320,6 +358,7 @@ def main() -> int:
     ap.add_argument("--no-ignore-identifiers", action="store_true", help="do not ignore identifier names (less rename-resistant)")
     ap.add_argument("--no-ignore-literals", action="store_true", help="do not ignore literal values")
     ap.add_argument("--report-only", action="store_true", help="print findings but always exit 0")
+    ap.add_argument("--summary-md", metavar="PATH", help="write a markdown result summary (for the CI job summary / PR comment)")
     args = ap.parse_args()
 
     require_trees()
@@ -338,6 +377,12 @@ def main() -> int:
     baseline_data = json.loads(Path(args.baseline).read_text(encoding="utf-8")) if Path(args.baseline).is_file() else {}
     base = baseline_data.get("clones", {})
 
+    total = sum(len(v) for v in pairs.values())
+    grandfathered = sum(
+        1 for o, ups in pairs.items() for u, t in ups.items()
+        if base.get(o, {}).get(u, 0) > 0 and t <= base.get(o, {}).get(u, 0) + TOKEN_DRIFT
+    )
+
     expected, recovered = baseline_recovery(pairs, base)
     if expected >= BASELINE_RECOVERY_MIN_EXPECTED and recovered < expected * BASELINE_RECOVERY_RATIO:
         msg = (
@@ -347,25 +392,34 @@ def main() -> int:
             f"upstream fetch, and CPD stderr above. After intentional mass remediation, "
             f"regenerate the baseline with --write-baseline."
         )
+        if args.summary_md:
+            Path(args.summary_md).write_text(
+                render_markdown([], total, grandfathered, args.min_tokens,
+                                ignore_identifiers, ignore_literals, error=msg),
+                encoding="utf-8",
+            )
         if args.report_only:
             print(msg, file=sys.stderr)
         else:
             sys.exit(msg)
 
-    violations: list[str] = []
+    # (owned, upstream, tokens, kind, base_tokens)
+    viol: list[tuple] = []
     for owned, ups in sorted(pairs.items()):
         for upstream, tokens in sorted(ups.items()):
             base_tokens = base.get(owned, {}).get(upstream, 0)
             if base_tokens == 0:
-                violations.append(f"NEW cross-tree clone: {owned}  <->  {upstream}  ({tokens} tokens)")
+                viol.append((owned, upstream, tokens, "new clone", 0))
             elif tokens > base_tokens + TOKEN_DRIFT:
-                violations.append(f"REGRESSION: {owned}  <->  {upstream}  ({tokens} tokens, baseline {base_tokens})")
+                viol.append((owned, upstream, tokens, "regression", base_tokens))
 
-    total = sum(len(v) for v in pairs.values())
-    grandfathered = sum(
-        1 for o, ups in pairs.items() for u, t in ups.items()
-        if base.get(o, {}).get(u, 0) > 0 and t <= base.get(o, {}).get(u, 0) + TOKEN_DRIFT
-    )
+    if args.summary_md:
+        Path(args.summary_md).write_text(
+            render_markdown(viol, total, grandfathered, args.min_tokens,
+                            ignore_identifiers, ignore_literals),
+            encoding="utf-8",
+        )
+
     print(f"CPD cross-tree clones: {total} pair(s) at >= {args.min_tokens} tokens "
           f"(ignore_identifiers={ignore_identifiers}, ignore_literals={ignore_literals}).")
     if expected:
@@ -373,13 +427,14 @@ def main() -> int:
     if grandfathered:
         print(f"{grandfathered} grandfathered clone pair(s) still present (remediation pending).")
 
-    if not violations:
+    if not viol:
         print("PASS: no new cross-tree clones or regressions.")
         return 0
 
-    print(f"\nFAIL: {len(violations)} new/regressed cross-tree clone(s):\n")
-    for v in violations:
-        print(f"  - {v}")
+    print(f"\nFAIL: {len(viol)} new/regressed cross-tree clone(s):\n")
+    for owned, upstream, tokens, kind, base_tokens in viol:
+        extra = "" if kind == "new clone" else f", baseline {base_tokens}"
+        print(f"  - {kind.upper()}: {owned}  <->  {upstream}  ({tokens} tokens{extra})")
     print(
         "\nToken-level duplication survived reformatting/renaming. Re-express the "
         "copied logic independently, or (for a reviewed, intentional change) "
