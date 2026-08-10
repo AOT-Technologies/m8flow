@@ -90,6 +90,37 @@ const messageForHttpError = (statusCode: number, statusText: string) => {
   return errorMessage;
 };
 
+const normalizeErrorResult = (
+  payload: unknown,
+  statusCode: number,
+  statusText: string,
+) => {
+  const fallbackMessage = messageForHttpError(statusCode, statusText);
+
+  if (payload && typeof payload === 'object') {
+    const normalized = { ...payload } as Record<string, unknown>;
+    const existingMessage =
+      typeof normalized.message === 'string' ? normalized.message.trim() : '';
+    if (existingMessage) {
+      return normalized;
+    }
+
+    const detailMessage =
+      typeof normalized.detail === 'string' ? normalized.detail.trim() : '';
+    if (detailMessage) {
+      normalized.message = detailMessage;
+      return normalized;
+    }
+
+    const titleMessage =
+      typeof normalized.title === 'string' ? normalized.title.trim() : '';
+    normalized.message = titleMessage || fallbackMessage;
+    return normalized;
+  }
+
+  return { message: fallbackMessage };
+};
+
 const shouldRetryUnauthenticatedRequest = ({
   httpMethod,
   hasRetried,
@@ -200,22 +231,32 @@ const makeCallToBackend = ({
         throw error;
       }
       if (result.response.status === 403) {
+        const normalizedError = normalizeErrorResult(
+          jsonResult,
+          result.response.status,
+          result.response.statusText,
+        );
         if (onUnauthorized) {
-          onUnauthorized(jsonResult);
+          onUnauthorized(normalizedError);
         } else if (UserService.isPublicUser()) {
           window.location.href = '/public/sign-out';
         } else {
           // Hopefully we can make this service a hook and use the error message context directly
 
-          alert(jsonResult.message);
+          alert(normalizedError.message);
         }
       } else if (!result.response.ok) {
+        const normalizedError = normalizeErrorResult(
+          jsonResult,
+          result.response.status,
+          result.response.statusText,
+        );
         if (failureCallback) {
-          failureCallback(jsonResult);
+          failureCallback(normalizedError);
         } else {
           let message = 'A server error occurred.';
-          if (jsonResult.message) {
-            message = jsonResult.message;
+          if (normalizedError.message) {
+            message = String(normalizedError.message);
           }
           console.error(message);
 
