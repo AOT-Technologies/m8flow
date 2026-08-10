@@ -127,12 +127,12 @@
       "spiffworkflow-frontend/src/ContainerForExtensions.tsx": 382
     },
     "m8flow-frontend/src/components/ProcessInstanceListTable.tsx": {
-      "spiffworkflow-frontend/src/components/ProcessInstanceListTable.tsx": 1333,
+      "spiffworkflow-frontend/src/components/ProcessInstanceListTable.tsx": 1318,
       "spiffworkflow-frontend/src/components/TaskListTable.tsx": 117,
       "spiffworkflow-frontend/src/hooks/useProcessInstances.ts": 186
     },
     "m8flow-frontend/src/components/ProcessInstanceListTableWithFilters.tsx": {
-      "spiffworkflow-frontend/src/components/ProcessInstanceListTableWithFilters.tsx": 2766
+      "spiffworkflow-frontend/src/components/ProcessInstanceListTableWithFilters.tsx": 2629
     },
     "m8flow-frontend/src/components/ProcessModelForm.tsx": {
       "spiffworkflow-frontend/src/components/ProcessModelForm.tsx": 273
@@ -182,6 +182,9 @@
     "m8flow-frontend/src/views/Homepage.tsx": {
       "spiffworkflow-frontend/src/views/Homepage.tsx": 797
     },
+    "m8flow-frontend/src/views/ProcessInstanceShow.tsx": {
+      "spiffworkflow-frontend/src/views/ProcessInstanceShow.tsx": 6941
+    },
     "m8flow-frontend/src/views/ProcessModelEditDiagram.tsx": {
       "spiffworkflow-frontend/src/views/ProcessModelEditDiagram.tsx": 1551
     },
@@ -189,7 +192,7 @@
       "spiffworkflow-frontend/src/views/ProcessModelShow.tsx": 1403
     },
     "m8flow-frontend/src/views/SecretList.tsx": {
-      "spiffworkflow-frontend/src/views/SecretList.tsx": 167
+      "spiffworkflow-frontend/src/views/SecretList.tsx": 154
     },
     "m8flow-frontend/src/views/SecretShow.tsx": {
       "spiffworkflow-frontend/src/views/SecretShow.tsx": 296
