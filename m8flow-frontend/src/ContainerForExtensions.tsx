@@ -267,6 +267,7 @@ export default function ContainerForExtensions() {
     [targetUris.m8flowTemplateListPath]: ["GET"],
     [targetUris.connectorsGroupedPath]: ["GET"],
     [targetUris.m8flowMcpConnectionPath]: ["GET"],
+    [targetUris.m8flowNatsEventsPath]: ["GET"],
   };
   const { ability, permissionsLoaded } = usePermissionFetcher(
     permissionRequestData,
@@ -606,7 +607,11 @@ export default function ContainerForExtensions() {
               element={
                 !permissionsLoaded
                   ? null
-                  : UserService.isSuperAdmin()
+                  : /* Tenant-admins get the event-history tab, so this is gated on the
+                       read-nats-events grant rather than super-admin alone. The page itself
+                       then hides the broker-wide tabs from non-super-admins. */
+                    UserService.isSuperAdmin() ||
+                      ability.can('GET', targetUris.m8flowNatsEventsPath)
                     ? <MonitoringNatsPage />
                     : <Navigate to="/" replace />
               }

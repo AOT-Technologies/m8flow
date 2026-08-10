@@ -41,6 +41,17 @@ if [[ -n "${M8FLOW_NATS_MONITORING_ENABLED:-}" ]] && [[ -z "${M8FLOW_FRONTEND_RU
   export M8FLOW_FRONTEND_RUNTIME_CONFIG_M8FLOW_NATS_MONITORING_ENABLED="$M8FLOW_NATS_MONITORING_ENABLED"
 fi
 
+# Mirrors the backend flag so the UI can hide the payload-viewing affordance. The backend
+# still enforces it -- this only avoids offering an action that would be refused.
+if [[ -n "${M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED:-}" ]] && [[ -z "${M8FLOW_FRONTEND_RUNTIME_CONFIG_M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED:-}" ]]; then
+  export M8FLOW_FRONTEND_RUNTIME_CONFIG_M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED="$M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED"
+fi
+
+# Optional deep link to Grafana for metric history; the link is hidden when unset.
+if [[ -n "${M8FLOW_GRAFANA_URL:-}" ]] && [[ -z "${M8FLOW_FRONTEND_RUNTIME_CONFIG_M8FLOW_GRAFANA_URL:-}" ]]; then
+  export M8FLOW_FRONTEND_RUNTIME_CONFIG_M8FLOW_GRAFANA_URL="$M8FLOW_GRAFANA_URL"
+fi
+
 # The MCP connection page is optional; when M8FLOW_MCP_SERVER_URL is unset/empty the page stays hidden.
 if [[ -n "${M8FLOW_MCP_SERVER_URL:-}" ]] && [[ -z "${M8FLOW_FRONTEND_RUNTIME_CONFIG_M8FLOW_MCP_SERVER_URL:-}" ]]; then
   export M8FLOW_FRONTEND_RUNTIME_CONFIG_M8FLOW_MCP_SERVER_URL="$M8FLOW_MCP_SERVER_URL"

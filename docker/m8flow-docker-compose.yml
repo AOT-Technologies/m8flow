@@ -477,6 +477,10 @@ services:
       # Set to "true" to surface the built-in NATS monitoring section; leave false when the
       # optional NATS compose is not running.
       M8FLOW_NATS_MONITORING_ENABLED: "${M8FLOW_NATS_MONITORING_ENABLED:-false}"
+      # Mirrors the backend flag so the UI can hide the payload-viewing affordance.
+      M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED: "${M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED:-false}"
+      # Browser-reachable Grafana URL for the "View trends" link; empty hides it.
+      M8FLOW_GRAFANA_URL: "${M8FLOW_GRAFANA_URL:-}"
       # Browser-reachable URL of the m8flow MCP server; leave empty to hide the MCP connection page.
       M8FLOW_MCP_SERVER_URL: "${M8FLOW_MCP_SERVER_URL:-}"
       M8FLOW_FRONTEND_FARO_COLLECTOR_URL: "${M8FLOW_FRONTEND_FARO_COLLECTOR_URL:-}"

@@ -127,6 +127,7 @@ function SideNav({
     // Gate on POST so the nav filter checks manage-nats-tokens (tenant-admin only)
     // rather than defaulting to a never-requested GET, which hid the item for everyone.
     [targetUris.m8flowNatsTokensPath]: ["POST"],
+    [targetUris.m8flowNatsEventsPath]: ["GET"],
     "/tasks/*": ["GET", "PUT"],
     [targetUris.m8flowTenantManagementPath]: ["GET"],
     "/m8flow/tenants": ["GET"],
@@ -340,7 +341,10 @@ function SideNav({
             icon: <Storage />,
             route: "/monitoring/nats",
             id: routeIdentifiers.MONITORING_NATS,
-            superAdminOnly: true,
+            // Not superAdminOnly: tenant-admins get the event-history tab, and tenant roles
+            // are not in the JWT, so this has to come from the permission grant. The page
+            // hides the broker-wide tabs from non-super-admins itself.
+            permissionRoutes: [targetUris.m8flowNatsEventsPath],
           },
         ]
       : []),

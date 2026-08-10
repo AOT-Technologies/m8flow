@@ -93,14 +93,17 @@ class NatsEventAuditQueryService:
             query = query.filter(NatsEventAuditModel.outcome == outcome)
         if failures_only:
             query = query.filter(NatsEventAuditModel.outcome.in_(FAILURE_OUTCOMES))
+        # Free-text fields the UI exposes as search boxes: case-insensitive "contains",
+        # not exact match, so typing "group" finds "group-a/flow-a". outcome and worker
+        # stay exact above -- those come from a fixed dropdown, not typed text.
         if process_identifier:
             query = query.filter(
-                NatsEventAuditModel.process_identifier == process_identifier
+                NatsEventAuditModel.process_identifier.ilike(f"%{process_identifier}%")
             )
         if username:
-            query = query.filter(NatsEventAuditModel.username == username)
+            query = query.filter(NatsEventAuditModel.username.ilike(f"%{username}%"))
         if event_id:
-            query = query.filter(NatsEventAuditModel.event_id == event_id)
+            query = query.filter(NatsEventAuditModel.event_id.ilike(f"%{event_id}%"))
         if worker:
             query = query.filter(NatsEventAuditModel.worker == worker)
         # Filter on queued time, not completion: an in-flight row has no completion time

@@ -202,13 +202,58 @@ class TestFilters:
 
         assert {r["eventId"] for r in result["results"]} == {"acme-bad"}
 
-    def test_by_username(self, seeded):
+    def test_by_username_exact(self, seeded):
         result = Q.list_events(tenant_id=ACME, username="bob")
 
         assert {r["eventId"] for r in result["results"]} == {"acme-bad"}
 
-    def test_by_event_id(self, seeded):
+    def test_by_username_is_a_contains_search(self, app):
+        """A search box, not an exact-match field: typing part of a name must find it."""
+        _tenant(ACME, "acme")
+        _row(tenant_id=ACME, event_id="e1", username="alice.smith")
+
+        result = Q.list_events(tenant_id=ACME, username="smith")
+
+        assert {r["eventId"] for r in result["results"]} == {"e1"}
+
+    def test_by_username_is_case_insensitive(self, app):
+        _tenant(ACME, "acme")
+        _row(tenant_id=ACME, event_id="e1", username="Alice")
+
+        result = Q.list_events(tenant_id=ACME, username="alice")
+
+        assert {r["eventId"] for r in result["results"]} == {"e1"}
+
+    def test_by_event_id_exact(self, seeded):
         result = Q.list_events(tenant_id=ACME, event_id="acme-ok")
+
+        assert len(result["results"]) == 1
+
+    def test_by_process_identifier_is_a_contains_search(self, app):
+        """The bug this locks in: "group" must find "group-a/flow-a", not require the
+        full identifier -- the UI ships this as a free-text search box, not a dropdown."""
+        _tenant(ACME, "acme")
+        _row(tenant_id=ACME, event_id="e1", process_identifier="group-a/flow-a")
+        _row(tenant_id=ACME, event_id="e2", process_identifier="other/proc")
+
+        result = Q.list_events(tenant_id=ACME, process_identifier="group")
+
+        assert {r["eventId"] for r in result["results"]} == {"e1"}
+
+    def test_by_process_identifier_matches_a_middle_fragment(self, app):
+        _tenant(ACME, "acme")
+        _row(tenant_id=ACME, event_id="e1", process_identifier="group-a/flow-a")
+
+        result = Q.list_events(tenant_id=ACME, process_identifier="a/flow")
+
+        assert {r["eventId"] for r in result["results"]} == {"e1"}
+
+    def test_by_event_id_is_also_a_contains_search(self, app):
+        """Consistent with process/username: a fragment of the id should still find it."""
+        _tenant(ACME, "acme")
+        _row(tenant_id=ACME, event_id="9b627319-f807-42e6-abd8-9fccc5ac13ef")
+
+        result = Q.list_events(tenant_id=ACME, event_id="f807-42e6")
 
         assert len(result["results"]) == 1
 
