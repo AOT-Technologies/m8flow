@@ -1,7 +1,20 @@
-import React from 'react';
-import * as ReactDOMClient from 'react-dom/client';
-import { createTheme, ThemeProvider } from '@mui/material/styles';
-import App from './App';
+/**
+ * m8flow application entry point.
+ *
+ * Everything below the Faro setup - the MUI theme, the React root, the render
+ * tree - is defined upstream by SpiffArena (LGPL-2.1) in its own index.tsx.
+ * Rather than carrying a copy of it, this module initialises m8flow's telemetry
+ * and then hands over to the upstream entry point.
+ *
+ * `@spiff-core` always resolves to the upstream original, never back to an
+ * m8flow override - see the alias in vite.config.ts. Upstream's own relative
+ * imports (./App, ./i18n, ./index.scss) still pass through the override
+ * resolver, so m8flow's App and i18n overrides are picked up as before.
+ *
+ * The import is dynamic on purpose: ES imports are hoisted, so a static
+ * `import '@spiff-core/index'` would execute upstream's module-level render
+ * BEFORE initFaro() ran, and the first paint would go untracked.
+ */
 import { initFaro, syncFaroTenantFromCookie } from './faro';
 
 initFaro();
@@ -11,53 +24,5 @@ initFaro();
 // calls this directly when a tenant is newly selected).
 syncFaroTenantFromCookie();
 
-// Import styles and i18n from core
-// Note: These imports use the @spiffworkflow-frontend alias configured in vite.config.ts
-import '@spiffworkflow-frontend/index.scss';
-import '@spiffworkflow-frontend/index.css';
-import './i18n';
-
-// @ts-expect-error TS(2345) FIXME: Argument of type 'HTMLElement | null' is not assignable
-const root = ReactDOMClient.createRoot(document.getElementById('root'));
-
-/**
- * Creates an instance of the MUI theme that can be fed to the top-level ThemeProvider.
- * Nested ThemeProviders can be used to override specific components.
- * This override implements a tooltip that fits the overall app theme.
- */
-const defaultTheme = createTheme();
-const overrideTheme = createTheme({
-  components: {
-    MuiTooltip: {
-      styleOverrides: {
-        arrow: {
-          '&::before': {
-            color: '#F5F5F5',
-            border: '1px solid grey',
-          },
-        },
-        tooltip: {
-          fontSize: '.8em',
-          color: 'black',
-          backgroundColor: '#F5F5F5',
-          padding: '5px',
-          border: '1px solid  grey',
-        },
-      },
-    },
-  },
-});
-
-const doRender = () => {
-  root.render(
-    <React.StrictMode>
-      <ThemeProvider theme={defaultTheme}>
-        <ThemeProvider theme={overrideTheme}>
-          <App />
-        </ThemeProvider>
-      </ThemeProvider>
-    </React.StrictMode>,
-  );
-};
-
-doRender();
+// Hands off to upstream, which creates the React root and renders <App />.
+import('@spiff-core/index');

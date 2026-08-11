@@ -1,16 +1,21 @@
-from dataclasses import dataclass
+"""m8flow compatibility shim for spiffworkflow_backend.models.configuration.
 
-from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScoped
-from spiffworkflow_backend.models.db import SpiffworkflowBaseDBModel
-from spiffworkflow_backend.models.db import db
+The model is defined upstream by SpiffArena (LGPL-2.1). m8flow's schema delta -
+the m8f_tenant_id column and any constraint changes - is applied centrally by
+m8flow_backend.models.tenant_schema. This module contributes nothing of its own.
 
+Kept so that existing `from m8flow_backend.models.configuration import ...` imports keep
+working. New code should import from spiffworkflow_backend.models.configuration directly.
 
-@dataclass
-class ConfigurationModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
-    __tablename__ = "configuration"
+DO NOT reintroduce model definitions here. Schema changes belong in
+m8flow_backend/models/tenant_schema.py.
+"""
+from __future__ import annotations
 
-    id: int = db.Column(db.Integer, primary_key=True)
-    category: str = db.Column(db.String(255), index=True)
-    value: dict = db.Column(db.JSON)
-    updated_at_in_seconds: int = db.Column(db.Integer)
-    created_at_in_seconds: int = db.Column(db.Integer)
+from spiffworkflow_backend.models.configuration import (  # noqa: F401
+    ConfigurationModel,
+)
+
+__all__ = [
+    "ConfigurationModel",
+]

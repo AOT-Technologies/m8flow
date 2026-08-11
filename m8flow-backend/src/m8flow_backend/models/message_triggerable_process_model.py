@@ -1,23 +1,21 @@
-from spiffworkflow_backend.models.db import SpiffworkflowBaseDBModel
-from spiffworkflow_backend.models.db import db
-from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScoped
+"""m8flow compatibility shim for spiffworkflow_backend.models.message_triggerable_process_model.
 
+The model is defined upstream by SpiffArena (LGPL-2.1). m8flow's schema delta -
+the m8f_tenant_id column and any constraint changes - is applied centrally by
+m8flow_backend.models.tenant_schema. This module contributes nothing of its own.
 
-class MessageTriggerableProcessModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
-    """SQLAlchemy model for MessageTriggerableProcessModel."""
-    __tablename__ = "message_triggerable_process_model"
-    __table_args__ = (
-        db.UniqueConstraint(
-            "m8f_tenant_id",
-            "message_name",
-            name="message_triggerable_process_model_message_name_tenant_unique",
-        ),
-    )
+Kept so that existing `from m8flow_backend.models.message_triggerable_process_model import ...` imports keep
+working. New code should import from spiffworkflow_backend.models.message_triggerable_process_model directly.
 
-    id = db.Column(db.Integer, primary_key=True)
-    message_name: str = db.Column(db.String(255), index=True)
-    process_model_identifier: str = db.Column(db.String(255), nullable=False, index=True)
-    file_name: str = db.Column(db.String(255), index=True)
+DO NOT reintroduce model definitions here. Schema changes belong in
+m8flow_backend/models/tenant_schema.py.
+"""
+from __future__ import annotations
 
-    updated_at_in_seconds: int = db.Column(db.Integer)
-    created_at_in_seconds: int = db.Column(db.Integer)
+from spiffworkflow_backend.models.message_triggerable_process_model import (  # noqa: F401
+    MessageTriggerableProcessModel,
+)
+
+__all__ = [
+    "MessageTriggerableProcessModel",
+]

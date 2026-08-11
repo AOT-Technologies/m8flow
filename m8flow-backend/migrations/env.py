@@ -16,11 +16,28 @@ SRC_DIR = M8FLOW_BACKEND_DIR / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
+# MUST come before any model import. Alembic does not go through
+# m8flow_backend.startup.patch_registry, so the DDL listener that adds m8flow's
+# tenant column and constraint changes to upstream's tables has to be installed
+# explicitly here. Without it, autogenerate sees upstream's bare schema and
+# proposes dropping every m8flow column.
+from m8flow_backend.models import tenant_schema
+
+tenant_schema.register()
+
 from m8flow_backend.services import model_override_patch
 
 model_override_patch.apply()
 
 import spiffworkflow_backend.load_database_models  # noqa: F401
+
+# m8flow's own models are not covered by upstream's loader. They used to be
+# pulled in as a side effect of m8flow's copied model files importing each
+# other; now that those are shims, the import has to be explicit. Without it
+# the m8flow_tenant table is absent and every m8f_tenant_id foreign key fails
+# to resolve during autogenerate.
+import m8flow_backend.models._timestamps_bootstrap  # noqa: F401
+
 from spiffworkflow_backend.models.db import db
 
 config = context.config
