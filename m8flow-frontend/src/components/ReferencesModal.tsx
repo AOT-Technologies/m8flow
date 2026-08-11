@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2026 AOT Technologies Inc.
+
 import React from 'react';
 import { Modal, UnorderedList, Link } from '@carbon/react';
 import { ProcessReference } from '@spiffworkflow-frontend/interfaces';

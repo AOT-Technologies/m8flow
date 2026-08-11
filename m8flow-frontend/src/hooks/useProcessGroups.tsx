@@ -1,15 +1,27 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2026 AOT Technologies Inc.
+
 /**
  * Override: useProcessGroups Hook
  *
  * Adds custom headers and forwards an optional ``tenantId`` query parameter so
  * a super-admin can narrow the cross-tenant process-group / process-model
  * listing to a single tenant.
+ *
+ * Results and in-flight status are held in one state object: they are always
+ * written together, so splitting them would allow a render where the list has
+ * arrived but loading is still true.
  */
 
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { ProcessGroup, ProcessGroupLite } from '@spiffworkflow-frontend/interfaces';
 import HttpService from '../services/HttpService';
+
+type FetchState = {
+  processGroups: ProcessGroup[] | ProcessGroupLite[] | null;
+  loading: boolean;
+};
 
 export default function useProcessGroups({
   processInfo,
@@ -20,15 +32,10 @@ export default function useProcessGroups({
   getRunnableProcessModels?: boolean;
   tenantId?: string | null;
 }) {
-  const [processGroups, setProcessGroups] = useState<
-    ProcessGroup[] | ProcessGroupLite[] | null
-  >(null);
-  const [loading, setLoading] = useState(false);
-
-  const handleProcessGroupResponse = (result: any) => {
-    setProcessGroups(result.results);
-    setLoading(false);
-  };
+  const [state, setState] = useState<FetchState>({
+    processGroups: null,
+    loading: false,
+  });
 
   let basePath = '/process-groups';
   if (getRunnableProcessModels) {
@@ -43,7 +50,7 @@ export default function useProcessGroups({
   }
 
   const getProcessGroups = async () => {
-    setLoading(true);
+    setState((prev) => ({ ...prev, loading: true }));
 
     HttpService.makeCallToBackend({
       path,
@@ -52,14 +59,16 @@ export default function useProcessGroups({
         'X-m8-Extension': 'true',
         'X-m8-Request-Source': 'useProcessGroups-override',
       },
-      successCallback: handleProcessGroupResponse,
+      successCallback: (result: any) =>
+        setState({ processGroups: result.results, loading: false }),
       failureCallback: (error: any) => {
         console.error('[m8 Extension] Process Groups API Error:', error);
-        setLoading(false);
+        setState((prev) => ({ ...prev, loading: false }));
       },
     });
 
-    // return required for Tanstack query
+    // Tanstack query requires a resolved value; the data itself arrives via the
+    // HttpService callbacks above, so the query is used only for scheduling.
     return true;
   };
 
@@ -68,8 +77,5 @@ export default function useProcessGroups({
     queryFn: () => getProcessGroups(),
   });
 
-  return {
-    processGroups,
-    loading,
-  };
+  return { processGroups: state.processGroups, loading: state.loading };
 }
