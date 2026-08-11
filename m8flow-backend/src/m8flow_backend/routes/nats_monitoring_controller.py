@@ -11,7 +11,11 @@ Two audiences, and the split matters:
 
 Message payload inspection is gated separately on
 ``M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED`` (off by default) because m8flow's streams retain
-every payload indefinitely.
+every payload indefinitely. Viewing one event's payload via ``GET /nats/events/{id}`` is open
+to tenant-admins for their own tenant's events, same as the event history itself -- the row
+is already tenant-scoped by the time the payload is fetched. Browsing a stream directly by
+sequence (``/nats/streams/{name}/messages``) has no such per-row tenant filter and stays
+super-admin only.
 """
 
 from __future__ import annotations
@@ -172,12 +176,12 @@ def get_event(event_id: str) -> tuple:
                 message="Message payload inspection is disabled on this deployment.",
                 status_code=403,
             )
-        if not _is_super_admin():
-            raise ApiError(
-                error_code="forbidden",
-                message="Message payload inspection is restricted to super-admins.",
-                status_code=403,
-            )
+        # No extra admin check here: `event` above already passed through `_audit_scope()`
+        # and `_scoped_query`'s tenant filter, so a non-super-admin caller only ever gets
+        # here for a row already confirmed to belong to their own active tenant (a row
+        # outside it 404s indistinguishably, in NatsEventAuditQueryService.get_event).
+        # That is unlike /nats/streams/{name}/messages and the broker-wide endpoints, which
+        # read the stream/broker directly with no tenant filter and stay super-admin only.
         stream_seq = event.get("streamSeq")
         if stream_seq:
             stream_name = request.args.get("streamName") or "M8FLOW_EVENTS"

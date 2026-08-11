@@ -189,7 +189,11 @@ export default function MonitoringNatsPage() {
           translate={translate}
           refreshKey={refreshKey}
           canCrossTenant={isSuperAdmin}
-          canInspectPayloads={isSuperAdmin && Boolean(NATS_MESSAGE_INSPECTION_ENABLED)}
+          // Not gated on isSuperAdmin: only tenant-admin and super-admin can reach event
+          // rows at all (read-nats-events is restricted to those two groups), and the
+          // backend scopes a tenant-admin's payload view to their own tenant's events --
+          // same reasoning as event history itself being open to tenant-admins.
+          canInspectPayloads={Boolean(NATS_MESSAGE_INSPECTION_ENABLED)}
           initialTenantId={tenantFilter}
         />
       )}

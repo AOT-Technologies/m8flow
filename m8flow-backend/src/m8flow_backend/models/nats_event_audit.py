@@ -69,7 +69,7 @@ class NatsEventAuditModel(SpiffworkflowBaseDBModel, AuditDateTimeMixin):
 
     The consumer currently logs every terminal outcome and then ACKs the message, so a
     rejected or unparseable event leaves no queryable trace once log retention rolls
-    (see ``m8flow-nats-consumer/consumer.py``). This table is that trace.
+    (see ``m8flow-nats-consumer/trigger_event_consumer.py``). This table is that trace.
 
     Payloads are deliberately NOT stored. All m8flow streams are created without
     ``max_age``/``max_msgs`` limits, so JetStream retains every message indefinitely —

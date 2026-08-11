@@ -118,6 +118,27 @@ export function redeliveryColor(redelivered: number): ChipColor {
   return redelivered < 10 ? "warning" : "error";
 }
 
+/**
+ * Pretty-prints a message payload for display when it looks like JSON (the common case --
+ * event payloads are almost always JSON bodies). Binary/base64 payloads and truncated
+ * previews are left as-is: a truncated JSON string is cut mid-object and would just fail to
+ * parse, and base64 content was never JSON to begin with.
+ */
+export function formatPayloadPreview(payload: {
+  payload: string;
+  encoding: string;
+  truncated: boolean;
+}): string {
+  if (payload.encoding !== "utf-8" || payload.truncated) {
+    return payload.payload;
+  }
+  try {
+    return JSON.stringify(JSON.parse(payload.payload), null, 2);
+  } catch {
+    return payload.payload;
+  }
+}
+
 /** Message for a failed panel load; a disabled broker is an expected state, not a crash. */
 export function loadErrorMessage(error: any, translate: Translate): string {
   const code = error?.error_code;

@@ -10,7 +10,9 @@ Tests cover:
 - 403 for an authenticated non-super-admin on broker-wide state
 - non-super-admins pinned to their active tenant, and unable to opt out with allTenants
 - super-admins able to cross tenants, but only by asking explicitly
-- payload inspection gated on both the env flag and super-admin
+- payload inspection gated on the env flag; a non-super-admin may view a payload for their
+  own tenant-scoped event (the row is already tenant-filtered by the time it is fetched),
+  but raw stream browsing by sequence stays super-admin only
 - limit/page validation and server-side clamping
 - 503 propagated when the broker is unreachable
 """
@@ -281,15 +283,23 @@ class TestPayloadInspectionGating:
         finally:
             ctx.pop()
 
-    def test_include_payload_403s_for_a_non_super_admin_even_when_enabled(
-        self, app, monkeypatch
+    def test_include_payload_works_for_a_non_super_admin_when_enabled(
+        self, app, monkeypatch, stub_services
     ):
+        """A tenant-admin (modeled here as any authenticated non-super-admin) may view the
+        payload of an event already scoped to their own tenant -- the row was tenant-filtered
+        by `_audit_scope()`/`_scoped_query` before this function ever sees it, so there is no
+        cross-tenant exposure left to guard against here. Mirrors the super-admin success
+        case below; only `super_admin` differs."""
         monkeypatch.setattr(controller, "nats_message_inspection_enabled", lambda: True)
         ctx = _as(app, "includePayload=true", super_admin=False)
         try:
-            assert _status(controller.get_event("evt-1")) == 403
+            assert _status(controller.get_event("evt-1")) == 200
         finally:
             ctx.pop()
+
+        assert stub_services["get_messages"]["start_seq"] == 42
+        assert stub_services["get_messages"]["limit"] == 1
 
     def test_event_without_include_payload_never_touches_nats(self, app, stub_services):
         ctx = _as(app, super_admin=True)

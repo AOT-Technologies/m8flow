@@ -260,6 +260,17 @@ def nats_audit_retention_days() -> int:
     return int(_get("M8FLOW_NATS_AUDIT_RETENTION_DAYS") or "90")
 
 
+def nats_broker_metrics_interval_seconds() -> int:
+    """How often m8flow-nats-consumer polls the broker to emit stream/consumer OTel gauges.
+
+    Coupled to OTEL_METRIC_EXPORT_INTERVAL (default 60000ms): a gauge is last-value-wins per
+    export tick, so polling faster than roughly half that interval buys nothing -- the extra
+    samples get overwritten before they ever leave the process. Default here is 20s, well
+    under the usual 30s half-interval margin.
+    """
+    return int(_get("M8FLOW_NATS_BROKER_METRICS_INTERVAL_SECONDS") or "20")
+
+
 def notification_sweep_interval_seconds() -> int:
     """How often the notification worker sweeps for missed pending requests."""
     return int(_get("M8FLOW_NOTIFICATION_SWEEP_INTERVAL_SECONDS") or "60")
