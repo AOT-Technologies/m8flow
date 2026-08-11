@@ -1,0 +1,42 @@
+# DevX CI Configuration — m8flow-frontend
+# Language: Node.js 20 | React SPA
+# Dockerfile: docker/m8flow.frontend.Dockerfile (builds from repo root context)
+
+project:
+  language: node
+  version: "20"
+  working_directory: "."            # Build context is repo root
+
+build:
+  enabled: false                    # No Nexus artifact; Docker is the build artifact
+  run_tests: false                  # Tests handled by ci.yml
+
+docker:
+  enabled: true
+  working_directory: "."            # Build context must be repo root
+  dockerfile: "docker/m8flow.frontend.Dockerfile"
+  image_name: "m8flow/m8flow-frontend"
+  image_tag: ""                     # Smart versioning: develop → dev-<sha>
+  registry_type: generic
+  registry_url: "docker.io"
+  platforms: "linux/amd64"
+
+security:
+  sast:
+    enabled: false
+
+  iac:
+    enabled: false
+
+  trivy:
+    enabled: true
+    severity: CRITICAL,HIGH
+    fail_on_vuln: false
+    ignore_unfixed: true
+    scanners: vuln,secret
+
+  sbom:
+    enabled: false
+
+  sbom_scan:
+    enabled: false
