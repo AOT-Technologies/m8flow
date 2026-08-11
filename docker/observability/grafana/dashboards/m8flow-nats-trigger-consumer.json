@@ -43,7 +43,7 @@
         "defaults": {},
         "overrides": []
       },
-      "description": "Queue-wide — no m8flow_tenant_id. Scoped to the trigger-event consumer (m8flow-nats-trigger-consumer.py); the notification worker has its own dashboard. Summed across instance -- a redeploy briefly leaves the old process's series alive under a different service.instance.id for up to ~5m, and without sum() a stat panel renders one box per series."
+      "description": "Queue-wide — no m8flow_tenant_id. Scoped to the trigger-event consumer (trigger_event_consumer.py); the notification worker has its own dashboard. Summed across instance -- a redeploy briefly leaves the old process's series alive under a different service.instance.id for up to ~5m, and without sum() a stat panel renders one box per series."
     },
     {
       "id": 2,

@@ -100,8 +100,10 @@ export default function MonitoringNatsPage() {
     );
   }
 
-  // Tenant-admins reach this page through the read-nats-events permission; anyone with
-  // neither that grant nor super-admin should not be here at all.
+  // Belt-and-suspenders, not the actual gate: the route element (ContainerForExtensions.tsx)
+  // already checks the read-nats-events permission before this component ever renders. This
+  // just catches an unauthenticated session directly, since isLoggedIn() has no notion of
+  // permissions -- a super-admin is exempted here only to match that upstream check's shape.
   if (!isSuperAdmin && !UserService.isLoggedIn()) {
     return <Navigate to="/" replace />;
   }

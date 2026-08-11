@@ -54,7 +54,7 @@ Backend-side NATS monitoring settings:
 - `M8FLOW_NATS_MONITORING_URL` (optional): base URL of the NATS server's monitoring endpoints. Default `http://nats:8222`, reached over the internal docker network, so the monitoring port never needs publishing to a browser.
 - `M8FLOW_NATS_MESSAGE_PREVIEW_MAX_BYTES` (optional): cap on how much of a payload a preview returns. Default `4096`.
 - `M8FLOW_NATS_AUDIT_RETENTION_DAYS` (optional): how long terminal event-audit rows are kept before the notification worker's sweep prunes them. Default `90`; `0` disables pruning. In-flight (`queued`) rows are never pruned.
-- `M8FLOW_NATS_BROKER_METRICS_INTERVAL_SECONDS` (optional): how often `m8flow-nats-consumer` polls the broker to emit per-stream/per-consumer metrics for the Grafana "M8Flow NATS Broker Overview" dashboard (see [`docs/nats-monitoring.md`](nats-monitoring.md) §7). Default `20`. Coupled to `OTEL_METRIC_EXPORT_INTERVAL` (default `60000`ms) — polling faster than roughly half that interval buys nothing, since an OTel gauge is last-value-wins per export tick.
+- `M8FLOW_NATS_BROKER_METRICS_INTERVAL_SECONDS` (optional): how often `m8flow-nats-consumer` polls the broker to emit per-stream/per-consumer metrics feeding the "M8Flow NATS Trigger Consumer Overview" and "M8Flow NATS Notification Worker Overview" Grafana dashboards. Default `20`. Coupled to `OTEL_METRIC_EXPORT_INTERVAL` (default `60000`ms) — polling faster than roughly half that interval buys nothing, since an OTel gauge is last-value-wins per export tick.
 
 ## Connector attachment paths
 
