@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Box, Button, CircularProgress } from "@mui/material";
 import HttpService from "@spiffworkflow-frontend/services/HttpService";
+import ErrorDisplay from "@spiffworkflow-frontend/components/ErrorDisplay";
 import TaskShow from "@spiffworkflow-frontend/views/TaskShow/TaskShow";
 
 /**
@@ -45,21 +46,21 @@ export default function ExternalFormAwareTaskShow() {
     };
   }, [params.process_instance_id, params.task_guid]);
 
-  if (state === "loading") {
-    return (
-      <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}>
-        <CircularProgress />
-      </Box>
-    );
-  }
+  let content = null;
 
   // External-form user task: render the normal task page (breadcrumb, title,
   // instructions with the secure form link) but hide ALL in-app action buttons —
   // Submit, signal ("next"), and the upstream "Save and Close" (which writes a draft) —
   // because the recipient completes this task via the emailed external form. We add our
   // own Close button that only navigates away, so there is nothing to *provide* in-app.
-  if (state === "external") {
-    return (
+  if (state === "loading") {
+    content = (
+      <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}>
+        <CircularProgress />
+      </Box>
+    );
+  } else if (state === "external") {
+    content = (
       <Box
         sx={{
           "& #submit-button": { display: "none" },
@@ -78,8 +79,15 @@ export default function ExternalFormAwareTaskShow() {
         </Box>
       </Box>
     );
+  } else {
+    // Regular task (or a load error we defer to upstream): render the upstream task page.
+    content = <TaskShow />;
   }
 
-  // Regular task (or a load error we defer to upstream): render the upstream task page.
-  return <TaskShow />;
+  return (
+    <>
+      <ErrorDisplay />
+      {content}
+    </>
+  );
 }
