@@ -8,6 +8,8 @@ Tests cover:
   excludes resume-failed (notified_at set), expired, exhausted, fresh rows
 - build_secure_link: ref= appended preserving query params; mini-app base override
 - notify: end-to-end with SMTP mocked, failure recording and retry
+- smtp_unconfigured: unconfigured tenants park terminally instead of retrying forever,
+  and revive/requeue bring parked rows back
 """
 import logging
 import sys
@@ -30,6 +32,9 @@ for path in (extension_src, backend_src):
 
 from spiffworkflow_backend.models.db import db  # noqa: E402
 from spiffworkflow_backend.models.db import add_listeners  # noqa: E402
+# Imported for its side effect of registering the `secret` table before db.create_all():
+# smtp_configuration_status() presence-checks optional keys against it.
+from spiffworkflow_backend.models.secret_model import SecretModel  # noqa: E402,F401
 from spiffworkflow_backend.models.user import UserModel  # noqa: E402
 
 from m8flow_backend.models.external_form_request import (  # noqa: E402
@@ -61,13 +66,18 @@ DEFAULT_SMTP_SECRETS = {
 
 @pytest.fixture
 def smtp_secrets(monkeypatch):
-    """Stub the per-tenant SMTP secret lookup with a mutable dict (default: configured)."""
+    """Stub the per-tenant SMTP secret lookup with a mutable dict (default: configured).
+
+    Mirrors the real _read_tenant_secret, which strips the decrypted value and reports a
+    blank one as absent — a whitespace-only secret must not read as configured."""
+
     secrets = dict(DEFAULT_SMTP_SECRETS)
-    monkeypatch.setattr(
-        ExternalFormNotificationService,
-        "_read_tenant_secret",
-        staticmethod(lambda key: secrets.get(key)),
-    )
+
+    def read(key):
+        value = (secrets.get(key) or "").strip()
+        return value or None
+
+    monkeypatch.setattr(ExternalFormNotificationService, "_read_tenant_secret", staticmethod(read))
     return secrets
 
 
@@ -356,29 +366,39 @@ class TestNotify:
         row = _fresh(row.id)
         assert row.status == ExternalFormRequestStatus.failed.value
         assert row.notified_at_in_seconds is None
-        # Failure reason is logged (not stored on the row).
+        # Failure reason is both logged and stored, so an admin can diagnose from the UI.
         assert "smtp down" in caplog.text
+        assert "smtp down" in row.last_error
 
         fake_smtp.fail_with = None
         assert ExternalFormNotificationService.notify(row.reference_id) == "sent"
         assert len(fake_smtp.sent_messages) == 1
+        # A successful claim clears the stale diagnosis.
+        assert _fresh(row.id).last_error is None
 
     def test_unknown_reference(self, app):
         assert ExternalFormNotificationService.notify("no-such-ref") == "skipped:unknown_reference"
 
-    def test_unconfigured_smtp_leaves_row_pending(self, app, tenant, alice, fake_smtp, smtp_secrets):
+    def test_unconfigured_smtp_parks_row_terminally(self, app, tenant, alice, fake_smtp, smtp_secrets):
         smtp_secrets.clear()  # tenant has no SMTP secrets
         row = _create_request(tenant, alice)
 
         assert ExternalFormNotificationService.notify(row.reference_id) == "skipped:smtp_unconfigured"
-        assert _fresh(row.id).status == ExternalFormRequestStatus.pending.value
+        parked = _fresh(row.id)
+        assert parked.status == ExternalFormRequestStatus.smtp_unconfigured.value
+        assert parked.attempts == 0  # no real delivery was attempted
+        assert "NATS_SMTP_HOST" in parked.last_error
 
     def test_missing_from_email_is_unconfigured(self, app, tenant, alice, fake_smtp, smtp_secrets):
         del smtp_secrets["NATS_SMTP_FROM_EMAIL"]  # host present but no sender address
         row = _create_request(tenant, alice)
 
         assert ExternalFormNotificationService.notify(row.reference_id) == "skipped:smtp_unconfigured"
-        assert _fresh(row.id).status == ExternalFormRequestStatus.pending.value
+        parked = _fresh(row.id)
+        assert parked.status == ExternalFormRequestStatus.smtp_unconfigured.value
+        # Only the genuinely missing key is reported; the configured host is not.
+        assert "NATS_SMTP_FROM_EMAIL" in parked.last_error
+        assert "NATS_SMTP_HOST" not in parked.last_error
 
     def test_expired_row_is_not_emailed(self, app, tenant, alice, fake_smtp, smtp_secrets):
         row = _create_request(tenant, alice, expires_at_in_seconds=int(time.time()) - 10)
@@ -395,8 +415,126 @@ class TestNotify:
         assert fake_smtp.sent_messages == []
         row = _fresh(row.id)
         assert row.status == ExternalFormRequestStatus.failed.value
-        # Failure reason is logged (not stored on the row).
         assert "not http/https" in caplog.text
+        assert "not http/https" in row.last_error
+
+
+class TestSmtpUnconfigured:
+    """The behaviour that ends the silent-infinite-retry bug."""
+
+    def test_parked_row_is_invisible_to_the_sweep(self, app, tenant, alice, fake_smtp, smtp_secrets):
+        smtp_secrets.clear()
+        row = _create_request(tenant, alice)
+        ExternalFormNotificationService.notify(row.reference_id)
+
+        # Well past the grace period, so only the status can be keeping it out.
+        later = int(time.time()) + 100_000
+        candidates = ExternalFormNotificationService.sweep_candidates(now=later)
+
+        assert [candidate for candidate in candidates if candidate[0] == row.id] == []
+
+    def test_mark_does_not_clobber_a_claimed_row(self, app, tenant, alice, smtp_secrets):
+        row = _create_request(tenant, alice)
+        assert ExternalFormNotificationService.claim(row.id) is True
+
+        assert ExternalFormNotificationService.mark_smtp_unconfigured([row.id], "Missing required secrets: NATS_SMTP_HOST") == 0
+        assert _fresh(row.id).status == ExternalFormRequestStatus.notified.value
+
+    def test_revive_returns_parked_rows_to_the_queue(self, app, tenant, alice, fake_smtp, smtp_secrets):
+        smtp_secrets.clear()
+        row = _create_request(tenant, alice)
+        ExternalFormNotificationService.notify(row.reference_id)
+
+        smtp_secrets.update(DEFAULT_SMTP_SECRETS)  # admin configures SMTP
+        assert ExternalFormNotificationService.revive_smtp_unconfigured() == 1
+
+        revived = _fresh(row.id)
+        assert revived.status == ExternalFormRequestStatus.pending.value
+        assert revived.attempts == 0
+        assert revived.last_error is None
+        assert ExternalFormNotificationService.notify(row.reference_id) == "sent"
+
+    def test_revive_leaves_other_statuses_alone(self, app, tenant, alice, smtp_secrets):
+        row = _create_request(tenant, alice)
+
+        assert ExternalFormNotificationService.revive_smtp_unconfigured() == 0
+        assert _fresh(row.id).status == ExternalFormRequestStatus.pending.value
+
+    def test_tenants_with_parked_requests(self, app, tenant, alice, fake_smtp, smtp_secrets):
+        smtp_secrets.clear()
+        row = _create_request(tenant, alice)
+
+        assert ExternalFormNotificationService.tenants_with_parked_requests() == []
+
+        ExternalFormNotificationService.notify(row.reference_id)
+
+        assert ExternalFormNotificationService.tenants_with_parked_requests() == [tenant.id]
+
+    def test_missing_required_smtp_keys(self, app, tenant, smtp_secrets):
+        assert ExternalFormNotificationService.missing_required_smtp_keys() == []
+
+        smtp_secrets["NATS_SMTP_HOST"] = "   "  # present but blank is not usable
+
+        assert ExternalFormNotificationService.missing_required_smtp_keys() == ["NATS_SMTP_HOST"]
+
+    def test_status_reports_keys_never_values(self, app, tenant, smtp_secrets):
+        status = ExternalFormNotificationService.smtp_configuration_status()
+
+        assert status["configured"] is True
+        assert status["missing_required_keys"] == []
+        assert status["required_keys"] == ["NATS_SMTP_HOST", "NATS_SMTP_FROM_EMAIL"]
+        assert "NATS_SMTP_PASSWORD" in status["optional_keys"]
+        assert [field["secretKey"] for field in status["fields"]]
+        serialized = str(status)
+        for value in DEFAULT_SMTP_SECRETS.values():
+            assert value not in serialized
+
+    def test_status_lists_missing_required_keys(self, app, tenant, smtp_secrets):
+        smtp_secrets.clear()
+
+        status = ExternalFormNotificationService.smtp_configuration_status()
+
+        assert status["configured"] is False
+        assert status["missing_required_keys"] == ["NATS_SMTP_HOST", "NATS_SMTP_FROM_EMAIL"]
+
+
+class TestRequeue:
+    def test_requeues_a_parked_row(self, app, tenant, alice, fake_smtp, smtp_secrets):
+        smtp_secrets.clear()
+        row = _create_request(tenant, alice)
+        ExternalFormNotificationService.notify(row.reference_id)
+
+        assert ExternalFormNotificationService.requeue(row.id) is True
+        assert _fresh(row.id).status == ExternalFormRequestStatus.pending.value
+
+    def test_requeues_a_send_failure(self, app, tenant, alice, fake_smtp, smtp_secrets):
+        row = _create_request(tenant, alice)
+        fake_smtp.fail_with = ConnectionRefusedError("smtp down")
+        ExternalFormNotificationService.notify(row.reference_id)
+
+        assert ExternalFormNotificationService.requeue(row.id) is True
+        requeued = _fresh(row.id)
+        assert requeued.status == ExternalFormRequestStatus.pending.value
+        assert requeued.attempts == 0
+        assert requeued.last_error is None
+
+    def test_refuses_an_already_notified_row(self, app, tenant, alice, fake_smtp, smtp_secrets):
+        row = _create_request(tenant, alice)
+        ExternalFormNotificationService.notify(row.reference_id)
+
+        assert ExternalFormNotificationService.requeue(row.id) is False
+        assert _fresh(row.id).status == ExternalFormRequestStatus.notified.value
+
+    def test_refuses_a_failed_resume(self, app, tenant, alice, smtp_secrets):
+        """A 'failed' row that kept notified_at is a failed workflow resume, not a failed
+        send — the recipient already got their email and must not get a second one."""
+        row = _create_request(tenant, alice)
+        ExternalFormNotificationService.claim(row.id)
+        row = _fresh(row.id)
+        row.status = ExternalFormRequestStatus.failed.value
+        db.session.commit()
+
+        assert ExternalFormNotificationService.requeue(row.id) is False
 
 
 class TestRenderEmail:

@@ -20,15 +20,40 @@ class ExternalFormRequestStatus(SpiffEnum):
     failed = "failed"
     expired = "expired"
     superseded = "superseded"
+    # Terminal-until-reconfigured: the tenant has no usable NATS_SMTP_* secrets, so no
+    # amount of retrying can deliver the email. Deliberately absent from
+    # ExternalFormNotificationService.CLAIMABLE_STATUSES — that tuple is the only
+    # predicate the sweep uses, so parking a row here stops the retry loop dead — and
+    # from ACTIONABLE_STATUSES, since the link was never delivered to anyone.
+    # Rows leave this state via revive_smtp_unconfigured() (auto, once the tenant's
+    # SMTP secrets appear) or an admin resend.
+    smtp_unconfigured = "smtp_unconfigured"
 
 
 # Statuses for which the secure link may still be used to submit the form.
-# "failed" means a notification/resume attempt failed; the link itself stays usable.
+# "failed" means a notification/resume attempt failed; the link itself stays usable,
+# because it was already delivered at least once.
+#
+# "smtp_unconfigured" is deliberately absent. Such a request was never emailed, so nobody
+# can legitimately hold its link — the only way to obtain one is to read reference_id out
+# of the database. Accepting it would let an operator submit a form as the recipient. Once
+# SMTP is configured, revive_smtp_unconfigured() returns the row to "pending" and the link
+# becomes usable in the normal way.
 ACTIONABLE_STATUSES = (
     ExternalFormRequestStatus.pending.value,
     ExternalFormRequestStatus.notified.value,
     ExternalFormRequestStatus.failed.value,
 )
+
+# Statuses in which the request is still open — not submitted, completed, superseded, or
+# expired. Broader than ACTIONABLE_STATUSES: a parked request is not submittable, but it is
+# still the live request for its (task, recipient) pair, so it must suppress duplicate row
+# creation, still be expired by TTL, and still be superseded when a sibling submits.
+OPEN_STATUSES = ACTIONABLE_STATUSES + (ExternalFormRequestStatus.smtp_unconfigured.value,)
+
+# Column width of last_error. Writers must truncate to this; an SMTP exception message
+# (or a provider's multi-line rejection) can easily exceed it.
+LAST_ERROR_MAX_LENGTH = 500
 
 
 @dataclass
@@ -61,6 +86,9 @@ class ExternalFormRequestModel(M8fTenantScopedMixin, TenantScoped, Spiffworkflow
     expires_at_in_seconds: Optional[int] = db.Column(db.Integer, nullable=True)
     attempts: int = db.Column(db.Integer, nullable=False, default=0)
     notified_at_in_seconds: Optional[int] = db.Column(db.Integer, nullable=True)
+    # Why the last delivery attempt failed, so an admin can diagnose from the UI instead
+    # of the worker logs. Bounded and truncated on write; never holds secret values.
+    last_error: Optional[str] = db.Column(db.String(LAST_ERROR_MAX_LENGTH), nullable=True)
 
     def is_actionable(self) -> bool:
         return self.status in ACTIONABLE_STATUSES
@@ -72,6 +100,26 @@ class ExternalFormRequestModel(M8fTenantScopedMixin, TenantScoped, Spiffworkflow
             "status": self.status,
             "external_form_url": self.external_form_url,
             "process_instance_id": self.process_instance_id,
+        }
+
+    def to_admin_dict(self) -> dict[str, Any]:
+        """Shape returned to tenant admins in the notification-status list.
+
+        Deliberately omits reference_id: it is the bearer credential in the emailed
+        secure link (external_form_show/submit authenticate on it alone), so it must not
+        be readable by anyone other than its recipient. Admin actions key on `id`."""
+        return {
+            "id": self.id,
+            "process_instance_id": self.process_instance_id,
+            "task_guid": self.task_guid,
+            "email": self.email,
+            "status": self.status,
+            "attempts": self.attempts,
+            "last_error": self.last_error,
+            "created_at_in_seconds": self.created_at_in_seconds,
+            "updated_at_in_seconds": self.updated_at_in_seconds,
+            "notified_at_in_seconds": self.notified_at_in_seconds,
+            "expires_at_in_seconds": self.expires_at_in_seconds,
         }
 
     def __repr__(self) -> str:

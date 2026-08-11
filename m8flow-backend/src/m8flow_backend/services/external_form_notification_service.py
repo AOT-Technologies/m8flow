@@ -20,6 +20,7 @@ from spiffworkflow_backend.models.db import db
 
 from m8flow_backend.config import notification_max_attempts
 from m8flow_backend.config import notification_sweep_grace_seconds
+from m8flow_backend.models.external_form_request import LAST_ERROR_MAX_LENGTH
 from m8flow_backend.models.external_form_request import ExternalFormRequestModel
 from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
 
@@ -49,12 +50,91 @@ SMTP_SECRET_KEYS = {
     "ssl": "NATS_SMTP_SSL",
 }
 
+# The minimum needed to send at all; resolve_smtp_settings() returns None without both.
+REQUIRED_SMTP_SECRET_KEYS = (SMTP_SECRET_KEYS["host"], SMTP_SECRET_KEYS["from_email"])
+OPTIONAL_SMTP_SECRET_KEYS = tuple(
+    key for key in SMTP_SECRET_KEYS.values() if key not in REQUIRED_SMTP_SECRET_KEYS
+)
+
+# Display metadata for the "configure external form email" form in the UI. Shaped like
+# the connector config fields the frontend already renders (see
+# routes/connectors_controller.ConnectorConfigField) so one component covers both, and
+# kept here so the NATS_SMTP_* key names have exactly one definition in the codebase.
+SMTP_CONFIG_FIELDS: list[dict[str, Any]] = [
+    {
+        "id": "host",
+        "secretKey": SMTP_SECRET_KEYS["host"],
+        "label": "SMTP Host",
+        "type": "text",
+        "required": True,
+        "helpText": "Hostname of the SMTP server used to email external form links.",
+    },
+    {
+        "id": "from_email",
+        "secretKey": SMTP_SECRET_KEYS["from_email"],
+        "label": "From Email",
+        "type": "text",
+        "required": True,
+        "format": "email",
+        "helpText": "Address recipients see as the sender.",
+    },
+    {
+        "id": "port",
+        "secretKey": SMTP_SECRET_KEYS["port"],
+        "label": "Port",
+        "type": "text",
+        "required": False,
+        "format": "port",
+        "helpText": "Defaults to 587 when unset.",
+    },
+    {
+        "id": "username",
+        "secretKey": SMTP_SECRET_KEYS["username"],
+        "label": "Username",
+        "type": "text",
+        "required": False,
+        "helpText": "Leave blank for servers that accept unauthenticated relay.",
+    },
+    {
+        "id": "password",
+        "secretKey": SMTP_SECRET_KEYS["password"],
+        "label": "Password",
+        "type": "password",
+        "required": False,
+    },
+    {
+        "id": "starttls",
+        "secretKey": SMTP_SECRET_KEYS["starttls"],
+        "label": "Use STARTTLS",
+        "type": "text",
+        "required": False,
+        "helpText": "Set to true to upgrade the connection after connecting (typically port 587).",
+    },
+    {
+        "id": "ssl",
+        "secretKey": SMTP_SECRET_KEYS["ssl"],
+        "label": "Use implicit TLS (SSL)",
+        "type": "text",
+        "required": False,
+        "helpText": "Set to true for implicit TLS (typically port 465). Takes precedence over STARTTLS.",
+    },
+]
+
 _TRUTHY = {"1", "true", "yes", "on"}
 
 
 def _is_truthy(value: str | None) -> bool:
     """Lenient boolean for tenant-set SMTP flags (true/1/yes/on, case-insensitive)."""
     return (value or "").strip().lower() in _TRUTHY
+
+
+def _truncate_error(message: Any) -> str | None:
+    """Fit a failure reason into last_error. SMTP rejections are routinely longer than
+    the column, and an oversized value would fail the INSERT on strict backends."""
+    text = str(message or "").strip()
+    if not text:
+        return None
+    return text[:LAST_ERROR_MAX_LENGTH]
 
 
 class ExternalFormNotificationService:
@@ -82,6 +162,8 @@ class ExternalFormNotificationService:
                 notified_at_in_seconds=now,
                 attempts=ExternalFormRequestModel.attempts + 1,
                 updated_at_in_seconds=now,
+                # Clear any prior diagnosis; it describes an attempt that is now superseded.
+                last_error=None,
             )
             .execution_options(synchronize_session=False)
         )
@@ -103,6 +185,7 @@ class ExternalFormNotificationService:
                 status=ExternalFormRequestStatus.failed.value,
                 notified_at_in_seconds=None,
                 updated_at_in_seconds=now,
+                last_error=_truncate_error(error_message),
             )
             .execution_options(synchronize_session=False)
         )
@@ -198,6 +281,79 @@ class ExternalFormNotificationService:
         return value or None
 
     @classmethod
+    def _read_secret_for_tenant(cls, key: str, tenant_id: str | None) -> str | None:
+        """Read a secret, scoping to `tenant_id` explicitly when one is supplied.
+
+        Super-admin requests are exempt from the tenant-scoping query listener (see
+        tenant_scoping_patch._tenant_scope_queries), so the ambient scoping the plain
+        `_read_tenant_secret` relies on does not apply to them. Without an explicit filter
+        a super admin would read some other tenant's NATS_SMTP_HOST and be told the tenant
+        they are looking at is configured. Callers with no explicit tenant keep the
+        ambient-scoped path."""
+        if tenant_id is None:
+            return cls._read_tenant_secret(key)
+
+        from spiffworkflow_backend.models.secret_model import SecretModel
+        from spiffworkflow_backend.services.secret_service import SecretService
+
+        secret = SecretModel.query.filter(
+            SecretModel.key == key, SecretModel.m8f_tenant_id == tenant_id
+        ).first()
+        if secret is None:
+            return None
+        try:
+            value = SecretService._decrypt(secret.value)
+        except Exception as exc:
+            LOGGER.warning("external-form-notify: could not decrypt a tenant secret (%s)", type(exc).__name__)
+            return None
+        value = (value or "").strip()
+        return value or None
+
+    @classmethod
+    def _present_smtp_secret_keys(cls, tenant_id: str | None = None) -> set[str]:
+        """Which NATS_SMTP_* keys the tenant has rows for. Presence only, no decryption,
+        so it stays a single query."""
+        from spiffworkflow_backend.models.secret_model import SecretModel
+
+        query = SecretModel.query.filter(SecretModel.key.in_(list(SMTP_SECRET_KEYS.values())))
+        if tenant_id is not None:
+            query = query.filter(SecretModel.m8f_tenant_id == tenant_id)
+        return {row.key for row in query.all()}
+
+    @classmethod
+    def smtp_readiness(cls, tenant_id: str | None = None) -> dict[str, Any]:
+        """Whether the tenant can send, and why not when it cannot.
+
+        Separates a key that was never set from one whose row exists but does not resolve
+        to a usable value (blank, or undecryptable because the backend encryption key
+        changed). Both block sending but need completely different fixes, so the reason an
+        admin reads must not collapse them into "missing"."""
+        missing: list[str] = []
+        unreadable: list[str] = []
+        present = cls._present_smtp_secret_keys(tenant_id)
+        for key in REQUIRED_SMTP_SECRET_KEYS:
+            if cls._read_secret_for_tenant(key, tenant_id):
+                continue
+            (unreadable if key in present else missing).append(key)
+
+        if unreadable:
+            reason = (
+                "SMTP secrets exist but could not be read (blank value, or the backend"
+                " encryption key changed): " + ", ".join(unreadable)
+            )
+        elif missing:
+            reason = "SMTP is not configured for this tenant. Missing required secrets: " + ", ".join(missing)
+        else:
+            reason = None
+        return {
+            "missing": missing,
+            "unreadable": unreadable,
+            "unusable": missing + unreadable,
+            "reason": reason,
+            "ok": reason is None,
+        }
+
+    @classmethod
     def resolve_smtp_settings(cls) -> dict[str, Any] | None:
         """Per-tenant SMTP config from the recipient tenant's encrypted secrets.
 
@@ -223,6 +379,147 @@ class ExternalFormNotificationService:
             "starttls": _is_truthy(cls._read_tenant_secret(SMTP_SECRET_KEYS["starttls"])),
             "ssl": _is_truthy(cls._read_tenant_secret(SMTP_SECRET_KEYS["ssl"])),
         }
+
+    @classmethod
+    def missing_required_smtp_keys(cls, tenant_id: str | None = None) -> list[str]:
+        """Required NATS_SMTP_* keys the tenant has not usably configured — absent, blank,
+        or undecryptable, i.e. exactly what makes resolve_smtp_settings() return None."""
+        return cls.smtp_readiness(tenant_id)["unusable"]
+
+    @classmethod
+    def smtp_configuration_status(cls, tenant_id: str | None = None) -> dict[str, Any]:
+        """Whether the tenant can send external-form emails, and which secret keys it
+        still needs. Returns key *names* only — never a secret value."""
+        readiness = cls.smtp_readiness(tenant_id)
+        unusable = readiness["unusable"]
+        # Optional keys are presence-checked only: decrypting them here would cost a
+        # round-trip each just to render a "Configured" chip.
+        present_keys = cls._present_smtp_secret_keys(tenant_id)
+        configured_keys = sorted(key for key in present_keys if key not in unusable)
+        return {
+            "configured": readiness["ok"],
+            "required_keys": list(REQUIRED_SMTP_SECRET_KEYS),
+            "optional_keys": list(OPTIONAL_SMTP_SECRET_KEYS),
+            "missing_required_keys": unusable,
+            "unreadable_keys": readiness["unreadable"],
+            "reason": readiness["reason"],
+            "configured_keys": configured_keys,
+            "fields": SMTP_CONFIG_FIELDS,
+        }
+
+    @classmethod
+    def mark_smtp_unconfigured(cls, request_ids: list[int], reason: str) -> int:
+        """Park requests that cannot be emailed because the tenant has no SMTP secrets.
+
+        'smtp_unconfigured' is outside CLAIMABLE_STATUSES, so the sweep stops considering
+        these rows entirely — this is what ends the indefinite retry loop. The status
+        guard mirrors release_failed(): a row the recipient just submitted, or one another
+        worker already claimed, is left alone."""
+        if not request_ids:
+            return 0
+        now = int(time.time())
+        result = db.session.execute(
+            sa_update(ExternalFormRequestModel)
+            .where(
+                ExternalFormRequestModel.id.in_(request_ids),
+                ExternalFormRequestModel.notified_at_in_seconds.is_(None),
+                ExternalFormRequestModel.status.in_(CLAIMABLE_STATUSES),
+            )
+            .values(
+                status=ExternalFormRequestStatus.smtp_unconfigured.value,
+                updated_at_in_seconds=now,
+                last_error=_truncate_error(reason),
+            )
+            .execution_options(synchronize_session=False)
+        )
+        db.session.commit()
+        return result.rowcount
+
+    @classmethod
+    def revive_smtp_unconfigured(cls, request_ids: list[int] | None = None) -> int:
+        """Return parked requests to the retry queue for the active tenant.
+
+        Called automatically once the tenant's SMTP secrets appear, and by the admin
+        resend action. attempts is reset because the parked attempts were never real
+        delivery attempts — they burned no SMTP connection."""
+        now = int(time.time())
+        statement = (
+            sa_update(ExternalFormRequestModel)
+            .where(
+                ExternalFormRequestModel.status == ExternalFormRequestStatus.smtp_unconfigured.value,
+            )
+            .values(
+                status=ExternalFormRequestStatus.pending.value,
+                notified_at_in_seconds=None,
+                attempts=0,
+                updated_at_in_seconds=now,
+                last_error=None,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        if request_ids is not None:
+            if not request_ids:
+                return 0
+            statement = statement.where(ExternalFormRequestModel.id.in_(request_ids))
+        result = db.session.execute(statement)
+        db.session.commit()
+        return result.rowcount
+
+    # Statuses an admin may resend from: parked for missing SMTP, or failed with the
+    # claim released (notified_at cleared). A 'failed' row that still has notified_at set
+    # is a failed workflow *resume*, not a failed send — re-emailing it is wrong.
+    RESENDABLE_STATUSES = (
+        ExternalFormRequestStatus.smtp_unconfigured.value,
+        ExternalFormRequestStatus.failed.value,
+        ExternalFormRequestStatus.pending.value,
+    )
+
+    @classmethod
+    def requeue(cls, request_id: int, tenant_id: str | None = None) -> bool:
+        """Admin resend: put one request back at the front of the retry queue.
+
+        True when the row moved. False when it is not in a resendable state (already
+        submitted/completed/superseded/expired, or a failed resume rather than a failed
+        send), which the caller reports as a conflict.
+
+        `tenant_id` pins the update to one tenant. Pass it whenever the caller is not
+        covered by the tenant-scoping listener — notably super-admin requests, which the
+        listener exempts, and where a bare numeric id would otherwise reach any tenant."""
+        now = int(time.time())
+        statement = (
+            sa_update(ExternalFormRequestModel)
+            .where(
+                ExternalFormRequestModel.id == request_id,
+                ExternalFormRequestModel.status.in_(cls.RESENDABLE_STATUSES),
+                ExternalFormRequestModel.notified_at_in_seconds.is_(None),
+            )
+            .values(
+                status=ExternalFormRequestStatus.pending.value,
+                attempts=0,
+                updated_at_in_seconds=now,
+                last_error=None,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        if tenant_id is not None:
+            statement = statement.where(ExternalFormRequestModel.m8f_tenant_id == tenant_id)
+        result = db.session.execute(statement)
+        db.session.commit()
+        return result.rowcount == 1
+
+    @classmethod
+    def tenants_with_parked_requests(cls) -> list[str]:
+        """Tenant ids holding requests parked as smtp_unconfigured. Runs cross-tenant —
+        call without tenant context, like sweep_candidates()."""
+        rows = (
+            db.session.query(ExternalFormRequestModel.m8f_tenant_id)
+            .filter(
+                ExternalFormRequestModel.status == ExternalFormRequestStatus.smtp_unconfigured.value
+            )
+            .distinct()
+            .all()
+        )
+        return [row.m8f_tenant_id for row in rows]
 
     @staticmethod
     def send_email(settings: dict[str, Any], to_email: str, subject: str, text_body: str, html_body: str) -> None:
@@ -261,10 +558,21 @@ class ExternalFormNotificationService:
             return "skipped:unknown_reference"
         smtp_settings = cls.resolve_smtp_settings()
         if smtp_settings is None:
-            LOGGER.warning(
-                "external-form-notify: tenant %s has no SMTP secrets configured; leaving request id=%s pending",
+            # Retrying cannot help until an admin adds the secrets, so park the row in a
+            # terminal status rather than leaving it pending for the sweep to re-pick
+            # forever. revive_smtp_unconfigured() brings it back once SMTP is configured.
+            readiness = cls.smtp_readiness()
+            reason = readiness["reason"] or "SMTP configuration could not be resolved for this tenant."
+            cls.mark_smtp_unconfigured([row.id], reason)
+            LOGGER.error(
+                "external-form-notify: cannot send for tenant=%s; parking request id=%s"
+                " instance=%s task=%s recipient_user_id=%s as smtp_unconfigured. %s",
                 row.m8f_tenant_id,
                 row.id,
+                row.process_instance_id,
+                row.task_guid,
+                row.recipient_user_id,
+                reason,
             )
             return "skipped:smtp_unconfigured"
         now = int(time.time())

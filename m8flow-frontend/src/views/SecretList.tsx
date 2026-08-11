@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
+  Alert,
   Box,
   Button,
   Dialog,
@@ -28,6 +29,10 @@ import { PermissionsToCheck } from '../interfaces';
 import { usePermissionFetcher } from '../hooks/PermissionService';
 import UserService from '../services/UserService';
 import { useGlobalTenant } from '../contexts/GlobalTenantContext';
+import {
+  getSmtpStatus,
+  type SmtpStatus,
+} from '../services/ExternalFormNotificationService';
 
 export default function SecretList() {
   const [searchParams] = useSearchParams();
@@ -36,6 +41,9 @@ export default function SecretList() {
   const [secrets, setSecrets] = useState([]);
   const [pagination, setPagination] = useState(null);
   const [secretToDelete, setSecretToDelete] = useState<any>(null);
+  // Null until the SMTP status resolves; stays null if the call fails or the user
+  // lacks permission, in which case no banner is shown at all.
+  const [smtpStatus, setSmtpStatus] = useState<SmtpStatus | null>(null);
   const { t } = useTranslation();
 
   const isSuperAdmin = UserService.isSuperAdmin();
@@ -85,6 +93,29 @@ export default function SecretList() {
     targetUris.secretListPath,
     fetchSecrets,
   ]);
+
+  // External form notification emails silently do nothing until the tenant's NATS_SMTP_*
+  // secrets exist, and nothing on this page named those keys. Surface the gap here, where
+  // the fix lives. A failure leaves the banner hidden — that covers a 403 for a user who
+  // cannot read the status, and the 400 a super admin gets before choosing a tenant.
+  //
+  // Depends on selectedTenantId: the answer is per-tenant, and the secrets table below
+  // already re-fetches on switch, so the banner must not keep the previous verdict.
+  useEffect(() => {
+    let cancelled = false;
+    const tenantId = isSuperAdmin ? selectedTenantId : null;
+    setSmtpStatus(null);
+    getSmtpStatus(tenantId)
+      .then((result) => {
+        if (!cancelled) {
+          setSmtpStatus(result);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isSuperAdmin, selectedTenantId]);
 
   const reloadSecrets = (_result: any) => {
     window.location.reload();
@@ -146,6 +177,10 @@ export default function SecretList() {
   };
 
   const SecretsDisplayArea = () => {
+    // Still loading: render nothing rather than flashing "no secrets to display".
+    if (!pagination) {
+      return null;
+    }
     const { page, perPage } = getPageInfoFromSearchParams(searchParams);
     let displayText = null;
     if (secrets?.length > 0) {
@@ -163,9 +198,69 @@ export default function SecretList() {
     return displayText;
   };
 
-  if (pagination) {
+  const externalFormEmailBanner = () => {
+    if (!smtpStatus) {
+      return null;
+    }
+    const keys = smtpStatus.configured
+      ? smtpStatus.required_keys
+      : smtpStatus.missing_required_keys;
+    // "These keys are missing" is wrong when the secret exists but cannot be decrypted —
+    // adding it again would not help. Show the backend's specific reason instead.
+    const unreadable = smtpStatus.unreadable_keys ?? [];
+    const headline =
+      unreadable.length > 0 && smtpStatus.reason
+        ? smtpStatus.reason
+        : (smtpStatus.configured
+            ? t('external_form_smtp_configured_hint')
+            : t('external_form_smtp_missing_hint'));
+    return (
+      <Alert
+        severity={smtpStatus.configured ? 'info' : 'warning'}
+        sx={{ mb: 2 }}
+        data-testid={
+          smtpStatus.configured
+            ? 'external-form-smtp-configured'
+            : 'external-form-smtp-not-configured'
+        }
+        action={
+          <Can I="POST" a={targetUris.secretListPath} ability={ability}>
+            <Button
+              size="small"
+              component={Link}
+              to="/configuration/external-form-email"
+            >
+              {t('external_form_email_configure_action')}
+            </Button>
+          </Can>
+        }
+      >
+        {headline}{' '}
+        {keys.map((key) => (
+          <Box
+            key={key}
+            component="code"
+            sx={{
+              fontFamily: 'monospace',
+              bgcolor: 'action.hover',
+              px: 0.5,
+              mr: 0.5,
+              borderRadius: 0.5,
+            }}
+          >
+            {key}
+          </Box>
+        ))}
+      </Alert>
+    );
+  };
+
+  // The banner must render even before the secrets call resolves — a tenant with no
+  // secrets at all is exactly the case that needs the warning most.
+  if (permissionsLoaded) {
     return (
       <div>
+        {externalFormEmailBanner()}
         <Box
           sx={{
             display: 'flex',

@@ -1,10 +1,12 @@
 import { is } from 'bpmn-js/lib/util/ModelUtil';
 import { SpiffExtensionTextInput } from 'bpmn-js-spiffworkflow/app/spiffworkflow/extensions/propertiesPanel/SpiffExtensionTextInput';
+import { ExternalFormSmtpStatus } from './ExternalFormSmtpStatus';
 
 const LOW_PRIORITY = 500;
 
 export const EXTERNAL_FORM_URL_PROP = 'externalFormUrl';
 export const EXTERNAL_FORM_GROUP_ID = 'external_form_properties';
+export const EXTERNAL_FORM_SMTP_STATUS_ENTRY_ID = 'external_form_smtp_status';
 
 // Upstream "Web Form (with Json Schemas)" group; we slot ours right after it.
 const JSON_SCHEMA_GROUP_ID = 'user_task_properties';
@@ -60,8 +62,15 @@ function createExternalFormGroup(element, translate, moddle, commandStack) {
         name: EXTERNAL_FORM_URL_PROP,
         label: translate('External form URL'),
         description: translate(
-          'When set, this user task uses an external form. Assignees are emailed a secure link to this URL. Clear the field to disable.'
+          'When set, this user task uses an external form. Assignees are emailed a secure link to this URL. Clear the field to disable. Sending requires the NATS_SMTP_HOST and NATS_SMTP_FROM_EMAIL tenant secrets under Configuration > Secrets.'
         ),
+      },
+      {
+        // Live warning when this tenant cannot actually send the email the field above
+        // promises. Renders nothing when SMTP is configured or the status is unknown.
+        id: EXTERNAL_FORM_SMTP_STATUS_ENTRY_ID,
+        element,
+        component: ExternalFormSmtpStatus,
       },
     ],
   };

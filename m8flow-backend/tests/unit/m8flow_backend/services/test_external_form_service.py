@@ -141,6 +141,16 @@ class TestCreateRequestsForTask:
         (row,) = _create_requests(tenant, alice, expires_at_in_seconds=1234567890)
         assert row.expires_at_in_seconds == 1234567890
 
+    def test_does_not_duplicate_a_request_parked_for_missing_smtp(self, app, tenant, alice):
+        """A parked request is still this recipient's live request. Re-issuing one on every
+        processor.save() would pile up rows that all get emailed once SMTP is configured."""
+        (first,) = _create_requests(tenant, alice)
+        first.status = ExternalFormRequestStatus.smtp_unconfigured.value
+        db.session.commit()
+
+        assert _create_requests(tenant, alice) == []
+        assert ExternalFormRequestModel.query.filter_by(recipient_user_id=alice.id).count() == 1
+
 
 class TestGetFormContext:
     def test_unknown_reference_raises_404(self, app):
@@ -186,6 +196,94 @@ class TestSubmit:
         with pytest.raises(ApiError) as exc_info:
             ExternalFormService.submit("nope", {"a": 1})
         assert exc_info.value.status_code == 404
+
+    def test_link_for_an_undelivered_request_is_refused(self, app, tenant, alice, monkeypatch):
+        """A request parked for missing SMTP was never emailed, so nobody can legitimately
+        hold its link — presenting one means reference_id was read out of the database."""
+        (row,) = _create_requests(tenant, alice)
+        row.status = ExternalFormRequestStatus.smtp_unconfigured.value
+        db.session.commit()
+        task_submit_mock = Mock(return_value={})
+        monkeypatch.setattr(
+            "spiffworkflow_backend.routes.process_api_blueprint._task_submit_shared", task_submit_mock
+        )
+
+        with pytest.raises(ApiError) as exc_info:
+            ExternalFormService.submit(row.reference_id, {"answer": 42})
+
+        assert exc_info.value.status_code == 409
+        assert exc_info.value.error_code == "reference_not_active"
+        # The workflow must not advance, and the row must stay parked for the resend path.
+        task_submit_mock.assert_not_called()
+        assert row.status == ExternalFormRequestStatus.smtp_unconfigured.value
+        assert row.form_submission_data is None
+
+    def test_public_refusal_message_does_not_disclose_mail_configuration(
+        self, app, tenant, alice
+    ):
+        """/external-forms/{ref}/submit is unauthenticated, so the refusal must not tell a
+        caller anything about the tenant's SMTP setup."""
+        (row,) = _create_requests(tenant, alice)
+        row.status = ExternalFormRequestStatus.smtp_unconfigured.value
+        db.session.commit()
+
+        with pytest.raises(ApiError) as exc_info:
+            ExternalFormService.submit(row.reference_id, {})
+
+        message = exc_info.value.message.lower()
+        for leak in ("smtp", "nats_smtp", "secret", "unconfigured", "email"):
+            assert leak not in message
+
+    def test_revived_request_becomes_submittable_again(self, app, tenant, alice, monkeypatch):
+        """Refusing a parked link costs nothing legitimate: configuring SMTP revives the
+        row to pending, and the normal flow resumes."""
+        from m8flow_backend.services.external_form_notification_service import (
+            ExternalFormNotificationService,
+        )
+
+        (row,) = _create_requests(tenant, alice)
+        row.status = ExternalFormRequestStatus.smtp_unconfigured.value
+        db.session.commit()
+        monkeypatch.setattr(
+            "spiffworkflow_backend.routes.process_api_blueprint._task_submit_shared",
+            Mock(return_value={}),
+        )
+
+        assert ExternalFormNotificationService.revive_smtp_unconfigured() == 1
+
+        with app.test_request_context():
+            result = ExternalFormService.submit(row.reference_id, {"answer": 42})
+
+        assert result["status"] == ExternalFormRequestStatus.completed.value
+
+    def test_parked_sibling_is_superseded_when_another_recipient_submits(
+        self, app, tenant, alice, bob, monkeypatch
+    ):
+        """Otherwise configuring SMTP later would email a link for an already-done task."""
+        alice_row, bob_row = _create_requests(tenant, alice, bob)
+        bob_row.status = ExternalFormRequestStatus.smtp_unconfigured.value
+        db.session.commit()
+        monkeypatch.setattr(
+            "spiffworkflow_backend.routes.process_api_blueprint._task_submit_shared",
+            Mock(return_value={}),
+        )
+
+        with app.test_request_context():
+            ExternalFormService.submit(alice_row.reference_id, {"answer": 42})
+
+        assert bob_row.status == ExternalFormRequestStatus.superseded.value
+
+    def test_parked_request_still_expires_on_ttl(self, app, tenant, alice):
+        """A parked row must stay reachable by the TTL check, or it would sit outside every
+        terminal state forever."""
+        (row,) = _create_requests(tenant, alice, expires_at_in_seconds=int(time.time()) - 10)
+        row.status = ExternalFormRequestStatus.smtp_unconfigured.value
+        db.session.commit()
+
+        context = ExternalFormService.get_form_context(row.reference_id)
+
+        assert context["status"] == ExternalFormRequestStatus.expired.value
+        assert context["actionable"] is False
 
     def test_happy_path_completes_task_as_recipient_and_supersedes_siblings(
         self, app, tenant, alice, bob, monkeypatch

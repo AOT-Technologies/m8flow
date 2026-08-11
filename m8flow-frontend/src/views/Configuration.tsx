@@ -6,6 +6,7 @@ import { Can } from '@casl/react';
 import SecretList from './SecretList';
 import SecretNew from './SecretNew';
 import SecretShow from './SecretShow';
+import ExternalFormEmailConfigure from './ExternalFormEmailConfigure';
 import { useUriListForPermissions } from '../hooks/UriListForPermissions';
 import { PermissionsToCheck } from '../interfaces';
 import { usePermissionFetcher } from '../hooks/PermissionService';
@@ -90,6 +91,13 @@ export default function Configuration({ extensionUxElements }: OwnProps) {
         <Route path="/" element={<SecretList />} />
         <Route path="secrets" element={<SecretList />} />
         <Route path="secrets/new" element={<SecretNew />} />
+        {/* M8Flow: guided NATS_SMTP_* entry, reached from the Secrets page banner.
+            Deliberately not a tab — it is a task, not a section. Declared before the
+            :secret_identifier route so it is not swallowed as a secret key. */}
+        <Route
+          path="external-form-email"
+          element={<ExternalFormEmailConfigure />}
+        />
         <Route path="secrets/:secret_identifier" element={<SecretShow />} />
         <Route
           path="extension/:page_identifier"

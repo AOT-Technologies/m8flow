@@ -27,6 +27,7 @@ for path in (extension_src, backend_src):
 
 from m8flow_backend.models.external_form_request import (  # noqa: E402
     ACTIONABLE_STATUSES,
+    OPEN_STATUSES,
     ExternalFormRequestModel,
     ExternalFormRequestStatus,
 )
@@ -133,6 +134,26 @@ class TestExternalFormRequestModel:
         assert ExternalFormRequestStatus.failed.value in ACTIONABLE_STATUSES
         assert ExternalFormRequestStatus.completed.value not in ACTIONABLE_STATUSES
         assert ExternalFormRequestStatus.superseded.value not in ACTIONABLE_STATUSES
+
+    def test_parked_request_is_open_but_not_actionable(self, app, tenant, recipient):
+        """A request parked for missing SMTP was never emailed, so its link must not be
+        submittable — but it is still the live request for its (task, recipient) pair."""
+        row = _make_request_row(tenant, recipient)
+        row.status = ExternalFormRequestStatus.smtp_unconfigured.value
+
+        assert row.is_actionable() is False
+        assert ExternalFormRequestStatus.smtp_unconfigured.value not in ACTIONABLE_STATUSES
+        assert ExternalFormRequestStatus.smtp_unconfigured.value in OPEN_STATUSES
+
+    def test_actionable_statuses_are_a_subset_of_open(self, app):
+        assert set(ACTIONABLE_STATUSES).issubset(set(OPEN_STATUSES))
+        for terminal in (
+            ExternalFormRequestStatus.submitted,
+            ExternalFormRequestStatus.completed,
+            ExternalFormRequestStatus.superseded,
+            ExternalFormRequestStatus.expired,
+        ):
+            assert terminal.value not in OPEN_STATUSES
 
     def test_form_submission_data_json_roundtrip(self, app, tenant, recipient):
         row = _make_request_row(tenant, recipient)

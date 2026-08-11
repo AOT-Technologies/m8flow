@@ -14,6 +14,9 @@ export const useM8flowUriListForPermissions = () => {
       connectorsGroupedPath: "/m8flow/connectors-grouped",
       m8flowMcpConnectionPath: "/m8flow/mcp-connection",
       m8flowNatsTokensPath: "/m8flow/nats-tokens",
+      m8flowExternalFormNotificationsPath: "/m8flow/external-form-notifications",
+      m8flowExternalFormSmtpStatusPath:
+        "/m8flow/external-form-notifications/smtp-status",
     };
   }, [spiffTargetUris]);
 

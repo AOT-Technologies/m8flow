@@ -6,8 +6,14 @@ vi.mock(
   () => ({ SpiffExtensionTextInput: function SpiffExtensionTextInputStub() {} }),
 );
 
+// Stub too: the real component imports preact hooks from the properties-panel bundle.
+vi.mock('./ExternalFormSmtpStatus', () => ({
+  ExternalFormSmtpStatus: function ExternalFormSmtpStatusStub() {},
+}));
+
 import ExternalFormPropertiesProvider, {
   EXTERNAL_FORM_GROUP_ID,
+  EXTERNAL_FORM_SMTP_STATUS_ENTRY_ID,
   EXTERNAL_FORM_URL_PROP,
 } from './ExternalFormPropertiesProvider';
 
@@ -55,8 +61,8 @@ describe('ExternalFormPropertiesProvider', () => {
     expect(group.id).toBe(EXTERNAL_FORM_GROUP_ID);
     expect(group.label).toBe('Web Form (External Form)');
 
-    expect(group.entries).toHaveLength(1);
-    const [urlEntry] = group.entries;
+    expect(group.entries).toHaveLength(2);
+    const [urlEntry, smtpEntry] = group.entries;
     expect(urlEntry.name).toBe(EXTERNAL_FORM_URL_PROP);
     expect(urlEntry.name).toBe('externalFormUrl');
     expect(urlEntry.id).toBe('extension_externalFormUrl');
@@ -64,6 +70,21 @@ describe('ExternalFormPropertiesProvider', () => {
     expect(urlEntry.moddle).toBe(moddle);
     expect(urlEntry.commandStack).toBe(commandStack);
     expect(typeof urlEntry.component).toBe('function');
+
+    // The SMTP warning sits directly under the URL field it qualifies.
+    expect(smtpEntry.id).toBe(EXTERNAL_FORM_SMTP_STATUS_ENTRY_ID);
+    expect(smtpEntry.element).toBe(element);
+    expect(typeof smtpEntry.component).toBe('function');
+  });
+
+  it('names the required SMTP secrets in the URL field description', () => {
+    const { provider } = instantiate();
+
+    const [group] = provider.getGroups(makeElement('bpmn:UserTask'))([]);
+    const [urlEntry] = group.entries;
+
+    expect(urlEntry.description).toContain('NATS_SMTP_HOST');
+    expect(urlEntry.description).toContain('NATS_SMTP_FROM_EMAIL');
   });
 
   it('does not add the group to non-user-task elements', () => {
