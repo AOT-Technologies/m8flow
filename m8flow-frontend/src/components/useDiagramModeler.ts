@@ -1,3 +1,12 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// SPDX-FileCopyrightText: Sartography and the SpiffArena contributors
+// SPDX-FileCopyrightText: 2026 AOT Technologies Inc.
+//
+// Derived from spiffworkflow-frontend/src/components/ReactDiagramEditor.tsx in SpiffArena
+// (https://github.com/sartography/spiff-arena), licensed LGPL-2.1-or-later.
+// AOT's modifications to this file are released under the same licence.
+// See LICENSES/LGPL-2.1-or-later.txt and NOTICE.
+
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import BpmnModeler from 'bpmn-js/lib/Modeler';
 import BpmnViewer from 'bpmn-js/lib/Viewer';

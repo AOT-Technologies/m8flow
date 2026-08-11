@@ -1,25 +1,22 @@
-import React from 'react';
-import { Button } from '@mui/material';
-import DownloadIcon from '@mui/icons-material/Download';
-
+/**
+ * m8flow override: the "Import Process Model" button is intentionally hidden.
+ *
+ * Upstream renders this button in ProcessModelNew. m8flow does not expose model
+ * import through the UI, so this override renders nothing.
+ *
+ * The props signature is kept so upstream's call site
+ * (`<ProcessModelImportButton onClick={...} />`) still type-checks. The prop is
+ * accepted and ignored.
+ *
+ * To restore the button, delete this file - the override resolver will fall
+ * back to upstream's implementation automatically.
+ */
 interface ProcessModelImportButtonProps {
   onClick: () => void;
 }
 
-export function ProcessModelImportButton({
-  onClick,
-}: ProcessModelImportButtonProps) {
-  return (
-    <>
-      {/* <Button
-        variant="contained"
-        color="primary"
-        startIcon={<DownloadIcon />}
-        onClick={onClick}
-        data-testid="process-model-import-button"
-      >
-        Import Process Model
-      </Button> */}
-    </>
-  );
+export function ProcessModelImportButton(
+  _props: ProcessModelImportButtonProps,
+) {
+  return null;
 }
