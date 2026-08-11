@@ -5,7 +5,7 @@ assert against the broker's real response shape rather than against the document
 Three things that capture settled, each locked below:
 
 - ``state.num_deleted`` is absent unless deletions have occurred
-- ``consumer_detail[].push_bound`` is null for pull consumers
+- ``consumer_detail[].push_bound`` is absent for pull consumers, not present as null
 - KV buckets appear as ordinary ``KV_``-prefixed streams
 
 Tests cover:
@@ -173,8 +173,10 @@ class TestNormalizeJsz:
         result = NatsMonitoringService.normalize_jsz(jsz)
         assert all(s["numDeleted"] == 0 for s in result["streams"])
 
-    def test_tolerates_a_null_push_bound(self, jsz):
-        """push_bound is null for pull consumers, which is all m8flow uses."""
+    def test_tolerates_a_missing_push_bound(self, jsz):
+        """push_bound is absent from the fixture for pull consumers, which is all m8flow
+        uses, rather than present-and-null -- and it is not read by normalize_jsz at all, so
+        this just locks that its absence stays harmless if that ever changes."""
         NatsMonitoringService.normalize_jsz(jsz)  # must not raise
 
     def test_survives_an_empty_response(self):

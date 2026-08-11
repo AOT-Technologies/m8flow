@@ -10,7 +10,8 @@ running server (see ``tests/unit/m8flow_backend/fixtures/nats_jsz.json``), not f
 documentation. Three things that response settled:
 
 - ``state.num_deleted`` is absent unless messages have actually been deleted.
-- ``consumer_detail[].push_bound`` is null for pull consumers, which is all m8flow uses.
+- ``consumer_detail[].push_bound`` is absent (not present as null) for pull consumers,
+  which is all m8flow uses.
 - KV buckets surface as ordinary streams named ``KV_<bucket>``, so the dedup bucket would
   otherwise appear in the dashboard as a mysterious extra stream.
 """
