@@ -22,8 +22,11 @@ def _truthy(value: str | None) -> bool:
 VAULT_ADDR = (os.getenv("M8FLOW_VAULT_INTERNAL_ADDR") or "http://vault:8200").rstrip("/")
 MOUNT_POINT = (os.getenv("M8FLOW_VAULT_MOUNT_POINT") or "kv").strip().strip("/")
 PATH_PREFIX = (os.getenv("M8FLOW_VAULT_SECRET_PATH_PREFIX") or "m8flow").strip().strip("/")
-POLICY_NAME = (os.getenv("M8FLOW_VAULT_POLICY_NAME") or "m8flow").strip()
-APPROLE_NAME = (os.getenv("M8FLOW_VAULT_APPROLE_NAME") or "m8flow").strip()
+APPROLE_MOUNT_POINT = (os.getenv("M8FLOW_VAULT_APPROLE_MOUNT_POINT") or "approle").strip().strip("/")
+TENANT_POLICY_PREFIX = (os.getenv("M8FLOW_VAULT_TENANT_POLICY_PREFIX") or "m8flow-tenant-policy").strip()
+TENANT_ROLE_PREFIX = (os.getenv("M8FLOW_VAULT_TENANT_ROLE_PREFIX") or "m8flow-tenant-role").strip()
+BROKER_POLICY_NAME = (os.getenv("M8FLOW_VAULT_POLICY_NAME") or "m8flow").strip()
+BROKER_APPROLE_NAME = (os.getenv("M8FLOW_VAULT_APPROLE_NAME") or "m8flow").strip()
 DEMO_OVERWRITE = _truthy(os.getenv("M8FLOW_VAULT_DEMO_OVERWRITE"))
 WAIT_TIMEOUT_SECONDS = float(os.getenv("M8FLOW_VAULT_DEMO_WAIT_TIMEOUT_SECONDS") or "180")
 WAIT_INTERVAL_SECONDS = float(os.getenv("M8FLOW_VAULT_DEMO_WAIT_INTERVAL_SECONDS") or "2")
@@ -35,6 +38,7 @@ APPROLE_ENV_FILE = STATE_DIR / "m8flow-approle.env"
 RUNTIME_ENV_FILE = STATE_DIR / "runtime.env"
 VERIFICATION_FILE = STATE_DIR / "verification.json"
 SECRETS_FILE = Path(os.getenv("M8FLOW_VAULT_DEMO_SECRETS_FILE") or "/app/docker/vault/demo/secrets.yml")
+SECRETS_SAMPLE_FILE = Path("/app/docker/vault/demo/secrets.yml.sample")
 POLICY_TEMPLATE = Path(
     os.getenv("M8FLOW_VAULT_POLICY_TEMPLATE") or "/app/docker/vault/policies/m8flow-policy.hcl.tpl"
 )
@@ -77,6 +81,16 @@ def write_json_file(path: Path, payload: dict[str, Any], mode: int = 0o600) -> N
 
 def load_json_file(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def format_missing_secrets_file_message(path: Path) -> str:
+    message = f"Vault demo secrets file is missing: {path}"
+    if path.name == "secrets.yml":
+        message += (
+            f". Copy {SECRETS_SAMPLE_FILE} to {path} and edit the local values you want "
+            "seeded for the m8flow tenant."
+        )
+    return message
 
 
 def remove_generated_files() -> None:
@@ -275,13 +289,14 @@ def ensure_kv_v2_mount(root_token: str) -> None:
 def ensure_approle_auth(root_token: str) -> None:
     _status_code, payload, _body = vault_request("GET", "sys/auth", token=root_token, expected_statuses=(200,))
     auth_methods = payload or {}
-    if "approle/" in auth_methods:
+    mount_key = f"{APPROLE_MOUNT_POINT}/"
+    if mount_key in auth_methods:
         return
 
-    log("Enabling the AppRole auth method.")
+    log(f"Enabling the AppRole auth method at mount '{APPROLE_MOUNT_POINT}'.")
     vault_request(
         "POST",
-        "sys/auth/approle",
+        f"sys/auth/{parse.quote(APPROLE_MOUNT_POINT, safe='')}",
         token=root_token,
         payload={"type": "approle"},
         expected_statuses=(200, 204),
@@ -293,13 +308,17 @@ def render_policy() -> str:
         fail(f"Vault policy template is missing: {POLICY_TEMPLATE}")
 
     template = POLICY_TEMPLATE.read_text(encoding="utf-8")
-    return template.replace("__MOUNT_POINT__", MOUNT_POINT).replace("__PATH_PREFIX__", PATH_PREFIX)
+    return (
+        template.replace("__APPROLE_MOUNT_POINT__", APPROLE_MOUNT_POINT)
+        .replace("__TENANT_POLICY_PREFIX__", TENANT_POLICY_PREFIX)
+        .replace("__TENANT_ROLE_PREFIX__", TENANT_ROLE_PREFIX)
+    )
 
 
 def ensure_policy(root_token: str) -> None:
     vault_request(
         "PUT",
-        f"sys/policies/acl/{parse.quote(POLICY_NAME, safe='')}",
+        f"sys/policies/acl/{parse.quote(BROKER_POLICY_NAME, safe='')}",
         token=root_token,
         payload={"policy": render_policy()},
         expected_statuses=(200, 204),
@@ -307,17 +326,17 @@ def ensure_policy(root_token: str) -> None:
 
 
 def ensure_approle_role(root_token: str) -> None:
-    log(f"Creating or updating AppRole '{APPROLE_NAME}' with policy '{POLICY_NAME}'.")
+    log(f"Creating or updating broker AppRole '{BROKER_APPROLE_NAME}' with policy '{BROKER_POLICY_NAME}'.")
     vault_request(
         "POST",
-        f"auth/approle/role/{parse.quote(APPROLE_NAME, safe='')}",
+        f"auth/{parse.quote(APPROLE_MOUNT_POINT, safe='')}/role/{parse.quote(BROKER_APPROLE_NAME, safe='')}",
         token=root_token,
         payload={
             "bind_secret_id": True,
             "secret_id_num_uses": 0,
             "secret_id_ttl": 0,
             "token_num_uses": 0,
-            "token_policies": [POLICY_NAME],
+            "token_policies": [BROKER_POLICY_NAME],
             "token_ttl": "24h",
             "token_max_ttl": "720h",
         },
@@ -328,20 +347,20 @@ def ensure_approle_role(root_token: str) -> None:
 def read_role_id(root_token: str) -> str:
     _status_code, payload, _body = vault_request(
         "GET",
-        f"auth/approle/role/{parse.quote(APPROLE_NAME, safe='')}/role-id",
+        f"auth/{parse.quote(APPROLE_MOUNT_POINT, safe='')}/role/{parse.quote(BROKER_APPROLE_NAME, safe='')}/role-id",
         token=root_token,
         expected_statuses=(200,),
     )
     role_id = ((payload or {}).get("data") or {}).get("role_id")
     if not isinstance(role_id, str) or not role_id.strip():
-        fail(f"Vault AppRole '{APPROLE_NAME}' did not return a usable role_id.")
+        fail(f"Vault broker AppRole '{BROKER_APPROLE_NAME}' did not return a usable role_id.")
     return role_id.strip()
 
 
 def approle_login(role_id: str, secret_id: str) -> str:
     _status_code, payload, _body = vault_request(
         "POST",
-        "auth/approle/login",
+        f"auth/{parse.quote(APPROLE_MOUNT_POINT, safe='')}/login",
         payload={"role_id": role_id, "secret_id": secret_id},
         expected_statuses=(200,),
     )
@@ -354,14 +373,14 @@ def approle_login(role_id: str, secret_id: str) -> str:
 def generate_secret_id(root_token: str) -> str:
     _status_code, payload, _body = vault_request(
         "POST",
-        f"auth/approle/role/{parse.quote(APPROLE_NAME, safe='')}/secret-id",
+        f"auth/{parse.quote(APPROLE_MOUNT_POINT, safe='')}/role/{parse.quote(BROKER_APPROLE_NAME, safe='')}/secret-id",
         token=root_token,
         payload={},
         expected_statuses=(200,),
     )
     secret_id = ((payload or {}).get("data") or {}).get("secret_id")
     if not isinstance(secret_id, str) or not secret_id.strip():
-        fail(f"Vault AppRole '{APPROLE_NAME}' did not return a usable secret_id.")
+        fail(f"Vault broker AppRole '{BROKER_APPROLE_NAME}' did not return a usable secret_id.")
     return secret_id.strip()
 
 
@@ -371,12 +390,12 @@ def ensure_secret_id(root_token: str, role_id: str) -> str:
         if existing_secret_id:
             try:
                 approle_login(role_id, existing_secret_id)
-                log("Reusing the persisted AppRole secret_id.")
+                log("Reusing the persisted broker AppRole secret_id.")
                 return existing_secret_id
             except RuntimeError as exc:
-                log(f"Persisted AppRole secret_id is invalid; generating a fresh one. Detail: {exc}")
+                log(f"Persisted broker AppRole secret_id is invalid; generating a fresh one. Detail: {exc}")
 
-    log("Generating a persisted AppRole secret_id for development use.")
+    log("Generating a persisted broker AppRole secret_id for development use.")
     return generate_secret_id(root_token)
 
 
@@ -389,6 +408,9 @@ def write_runtime_files(role_id: str, secret_id: str) -> None:
             f"M8FLOW_VAULT_ADDR={VAULT_ADDR}\n"
             f"M8FLOW_VAULT_MOUNT_POINT={MOUNT_POINT}\n"
             f"M8FLOW_VAULT_SECRET_PATH_PREFIX={PATH_PREFIX}\n"
+            f"M8FLOW_VAULT_APPROLE_MOUNT_POINT={APPROLE_MOUNT_POINT}\n"
+            f"M8FLOW_VAULT_TENANT_POLICY_PREFIX={TENANT_POLICY_PREFIX}\n"
+            f"M8FLOW_VAULT_TENANT_ROLE_PREFIX={TENANT_ROLE_PREFIX}\n"
             f"M8FLOW_VAULT_ROLE_ID={role_id}\n"
             f"M8FLOW_VAULT_SECRET_ID={secret_id}\n"
         ),
@@ -399,6 +421,9 @@ def write_runtime_files(role_id: str, secret_id: str) -> None:
             f"M8FLOW_VAULT_ADDR={VAULT_ADDR}\n"
             f"M8FLOW_VAULT_MOUNT_POINT={MOUNT_POINT}\n"
             f"M8FLOW_VAULT_SECRET_PATH_PREFIX={PATH_PREFIX}\n"
+            f"M8FLOW_VAULT_APPROLE_MOUNT_POINT={APPROLE_MOUNT_POINT}\n"
+            f"M8FLOW_VAULT_TENANT_POLICY_PREFIX={TENANT_POLICY_PREFIX}\n"
+            f"M8FLOW_VAULT_TENANT_ROLE_PREFIX={TENANT_ROLE_PREFIX}\n"
             f"M8FLOW_VAULT_ROLE_ID_FILE={ROLE_ID_FILE.as_posix()}\n"
             f"M8FLOW_VAULT_SECRET_ID_FILE={SECRET_ID_FILE.as_posix()}\n"
         ),
@@ -408,7 +433,7 @@ def write_runtime_files(role_id: str, secret_id: str) -> None:
 
 def load_seeded_secrets() -> list[SeededSecret]:
     if not SECRETS_FILE.exists():
-        fail(f"Vault demo secrets file is missing: {SECRETS_FILE}")
+        fail(format_missing_secrets_file_message(SECRETS_FILE))
 
     raw_payload = yaml.safe_load(SECRETS_FILE.read_text(encoding="utf-8")) or {}
     if not isinstance(raw_payload, dict):
@@ -507,19 +532,28 @@ def seed_demo_secrets(root_token: str, secrets: list[SeededSecret]) -> tuple[int
 def write_verification_report(
     *,
     verified_secret: SeededSecret,
+    broker_direct_read_blocked: bool,
+    tenant_policy_name: str,
+    tenant_role_name: str,
     written: int,
     skipped: int,
 ) -> None:
     write_json_file(
         VERIFICATION_FILE,
         {
-            "approle_name": APPROLE_NAME,
+            "approle_mount_point": APPROLE_MOUNT_POINT,
+            "approle_name": BROKER_APPROLE_NAME,
+            "broker_approle_name": BROKER_APPROLE_NAME,
+            "broker_direct_read_blocked": broker_direct_read_blocked,
+            "broker_policy_name": BROKER_POLICY_NAME,
             "mount_point": MOUNT_POINT,
             "overwrite": DEMO_OVERWRITE,
             "path_prefix": PATH_PREFIX,
-            "policy_name": POLICY_NAME,
+            "policy_name": BROKER_POLICY_NAME,
             "seeded_secret_count": written + skipped,
             "skipped": skipped,
+            "tenant_policy_name": tenant_policy_name,
+            "tenant_role_name": tenant_role_name,
             "verified_secret_tenant_id": verified_secret.tenant_id,
             "verified_secret_tenant_reference": verified_secret.tenant_reference,
             "verified_secret_path": verified_secret.logical_path,
@@ -537,14 +571,7 @@ def verify_bootstrap(role_id: str, secret_id: str, secrets: list[SeededSecret], 
     if status.get("initialized") is not True or status.get("sealed") is not False:
         fail(f"Vault demo verification failed because Vault is not ready. Status: {status}")
 
-    app_token = approle_login(role_id, secret_id)
     verified_secret = secrets[0]
-    resolved_value = read_secret_value(verified_secret, app_token)
-    if resolved_value != verified_secret.value:
-        fail(
-            f"Vault demo verification failed for '{verified_secret.logical_path}'. "
-            "The AppRole-authenticated read did not match the seeded value."
-        )
 
     backend_src = Path("/app/m8flow-backend/src")
     backend_src_str = str(backend_src)
@@ -554,27 +581,58 @@ def verify_bootstrap(role_id: str, secret_id: str, secrets: list[SeededSecret], 
     os.environ["M8FLOW_VAULT_ADDR"] = VAULT_ADDR
     os.environ["M8FLOW_VAULT_MOUNT_POINT"] = MOUNT_POINT
     os.environ["M8FLOW_VAULT_SECRET_PATH_PREFIX"] = PATH_PREFIX
+    os.environ["M8FLOW_VAULT_APPROLE_MOUNT_POINT"] = APPROLE_MOUNT_POINT
+    os.environ["M8FLOW_VAULT_TENANT_POLICY_PREFIX"] = TENANT_POLICY_PREFIX
+    os.environ["M8FLOW_VAULT_TENANT_ROLE_PREFIX"] = TENANT_ROLE_PREFIX
     os.environ["M8FLOW_VAULT_ROLE_ID_FILE"] = ROLE_ID_FILE.as_posix()
     os.environ["M8FLOW_VAULT_SECRET_ID_FILE"] = SECRET_ID_FILE.as_posix()
     os.environ.pop("M8FLOW_VAULT_TOKEN", None)
     os.environ.pop("VAULT_TOKEN", None)
 
-    from m8flow_backend.services.vault_client import VaultClient, VaultSettings
+    from m8flow_backend.services.tenant_scoped_vault_client_provider import TenantScopedVaultClientProvider
+    from m8flow_backend.services.tenant_vault_provisioning_service import TenantVaultProvisioningService
+    from m8flow_backend.services.vault_client import VaultClient, VaultClientError, VaultSettings
 
-    backend_client = VaultClient(settings=VaultSettings.from_env())
-    if not backend_client.check_availability():
+    broker_client = VaultClient(settings=VaultSettings.from_env())
+    if not broker_client.check_availability():
         fail("Vault demo verification failed because the backend Vault client wrapper reported Vault unavailable.")
 
-    wrapper_value = backend_client.retrieve_secret(
-        f"tenants/{verified_secret.tenant_id}/secrets/{verified_secret.secret_name}"
+    provisioned_identity = TenantVaultProvisioningService(vault_client=broker_client).provision_tenant_identity(
+        verified_secret.tenant_id
     )
+    logical_path = f"tenants/{verified_secret.tenant_id}/secrets/{verified_secret.secret_name}"
+
+    broker_direct_read_blocked = False
+    try:
+        broker_value = broker_client.retrieve_secret(logical_path)
+    except VaultClientError:
+        broker_direct_read_blocked = True
+    else:
+        if broker_value is None:
+            broker_direct_read_blocked = True
+        else:
+            fail(
+                f"Vault demo verification failed because the broker AppRole "
+                f"'{BROKER_APPROLE_NAME}' can still read '{logical_path}' directly."
+            )
+
+    tenant_client = TenantScopedVaultClientProvider(broker_vault_client=broker_client).for_tenant(
+        verified_secret.tenant_id
+    )
+    wrapper_value = tenant_client.vault_client.retrieve_secret(logical_path)
     if wrapper_value != verified_secret.value:
         fail(
-            f"Vault demo verification failed for backend wrapper path "
-            f"'tenants/{verified_secret.tenant_id}/secrets/{verified_secret.secret_name}'."
+            f"Vault demo verification failed for tenant-scoped backend wrapper path '{logical_path}'."
         )
 
-    write_verification_report(verified_secret=verified_secret, written=written, skipped=skipped)
+    write_verification_report(
+        verified_secret=verified_secret,
+        broker_direct_read_blocked=broker_direct_read_blocked,
+        tenant_policy_name=provisioned_identity.policy_name,
+        tenant_role_name=provisioned_identity.role_name,
+        written=written,
+        skipped=skipped,
+    )
 
 
 def main() -> int:
@@ -606,7 +664,7 @@ def main() -> int:
 
         log(
             "Bootstrap complete "
-            f"(mount={MOUNT_POINT}, policy={POLICY_NAME}, approle={APPROLE_NAME}, "
+            f"(mount={MOUNT_POINT}, broker_policy={BROKER_POLICY_NAME}, broker_approle={BROKER_APPROLE_NAME}, "
             f"written={written}, skipped={skipped}, overwrite={DEMO_OVERWRITE})."
         )
         return 0

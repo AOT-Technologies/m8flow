@@ -53,9 +53,19 @@ class TestCreateRealm:
 
     @patch("m8flow_backend.routes.keycloak_controller.TenantService.name_exists")
     @patch("m8flow_backend.routes.keycloak_controller.AuthorizationService.user_has_permission")
+    @patch("m8flow_backend.routes.keycloak_controller.provision_tenant_vault_identity_if_enabled")
     @patch("m8flow_backend.routes.keycloak_controller.create_tenant_if_not_exists")
     @patch("m8flow_backend.routes.keycloak_controller.create_organization")
-    def test_create_realm_success(self, mock_create_organization, mock_create_tenant, mock_auth, mock_name_exists, app, mock_user):
+    def test_create_realm_success(
+        self,
+        mock_create_organization,
+        mock_create_tenant,
+        mock_provision_tenant_vault,
+        mock_auth,
+        mock_name_exists,
+        app,
+        mock_user,
+    ):
         mock_auth.return_value = True
         mock_name_exists.return_value = False
         mock_create_organization.return_value = {
@@ -85,15 +95,18 @@ class TestCreateRealm:
                 name="Tenant B",
                 slug="tenant-b",
             )
+            mock_provision_tenant_vault.assert_called_once_with("org-uuid-tenant-b-123")
 
     @patch("m8flow_backend.routes.keycloak_controller.TenantService.name_exists")
     @patch("m8flow_backend.routes.keycloak_controller.AuthorizationService.user_has_permission")
+    @patch("m8flow_backend.routes.keycloak_controller.provision_tenant_vault_identity_if_enabled")
     @patch("m8flow_backend.routes.keycloak_controller.create_tenant_if_not_exists")
     @patch("m8flow_backend.routes.keycloak_controller.create_organization")
     def test_create_realm_accepts_slug_and_name_fields(
         self,
         mock_create_organization,
         mock_create_tenant,
+        mock_provision_tenant_vault,
         mock_auth,
         mock_name_exists,
         app,
@@ -119,6 +132,57 @@ class TestCreateRealm:
                 name="Tenant C",
                 slug="tenant-c",
             )
+            mock_provision_tenant_vault.assert_called_once_with("org-uuid-tenant-c-456")
+
+    @patch("m8flow_backend.routes.keycloak_controller.TenantService.name_exists")
+    @patch("m8flow_backend.routes.keycloak_controller.AuthorizationService.user_has_permission")
+    @patch("m8flow_backend.routes.keycloak_controller.delete_organization")
+    @patch("m8flow_backend.routes.keycloak_controller.get_master_admin_token")
+    @patch("m8flow_backend.routes.keycloak_controller.provision_tenant_vault_identity_if_enabled")
+    @patch("m8flow_backend.routes.keycloak_controller.create_tenant_if_not_exists")
+    @patch("m8flow_backend.routes.keycloak_controller.create_organization")
+    def test_create_realm_rolls_back_when_vault_provisioning_fails(
+        self,
+        mock_create_organization,
+        mock_create_tenant,
+        mock_provision_tenant_vault,
+        mock_get_master_admin_token,
+        mock_delete_organization,
+        mock_auth,
+        mock_name_exists,
+        app,
+        mock_user,
+    ):
+        from m8flow_backend.services.tenant_vault_provisioning_service import TenantVaultProvisioningError
+
+        mock_auth.return_value = True
+        mock_name_exists.return_value = False
+        mock_get_master_admin_token.return_value = "master-token"
+        mock_create_organization.return_value = {
+            "id": "org-uuid-tenant-d-789",
+            "alias": "tenant-d",
+            "name": "Tenant D",
+            "enabled": True,
+        }
+        mock_provision_tenant_vault.side_effect = TenantVaultProvisioningError("vault policy write failed")
+
+        tenant_row = MagicMock()
+        tenant_row.id = "org-uuid-tenant-d-789"
+
+        with app.test_request_context():
+            g.user = mock_user
+            with patch("m8flow_backend.routes.keycloak_controller.db") as mock_db:
+                mock_db.session.get.return_value = tenant_row
+                result, status = create_realm({"realm_id": "tenant-d", "display_name": "Tenant D"})
+
+        assert status == 502
+        assert "Vault provisioning" in result["detail"]
+        mock_db.session.delete.assert_called_once_with(tenant_row)
+        mock_db.session.commit.assert_called_once()
+        mock_delete_organization.assert_called_once_with(
+            "org-uuid-tenant-d-789",
+            admin_token="master-token",
+        )
 
     @patch("m8flow_backend.routes.keycloak_controller.AuthorizationService.user_has_permission")
     def test_create_realm_missing_realm_id(self, mock_auth, app, mock_user):

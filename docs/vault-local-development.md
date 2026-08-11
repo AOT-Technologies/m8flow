@@ -7,17 +7,20 @@ This repository supports two local Vault workflows:
 
 Both workflows are local-only. They use a single-node HTTP Vault with no TLS, no HA, no audit device, and no production-grade unseal strategy.
 
+The local dev setup now has two distinct Vault identity layers:
+
+- a shared broker/control-plane AppRole created by `vault-demo` so backend and Celery containers can start in Vault mode and mint tenant-scoped Vault clients in local Docker;
+- per-tenant Vault policies and AppRoles created by M8Flow itself when tenants are provisioned, so Vault becomes the tenant-isolation backstop.
+
 ## Architecture
 
 - Base Vault service: `vault`
 - Demo bootstrap service: `vault-demo`
-- Demo metadata seeder service: `vault-demo-seed`
 - Vault image: `hashicorp/vault:1.18.5`
 - Vault server config: [docker/vault/config/vault.hcl](../docker/vault/config/vault.hcl)
 - Policy template: [docker/vault/policies/m8flow-policy.hcl.tpl](../docker/vault/policies/m8flow-policy.hcl.tpl)
 - Demo bootstrap script: [docker/vault/demo/bootstrap_vault_demo.py](../docker/vault/demo/bootstrap_vault_demo.py)
-- Demo metadata seeder script: [docker/vault/demo/seed_vault_demo_metadata.py](../docker/vault/demo/seed_vault_demo_metadata.py)
-- Demo seed file: [docker/vault/demo/secrets.yml](../docker/vault/demo/secrets.yml)
+- Demo seed template: [docker/vault/demo/secrets.yml.sample](../docker/vault/demo/secrets.yml.sample)
 - Runtime verification script: [docker/vault/demo/verify_backend_vault_demo.py](../docker/vault/demo/verify_backend_vault_demo.py)
 - Persistent Vault data volume: `m8flow_vault-data`
 - Persistent demo state volume: `m8flow_vault-demo-state`
@@ -36,6 +39,17 @@ The `vault-demo` profile stores generated local-only files inside the named demo
 - `verification.json`
 
 Because those files live in a Docker volume instead of the repository, they are not committed and do not need `.gitignore` entries.
+
+## Per-Tenant Vault Identities
+
+When `M8FLOW_VAULT_ENABLED=true`, M8Flow now provisions Vault-side tenant identities automatically:
+
+- the create-tenant API creates a tenant-scoped ACL policy and AppRole after the Keycloak organization and local tenant row are created;
+- the shared-realm bootstrap provisions the default `m8flow` tenant's Vault identity after reconciling the canonical tenant UUID;
+- the generated tenant policy is limited to that tenant's secret subtree, following the logical path convention `kv/m8flow/tenants/{tenant_id}/secrets/{secret_name}`;
+- repeated startup/bootstrap passes reconcile the role and policy without rotating the existing tenant AppRole `secret_id`.
+
+The configured runtime token or AppRole is now a broker/control-plane identity. M8Flow uses it to create, reconcile, and resolve tenant-specific AppRoles, then performs tenant secret CRUD through tenant-scoped Vault clients derived from those AppRoles. If that broker identity can still read tenant KV data directly, the local setup is misconfigured.
 
 ## Start Only The Base Vault Service
 
@@ -75,10 +89,30 @@ Those helpers keep the base `vault` profile manual. They enable the KV v2 mount 
 
 ## Start The Demo Bootstrap Workflow
 
-Use this when you want an end-to-end local Vault demo with AppRole credentials and seeded secrets:
+Use this when you want an end-to-end local Vault demo with broker AppRole credentials and seeded secrets:
 
 ```bash
 docker compose -f docker/m8flow-docker-compose.yml --profile vault --profile vault-demo up -d --build
+```
+
+Before the first run, create your local seed file:
+
+```bash
+cp docker/vault/demo/secrets.yml.sample docker/vault/demo/secrets.yml
+```
+
+```powershell
+Copy-Item docker/vault/demo/secrets.yml.sample docker/vault/demo/secrets.yml
+```
+
+Then edit `docker/vault/demo/secrets.yml` and define the secrets you want seeded for the shared-realm `m8flow` tenant:
+
+```yaml
+tenants:
+  m8flow:
+    secrets:
+      API_TOKEN: your-local-demo-token
+      SMTP_PASSWORD: your-local-demo-password
 ```
 
 What the `vault-demo` profile does on each run:
@@ -88,17 +122,18 @@ What the `vault-demo` profile does on each run:
 - auto-unseals Vault using the persisted development unseal key;
 - enables KV v2 at `kv` if it is missing;
 - enables AppRole auth if it is missing;
-- creates or updates the `m8flow` policy;
-- creates or updates the `m8flow` AppRole;
-- reuses the persisted AppRole `secret_id` when it is still valid, otherwise generates a new one;
-- writes `runtime.env` plus file-backed AppRole credentials into `/vault/demo`;
-- seeds [docker/vault/demo/secrets.yml](../docker/vault/demo/secrets.yml) under the shared-realm `m8flow` tenant alias;
+- creates or updates the shared broker `m8flow` policy;
+- creates or updates the shared broker `m8flow` AppRole;
+- reuses the persisted broker AppRole `secret_id` when it is still valid, otherwise generates a new one;
+- writes `runtime.env` plus file-backed broker AppRole credentials into `/vault/demo`;
+- seeds your local `docker/vault/demo/secrets.yml` file under the canonical tenant UUID that corresponds to the shared-realm `m8flow` organization alias;
 - skips existing seeded secrets by default;
 - overwrites seeded secrets only when `M8FLOW_VAULT_DEMO_OVERWRITE=true`;
-- starts `vault-demo-seed` after the backend is up so the seeded `m8flow` tenant resolves to its canonical local tenant UUID;
-- ensures the local shared-realm `admin` user and principal exist;
-- upserts `vault_metadata` rows as if `admin` created the seeded secrets for that tenant.
-- verifies AppRole access with both raw Vault login and the repo's backend `VaultClient`.
+- provisions the seeded tenant's Vault policy and AppRole through the broker identity;
+- verifies the broker identity cannot read the tenant secret directly;
+- verifies the repo's backend `VaultClient` can read the seeded secret only after switching into a tenant-scoped Vault client.
+
+That `m8flow` AppRole is the shared local broker identity. It is separate from the per-tenant AppRoles that M8Flow provisions when tenant creation/bootstrap runs.
 
 The backend, Celery worker, Celery Flower, and the optional NATS workers mount `/vault/demo` read-only. Their startup commands load `runtime.env` automatically when it exists so the demo profile can supply the Vault address plus file-backed AppRole credentials. `M8FLOW_VAULT_ENABLED` is still controlled by your local `.env`.
 
@@ -147,13 +182,7 @@ Check the bootstrap logs:
 docker compose -f docker/m8flow-docker-compose.yml logs vault-demo
 ```
 
-Check the metadata-seeding logs:
-
-```bash
-docker compose -f docker/m8flow-docker-compose.yml logs vault-demo-seed
-```
-
-Verify seeded-secret retrieval plus `vault_metadata` ownership from the backend container:
+Verify seeded-secret retrieval from the backend container:
 
 ```bash
 docker compose -f docker/m8flow-docker-compose.yml exec m8flow-backend \
@@ -177,14 +206,16 @@ docker compose -f docker/m8flow-docker-compose.yml exec m8flow-backend \
 Re-run only the demo bootstrap services to confirm idempotency:
 
 ```bash
-docker compose -f docker/m8flow-docker-compose.yml up -d vault-demo vault-demo-seed
+docker compose -f docker/m8flow-docker-compose.yml up -d vault-demo
 ```
+
+Create another tenant after the stack is running to exercise the new per-tenant provisioning path. With Vault mode enabled, the tenant-create API now returns an error and rolls the tenant back if Vault policy/AppRole provisioning fails.
 
 If you want the seed file to overwrite existing secrets on the next run:
 
 ```bash
 export M8FLOW_VAULT_DEMO_OVERWRITE=true
-docker compose -f docker/m8flow-docker-compose.yml up -d vault-demo vault-demo-seed
+docker compose -f docker/m8flow-docker-compose.yml up -d vault-demo
 ```
 
 ## Restart Behavior And Persistence
@@ -196,7 +227,7 @@ Examples:
 ```bash
 docker compose -f docker/m8flow-docker-compose.yml stop vault
 docker compose -f docker/m8flow-docker-compose.yml start vault
-docker compose -f docker/m8flow-docker-compose.yml up -d vault-demo vault-demo-seed
+docker compose -f docker/m8flow-docker-compose.yml up -d vault-demo
 ```
 
 After a plain Vault restart:
@@ -219,8 +250,8 @@ After removing those volumes, the next `vault-demo` run starts from a brand-new 
 ## Troubleshooting
 
 - `vault-demo` fails saying the init file is missing while Vault is already initialized: the Vault data volume and the demo state volume are out of sync. Remove both and start again.
-- `vault-demo-seed` fails after Vault bootstraps successfully: inspect `docker compose logs vault-demo-seed` and confirm the backend finished migrations plus the shared-realm `m8flow` organization still exists.
 - Backend or Celery logs mention `http://localhost:8200`: the container-side Vault address is wrong. Containerized services must use `http://vault:8200`.
+- `vault-demo` says the secrets file is missing: copy `docker/vault/demo/secrets.yml.sample` to `docker/vault/demo/secrets.yml` and edit the values locally.
 - Seeded secrets did not change after you edited `secrets.yml`: this is expected unless `M8FLOW_VAULT_DEMO_OVERWRITE=true`.
-- `verify_backend_vault_demo.py` fails inside a container: inspect `docker compose logs vault-demo` and `docker compose logs vault-demo-seed` first, then check `/vault/demo/runtime.env` and `/vault/demo/verification.json`.
+- `verify_backend_vault_demo.py` fails inside a container: inspect `docker compose logs vault-demo` first, then check `/vault/demo/runtime.env` and `/vault/demo/verification.json`. A healthy report should show `broker_direct_read_blocked: true`.
 - You want a manual Vault without auto-seeding: run only the `vault` profile and skip `vault-demo`.

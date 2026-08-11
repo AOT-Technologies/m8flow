@@ -64,30 +64,43 @@ Examples:
 
 ## Vault
 
-- `M8FLOW_VAULT_ENABLED` (optional): When `true`, the backend switches completely to Vault-backed secrets plus the `vault_metadata` table. Legacy database secrets are not read or written in this mode.
+- `M8FLOW_VAULT_ENABLED` (optional): When `true`, the backend switches completely to Vault-backed secrets. Legacy database secrets are not read or written in this mode.
 - `M8FLOW_VAULT_ADDR` / `VAULT_ADDR` (optional): Base URL of the Vault API, for example `https://vault.example.com`.
-- `M8FLOW_VAULT_TOKEN` / `VAULT_TOKEN` (optional): Token used by backend Vault operations. Use this for manual token-based runtime auth.
+- `M8FLOW_VAULT_TOKEN` / `VAULT_TOKEN` (optional): Broker/control-plane token used by backend Vault operations. Use this for manual token-based runtime auth.
 - `M8FLOW_VAULT_TOKEN_FILE` / `VAULT_TOKEN_FILE` (optional): File containing a Vault token. Useful when the runtime token is mounted into the container instead of injected directly as an env var.
-- `M8FLOW_VAULT_ROLE_ID` / `VAULT_ROLE_ID` (optional): Vault AppRole role ID used by backend Vault operations.
+- `M8FLOW_VAULT_ROLE_ID` / `VAULT_ROLE_ID` (optional): Broker/control-plane Vault AppRole role ID used by backend Vault operations.
 - `M8FLOW_VAULT_ROLE_ID_FILE` / `VAULT_ROLE_ID_FILE` (optional): File containing the Vault AppRole role ID.
-- `M8FLOW_VAULT_SECRET_ID` / `VAULT_SECRET_ID` (optional): Vault AppRole secret ID used by backend Vault operations.
+- `M8FLOW_VAULT_SECRET_ID` / `VAULT_SECRET_ID` (optional): Broker/control-plane Vault AppRole secret ID used by backend Vault operations.
 - `M8FLOW_VAULT_SECRET_ID_FILE` / `VAULT_SECRET_ID_FILE` (optional): File containing the Vault AppRole secret ID.
 - `M8FLOW_VAULT_NAMESPACE` / `VAULT_NAMESPACE` (optional): Vault Enterprise namespace when your deployment uses namespaced auth and KV mounts.
 - `M8FLOW_VAULT_MOUNT_POINT` (optional): KV v2 mount used for M8Flow-managed secrets. Default: `kv`.
 - `M8FLOW_VAULT_SECRET_PATH_PREFIX` (optional): Prefix within the KV mount used as the root namespace for derived secret paths such as `m8flow/tenants/{tenant_id}/secrets/{secret_name}`. Default: `m8flow`.
+- `M8FLOW_VAULT_APPROLE_MOUNT_POINT` (optional): Vault auth mount used when M8Flow provisions per-tenant AppRoles. Default: `approle`.
+- `M8FLOW_VAULT_TENANT_POLICY_PREFIX` (optional): Prefix used for auto-created per-tenant Vault ACL policies. Effective policy names look like `{prefix}-{tenant_id}` after Vault-safe normalization. Default: `m8flow-tenant-policy`.
+- `M8FLOW_VAULT_TENANT_ROLE_PREFIX` (optional): Prefix used for auto-created per-tenant Vault AppRoles. Effective role names look like `{prefix}-{tenant_id}` after Vault-safe normalization. Default: `m8flow-tenant-role`.
 - `M8FLOW_VAULT_TIMEOUT_SECONDS` (optional): Request timeout for Vault API calls. Default: `5`.
 - `M8FLOW_VAULT_SKIP_VERIFY` / `VAULT_SKIP_VERIFY` (optional): Set to `true` only when TLS certificate verification must be disabled for a non-production environment.
 - `M8FLOW_VAULT_CACERT` / `VAULT_CACERT` (optional): CA bundle path used to verify Vault TLS certificates. When set, it takes precedence over `*_SKIP_VERIFY`.
 - `M8FLOW_VAULT_PORT` (optional, Docker Compose local dev): Host port that publishes the local Vault API and built-in UI. Default: `8200`.
-- `M8FLOW_VAULT_DEMO_OVERWRITE` (optional, Docker Compose local dev): When `true`, the `vault-demo` bootstrap overwrites secrets defined in `docker/vault/demo/secrets.yml`. Default: `false`.
+- `M8FLOW_VAULT_DEMO_OVERWRITE` (optional, Docker Compose local dev): When `true`, the `vault-demo` bootstrap overwrites secrets defined in your local `docker/vault/demo/secrets.yml` file. Start from `docker/vault/demo/secrets.yml.sample`. Default: `false`.
+
+Per-tenant Vault identity notes:
+
+- When `M8FLOW_VAULT_ENABLED=true`, tenant creation now provisions Vault-side isolation artifacts automatically.
+- The create-tenant API writes a tenant-scoped ACL policy limited to `kv/data|metadata/<prefix>/tenants/{tenant_id}/secrets/...` and creates a matching AppRole for that tenant.
+- Shared-realm bootstrap also provisions the default `m8flow` tenant's Vault identity after it reconciles the canonical tenant UUID.
+- The configured runtime token or runtime AppRole is now a broker/control-plane identity. M8Flow uses it to manage tenant policies/AppRoles and to mint tenant-scoped Vault clients for tenant secret CRUD.
+- A healthy configuration does not let that broker identity read tenant secret values directly; only the derived tenant-scoped client should have data-plane access inside `tenants/{tenant_id}/secrets/...`.
+- On a brand-new tenant, M8Flow generates an initial AppRole `secret_id`. On later startup/bootstrap passes, the role and policy are reconciled idempotently without rotating that `secret_id`.
 
 Local Docker Compose notes:
 
 - Browser and host-side CLI URL: `http://127.0.0.1:${M8FLOW_VAULT_PORT:-8200}`
 - Backend and Celery in Compose use the service DNS name: `http://vault:8200`
 - Set `M8FLOW_VAULT_ENABLED=true` in your local `.env` when you want the Compose backend/Celery services to use Vault-backed secrets. The `vault-demo` profile supplies connection and AppRole runtime files, but it does not force the enable flag.
+- The local `vault-demo` profile still creates one shared development broker policy/AppRole (`m8flow`) for backend/Celery startup. That identity is separate from the per-tenant AppRoles created by M8Flow when tenants are provisioned, and it should not read tenant secrets directly.
 - The `vault-demo` profile writes AppRole credentials, `runtime.env`, and verification artifacts into the named Docker volume mounted at `/vault/demo`.
-- The follow-up `vault-demo-seed` service uses that same state volume after backend startup to mirror `vault_metadata` for the seeded shared-realm `m8flow` tenant as the local `admin` user.
+- The `vault-demo` bootstrap resolves the shared-realm `m8flow` organization to its canonical tenant UUID before it writes seeded secrets, so there is no post-start metadata mirror phase.
 - Do not point containerized backend/Celery startup at `http://localhost:8200`; inside those containers, `localhost` is the container itself.
 - See [vault-local-development.md](./vault-local-development.md) for init, unseal, policy bootstrap, and reset steps.
 

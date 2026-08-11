@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 from urllib.parse import quote
 
 try:
@@ -106,6 +106,41 @@ class VaultSettings:
             return "approle"
         return None
 
+    def with_approle_credentials(self, *, role_id: str, secret_id: str) -> "VaultSettings":
+        normalized_role_id = str(role_id or "").strip()
+        normalized_secret_id = str(secret_id or "").strip()
+        if not normalized_role_id:
+            raise ValueError("role_id must not be empty.")
+        if not normalized_secret_id:
+            raise ValueError("secret_id must not be empty.")
+
+        return VaultSettings(
+            addr=self.addr,
+            token=None,
+            role_id=normalized_role_id,
+            secret_id=normalized_secret_id,
+            namespace=self.namespace,
+            mount_point=self.mount_point,
+            secret_path_prefix=self.secret_path_prefix,
+            verify=self.verify,
+            timeout_seconds=self.timeout_seconds,
+        )
+
+
+@dataclass(frozen=True)
+class VaultAppRoleSecretId:
+    """Generated AppRole secret ID payload returned by Vault."""
+
+    secret_id: str
+    secret_id_accessor: str | None = None
+
+
+@dataclass(frozen=True)
+class VaultAppRole:
+    """AppRole configuration as returned by Vault."""
+
+    data: dict[str, Any]
+
 
 def _is_connection_error(exc: Exception) -> bool:
     if requests is not None and isinstance(exc, requests.exceptions.RequestException):
@@ -188,6 +223,15 @@ def _read_mount_metadata(client: Any, mount_point: str) -> dict[str, Any]:
     return metadata
 
 
+def _is_mount_metadata_forbidden_error(exc: Exception) -> bool:
+    forbidden_type = getattr(hvac_exceptions, "Forbidden", None) if hvac_exceptions else None
+    if forbidden_type and isinstance(exc, forbidden_type):
+        return True
+
+    message = str(exc).lower()
+    return "sys/internal/ui/mounts" in message and "403" in message
+
+
 class VaultClient:
     """Thin wrapper around Vault KV v2 secret operations."""
 
@@ -209,6 +253,134 @@ class VaultClient:
         return self._settings
 
     def store_secret(self, secret_name: str, secret_value: str) -> dict[str, Any]:
+        return self.store_secret_document(secret_name, {_SECRET_VALUE_FIELD: secret_value})
+
+    def create_or_update_policy(self, policy_name: str, policy: str) -> None:
+        client = self._get_client()
+        normalized_policy_name = self._require_non_empty(policy_name, "policy_name")
+        normalized_policy = self._require_non_empty(policy, "policy")
+
+        try:
+            client.sys.create_or_update_policy(
+                name=normalized_policy_name,
+                policy=normalized_policy,
+            )
+        except Exception as exc:
+            raise self._resource_error("create or update", "policy", normalized_policy_name, exc) from exc
+
+    def create_or_update_approle(
+        self,
+        role_name: str,
+        *,
+        token_policies: list[str],
+        mount_point: str = "approle",
+        token_no_default_policy: bool = True,
+    ) -> dict[str, Any]:
+        client = self._get_client()
+        normalized_role_name = self._require_non_empty(role_name, "role_name")
+        normalized_mount_point = self._require_non_empty(mount_point, "mount_point")
+        normalized_policies = [policy.strip() for policy in token_policies if isinstance(policy, str) and policy.strip()]
+        if not normalized_policies:
+            raise ValueError("token_policies must contain at least one non-empty policy name.")
+
+        try:
+            response = client.auth.approle.create_or_update_approle(
+                role_name=normalized_role_name,
+                mount_point=normalized_mount_point,
+                token_policies=normalized_policies,
+                bind_secret_id=True,
+                token_no_default_policy=token_no_default_policy,
+            )
+        except Exception as exc:
+            raise self._resource_error("create or update", "AppRole", normalized_role_name, exc) from exc
+
+        return response or {}
+
+    def read_approle(
+        self,
+        role_name: str,
+        *,
+        mount_point: str = "approle",
+    ) -> VaultAppRole | None:
+        client = self._get_client()
+        normalized_role_name = self._require_non_empty(role_name, "role_name")
+        normalized_mount_point = self._require_non_empty(mount_point, "mount_point")
+
+        try:
+            response = client.auth.approle.read_role(
+                role_name=normalized_role_name,
+                mount_point=normalized_mount_point,
+            )
+        except Exception as exc:
+            if self._is_invalid_path_error(exc):
+                return None
+            raise self._resource_error("read", "AppRole", normalized_role_name, exc) from exc
+
+        payload = (response or {}).get("data") or {}
+        if not isinstance(payload, dict) or not payload:
+            return None
+
+        return VaultAppRole(data=dict(payload))
+
+    def read_approle_role_id(self, role_name: str, *, mount_point: str = "approle") -> str:
+        client = self._get_client()
+        normalized_role_name = self._require_non_empty(role_name, "role_name")
+        normalized_mount_point = self._require_non_empty(mount_point, "mount_point")
+
+        try:
+            response = client.auth.approle.read_role_id(
+                role_name=normalized_role_name,
+                mount_point=normalized_mount_point,
+            )
+        except Exception as exc:
+            raise self._resource_error("read", "AppRole role ID for", normalized_role_name, exc) from exc
+
+        role_id = (((response or {}).get("data") or {}).get("role_id") or "").strip()
+        if not role_id:
+            raise VaultOperationError(
+                f"Vault AppRole '{normalized_role_name}' did not return a role_id."
+            )
+        return role_id
+
+    def generate_approle_secret_id(
+        self,
+        role_name: str,
+        *,
+        mount_point: str = "approle",
+    ) -> VaultAppRoleSecretId:
+        client = self._get_client()
+        normalized_role_name = self._require_non_empty(role_name, "role_name")
+        normalized_mount_point = self._require_non_empty(mount_point, "mount_point")
+
+        try:
+            response = client.auth.approle.generate_secret_id(
+                role_name=normalized_role_name,
+                mount_point=normalized_mount_point,
+            )
+        except Exception as exc:
+            raise self._resource_error("generate", "AppRole secret ID for", normalized_role_name, exc) from exc
+
+        payload = (response or {}).get("data") or {}
+        secret_id = str(payload.get("secret_id") or "").strip()
+        if not secret_id:
+            raise VaultOperationError(
+                f"Vault AppRole '{normalized_role_name}' did not return a secret_id."
+            )
+
+        secret_id_accessor_raw = payload.get("secret_id_accessor")
+        secret_id_accessor = (
+            str(secret_id_accessor_raw).strip() if secret_id_accessor_raw is not None else None
+        ) or None
+        return VaultAppRoleSecretId(
+            secret_id=secret_id,
+            secret_id_accessor=secret_id_accessor,
+        )
+
+    def store_secret_document(
+        self,
+        secret_name: str,
+        secret_data: Mapping[str, Any],
+    ) -> dict[str, Any]:
         client = self._get_client()
         path = self._secret_path(secret_name)
 
@@ -216,7 +388,7 @@ class VaultClient:
             response = client.secrets.kv.v2.create_or_update_secret(
                 mount_point=self._settings.mount_point,
                 path=path,
-                secret={_SECRET_VALUE_FIELD: secret_value},
+                secret=dict(secret_data),
             )
         except Exception as exc:
             raise self._operation_error("store", secret_name, exc) from exc
@@ -224,6 +396,16 @@ class VaultClient:
         return response or {}
 
     def retrieve_secret(self, secret_name: str) -> str | None:
+        payload = self.retrieve_secret_document(secret_name)
+        if payload is None:
+            return None
+
+        value = payload.get(_SECRET_VALUE_FIELD)
+        if value is None:
+            return None
+        return value if isinstance(value, str) else str(value)
+
+    def retrieve_secret_document(self, secret_name: str) -> dict[str, Any] | None:
         client = self._get_client()
         path = self._secret_path(secret_name)
 
@@ -238,10 +420,28 @@ class VaultClient:
             raise self._operation_error("retrieve", secret_name, exc) from exc
 
         payload = (((response or {}).get("data") or {}).get("data") or {})
-        value = payload.get(_SECRET_VALUE_FIELD)
-        if value is None:
+        if not isinstance(payload, dict) or not payload:
             return None
-        return value if isinstance(value, str) else str(value)
+        return dict(payload)
+
+    def list_secret_names(self, secret_name_prefix: str) -> list[str]:
+        client = self._get_client()
+        path = self._secret_path(secret_name_prefix)
+
+        try:
+            response = client.secrets.kv.v2.list_secrets(
+                mount_point=self._settings.mount_point,
+                path=path,
+            )
+        except Exception as exc:
+            if self._is_invalid_path_error(exc):
+                return []
+            raise self._operation_error("list", secret_name_prefix, exc) from exc
+
+        payload = ((response or {}).get("data") or {}).get("keys") or []
+        if not isinstance(payload, list):
+            return []
+        return [entry for entry in payload if isinstance(entry, str)]
 
     def delete_secret(self, secret_name: str) -> bool:
         client = self._get_client()
@@ -294,9 +494,25 @@ class VaultClient:
 
         try:
             mount_metadata = _read_mount_metadata(client, self._settings.mount_point)
-        except VaultClientError:
+        except VaultClientError as exc:
+            if _is_mount_metadata_forbidden_error(exc):
+                logger.info(
+                    "vault_client: skipping mount metadata validation for mount '%s' because "
+                    "the configured Vault identity is intentionally least-privilege: %s",
+                    self._settings.mount_point,
+                    exc,
+                )
+                return
             raise
         except Exception as exc:
+            if _is_mount_metadata_forbidden_error(exc):
+                logger.info(
+                    "vault_client: skipping mount metadata validation for mount '%s' because "
+                    "the configured Vault identity is intentionally least-privilege: %s",
+                    self._settings.mount_point,
+                    exc,
+                )
+                return
             raise self._operation_error("validate mount access for", "vault", exc) from exc
 
         options = mount_metadata.get("options") or {}
@@ -330,12 +546,30 @@ class VaultClient:
         return normalized_secret_name
 
     def _operation_error(self, action: str, secret_name: str, exc: Exception) -> VaultClientError:
+        return self._resource_error(action, "secret", secret_name, exc)
+
+    def _resource_error(
+        self,
+        action: str,
+        resource_type: str,
+        resource_name: str,
+        exc: Exception,
+    ) -> VaultClientError:
         if self._is_connection_error(exc):
             return VaultConnectionError(
-                f"Could not {action} secret '{secret_name}' because Vault is unreachable: {exc}"
+                f"Could not {action} {resource_type} '{resource_name}' because Vault is unreachable: {exc}"
             )
 
-        return VaultOperationError(f"Could not {action} secret '{secret_name}' in Vault: {exc}")
+        return VaultOperationError(
+            f"Could not {action} {resource_type} '{resource_name}' in Vault: {exc}"
+        )
+
+    @staticmethod
+    def _require_non_empty(value: str, field_name: str) -> str:
+        normalized_value = (value or "").strip()
+        if not normalized_value:
+            raise ValueError(f"{field_name} must not be empty.")
+        return normalized_value
 
     @staticmethod
     def _is_invalid_path_error(exc: Exception) -> bool:

@@ -182,6 +182,9 @@ services:
       M8FLOW_VAULT_INTERNAL_ADDR: "http://vault:8200"
       M8FLOW_VAULT_MOUNT_POINT: "${M8FLOW_VAULT_MOUNT_POINT:-kv}"
       M8FLOW_VAULT_SECRET_PATH_PREFIX: "${M8FLOW_VAULT_SECRET_PATH_PREFIX:-m8flow}"
+      M8FLOW_VAULT_APPROLE_MOUNT_POINT: "${M8FLOW_VAULT_APPROLE_MOUNT_POINT:-approle}"
+      M8FLOW_VAULT_TENANT_POLICY_PREFIX: "${M8FLOW_VAULT_TENANT_POLICY_PREFIX:-m8flow-tenant-policy}"
+      M8FLOW_VAULT_TENANT_ROLE_PREFIX: "${M8FLOW_VAULT_TENANT_ROLE_PREFIX:-m8flow-tenant-role}"
       M8FLOW_VAULT_POLICY_NAME: "${M8FLOW_VAULT_POLICY_NAME:-m8flow}"
       M8FLOW_VAULT_APPROLE_NAME: "${M8FLOW_VAULT_APPROLE_NAME:-m8flow}"
       M8FLOW_VAULT_DEMO_STATE_DIR: "/vault/demo"
@@ -204,45 +207,6 @@ services:
         condition: service_healthy
       keycloak-master-admin-init:
         condition: service_completed_successfully
-    restart: "no"
-
-  vault-demo-seed:
-    profiles: ["vault-demo"]
-    image: m8flow-backend
-    pull_policy: never
-    user: "0"
-    entrypoint:
-      - /bin/bash
-      - -lc
-    command:
-      - |
-        mkdir -p /vault/demo
-        chown -R app:app /vault/demo
-        exec gosu app python /app/docker/vault/demo/seed_vault_demo_metadata.py
-    environment:
-      M8FLOW_VAULT_DEMO_STATE_DIR: "/vault/demo"
-      M8FLOW_VAULT_DEMO_SECRETS_FILE: "/app/docker/vault/demo/secrets.yml"
-      M8FLOW_BACKEND_DATABASE_URI: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
-      SPIFFWORKFLOW_BACKEND_DATABASE_URI: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
-      KEYCLOAK_URL: "http://keycloak:8080"
-      M8FLOW_KEYCLOAK_URL: "http://keycloak:8080"
-      KEYCLOAK_HOSTNAME: "${KEYCLOAK_HOSTNAME:-http://localhost:6842}"
-      KEYCLOAK_ADMIN_USER: "${KEYCLOAK_ADMIN_USER:-admin}"
-      KEYCLOAK_ADMIN_PASSWORD: "${KEYCLOAK_ADMIN_PASSWORD:-admin}"
-      M8FLOW_KEYCLOAK_SHARED_REALM: "${M8FLOW_KEYCLOAK_SHARED_REALM:-m8flow}"
-      M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_ALIAS: "${M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_ALIAS:-m8flow}"
-      SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__uri: "${KEYCLOAK_HOSTNAME:-http://localhost:6842}/realms/${M8FLOW_KEYCLOAK_SHARED_REALM:-m8flow}"
-    volumes:
-      - vault-demo-state:/vault/demo
-    depends_on:
-      m8flow-db:
-        condition: service_healthy
-      keycloak:
-        condition: service_healthy
-      vault-demo:
-        condition: service_completed_successfully
-      m8flow-backend:
-        condition: service_started
     restart: "no"
 
   m8flow-nats-consumer:

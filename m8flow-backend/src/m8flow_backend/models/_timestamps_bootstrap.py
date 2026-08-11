@@ -24,7 +24,6 @@ from m8flow_backend.models.process_model_template import ProcessModelTemplateMod
 from m8flow_backend.models.nats_api_key import M8flowNatsApiKeyModel  # noqa: F401
 from m8flow_backend.models.external_form_request import ExternalFormRequestModel  # noqa: F401
 from m8flow_backend.models.tenant_invitation import M8flowTenantInvitationModel  # noqa: F401
-from m8flow_backend.models.vault_metadata import VaultMetadataModel  # noqa: F401
 
 
 _PATCHED = False

@@ -9,6 +9,9 @@ import sqlalchemy as sa
 from m8flow_backend.config import default_organization_alias
 from m8flow_backend.config import default_organization_name
 from m8flow_backend.services.keycloak_service import get_organization_by_alias
+from m8flow_backend.services.tenant_vault_provisioning_service import (
+    provision_tenant_vault_identity_if_enabled,
+)
 from m8flow_backend.tenancy import create_tenant_if_not_exists
 
 logger = logging.getLogger(__name__)
@@ -197,6 +200,7 @@ def reconcile_default_shared_realm_tenant(flask_app: Any) -> None:
                 name=organization_name,
                 slug=organization_alias,
             )
+            provision_tenant_vault_identity_if_enabled(organization_id)
             logger.info(
                 "shared_realm_bootstrap: created canonical shared-realm tenant id=%s slug=%s",
                 organization_id,
@@ -233,3 +237,5 @@ def reconcile_default_shared_realm_tenant(flask_app: Any) -> None:
         if tenant_changed:
             db.session.add(tenant)
             db.session.commit()
+
+        provision_tenant_vault_identity_if_enabled(organization_id)

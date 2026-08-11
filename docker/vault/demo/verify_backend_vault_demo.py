@@ -6,7 +6,6 @@ import os
 import sys
 from pathlib import Path
 
-import sqlalchemy as sa
 import yaml
 
 from demo_identity import wait_for_demo_tenant_identity
@@ -17,6 +16,13 @@ WAIT_INTERVAL_SECONDS = float(os.getenv("M8FLOW_VAULT_DEMO_WAIT_INTERVAL_SECONDS
 
 def fail(message: str) -> None:
     raise RuntimeError(message)
+
+
+def format_missing_secrets_file_message(path: Path) -> str:
+    message = f"Vault demo secrets file is missing: {path}"
+    if path.name == "secrets.yml":
+        message += ". Copy docker/vault/demo/secrets.yml.sample to docker/vault/demo/secrets.yml first."
+    return message
 
 
 def load_env_file(path: Path) -> None:
@@ -33,7 +39,7 @@ def load_env_file(path: Path) -> None:
 
 def load_first_seeded_secret(path: Path) -> tuple[str, str, str]:
     if not path.exists():
-        fail(f"Vault demo secrets file is missing: {path}")
+        fail(format_missing_secrets_file_message(path))
 
     payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     tenants = payload.get("tenants")
@@ -52,72 +58,10 @@ def load_first_seeded_secret(path: Path) -> tuple[str, str, str]:
     return str(first_tenant_id), str(first_secret_name), str(first_secret_value)
 
 
-def database_uri() -> str:
-    value = os.getenv("M8FLOW_BACKEND_DATABASE_URI") or os.getenv("SPIFFWORKFLOW_BACKEND_DATABASE_URI")
-    if not value or not value.strip():
-        fail("Vault demo verification requires M8FLOW_BACKEND_DATABASE_URI or SPIFFWORKFLOW_BACKEND_DATABASE_URI.")
-    return value.strip()
-
-
-def resolve_current_tenant_id(tenant_reference: str, organization_alias: str, organization_id: str) -> str:
-    engine = sa.create_engine(database_uri())
-    metadata = sa.MetaData()
-    tenant_table = sa.Table("m8flow_tenant", metadata, autoload_with=engine)
-
-    with engine.connect() as connection:
-        tenant_row = connection.execute(
-            sa.select(tenant_table.c.id).where(
-                sa.or_(
-                    tenant_table.c.id == tenant_reference,
-                    tenant_table.c.slug == tenant_reference,
-                )
-            )
-        ).mappings().first()
-
-    if tenant_row is None:
-        fail(f"Vault demo verification could not resolve tenant reference '{tenant_reference}' in m8flow_tenant.")
-
-    resolved_tenant_id = str(tenant_row["id"]).strip()
-    if tenant_reference == organization_alias and resolved_tenant_id != organization_id:
-        fail(
-            f"Vault demo verification resolved tenant reference '{tenant_reference}' to '{resolved_tenant_id}', "
-            f"but Keycloak organization id is '{organization_id}'."
-        )
-    return resolved_tenant_id
-
-
-def verify_vault_metadata(tenant_id: str, secret_name: str, admin_username: str) -> None:
-    engine = sa.create_engine(database_uri())
-    metadata = sa.MetaData()
-    user_table = sa.Table("user", metadata, autoload_with=engine)
-    vault_metadata_table = sa.Table("vault_metadata", metadata, autoload_with=engine)
-
-    with engine.connect() as connection:
-        metadata_row = connection.execute(
-            sa.select(
-                vault_metadata_table.c.id,
-                user_table.c.username,
-                vault_metadata_table.c.user_id,
-                vault_metadata_table.c.m8f_tenant_id,
-            )
-            .select_from(vault_metadata_table.join(user_table, vault_metadata_table.c.user_id == user_table.c.id))
-            .where(
-                sa.and_(
-                    vault_metadata_table.c.m8f_tenant_id == tenant_id,
-                    vault_metadata_table.c.name == secret_name,
-                )
-            )
-        ).mappings().first()
-
-    if metadata_row is None:
-        fail(
-            f"Vault demo verification could not find vault_metadata for tenant '{tenant_id}' and secret '{secret_name}'."
-        )
-    if metadata_row["username"] != admin_username:
-        fail(
-            f"Vault demo verification expected vault_metadata for secret '{secret_name}' to belong to "
-            f"'{admin_username}', but found '{metadata_row['username']}'."
-        )
+def resolve_seeded_tenant_id(tenant_reference: str, organization_alias: str, organization_id: str) -> str:
+    if tenant_reference == organization_alias:
+        return organization_id
+    return tenant_reference
 
 
 def main() -> int:
@@ -139,36 +83,59 @@ def main() -> int:
             timeout_seconds=WAIT_TIMEOUT_SECONDS,
             interval_seconds=WAIT_INTERVAL_SECONDS,
         )
-        tenant_id = resolve_current_tenant_id(
+        tenant_id = resolve_seeded_tenant_id(
             tenant_reference,
             organization_alias=identity.organization_alias,
             organization_id=identity.organization_id,
         )
 
-        from m8flow_backend.services.vault_client import VaultClient, VaultSettings
+        from m8flow_backend.services.tenant_scoped_vault_client_provider import TenantScopedVaultClientProvider
+        from m8flow_backend.services.tenant_vault_provisioning_service import TenantVaultProvisioningService
+        from m8flow_backend.services.vault_client import VaultClient, VaultClientError, VaultSettings
 
-        client = VaultClient(settings=VaultSettings.from_env())
-        if not client.check_availability():
+        broker_client = VaultClient(settings=VaultSettings.from_env())
+        if not broker_client.check_availability():
             fail("Vault client wrapper reported Vault unavailable.")
 
         logical_path = f"tenants/{tenant_id}/secrets/{secret_name}"
-        resolved_value = client.retrieve_secret(logical_path)
+        provisioned_identity = TenantVaultProvisioningService(vault_client=broker_client).provision_tenant_identity(
+            tenant_id
+        )
+
+        broker_direct_read_blocked = False
+        try:
+            broker_value = broker_client.retrieve_secret(logical_path)
+        except VaultClientError:
+            broker_direct_read_blocked = True
+        else:
+            if broker_value is None:
+                broker_direct_read_blocked = True
+            else:
+                fail(
+                    f"Broker Vault identity still has direct read access to '{logical_path}'. "
+                    "The local demo should only read tenant secrets through a tenant-scoped Vault client."
+                )
+
+        client = TenantScopedVaultClientProvider(broker_vault_client=broker_client).for_tenant(tenant_id)
+        resolved_value = client.vault_client.retrieve_secret(logical_path)
         if resolved_value != expected_value:
             fail(
                 f"Vault client wrapper read '{logical_path}', but the resolved value "
                 "did not match the seeded demo secret."
             )
-        verify_vault_metadata(tenant_id, secret_name, identity.admin_username)
 
         print(
             json.dumps(
                 {
                     "admin_username": identity.admin_username,
-                    "metadata_verified": True,
+                    "broker_direct_read_blocked": broker_direct_read_blocked,
                     "verified": True,
-                    "mount_point": client.settings.mount_point,
-                    "path_prefix": client.settings.secret_path_prefix,
+                    "mount_point": client.vault_client.settings.mount_point,
+                    "path_prefix": client.vault_client.settings.secret_path_prefix,
                     "secret_path": logical_path,
+                    "tenant_policy_name": provisioned_identity.policy_name,
+                    "tenant_role_name": provisioned_identity.role_name,
+                    "tenant_id": tenant_id,
                 }
             )
         )

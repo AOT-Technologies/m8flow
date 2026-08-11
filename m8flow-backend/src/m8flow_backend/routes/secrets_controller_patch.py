@@ -4,7 +4,7 @@ _PATCHED = False
 
 
 def apply() -> None:
-    """Patch secret endpoints to support Vault metadata mode and super-admin tenant filtering."""
+    """Patch secret endpoints to use the common backend and super-admin tenant filtering."""
     global _PATCHED
     if _PATCHED:
         return
@@ -24,9 +24,10 @@ def apply() -> None:
         return make_response(jsonify(secret.to_dict()), 200)
 
     def patched_secret_show_value(key: str):
-        secret = get_secret_backend().get_secret(key)
+        backend = get_secret_backend()
+        secret = backend.get_secret(key)
         secret_as_dict = secret.to_dict()
-        secret_as_dict["value"] = secret.value
+        secret_as_dict["value"] = backend.get_secret_value(key)
         return make_response(jsonify(secret_as_dict), 200)
 
     def patched_secret_create(body: dict):

@@ -32,6 +32,10 @@ class FakeSecretBackend:
         self.calls.append(("get_secret", key))
         return FakeSecret(key=key, user_id=7)
 
+    def get_secret_value(self, key: str) -> str:
+        self.calls.append(("get_secret_value", key))
+        return "vault-value"
+
     def add_secret(self, key: str, value: str, user_id: int) -> FakeSecret:
         self.calls.append(("add_secret", key, value, user_id))
         return FakeSecret(key=key, user_id=user_id)
@@ -130,7 +134,7 @@ def test_secret_crud_routes_delegate_to_common_backend(monkeypatch) -> None:
     assert show_response.get_json()["key"] == "API_TOKEN"
 
     assert show_value_response.status_code == 200
-    assert show_value_response.get_json()["value"] == "enc:vault-value"
+    assert show_value_response.get_json()["value"] == "vault-value"
 
     assert create_response.status_code == 201
     assert create_response.get_json()["user_id"] == 7
@@ -144,6 +148,7 @@ def test_secret_crud_routes_delegate_to_common_backend(monkeypatch) -> None:
     assert backend.calls == [
         ("get_secret", "API_TOKEN"),
         ("get_secret", "API_TOKEN"),
+        ("get_secret_value", "API_TOKEN"),
         ("add_secret", "API_TOKEN", "vault-value", 7),
         ("update_secret", "API_TOKEN", "rotated-value", 7, False, "API_TOKEN_NEW"),
         ("delete_secret", "API_TOKEN", 99),

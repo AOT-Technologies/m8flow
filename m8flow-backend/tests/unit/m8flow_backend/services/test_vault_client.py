@@ -19,6 +19,8 @@ for path in (extension_src, backend_src):
 
 from m8flow_backend.services import vault_client as vault_client_module
 from m8flow_backend.services.vault_client import (
+    VaultAppRoleSecretId,
+    VaultAppRole,
     VaultClient,
     VaultConfigurationError,
     VaultConnectionError,
@@ -32,17 +34,29 @@ class FakeInvalidPath(Exception):
     """Stand-in for hvac.exceptions.InvalidPath."""
 
 
+class FakeForbidden(Exception):
+    """Stand-in for hvac.exceptions.Forbidden."""
+
+
 class FakeKvV2:
     def __init__(self) -> None:
-        self.storage: dict[str, dict[str, str]] = {}
+        self.storage: dict[str, dict[str, object]] = {}
         self.create_calls: list[dict[str, object]] = []
         self.read_calls: list[dict[str, object]] = []
+        self.list_calls: list[dict[str, object]] = []
         self.delete_calls: list[dict[str, object]] = []
         self.read_exception: Exception | None = None
+        self.list_exception: Exception | None = None
         self.write_exception: Exception | None = None
         self.delete_exception: Exception | None = None
 
-    def create_or_update_secret(self, *, mount_point: str, path: str, secret: dict[str, str]) -> dict[str, object]:
+    def create_or_update_secret(
+        self,
+        *,
+        mount_point: str,
+        path: str,
+        secret: dict[str, object],
+    ) -> dict[str, object]:
         self.create_calls.append({"mount_point": mount_point, "path": path, "secret": secret})
         if self.write_exception is not None:
             raise self.write_exception
@@ -57,6 +71,27 @@ class FakeKvV2:
             raise FakeInvalidPath(path)
         return {"data": {"data": dict(self.storage[path])}}
 
+    def list_secrets(self, *, mount_point: str, path: str) -> dict[str, object]:
+        self.list_calls.append({"mount_point": mount_point, "path": path})
+        if self.list_exception is not None:
+            raise self.list_exception
+
+        prefix = f"{path.strip('/')}/"
+        keys: set[str] = set()
+        for stored_path in self.storage:
+            if not stored_path.startswith(prefix):
+                continue
+            remainder = stored_path[len(prefix) :]
+            if not remainder:
+                continue
+            first_component, _separator, suffix = remainder.partition("/")
+            keys.add(f"{first_component}/" if suffix else first_component)
+
+        if not keys:
+            raise FakeInvalidPath(path)
+
+        return {"data": {"keys": sorted(keys)}}
+
     def delete_metadata_and_all_versions(self, *, mount_point: str, path: str) -> None:
         self.delete_calls.append({"mount_point": mount_point, "path": path})
         if self.delete_exception is not None:
@@ -70,12 +105,21 @@ class FakeSys:
     def __init__(self) -> None:
         self.health_calls: list[dict[str, object]] = []
         self.health_exception: Exception | None = None
+        self.policy_calls: list[dict[str, str]] = []
+        self.policy_exception: Exception | None = None
+        self.policies: dict[str, str] = {}
 
     def read_health_status(self, **kwargs) -> dict[str, bool]:
         self.health_calls.append(kwargs)
         if self.health_exception is not None:
             raise self.health_exception
         return {"initialized": True}
+
+    def create_or_update_policy(self, *, name: str, policy: str) -> None:
+        self.policy_calls.append({"name": name, "policy": policy})
+        if self.policy_exception is not None:
+            raise self.policy_exception
+        self.policies[name] = policy
 
 
 class FakeAdapter:
@@ -95,14 +139,79 @@ class FakeAppRoleAuth:
     def __init__(self, client: "FakeHvacClient") -> None:
         self.client = client
         self.login_calls: list[dict[str, str]] = []
+        self.create_or_update_calls: list[dict[str, object]] = []
+        self.read_role_id_calls: list[dict[str, str]] = []
+        self.read_role_calls: list[dict[str, str]] = []
+        self.generate_secret_id_calls: list[dict[str, str]] = []
         self.login_exception: Exception | None = None
+        self.create_or_update_exception: Exception | None = None
+        self.read_role_id_exception: Exception | None = None
+        self.read_role_exception: Exception | None = None
+        self.generate_secret_id_exception: Exception | None = None
         self.login_response: dict[str, object] | None = {"auth": {"client_token": "approle-token"}}
+        self.create_or_update_response: dict[str, object] | None = {"data": {"created": True}}
+        self.role_ids: dict[str, str] = {}
+        self.roles: dict[str, dict[str, object]] = {}
+        self.generate_secret_id_response: dict[str, object] | None = {
+            "data": {
+                "secret_id": "generated-secret-id",
+                "secret_id_accessor": "generated-secret-id-accessor",
+            }
+        }
 
     def login(self, *, role_id: str, secret_id: str) -> dict[str, object] | None:
         self.login_calls.append({"role_id": role_id, "secret_id": secret_id})
         if self.login_exception is not None:
             raise self.login_exception
         return self.login_response
+
+    def create_or_update_approle(
+        self,
+        *,
+        role_name: str,
+        mount_point: str,
+        token_policies: list[str],
+        bind_secret_id: bool,
+        token_no_default_policy: bool,
+    ) -> dict[str, object] | None:
+        self.create_or_update_calls.append(
+            {
+                "role_name": role_name,
+                "mount_point": mount_point,
+                "token_policies": token_policies,
+                "bind_secret_id": bind_secret_id,
+                "token_no_default_policy": token_no_default_policy,
+            }
+        )
+        if self.create_or_update_exception is not None:
+            raise self.create_or_update_exception
+        self.role_ids.setdefault(role_name, f"role-id-for-{role_name}")
+        self.roles[role_name] = {
+            "token_policies": list(token_policies),
+            "bind_secret_id": bind_secret_id,
+            "token_no_default_policy": token_no_default_policy,
+        }
+        return self.create_or_update_response
+
+    def read_role(self, *, role_name: str, mount_point: str) -> dict[str, object] | None:
+        self.read_role_calls.append({"role_name": role_name, "mount_point": mount_point})
+        if self.read_role_exception is not None:
+            raise self.read_role_exception
+        if role_name not in self.roles:
+            raise FakeInvalidPath(role_name)
+        return {"data": dict(self.roles[role_name])}
+
+    def read_role_id(self, *, role_name: str, mount_point: str) -> dict[str, object] | None:
+        self.read_role_id_calls.append({"role_name": role_name, "mount_point": mount_point})
+        if self.read_role_id_exception is not None:
+            raise self.read_role_id_exception
+        return {"data": {"role_id": self.role_ids.get(role_name)}}
+
+    def generate_secret_id(self, *, role_name: str, mount_point: str) -> dict[str, object] | None:
+        self.generate_secret_id_calls.append({"role_name": role_name, "mount_point": mount_point})
+        if self.generate_secret_id_exception is not None:
+            raise self.generate_secret_id_exception
+        return self.generate_secret_id_response
 
 
 class FakeHvacClient:
@@ -175,8 +284,138 @@ class TestVaultSettings:
         assert settings.auth_method == "approle"
         assert settings.is_configured is True
 
+    def test_with_approle_credentials_reuses_connection_details_and_clears_token(self):
+        settings = _settings(token="shared-token", role_id=None, secret_id=None)
+
+        tenant_settings = settings.with_approle_credentials(
+            role_id="tenant-role-id",
+            secret_id="tenant-secret-id",
+        )
+
+        assert tenant_settings.addr == settings.addr
+        assert tenant_settings.token is None
+        assert tenant_settings.role_id == "tenant-role-id"
+        assert tenant_settings.secret_id == "tenant-secret-id"
+        assert tenant_settings.namespace == settings.namespace
+        assert tenant_settings.mount_point == settings.mount_point
+        assert tenant_settings.secret_path_prefix == settings.secret_path_prefix
+
 
 class TestVaultClientOperations:
+    def test_read_approle_returns_role_payload(self, monkeypatch):
+        monkeypatch.setattr(
+            vault_client_module,
+            "hvac_exceptions",
+            SimpleNamespace(InvalidPath=FakeInvalidPath),
+        )
+        fake_client = FakeHvacClient()
+        fake_client.auth.approle.roles["tenant-role"] = {"token_policies": ["tenant-policy"]}
+        client = VaultClient(settings=_settings(), client_factory=lambda _settings: fake_client)
+
+        role = client.read_approle("tenant-role", mount_point="approle-custom")
+
+        assert role == VaultAppRole(data={"token_policies": ["tenant-policy"]})
+        assert fake_client.auth.approle.read_role_calls == [
+            {"role_name": "tenant-role", "mount_point": "approle-custom"}
+        ]
+
+    def test_read_approle_returns_none_for_missing_role(self, monkeypatch):
+        monkeypatch.setattr(
+            vault_client_module,
+            "hvac_exceptions",
+            SimpleNamespace(InvalidPath=FakeInvalidPath),
+        )
+        fake_client = FakeHvacClient()
+        client = VaultClient(settings=_settings(), client_factory=lambda _settings: fake_client)
+
+        role = client.read_approle("tenant-role", mount_point="approle-custom")
+
+        assert role is None
+
+    def test_create_or_update_policy_writes_policy_document(self):
+        fake_client = FakeHvacClient()
+        client = VaultClient(settings=_settings(), client_factory=lambda _settings: fake_client)
+
+        client.create_or_update_policy("tenant-policy", 'path "kv/data/m8flow/*" {}')
+
+        assert fake_client.sys.policy_calls == [
+            {"name": "tenant-policy", "policy": 'path "kv/data/m8flow/*" {}'}
+        ]
+        assert fake_client.sys.policies["tenant-policy"] == 'path "kv/data/m8flow/*" {}'
+
+    def test_create_or_update_approle_writes_role_configuration(self):
+        fake_client = FakeHvacClient()
+        client = VaultClient(settings=_settings(), client_factory=lambda _settings: fake_client)
+
+        result = client.create_or_update_approle(
+            "tenant-role",
+            mount_point="approle-custom",
+            token_policies=["tenant-policy"],
+        )
+
+        assert result == {"data": {"created": True}}
+        assert fake_client.auth.approle.create_or_update_calls == [
+            {
+                "role_name": "tenant-role",
+                "mount_point": "approle-custom",
+                "token_policies": ["tenant-policy"],
+                "bind_secret_id": True,
+                "token_no_default_policy": True,
+            }
+        ]
+
+    def test_read_approle_role_id_returns_role_id(self):
+        fake_client = FakeHvacClient()
+        fake_client.auth.approle.role_ids["tenant-role"] = "role-id-123"
+        client = VaultClient(settings=_settings(), client_factory=lambda _settings: fake_client)
+
+        role_id = client.read_approle_role_id("tenant-role", mount_point="approle-custom")
+
+        assert role_id == "role-id-123"
+        assert fake_client.auth.approle.read_role_id_calls == [
+            {"role_name": "tenant-role", "mount_point": "approle-custom"}
+        ]
+
+    def test_generate_approle_secret_id_returns_secret_and_accessor(self):
+        fake_client = FakeHvacClient()
+        client = VaultClient(settings=_settings(), client_factory=lambda _settings: fake_client)
+
+        secret_id = client.generate_approle_secret_id("tenant-role", mount_point="approle-custom")
+
+        assert secret_id == VaultAppRoleSecretId(
+            secret_id="generated-secret-id",
+            secret_id_accessor="generated-secret-id-accessor",
+        )
+        assert fake_client.auth.approle.generate_secret_id_calls == [
+            {"role_name": "tenant-role", "mount_point": "approle-custom"}
+        ]
+
+    def test_store_secret_document_writes_full_payload_under_prefixed_path(self):
+        fake_client = FakeHvacClient()
+        client = VaultClient(settings=_settings(), client_factory=lambda _settings: fake_client)
+
+        result = client.store_secret_document(
+            "SMTP_PASSWORD",
+            {
+                "value": "super-secret",
+                "tenant_id": "tenant-123",
+                "updated_by": "admin",
+            },
+        )
+
+        assert result == {"data": {"path": "m8flow/test/SMTP_PASSWORD"}}
+        assert fake_client.kv_v2.create_calls == [
+            {
+                "mount_point": "kv",
+                "path": "m8flow/test/SMTP_PASSWORD",
+                "secret": {
+                    "value": "super-secret",
+                    "tenant_id": "tenant-123",
+                    "updated_by": "admin",
+                },
+            }
+        ]
+
     def test_store_secret_writes_string_value_under_prefixed_path(self):
         fake_client = FakeHvacClient()
         client = VaultClient(settings=_settings(), client_factory=lambda _settings: fake_client)
@@ -208,6 +447,31 @@ class TestVaultClientOperations:
                 "path": "m8flow/test/tenants/tenant-1/secrets/SMTP_PASSWORD",
                 "secret": {"value": "super-secret"},
             }
+        ]
+
+    def test_retrieve_secret_document_returns_full_payload(self, monkeypatch):
+        monkeypatch.setattr(
+            vault_client_module,
+            "hvac_exceptions",
+            SimpleNamespace(InvalidPath=FakeInvalidPath),
+        )
+        fake_client = FakeHvacClient()
+        fake_client.kv_v2.storage["m8flow/test/SMTP_PASSWORD"] = {
+            "value": "super-secret",
+            "tenant_id": "tenant-123",
+            "updated_by": "admin",
+        }
+        client = VaultClient(settings=_settings(), client_factory=lambda _settings: fake_client)
+
+        value = client.retrieve_secret_document("SMTP_PASSWORD")
+
+        assert value == {
+            "value": "super-secret",
+            "tenant_id": "tenant-123",
+            "updated_by": "admin",
+        }
+        assert fake_client.kv_v2.read_calls == [
+            {"mount_point": "kv", "path": "m8flow/test/SMTP_PASSWORD"}
         ]
 
     def test_retrieve_secret_returns_string_value(self, monkeypatch):
@@ -259,6 +523,38 @@ class TestVaultClientOperations:
         client = VaultClient(settings=_settings(), client_factory=lambda _settings: fake_client)
 
         assert client.retrieve_secret("MISSING_SECRET") is None
+
+    def test_list_secret_names_returns_direct_children_for_prefix(self, monkeypatch):
+        monkeypatch.setattr(
+            vault_client_module,
+            "hvac_exceptions",
+            SimpleNamespace(InvalidPath=FakeInvalidPath),
+        )
+        fake_client = FakeHvacClient()
+        fake_client.kv_v2.storage["m8flow/test/tenants/tenant-1/secrets/API_TOKEN"] = {"value": "one"}
+        fake_client.kv_v2.storage["m8flow/test/tenants/tenant-1/secrets/SMTP_PASSWORD"] = {"value": "two"}
+        fake_client.kv_v2.storage["m8flow/test/tenants/tenant-2/secrets/API_TOKEN"] = {"value": "three"}
+        client = VaultClient(settings=_settings(), client_factory=lambda _settings: fake_client)
+
+        result = client.list_secret_names("m8flow/test/tenants/tenant-1/secrets")
+
+        assert result == ["API_TOKEN", "SMTP_PASSWORD"]
+        assert fake_client.kv_v2.list_calls == [
+            {"mount_point": "kv", "path": "m8flow/test/tenants/tenant-1/secrets"}
+        ]
+
+    def test_list_secret_names_returns_none_for_missing_prefix(self, monkeypatch):
+        monkeypatch.setattr(
+            vault_client_module,
+            "hvac_exceptions",
+            SimpleNamespace(InvalidPath=FakeInvalidPath),
+        )
+        fake_client = FakeHvacClient()
+        client = VaultClient(settings=_settings(), client_factory=lambda _settings: fake_client)
+
+        result = client.list_secret_names("m8flow/test/tenants/tenant-1/secrets")
+
+        assert result == []
 
     def test_delete_secret_returns_true_for_existing_secret(self, monkeypatch):
         monkeypatch.setattr(
@@ -323,6 +619,28 @@ class TestVaultClientOperations:
 
         with pytest.raises(VaultOperationError, match="is unavailable"):
             client.assert_startup_ready()
+
+    def test_assert_startup_ready_skips_mount_metadata_when_preflight_is_forbidden(self, monkeypatch, caplog):
+        fake_client = FakeHvacClient()
+        fake_client.adapter.get_exception = FakeForbidden(
+            'preflight capability check returned 403, please ensure client\'s policies grant access '
+            'to path "kv/", on get http://vault:8200/v1/sys/internal/ui/mounts/kv'
+        )
+        monkeypatch.setattr(
+            vault_client_module,
+            "hvac_exceptions",
+            SimpleNamespace(
+                InvalidPath=FakeInvalidPath,
+                Forbidden=FakeForbidden,
+            ),
+        )
+        client = VaultClient(settings=_settings(), client_factory=lambda _settings: fake_client)
+
+        with caplog.at_level("INFO", logger="m8flow.vault.client"):
+            client.assert_startup_ready()
+
+        assert fake_client.adapter.get_calls == ["/v1/sys/internal/ui/mounts/kv"]
+        assert "skipping mount metadata validation" in caplog.text.lower()
 
     def test_check_availability_returns_false_when_not_configured(self):
         client = VaultClient(

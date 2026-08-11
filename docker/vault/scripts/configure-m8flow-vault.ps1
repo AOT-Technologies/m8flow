@@ -14,6 +14,9 @@ $vaultService = if ($env:M8FLOW_VAULT_SERVICE_NAME) { $env:M8FLOW_VAULT_SERVICE_
 $vaultAddr = if ($env:M8FLOW_VAULT_INTERNAL_ADDR) { $env:M8FLOW_VAULT_INTERNAL_ADDR } else { 'http://127.0.0.1:8200' }
 $mountPoint = if ($env:M8FLOW_VAULT_MOUNT_POINT) { $env:M8FLOW_VAULT_MOUNT_POINT } else { 'kv' }
 $pathPrefix = if ($env:M8FLOW_VAULT_SECRET_PATH_PREFIX) { $env:M8FLOW_VAULT_SECRET_PATH_PREFIX } else { 'm8flow' }
+$approleMountPoint = if ($env:M8FLOW_VAULT_APPROLE_MOUNT_POINT) { $env:M8FLOW_VAULT_APPROLE_MOUNT_POINT } else { 'approle' }
+$tenantPolicyPrefix = if ($env:M8FLOW_VAULT_TENANT_POLICY_PREFIX) { $env:M8FLOW_VAULT_TENANT_POLICY_PREFIX } else { 'm8flow-tenant-policy' }
+$tenantRolePrefix = if ($env:M8FLOW_VAULT_TENANT_ROLE_PREFIX) { $env:M8FLOW_VAULT_TENANT_ROLE_PREFIX } else { 'm8flow-tenant-role' }
 $policyName = if ($env:M8FLOW_VAULT_POLICY_NAME) { $env:M8FLOW_VAULT_POLICY_NAME } else { 'm8flow' }
 $operatorToken = if ($env:M8FLOW_VAULT_OPERATOR_TOKEN) { $env:M8FLOW_VAULT_OPERATOR_TOKEN } elseif ($env:VAULT_TOKEN) { $env:VAULT_TOKEN } else { '' }
 
@@ -94,6 +97,9 @@ if (-not $mountEntry) {
 $policyText = Get-Content -Path $policyTemplate -Raw
 $policyText = $policyText.Replace('__MOUNT_POINT__', $mountPoint.Trim('/'))
 $policyText = $policyText.Replace('__PATH_PREFIX__', $pathPrefix.Trim('/'))
+$policyText = $policyText.Replace('__APPROLE_MOUNT_POINT__', $approleMountPoint.Trim('/'))
+$policyText = $policyText.Replace('__TENANT_POLICY_PREFIX__', $tenantPolicyPrefix.Trim('/'))
+$policyText = $policyText.Replace('__TENANT_ROLE_PREFIX__', $tenantRolePrefix.Trim('/'))
 
 $tempPolicyFile = [System.IO.Path]::GetTempFileName()
 try {
@@ -111,12 +117,16 @@ Write-Host ''
 Write-Host 'Next steps:'
 Write-Host '1. For the development-only AppRole + demo-seeding flow, run:'
 Write-Host '   docker compose -f docker/m8flow-docker-compose.yml --profile vault --profile vault-demo up -d --build'
-Write-Host '2. Or create a non-root application token with that policy manually, for example:'
+Write-Host '2. Or create a non-root broker/control-plane token with that policy manually, for example:'
 Write-Host "   docker compose -f docker/m8flow-docker-compose.yml exec vault sh -lc 'VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=`$M8FLOW_VAULT_OPERATOR_TOKEN vault token create -policy=$policyName -display-name=m8flow-local -ttl=24h -renewable=true'"
 Write-Host '3. Save the returned token outside source control and add these lines to your local .env:'
 Write-Host '   M8FLOW_VAULT_ENABLED=true'
 Write-Host '   M8FLOW_VAULT_ADDR=http://vault:8200'
-Write-Host '   M8FLOW_VAULT_TOKEN=<application token>'
+Write-Host '   M8FLOW_VAULT_TOKEN=<broker token>'
 Write-Host "   M8FLOW_VAULT_MOUNT_POINT=$mountPoint"
 Write-Host "   M8FLOW_VAULT_SECRET_PATH_PREFIX=$pathPrefix"
-Write-Host '4. Restart the backend and Celery services after Vault is unsealed and the app token is configured.'
+Write-Host "   M8FLOW_VAULT_APPROLE_MOUNT_POINT=$approleMountPoint"
+Write-Host "   M8FLOW_VAULT_TENANT_POLICY_PREFIX=$tenantPolicyPrefix"
+Write-Host "   M8FLOW_VAULT_TENANT_ROLE_PREFIX=$tenantRolePrefix"
+Write-Host '4. Restart the backend and Celery services after Vault is unsealed and the broker token is configured.'
+Write-Host '5. That broker identity manages per-tenant Vault roles and policies, but it should not read tenant KV secret values directly.'

@@ -254,6 +254,21 @@ def vault_secret_path_prefix() -> str:
     return _get("M8FLOW_VAULT_SECRET_PATH_PREFIX") or "m8flow"
 
 
+def vault_approle_mount_point() -> str:
+    """AppRole auth mount point used for tenant-scoped Vault identities."""
+    return _get("M8FLOW_VAULT_APPROLE_MOUNT_POINT") or "approle"
+
+
+def vault_tenant_policy_prefix() -> str:
+    """Policy name prefix for per-tenant Vault policies."""
+    return _get("M8FLOW_VAULT_TENANT_POLICY_PREFIX") or "m8flow-tenant-policy"
+
+
+def vault_tenant_role_prefix() -> str:
+    """AppRole name prefix for per-tenant Vault roles."""
+    return _get("M8FLOW_VAULT_TENANT_ROLE_PREFIX") or "m8flow-tenant-role"
+
+
 def vault_timeout_seconds() -> float:
     """Timeout used for Vault API calls."""
     raw = _get("M8FLOW_VAULT_TIMEOUT_SECONDS") or "5"
