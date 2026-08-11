@@ -1,28 +1,21 @@
-from dataclasses import dataclass
+"""m8flow compatibility shim for spiffworkflow_backend.models.process_instance_error_detail.
 
-from sqlalchemy import ForeignKey
-from sqlalchemy.orm import relationship
+The model is defined upstream by SpiffArena (LGPL-2.1). m8flow's schema delta -
+the m8f_tenant_id column and any constraint changes - is applied centrally by
+m8flow_backend.models.tenant_schema. This module contributes nothing of its own.
 
-from spiffworkflow_backend.models.db import SpiffworkflowBaseDBModel
-from spiffworkflow_backend.models.db import db
-from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScoped
+Kept so that existing `from m8flow_backend.models.process_instance_error_detail import ...` imports keep
+working. New code should import from spiffworkflow_backend.models.process_instance_error_detail directly.
 
+DO NOT reintroduce model definitions here. Schema changes belong in
+m8flow_backend/models/tenant_schema.py.
+"""
+from __future__ import annotations
 
-@dataclass
-class ProcessInstanceErrorDetailModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
-    """SQLAlchemy model for ProcessInstanceErrorDetailModel."""
-    __tablename__ = "process_instance_error_detail"
-    id: int = db.Column(db.Integer, primary_key=True)
+from spiffworkflow_backend.models.process_instance_error_detail import (  # noqa: F401
+    ProcessInstanceErrorDetailModel,
+)
 
-    process_instance_event_id: int = db.Column(ForeignKey("process_instance_event.id"), nullable=False, index=True)
-    process_instance_event = relationship("ProcessInstanceEventModel")  # type: ignore
-
-    message: str = db.Column(db.String(1024), nullable=False)
-
-    # this should be 65k in mysql
-    stacktrace: list | None = db.Column(db.JSON, nullable=False)
-
-    task_line_number: int | None = db.Column(db.Integer)
-    task_offset: int | None = db.Column(db.Integer)
-    task_line_contents: str | None = db.Column(db.String(255))
-    task_trace: list | None = db.Column(db.JSON)
+__all__ = [
+    "ProcessInstanceErrorDetailModel",
+]

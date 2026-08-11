@@ -1,13 +1,21 @@
-from spiffworkflow_backend.models.db import SpiffworkflowBaseDBModel
-from spiffworkflow_backend.models.db import db
-from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScoped
+"""m8flow compatibility shim for spiffworkflow_backend.models.process_caller.
 
+The model is defined upstream by SpiffArena (LGPL-2.1). m8flow's schema delta -
+the m8f_tenant_id column and any constraint changes - is applied centrally by
+m8flow_backend.models.tenant_schema. This module contributes nothing of its own.
 
-# TODO: delete this file
-class ProcessCallerCacheModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
-    """SQLAlchemy model for ProcessCallerCacheModel."""
+Kept so that existing `from m8flow_backend.models.process_caller import ...` imports keep
+working. New code should import from spiffworkflow_backend.models.process_caller directly.
 
-    __tablename__ = "process_caller_cache"
-    id = db.Column(db.Integer, primary_key=True)
-    process_identifier = db.Column(db.String(255), index=True)
-    calling_process_identifier = db.Column(db.String(255))
+DO NOT reintroduce model definitions here. Schema changes belong in
+m8flow_backend/models/tenant_schema.py.
+"""
+from __future__ import annotations
+
+from spiffworkflow_backend.models.process_caller import (  # noqa: F401
+    ProcessCallerCacheModel,
+)
+
+__all__ = [
+    "ProcessCallerCacheModel",
+]

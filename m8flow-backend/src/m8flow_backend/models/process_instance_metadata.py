@@ -1,23 +1,21 @@
-from dataclasses import dataclass
+"""m8flow compatibility shim for spiffworkflow_backend.models.process_instance_metadata.
 
-from sqlalchemy import ForeignKey
+The model is defined upstream by SpiffArena (LGPL-2.1). m8flow's schema delta -
+the m8f_tenant_id column and any constraint changes - is applied centrally by
+m8flow_backend.models.tenant_schema. This module contributes nothing of its own.
 
-from spiffworkflow_backend.models.db import SpiffworkflowBaseDBModel
-from spiffworkflow_backend.models.db import db
-from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScoped
-from m8flow_backend.models.process_instance import ProcessInstanceModel
+Kept so that existing `from m8flow_backend.models.process_instance_metadata import ...` imports keep
+working. New code should import from spiffworkflow_backend.models.process_instance_metadata directly.
 
+DO NOT reintroduce model definitions here. Schema changes belong in
+m8flow_backend/models/tenant_schema.py.
+"""
+from __future__ import annotations
 
-@dataclass
-class ProcessInstanceMetadataModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
-    """SQLAlchemy model for ProcessInstanceMetadataModel."""
-    __tablename__ = "process_instance_metadata"
-    __table_args__ = (db.UniqueConstraint("process_instance_id", "key", name="process_instance_metadata_unique"),)
+from spiffworkflow_backend.models.process_instance_metadata import (  # noqa: F401
+    ProcessInstanceMetadataModel,
+)
 
-    id: int = db.Column(db.Integer, primary_key=True)
-    process_instance_id: int = db.Column(ForeignKey(ProcessInstanceModel.id), nullable=False, index=True)  # type: ignore
-    key: str = db.Column(db.String(255), nullable=False, index=True)
-    value: str = db.Column(db.String(255), nullable=False)
-
-    updated_at_in_seconds: int = db.Column(db.Integer, nullable=False)
-    created_at_in_seconds: int = db.Column(db.Integer, nullable=False)
+__all__ = [
+    "ProcessInstanceMetadataModel",
+]

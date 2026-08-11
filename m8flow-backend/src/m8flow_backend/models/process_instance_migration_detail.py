@@ -1,32 +1,23 @@
-from dataclasses import dataclass
-from typing import TypedDict
+"""m8flow compatibility shim for spiffworkflow_backend.models.process_instance_migration_detail.
 
-from sqlalchemy import ForeignKey
-from sqlalchemy.orm import relationship
+The model is defined upstream by SpiffArena (LGPL-2.1). m8flow's schema delta -
+the m8f_tenant_id column and any constraint changes - is applied centrally by
+m8flow_backend.models.tenant_schema. This module contributes nothing of its own.
 
-from spiffworkflow_backend.models.db import SpiffworkflowBaseDBModel
-from spiffworkflow_backend.models.db import db
-from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScoped
+Kept so that existing `from m8flow_backend.models.process_instance_migration_detail import ...` imports keep
+working. New code should import from spiffworkflow_backend.models.process_instance_migration_detail directly.
 
+DO NOT reintroduce model definitions here. Schema changes belong in
+m8flow_backend/models/tenant_schema.py.
+"""
+from __future__ import annotations
 
-class ProcessInstanceMigrationDetailDict(TypedDict):
-    """Helper class for ProcessInstanceMigrationDetailDict."""
-    initial_git_revision: str | None
-    target_git_revision: str | None
-    initial_bpmn_process_hash: str
-    target_bpmn_process_hash: str
+from spiffworkflow_backend.models.process_instance_migration_detail import (  # noqa: F401
+    ProcessInstanceMigrationDetailDict,
+    ProcessInstanceMigrationDetailModel,
+)
 
-
-@dataclass
-class ProcessInstanceMigrationDetailModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
-    """SQLAlchemy model for ProcessInstanceMigrationDetailModel."""
-    __tablename__ = "process_instance_migration_detail"
-    id: int = db.Column(db.Integer, primary_key=True)
-
-    process_instance_event_id: int = db.Column(ForeignKey("process_instance_event.id"), nullable=False, index=True)
-    process_instance_event = relationship("ProcessInstanceEventModel")  # type: ignore
-
-    initial_git_revision: str | None = db.Column(db.String(64), nullable=True)
-    target_git_revision: str | None = db.Column(db.String(64), nullable=True)
-    initial_bpmn_process_hash: str = db.Column(db.String(64), nullable=False)
-    target_bpmn_process_hash: str = db.Column(db.String(64), nullable=False)
+__all__ = [
+    "ProcessInstanceMigrationDetailDict",
+    "ProcessInstanceMigrationDetailModel",
+]

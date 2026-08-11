@@ -1,25 +1,21 @@
-from dataclasses import dataclass
-from datetime import datetime
-from datetime import timezone
+"""m8flow compatibility shim for spiffworkflow_backend.models.api_log_model.
 
-from spiffworkflow_backend.models.db import SpiffworkflowBaseDBModel
-from spiffworkflow_backend.models.db import db
-from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScoped
+The model is defined upstream by SpiffArena (LGPL-2.1). m8flow's schema delta -
+the m8f_tenant_id column and any constraint changes - is applied centrally by
+m8flow_backend.models.tenant_schema. This module contributes nothing of its own.
 
+Kept so that existing `from m8flow_backend.models.api_log_model import ...` imports keep
+working. New code should import from spiffworkflow_backend.models.api_log_model directly.
 
-@dataclass
-class APILogModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
-    """SQLAlchemy model for APILogModel."""
-    __tablename__ = "api_log"
+DO NOT reintroduce model definitions here. Schema changes belong in
+m8flow_backend/models/tenant_schema.py.
+"""
+from __future__ import annotations
 
-    id: int = db.Column(db.Integer, primary_key=True)
-    created_at: datetime = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), index=True)
-    endpoint: str = db.Column(db.String(255), index=True)
-    method: str = db.Column(db.String(10), index=True)
-    request_body: dict | None = db.Column(db.JSON)
-    response_body: dict | None = db.Column(db.JSON)
-    status_code: int = db.Column(db.Integer, index=True)
-    duration_ms: int = db.Column(db.Integer, index=True)
+from spiffworkflow_backend.models.api_log_model import (  # noqa: F401
+    APILogModel,
+)
 
-    # not a foreign key so we can create and keep the log regardless of the state or process instance
-    process_instance_id: int | None = db.Column(db.Integer, nullable=True, index=True)
+__all__ = [
+    "APILogModel",
+]

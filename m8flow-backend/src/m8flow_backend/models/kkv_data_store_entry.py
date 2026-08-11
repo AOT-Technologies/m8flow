@@ -1,27 +1,21 @@
-from dataclasses import dataclass
+"""m8flow compatibility shim for spiffworkflow_backend.models.kkv_data_store_entry.
 
-from sqlalchemy import ForeignKey
-from sqlalchemy import UniqueConstraint
-from sqlalchemy.orm import relationship
+The model is defined upstream by SpiffArena (LGPL-2.1). m8flow's schema delta -
+the m8f_tenant_id column and any constraint changes - is applied centrally by
+m8flow_backend.models.tenant_schema. This module contributes nothing of its own.
 
-from spiffworkflow_backend.models.db import SpiffworkflowBaseDBModel
-from spiffworkflow_backend.models.db import db
-from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScoped
-from m8flow_backend.models.kkv_data_store import KKVDataStoreModel
+Kept so that existing `from m8flow_backend.models.kkv_data_store_entry import ...` imports keep
+working. New code should import from spiffworkflow_backend.models.kkv_data_store_entry directly.
 
+DO NOT reintroduce model definitions here. Schema changes belong in
+m8flow_backend/models/tenant_schema.py.
+"""
+from __future__ import annotations
 
-@dataclass
-class KKVDataStoreEntryModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
-    """SQLAlchemy model for KKVDataStoreEntryModel."""
-    __tablename__ = "kkv_data_store_entry"
-    __table_args__ = (UniqueConstraint("kkv_data_store_id", "top_level_key", "secondary_key", name="_instance_keys_unique"),)
+from spiffworkflow_backend.models.kkv_data_store_entry import (  # noqa: F401
+    KKVDataStoreEntryModel,
+)
 
-    id: int = db.Column(db.Integer, primary_key=True)
-    kkv_data_store_id: int = db.Column(ForeignKey(KKVDataStoreModel.id), nullable=False, index=True)  # type: ignore
-    top_level_key: str = db.Column(db.String(255), nullable=False, index=True)
-    secondary_key: str = db.Column(db.String(255), nullable=False, index=True)
-    value: dict = db.Column(db.JSON, nullable=False)
-    updated_at_in_seconds: int = db.Column(db.Integer, nullable=False)
-    created_at_in_seconds: int = db.Column(db.Integer, nullable=False)
-
-    instance = relationship("KKVDataStoreModel", back_populates="entries")
+__all__ = [
+    "KKVDataStoreEntryModel",
+]

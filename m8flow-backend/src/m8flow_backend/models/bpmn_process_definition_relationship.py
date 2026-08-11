@@ -1,36 +1,21 @@
+"""m8flow compatibility shim for spiffworkflow_backend.models.bpmn_process_definition_relationship.
+
+The model is defined upstream by SpiffArena (LGPL-2.1). m8flow's schema delta -
+the m8f_tenant_id column and any constraint changes - is applied centrally by
+m8flow_backend.models.tenant_schema. This module contributes nothing of its own.
+
+Kept so that existing `from m8flow_backend.models.bpmn_process_definition_relationship import ...` imports keep
+working. New code should import from spiffworkflow_backend.models.bpmn_process_definition_relationship directly.
+
+DO NOT reintroduce model definitions here. Schema changes belong in
+m8flow_backend/models/tenant_schema.py.
+"""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from spiffworkflow_backend.models.bpmn_process_definition_relationship import (  # noqa: F401
+    BpmnProcessDefinitionRelationshipModel,
+)
 
-from sqlalchemy import ForeignKey
-from sqlalchemy import UniqueConstraint
-
-from m8flow_backend.models.bpmn_process_definition import BpmnProcessDefinitionModel
-from spiffworkflow_backend.models.db import SpiffworkflowBaseDBModel
-from spiffworkflow_backend.models.db import db
-from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScoped
-
-
-@dataclass
-class BpmnProcessDefinitionRelationshipModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
-    """SQLAlchemy model for BpmnProcessDefinitionRelationshipModel."""
-    __tablename__ = "bpmn_process_definition_relationship"
-    __table_args__ = (
-        UniqueConstraint(
-            "bpmn_process_definition_parent_id",
-            "bpmn_process_definition_child_id",
-            name="bpmn_process_definition_relationship_unique",
-        ),
-    )
-
-    id: int = db.Column(db.Integer, primary_key=True)
-    bpmn_process_definition_parent_id: int = db.Column(
-        ForeignKey(BpmnProcessDefinitionModel.id),  # type: ignore
-        nullable=False,
-        index=True,
-    )
-    bpmn_process_definition_child_id: int = db.Column(
-        ForeignKey(BpmnProcessDefinitionModel.id),  # type: ignore
-        nullable=False,
-        index=True,
-    )
+__all__ = [
+    "BpmnProcessDefinitionRelationshipModel",
+]

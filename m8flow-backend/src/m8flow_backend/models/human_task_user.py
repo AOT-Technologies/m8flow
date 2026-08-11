@@ -1,49 +1,23 @@
+"""m8flow compatibility shim for spiffworkflow_backend.models.human_task_user.
+
+The model is defined upstream by SpiffArena (LGPL-2.1). m8flow's schema delta -
+the m8f_tenant_id column and any constraint changes - is applied centrally by
+m8flow_backend.models.tenant_schema. This module contributes nothing of its own.
+
+Kept so that existing `from m8flow_backend.models.human_task_user import ...` imports keep
+working. New code should import from spiffworkflow_backend.models.human_task_user directly.
+
+DO NOT reintroduce model definitions here. Schema changes belong in
+m8flow_backend/models/tenant_schema.py.
+"""
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any
+from spiffworkflow_backend.models.human_task_user import (  # noqa: F401
+    HumanTaskUserAddedBy,
+    HumanTaskUserModel,
+)
 
-from sqlalchemy import ForeignKey
-from sqlalchemy.orm import relationship
-from sqlalchemy.orm import validates
-
-from spiffworkflow_backend.helpers.spiff_enum import SpiffEnum
-from spiffworkflow_backend.models.db import SpiffworkflowBaseDBModel
-from spiffworkflow_backend.models.db import db
-from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScoped
-from m8flow_backend.models.human_task import HumanTaskModel
-from spiffworkflow_backend.models.user import UserModel
-
-
-class HumanTaskUserAddedBy(SpiffEnum):
-    """Enum for HumanTaskUserAddedBy values."""
-    guest = "guest"
-    lane_assignment = "lane_assignment"
-    lane_owner = "lane_owner"
-    manual = "manual"
-    process_initiator = "process_initiator"
-
-
-@dataclass
-class HumanTaskUserModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
-    """SQLAlchemy model for HumanTaskUserModel."""
-    __tablename__ = "human_task_user"
-
-    __table_args__ = (
-        db.UniqueConstraint(
-            "human_task_id",
-            "user_id",
-            name="human_task_user_unique",
-        ),
-    )
-
-    id = db.Column(db.Integer, primary_key=True)
-    human_task_id = db.Column(ForeignKey(HumanTaskModel.id), nullable=False, index=True)  # type: ignore
-    user_id = db.Column(ForeignKey(UserModel.id), nullable=False, index=True)  # type: ignore
-    added_by: str = db.Column(db.String(20), index=True)
-
-    human_task = relationship(HumanTaskModel, back_populates="human_task_users")
-
-    @validates("added_by")
-    def validate_status(self, key: str, value: Any) -> Any:
-        return self.validate_enum_field(key, value, HumanTaskUserAddedBy)
+__all__ = [
+    "HumanTaskUserAddedBy",
+    "HumanTaskUserModel",
+]

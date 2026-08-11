@@ -1,24 +1,21 @@
-from dataclasses import dataclass
+"""m8flow compatibility shim for spiffworkflow_backend.models.refresh_token.
 
-from sqlalchemy import ForeignKey
-from sqlalchemy import UniqueConstraint
+The model is defined upstream by SpiffArena (LGPL-2.1). m8flow's schema delta -
+the m8f_tenant_id column and any constraint changes - is applied centrally by
+m8flow_backend.models.tenant_schema. This module contributes nothing of its own.
 
-from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScoped
-from spiffworkflow_backend.models.db import SpiffworkflowBaseDBModel
-from spiffworkflow_backend.models.db import db
+Kept so that existing `from m8flow_backend.models.refresh_token import ...` imports keep
+working. New code should import from spiffworkflow_backend.models.refresh_token directly.
 
+DO NOT reintroduce model definitions here. Schema changes belong in
+m8flow_backend/models/tenant_schema.py.
+"""
+from __future__ import annotations
 
-@dataclass()
-class RefreshTokenModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
-    __tablename__ = "refresh_token"
-    __table_args__ = (
-        UniqueConstraint(
-            "m8f_tenant_id",
-            "user_id",
-            name="refresh_token_user_id_tenant_unique",
-        ),
-    )
+from spiffworkflow_backend.models.refresh_token import (  # noqa: F401
+    RefreshTokenModel,
+)
 
-    id: int = db.Column(db.Integer, primary_key=True)
-    user_id: int = db.Column(ForeignKey("user.id"), nullable=False)
-    token: str = db.Column(db.String(4096), nullable=False)
+__all__ = [
+    "RefreshTokenModel",
+]

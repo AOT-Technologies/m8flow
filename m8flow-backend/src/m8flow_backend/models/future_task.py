@@ -1,65 +1,21 @@
-import copy
-import time
-from dataclasses import dataclass
+"""m8flow compatibility shim for spiffworkflow_backend.models.future_task.
 
-from flask import current_app
-from sqlalchemy import ForeignKey
-from sqlalchemy.dialects.mysql import insert as mysql_insert
-from sqlalchemy.dialects.postgresql import insert as postgres_insert
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
-from sqlalchemy.sql import false
+The model is defined upstream by SpiffArena (LGPL-2.1). m8flow's schema delta -
+the m8f_tenant_id column and any constraint changes - is applied centrally by
+m8flow_backend.models.tenant_schema. This module contributes nothing of its own.
 
-from spiffworkflow_backend.models.db import SpiffworkflowBaseDBModel
-from spiffworkflow_backend.models.db import db
-from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScoped
-from m8flow_backend.models.task import TaskModel  # noqa: F401
+Kept so that existing `from m8flow_backend.models.future_task import ...` imports keep
+working. New code should import from spiffworkflow_backend.models.future_task directly.
 
+DO NOT reintroduce model definitions here. Schema changes belong in
+m8flow_backend/models/tenant_schema.py.
+"""
+from __future__ import annotations
 
-@dataclass
-class FutureTaskModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
-    """SQLAlchemy model for FutureTaskModel."""
-    __tablename__ = "future_task"
+from spiffworkflow_backend.models.future_task import (  # noqa: F401
+    FutureTaskModel,
+)
 
-    guid: str = db.Column(ForeignKey(TaskModel.guid, ondelete="CASCADE", name="future_task_task_guid_fk"), primary_key=True)
-    run_at_in_seconds: int = db.Column(db.Integer, nullable=False, index=True)
-    queued_to_run_at_in_seconds: int = db.Column(db.Integer, nullable=True, index=True)
-    completed: bool = db.Column(db.Boolean, default=False, nullable=False, index=True)
-    archived_for_process_instance_status: bool = db.Column(
-        db.Boolean,
-        default=False,
-        server_default=false(),
-        nullable=False,
-        index=True,
-    )
-
-    updated_at_in_seconds: int = db.Column(db.Integer, nullable=False)
-
-    @classmethod
-    def insert_or_update(cls, guid: str, run_at_in_seconds: int, queued_to_run_at_in_seconds: int | None = None) -> None:
-        task_info: dict[str, int | str | None] = {
-            "guid": guid,
-            "run_at_in_seconds": run_at_in_seconds,
-            "updated_at_in_seconds": round(time.time()),
-        }
-
-        if queued_to_run_at_in_seconds is not None:
-            task_info["queued_to_run_at_in_seconds"] = queued_to_run_at_in_seconds
-
-        new_values = copy.copy(task_info)
-        del new_values["guid"]
-
-        on_duplicate_key_stmt = None
-        if current_app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] == "mysql":
-            insert_stmt = mysql_insert(FutureTaskModel).values(task_info)
-            on_duplicate_key_stmt = insert_stmt.on_duplicate_key_update(**new_values)
-        else:
-            insert_stmt = None
-            if current_app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] == "sqlite":
-                insert_stmt = sqlite_insert(FutureTaskModel).values(task_info)
-            else:
-                insert_stmt = postgres_insert(FutureTaskModel).values(task_info)
-            on_duplicate_key_stmt = insert_stmt.on_conflict_do_update(
-                index_elements=["guid"],
-                set_=new_values,
-            )
-        db.session.execute(on_duplicate_key_stmt)
+__all__ = [
+    "FutureTaskModel",
+]

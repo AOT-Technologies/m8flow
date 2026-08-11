@@ -1,31 +1,21 @@
-from dataclasses import dataclass
+"""m8flow compatibility shim for spiffworkflow_backend.models.json_data_store.
 
-from sqlalchemy import UniqueConstraint
+The model is defined upstream by SpiffArena (LGPL-2.1). m8flow's schema delta -
+the m8f_tenant_id column and any constraint changes - is applied centrally by
+m8flow_backend.models.tenant_schema. This module contributes nothing of its own.
 
-from spiffworkflow_backend.models.db import SpiffworkflowBaseDBModel
-from spiffworkflow_backend.models.db import db
-from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScoped
+Kept so that existing `from m8flow_backend.models.json_data_store import ...` imports keep
+working. New code should import from spiffworkflow_backend.models.json_data_store directly.
 
+DO NOT reintroduce model definitions here. Schema changes belong in
+m8flow_backend/models/tenant_schema.py.
+"""
+from __future__ import annotations
 
-@dataclass
-class JSONDataStoreModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel):
-    """SQLAlchemy model for JSONDataStoreModel."""
-    __tablename__ = "json_data_store"
-    __table_args__ = (
-        UniqueConstraint(
-            "m8f_tenant_id",
-            "identifier",
-            "location",
-            name="_identifier_location_unique",
-        ),
-    )
+from spiffworkflow_backend.models.json_data_store import (  # noqa: F401
+    JSONDataStoreModel,
+)
 
-    id: int = db.Column(db.Integer, primary_key=True)
-    name: str = db.Column(db.String(255), index=True, nullable=False)
-    identifier: str = db.Column(db.String(255), index=True, nullable=False)
-    location: str = db.Column(db.String(255), nullable=False)
-    schema: dict = db.Column(db.JSON, nullable=False)
-    data: dict = db.Column(db.JSON, nullable=False)
-    description: str = db.Column(db.String(255))
-    updated_at_in_seconds: int = db.Column(db.Integer, nullable=False)
-    created_at_in_seconds: int = db.Column(db.Integer, nullable=False)
+__all__ = [
+    "JSONDataStoreModel",
+]
