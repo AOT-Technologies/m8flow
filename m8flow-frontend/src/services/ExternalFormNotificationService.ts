@@ -30,7 +30,10 @@ export interface SmtpStatus {
   unreadable_keys?: string[];
   /** Backend explanation of why sending is blocked; null when configured. */
   reason?: string | null;
-  /** Keys the tenant has set. Names only — values are never returned. */
+  /**
+   * Keys with a usable (decryptable, non-blank) value. Names only — values are never
+   * returned. Presence of a blank or undecryptable secret does not count.
+   */
   configured_keys: string[];
   fields: SmtpConfigField[];
 }

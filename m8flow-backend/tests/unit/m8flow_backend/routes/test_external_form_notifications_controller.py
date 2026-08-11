@@ -271,6 +271,15 @@ class TestNotificationList:
         assert [item["id"] for item in results] == [row.id]
         assert "NATS_SMTP_HOST" in results[0]["last_error"]
 
+    def test_invalid_status_is_400(self, app, tenant):
+        with app.test_request_context("/m8flow/external-form-notifications?status=not_a_real_status"):
+            response = controller.external_form_notification_list(status="not_a_real_status")
+
+        assert response.status_code == 400
+        payload = response.get_json()
+        assert payload["error_code"] == "invalid_status"
+        assert "not_a_real_status" in payload["message"]
+
     def test_process_instance_filter(self, app, tenant, alice):
         _create_request(tenant, alice)
         other = _create_request(

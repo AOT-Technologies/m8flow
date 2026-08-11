@@ -30,8 +30,24 @@ for path in (extension_src, backend_src):
     if path_str not in sys.path:
         sys.path.insert(0, path_str)
 
+# Install the model overrides before any spiff model is touched: these tests presence-check
+# SecretModel rows, which only exist on the m8flow override. Idempotent — the repo
+# conftest's bootstrap() has normally already done this.
+from m8flow_backend.services.model_override_patch import apply as apply_model_overrides  # noqa: E402
+
+apply_model_overrides()
+
 from spiffworkflow_backend.models.db import db  # noqa: E402
 from spiffworkflow_backend.models.db import add_listeners  # noqa: E402
+
+# services/conftest imports tenant_scoping_patch before bootstrap, which loads
+# spiffworkflow_backend (and load_database_models) and registers `secret` on MetaData.
+# Bootstrap then purges the module from sys.modules but leaves the Table — drop it so
+# the m8flow override can register cleanly on first import below.
+_secret_table = db.metadata.tables.get("secret")
+if _secret_table is not None and "spiffworkflow_backend.models.secret_model" not in sys.modules:
+    db.metadata.remove(_secret_table)
+
 # Imported for its side effect of registering the `secret` table before db.create_all():
 # smtp_configuration_status() presence-checks optional keys against it.
 from spiffworkflow_backend.models.secret_model import SecretModel  # noqa: E402,F401
@@ -446,7 +462,7 @@ class TestSmtpUnconfigured:
         ExternalFormNotificationService.notify(row.reference_id)
 
         smtp_secrets.update(DEFAULT_SMTP_SECRETS)  # admin configures SMTP
-        assert ExternalFormNotificationService.revive_smtp_unconfigured() == 1
+        assert ExternalFormNotificationService.revive_smtp_unconfigured(tenant_id=tenant.id) == 1
 
         revived = _fresh(row.id)
         assert revived.status == ExternalFormRequestStatus.pending.value
@@ -457,8 +473,39 @@ class TestSmtpUnconfigured:
     def test_revive_leaves_other_statuses_alone(self, app, tenant, alice, smtp_secrets):
         row = _create_request(tenant, alice)
 
-        assert ExternalFormNotificationService.revive_smtp_unconfigured() == 0
+        assert ExternalFormNotificationService.revive_smtp_unconfigured(tenant_id=tenant.id) == 0
         assert _fresh(row.id).status == ExternalFormRequestStatus.pending.value
+
+    def test_revive_requires_tenant_id_for_bulk(self, app, tenant, alice, smtp_secrets):
+        with pytest.raises(ValueError, match="requires tenant_id"):
+            ExternalFormNotificationService.revive_smtp_unconfigured()
+
+    def test_revive_does_not_cross_tenants(self, app, tenant, alice, fake_smtp, smtp_secrets):
+        """UPDATEs bypass the SELECT tenant listener — bulk revive must pin m8f_tenant_id."""
+        other = M8flowTenantModel(
+            id="tenant-2",
+            name="Tenant Two",
+            slug="tenant-two",
+            status=TenantStatus.ACTIVE,
+            created_by="admin",
+            modified_by="admin",
+        )
+        db.session.add(other)
+        db.session.commit()
+
+        smtp_secrets.clear()
+        row_a = _create_request(tenant, alice, task_guid="aaaaaaaa-2222-3333-4444-555555555555")
+        row_b = _create_request(other, alice, task_guid="bbbbbbbb-2222-3333-4444-555555555555")
+        ExternalFormNotificationService.notify(row_a.reference_id)
+        ExternalFormNotificationService.notify(row_b.reference_id)
+        assert _fresh(row_a.id).status == ExternalFormRequestStatus.smtp_unconfigured.value
+        assert _fresh(row_b.id).status == ExternalFormRequestStatus.smtp_unconfigured.value
+
+        smtp_secrets.update(DEFAULT_SMTP_SECRETS)
+        assert ExternalFormNotificationService.revive_smtp_unconfigured(tenant_id=tenant.id) == 1
+
+        assert _fresh(row_a.id).status == ExternalFormRequestStatus.pending.value
+        assert _fresh(row_b.id).status == ExternalFormRequestStatus.smtp_unconfigured.value
 
     def test_tenants_with_parked_requests(self, app, tenant, alice, fake_smtp, smtp_secrets):
         smtp_secrets.clear()
@@ -497,6 +544,49 @@ class TestSmtpUnconfigured:
         assert status["configured"] is False
         assert status["missing_required_keys"] == ["NATS_SMTP_HOST", "NATS_SMTP_FROM_EMAIL"]
 
+    def test_configured_keys_excludes_blank_optional(self, app, tenant, smtp_secrets, monkeypatch):
+        """Optional key present but blank must not appear in configured_keys."""
+        present = set(DEFAULT_SMTP_SECRETS) | {"NATS_SMTP_PASSWORD"}
+        monkeypatch.setattr(
+            ExternalFormNotificationService,
+            "_present_smtp_secret_keys",
+            classmethod(lambda cls, tenant_id=None: present),
+        )
+        smtp_secrets["NATS_SMTP_PASSWORD"] = "   "
+
+        status = ExternalFormNotificationService.smtp_configuration_status()
+
+        assert status["configured"] is True
+        assert "NATS_SMTP_PASSWORD" not in status["configured_keys"]
+        assert "NATS_SMTP_HOST" in status["configured_keys"]
+        assert status["unreadable_keys"] == []
+
+    def test_configured_keys_excludes_undecryptable_optional(self, app, tenant, smtp_secrets, monkeypatch):
+        """Optional key present but undecryptable is not configured; does not taint unreadable_keys."""
+        present = set(DEFAULT_SMTP_SECRETS) | {"NATS_SMTP_PASSWORD"}
+        monkeypatch.setattr(
+            ExternalFormNotificationService,
+            "_present_smtp_secret_keys",
+            classmethod(lambda cls, tenant_id=None: present),
+        )
+
+        def read_for_tenant(cls, key, tenant_id=None):
+            if key == "NATS_SMTP_PASSWORD":
+                return None
+            value = (smtp_secrets.get(key) or "").strip()
+            return value or None
+
+        monkeypatch.setattr(
+            ExternalFormNotificationService,
+            "_read_secret_for_tenant",
+            classmethod(read_for_tenant),
+        )
+
+        status = ExternalFormNotificationService.smtp_configuration_status()
+
+        assert status["configured"] is True
+        assert "NATS_SMTP_PASSWORD" not in status["configured_keys"]
+        assert status["unreadable_keys"] == []
 
 class TestRequeue:
     def test_requeues_a_parked_row(self, app, tenant, alice, fake_smtp, smtp_secrets):

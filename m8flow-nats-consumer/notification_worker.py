@@ -108,7 +108,8 @@ def _revive_reconfigured_tenants() -> None:
             def revive_if_configured() -> int:
                 if not ExternalFormNotificationService.smtp_readiness()["ok"]:
                     return 0
-                return ExternalFormNotificationService.revive_smtp_unconfigured()
+                # UPDATEs bypass the SELECT tenant listener — pin tenant_id explicitly.
+                return ExternalFormNotificationService.revive_smtp_unconfigured(tenant_id=tenant_id)
 
             revived = _in_tenant_context(tenant_id, revive_if_configured)
             if revived:

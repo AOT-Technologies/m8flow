@@ -31,10 +31,14 @@ COLUMN_NAME = "last_error"
 
 
 def _column_exists() -> bool:
+    # schema=None matches batch_alter_table below (default/public schema).
     inspector = sa.inspect(op.get_bind())
-    if TABLE_NAME not in inspector.get_table_names():
+    if TABLE_NAME not in inspector.get_table_names(schema=None):
         return False
-    return any(column["name"] == COLUMN_NAME for column in inspector.get_columns(TABLE_NAME))
+    return any(
+        column["name"] == COLUMN_NAME
+        for column in inspector.get_columns(TABLE_NAME, schema=None)
+    )
 
 
 def upgrade():

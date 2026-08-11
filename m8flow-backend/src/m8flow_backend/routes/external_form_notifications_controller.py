@@ -89,6 +89,15 @@ def external_form_notification_list(
     per_page = max(1, min(int(per_page), MAX_PER_PAGE))
     tenant_id = _explicit_tenant_filter()
 
+    if status:
+        allowed = set(ExternalFormRequestStatus.list())
+        if status not in allowed:
+            return error_response(
+                "invalid_status",
+                f"Unknown status '{status}'. Allowed values: {', '.join(sorted(allowed))}.",
+                400,
+            )
+
     query = ExternalFormRequestModel.query
     if tenant_id is not None:
         query = query.filter(ExternalFormRequestModel.m8f_tenant_id == tenant_id)

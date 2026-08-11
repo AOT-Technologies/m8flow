@@ -249,7 +249,7 @@ class TestSubmit:
             Mock(return_value={}),
         )
 
-        assert ExternalFormNotificationService.revive_smtp_unconfigured() == 1
+        assert ExternalFormNotificationService.revive_smtp_unconfigured(tenant_id=tenant.id) == 1
 
         with app.test_request_context():
             result = ExternalFormService.submit(row.reference_id, {"answer": 42})

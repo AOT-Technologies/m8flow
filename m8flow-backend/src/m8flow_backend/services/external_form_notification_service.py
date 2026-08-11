@@ -389,13 +389,16 @@ class ExternalFormNotificationService:
     @classmethod
     def smtp_configuration_status(cls, tenant_id: str | None = None) -> dict[str, Any]:
         """Whether the tenant can send external-form emails, and which secret keys it
-        still needs. Returns key *names* only — never a secret value."""
+        still needs. Returns key *names* only — never a secret value.
+
+        ``configured_keys`` lists keys that resolve to a usable (decryptable, non-blank)
+        value — including optional keys. Presence alone is not enough."""
         readiness = cls.smtp_readiness(tenant_id)
         unusable = readiness["unusable"]
-        # Optional keys are presence-checked only: decrypting them here would cost a
-        # round-trip each just to render a "Configured" chip.
         present_keys = cls._present_smtp_secret_keys(tenant_id)
-        configured_keys = sorted(key for key in present_keys if key not in unusable)
+        configured_keys = sorted(
+            key for key in present_keys if cls._read_secret_for_tenant(key, tenant_id)
+        )
         return {
             "configured": readiness["ok"],
             "required_keys": list(REQUIRED_SMTP_SECRET_KEYS),
@@ -436,12 +439,26 @@ class ExternalFormNotificationService:
         return result.rowcount
 
     @classmethod
-    def revive_smtp_unconfigured(cls, request_ids: list[int] | None = None) -> int:
-        """Return parked requests to the retry queue for the active tenant.
+    def revive_smtp_unconfigured(
+        cls,
+        request_ids: list[int] | None = None,
+        tenant_id: str | None = None,
+    ) -> int:
+        """Return parked requests to the retry queue for one tenant.
 
-        Called automatically once the tenant's SMTP secrets appear, and by the admin
-        resend action. attempts is reset because the parked attempts were never real
-        delivery attempts — they burned no SMTP connection."""
+        Called automatically once the tenant's SMTP secrets appear. attempts is reset
+        because the parked attempts were never real delivery attempts — they burned no
+        SMTP connection.
+
+        UPDATEs bypass the tenant-scoping SELECT listener, so ``tenant_id`` must be
+        passed for bulk revive (no ``request_ids``). Without it this would revive parked
+        rows across every tenant. Prefer passing ``tenant_id`` for id-scoped revive too
+        (same compensation ``requeue`` makes for super-admin / unscoped contexts)."""
+        if request_ids is None and tenant_id is None:
+            raise ValueError(
+                "revive_smtp_unconfigured requires tenant_id for bulk revive; "
+                "unscoped UPDATEs are not tenant-filtered by the SELECT listener"
+            )
         now = int(time.time())
         statement = (
             sa_update(ExternalFormRequestModel)
@@ -457,6 +474,8 @@ class ExternalFormNotificationService:
             )
             .execution_options(synchronize_session=False)
         )
+        if tenant_id is not None:
+            statement = statement.where(ExternalFormRequestModel.m8f_tenant_id == tenant_id)
         if request_ids is not None:
             if not request_ids:
                 return 0
