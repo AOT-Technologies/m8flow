@@ -63,4 +63,4 @@ deployment:
 
 aws:
   default_region: ca-central-1
-  role_to_assume: arn:aws:iam::653405621825:role/GitHubActionsRole-test
+  role_to_assume: arn:aws:iam::653405621825:role/m8flow-dev-cicd-deploy-role
