@@ -1,0 +1,42 @@
+# DevX CI Configuration — m8flow-keycloak
+# Language: Maven (Java 17) — builds a Keycloak provider JAR then wraps it in a Keycloak image
+# Dockerfile: docker/m8flow.keycloak.Dockerfile (Maven builder stage + Keycloak runtime)
+
+project:
+  language: maven
+  version: "17"
+  working_directory: "."            # Build context is repo root
+
+build:
+  enabled: false                    # Maven build happens inside Docker multi-stage; no Nexus upload
+  run_tests: false
+
+docker:
+  enabled: true
+  working_directory: "."            # Build context must be repo root (COPY keycloak-extensions/...)
+  dockerfile: "docker/m8flow.keycloak.Dockerfile"
+  image_name: "m8flow/m8flow-keycloak"
+  image_tag: ""
+  registry_type: generic
+  registry_url: "docker.io"
+  platforms: "linux/amd64"
+
+security:
+  sast:
+    enabled: false
+
+  iac:
+    enabled: false
+
+  trivy:
+    enabled: true
+    severity: CRITICAL,HIGH
+    fail_on_vuln: false
+    ignore_unfixed: true
+    scanners: vuln,secret
+
+  sbom:
+    enabled: false
+
+  sbom_scan:
+    enabled: false
