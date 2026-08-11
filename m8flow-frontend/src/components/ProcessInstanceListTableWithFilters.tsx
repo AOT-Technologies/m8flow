@@ -682,10 +682,8 @@ export default function ProcessInstanceListTableWithFilters({
     }
   };
 
-  // jasquat/burnettk - 2022-12-28 do not check the validity of the dates when rendering components to avoid the page being
-  // re-rendered while the user is still typing. NOTE that we also prevented rerendering
-  // with the use of the setErrorMessageSafely function. we are not sure why the context not
-  // changing still causes things to rerender when we call its setter without our extra check.
+  // Do not check date validity while rendering — avoids re-renders mid-typing.
+  // setErrorMessageSafely also helps; context setters can still retrigger without an extra guard.
   const validateStartAndEndSeconds = () => {
     const startFromSeconds =
       DateAndTimeService.convertDateAndTimeStringsToSeconds(
