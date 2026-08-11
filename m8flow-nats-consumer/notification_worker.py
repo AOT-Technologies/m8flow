@@ -17,6 +17,7 @@ import logging
 import os
 import signal
 import sys
+import time
 from typing import Any
 
 from dotenv import load_dotenv
@@ -35,10 +36,17 @@ logger = logging.getLogger("m8flow.nats.notification_worker")
 
 try:
     from m8flow_telemetry.bootstrap import setup
+    from m8flow_telemetry.metrics import (
+        record_nats_processing,
+        set_nats_consumer_lag,
+        set_nats_consumer_redelivered,
+    )
 
     setup("m8flow-nats-notification-worker")
 except ImportError:  # pragma: no cover
-    pass
+    record_nats_processing = None
+    set_nats_consumer_lag = None
+    set_nats_consumer_redelivered = None
 
 NATS_URL      = os.environ["M8FLOW_NATS_URL"]
 STREAM_NAME   = os.getenv("M8FLOW_NATS_NOTIFICATIONS_STREAM_NAME", "M8FLOW_NOTIFICATIONS")
@@ -228,6 +236,10 @@ async def process_message(msg: Any) -> None:
             return
 
         failures: list[str] = []
+        # Timed from here, not from the top of the function: trigger_event_consumer.py's own convention
+        # is to time only real processing, not the pre-processing validation failures
+        # already returned above (each of which skips record_nats_processing entirely).
+        started = time.perf_counter()
         for reference_id in reference_ids:
             try:
                 result = await asyncio.to_thread(_notify_one, tenant_id, reference_id)
@@ -247,19 +259,27 @@ async def process_message(msg: Any) -> None:
 
         # A partial failure is still a failure worth seeing: the sweep will retry, but
         # without this row the only trace is a log line.
+        outcome = (
+            NatsEventOutcome.transient_error.value
+            if failures
+            else NatsEventOutcome.instantiated.value
+        )
         await asyncio.to_thread(
             _record_audit,
             tenant_id=tenant_id,
             event_id=event_id,
-            outcome=(
-                NatsEventOutcome.transient_error.value
-                if failures
-                else NatsEventOutcome.instantiated.value
-            ),
+            outcome=outcome,
             error_message="; ".join(failures) if failures else None,
             stream_seq=stream_seq,
             process_instance_id=data.get("process_instance_id"),
         )
+        if record_nats_processing is not None:
+            record_nats_processing(
+                tenant_id,
+                duration_ms=(time.perf_counter() - started) * 1000,
+                failed=bool(failures),
+                outcome=outcome,
+            )
     finally:
         await msg.ack()
 
@@ -317,15 +337,32 @@ async def main() -> None:
 
     sweep_task = asyncio.create_task(sweep_loop())
 
+    async def _report_consumer_lag() -> None:
+        if set_nats_consumer_lag is None:
+            return
+        try:
+            info = await sub.consumer_info()
+            set_nats_consumer_lag(getattr(info, "num_pending", 0))
+            # "or 0": getattr's default only substitutes when the attribute is missing,
+            # not when the dataclass has it explicitly set to None.
+            if set_nats_consumer_redelivered is not None:
+                set_nats_consumer_redelivered(getattr(info, "num_redelivered", 0) or 0)
+        except Exception:
+            pass
+
     logger.info("Notification worker loop started.")
     while running:
         try:
             msgs = await sub.fetch(batch=FETCH_BATCH, timeout=FETCH_TIMEOUT)
             for msg in msgs:
                 await process_message(msg)
+            # Report current lag every iteration, not just on idle timeout — under
+            # sustained backlog, fetch never times out, so a timeout-only update would
+            # leave the gauge stale exactly when the backlog is worst. Mirrors trigger_event_consumer.py.
+            await _report_consumer_lag()
         except asyncio.TimeoutError:
             # No messages within the fetch window — normal idle poll.
-            pass
+            await _report_consumer_lag()
         except ConnectionClosedError:
             logger.warning("NATS connection closed, exiting loop.")
             break

@@ -26,14 +26,22 @@ logging.basicConfig(
 logger = logging.getLogger("m8flow.nats.consumer")
 
 try:
-    from m8flow_telemetry.bootstrap import setup
-    from m8flow_telemetry.metrics import record_nats_processing, set_nats_consumer_lag
+    from m8flow_telemetry.bootstrap import is_telemetry_enabled, setup
+    from m8flow_telemetry.metrics import (
+        record_nats_broker_snapshot,
+        record_nats_processing,
+        set_nats_consumer_lag,
+        set_nats_consumer_redelivered,
+    )
     from m8flow_telemetry.nats_propagate import start_nats_consume_span
 
     setup("m8flow-nats-consumer")
 except ImportError:  # pragma: no cover
+    is_telemetry_enabled = None
+    record_nats_broker_snapshot = None
     record_nats_processing = None
     set_nats_consumer_lag = None
+    set_nats_consumer_redelivered = None
     start_nats_consume_span = None
 logging.getLogger("m8flow.nats.token_service").setLevel(os.getenv("M8FLOW_NATS_TOKEN_SERVICE_LOG_LEVEL", "DEBUG"))
 
@@ -436,7 +444,12 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
                     logger.warning("Failed to send reply to %s: %s", reply_to, e)
 
             if record_nats_processing is not None:
-                record_nats_processing(tenant_id, duration_ms=(time.perf_counter() - started) * 1000, failed=False)
+                record_nats_processing(
+                    tenant_id,
+                    duration_ms=(time.perf_counter() - started) * 1000,
+                    failed=False,
+                    outcome=NatsEventOutcome.instantiated.value,
+                )
 
     except Exception as e:
         # Most failures are PERMANENT (validation, missing models, auth).
@@ -449,7 +462,7 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
 
         if record_nats_processing is not None:
             duration_ms = (time.perf_counter() - started) * 1000 if started is not None else 0.0
-            record_nats_processing(tenant_id, duration_ms=duration_ms, failed=True)
+            record_nats_processing(tenant_id, duration_ms=duration_ms, failed=True, outcome=failure_outcome)
 
         # The message is about to be ACKed away, so this row is the only lasting record of
         # why it never became a process instance.
@@ -479,6 +492,40 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
                 logger.warning("Failed to send error reply to %s: %s", reply_to, publish_err)
 
         await msg.ack()
+
+async def broker_metrics_loop() -> None:
+    """Periodically snapshot broker-level stream/consumer state into OTel gauges.
+
+    Reuses the exact same NatsMonitoringService.streams() the live in-app NATS monitoring
+    dashboard reads, so a parsing fix or a NATS field-shape change (it has already changed
+    three times, per that service's fixture-driven tests) lands in both places from one
+    change, rather than drifting between two independent implementations.
+
+    Interval defaults to roughly half the OTel metric export interval (see
+    nats_broker_metrics_interval_seconds) — polling faster than metrics are actually
+    exported buys nothing, since an OTel gauge is last-value-wins per export tick.
+    """
+    if record_nats_broker_snapshot is None or is_telemetry_enabled is None:
+        return
+
+    from m8flow_backend.config import nats_broker_metrics_interval_seconds
+
+    interval = nats_broker_metrics_interval_seconds()
+    logger.info("Broker metrics loop started (every %ss).", interval)
+    while running:
+        if is_telemetry_enabled():
+            try:
+                from m8flow_backend.services.nats_monitoring_service import NatsMonitoringService
+
+                # NatsMonitoringService uses blocking httpx, not an async client — calling it
+                # directly from this coroutine would stall the entire event loop, including
+                # message fetch/ack, for up to its own timeout on every poll.
+                data = await asyncio.to_thread(NatsMonitoringService.streams)
+                record_nats_broker_snapshot(data["streams"])
+            except Exception:
+                logger.debug("Broker metrics snapshot failed; retrying next interval.", exc_info=True)
+        await asyncio.sleep(interval)
+
 
 async def main() -> None:
     global flask_app
@@ -544,12 +591,18 @@ async def main() -> None:
         await nc.close()
         sys.exit(1)
 
+    broker_metrics_task = asyncio.create_task(broker_metrics_loop())
+
     async def _report_consumer_lag() -> None:
         if set_nats_consumer_lag is None:
             return
         try:
             info = await sub.consumer_info()
             set_nats_consumer_lag(getattr(info, "num_pending", 0))
+            # "or 0": getattr's default only substitutes when the attribute is missing,
+            # not when the dataclass has it explicitly set to None.
+            if set_nats_consumer_redelivered is not None:
+                set_nats_consumer_redelivered(getattr(info, "num_redelivered", 0) or 0)
         except Exception:
             pass
 
@@ -574,6 +627,11 @@ async def main() -> None:
             await asyncio.sleep(1)
 
     logger.info("Closing connections...")
+    broker_metrics_task.cancel()
+    try:
+        await broker_metrics_task
+    except asyncio.CancelledError:
+        pass
     await nc.close()
     logger.info("Consumer shutdown complete.")
 

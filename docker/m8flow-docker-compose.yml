@@ -145,7 +145,7 @@ services:
       - |
         if [ "$$M8FLOW_NATS_ENABLED" = "true" ]; then
           PYTHONPATH=/app:/app/m8flow-backend/src:/app/spiffworkflow-backend/src \
-          exec python m8flow-nats-consumer/consumer.py
+          exec python m8flow-nats-consumer/trigger_event_consumer.py
         else
           echo "M8FLOW_NATS_ENABLED is not true. Consumer idling."
           exec tail -f /dev/null

@@ -35,6 +35,7 @@ import {
   Translate,
   formatEpochSeconds,
   formatNumber,
+  formatPayloadPreview,
   loadErrorMessage,
   outcomeColor,
   outcomeLabel,
@@ -45,7 +46,11 @@ interface OwnProps {
   refreshKey: number;
   /** Super-admins may read across tenants; everyone else is pinned server-side. */
   canCrossTenant: boolean;
-  /** Payload viewing needs both the env flag and super-admin, so it is offered narrowly. */
+  /**
+   * Payload viewing needs the env flag; whether the caller is allowed to at all is a
+   * backend decision (tenant-admin gets their own tenant's events, super-admin gets any),
+   * not a role check here.
+   */
   canInspectPayloads: boolean;
   /** Set when arriving from the Tenants tab. */
   initialTenantId?: string | null;
@@ -100,13 +105,27 @@ function EventDetail({
       return;
     }
     setLoadingPayload(true);
-    NatsMonitoringService.getEvent(event.eventId, { includePayload: true })
+    // Scope explicitly by this row's own tenant rather than relying on the panel's
+    // allTenants toggle: under "All Tenants" there is no active tenant to fall back to
+    // server-side, so an unscoped request 400s with "an active tenant is required" even
+    // though the row's tenant is already known right here.
+    NatsMonitoringService.getEvent(event.eventId, {
+      includePayload: true,
+      tenantId: event.tenantId ?? undefined,
+    })
       .then((full) => {
         setPayload(full.payload ?? null);
         setPayloadError("");
       })
       .catch((e) => setPayloadError(loadErrorMessage(e, translate)))
       .finally(() => setLoadingPayload(false));
+  };
+
+  // Resets back to the "Show message payload" link, rather than leaving a stale payload
+  // (which may be sensitive, e.g. amounts/customer ids) visible with no way to hide it again.
+  const closePayload = () => {
+    setPayload(undefined);
+    setPayloadError("");
   };
 
   return (
@@ -163,12 +182,23 @@ function EventDetail({
                   : translate("nats_show_payload", "Show message payload")}
               </Link>
             ) : payload === null ? (
-              <Typography variant="body2" color="text.secondary">
-                {translate(
-                  "nats_payload_gone",
-                  "The message is no longer in the stream, so its payload cannot be shown.",
-                )}
-              </Typography>
+              <Box>
+                <Typography variant="body2" color="text.secondary">
+                  {translate(
+                    "nats_payload_gone",
+                    "The message is no longer in the stream, so its payload cannot be shown.",
+                  )}
+                </Typography>
+                <Link
+                  component="button"
+                  type="button"
+                  onClick={closePayload}
+                  sx={{ display: "block", mt: 0.5 }}
+                  data-testid={`nats-close-payload-${event.id}`}
+                >
+                  {translate("nats_hide_payload", "Close")}
+                </Link>
+              </Box>
             ) : (
               <Box>
                 <Typography variant="caption" color="text.secondary" display="block">
@@ -196,8 +226,17 @@ function EventDetail({
                     wordBreak: "break-all",
                   }}
                 >
-                  {payload.payload}
+                  {formatPayloadPreview(payload)}
                 </Box>
+                <Link
+                  component="button"
+                  type="button"
+                  onClick={closePayload}
+                  sx={{ display: "block", mt: 0.5 }}
+                  data-testid={`nats-close-payload-${event.id}`}
+                >
+                  {translate("nats_hide_payload", "Close")}
+                </Link>
               </Box>
             )}
             {payloadError && (
