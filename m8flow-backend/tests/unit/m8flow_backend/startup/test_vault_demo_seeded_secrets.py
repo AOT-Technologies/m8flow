@@ -146,6 +146,18 @@ def test_bootstrap_encrypted_state_files_do_not_store_plaintext(monkeypatch: pyt
     assert bootstrap_vault_demo.load_encrypted_json_file(target_file) == payload
 
 
+def test_verification_report_does_not_store_secret_derived_fields(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    report_file = tmp_path / "verification.json"
+    monkeypatch.setattr(bootstrap_vault_demo, "VERIFICATION_FILE", report_file)
+
+    bootstrap_vault_demo.write_verification_report(broker_direct_read_blocked=True)
+
+    assert report_file.read_text(encoding="utf-8") == '{\n  "broker_direct_read_blocked": true,\n  "verified": true\n}\n'
+
+
 def test_verify_script_failure_output_hides_exception_text(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],

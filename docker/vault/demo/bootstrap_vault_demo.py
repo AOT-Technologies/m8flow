@@ -525,39 +525,19 @@ def seed_demo_secrets(root_token: str, secrets: list[SeededSecretSpec]) -> tuple
 
 def write_verification_report(
     *,
-    verified_secret: SeededSecretSpec,
     broker_direct_read_blocked: bool,
-    tenant_policy_name: str,
-    tenant_role_name: str,
-    written: int,
-    skipped: int,
 ) -> None:
     write_plain_json_file(
         VERIFICATION_FILE,
         {
-            "approle_mount_point": APPROLE_MOUNT_POINT,
-            "approle_name": BROKER_APPROLE_NAME,
-            "broker_approle_name": BROKER_APPROLE_NAME,
             "broker_direct_read_blocked": broker_direct_read_blocked,
-            "broker_policy_name": BROKER_POLICY_NAME,
-            "mount_point": MOUNT_POINT,
-            "overwrite": DEMO_OVERWRITE,
-            "path_prefix": PATH_PREFIX,
-            "policy_name": BROKER_POLICY_NAME,
-            "seeded_secret_count": written + skipped,
-            "skipped": skipped,
-            "tenant_policy_name": tenant_policy_name,
-            "tenant_role_name": tenant_role_name,
-            "verified_secret_tenant_id": verified_secret.tenant_id,
-            "verified_secret_tenant_reference": verified_secret.tenant_reference,
-            "verified_secret_path": seeded_secret_logical_path(verified_secret),
-            "written": written,
+            "verified": True,
         },
         mode=0o644,
     )
 
 
-def verify_bootstrap(role_id: str, secret_id: str, secrets: list[SeededSecretSpec], written: int, skipped: int) -> None:
+def verify_bootstrap(secrets: list[SeededSecretSpec]) -> None:
     if not secrets:
         fail("Vault demo verification requires at least one seeded secret.")
 
@@ -591,9 +571,7 @@ def verify_bootstrap(role_id: str, secret_id: str, secrets: list[SeededSecretSpe
     if not broker_client.check_availability():
         fail("Vault demo verification failed because the backend Vault client wrapper reported Vault unavailable.")
 
-    provisioned_identity = TenantVaultProvisioningService(vault_client=broker_client).provision_tenant_identity(
-        verified_secret.tenant_id
-    )
+    TenantVaultProvisioningService(vault_client=broker_client).provision_tenant_identity(verified_secret.tenant_id)
     logical_path = f"tenants/{verified_secret.tenant_id}/secrets/{verified_secret.secret_name}"
 
     broker_direct_read_blocked = False
@@ -620,12 +598,7 @@ def verify_bootstrap(role_id: str, secret_id: str, secrets: list[SeededSecretSpe
         )
 
     write_verification_report(
-        verified_secret=verified_secret,
         broker_direct_read_blocked=broker_direct_read_blocked,
-        tenant_policy_name=provisioned_identity.policy_name,
-        tenant_role_name=provisioned_identity.role_name,
-        written=written,
-        skipped=skipped,
     )
 
 
@@ -653,8 +626,8 @@ def main() -> int:
         write_runtime_files(role_id, secret_id)
 
         seeded_secrets = load_seeded_secrets()
-        written, skipped = seed_demo_secrets(root_token, seeded_secrets)
-        verify_bootstrap(role_id, secret_id, seeded_secrets, written, skipped)
+        seed_demo_secrets(root_token, seeded_secrets)
+        verify_bootstrap(seeded_secrets)
 
         print("vault-demo: Bootstrap complete", flush=True)
         return 0
