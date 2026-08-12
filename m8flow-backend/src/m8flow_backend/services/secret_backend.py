@@ -175,6 +175,8 @@ class LegacyDatabaseSecretBackend:
         create_if_not_exists: bool | None = False,
         new_key: str | None = None,
     ) -> None:
+        from spiffworkflow_backend.models.secret_model import SecretModel
+
         secret_model = SecretModel.query.filter(SecretModel.key == key).first()
         if secret_model:
             secret_model.value = _encrypt_secret_value(value)
@@ -205,6 +207,8 @@ class LegacyDatabaseSecretBackend:
         )
 
     def delete_secret(self, key: str, user_id: int) -> None:
+        from spiffworkflow_backend.models.secret_model import SecretModel
+
         secret_model = SecretModel.query.filter(SecretModel.key == key).first()
         if secret_model:
             db.session.delete(secret_model)
