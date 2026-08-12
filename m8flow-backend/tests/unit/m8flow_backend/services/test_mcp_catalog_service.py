@@ -131,6 +131,32 @@ def test_get_catalog_happy_path_derives_category_and_badge_from_tags_and_annotat
     assert tools_by_name["noop"]["badge"] == "read"
 
 
+def test_get_catalog_marks_a_sensitive_tool_name_with_the_sensitive_badge(monkeypatch):
+    """Proves the catalog's badge -- not just execute_tool's own gate -- reflects
+    SENSITIVE_TOOL_NAMES, since the McpToolsCatalog UI decides whether to render the
+    locked "Try it" state purely from this field. SENSITIVE_TOOL_NAMES ships empty
+    (see the module docstring); this monkeypatches it locally, the same way
+    test_execute_tool_blocks_a_tool_added_to_sensitive_tool_names does below.
+    """
+    monkeypatch.setattr(mcp_catalog_service, "SENSITIVE_TOOL_NAMES", frozenset({"get_secret_value"}))
+    sensitive_tool = _make_tool("get_secret_value", read_only=True, tags=["secrets"])
+    other_tool = _make_tool("list_reports", read_only=True, tags=["reporting"])
+
+    session = SimpleNamespace(
+        initialize=AsyncMock(return_value=SimpleNamespace(protocolVersion="2024-11-05")),
+        list_tools=AsyncMock(return_value=SimpleNamespace(tools=[sensitive_tool, other_tool])),
+    )
+    _install_fake_client(monkeypatch, session)
+
+    result = asyncio.run(mcp_catalog_service.get_catalog("token-abc"))
+
+    tools_by_name = {tool["name"]: tool for tool in result["tools"]}
+    # Sensitive wins even though this tool's own readOnlyHint is True -- badge must
+    # never fall back to "read" for a tenant-disabled tool.
+    assert tools_by_name["get_secret_value"]["badge"] == "sensitive"
+    assert tools_by_name["list_reports"]["badge"] == "read"
+
+
 def test_get_catalog_returns_error_dict_instead_of_raising_on_connection_failure(monkeypatch):
     _install_fake_client(monkeypatch, session=None, raise_exc=httpx.ConnectError("boom"))
 
