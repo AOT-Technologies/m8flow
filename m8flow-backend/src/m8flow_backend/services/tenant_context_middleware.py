@@ -626,13 +626,11 @@ def _selected_tenant_from_request() -> Optional[str]:
         return None
     selected_tenant = request.cookies.get(SELECTED_TENANT_COOKIE_NAME)
     if isinstance(selected_tenant, str) and selected_tenant.strip():
-        normalized_selected_tenant = _canonical_tenant_id_from_identifiers(selected_tenant.strip())
+        normalized_cookie_value = selected_tenant.strip()
+        normalized_selected_tenant = _canonical_tenant_id_from_identifiers(normalized_cookie_value)
         if normalized_selected_tenant:
             return normalized_selected_tenant
-        LOGGER.info(
-            "Ignoring stale selected-tenant cookie for shared-realm request: %s",
-            selected_tenant.strip(),
-        )
+        return normalized_cookie_value
     return None
 
 

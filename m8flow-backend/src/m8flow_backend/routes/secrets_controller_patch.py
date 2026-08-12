@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib
+
 _PATCHED = False
 
 
@@ -13,7 +15,7 @@ def apply() -> None:
     from flask import request as flask_request
     from flask import jsonify, make_response
 
-    import spiffworkflow_backend.routes.secrets_controller as secrets_controller
+    secrets_controller = importlib.import_module("spiffworkflow_backend.routes.secrets_controller")
     from spiffworkflow_backend.services.user_service import UserService
 
     from m8flow_backend.services.secret_backend import get_secret_backend
