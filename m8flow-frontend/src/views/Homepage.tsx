@@ -118,7 +118,7 @@ export default function Homepage({
 
   const headingForBucket = (bucketKey: string): string => {
     if (bucketKey === ME_BUCKET) return t('tasks_for');
-    if (activeGrouping === 'Process Group') return t('tasks_from_process_group');
+    if (activeGrouping === folderLabel) return t('tasks_from_process_group');
     return t('tasks_for_user_group');
   };
 

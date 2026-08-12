@@ -151,10 +151,8 @@ export function useDiagramModeler(options: UseDiagramModelerOptions) {
         'bpmn:ItemAwareElement',
       );
       dangling.forEach((ref: any) => {
-        const placeholder = moddle.create(descriptor, {
-          id: ref.id,
-          name: ref.id ? typeof ref.name === 'undefined' : ref.name,
-        });
+        // ItemAwareElement has no BPMN `name`; id alone resolves the dangling loopData*Ref.
+        const placeholder = moddle.create(descriptor, { id: ref.id });
         placeholder.$parent = ref.element;
         ref.element.set(ref.property, placeholder);
       });

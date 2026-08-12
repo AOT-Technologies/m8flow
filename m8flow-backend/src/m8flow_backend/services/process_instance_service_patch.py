@@ -4,7 +4,6 @@ import hashlib
 import time
 
 from flask import current_app
-from flask import g
 
 _PATCHED = False
 
@@ -134,21 +133,28 @@ def apply() -> None:
     if _PATCHED:
         return
 
+    import importlib
+
     import sqlalchemy as sa
 
-    from spiffworkflow_backend.data_migrations.process_instance_migrator import ProcessInstanceMigrator
     from spiffworkflow_backend.models.db import db
     from spiffworkflow_backend.services.process_instance_processor import ProcessInstanceProcessor
-    from spiffworkflow_backend.services.process_instance_queue_service import ProcessInstanceQueueService
     from spiffworkflow_backend.services.process_instance_service import ProcessInstanceService
     from spiffworkflow_backend.services.spec_file_service import SpecFileService
     from spiffworkflow_backend.services.workflow_execution_service import TaskRunnability
 
     original_create_process_instance = ProcessInstanceService.create_process_instance
+    original_complete_form_task = getattr(ProcessInstanceService, "complete_form_task", None)
+    original_run_process_instance_with_processor = getattr(
+        ProcessInstanceService, "run_process_instance_with_processor", None
+    )
     original_spiff_task_to_api_task = getattr(ProcessInstanceService, "spiff_task_to_api_task", None)
     original_update_form_task_data = ProcessInstanceService.update_form_task_data
     original_schedule_next_process_model_cycle = ProcessInstanceService.schedule_next_process_model_cycle
     original_terminate = getattr(ProcessInstanceProcessor, "terminate", None)
+
+    service_module = importlib.import_module("spiffworkflow_backend.services.process_instance_service")
+    processor_module = importlib.import_module("spiffworkflow_backend.services.process_instance_processor")
 
     @classmethod  # type: ignore[misc]
     def patched_create_process_instance(cls, process_model, user, start_configuration=None, load_bpmn_process_model: bool = True):
@@ -279,46 +285,52 @@ def apply() -> None:
         human_task,
         execution_mode: str | None = None,
     ) -> None:
-        from SpiffWorkflow.util.task import TaskState  # type: ignore
-        from spiffworkflow_backend.background_processing.celery_tasks.process_instance_task_producer import (
-            should_queue_process_instance,
-        )
-        from spiffworkflow_backend.helpers.spiff_enum import ProcessInstanceExecutionMode
-        from spiffworkflow_backend.services.jinja_service import JinjaService
-        from spiffworkflow_backend.services.process_instance_tmp_service import ProcessInstanceTmpService
+        """WRAP upstream complete_form_task: telemetry + queued follow-up preflight."""
+        if not callable(original_complete_form_task):
+            raise RuntimeError("ProcessInstanceService.complete_form_task is missing; cannot WRAP")
 
-        ProcessInstanceService.update_form_task_data(processor.process_instance_model, spiff_task, data, user)
-        processor.complete_task(spiff_task, human_task, user=user)
+        original_complete_task = processor.complete_task
 
+        def complete_task_with_telemetry(*args, **kwargs):
+            result = original_complete_task(*args, **kwargs)
+            try:
+                from m8flow_telemetry.metrics import record_task_completed
+
+                tenant_metric_id = getattr(processor.process_instance_model, "m8f_tenant_id", None)
+                task_type = getattr(getattr(human_task, "task_type", None), "value", None) or getattr(
+                    human_task, "task_type", "unknown"
+                )
+                record_task_completed(
+                    str(tenant_metric_id) if tenant_metric_id else None, task_type=str(task_type)
+                )
+            except ImportError:
+                pass
+            return result
+
+        previous_should_queue = getattr(service_module, "should_queue_process_instance", None)
+        if not callable(previous_should_queue):
+            from spiffworkflow_backend.background_processing.celery_tasks.process_instance_task_producer import (
+                should_queue_process_instance as producer_should_queue,
+            )
+
+            previous_should_queue = producer_should_queue
+            service_module.should_queue_process_instance = producer_should_queue
+
+        def should_queue_with_follow_up_preflight(mode: str | None = None) -> bool:
+            will_queue = previous_should_queue(mode)
+            if will_queue:
+                _validate_queued_follow_up_work(processor, handle_error=False)
+            return will_queue
+
+        processor.complete_task = complete_task_with_telemetry
+        service_module.should_queue_process_instance = should_queue_with_follow_up_preflight
         try:
-            from m8flow_telemetry.metrics import record_task_completed
-
-            tenant_metric_id = getattr(processor.process_instance_model, "m8f_tenant_id", None)
-            task_type = getattr(getattr(human_task, "task_type", None), "value", None) or getattr(
-                human_task, "task_type", "unknown"
+            return original_complete_form_task(
+                processor, spiff_task, data, user, human_task, execution_mode
             )
-            record_task_completed(str(tenant_metric_id) if tenant_metric_id else None, task_type=str(task_type))
-        except ImportError:
-            pass
-
-        if should_queue_process_instance(execution_mode):
-            # m8flow preflight before follow-up work is handed to the async worker.
-            _validate_queued_follow_up_work(processor, handle_error=False)
-            processor.bpmn_process_instance.refresh_waiting_tasks()
-            ready_or_waiting = processor.bpmn_process_instance.get_tasks(
-                state=TaskState.WAITING | TaskState.READY
-            )
-            JinjaService.add_instruction_for_end_user_if_appropriate(
-                ready_or_waiting, processor.process_instance_model.id, set()
-            )
-            return
-
-        # Already queued for a future run -> nothing to execute synchronously.
-        if ProcessInstanceTmpService.is_enqueued_to_run_in_the_future(processor.process_instance_model):
-            return
-
-        strategy = "greedy" if execution_mode == ProcessInstanceExecutionMode.synchronous.value else None
-        processor.do_engine_steps(save=True, execution_strategy_name=strategy)
+        finally:
+            processor.complete_task = original_complete_task
+            service_module.should_queue_process_instance = previous_should_queue
 
     @classmethod
     def patched_schedule_next_process_model_cycle(cls, process_instance_model) -> None:
@@ -360,113 +372,79 @@ def apply() -> None:
         execution_strategy_name: str | None = None,
         should_schedule_waiting_timer_events: bool = True,
     ) -> tuple[ProcessInstanceProcessor | None, TaskRunnability]:
-        task_runnability = TaskRunnability.unknown_if_ready_tasks
-        with ProcessInstanceQueueService.dequeued(process_instance):
-            ProcessInstanceMigrator.run(process_instance)
-            processor = ProcessInstanceProcessor(
-                process_instance,
-                workflow_completed_handler=cls.schedule_next_process_model_cycle,
-                include_task_data_for_completed_tasks=True,
+        """WRAP upstream run: force completed-task data load + seed merged data objects."""
+        if not callable(original_run_process_instance_with_processor):
+            raise RuntimeError(
+                "ProcessInstanceService.run_process_instance_with_processor is missing; cannot WRAP"
             )
-            # m8flow: seed the workflow with completed-task data + merged data objects so
-            # readonly views and re-runs see the values captured on the executed instance.
-            _seed_processor_with_completed_data(processor, process_instance)
 
-        skip_now = bool(status_value) and cls.can_optimistically_skip(processor, status_value)
-        if skip_now:
-            current_app.logger.info(f"Optimistically skipped process_instance {process_instance.id}")
-            return (processor, task_runnability)
+        # Upstream resolves ProcessInstanceProcessor from the service module globals.
+        if not hasattr(service_module, "ProcessInstanceProcessor"):
+            service_module.ProcessInstanceProcessor = processor_module.ProcessInstanceProcessor
+        OriginalProcessor = service_module.ProcessInstanceProcessor
 
-        db.session.refresh(process_instance)
-        status_ready = status_value is None or process_instance.status == status_value
-        if status_ready:
-            task_runnability = processor.do_engine_steps(
-                save=True,
+        class _SeedingProcessor(OriginalProcessor):
+            def __init__(self, process_instance_model, *args, **kwargs):
+                kwargs["include_task_data_for_completed_tasks"] = True
+                super().__init__(process_instance_model, *args, **kwargs)
+                _seed_processor_with_completed_data(self, process_instance_model)
+
+        previous_processor = service_module.ProcessInstanceProcessor
+        service_module.ProcessInstanceProcessor = _SeedingProcessor
+        try:
+            return original_run_process_instance_with_processor(
+                process_instance,
+                status_value=status_value,
                 execution_strategy_name=execution_strategy_name,
                 should_schedule_waiting_timer_events=should_schedule_waiting_timer_events,
             )
-
-        return (processor, task_runnability)
+        finally:
+            service_module.ProcessInstanceProcessor = previous_processor
 
     @staticmethod
     def patched_spiff_task_to_api_task(processor, spiff_task):
-        from SpiffWorkflow.util.task import TaskState  # type: ignore
-        from spiffworkflow_backend.exceptions.error import HumanTaskAlreadyCompletedError
-        from spiffworkflow_backend.exceptions.error import HumanTaskNotFoundError
-        from spiffworkflow_backend.exceptions.error import UserDoesNotHaveAccessToTaskError
-        from spiffworkflow_backend.models.group import GroupModel
+        """WRAP upstream spiff_task_to_api_task; prefer usernames when owners are surfaced."""
         from spiffworkflow_backend.models.human_task import HumanTaskModel
-        from spiffworkflow_backend.models.process_instance_event import ProcessInstanceEventModel
-        from spiffworkflow_backend.models.process_instance_event import ProcessInstanceEventType
-        from spiffworkflow_backend.models.task import Task
-        from spiffworkflow_backend.services.authorization_service import AuthorizationService
 
-        if callable(original_spiff_task_to_api_task):
+        def _rewrite_potential_owners(task: object) -> object:
+            if getattr(task, "can_complete", True):
+                return task
+            human_task = HumanTaskModel.query.filter_by(task_id=str(spiff_task.id)).first()
+            if human_task is None or human_task.lane_assignment_id is not None:
+                return task
+            if not getattr(human_task, "potential_owners", None):
+                return task
+            task.potential_owner_usernames = _potential_owner_usernames_from_human_task(human_task)
+            return task
+
+        def _coerce_missing_owner_emails() -> list[tuple[object, object]]:
+            restores: list[tuple[object, object]] = []
+            human_task = HumanTaskModel.query.filter_by(task_id=str(spiff_task.id)).first()
+            if human_task is None:
+                return restores
+            for owner in getattr(human_task, "potential_owners", []) or []:
+                if getattr(owner, "email", None) is None:
+                    restores.append((owner, owner.email))
+                    owner.email = getattr(owner, "username", None) or ""
+            return restores
+
+        if not callable(original_spiff_task_to_api_task):
+            raise RuntimeError("ProcessInstanceService.spiff_task_to_api_task is missing; cannot WRAP")
+
+        try:
+            task = original_spiff_task_to_api_task(processor, spiff_task)
+        except TypeError as exc:
+            message = str(exc)
+            if "expected str instance" not in message or "NoneType found" not in message:
+                raise
+            restores = _coerce_missing_owner_emails()
             try:
-                return original_spiff_task_to_api_task(processor, spiff_task)
-            except TypeError as exc:
-                if "expected str instance" not in str(exc) or "NoneType found" not in str(exc):
-                    raise
-        task_spec = spiff_task.task_spec
-        task_type = task_spec.description
-        task_guid = str(spiff_task.id)
-        props = dict(getattr(task_spec, "extensions", {}) or {})
-        lane = getattr(task_spec, "lane", None)
+                task = original_spiff_task_to_api_task(processor, spiff_task)
+            finally:
+                for owner, previous_email in restores:
+                    owner.email = previous_email
 
-        def _user_can_complete() -> bool:
-            try:
-                AuthorizationService.assert_user_can_complete_task(
-                    processor.process_instance_model.id, task_guid, g.user
-                )
-                return True
-            except (
-                HumanTaskAlreadyCompletedError,
-                HumanTaskNotFoundError,
-                UserDoesNotHaveAccessToTaskError,
-            ):
-                return False
-
-        can_complete = _user_can_complete()
-
-        # When the current user can't complete it, surface who can (lane group or the
-        # potential-owner usernames) so the UI can explain why.
-        assigned_user_group_identifier = None
-        potential_owner_usernames = None
-        blocked_human_task = None if can_complete else HumanTaskModel.query.filter_by(task_id=task_guid).first()
-        if blocked_human_task is not None:
-            if blocked_human_task.lane_assignment_id is not None:
-                lane_group = GroupModel.query.filter_by(id=blocked_human_task.lane_assignment_id).first()
-                assigned_user_group_identifier = lane_group.identifier if lane_group is not None else None
-            elif len(blocked_human_task.potential_owners) > 0:
-                potential_owner_usernames = _potential_owner_usernames_from_human_task(blocked_human_task)
-
-        parent_id = spiff_task.parent.id if spiff_task.parent else None
-        serialized_task_spec = processor.serialize_task_spec(task_spec)
-
-        failure_event = ProcessInstanceEventModel.query.filter_by(
-            task_guid=task_guid, event_type=ProcessInstanceEventType.task_failed.value
-        ).first()
-        error_message = failure_event.error_details[-1].message if failure_event else None
-
-        return Task(
-            spiff_task.id,
-            spiff_task.task_spec.bpmn_id,
-            spiff_task.task_spec.bpmn_name,
-            task_type,
-            TaskState.get_name(spiff_task.state),
-            can_complete=can_complete,
-            lane=lane,
-            process_identifier=spiff_task.task_spec._wf_spec.name,
-            process_instance_id=processor.process_instance_model.id,
-            process_model_identifier=processor.process_model_identifier,
-            process_model_display_name=processor.process_model_display_name,
-            properties=props,
-            parent=parent_id,
-            event_definition=serialized_task_spec.get("event_definition"),
-            error_message=error_message,
-            assigned_user_group_identifier=assigned_user_group_identifier,
-            potential_owner_usernames=potential_owner_usernames,
-        )
+        return _rewrite_potential_owners(task)
 
     ProcessInstanceService.create_process_instance = patched_create_process_instance  # type: ignore[assignment]
     ProcessInstanceService.complete_form_task = patched_complete_form_task
