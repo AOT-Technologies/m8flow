@@ -5,6 +5,7 @@
 deployment:
   enabled: true
   target: eks
+  method: patch
 
   environments:
     dev:
@@ -12,7 +13,8 @@ deployment:
       region: ca-central-1
       cluster_name: m8flow-eks
       namespace: dev
-      deploy_method: helm
+      deployment_name: m8flow-connector-proxy
+      container_name: m8flow-connector-proxy
       helm:
         release_name: m8flow-connector-proxy
         chart_path: m8flow-charts/charts/m8flow-connector-proxy
@@ -30,7 +32,8 @@ deployment:
       region: ca-central-1
       cluster_name: m8flow-eks
       namespace: demo
-      deploy_method: helm
+      deployment_name: m8flow-connector-proxy
+      container_name: m8flow-connector-proxy
       helm:
         release_name: m8flow-connector-proxy
         chart_path: m8flow-charts/charts/m8flow-connector-proxy
@@ -48,7 +51,8 @@ deployment:
       region: ca-central-1
       cluster_name: m8flow-eks
       namespace: qa
-      deploy_method: helm
+      deployment_name: m8flow-connector-proxy
+      container_name: m8flow-connector-proxy
       helm:
         release_name: m8flow-connector-proxy
         chart_path: m8flow-charts/charts/m8flow-connector-proxy

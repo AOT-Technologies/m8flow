@@ -5,6 +5,7 @@
 deployment:
   enabled: true
   target: eks
+  method: patch
 
   environments:
     dev:
@@ -12,7 +13,8 @@ deployment:
       region: ca-central-1
       cluster_name: m8flow-eks
       namespace: dev
-      deploy_method: helm
+      deployment_name: m8flow-frontend
+      container_name: m8flow-frontend
       helm:
         release_name: m8flow-frontend
         chart_path: m8flow-charts/charts/m8flow-frontend
@@ -30,7 +32,8 @@ deployment:
       region: ca-central-1
       cluster_name: m8flow-eks
       namespace: demo
-      deploy_method: helm
+      deployment_name: m8flow-frontend
+      container_name: m8flow-frontend
       helm:
         release_name: m8flow-frontend
         chart_path: m8flow-charts/charts/m8flow-frontend
@@ -48,7 +51,8 @@ deployment:
       region: ca-central-1
       cluster_name: m8flow-eks
       namespace: qa
-      deploy_method: helm
+      deployment_name: m8flow-frontend
+      container_name: m8flow-frontend
       helm:
         release_name: m8flow-frontend
         chart_path: m8flow-charts/charts/m8flow-frontend

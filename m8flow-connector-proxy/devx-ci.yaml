@@ -13,8 +13,8 @@ build:
 
 docker:
   enabled: true
-  working_directory: "m8flow-connector-proxy"
-  dockerfile: "Dockerfile"
+  working_directory: "."
+  dockerfile: "m8flow-connector-proxy/Dockerfile"
   image_name: "m8flow/m8flow-connector-proxy"
   image_tag: ""
   registry_type: generic
