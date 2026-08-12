@@ -17,6 +17,28 @@ logger = logging.getLogger(__name__)
 
 COOKIE_PATH = "/"
 
+# The auth cookies m8flow manages, mapping the thread-local attribute that holds a
+# freshly issued value to the cookie name written back to the browser.
+_TOKEN_COOKIES = {
+    "new_access_token": "access_token",
+    "new_id_token": "id_token",
+    "new_authentication_identifier": "authentication_identifier",
+}
+
+
+def _frontend_cookie_domain(app: flask.Flask) -> str | None:
+    """The bare host the frontend is served from, or None for localhost.
+
+    Mirrors upstream's behaviour: an unset URL yields an empty domain (host-only
+    cookie), and a localhost URL yields None so no Domain attribute is emitted.
+    """
+    domain = re.sub(
+        r"^https?://", "", app.config.get("SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND", "")
+    )
+    if domain and domain.startswith("localhost"):
+        return None
+    return domain
+
 
 def _set_new_access_token_in_cookie_with_path(
     response: flask.wrappers.Response,
@@ -24,52 +46,21 @@ def _set_new_access_token_in_cookie_with_path(
     from flask import current_app
 
     tld = current_app.config["THREAD_LOCAL_DATA"]
-    domain_for_frontend_cookie: str | None = re.sub(
-        r"^https?:\/\/",
-        "",
-        current_app.config.get("SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND", ""),
-    )
-    if domain_for_frontend_cookie and domain_for_frontend_cookie.startswith("localhost"):
-        domain_for_frontend_cookie = None
+    domain = _frontend_cookie_domain(current_app)
 
-    if hasattr(tld, "new_access_token") and tld.new_access_token:
-        response.set_cookie(
-            "access_token",
-            tld.new_access_token,
-            domain=domain_for_frontend_cookie,
-            path=COOKIE_PATH,
-        )
+    # Write each freshly issued token, forcing path=/ so the browser sends it to the
+    # frontend routes (see module docstring).
+    for source_attr, cookie_name in _TOKEN_COOKIES.items():
+        value = getattr(tld, source_attr, None)
+        if value:
+            response.set_cookie(cookie_name, value, domain=domain, path=COOKIE_PATH)
 
-    if hasattr(tld, "new_id_token") and tld.new_id_token:
-        response.set_cookie(
-            "id_token",
-            tld.new_id_token,
-            domain=domain_for_frontend_cookie,
-            path=COOKIE_PATH,
-        )
-
-    if hasattr(tld, "new_authentication_identifier") and tld.new_authentication_identifier:
-        response.set_cookie(
-            "authentication_identifier",
-            tld.new_authentication_identifier,
-            domain=domain_for_frontend_cookie,
-            path=COOKIE_PATH,
-        )
-
-    if hasattr(tld, "user_has_logged_out") and tld.user_has_logged_out:
-        response.set_cookie(
-            "id_token", "", max_age=0, domain=domain_for_frontend_cookie, path=COOKIE_PATH
-        )
-        response.set_cookie(
-            "access_token", "", max_age=0, domain=domain_for_frontend_cookie, path=COOKIE_PATH
-        )
-        response.set_cookie(
-            "authentication_identifier",
-            "",
-            max_age=0,
-            domain=domain_for_frontend_cookie,
-            path=COOKIE_PATH,
-        )
+    # On logout, expire every managed cookie (same path/domain so the browser drops them).
+    if getattr(tld, "user_has_logged_out", False):
+        for cookie_name in _TOKEN_COOKIES.values():
+            response.set_cookie(
+                cookie_name, "", max_age=0, domain=domain, path=COOKIE_PATH
+            )
 
     from spiffworkflow_backend.routes.authentication_controller import (
         _clear_auth_tokens_from_thread_local_data,
@@ -87,4 +78,3 @@ def apply_cookie_path_patch() -> None:
         _set_new_access_token_in_cookie_with_path
     )
     logger.info("cookie_path_patch: applied; auth cookies use path=/")
-

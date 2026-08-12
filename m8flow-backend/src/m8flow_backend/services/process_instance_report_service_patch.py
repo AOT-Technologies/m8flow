@@ -40,34 +40,39 @@ def apply() -> None:
     @classmethod
     def patched_get_basic_query(cls, filters: list[FilterValue]) -> Query:
         """Build the report base query with tenant-aware process initiator resolution."""
-        process_instance_query: Query = ProcessInstanceModel.query
-        process_instance_query = process_instance_query.options(selectinload(ProcessInstanceModel.process_initiator))
+        query: Query = ProcessInstanceModel.query.options(
+            selectinload(ProcessInstanceModel.process_initiator)
+        )
 
         for value in cls.check_filter_value(filters, "process_model_identifier"):
             process_model = ProcessModelService.get_process_model(f"{value}")
-            process_instance_query = process_instance_query.filter_by(process_model_identifier=process_model.id)
+            query = query.filter_by(process_model_identifier=process_model.id)
 
         if ProcessInstanceModel.start_in_seconds is None or ProcessInstanceModel.end_in_seconds is None:
             raise ApiError(
                 error_code="unexpected_condition",
-                message="Something went very wrong",
+                message="Process instance start/end timestamp columns are not mapped.",
                 status_code=500,
             )
 
-        for value in cls.check_filter_value(filters, "start_from"):
-            process_instance_query = process_instance_query.filter(ProcessInstanceModel.start_in_seconds >= value)
-        for value in cls.check_filter_value(filters, "start_to"):
-            process_instance_query = process_instance_query.filter(ProcessInstanceModel.start_in_seconds <= value)
-        for value in cls.check_filter_value(filters, "end_from"):
-            process_instance_query = process_instance_query.filter(ProcessInstanceModel.end_in_seconds >= value)
-        for value in cls.check_filter_value(filters, "end_to"):
-            process_instance_query = process_instance_query.filter(ProcessInstanceModel.end_in_seconds <= value)
+        # Timestamp range filters, applied from a table so the four near-identical blocks
+        # are one loop rather than a copied ladder.
+        range_filters = (
+            ("start_from", ProcessInstanceModel.start_in_seconds, lambda col, v: col >= v),
+            ("start_to", ProcessInstanceModel.start_in_seconds, lambda col, v: col <= v),
+            ("end_from", ProcessInstanceModel.end_in_seconds, lambda col, v: col >= v),
+            ("end_to", ProcessInstanceModel.end_in_seconds, lambda col, v: col <= v),
+        )
+        for filter_key, column, predicate in range_filters:
+            for value in cls.check_filter_value(filters, filter_key):
+                query = query.filter(predicate(column, value))
 
-        has_active_status = cls.get_filter_value(filters, "has_active_status")
-        if has_active_status:
-            process_instance_query = process_instance_query.filter(
+        if cls.get_filter_value(filters, "has_active_status"):
+            query = query.filter(
                 ProcessInstanceModel.status.in_(ProcessInstanceModel.active_statuses())  # type: ignore[arg-type]
             )
+
+        process_instance_query = query
 
         for value in cls.check_filter_value(filters, "process_initiator_username"):
             initiators = find_users_for_current_tenant_by_username(value)

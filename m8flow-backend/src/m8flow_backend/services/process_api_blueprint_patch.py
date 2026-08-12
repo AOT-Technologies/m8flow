@@ -71,6 +71,82 @@ def _make_external_form_aware_get_task_model(original, api_error_cls):
     return _patched_get_task_model_for_request
 
 
+_TASK_DATA_VAR_PREFIX = "options_from_task_data_var:"
+
+
+def _task_data_var_name(anyof_or_items_value: object) -> str | None:
+    """A dynamic option list is encoded as a one-element list holding the string
+    ``options_from_task_data_var:<name>``. Return ``<name>`` for that shape, else None."""
+    if not (isinstance(anyof_or_items_value, list) and len(anyof_or_items_value) == 1):
+        return None
+    sole = anyof_or_items_value[0]
+    if isinstance(sole, str) and sole.startswith(_TASK_DATA_VAR_PREFIX):
+        return sole[len(_TASK_DATA_VAR_PREFIX):]
+    return None
+
+
+def _resolve_task_data_option_list(container: dict, key: str, task_data: dict) -> None:
+    """Replace a ``anyOf``/``items`` placeholder with the concrete options resolved from
+    ``task_data``. m8flow's divergence from upstream: a missing or empty source variable
+    renders an empty option set (with a warning) instead of raising a 500; a string source
+    is a 400 (client) rather than a 500."""
+    from spiffworkflow_backend.exceptions.api_error import ApiError
+
+    var_name = _task_data_var_name(container[key])
+    if var_name is None:
+        return
+
+    if var_name not in task_data:
+        _logger.warning(
+            "Form option variable '%s' is not in the task data; rendering empty options.",
+            var_name,
+        )
+        container[key] = []
+        return
+
+    source = task_data.get(var_name)
+    if source == []:
+        _logger.warning(
+            "Form option variable '%s' is an empty list; rendering empty options.",
+            var_name,
+        )
+        container[key] = []
+        return
+    if isinstance(source, str):
+        raise ApiError(
+            error_code="invalid_form_data",
+            message=(
+                "This form depends on enum variables, but at least one variable was a string."
+                f" The variable '{var_name}' must be a list with at least one element."
+            ),
+            status_code=400,
+        )
+    if not isinstance(source, list):
+        return
+
+    if all(isinstance(o, dict) and "value" in o and "label" in o for o in source):
+        container[key] = [
+            {"type": "string", "enum": [option["value"]], "title": option["label"]}
+            for option in source
+        ]
+    else:
+        container[key] = source
+
+
+def _patched_update_form_schema_with_task_data_as_needed(in_dict: dict, task_data: dict) -> None:
+    """m8flow form-schema builder: resolve dynamic option lists, recursing through nested
+    schema dicts/lists. Re-expressed independently of upstream (guard clauses + helpers)."""
+    for key, value in in_dict.items():
+        if key in {"anyOf", "items"}:
+            _resolve_task_data_option_list(in_dict, key, task_data)
+        elif isinstance(value, dict):
+            _patched_update_form_schema_with_task_data_as_needed(value, task_data)
+        elif isinstance(value, list):
+            for element in value:
+                if isinstance(element, dict):
+                    _patched_update_form_schema_with_task_data_as_needed(element, task_data)
+
+
 def apply() -> None:
     """Patches for spiffworkflow_backend.routes.process_api_blueprint:
 
@@ -84,65 +160,6 @@ def apply() -> None:
 
     process_api_blueprint = importlib.import_module("spiffworkflow_backend.routes.process_api_blueprint")
     from spiffworkflow_backend.exceptions.api_error import ApiError
-
-    def _patched_update_form_schema_with_task_data_as_needed(in_dict: dict, task_data: dict) -> None:
-        for k, value in in_dict.items():
-            if k in {"anyOf", "items"}:
-                if isinstance(value, list):
-                    if len(value) == 1:
-                        first_element_in_value_list = value[0]
-                        if isinstance(first_element_in_value_list, str):
-                            if first_element_in_value_list.startswith("options_from_task_data_var:"):
-                                task_data_var = first_element_in_value_list.replace("options_from_task_data_var:", "")
-
-                                if task_data_var not in task_data:
-                                    _logger.warning(
-                                        "Error building form. Attempting to create a selection list with options from"
-                                        " variable '%s' but it doesn't exist in the Task Data."
-                                        " Rendering form with empty options.",
-                                        task_data_var,
-                                    )
-                                    in_dict[k] = []
-                                    continue
-
-                                select_options_from_task_data = task_data.get(task_data_var)
-                                if select_options_from_task_data == []:
-                                    _logger.warning(
-                                        "This form depends on variables, but at least one variable was empty."
-                                        " The variable '%s' is an empty list."
-                                        " Rendering form with empty options.",
-                                        task_data_var,
-                                    )
-                                    in_dict[k] = []
-                                    continue
-                                if isinstance(select_options_from_task_data, str):
-                                    raise ApiError(
-                                        error_code="invalid_form_data",
-                                        message=(
-                                            "This form depends on enum variables, but at least one variable was a string."
-                                            f" The variable '{task_data_var}' must be a list with at least one element."
-                                        ),
-                                        status_code=400,
-                                    )
-                                if isinstance(select_options_from_task_data, list):
-                                    if all("value" in d and "label" in d for d in select_options_from_task_data):
-
-                                        def map_function(task_data_select_option: dict) -> dict:
-                                            return {
-                                                "type": "string",
-                                                "enum": [task_data_select_option["value"]],
-                                                "title": task_data_select_option["label"],
-                                            }
-
-                                        in_dict[k] = list(map(map_function, select_options_from_task_data))
-                                    else:
-                                        in_dict[k] = select_options_from_task_data
-            elif isinstance(value, dict):
-                _patched_update_form_schema_with_task_data_as_needed(value, task_data)
-            elif isinstance(value, list):
-                for o in value:
-                    if isinstance(o, dict):
-                        _patched_update_form_schema_with_task_data_as_needed(o, task_data)
 
     process_api_blueprint._update_form_schema_with_task_data_as_needed = (
         _patched_update_form_schema_with_task_data_as_needed

@@ -355,6 +355,41 @@ def apply_to_table(table: Table) -> None:
 
 
 _REGISTERED = False
+_APP_METADATA: object | None = None
+#: Returned while ``spiffworkflow_backend.models.db`` is still mid-import, so the
+#: listener cannot yet know the app metadata. Distinct from "not the app's".
+_METADATA_UNRESOLVED = object()
+
+
+def _app_metadata() -> object:
+    """The one MetaData m8flow's delta belongs to: the app's mapped models.
+
+    Resolved lazily (importing db here, not at register() time, preserves the
+    "register the listener before importing any model" contract this module's
+    spec relies on) and cached. Scoping to this metadata keeps the listener off
+    throwaway Table objects that share a managed name but live in a different
+    MetaData:
+
+    * Alembic builds each migration operation against its own per-op MetaData, so a
+      hand-written compat migration that already creates m8flow's index/constraint
+      would otherwise collide with a listener-injected duplicate ("already exists").
+    * A migration unit test builds an isolated ``sa.MetaData()`` holding only the few
+      tables it needs; injecting m8flow's FK columns there points at tables the test
+      never created (NoReferencedTableError at create_all).
+
+    If a Table happens to attach while the db module is itself still importing, the
+    import re-enters and raises. That window holds no managed app table (db does not
+    define one), so returning _METADATA_UNRESOLVED - which the caller treats as
+    "apply", the pre-scoping default - is safe and avoids a spurious error log.
+    """
+    global _APP_METADATA
+    if _APP_METADATA is None:
+        try:
+            from spiffworkflow_backend.models.db import db
+        except ImportError:
+            return _METADATA_UNRESOLVED
+        _APP_METADATA = db.metadata
+    return _APP_METADATA
 
 
 def register() -> None:
@@ -369,6 +404,12 @@ def register() -> None:
         # constructs, including internal ones we have no business touching, and an
         # exception aborts whatever created the table - a migration, or app boot.
         try:
+            # Only the app's own mapped tables carry m8flow's delta. A Table in any
+            # other MetaData (an Alembic op stub, a migration test's isolated schema)
+            # keeps a managed name but is not ours to touch - see _app_metadata().
+            target = _app_metadata()
+            if target is not _METADATA_UNRESOLVED and table.metadata is not target:
+                return
             apply_to_table(table)
         except Exception:
             LOGGER.exception(

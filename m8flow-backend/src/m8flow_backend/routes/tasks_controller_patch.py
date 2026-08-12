@@ -150,39 +150,33 @@ def _apply_module_patches():
 
         potential_owner_usernames = tasks_controller._get_potential_owner_usernames(assigned_user)
 
-        process_model_identifier_column = ProcessInstanceModel.process_model_identifier
-        process_instance_status_column = ProcessInstanceModel.status.label("process_instance_status")  # type: ignore
-        user_username_column = UserModel.username.label("process_initiator_username")  # type: ignore
-        group_identifier_column = GroupModel.identifier.label("assigned_user_group_identifier")  # type: ignore
-        lane_name_column = HumanTaskModel.lane_name
-        tenant_id_column = ProcessInstanceModel.m8f_tenant_id.label("tenant_id")  # type: ignore
-        if current_app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] == "postgres":
-            process_model_identifier_column = func.max(ProcessInstanceModel.process_model_identifier).label(
-                "process_model_identifier"
-            )
-            process_instance_status_column = func.max(ProcessInstanceModel.status).label("process_instance_status")
-            user_username_column = func.max(UserModel.username).label("process_initiator_username")
-            group_identifier_column = func.max(GroupModel.identifier).label("assigned_user_group_identifier")
-            lane_name_column = func.max(HumanTaskModel.lane_name).label("lane_name")
-            tenant_id_column = func.max(ProcessInstanceModel.m8f_tenant_id).label("tenant_id")
+        # On postgres the query groups by human_task.id, so the process-instance/user/group
+        # columns must be aggregated; sqlite tolerates the bare column. Build one column list
+        # via a helper rather than duplicating it per dialect.
+        is_postgres = current_app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] == "postgres"
+
+        def col(expr: object, label: str) -> object:
+            return (func.max(expr) if is_postgres else expr).label(label)
+
+        selected_columns = [
+            col(ProcessInstanceModel.process_model_identifier, "process_model_identifier"),
+            col(ProcessInstanceModel.status, "process_instance_status"),
+            col(UserModel.username, "process_initiator_username"),
+            col(GroupModel.identifier, "assigned_user_group_identifier"),
+            HumanTaskModel.task_name,
+            HumanTaskModel.task_title,
+            HumanTaskModel.process_model_display_name,
+            HumanTaskModel.process_instance_id,
+            HumanTaskModel.updated_at_in_seconds,
+            HumanTaskModel.created_at_in_seconds,
+            HumanTaskModel.json_metadata,
+            col(HumanTaskModel.lane_name, "lane_name"),
+            potential_owner_usernames,
+            col(ProcessInstanceModel.m8f_tenant_id, "tenant_id"),
+        ]
 
         human_tasks = (
-            human_tasks_query.add_columns(
-                process_model_identifier_column,
-                process_instance_status_column,
-                user_username_column,
-                group_identifier_column,
-                HumanTaskModel.task_name,
-                HumanTaskModel.task_title,
-                HumanTaskModel.process_model_display_name,
-                HumanTaskModel.process_instance_id,
-                HumanTaskModel.updated_at_in_seconds,
-                HumanTaskModel.created_at_in_seconds,
-                HumanTaskModel.json_metadata,
-                lane_name_column,
-                potential_owner_usernames,
-                tenant_id_column,
-            )
+            human_tasks_query.add_columns(*selected_columns)
             .order_by(desc(HumanTaskModel.id))  # type: ignore
             .paginate(page=page, per_page=per_page, error_out=False)
         )

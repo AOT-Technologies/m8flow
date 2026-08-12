@@ -31,7 +31,11 @@ UPSTREAM_URL="$(jq -r '.upstream_url' "${UPSTREAM_CONFIG_FILE}")"
 DEFAULT_UPSTREAM_TAG="$(jq -r '.upstream_ref' "${UPSTREAM_CONFIG_FILE}")"
 UPSTREAM_TAG="${1:-${DEFAULT_UPSTREAM_TAG}}"
 
-mapfile -t DIRS < <(
+# Bash-3-compatible (macOS /bin/bash is 3.2; mapfile requires bash 4+).
+DIRS=()
+while IFS= read -r _dir; do
+  [[ -n "${_dir}" ]] && DIRS+=("${_dir}")
+done < <(
   jq -r '
     [
       (.backend // [])[],
