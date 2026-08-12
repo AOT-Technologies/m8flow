@@ -128,9 +128,16 @@ def _vault_secret_missing_value(key: str, tenant_id: str, secret_id: str, path: 
 
 
 def _vault_runtime_error(action: str, key: str, exc: Exception, status_code: int = 503) -> ApiError:
+    logger.warning(
+        "vault_secret_operation_failed action=%s key=%s status_code=%s error_type=%s",
+        action,
+        key,
+        status_code,
+        type(exc).__name__,
+    )
     return ApiError(
         error_code=f"vault_{action}_error",
-        message=f"Could not {action} secret with key: {key}. Original error is: {exc}",
+        message=f"Could not {action} secret with key: {key}.",
         status_code=status_code,
     )
 
@@ -420,12 +427,12 @@ class VaultBackedSecretBackend:
                     vault_client.delete_secret(target_path)
                 except Exception as cleanup_exc:
                     logger.error(
-                        "vault_secret_update_compensation_failed tenant_id=%s secret_id=%s path=%s target_path=%s cleanup_error=%s",
+                        "vault_secret_update_compensation_failed tenant_id=%s secret_id=%s path=%s target_path=%s cleanup_error_type=%s",
                         tenant_id,
                         existing.id,
                         path,
                         target_path,
-                        cleanup_exc,
+                        type(cleanup_exc).__name__,
                     )
             raise _vault_runtime_error("update", key, exc) from exc
 

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import sys
 import time
 from pathlib import Path
@@ -43,30 +42,9 @@ POLICY_TEMPLATE = Path(
 )
 HEALTH_PATH = "sys/health?standbyok=true&perfstandbyok=true"
 LEADER_PATH = "sys/leader"
-_REDACTED = "<redacted>"
-_SENSITIVE_FIELD_PATTERNS = (
-    re.compile(
-        r'(?i)(["\']?(?:root_token|client_token|secret_id|secret_id_accessor|role_id|token|value)["\']?\s*[:=]\s*)(["\']?)([^,"\'}\s]+)(["\']?)'
-    ),
-    re.compile(
-        r'(?i)\b((?:M8FLOW_VAULT_(?:SECRET_ID|ROLE_ID)|VAULT_TOKEN|X-Vault-Token)\s*=\s*)([^\s]+)'
-    ),
-)
-
-
-def _sanitize_log_text(message: str) -> str:
-    sanitized = str(message)
-    sanitized = _SENSITIVE_FIELD_PATTERNS[0].sub(rf"\1\2{_REDACTED}\4", sanitized)
-    sanitized = _SENSITIVE_FIELD_PATTERNS[1].sub(rf"\1{_REDACTED}", sanitized)
-    return sanitized
-
-
-def log(message: str) -> None:
-    print(f"vault-demo: {_sanitize_log_text(message)}", flush=True)
-
 
 def fail(message: str) -> None:
-    raise RuntimeError(_sanitize_log_text(message))
+    raise RuntimeError(message)
 
 
 def write_text_file(path: Path, content: str, mode: int = 0o600) -> None:
@@ -94,6 +72,13 @@ def format_missing_secrets_file_message(path: Path) -> str:
             "seeded for the m8flow tenant."
         )
     return message
+
+
+def log_missing_secrets_file_notice(_message: str) -> None:
+    print(
+        "vault-demo: Vault demo secrets file is missing. Proceeding with the demo bootstrap marker secret.",
+        flush=True,
+    )
 
 
 def seeded_secret_logical_path(secret: SeededSecretSpec) -> str:
@@ -133,7 +118,8 @@ def vault_request(
         response_status = int(exc.code)
         response_body = exc.read().decode("utf-8")
     except error.URLError as exc:
-        fail(f"Could not reach Vault at {VAULT_ADDR}: {exc}")
+        del exc
+        fail(f"Could not reach Vault at {VAULT_ADDR}.")
 
     parsed: dict[str, Any] | None = None
     if response_body.strip():
@@ -167,11 +153,13 @@ def wait_for_vault_status() -> dict[str, Any]:
             if isinstance(payload, dict):
                 return payload
             last_error = "health endpoint returned a non-JSON response"
-        except RuntimeError as exc:
-            last_error = str(exc)
+        except RuntimeError:
+            last_error = "health request failed"
         time.sleep(WAIT_INTERVAL_SECONDS)
 
-    fail(f"Timed out waiting for Vault health at {VAULT_ADDR}. Last error: {last_error or 'unknown error'}")
+    if last_error == "health endpoint returned a non-JSON response":
+        fail(f"Timed out waiting for Vault health at {VAULT_ADDR}. The health endpoint returned a non-JSON response.")
+    fail(f"Timed out waiting for Vault health at {VAULT_ADDR}.")
 
 
 def wait_for_active_node() -> dict[str, Any]:
@@ -190,22 +178,21 @@ def wait_for_active_node() -> dict[str, Any]:
                     return payload
                 if payload.get("is_self") is True:
                     return payload
-                last_error = f"leader not active yet: {payload}"
+                last_error = "leader not active yet"
             elif "active cluster node not found" in body:
-                last_error = body
+                last_error = "active cluster node not found"
             else:
                 last_error = "leader endpoint returned a non-JSON response"
-        except RuntimeError as exc:
-            if "active cluster node not found" in str(exc):
-                last_error = str(exc)
-            else:
-                last_error = str(exc)
+        except RuntimeError:
+            last_error = "leader request failed"
         time.sleep(WAIT_INTERVAL_SECONDS)
 
-    fail(
-        f"Timed out waiting for the local Vault node to become active at {VAULT_ADDR}. "
-        f"Last error: {last_error or 'unknown error'}"
-    )
+    if last_error == "leader endpoint returned a non-JSON response":
+        fail(
+            f"Timed out waiting for the local Vault node to become active at {VAULT_ADDR}. "
+            "The leader endpoint returned a non-JSON response."
+        )
+    fail(f"Timed out waiting for the local Vault node to become active at {VAULT_ADDR}.")
 
 
 def load_init_payload() -> dict[str, Any]:
@@ -238,7 +225,7 @@ def initialize_if_needed(status: dict[str, Any]) -> dict[str, Any]:
     if status.get("initialized") is not False:
         return status
 
-    log("Vault is uninitialized. Initializing a development-only instance.")
+    print("vault-demo: Vault is uninitialized. Initializing a development-only instance.", flush=True)
     remove_generated_files()
     _status_code, payload, _body = vault_request(
         "PUT",
@@ -257,7 +244,7 @@ def unseal_if_needed(status: dict[str, Any]) -> dict[str, Any]:
         return status
 
     init_payload = load_init_payload()
-    log("Vault is sealed. Unsealing with the persisted development key.")
+    print("vault-demo: Vault is sealed. Unsealing with the persisted development key.", flush=True)
     _status_code, payload, _body = vault_request(
         "PUT",
         "sys/unseal",
@@ -275,7 +262,7 @@ def ensure_kv_v2_mount(root_token: str) -> None:
     mount_key = f"{MOUNT_POINT}/"
     mount_entry = mounts.get(mount_key)
     if mount_entry is None:
-        log(f"Enabling KV v2 mount '{MOUNT_POINT}'.")
+        print(f"vault-demo: Enabling KV v2 mount '{MOUNT_POINT}'.", flush=True)
         vault_request(
             "POST",
             f"sys/mounts/{parse.quote(MOUNT_POINT, safe='')}",
@@ -300,7 +287,7 @@ def ensure_approle_auth(root_token: str) -> None:
     if mount_key in auth_methods:
         return
 
-    log(f"Enabling the AppRole auth method at mount '{APPROLE_MOUNT_POINT}'.")
+    print(f"vault-demo: Enabling the AppRole auth method at mount '{APPROLE_MOUNT_POINT}'.", flush=True)
     vault_request(
         "POST",
         f"sys/auth/{parse.quote(APPROLE_MOUNT_POINT, safe='')}",
@@ -333,7 +320,10 @@ def ensure_policy(root_token: str) -> None:
 
 
 def ensure_approle_role(root_token: str) -> None:
-    log(f"Creating or updating broker AppRole '{BROKER_APPROLE_NAME}' with policy '{BROKER_POLICY_NAME}'.")
+    print(
+        f"vault-demo: Creating or updating broker AppRole '{BROKER_APPROLE_NAME}' with policy '{BROKER_POLICY_NAME}'.",
+        flush=True,
+    )
     vault_request(
         "POST",
         f"auth/{parse.quote(APPROLE_MOUNT_POINT, safe='')}/role/{parse.quote(BROKER_APPROLE_NAME, safe='')}",
@@ -397,12 +387,12 @@ def ensure_secret_id(root_token: str, role_id: str) -> str:
         if existing_secret_id:
             try:
                 approle_login(role_id, existing_secret_id)
-                log("Reusing the persisted broker AppRole secret_id.")
+                print("vault-demo: Reusing the persisted broker AppRole secret_id.", flush=True)
                 return existing_secret_id
             except RuntimeError:
-                log("Persisted broker AppRole secret_id is invalid; generating a fresh one.")
+                print("vault-demo: Persisted broker AppRole secret_id is invalid; generating a fresh one.", flush=True)
 
-    log("Generating a persisted broker AppRole secret_id for development use.")
+    print("vault-demo: Generating a persisted broker AppRole secret_id for development use.", flush=True)
     return generate_secret_id(root_token)
 
 
@@ -448,7 +438,7 @@ def load_seeded_secrets() -> list[SeededSecretSpec]:
         organization_alias=demo_identity.organization_alias,
         organization_id=demo_identity.organization_id,
         missing_file_message_factory=format_missing_secrets_file_message,
-        logger=log,
+        logger=log_missing_secrets_file_notice,
     )
 
 
@@ -537,7 +527,7 @@ def verify_bootstrap(role_id: str, secret_id: str, secrets: list[SeededSecretSpe
 
     status = wait_for_vault_status()
     if status.get("initialized") is not True or status.get("sealed") is not False:
-        fail(f"Vault demo verification failed because Vault is not ready. Status: {status}")
+        fail("Vault demo verification failed because Vault is not ready.")
 
     verified_secret = secrets[0]
 
@@ -630,14 +620,15 @@ def main() -> int:
         written, skipped = seed_demo_secrets(root_token, seeded_secrets)
         verify_bootstrap(role_id, secret_id, seeded_secrets, written, skipped)
 
-        log(
-            "Bootstrap complete "
+        print(
+            "vault-demo: Bootstrap complete "
             f"(mount={MOUNT_POINT}, broker_policy={BROKER_POLICY_NAME}, broker_approle={BROKER_APPROLE_NAME}, "
-            f"written={written}, skipped={skipped}, overwrite={DEMO_OVERWRITE})."
+            f"written={written}, skipped={skipped}, overwrite={DEMO_OVERWRITE}).",
+            flush=True,
         )
         return 0
-    except Exception as exc:
-        print(f"vault-demo: {_sanitize_log_text(exc)}", file=sys.stderr, flush=True)
+    except Exception:
+        print("vault-demo: Bootstrap failed.", file=sys.stderr, flush=True)
         return 1
 
 

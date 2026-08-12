@@ -249,19 +249,30 @@ def test_vault_mode_uses_tenant_scoped_clients_for_data_plane(app, tenants, user
     assert provider.calls == [tenants[0], tenants[1]]
 
 
-def test_vault_mode_returns_runtime_error_when_tenant_client_cannot_be_resolved(app, tenants, user) -> None:
+def test_vault_mode_returns_runtime_error_without_exposing_sensitive_exception_text(
+    app,
+    tenants,
+    user,
+    caplog,
+) -> None:
     fake_vault = FakeVaultClient()
     provider = FakeTenantScopedVaultClientProvider(fake_vault)
-    provider.errors_by_tenant[tenants[0]] = TenantScopedVaultClientError("tenant approle is missing")
+    provider.errors_by_tenant[tenants[0]] = TenantScopedVaultClientError("secret_id=secret-123 value=demo-secret")
     backend = _backend(fake_vault, provider=provider)
 
-    with app.test_request_context("/"):
-        g.m8flow_tenant_id = tenants[0]
-        with pytest.raises(ApiError) as exc_info:
-            backend.add_secret("API_TOKEN", "vault-value", user)
+    with caplog.at_level("WARNING", logger="m8flow.secret_backend"):
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = tenants[0]
+            with pytest.raises(ApiError) as exc_info:
+                backend.add_secret("API_TOKEN", "vault-value", user)
 
     assert exc_info.value.error_code == "vault_create_error"
-    assert "tenant approle is missing" in exc_info.value.message
+    assert exc_info.value.message == "Could not create secret with key: API_TOKEN."
+    assert "secret-123" not in exc_info.value.message
+    assert "demo-secret" not in exc_info.value.message
+    assert "TenantScopedVaultClientError" in caplog.text
+    assert "secret-123" not in caplog.text
+    assert "demo-secret" not in caplog.text
 
 
 def test_vault_mode_does_not_fallback_to_legacy_secret_table(app, tenants, user) -> None:
@@ -288,6 +299,8 @@ def test_vault_mode_does_not_fallback_to_legacy_secret_table(app, tenants, user)
             backend.get_secret("SMTP_PASSWORD")
 
     assert exc_info.value.error_code == "vault_read_error"
+    assert exc_info.value.message == "Could not read secret with key: SMTP_PASSWORD."
+    assert "vault unavailable" not in exc_info.value.message
 
 
 def test_secret_names_are_unique_within_tenant_but_reusable_across_tenants(app, tenants, user) -> None:

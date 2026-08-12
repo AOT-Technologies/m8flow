@@ -23,6 +23,7 @@ from seeded_secrets import (
     load_seeded_secret_specs,
 )
 import bootstrap_vault_demo
+import verify_backend_vault_demo
 
 
 def test_missing_secrets_file_falls_back_to_demo_bootstrap_secret(tmp_path: Path) -> None:
@@ -90,17 +91,23 @@ def test_present_file_with_empty_tenant_secret_mapping_is_rejected(tmp_path: Pat
         )
 
 
-def test_bootstrap_log_redacts_secret_like_values(capsys: pytest.CaptureFixture[str]) -> None:
-    bootstrap_vault_demo.log(
-        'secret_id=secret-123 role_id="role-456" root_token=root-789 value=demo-secret'
-    )
+def test_bootstrap_main_failure_output_hides_exception_text(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(bootstrap_vault_demo, "wait_for_vault_status", lambda: (_ for _ in ()).throw(
+        RuntimeError("secret_id=secret-123 role_id=role-456 root_token=root-789 value=demo-secret")
+    ))
+
+    result = bootstrap_vault_demo.main()
 
     captured = capsys.readouterr()
-    assert "secret-123" not in captured.out
-    assert "role-456" not in captured.out
-    assert "root-789" not in captured.out
-    assert "demo-secret" not in captured.out
-    assert "<redacted>" in captured.out
+    assert result == 1
+    assert captured.err.strip() == "vault-demo: Bootstrap failed."
+    assert "secret-123" not in captured.err
+    assert "role-456" not in captured.err
+    assert "root-789" not in captured.err
+    assert "demo-secret" not in captured.err
 
 
 def test_vault_request_error_suppresses_response_body(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -122,3 +129,28 @@ def test_vault_request_error_suppresses_response_body(monkeypatch: pytest.Monkey
     message = str(exc_info.value)
     assert "secret-123" not in message
     assert "Response body suppressed to avoid logging sensitive data." in message
+
+
+def test_verify_script_failure_output_hides_exception_text(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(verify_backend_vault_demo, "load_env_file", lambda path: None)
+
+    def fail_with_sensitive_details(**kwargs) -> None:
+        del kwargs
+        raise RuntimeError("secret_id=secret-123 value=demo-secret")
+
+    monkeypatch.setattr(
+        verify_backend_vault_demo,
+        "wait_for_demo_tenant_identity",
+        fail_with_sensitive_details,
+    )
+
+    result = verify_backend_vault_demo.main()
+
+    captured = capsys.readouterr()
+    assert result == 1
+    assert "secret-123" not in captured.err
+    assert "demo-secret" not in captured.err
+    assert "RuntimeError" in captured.err

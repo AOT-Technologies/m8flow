@@ -36,6 +36,10 @@ def load_env_file(path: Path) -> None:
         os.environ[key.strip()] = value.strip().strip('"').strip("'")
 
 
+def format_failure_message(exc: Exception) -> str:
+    return f"vault-demo-verify failed with {type(exc).__name__}."
+
+
 def main() -> int:
     try:
         script_path = Path(__file__).resolve()
@@ -115,7 +119,7 @@ def main() -> int:
         )
         return 0
     except Exception as exc:
-        print(f"vault-demo-verify: {exc}", file=sys.stderr, flush=True)
+        print(format_failure_message(exc), file=sys.stderr, flush=True)
         return 1
 
 
