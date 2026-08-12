@@ -5,6 +5,10 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from fastmcp import FastMCP
 
+# Tool names an admin must explicitly enable per tenant before an MCP client can call
+# them (M8F-404). Empty today — no MCP tool is currently classified as sensitive.
+SENSITIVE_TOOL_NAMES: frozenset[str] = frozenset()
+
 
 def register_tools(mcp: "FastMCP") -> None:
     """Register all m8flow tools with the MCP server.

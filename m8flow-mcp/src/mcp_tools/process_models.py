@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from mcp.types import ToolAnnotations
+
 from src.api_client import M8flowAPIClient
 from src.utils.context import get_auth_token
 from src.utils.logging import get_logger
@@ -23,7 +25,12 @@ def register_process_model_tools(mcp: FastMCP) -> None:
         mcp: FastMCP server instance
     """
 
-    @mcp.tool(name="list_process_models", description="List all workflow process models in m8flow")
+    @mcp.tool(
+        name="list_process_models",
+        description="List all workflow process models in m8flow",
+        tags={"process-models"},
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
+    )
     async def list_process_models(
         page: int = 1,
         per_page: int = 10,
@@ -57,7 +64,12 @@ def register_process_model_tools(mcp: FastMCP) -> None:
             logger.error(f"Failed to list process models: {e}")
             return {"error": str(e)}
 
-    @mcp.tool(name="get_process_model", description="Get details of a specific process model")
+    @mcp.tool(
+        name="get_process_model",
+        description="Get details of a specific process model",
+        tags={"process-models"},
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
+    )
     async def get_process_model(process_model_id: str, include_template_info: bool = True) -> dict[str, Any]:
         """Get process model details.
 
@@ -97,7 +109,12 @@ def register_process_model_tools(mcp: FastMCP) -> None:
             logger.error(f"Failed to get process model {process_model_id}: {e}")
             return {"error": str(e)}
 
-    @mcp.tool(name="create_process_model", description="Create a new process model")
+    @mcp.tool(
+        name="create_process_model",
+        description="Create a new process model",
+        tags={"process-models"},
+        annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False),
+    )
     async def create_process_model(
         identifier: str,
         display_name: str,
@@ -150,7 +167,12 @@ def register_process_model_tools(mcp: FastMCP) -> None:
             logger.error(f"Failed to create process model: {e}")
             return {"error": str(e)}
 
-    @mcp.tool(name="update_process_model", description="Update an existing process model")
+    @mcp.tool(
+        name="update_process_model",
+        description="Update an existing process model",
+        tags={"process-models"},
+        annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False),
+    )
     async def update_process_model(
         process_model_id: str,
         display_name: str | None = None,
@@ -185,7 +207,12 @@ def register_process_model_tools(mcp: FastMCP) -> None:
             logger.error(f"Failed to update process model {process_model_id}: {e}")
             return {"error": str(e)}
 
-    @mcp.tool(name="delete_process_model", description="Delete a process model")
+    @mcp.tool(
+        name="delete_process_model",
+        description="Delete a process model",
+        tags={"process-models"},
+        annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True),
+    )
     async def delete_process_model(process_model_id: str) -> dict[str, Any]:
         """Delete a process model.
 

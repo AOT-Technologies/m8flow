@@ -287,6 +287,23 @@ permissions:
     groups: ["everybody"]
     actions: [read]
     uri: /m8flow/mcp-connection
+  # MCP tool catalog + tool execution. Unlike read-mcp-connection-page above (a
+  # frontend page-visibility gate open to "everybody"), this is the real backend
+  # API behind that page and can invoke arbitrary MCP tools on the caller's
+  # behalf, so it is admin-only. The trailing "/*" also reaches GET
+  # /m8flow/mcp-tools/ping (see AuthorizationService.target_uri_matches_actual_uri:
+  # a "*"-suffixed uri matches both the exact prefix and anything below it, same
+  # as read-nats-tokens-by-id's "/m8flow/nats-tokens/*" above). POST .../execute
+  # additionally requires the separate "create" action granted below -- GET-only
+  # "read" here can never authorize it. (M8F-404)
+  read-mcp-tools-catalog:
+    groups: ["tenant-admin", "super-admin"]
+    actions: [read]
+    uri: /m8flow/mcp-tools/*
+  execute-mcp-tools:
+    groups: ["tenant-admin", "super-admin"]
+    actions: [create]
+    uri: /m8flow/mcp-tools/execute
   read-data-stores:
     groups: ["viewer", "super-admin"]
     actions: [read]

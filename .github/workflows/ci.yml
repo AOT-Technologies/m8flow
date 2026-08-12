@@ -92,6 +92,16 @@ jobs:
       - name: Install dependencies
         working-directory: spiffworkflow-backend
         run: uv sync --group dev
+      - name: Install M8Flow backend runtime-only dependencies
+        # m8flow-backend has no pyproject.toml of its own -- it runs on PYTHONPATH
+        # inside spiffworkflow-backend's venv, so extra runtime deps its own code
+        # needs (but spiffworkflow-backend's pyproject.toml doesn't declare) are
+        # installed here on top of the synced venv, mirroring bin/run_m8flow_backend.sh.
+        # mcp: MCP client SDK used by services/mcp_catalog_service.py (M8F-404 tools
+        # catalog) to talk to the separately-deployed m8flow-mcp server. Upper-bounded:
+        # mcp 2.0.0 renamed McpError -> MCPError, which breaks that import.
+        working-directory: spiffworkflow-backend
+        run: uv pip install "mcp>=1.9.0,<2.0.0"
       - name: Test M8Flow backend
         working-directory: spiffworkflow-backend
         run: |

@@ -61,11 +61,13 @@ COPY uvicorn-log.yaml /app/uvicorn-log.yaml
 # Pin flask>=3.1.3 to fix CVE-2026-27205 (info disclosure via improper session cache)
 # Pre-install lxml: upstream SpiffWorkflow imports it during build but doesn't
 # declare it as a build dependency (needed for setuptools attr: version resolution).
+# Pin mcp<2.0.0: 2.0.0 renamed McpError -> MCPError, breaking the
+# `from mcp import McpError` import in m8flow_backend/services/mcp_catalog_service.py.
 RUN uv venv /opt/venv \
   && uv pip install --python /opt/venv/bin/python setuptools wheel lxml \
   && uv pip install --python /opt/venv/bin/python --no-build-isolation-package spiffworkflow -e /app/spiffworkflow-backend \
   && uv pip install --python /opt/venv/bin/python "/app/m8flow-telemetry[flask,asgi]" \
-  && uv pip install --python /opt/venv/bin/python flower hvac "flask>=3.1.3" \
+  && uv pip install --python /opt/venv/bin/python flower hvac "flask>=3.1.3" "mcp>=1.9.0,<2.0.0" \
   && uv pip install --python /opt/venv/bin/python "pydantic>=2.9,<3"
 
 # -----------------------------------------------------------------------------
@@ -133,9 +135,11 @@ COPY --from=fetch-upstream /upstream/spiff-arena-common /app/spiff-arena-common
 #   - build-essential: brings in patch (CVE-2018-6952, CVE-2021-45261)
 #   - python3-pip-whl: bundles outdated requests/urllib3 (CVE-2024-35195,
 #     CVE-2025-66418, CVE-2025-66471, CVE-2026-21441) - not needed since we use uv
+# Pin mcp<2.0.0: 2.0.0 renamed McpError -> MCPError, breaking the
+# `from mcp import McpError` import in m8flow_backend/services/mcp_catalog_service.py.
 RUN uv pip install --system --break-system-packages setuptools wheel lxml \
   && cd /app/spiffworkflow-backend && uv pip install --system --break-system-packages --no-build-isolation-package spiffworkflow -e . --group dev \
-  && uv pip install --system --break-system-packages flower hvac nats-py httpx python-dotenv "flask>=3.1.3" \
+  && uv pip install --system --break-system-packages flower hvac nats-py httpx python-dotenv "flask>=3.1.3" "mcp>=1.9.0,<2.0.0" \
   && uv pip install --system --break-system-packages "pydantic>=2.9,<3" \
   && uv pip install --system --break-system-packages "/app/m8flow-telemetry[flask,asgi]" \
   && uv cache clean \
