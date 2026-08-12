@@ -25,24 +25,38 @@ function Resolve-RepoRelativePath {
   return [System.IO.Path]::GetFullPath((Join-Path $repoRoot $PathValue))
 }
 
-if (-not (Test-Path ".venv")) { python -m venv .venv }
-
-. (Join-Path $repoRoot ".venv\Scripts\Activate.ps1")
-
+# Mirror the bash launcher (run_m8flow_celery_worker.sh): run everything through
+# `uv run` so uv manages the venv on the repo-pinned Python (.python-version).
+# Do NOT pre-create it with `python -m venv`, which binds to whatever python is on
+# PATH (e.g. 3.14) and lacks a psycopg2 wheel, breaking on Windows. See M8F-432.
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
-  Write-Host "uv not found; installing into the virtual environment..."
-  python -m pip install uv
+  Write-Host "uv not found on PATH; attempting to install it with pip..."
+  try { python -m pip install uv } catch { }
 }
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
-  Write-Error "uv is required but could not be installed. Install it manually and re-run."
+  Write-Error "uv is required but could not be installed. Install it from https://docs.astral.sh/uv/ and re-run."
   exit 1
+}
+
+function Invoke-UvPython {
+  param([string[]]$Arguments)
+  Push-Location (Join-Path $repoRoot "spiffworkflow-backend")
+  try {
+    $uvArgs = @("run")
+    if ($env:VIRTUAL_ENV) { $uvArgs += "--active" }
+    $uvArgs += "python"
+    $uvArgs += $Arguments
+    & uv @uvArgs
+  } finally {
+    Pop-Location
+  }
 }
 
 function Test-HasM8FlowBackendRuntimeDependencies {
   $oldPreference = $ErrorActionPreference
   $ErrorActionPreference = 'Continue'
   try {
-    uv run --active python -c "import hvac; import nats" 2>&1 > $null
+    Invoke-UvPython @("-c", "import hvac; import nats") 2>&1 > $null
     if ($LASTEXITCODE -ne 0) {
       return $false
     }
@@ -127,14 +141,21 @@ if ($Mode -eq "worker") {
 }
 
 Push-Location (Join-Path $repoRoot "spiffworkflow-backend")
-uv sync --all-groups --active
-if (-not (Test-HasM8FlowBackendRuntimeDependencies)) {
-  uv pip install hvac "nats-py>=2.6.0"
+try {
+  $uvSyncArgs = @("sync", "--all-groups")
+  if ($env:VIRTUAL_ENV) { $uvSyncArgs += "--active" }
+  & uv @uvSyncArgs
+
+  if (-not (Test-HasM8FlowBackendRuntimeDependencies)) {
+    $uvPipArgs = @("pip", "install", "hvac", "nats-py>=2.6.0")
+    & uv @uvPipArgs
+  }
+} finally {
+  Pop-Location
 }
 if ($env:M8FLOW_BACKEND_SW_UPGRADE_DB -eq "true") {
-  python -m flask db upgrade
+  Invoke-UvPython @("-m", "flask", "db", "upgrade")
 }
-Pop-Location
 
 $logLevel = $env:M8FLOW_BACKEND_CELERY_LOG_LEVEL
 if (-not $logLevel) { $logLevel = "info" }
@@ -176,7 +197,9 @@ if ($Mode -eq "worker") {
     $workerArgs += "--concurrency=$concurrency"
   }
 
-  python -m celery -A "m8flow_backend.background_processing.celery_worker:celery_app" @workerArgs @PassthroughArgs
+  $celeryArgs = @("-m", "celery", "-A", "m8flow_backend.background_processing.celery_worker:celery_app") + $workerArgs
+  if ($PassthroughArgs) { $celeryArgs += $PassthroughArgs }
+  Invoke-UvPython $celeryArgs
   exit $LASTEXITCODE
 }
 
@@ -193,4 +216,6 @@ if ($flowerAuth) {
   $flowerArgs += @("--basic-auth=$flowerAuth")
 }
 
-python -m celery -A "m8flow_backend.background_processing.celery_worker:celery_app" @flowerArgs @PassthroughArgs
+$celeryArgs = @("-m", "celery", "-A", "m8flow_backend.background_processing.celery_worker:celery_app") + $flowerArgs
+if ($PassthroughArgs) { $celeryArgs += $PassthroughArgs }
+Invoke-UvPython $celeryArgs

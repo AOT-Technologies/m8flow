@@ -76,29 +76,16 @@ function Resolve-RepoRelativePath {
 }
 
 function Ensure-LocalUvEnvironment {
-  $venvDir = Join-Path $repoRoot '.venv'
-  if (-not (Test-Path $venvDir)) {
-    python -m venv $venvDir
-  }
-
-$activateScript = @(
-  (Join-Path $venvDir 'Scripts/Activate.ps1'),
-  (Join-Path $venvDir 'bin/Activate.ps1')
-) | Where-Object { Test-Path $_ } | Select-Object -First 1
-
-if (-not $activateScript) {
-  throw "No PowerShell venv activation script found in $venvDir"
-}
-
-. $activateScript
-
+  # Let uv create/manage the venv on the repo-pinned Python (.python-version).
+  # Pre-creating it with `python -m venv` would bind to whatever python is on PATH
+  # (e.g. 3.14), which lacks a psycopg2 wheel and breaks on Windows. See M8F-432.
   if (-not (Test-CommandAvailable uv)) {
-    Write-Host 'uv not found; installing into the virtual environment...'
-    python -m pip install uv
+    Write-Host 'uv not found on PATH; attempting to install it with pip...'
+    try { python -m pip install uv } catch { }
   }
 
   if (-not (Test-CommandAvailable uv)) {
-    throw 'uv is required but could not be installed. Install it manually and re-run.'
+    throw 'uv is required for local development but was not found on PATH. Install it from https://docs.astral.sh/uv/ and re-run.'
   }
 }
 

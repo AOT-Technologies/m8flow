@@ -51,6 +51,35 @@ Changes should preserve the patch-based architecture:
 - Prefer small, targeted patches over broad rewrites.
 - Preserve compatibility with upstream SpiffArena where practical.
 
+## Upstream Copy / License Boundary
+
+The imported SpiffArena folders (`spiffworkflow-backend/`, `spiffworkflow-frontend/`,
+`spiff-arena-common/`) are LGPL-2.1 and gitignored. The m8flow-owned trees
+(`m8flow-backend/`, `m8flow-frontend/`, `extensions/`, etc.) are Apache-2.0.
+Do not copy upstream source into the Apache-2.0-tracked trees.
+
+- Do not paste upstream file bodies into m8flow-owned files. A frontend override
+  must carry only the tenant/RBAC delta and wrap the upstream component via the
+  override resolver, not fork the whole upstream file.
+- For backend models, preserve the functional contract (column names/types,
+  table names, exported API — these are not copyrightable expression) but
+  re-express the surrounding boilerplate independently (own structure/comments).
+- Never carry over upstream attribution comments (author handles, `sartography/`
+  URLs) or LGPL/GPL license header text into the Apache-2.0 trees.
+- CI enforces this with two complementary gates (see `.github/workflows/ci.yml`):
+  - `bin/check-upstream-copying.py` — raw-line similarity, cross-language and
+    comment-aware, gated against `bin/upstream-copy-baseline.json`.
+  - `bin/check-upstream-cpd.py` — PMD CPD token-level detection that resists
+    reformatting and identifier renaming, gated against
+    `bin/upstream-cpd-baseline.json`.
+  Both block *new* copying and *regressions* of already-flagged files; neither
+  forces an immediate rewrite of pre-existing copies. License/attribution markers
+  are never grandfathered. Job wiring and usage are documented in
+  `.github/workflows/README.md`; the flagged files themselves are listed in
+  the two baseline JSONs.
+- If you intentionally and reviewably change an already-flagged file, regenerate
+  the relevant baseline (`--write-baseline`) and have the diff reviewed.
+
 ## Keycloak Login UX
 
 - Do not change the Keycloak login experience to a two-step username-then-password flow.
