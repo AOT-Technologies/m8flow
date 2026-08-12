@@ -111,9 +111,6 @@ NONCOPYRIGHTABLE_ALLOWLIST: dict[str, str] = {
         "Diagram editor props type contract (ReactDiagramEditorProps); prop names are the call-site API surface plus m8flow hideDeleteButton/hideViewXmlButton.",
     "m8flow-frontend/src/components/useDiagramModeler.ts":
         "bpmn-js / dmn-js modeler construction and library wiring (scenes a faire / published package API); copyrightable import/event logic was rewritten in ticket 14.",
-    # Map ticket 17 — agreed residual after clean-room rewrite of the tent-pole patch.
-    "m8flow-backend/src/m8flow_backend/services/process_instance_service_patch.py":
-        "Residual ~97-token clone is the spiff run-process-instance API call flow (scenes a faire); copyrightable branches were rewritten in ticket 17.",
 }
 
 def find_pmd() -> str:
