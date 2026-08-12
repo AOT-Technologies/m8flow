@@ -1,6 +1,4 @@
-/**
- * Process group card — upstream body + super-admin tenant chip overlay.
- */
+/** Process group card with optional super-admin tenant chip. */
 import { Box, Chip } from '@mui/material';
 import UpstreamCard from '@spiff-core/views/StartProcess/ProcessGroupCard';
 import UserService from '../../services/UserService';

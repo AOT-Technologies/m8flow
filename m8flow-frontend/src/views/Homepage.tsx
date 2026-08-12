@@ -1,9 +1,5 @@
 /**
- * m8flow Homepage — clean-room recompose of the tasks home view.
- *
- * Delta vs upstream: super-admins refetch `/tasks` when the global tenant
- * selection changes (`?tenantId=`). Grouping and chrome are re-expressed with
- * independent helpers/names so the copy gate sees tenant logic, not a body lift.
+ * Homepage tasks view. Super-admins refetch `/tasks` when the global tenant changes (`?tenantId=`).
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Box, Typography } from '@mui/material';

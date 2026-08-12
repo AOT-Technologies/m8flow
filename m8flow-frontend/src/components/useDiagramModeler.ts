@@ -4,24 +4,24 @@ import BpmnViewer from 'bpmn-js/lib/Viewer';
 import {
   BpmnPropertiesPanelModule,
   BpmnPropertiesProviderModule,
-  // @ts-expect-error TS(7016) FIXME
+  // @ts-expect-error missing type declarations
 } from 'bpmn-js-properties-panel';
-// @ts-expect-error TS(7016) FIXME
+// @ts-expect-error missing type declarations
 import CliModule from 'bpmn-js-cli';
-// @ts-expect-error TS(7016) FIXME
+// @ts-expect-error missing type declarations
 import DmnModeler from 'dmn-js/lib/Modeler';
 import {
   DmnPropertiesPanelModule,
   DmnPropertiesProviderModule,
-  // @ts-expect-error TS(7016) FIXME
+  // @ts-expect-error missing type declarations
 } from 'dmn-js-properties-panel';
 import KeyboardMoveModule from 'diagram-js/lib/navigation/keyboard-move';
 import MoveCanvasModule from 'diagram-js/lib/navigation/movecanvas';
 import ZoomScrollModule from 'diagram-js/lib/navigation/zoomscroll';
-// @ts-expect-error TS(7016) FIXME
+// @ts-expect-error missing type declarations
 import spiffworkflow from 'bpmn-js-spiffworkflow/app/spiffworkflow';
 import spiffModdleExtension from 'bpmn-js-spiffworkflow/app/spiffworkflow/moddle/spiffworkflow.json';
-// @ts-expect-error TS(7016) FIXME
+// @ts-expect-error missing type declarations
 import m8flowExternalForm from './bpmn';
 import BpmnJsScriptIcon from '@spiffworkflow-frontend/icons/bpmn_js_script_icon.svg';
 import { getBpmnProcessIdentifiers } from '@spiffworkflow-frontend/helpers';
@@ -151,7 +151,6 @@ export function useDiagramModeler(options: UseDiagramModelerOptions) {
         'bpmn:ItemAwareElement',
       );
       dangling.forEach((ref: any) => {
-        // ItemAwareElement has no BPMN `name`; id alone resolves the dangling loopData*Ref.
         const placeholder = moddle.create(descriptor, { id: ref.id });
         placeholder.$parent = ref.element;
         ref.element.set(ref.property, placeholder);

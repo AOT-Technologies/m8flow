@@ -9,7 +9,7 @@ _INITIATOR_USERNAME_FIELD = "process_initiator_username"
 
 
 def _filters_without_initiator_username(filters: list) -> list:
-    """Drop initiator username filters so upstream does not apply its global user lookup."""
+    """Strip initiator username filters so we can re-apply them tenant-scoped."""
     return [f for f in filters if f.get("field_name") != _INITIATOR_USERNAME_FIELD]
 
 
@@ -42,7 +42,7 @@ def apply() -> None:
 
     @classmethod
     def patched_get_basic_query(cls, filters) -> object:
-        """WRAP upstream query construction; rebind only initiator + SA tenant filters."""
+        """Build the report query with tenant-scoped initiator and SA tenant filters."""
         process_instance_query = original_get_basic_query(
             cls, _filters_without_initiator_username(filters)
         )
@@ -58,7 +58,6 @@ def apply() -> None:
             else:
                 process_instance_query = process_instance_query.filter_by(process_initiator_id=-1)
 
-        # Super admin tenant filter: supported via report filter_by or query param.
         if is_super_admin_request():
             for value in cls.check_filter_value(filters, "tenant_id"):
                 if value:
