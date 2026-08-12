@@ -268,6 +268,7 @@ def test_vault_mode_returns_runtime_error_without_exposing_sensitive_exception_t
 
     assert exc_info.value.error_code == "vault_create_error"
     assert exc_info.value.message == "Could not create secret with key: API_TOKEN."
+    assert "API_TOKEN" not in caplog.text
     assert "secret-123" not in exc_info.value.message
     assert "demo-secret" not in exc_info.value.message
     assert "TenantScopedVaultClientError" in caplog.text
@@ -381,20 +382,23 @@ def test_rename_to_existing_secret_is_rejected_before_touching_vault(app, tenant
     assert fake_vault.storage[f"m8flow/tenants/{tenants[0]}/secrets/EXISTING_NAME"]["value"] == "existing"
 
 
-def test_missing_vault_value_with_present_document_is_returned_as_not_found(app, tenants, user) -> None:
+def test_missing_vault_value_with_present_document_is_returned_as_not_found(app, tenants, user, caplog) -> None:
     fake_vault = FakeVaultClient()
     backend = _backend(fake_vault)
 
-    with app.test_request_context("/"):
-        g.m8flow_tenant_id = tenants[0]
-        backend.add_secret("API_TOKEN", "vault-value", user)
-        fake_vault.storage[f"m8flow/tenants/{tenants[0]}/secrets/API_TOKEN"].pop("value", None)
-        with pytest.raises(ApiError) as exc_info:
-            backend.get_secret("API_TOKEN")
+    with caplog.at_level("WARNING", logger="m8flow.secret_backend"):
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = tenants[0]
+            backend.add_secret("API_TOKEN", "vault-value", user)
+            fake_vault.storage[f"m8flow/tenants/{tenants[0]}/secrets/API_TOKEN"].pop("value", None)
+            with pytest.raises(ApiError) as exc_info:
+                backend.get_secret("API_TOKEN")
 
     assert exc_info.value.error_code == "vault_secret_value_missing"
     assert exc_info.value.status_code == 404
     assert exc_info.value.message == "Unable to locate the Vault secret value for key: API_TOKEN."
+    assert "API_TOKEN" not in caplog.text
+    assert "m8flow/tenants" not in caplog.text
 
 
 def test_delete_removes_vault_document_and_tolerates_missing_vault_value(app, tenants, user) -> None:

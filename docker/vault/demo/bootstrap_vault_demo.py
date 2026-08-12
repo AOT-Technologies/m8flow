@@ -620,12 +620,7 @@ def main() -> int:
         written, skipped = seed_demo_secrets(root_token, seeded_secrets)
         verify_bootstrap(role_id, secret_id, seeded_secrets, written, skipped)
 
-        print(
-            "vault-demo: Bootstrap complete "
-            f"(mount={MOUNT_POINT}, broker_policy={BROKER_POLICY_NAME}, broker_approle={BROKER_APPROLE_NAME}, "
-            f"written={written}, skipped={skipped}, overwrite={DEMO_OVERWRITE}).",
-            flush=True,
-        )
+        print("vault-demo: Bootstrap complete", flush=True)
         return 0
     except Exception:
         print("vault-demo: Bootstrap failed.", file=sys.stderr, flush=True)
