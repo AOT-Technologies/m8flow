@@ -5,6 +5,7 @@ on:
     branches:
       - develop
     paths:
+      - "m8flow-keycloak/**"
       - "keycloak-extensions/**"
       - "docker/m8flow.keycloak.Dockerfile"
       - ".github/workflows/keycloak-cicd.yaml"
@@ -13,6 +14,7 @@ on:
     branches:
       - develop
     paths:
+      - "m8flow-keycloak/**"
       - "keycloak-extensions/**"
       - "docker/m8flow.keycloak.Dockerfile"
       - ".github/workflows/keycloak-cicd.yaml"
