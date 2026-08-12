@@ -501,6 +501,33 @@ def test_get_secret_backend_uses_configured_storage_mode(app) -> None:
         assert isinstance(get_secret_backend(), SecretBackend)
 
 
+def test_legacy_backend_update_secret_works_at_runtime(app, tenants, user) -> None:
+    backend = LegacyDatabaseSecretBackend()
+
+    with app.app_context():
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = tenants[0]
+            backend.add_secret("API_TOKEN", "initial-value", user)
+            backend.update_secret("API_TOKEN", "rotated-value", user_id=user)
+            resolved_value = backend.get_secret_value("API_TOKEN")
+
+    assert resolved_value == "rotated-value"
+
+
+def test_legacy_backend_delete_secret_works_at_runtime(app, tenants, user) -> None:
+    backend = LegacyDatabaseSecretBackend()
+
+    with app.app_context():
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = tenants[0]
+            backend.add_secret("API_TOKEN", "initial-value", user)
+            backend.delete_secret("API_TOKEN", user)
+            with pytest.raises(ApiError) as exc_info:
+                backend.get_secret("API_TOKEN")
+
+    assert exc_info.value.error_code == "missing_secret_error"
+
+
 def test_secret_backend_contract_accepts_current_backend_implementations(app) -> None:
     fake_vault = FakeVaultClient()
 
