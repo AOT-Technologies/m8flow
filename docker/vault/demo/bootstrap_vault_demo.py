@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -42,14 +43,30 @@ POLICY_TEMPLATE = Path(
 )
 HEALTH_PATH = "sys/health?standbyok=true&perfstandbyok=true"
 LEADER_PATH = "sys/leader"
+_REDACTED = "<redacted>"
+_SENSITIVE_FIELD_PATTERNS = (
+    re.compile(
+        r'(?i)(["\']?(?:root_token|client_token|secret_id|secret_id_accessor|role_id|token|value)["\']?\s*[:=]\s*)(["\']?)([^,"\'}\s]+)(["\']?)'
+    ),
+    re.compile(
+        r'(?i)\b((?:M8FLOW_VAULT_(?:SECRET_ID|ROLE_ID)|VAULT_TOKEN|X-Vault-Token)\s*=\s*)([^\s]+)'
+    ),
+)
+
+
+def _sanitize_log_text(message: str) -> str:
+    sanitized = str(message)
+    sanitized = _SENSITIVE_FIELD_PATTERNS[0].sub(rf"\1\2{_REDACTED}\4", sanitized)
+    sanitized = _SENSITIVE_FIELD_PATTERNS[1].sub(rf"\1{_REDACTED}", sanitized)
+    return sanitized
 
 
 def log(message: str) -> None:
-    print(f"vault-demo: {message}", flush=True)
+    print(f"vault-demo: {_sanitize_log_text(message)}", flush=True)
 
 
 def fail(message: str) -> None:
-    raise RuntimeError(message)
+    raise RuntimeError(_sanitize_log_text(message))
 
 
 def write_text_file(path: Path, content: str, mode: int = 0o600) -> None:
@@ -130,7 +147,7 @@ def vault_request(
     if response_status not in expected_statuses:
         fail(
             f"Vault API {method} /v1/{api_path.lstrip('/')} returned {response_status}. "
-            f"Response: {response_body or '<empty>'}"
+            "Response body suppressed to avoid logging sensitive data."
         )
 
     return response_status, parsed, response_body
@@ -382,8 +399,8 @@ def ensure_secret_id(root_token: str, role_id: str) -> str:
                 approle_login(role_id, existing_secret_id)
                 log("Reusing the persisted broker AppRole secret_id.")
                 return existing_secret_id
-            except RuntimeError as exc:
-                log(f"Persisted broker AppRole secret_id is invalid; generating a fresh one. Detail: {exc}")
+            except RuntimeError:
+                log("Persisted broker AppRole secret_id is invalid; generating a fresh one.")
 
     log("Generating a persisted broker AppRole secret_id for development use.")
     return generate_secret_id(root_token)
@@ -620,7 +637,7 @@ def main() -> int:
         )
         return 0
     except Exception as exc:
-        print(f"vault-demo: {exc}", file=sys.stderr, flush=True)
+        print(f"vault-demo: {_sanitize_log_text(exc)}", file=sys.stderr, flush=True)
         return 1
 
 

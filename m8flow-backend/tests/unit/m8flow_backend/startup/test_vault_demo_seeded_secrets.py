@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from io import BytesIO
+from urllib.error import HTTPError
 
 import pytest
 
@@ -20,6 +22,7 @@ from seeded_secrets import (
     SeededSecretSpec,
     load_seeded_secret_specs,
 )
+import bootstrap_vault_demo
 
 
 def test_missing_secrets_file_falls_back_to_demo_bootstrap_secret(tmp_path: Path) -> None:
@@ -85,3 +88,37 @@ def test_present_file_with_empty_tenant_secret_mapping_is_rejected(tmp_path: Pat
             organization_id="tenant-123",
             missing_file_message_factory=lambda path: f"missing {path}",
         )
+
+
+def test_bootstrap_log_redacts_secret_like_values(capsys: pytest.CaptureFixture[str]) -> None:
+    bootstrap_vault_demo.log(
+        'secret_id=secret-123 role_id="role-456" root_token=root-789 value=demo-secret'
+    )
+
+    captured = capsys.readouterr()
+    assert "secret-123" not in captured.out
+    assert "role-456" not in captured.out
+    assert "root-789" not in captured.out
+    assert "demo-secret" not in captured.out
+    assert "<redacted>" in captured.out
+
+
+def test_vault_request_error_suppresses_response_body(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_urlopen(req, timeout=10):
+        del timeout
+        raise HTTPError(
+            req.full_url,
+            403,
+            "Forbidden",
+            hdrs=None,
+            fp=BytesIO(b'{"errors":["bad request"],"secret_id":"secret-123"}'),
+        )
+
+    monkeypatch.setattr(bootstrap_vault_demo.request, "urlopen", fake_urlopen)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        bootstrap_vault_demo.vault_request("GET", "sys/mounts", expected_statuses=(200,))
+
+    message = str(exc_info.value)
+    assert "secret-123" not in message
+    assert "Response body suppressed to avoid logging sensitive data." in message
