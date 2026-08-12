@@ -113,11 +113,11 @@ def _secret_not_found(key: str) -> ApiError:
 
 
 def _vault_secret_missing_value(key: str, tenant_id: str, secret_id: str, path: str) -> ApiError:
+    del secret_id
     del path
     logger.warning(
-        "vault_secret_value_missing tenant_id=%s secret_id=%s",
+        "vault_secret_value_missing tenant_id=%s",
         tenant_id,
-        secret_id,
     )
     return ApiError(
         error_code="vault_secret_value_missing",
@@ -425,9 +425,8 @@ class VaultBackedSecretBackend:
                     vault_client.delete_secret(target_path)
                 except Exception as cleanup_exc:
                     logger.error(
-                        "vault_secret_update_compensation_failed tenant_id=%s secret_id=%s cleanup_error_type=%s",
+                        "vault_secret_update_compensation_failed tenant_id=%s cleanup_error_type=%s",
                         tenant_id,
-                        existing.id,
                         type(cleanup_exc).__name__,
                     )
             raise _vault_runtime_error("update", key, exc) from exc
@@ -460,9 +459,8 @@ class VaultBackedSecretBackend:
 
         if not deleted:
             logger.warning(
-                "vault_secret_delete_missing_value tenant_id=%s secret_id=%s",
+                "vault_secret_delete_missing_value tenant_id=%s",
                 tenant_id,
-                existing.id,
             )
 
     def list_secrets(self, page: int = 1, per_page: int = 100, tenant_id: str | None = None) -> list[VaultSecretRecord]:

@@ -4,6 +4,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from io import BytesIO
+from types import ModuleType
 from urllib.error import HTTPError
 
 import pytest
@@ -131,6 +132,20 @@ def test_vault_request_error_suppresses_response_body(monkeypatch: pytest.Monkey
     assert "Response body suppressed to avoid logging sensitive data." in message
 
 
+def test_bootstrap_encrypted_state_files_do_not_store_plaintext(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("M8FLOW_BACKEND_ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef")
+    payload = {"root_token": "root-123", "keys_base64": ["unseal-456"]}
+    target_file = tmp_path / "init.json"
+
+    bootstrap_vault_demo.write_encrypted_json_file(target_file, payload)
+
+    raw_text = target_file.read_text(encoding="utf-8")
+    assert "root-123" not in raw_text
+    assert "unseal-456" not in raw_text
+    assert raw_text.startswith("m8flow-vault-demo:enc:v1:")
+    assert bootstrap_vault_demo.load_encrypted_json_file(target_file) == payload
+
+
 def test_verify_script_failure_output_hides_exception_text(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -153,4 +168,110 @@ def test_verify_script_failure_output_hides_exception_text(
     assert result == 1
     assert "secret-123" not in captured.err
     assert "demo-secret" not in captured.err
-    assert "RuntimeError" in captured.err
+    assert captured.err.strip() == "vault-demo-verify failed."
+
+
+def test_verify_script_success_output_is_generic(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    runtime_env = tmp_path / "runtime.env"
+    runtime_env.write_text("", encoding="utf-8")
+    secrets_file = tmp_path / "secrets.yml"
+    secrets_file.write_text(
+        "tenants:\n  m8flow:\n    secrets:\n      API_TOKEN: demo-token\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("M8FLOW_VAULT_DEMO_ENV_FILE", str(runtime_env))
+    monkeypatch.setenv("M8FLOW_VAULT_DEMO_SECRETS_FILE", str(secrets_file))
+
+    fake_identity = type(
+        "Identity",
+        (),
+        {
+            "admin_username": "admin",
+            "organization_alias": "m8flow",
+            "organization_id": "tenant-123",
+        },
+    )()
+
+    fake_broker_client = type(
+        "BrokerClient",
+        (),
+        {
+            "settings": type("Settings", (), {"mount_point": "kv", "secret_path_prefix": "m8flow"})(),
+            "check_availability": lambda self: True,
+            "retrieve_secret": lambda self, path: None,
+        },
+    )()
+    fake_tenant_client = type(
+        "TenantClient",
+        (),
+        {
+            "vault_client": type(
+                "TenantVaultClient",
+                (),
+                {"retrieve_secret": lambda self, path: "demo-token"},
+            )()
+        },
+    )()
+
+    monkeypatch.setattr(verify_backend_vault_demo, "wait_for_demo_tenant_identity", lambda **kwargs: fake_identity)
+    monkeypatch.setattr(
+        verify_backend_vault_demo,
+        "load_env_file",
+        lambda path: None,
+    )
+    fake_provisioning_module = ModuleType("m8flow_backend.services.tenant_vault_provisioning_service")
+
+    class FakeProvisioner:
+        def __init__(self, *, vault_client):
+            self.vault_client = vault_client
+
+        def provision_tenant_identity(self, tenant_id):
+            del tenant_id
+            return type("ProvisionedIdentity", (), {"policy_name": "policy", "role_name": "role"})()
+
+    fake_provisioning_module.TenantVaultProvisioningService = FakeProvisioner
+    monkeypatch.setitem(
+        sys.modules,
+        "m8flow_backend.services.tenant_vault_provisioning_service",
+        fake_provisioning_module,
+    )
+
+    fake_provider_module = ModuleType("m8flow_backend.services.tenant_scoped_vault_client_provider")
+
+    class FakeProvider:
+        def __init__(self, *, broker_vault_client):
+            self.broker_vault_client = broker_vault_client
+
+        def for_tenant(self, tenant_id):
+            del tenant_id
+            return fake_tenant_client
+
+    fake_provider_module.TenantScopedVaultClientProvider = FakeProvider
+    monkeypatch.setitem(
+        sys.modules,
+        "m8flow_backend.services.tenant_scoped_vault_client_provider",
+        fake_provider_module,
+    )
+
+    fake_vault_client_module = ModuleType("m8flow_backend.services.vault_client")
+    fake_vault_client_module.VaultClient = lambda settings=None: fake_broker_client
+    fake_vault_client_module.VaultClientError = RuntimeError
+    fake_vault_client_module.VaultSettings = type("VaultSettings", (), {"from_env": staticmethod(lambda: object())})
+    monkeypatch.setitem(
+        sys.modules,
+        "m8flow_backend.services.vault_client",
+        fake_vault_client_module,
+    )
+
+    result = verify_backend_vault_demo.main()
+
+    captured = capsys.readouterr()
+    assert result == 0
+    assert captured.out.strip() == "vault-demo-verify: Verification succeeded."
+    assert "json" not in captured.out.lower()
+    assert "tenant-123" not in captured.out

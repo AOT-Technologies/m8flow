@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import json
 import os
 import sys
 from pathlib import Path
@@ -36,8 +35,8 @@ def load_env_file(path: Path) -> None:
         os.environ[key.strip()] = value.strip().strip('"').strip("'")
 
 
-def format_failure_message(exc: Exception) -> str:
-    return f"vault-demo-verify failed with {type(exc).__name__}."
+def format_failure_message(_exc: Exception) -> str:
+    return "vault-demo-verify failed."
 
 
 def main() -> int:
@@ -102,21 +101,10 @@ def main() -> int:
                 "did not match the seeded demo secret."
             )
 
-        print(
-            json.dumps(
-                {
-                    "admin_username": identity.admin_username,
-                    "broker_direct_read_blocked": broker_direct_read_blocked,
-                    "verified": True,
-                    "mount_point": client.vault_client.settings.mount_point,
-                    "path_prefix": client.vault_client.settings.secret_path_prefix,
-                    "secret_path": logical_path,
-                    "tenant_policy_name": provisioned_identity.policy_name,
-                    "tenant_role_name": provisioned_identity.role_name,
-                    "tenant_id": seeded_secret.tenant_id,
-                }
-            )
-        )
+        del broker_direct_read_blocked
+        del identity
+        del provisioned_identity
+        print("vault-demo-verify: Verification succeeded.", flush=True)
         return 0
     except Exception as exc:
         print(format_failure_message(exc), file=sys.stderr, flush=True)

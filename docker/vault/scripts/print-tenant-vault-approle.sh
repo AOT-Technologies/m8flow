@@ -92,7 +92,7 @@ resolve_operator_token() {
 
   set +e
   resolved_token=$(compose exec -T "$backend_service" sh -c \
-    'python -c "import json, pathlib; print(json.loads(pathlib.Path(\"/vault/demo/init.json\").read_text())[\"root_token\"])"' \
+    'python -c "import sys; sys.path.insert(0, \"/app/docker/vault/demo\"); import bootstrap_vault_demo as b; print(b.root_token_from_init(b.load_init_payload()))"' \
     2>/dev/null)
   status_code=$?
   set -e
@@ -102,7 +102,7 @@ resolve_operator_token() {
   fi
 
   compose run --rm --no-deps "$backend_service" sh -c \
-    'python -c "import json, pathlib; print(json.loads(pathlib.Path(\"/vault/demo/init.json\").read_text())[\"root_token\"])"' \
+    'python -c "import sys; sys.path.insert(0, \"/app/docker/vault/demo\"); import bootstrap_vault_demo as b; print(b.root_token_from_init(b.load_init_payload()))"' \
     2>/dev/null || fail \
     "Could not resolve an operator token. Set M8FLOW_VAULT_OPERATOR_TOKEN (or VAULT_TOKEN), or run the local vault-demo bootstrap first."
 }

@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import base64
 import json
 import os
 import sys
 import time
+import hashlib
 from pathlib import Path
 from typing import Any
 from urllib import error, parse, request
+
+from cryptography.fernet import Fernet, InvalidToken
 
 from demo_identity import wait_for_demo_tenant_identity
 from seeded_secrets import SeededSecretSpec, load_seeded_secret_specs
@@ -32,7 +36,6 @@ STATE_DIR = Path(os.getenv("M8FLOW_VAULT_DEMO_STATE_DIR") or "/vault/demo")
 INIT_FILE = STATE_DIR / "init.json"
 ROLE_ID_FILE = STATE_DIR / "m8flow-role-id"
 SECRET_ID_FILE = STATE_DIR / "m8flow-secret-id"
-APPROLE_ENV_FILE = STATE_DIR / "m8flow-approle.env"
 RUNTIME_ENV_FILE = STATE_DIR / "runtime.env"
 VERIFICATION_FILE = STATE_DIR / "verification.json"
 SECRETS_FILE = Path(os.getenv("M8FLOW_VAULT_DEMO_SECRETS_FILE") or "/app/docker/vault/demo/secrets.yml")
@@ -42,26 +45,72 @@ POLICY_TEMPLATE = Path(
 )
 HEALTH_PATH = "sys/health?standbyok=true&perfstandbyok=true"
 LEADER_PATH = "sys/leader"
+_ENCRYPTED_STATE_PREFIX = "m8flow-vault-demo:enc:v1:"
+
 
 def fail(message: str) -> None:
     raise RuntimeError(message)
 
 
-def write_text_file(path: Path, content: str, mode: int = 0o600) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+def _set_file_mode(path: Path, mode: int) -> None:
     try:
         os.chmod(path, mode)
     except OSError:
         pass
 
 
-def write_json_file(path: Path, payload: dict[str, Any], mode: int = 0o600) -> None:
-    write_text_file(path, json.dumps(payload, indent=2, sort_keys=True) + "\n", mode=mode)
+def _state_cipher() -> Fernet:
+    state_key = (
+        os.getenv("M8FLOW_VAULT_DEMO_STATE_KEY")
+        or os.getenv("M8FLOW_BACKEND_ENCRYPTION_KEY")
+        or os.getenv("FLASK_SESSION_SECRET_KEY")
+    )
+    if not isinstance(state_key, str) or not state_key.strip():
+        fail(
+            "Vault demo state encryption key is missing. "
+            "Set M8FLOW_VAULT_DEMO_STATE_KEY or M8FLOW_BACKEND_ENCRYPTION_KEY."
+        )
+
+    digest = hashlib.sha256(state_key.strip().encode("utf-8")).digest()
+    return Fernet(base64.urlsafe_b64encode(digest))
 
 
-def load_json_file(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
+def write_plain_text_file(path: Path, text: str, mode: int = 0o600) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    _set_file_mode(path, mode)
+
+
+def write_plain_json_file(path: Path, payload: dict[str, Any], mode: int = 0o600) -> None:
+    write_plain_text_file(path, json.dumps(payload, indent=2, sort_keys=True) + "\n", mode=mode)
+
+
+def write_encrypted_text_file(path: Path, text: str, mode: int = 0o600) -> None:
+    ciphertext = _state_cipher().encrypt(text.encode("utf-8")).decode("utf-8")
+    write_plain_text_file(path, _ENCRYPTED_STATE_PREFIX + ciphertext + "\n", mode=mode)
+
+
+def write_encrypted_json_file(path: Path, payload: dict[str, Any], mode: int = 0o600) -> None:
+    write_encrypted_text_file(path, json.dumps(payload, indent=2, sort_keys=True), mode=mode)
+
+
+def read_encrypted_text_file(path: Path) -> str:
+    raw_text = path.read_text(encoding="utf-8").strip()
+    if not raw_text:
+        return raw_text
+    if not raw_text.startswith(_ENCRYPTED_STATE_PREFIX):
+        return raw_text
+
+    ciphertext = raw_text[len(_ENCRYPTED_STATE_PREFIX) :]
+    try:
+        plaintext = _state_cipher().decrypt(ciphertext.encode("utf-8"))
+    except InvalidToken as exc:
+        raise RuntimeError(f"Vault demo state file could not be decrypted: {path}") from exc
+    return plaintext.decode("utf-8")
+
+
+def load_encrypted_json_file(path: Path) -> dict[str, Any]:
+    return json.loads(read_encrypted_text_file(path))
 
 
 def format_missing_secrets_file_message(path: Path) -> str:
@@ -86,7 +135,7 @@ def seeded_secret_logical_path(secret: SeededSecretSpec) -> str:
 
 
 def remove_generated_files() -> None:
-    for path in (ROLE_ID_FILE, SECRET_ID_FILE, APPROLE_ENV_FILE, RUNTIME_ENV_FILE, VERIFICATION_FILE):
+    for path in (ROLE_ID_FILE, SECRET_ID_FILE, RUNTIME_ENV_FILE, VERIFICATION_FILE):
         path.unlink(missing_ok=True)
 
 
@@ -201,7 +250,7 @@ def load_init_payload() -> dict[str, Any]:
             "Vault is already initialized, but the persisted demo init file is missing. "
             "Reset both the Vault data volume and the vault-demo state volume, then retry."
         )
-    return load_json_file(INIT_FILE)
+    return load_encrypted_json_file(INIT_FILE)
 
 
 def root_token_from_init(payload: dict[str, Any]) -> str:
@@ -235,7 +284,7 @@ def initialize_if_needed(status: dict[str, Any]) -> dict[str, Any]:
     )
     if not isinstance(payload, dict):
         fail("Vault init did not return a JSON payload.")
-    write_json_file(INIT_FILE, payload)
+    write_encrypted_json_file(INIT_FILE, payload)
     return wait_for_vault_status()
 
 
@@ -383,36 +432,23 @@ def generate_secret_id(root_token: str) -> str:
 
 def ensure_secret_id(root_token: str, role_id: str) -> str:
     if SECRET_ID_FILE.exists():
-        existing_secret_id = SECRET_ID_FILE.read_text(encoding="utf-8").strip()
+        existing_secret_id = read_encrypted_text_file(SECRET_ID_FILE).strip()
         if existing_secret_id:
             try:
                 approle_login(role_id, existing_secret_id)
-                print("vault-demo: Reusing the persisted broker AppRole secret_id.", flush=True)
+                print("vault-demo: Reusing the persisted broker AppRole credential.", flush=True)
                 return existing_secret_id
             except RuntimeError:
-                print("vault-demo: Persisted broker AppRole secret_id is invalid; generating a fresh one.", flush=True)
+                print("vault-demo: Persisted broker AppRole credential is invalid; generating a fresh one.", flush=True)
 
-    print("vault-demo: Generating a persisted broker AppRole secret_id for development use.", flush=True)
+    print("vault-demo: Generating a persisted broker AppRole credential for development use.", flush=True)
     return generate_secret_id(root_token)
 
 
 def write_runtime_files(role_id: str, secret_id: str) -> None:
-    write_text_file(ROLE_ID_FILE, role_id + "\n")
-    write_text_file(SECRET_ID_FILE, secret_id + "\n")
-    write_text_file(
-        APPROLE_ENV_FILE,
-        (
-            f"M8FLOW_VAULT_ADDR={VAULT_ADDR}\n"
-            f"M8FLOW_VAULT_MOUNT_POINT={MOUNT_POINT}\n"
-            f"M8FLOW_VAULT_SECRET_PATH_PREFIX={PATH_PREFIX}\n"
-            f"M8FLOW_VAULT_APPROLE_MOUNT_POINT={APPROLE_MOUNT_POINT}\n"
-            f"M8FLOW_VAULT_TENANT_POLICY_PREFIX={TENANT_POLICY_PREFIX}\n"
-            f"M8FLOW_VAULT_TENANT_ROLE_PREFIX={TENANT_ROLE_PREFIX}\n"
-            f"M8FLOW_VAULT_ROLE_ID={role_id}\n"
-            f"M8FLOW_VAULT_SECRET_ID={secret_id}\n"
-        ),
-    )
-    write_text_file(
+    write_encrypted_text_file(ROLE_ID_FILE, role_id + "\n")
+    write_encrypted_text_file(SECRET_ID_FILE, secret_id + "\n")
+    write_plain_text_file(
         RUNTIME_ENV_FILE,
         (
             f"M8FLOW_VAULT_ADDR={VAULT_ADDR}\n"
@@ -496,7 +532,7 @@ def write_verification_report(
     written: int,
     skipped: int,
 ) -> None:
-    write_json_file(
+    write_plain_json_file(
         VERIFICATION_FILE,
         {
             "approle_mount_point": APPROLE_MOUNT_POINT,

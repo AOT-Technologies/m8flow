@@ -110,31 +110,41 @@ function Resolve-OperatorToken {
     return $env:VAULT_TOKEN
   }
 
-  $initJsonOutput = $null
+  $operatorTokenOutput = $null
   try {
-    $initJsonOutput = Invoke-Compose -Arguments @('exec', '-T', $backendService, 'sh', '-c', 'cat /vault/demo/init.json') 2>$null
+    $operatorTokenOutput = Invoke-Compose -Arguments @(
+      'exec',
+      '-T',
+      $backendService,
+      'sh',
+      '-c',
+      'python -c "import sys; sys.path.insert(0, \"/app/docker/vault/demo\"); import bootstrap_vault_demo as b; print(b.root_token_from_init(b.load_init_payload()))"'
+    ) 2>$null
   } catch {
-    $initJsonOutput = $null
+    $operatorTokenOutput = $null
   }
 
-  if (-not $initJsonOutput) {
+  if (-not $operatorTokenOutput) {
     try {
-      $initJsonOutput = Invoke-Compose -Arguments @('run', '--rm', '--no-deps', $backendService, 'sh', '-c', 'cat /vault/demo/init.json') 2>$null
+      $operatorTokenOutput = Invoke-Compose -Arguments @(
+        'run',
+        '--rm',
+        '--no-deps',
+        $backendService,
+        'sh',
+        '-c',
+        'python -c "import sys; sys.path.insert(0, \"/app/docker/vault/demo\"); import bootstrap_vault_demo as b; print(b.root_token_from_init(b.load_init_payload()))"'
+      ) 2>$null
     } catch {
-      $initJsonOutput = $null
+      $operatorTokenOutput = $null
     }
   }
 
-  if (-not $initJsonOutput) {
+  if (-not $operatorTokenOutput) {
     throw 'Could not resolve an operator token. Set M8FLOW_VAULT_OPERATOR_TOKEN (or VAULT_TOKEN), or run the local vault-demo bootstrap first.'
   }
 
-  $initPayload = ($initJsonOutput -join [Environment]::NewLine) | ConvertFrom-Json
-  if (-not $initPayload.root_token) {
-    throw 'The local Vault demo init payload did not contain a root_token.'
-  }
-
-  return [string]$initPayload.root_token
+  return [string](($operatorTokenOutput | Select-Object -Last 1).Trim())
 }
 
 function Get-TenantRow {

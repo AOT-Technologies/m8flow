@@ -99,7 +99,7 @@ Local Docker Compose notes:
 - Backend and Celery in Compose use the service DNS name: `http://vault:8200`
 - Set `M8FLOW_VAULT_ENABLED=true` in your local `.env` when you want the Compose backend/Celery services to use Vault-backed secrets. The `vault-demo` profile supplies connection and AppRole runtime files, but it does not force the enable flag.
 - The local `vault-demo` profile still creates one shared development broker policy/AppRole (`m8flow`) for backend/Celery startup. That identity is separate from the per-tenant AppRoles created by M8Flow when tenants are provisioned, and it should not read tenant secrets directly.
-- The `vault-demo` profile writes AppRole credentials, `runtime.env`, and verification artifacts into the named Docker volume mounted at `/vault/demo`.
+- The `vault-demo` profile writes encrypted AppRole credential files, `runtime.env`, and verification artifacts into the named Docker volume mounted at `/vault/demo`.
 - The `vault-demo` bootstrap resolves the shared-realm `m8flow` organization to its canonical tenant UUID before it writes seeded secrets, so there is no post-start metadata mirror phase.
 - Do not point containerized backend/Celery startup at `http://localhost:8200`; inside those containers, `localhost` is the container itself.
 - See [vault-local-development.md](./vault-local-development.md) for init, unseal, policy bootstrap, and reset steps.

@@ -35,10 +35,9 @@ The local dev setup now has two distinct Vault identity layers:
 
 The `vault-demo` profile stores generated local-only files inside the named demo state volume at `/vault/demo`:
 
-- `init.json`
-- `m8flow-role-id`
-- `m8flow-secret-id`
-- `m8flow-approle.env`
+- `init.json` (encrypted at rest)
+- `m8flow-role-id` (encrypted at rest)
+- `m8flow-secret-id` (encrypted at rest)
 - `runtime.env`
 - `verification.json`
 
@@ -85,7 +84,7 @@ Notes:
 
 - Each run mints a new tenant AppRole `secret_id`. Treat it like a credential.
 - If `M8FLOW_VAULT_OPERATOR_TOKEN` or `VAULT_TOKEN` is set in your host shell, the helpers use that operator token.
-- Otherwise, in the local `vault-demo` workflow they fall back to the persisted `root_token` from `/vault/demo/init.json`.
+- Otherwise, in the local `vault-demo` workflow they fall back to the encrypted persisted `root_token` from `/vault/demo/init.json` by using the repo-owned bootstrap decryption helper.
 - These helpers are local-development tooling. They are not intended for production Vault access flows.
 
 ## Start Only The Base Vault Service
@@ -155,14 +154,14 @@ tenants:
 What the `vault-demo` profile does on each run:
 
 - waits for the base `vault` service;
-- initializes Vault if needed and persists the init payload in the demo state volume;
+- initializes Vault if needed and persists the encrypted init payload in the demo state volume;
 - auto-unseals Vault using the persisted development unseal key;
 - enables KV v2 at `kv` if it is missing;
 - enables AppRole auth if it is missing;
 - creates or updates the shared broker `m8flow` policy;
 - creates or updates the shared broker `m8flow` AppRole;
 - reuses the persisted broker AppRole `secret_id` when it is still valid, otherwise generates a new one;
-- writes `runtime.env` plus file-backed broker AppRole credentials into `/vault/demo`;
+- writes `runtime.env` plus encrypted file-backed broker AppRole credentials into `/vault/demo`;
 - if `docker/vault/demo/secrets.yml` exists, seeds it under the canonical tenant UUID that corresponds to the shared-realm `m8flow` organization alias;
 - if `docker/vault/demo/secrets.yml` is absent, writes a harmless `_m8flow_demo_bootstrap` marker secret so the canonical `m8flow` tenant path still exists in Vault after a clean rebuild;
 - skips existing seeded secrets by default;
@@ -201,14 +200,15 @@ That sequence:
 
 Open the local Vault UI at `http://127.0.0.1:${M8FLOW_VAULT_PORT:-8200}/ui/`.
 
-The `vault-demo` bootstrap persists the local development init payload in `/vault/demo/init.json`. To inspect it without depending on a running backend container:
+The `vault-demo` bootstrap persists the local development init payload in encrypted form at `/vault/demo/init.json`. To print the usable `root_token` without depending on a running backend container:
 
 ```bash
 docker compose -f docker/m8flow-docker-compose.yml --profile vault --profile vault-demo \
-  run --rm --no-deps m8flow-backend sh -lc "cat /vault/demo/init.json"
+  run --rm --no-deps m8flow-backend sh -lc \
+  'python -c "import sys; sys.path.insert(0, \"/app/docker/vault/demo\"); import bootstrap_vault_demo as b; print(b.root_token_from_init(b.load_init_payload()))"'
 ```
 
-Use the `root_token` value from that JSON to sign in to the Vault UI with the `Token` auth method.
+Use the printed `root_token` value to sign in to the Vault UI with the `Token` auth method.
 
 That token stays the same across normal container restarts, rebuilds, and `docker compose up/down` runs as long as the named volumes are preserved. It changes only when Vault is re-initialized, which for this local setup normally means removing both `m8flow_vault-data` and `m8flow_vault-demo-state`.
 
