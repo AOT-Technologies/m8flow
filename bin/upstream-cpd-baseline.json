@@ -4,124 +4,8 @@
   "ignore_identifiers": true,
   "ignore_literals": true,
   "clones": {
-    "m8flow-backend/src/m8flow_backend/models/api_log_model.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/api_log_model.py": 168
-    },
-    "m8flow-backend/src/m8flow_backend/models/bpmn_process.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/bpmn_process.py": 225
-    },
-    "m8flow-backend/src/m8flow_backend/models/bpmn_process_definition.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/bpmn_process_definition.py": 157
-    },
-    "m8flow-backend/src/m8flow_backend/models/bpmn_process_definition_relationship.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/bpmn_process_definition_relationship.py": 83
-    },
-    "m8flow-backend/src/m8flow_backend/models/configuration.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/configuration.py": 77
-    },
-    "m8flow-backend/src/m8flow_backend/models/future_task.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/future_task.py": 324
-    },
-    "m8flow-backend/src/m8flow_backend/models/human_task.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/human_task.py": 593
-    },
-    "m8flow-backend/src/m8flow_backend/models/human_task_user.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/human_task_user.py": 139
-    },
-    "m8flow-backend/src/m8flow_backend/models/json_data_store.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/json_data_store.py": 163,
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/kkv_data_store.py": 100
-    },
-    "m8flow-backend/src/m8flow_backend/models/kkv_data_store.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/json_data_store.py": 100,
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/kkv_data_store.py": 157
-    },
-    "m8flow-backend/src/m8flow_backend/models/kkv_data_store_entry.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/kkv_data_store_entry.py": 163
-    },
-    "m8flow-backend/src/m8flow_backend/models/message_instance.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/message_instance.py": 656
-    },
-    "m8flow-backend/src/m8flow_backend/models/message_instance_correlation.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/message_instance_correlation.py": 140
-    },
-    "m8flow-backend/src/m8flow_backend/models/message_model.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/message_model.py": 146
-    },
-    "m8flow-backend/src/m8flow_backend/models/permission_assignment.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/permission_assignment.py": 132
-    },
-    "m8flow-backend/src/m8flow_backend/models/process_caller_relationship.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/process_caller_relationship.py": 169
-    },
-    "m8flow-backend/src/m8flow_backend/models/process_instance.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/process_instance.py": 598
-    },
-    "m8flow-backend/src/m8flow_backend/models/process_instance_error_detail.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/process_instance_error_detail.py": 142
-    },
-    "m8flow-backend/src/m8flow_backend/models/process_instance_event.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/process_instance_event.py": 230
-    },
-    "m8flow-backend/src/m8flow_backend/models/process_instance_file_data.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/process_instance_file_data.py": 383
-    },
-    "m8flow-backend/src/m8flow_backend/models/process_instance_metadata.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/process_instance_metadata.py": 133
-    },
-    "m8flow-backend/src/m8flow_backend/models/process_instance_migration_detail.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/process_instance_migration_detail.py": 126
-    },
-    "m8flow-backend/src/m8flow_backend/models/process_instance_queue.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/process_instance_queue.py": 166
-    },
-    "m8flow-backend/src/m8flow_backend/models/process_instance_report.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/process_instance_report.py": 371
-    },
-    "m8flow-backend/src/m8flow_backend/models/process_model_cycle.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/process_model_cycle.py": 102
-    },
-    "m8flow-backend/src/m8flow_backend/models/reference_cache.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/reference_cache.py": 554
-    },
-    "m8flow-backend/src/m8flow_backend/models/secret_model.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/secret_model.py": 145
-    },
-    "m8flow-backend/src/m8flow_backend/models/service_account.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/service_account.py": 240
-    },
-    "m8flow-backend/src/m8flow_backend/models/task.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/task.py": 377
-    },
-    "m8flow-backend/src/m8flow_backend/models/task_definition.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/task_definition.py": 184
-    },
-    "m8flow-backend/src/m8flow_backend/models/task_draft_data.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/task_draft_data.py": 264
-    },
-    "m8flow-backend/src/m8flow_backend/models/task_instructions_for_end_user.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/task_instructions_for_end_user.py": 334
-    },
-    "m8flow-backend/src/m8flow_backend/models/typeahead.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/typeahead.py": 96
-    },
-    "m8flow-backend/src/m8flow_backend/models/user.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/models/user.py": 301
-    },
-    "m8flow-backend/src/m8flow_backend/routes/tasks_controller_patch.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/routes/tasks_controller.py": 85
-    },
-    "m8flow-backend/src/m8flow_backend/services/process_api_blueprint_patch.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/routes/process_api_blueprint.py": 87
-    },
-    "m8flow-backend/src/m8flow_backend/services/process_instance_processor_patch.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/services/process_instance_processor.py": 90
-    },
-    "m8flow-backend/src/m8flow_backend/services/process_instance_report_service_patch.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/services/process_instance_report_service.py": 141
-    },
     "m8flow-backend/src/m8flow_backend/services/process_instance_service_patch.py": {
-      "spiffworkflow-backend/src/spiffworkflow_backend/services/process_instance_service.py": 194
+      "spiffworkflow-backend/src/spiffworkflow_backend/services/process_instance_service.py": 97
     },
     "m8flow-frontend/src/ContainerForExtensions.tsx": {
       "spiffworkflow-frontend/src/ContainerForExtensions.tsx": 382
@@ -143,32 +27,20 @@
     "m8flow-frontend/src/components/ProcessModelTabs.tsx": {
       "spiffworkflow-frontend/src/components/ProcessModelTabs.tsx": 441
     },
-    "m8flow-frontend/src/components/ReactDiagramEditor.tsx": {
-      "spiffworkflow-frontend/src/components/ReactDiagramEditor.tsx": 79
-    },
     "m8flow-frontend/src/components/ReactDiagramEditor.types.ts": {
       "spiffworkflow-frontend/src/components/ReactDiagramEditor.tsx": 319
     },
     "m8flow-frontend/src/components/SideNav.tsx": {
       "spiffworkflow-frontend/src/components/SideNav.tsx": 99
     },
-    "m8flow-frontend/src/components/TaskTable.tsx": {
-      "spiffworkflow-frontend/src/components/TaskTable.tsx": 365
-    },
     "m8flow-frontend/src/components/messages/MessageInstanceList.tsx": {
       "spiffworkflow-frontend/src/components/messages/MessageInstanceList.tsx": 214
-    },
-    "m8flow-frontend/src/components/useDiagramImport.ts": {
-      "spiffworkflow-frontend/src/components/ReactDiagramEditor.tsx": 204
     },
     "m8flow-frontend/src/components/useDiagramModeler.ts": {
       "spiffworkflow-frontend/src/components/ReactDiagramEditor.tsx": 251
     },
     "m8flow-frontend/src/hooks/useExtendedGrouping.tsx": {
       "spiffworkflow-frontend/src/views/Homepage.tsx": 142
-    },
-    "m8flow-frontend/src/index.tsx": {
-      "spiffworkflow-frontend/src/index.tsx": 152
     },
     "m8flow-frontend/src/services/HttpService.ts": {
       "spiffworkflow-frontend/src/services/HttpService.ts": 227
@@ -177,7 +49,7 @@
       "spiffworkflow-frontend/src/services/UserService.ts": 239
     },
     "m8flow-frontend/src/views/Configuration.tsx": {
-      "spiffworkflow-frontend/src/views/Configuration.tsx": 149
+      "spiffworkflow-frontend/src/views/Configuration.tsx": 83
     },
     "m8flow-frontend/src/views/Homepage.tsx": {
       "spiffworkflow-frontend/src/views/Homepage.tsx": 797

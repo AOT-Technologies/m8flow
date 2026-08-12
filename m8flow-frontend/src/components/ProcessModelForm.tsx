@@ -1,12 +1,3 @@
-// SPDX-License-Identifier: LGPL-2.1-or-later
-// SPDX-FileCopyrightText: Sartography and the SpiffArena contributors
-// SPDX-FileCopyrightText: 2026 AOT Technologies Inc.
-//
-// Derived from spiffworkflow-frontend/src/components/ProcessModelForm.tsx in SpiffArena
-// (https://github.com/sartography/spiff-arena), licensed LGPL-2.1-or-later.
-// AOT's modifications to this file are released under the same licence.
-// See LICENSES/LGPL-2.1-or-later.txt and NOTICE.
-
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';

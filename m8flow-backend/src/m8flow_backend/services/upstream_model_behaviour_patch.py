@@ -9,6 +9,9 @@ which a DDL listener cannot express:
   ``get_data()`` rather than upstream's ``json_data()``.
 * ``PermissionTargetModel.__init__`` accepts a ``command`` argument, matching the
   ``command`` column m8flow adds to that table.
+* ``TaskModel.json_data`` merges the task's ``properties_json['delta']['updates']``
+  over the stored json data (and ``python_env_data`` tolerates a missing dict), so
+  in-flight lane/decision overrides show through ``get_data()``.
 
 These previously lived in m8flow's copies of the upstream model files. Expressing
 them here means those copies - and the ~330 lines of upstream code they carried -
@@ -91,6 +94,49 @@ def _patch_permission_target_init() -> None:
     PermissionTargetModel.__init__ = __init__  # type: ignore[method-assign]
 
 
+def _patch_task_json_data() -> None:
+    """TaskModel.json_data() overlays the task's pending delta updates.
+
+    Upstream returns the stored json data verbatim. m8flow lets an in-flight task
+    carry ``properties_json['delta']['updates']`` - lane owners, a decision value -
+    that must win over the persisted data. python_env_data() is hardened at the same
+    time so a missing hash yields ``{}`` instead of a non-dict. get_data() is left
+    to upstream: it is already ``{**python_env_data(), **json_data()}``, so patching
+    these two feeds the merged result through it.
+    """
+    from spiffworkflow_backend.models.json_data import JsonDataModel
+    from spiffworkflow_backend.models.task import TaskModel
+
+    _require(TaskModel, "json_data")
+    _require(TaskModel, "python_env_data")
+
+    def _delta_updates(self: Any) -> dict:
+        properties_json = self.properties_json
+        if not isinstance(properties_json, dict):
+            return {}
+        delta = properties_json.get("delta")
+        if not isinstance(delta, dict):
+            return {}
+        updates = delta.get("updates")
+        return updates if isinstance(updates, dict) else {}
+
+    def python_env_data(self: Any) -> dict:
+        data = JsonDataModel.find_data_dict_by_hash(self.python_env_data_hash)
+        return data if isinstance(data, dict) else {}
+
+    def json_data(self: Any) -> dict:
+        data = JsonDataModel.find_data_dict_by_hash(self.json_data_hash)
+        if not isinstance(data, dict):
+            data = {}
+        delta_updates = _delta_updates(self)
+        if not delta_updates:
+            return data
+        return {**data, **delta_updates}
+
+    TaskModel.python_env_data = python_env_data  # type: ignore[method-assign]
+    TaskModel.json_data = json_data  # type: ignore[method-assign]
+
+
 def apply() -> None:
     global _PATCHED
     if _PATCHED:
@@ -98,6 +144,7 @@ def apply() -> None:
 
     _patch_process_instance_get_data()
     _patch_permission_target_init()
+    _patch_task_json_data()
 
     _PATCHED = True
     LOGGER.info("upstream_model_behaviour_patch applied")

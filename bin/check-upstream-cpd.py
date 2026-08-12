@@ -14,7 +14,18 @@ Apache-2.0 owned tree AND a gitignored upstream tree. Intra-repo duplication is 
 of scope. Owned trees scanned today are m8flow-backend/src and m8flow-frontend/src
 only; m8flow-connector-proxy is intentionally out of CPD scope (covered by the
 raw-line gate in bin/check-upstream-copying.py, which fetches connector-proxy
-extras). A checked-in baseline (bin/upstream-cpd-baseline.json) grandfathers the
+extras).
+
+REVIEWED SCOPE BOUNDARY (see the gate coverage audit): CPD deliberately covers only
+the python + typescript src trees — token-level, reformat/rename-resistant detection
+where it matters most. It is NOT the completeness net for the whole repo. Everything
+outside that (non-src files, other owned trees, other languages, config/data assets,
+shebang scripts, Dockerfiles) is covered by the raw-line gate in
+bin/check-upstream-copying.py, which spans all owned trees and includes shebang
+scripts and Dockerfiles. The two gates are complementary by design; do not read CPD's
+narrow scope as a coverage gap.
+
+A checked-in baseline (bin/upstream-cpd-baseline.json) grandfathers the
 clones that already exist so the gate blocks only NEW cross-tree clones and
 regressions (a bigger duplicated block against the same counterpart). Clones drop
 out of the baseline as files are remediated.

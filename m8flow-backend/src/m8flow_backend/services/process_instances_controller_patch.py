@@ -107,49 +107,54 @@ def apply() -> None:
         force_run: bool = False,
         execution_mode: str | None = None,
     ) -> None:
-        if process_instance.status != "not_started" and not force_run:
+        already_started = process_instance.status != "not_started"
+        if already_started and not force_run:
             raise ApiError(
                 error_code="process_instance_not_runnable",
                 message=f"Process Instance ({process_instance.id}) is currently running or has already run.",
                 status_code=400,
             )
 
+        not_yet_enqueued = lambda: not ProcessInstanceTmpService.is_enqueued_to_run_in_the_future(  # noqa: E731
+            process_instance
+        )
+
+        def enqueue_for_later() -> None:
+            # m8flow preflight: reject a queued start whose lanes can't be assigned before it
+            # is handed to the worker (upstream only validates once the worker picks it up).
+            if not_yet_enqueued():
+                _validate_queued_process_start(process_instance, handle_error=False)
+            queue_process_instance_if_appropriate(process_instance, execution_mode=execution_mode)
+
+        def run_immediately():
+            strategy = "greedy" if execution_mode == ProcessInstanceExecutionMode.synchronous.value else None
+            ran_processor, _ = ProcessInstanceService.run_process_instance_with_processor(
+                process_instance, execution_strategy_name=strategy
+            )
+            return ran_processor
+
         processor = None
         try:
             if force_run is True:
                 ProcessInstanceTmpService.add_event_to_process_instance(process_instance, "process_instance_force_run")
-
             if should_queue_process_instance(execution_mode=execution_mode):
-                if not ProcessInstanceTmpService.is_enqueued_to_run_in_the_future(process_instance):
-                    _validate_queued_process_start(process_instance, handle_error=False)
-                queue_process_instance_if_appropriate(process_instance, execution_mode=execution_mode)
-            elif not ProcessInstanceTmpService.is_enqueued_to_run_in_the_future(process_instance):
-                execution_strategy_name = None
-                if execution_mode == ProcessInstanceExecutionMode.synchronous.value:
-                    execution_strategy_name = "greedy"
-                processor, _ = ProcessInstanceService.run_process_instance_with_processor(
-                    process_instance,
-                    execution_strategy_name=execution_strategy_name,
-                )
-        except (
-            ApiError,
-            ProcessInstanceIsNotEnqueuedError,
-            ProcessInstanceIsAlreadyLockedError,
-        ) as error:
+                enqueue_for_later()
+            elif not_yet_enqueued():
+                processor = run_immediately()
+        except (ApiError, ProcessInstanceIsNotEnqueuedError, ProcessInstanceIsAlreadyLockedError) as error:
             if _should_handle_process_run_api_error(error):
                 ErrorHandlingService.handle_error(process_instance, error)
-            raise error
+            raise
         except Exception as error:
             ErrorHandlingService.handle_error(process_instance, error)
-            if processor is not None:
-                task = processor.bpmn_process_instance.last_task
-                raise ApiError.from_task(
-                    error_code="unknown_exception",
-                    message=f"An unknown error occurred. Original error: {error}",
-                    status_code=400,
-                    task=task,
-                ) from error
-            raise error
+            if processor is None:
+                raise
+            raise ApiError.from_task(
+                error_code="unknown_exception",
+                message=f"An unknown error occurred. Original error: {error}",
+                status_code=400,
+                task=processor.bpmn_process_instance.last_task,
+            ) from error
 
     process_instances_controller._get_process_instance = patched_get_process_instance
     process_instances_controller._process_instance_run = patched_process_instance_run

@@ -18,6 +18,29 @@ def _task_sort_ts(task: object) -> float:
     return 0.0
 
 
+def _seed_processor_with_completed_data(processor: object, process_instance: object) -> None:
+    """Seed the processor's workflow data with the instance's completed-task data and the
+    union of its data objects (existing + each completed task's, oldest-first), so readonly
+    views and re-runs see the values the instance actually executed with."""
+    from spiffworkflow_backend.services.process_instance_processor import ProcessInstanceProcessor
+
+    completed_task_data = process_instance.get_data()
+    if isinstance(completed_task_data, dict) and completed_task_data:
+        processor.bpmn_process_instance.data.update(completed_task_data)
+
+    merged_data_objects: dict = {}
+    existing_data_objects = processor.bpmn_process_instance.data.get("data_objects")
+    if isinstance(existing_data_objects, dict) and existing_data_objects:
+        merged_data_objects.update(existing_data_objects)
+    for completed_task in sorted(
+        ProcessInstanceProcessor.get_tasks_with_data(processor.bpmn_process_instance), key=_task_sort_ts
+    ):
+        if isinstance(completed_task.data, dict) and completed_task.data:
+            merged_data_objects.update(completed_task.data)
+    if merged_data_objects:
+        processor.bpmn_process_instance.data["data_objects"] = merged_data_objects
+
+
 def _raise_lane_assignment_api_error(
     process_instance: object,
     exc: Exception,
@@ -279,16 +302,23 @@ def apply() -> None:
             pass
 
         if should_queue_process_instance(execution_mode):
+            # m8flow preflight before follow-up work is handed to the async worker.
             _validate_queued_follow_up_work(processor, handle_error=False)
             processor.bpmn_process_instance.refresh_waiting_tasks()
-            tasks = processor.bpmn_process_instance.get_tasks(state=TaskState.WAITING | TaskState.READY)
-            JinjaService.add_instruction_for_end_user_if_appropriate(tasks, processor.process_instance_model.id, set())
-        elif not ProcessInstanceTmpService.is_enqueued_to_run_in_the_future(processor.process_instance_model):
-            execution_strategy_name = None
-            if execution_mode == ProcessInstanceExecutionMode.synchronous.value:
-                execution_strategy_name = "greedy"
+            ready_or_waiting = processor.bpmn_process_instance.get_tasks(
+                state=TaskState.WAITING | TaskState.READY
+            )
+            JinjaService.add_instruction_for_end_user_if_appropriate(
+                ready_or_waiting, processor.process_instance_model.id, set()
+            )
+            return
 
-            processor.do_engine_steps(save=True, execution_strategy_name=execution_strategy_name)
+        # Already queued for a future run -> nothing to execute synchronously.
+        if ProcessInstanceTmpService.is_enqueued_to_run_in_the_future(processor.process_instance_model):
+            return
+
+        strategy = "greedy" if execution_mode == ProcessInstanceExecutionMode.synchronous.value else None
+        processor.do_engine_steps(save=True, execution_strategy_name=strategy)
 
     @classmethod
     def patched_schedule_next_process_model_cycle(cls, process_instance_model) -> None:
@@ -330,7 +360,6 @@ def apply() -> None:
         execution_strategy_name: str | None = None,
         should_schedule_waiting_timer_events: bool = True,
     ) -> tuple[ProcessInstanceProcessor | None, TaskRunnability]:
-        processor = None
         task_runnability = TaskRunnability.unknown_if_ready_tasks
         with ProcessInstanceQueueService.dequeued(process_instance):
             ProcessInstanceMigrator.run(process_instance)
@@ -339,26 +368,18 @@ def apply() -> None:
                 workflow_completed_handler=cls.schedule_next_process_model_cycle,
                 include_task_data_for_completed_tasks=True,
             )
-            completed_task_data = process_instance.get_data()
-            if isinstance(completed_task_data, dict) and completed_task_data:
-                processor.bpmn_process_instance.data.update(completed_task_data)
-            completed_tasks_with_data = ProcessInstanceProcessor.get_tasks_with_data(processor.bpmn_process_instance)
-            merged_data_objects = {}
-            existing_data_objects = processor.bpmn_process_instance.data.get("data_objects")
-            if isinstance(existing_data_objects, dict) and existing_data_objects:
-                merged_data_objects.update(existing_data_objects)
-            for completed_task in sorted(completed_tasks_with_data, key=_task_sort_ts):
-                if isinstance(completed_task.data, dict) and completed_task.data:
-                    merged_data_objects.update(completed_task.data)
-            if merged_data_objects:
-                processor.bpmn_process_instance.data["data_objects"] = merged_data_objects
+            # m8flow: seed the workflow with completed-task data + merged data objects so
+            # readonly views and re-runs see the values captured on the executed instance.
+            _seed_processor_with_completed_data(processor, process_instance)
 
-        if status_value and cls.can_optimistically_skip(processor, status_value):
+        skip_now = bool(status_value) and cls.can_optimistically_skip(processor, status_value)
+        if skip_now:
             current_app.logger.info(f"Optimistically skipped process_instance {process_instance.id}")
             return (processor, task_runnability)
 
         db.session.refresh(process_instance)
-        if status_value is None or process_instance.status == status_value:
+        status_ready = status_value is None or process_instance.status == status_value
+        if status_ready:
             task_runnability = processor.do_engine_steps(
                 save=True,
                 execution_strategy_name=execution_strategy_name,
@@ -386,54 +407,46 @@ def apply() -> None:
             except TypeError as exc:
                 if "expected str instance" not in str(exc) or "NoneType found" not in str(exc):
                     raise
-        task_type = spiff_task.task_spec.description
+        task_spec = spiff_task.task_spec
+        task_type = task_spec.description
         task_guid = str(spiff_task.id)
+        props = dict(getattr(task_spec, "extensions", {}) or {})
+        lane = getattr(task_spec, "lane", None)
 
-        props = {}
-        if hasattr(spiff_task.task_spec, "extensions"):
-            for key, val in spiff_task.task_spec.extensions.items():
-                props[key] = val
+        def _user_can_complete() -> bool:
+            try:
+                AuthorizationService.assert_user_can_complete_task(
+                    processor.process_instance_model.id, task_guid, g.user
+                )
+                return True
+            except (
+                HumanTaskAlreadyCompletedError,
+                HumanTaskNotFoundError,
+                UserDoesNotHaveAccessToTaskError,
+            ):
+                return False
 
-        if hasattr(spiff_task.task_spec, "lane"):
-            lane = spiff_task.task_spec.lane
-        else:
-            lane = None
+        can_complete = _user_can_complete()
 
-        can_complete = False
-        try:
-            AuthorizationService.assert_user_can_complete_task(processor.process_instance_model.id, task_guid, g.user)
-            can_complete = True
-        except HumanTaskAlreadyCompletedError:
-            can_complete = False
-        except HumanTaskNotFoundError:
-            can_complete = False
-        except UserDoesNotHaveAccessToTaskError:
-            can_complete = False
-
+        # When the current user can't complete it, surface who can (lane group or the
+        # potential-owner usernames) so the UI can explain why.
         assigned_user_group_identifier = None
         potential_owner_usernames = None
-        if can_complete is False:
-            human_task = HumanTaskModel.query.filter_by(task_id=task_guid).first()
-            if human_task is not None:
-                if human_task.lane_assignment_id is not None:
-                    group = GroupModel.query.filter_by(id=human_task.lane_assignment_id).first()
-                    if group is not None:
-                        assigned_user_group_identifier = group.identifier
-                elif len(human_task.potential_owners) > 0:
-                    potential_owner_usernames = _potential_owner_usernames_from_human_task(human_task)
+        blocked_human_task = None if can_complete else HumanTaskModel.query.filter_by(task_id=task_guid).first()
+        if blocked_human_task is not None:
+            if blocked_human_task.lane_assignment_id is not None:
+                lane_group = GroupModel.query.filter_by(id=blocked_human_task.lane_assignment_id).first()
+                assigned_user_group_identifier = lane_group.identifier if lane_group is not None else None
+            elif len(blocked_human_task.potential_owners) > 0:
+                potential_owner_usernames = _potential_owner_usernames_from_human_task(blocked_human_task)
 
-        parent_id = None
-        if spiff_task.parent:
-            parent_id = spiff_task.parent.id
+        parent_id = spiff_task.parent.id if spiff_task.parent else None
+        serialized_task_spec = processor.serialize_task_spec(task_spec)
 
-        serialized_task_spec = processor.serialize_task_spec(spiff_task.task_spec)
-
-        error_message = None
-        error_event = ProcessInstanceEventModel.query.filter_by(
+        failure_event = ProcessInstanceEventModel.query.filter_by(
             task_guid=task_guid, event_type=ProcessInstanceEventType.task_failed.value
         ).first()
-        if error_event:
-            error_message = error_event.error_details[-1].message
+        error_message = failure_event.error_details[-1].message if failure_event else None
 
         return Task(
             spiff_task.id,
