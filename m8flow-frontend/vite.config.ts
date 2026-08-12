@@ -4,6 +4,7 @@ import viteTsconfigPaths from 'vite-tsconfig-paths';
 import svgr from 'vite-plugin-svgr';
 import path from 'path';
 import { overrideResolver } from './vite-plugin-override-resolver';
+import { fixPythonWorkerUrl } from './vite-plugin-python-worker';
 
 // Load repo root .env so MULTI_TENANT_ON is available even when npm start is run without sourcing .env
 const repoRoot = path.resolve(__dirname, '..');
@@ -71,6 +72,8 @@ export default defineConfig({
   plugins: [
     // Override resolver - must be first to check overrides before core
     overrideResolver(),
+    // Rewrite upstream EditDiagram worker URL for m8flow's Vite root/publicDir
+    fixPythonWorkerUrl(),
     // Use real React in tests to avoid ref type mismatch with @testing-library/react
     ...(process.env.VITEST ? [] : [preact({ devToolsEnabled: false })]),
     // viteTsconfigPaths(),

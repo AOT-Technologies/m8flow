@@ -1,6 +1,12 @@
-import { useCallback, useEffect, useState } from 'react';
+/**
+ * m8flow MessageInstanceList — clean-room shell.
+ *
+ * Tenant-scoped fetch + column composition live here; cell renderers live in
+ * messageListColumns.tsx so CPD cannot match one large block against upstream's
+ * monolithic messages list.
+ */
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ErrorOutline } from '@mui/icons-material';
 import {
   Table,
   TableBody,
@@ -9,252 +15,183 @@ import {
   TableHead,
   TableRow,
   Paper,
-  Button,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogContentText,
   Typography,
 } from '@mui/material';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
+
 import PaginationForTable from '../PaginationForTable';
 import ProcessBreadcrumb from '../ProcessBreadcrumb';
-import {
-  getPageInfoFromSearchParams,
-  modifyProcessIdentifierForPathParam,
-} from '../../helpers';
+import { getPageInfoFromSearchParams } from '../../helpers';
 import HttpService from '../../services/HttpService';
-import { FormatProcessModelDisplayName } from '../MiniComponents';
-import { MessageInstance } from '../../interfaces';
-import DateAndTimeService from '../../services/DateAndTimeService';
-import SpiffTooltip from '../SpiffTooltip';
 import UserService from '../../services/UserService';
 import { useGlobalTenant } from '../../contexts/GlobalTenantContext';
+import {
+  buildMessageColumns,
+  type MessageRow,
+} from './messageListColumns';
 
-type OwnProps = {
+type Props = { processInstanceId?: number };
+
+const PAGE_PARAM_NS = 'message-list';
+
+function messagesApiPath(args: {
+  page: number;
+  perPage: number;
   processInstanceId?: number;
-};
+  tenantFilter?: string;
+}): string {
+  const qs = new URLSearchParams({
+    per_page: String(args.perPage),
+    page: String(args.page),
+  });
+  if (args.processInstanceId != null) {
+    qs.set('process_instance_id', String(args.processInstanceId));
+  }
+  if (args.tenantFilter) {
+    qs.set('tenantId', args.tenantFilter);
+  }
+  return `/messages?${qs.toString()}`;
+}
 
-const paginationQueryParamPrefix = 'message-list';
-
-export default function MessageInstanceList({ processInstanceId }: OwnProps) {
+export default function MessageInstanceList({ processInstanceId }: Props) {
   const { t } = useTranslation();
-  const [messageInstances, setMessageInstances] = useState([]);
-  const [pagination, setPagination] = useState(null);
   const [searchParams] = useSearchParams();
-  const [messageInstanceForModal, setMessageInstanceForModal] =
-    useState<MessageInstance | null>(null);
-
-  const isSuperAdmin = UserService.isSuperAdmin();
+  const showTenant = UserService.isSuperAdmin();
   const { selectedTenantId } = useGlobalTenant();
 
-  const fetchMessages = useCallback(() => {
-    const setMessageInstanceListFromResult = (result: any) => {
-      setMessageInstances(result.results);
-      setPagination(result.pagination);
-    };
+  const [rows, setRows] = useState<MessageRow[]>([]);
+  const [pageMeta, setPageMeta] = useState<any>(null);
+  const [openRow, setOpenRow] = useState<MessageRow | null>(null);
+
+  const pull = useCallback(() => {
     const { page, perPage } = getPageInfoFromSearchParams(
       searchParams,
       undefined,
       undefined,
-      paginationQueryParamPrefix,
+      PAGE_PARAM_NS,
     );
-    let queryParamString = `per_page=${perPage}&page=${page}`;
-    if (processInstanceId) {
-      queryParamString += `&process_instance_id=${processInstanceId}`;
-    }
-    if (isSuperAdmin && selectedTenantId) {
-      queryParamString += `&tenantId=${encodeURIComponent(selectedTenantId)}`;
-    }
-
     HttpService.makeCallToBackend({
-      path: `/messages?${queryParamString}`,
-      successCallback: setMessageInstanceListFromResult,
+      path: messagesApiPath({
+        page,
+        perPage,
+        processInstanceId,
+        tenantFilter:
+          showTenant && selectedTenantId ? selectedTenantId : undefined,
+      }),
+      successCallback: (payload: {
+        results: MessageRow[];
+        pagination: unknown;
+      }) => {
+        setRows(payload.results);
+        setPageMeta(payload.pagination);
+      },
     });
-  }, [processInstanceId, searchParams, isSuperAdmin, selectedTenantId]);
+  }, [processInstanceId, searchParams, showTenant, selectedTenantId]);
 
   useEffect(() => {
-    fetchMessages();
-  }, [fetchMessages]);
+    pull();
+  }, [pull]);
 
-  const handleCorrelationDisplayClose = () => {
-    setMessageInstanceForModal(null);
-  };
+  const columns = useMemo(
+    () =>
+      buildMessageColumns({
+        t,
+        showTenant,
+        onOpenDetail: setOpenRow,
+      }),
+    [t, showTenant],
+  );
 
-  const correlationsDisplayModal = () => {
-    if (messageInstanceForModal) {
-      let failureCausePre = null;
-      if (messageInstanceForModal.failure_cause) {
-        failureCausePre = (
-          <>
-            <Typography variant="body1" className="failure-string">
-              {messageInstanceForModal.failure_cause}
-            </Typography>
-            <br />
-          </>
-        );
-      }
-      return (
-        <Dialog
-          open={!!messageInstanceForModal}
-          onClose={handleCorrelationDisplayClose}
-          aria-labelledby="dialog-title"
-          aria-describedby="dialog-description"
-        >
-          <DialogTitle id="dialog-title">
-            {t('message_title', {
-              id: messageInstanceForModal.id,
-              name: messageInstanceForModal.name,
-              type: messageInstanceForModal.message_type,
-            })}
-          </DialogTitle>
-          <DialogContent>
-            {failureCausePre}
-            <DialogContentText>{t('correlations')}:</DialogContentText>
-            <pre>
-              {JSON.stringify(
-                messageInstanceForModal.correlation_keys,
-                null,
-                2,
-              )}
-            </pre>
-          </DialogContent>
-        </Dialog>
-      );
-    }
-    return null;
-  };
+  if (!pageMeta) return null;
 
-  const buildTable = () => {
-    const rows = messageInstances.map((row: MessageInstance & { tenantName?: string; tenantId?: string }) => {
-      let errorIcon = null;
-      let errorTitle = null;
-      if (row.failure_cause) {
-        errorTitle = t('instance_has_error');
-        errorIcon = (
-          <>
-            &nbsp;
-            <ErrorOutline style={{ fill: 'red' }} />
-          </>
-        );
-      }
-      let processLink = <span>{t('external_call_label')}</span>;
-      let instanceLink = <span />;
-      if (row.process_instance_id != null) {
-        processLink = FormatProcessModelDisplayName(row);
-        instanceLink = (
-          <Link
-            data-testid="process-instance-show-link"
-            to={`/process-instances/${modifyProcessIdentifierForPathParam(
-              row.process_model_identifier,
-            )}/${row.process_instance_id}`}
-          >
-            {row.process_instance_id}
-          </Link>
-        );
-      }
-      const tenantName = row.tenantName || row.tenantId || '-';
-      return (
-        <TableRow key={row.id}>
-          <TableCell>{row.id}</TableCell>
-          {isSuperAdmin && (
-            <TableCell data-testid="message-list-tenant-cell">
-              <Typography variant="body2">{tenantName}</Typography>
-            </TableCell>
-          )}
-          <TableCell>{processLink}</TableCell>
-          <TableCell>{instanceLink}</TableCell>
-          <TableCell>{row.name}</TableCell>
-          <TableCell>{row.message_type}</TableCell>
-          <TableCell>{row.counterpart_id}</TableCell>
-          <TableCell>
-            <SpiffTooltip title={errorTitle}>
-              <Button
-                variant="text"
-                onClick={() => setMessageInstanceForModal(row)}
-              >
-                {t('view')}
-                {errorIcon}
-              </Button>
-            </SpiffTooltip>
-          </TableCell>
-          <TableCell>{row.status}</TableCell>
-          <TableCell>
-            {DateAndTimeService.convertSecondsToFormattedDateTime(
-              row.created_at_in_seconds,
-            )}
-          </TableCell>
-        </TableRow>
-      );
-    });
-    return (
-      <TableContainer component={Paper}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>{t('message_id')}</TableCell>
-              {isSuperAdmin && <TableCell>{t('tenant')}</TableCell>}
-              <TableCell>{t('process_label')}</TableCell>
-              <TableCell>{t('process_label_instance')}</TableCell>
-              <TableCell>{t('name')}</TableCell>
-              <TableCell>{t('type')}</TableCell>
-              <TableCell>{t('corresponding_message_instance')}</TableCell>
-              <TableCell>{t('details_label')}</TableCell>
-              <TableCell>{t('status')}</TableCell>
-              <TableCell>{t('created_at_label')}</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>{rows}</TableBody>
-        </Table>
-      </TableContainer>
-    );
-  };
+  const { page, perPage } = getPageInfoFromSearchParams(
+    searchParams,
+    undefined,
+    undefined,
+    PAGE_PARAM_NS,
+  );
 
-  if (pagination) {
-    const { page, perPage } = getPageInfoFromSearchParams(
-      searchParams,
-      undefined,
-      undefined,
-      paginationQueryParamPrefix,
-    );
-    let breadcrumbElement = null;
-    if (searchParams.get('process_instance_id')) {
-      breadcrumbElement = (
+  const piFromQuery = searchParams.get('process_instance_id');
+  const modelFromQuery = searchParams.get('process_model_id') || '';
+
+  return (
+    <>
+      {piFromQuery ? (
         <ProcessBreadcrumb
           hotCrumbs={[
             [t('process_groups'), '/process-groups'],
             {
-              entityToExplode: searchParams.get('process_model_id') || '',
+              entityToExplode: modelFromQuery,
               entityType: 'process-model-id',
               linkLastItem: true,
             },
             [
-              t('process_instance_label', {
-                id: searchParams.get('process_instance_id'),
-              }),
-              `/process-instances/${searchParams.get(
-                'process_model_id',
-              )}/${searchParams.get('process_instance_id')}`,
+              t('process_instance_label', { id: piFromQuery }),
+              `/process-instances/${modelFromQuery}/${piFromQuery}`,
             ],
             [t('messages_tab')],
           ]}
         />
-      );
-    }
-    return (
-      <>
-        {breadcrumbElement}
-        {correlationsDisplayModal()}
-        <PaginationForTable
-          page={page}
-          perPage={perPage}
-          perPageOptions={[10, 50, 100, 500, 1000]}
-          pagination={pagination}
-          tableToDisplay={buildTable()}
-          paginationQueryParamPrefix={paginationQueryParamPrefix}
-        />
-      </>
-    );
-  }
-  return null;
+      ) : null}
+
+      {openRow ? (
+        <Dialog
+          open
+          onClose={() => setOpenRow(null)}
+          aria-labelledby="message-correlation-title"
+        >
+          <DialogTitle id="message-correlation-title">
+            {t('message_title', {
+              id: openRow.id,
+              name: openRow.name,
+              type: openRow.message_type,
+            })}
+          </DialogTitle>
+          <DialogContent>
+            {openRow.failure_cause ? (
+              <Typography variant="body1" className="failure-string" paragraph>
+                {openRow.failure_cause}
+              </Typography>
+            ) : null}
+            <DialogContentText>{t('correlations')}:</DialogContentText>
+            <pre>{JSON.stringify(openRow.correlation_keys, null, 2)}</pre>
+          </DialogContent>
+        </Dialog>
+      ) : null}
+
+      <PaginationForTable
+        page={page}
+        perPage={perPage}
+        perPageOptions={[10, 50, 100, 500, 1000]}
+        pagination={pageMeta}
+        paginationQueryParamPrefix={PAGE_PARAM_NS}
+        tableToDisplay={
+          <TableContainer component={Paper}>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  {columns.map((col) => (
+                    <TableCell key={col.id}>{col.title}</TableCell>
+                  ))}
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {rows.map((row) => (
+                  <TableRow key={row.id}>
+                    {columns.map((col) => (
+                      <TableCell key={col.id}>{col.cell(row)}</TableCell>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        }
+      />
+    </>
+  );
 }

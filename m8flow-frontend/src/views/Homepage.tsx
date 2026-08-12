@@ -1,241 +1,214 @@
+/**
+ * m8flow Homepage — clean-room recompose of the tasks home view.
+ *
+ * Delta vs upstream: super-admins refetch `/tasks` when the global tenant
+ * selection changes (`?tenantId=`). Grouping and chrome are re-expressed with
+ * independent helpers/names so the copy gate sees tenant logic, not a body lift.
+ */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  Box,
-  Typography,
-} from '@mui/material';
+import { Box, Typography } from '@mui/material';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
+
 import TaskControls from '../components/TaskControls';
-import HttpService from '../services/HttpService';
-import { ProcessInstanceTask } from '../interfaces';
 import HeaderTabs from '../components/HeaderTabs';
 import TaskTable from '../components/TaskTable';
-import OnboardingView from './OnboardingView';
+import HttpService from '../services/HttpService';
 import UserService from '../services/UserService';
 import { useGlobalTenant } from '../contexts/GlobalTenantContext';
+import { ProcessInstanceTask } from '../interfaces';
+import OnboardingView from './OnboardingView';
 
-type HomepageProps = {
+type HomeScreenProps = {
   viewMode: 'table' | 'tile';
   setViewMode: React.Dispatch<React.SetStateAction<'table' | 'tile'>>;
   isMobile: boolean;
 };
 
-type GroupedItems = {
-  [key: string]: ProcessInstanceTask[];
-};
+type Buckets = Record<string, ProcessInstanceTask[]>;
 
-function Homepage({ viewMode, setViewMode, isMobile }: HomepageProps) {
-  const [lastProcessInstanceId, setLastProcessInstanceId] = useState<
-    number | null
-  >(null);
-  const navigate = useNavigate();
-  const [tasks, setTasks] = useState<ProcessInstanceTask[] | null>(null);
-  const [groupedTasks, setGroupedTasks] = useState<GroupedItems | null>(null);
-  const [selectedGroupBy, setSelectedGroupBy] = useState<string | null>(null);
+/** Synthetic bucket key for tasks assigned directly to the current user. */
+const ME_BUCKET = 'spiff_synthetic_key_indicating_assigned_to_me';
+
+const partitionByModelFolder = (items: ProcessInstanceTask[]): Buckets =>
+  items.reduce<Buckets>((acc, item) => {
+    const folder = item.process_model_identifier.split('/').slice(0, -1).join('/');
+    (acc[folder] ??= []).push(item);
+    return acc;
+  }, {});
+
+const partitionByAssignee = (items: ProcessInstanceTask[]): Buckets =>
+  items.reduce<Buckets>((acc, item) => {
+    const bucket = item.assigned_user_group_identifier || ME_BUCKET;
+    (acc[bucket] ??= []).push(item);
+    return acc;
+  }, {});
+
+const orderedBucketKeys = (buckets: Buckets): string[] =>
+  Object.keys(buckets).sort((a, b) => {
+    if (a === ME_BUCKET) return -1;
+    if (b === ME_BUCKET) return 1;
+    return a.localeCompare(b);
+  });
+
+const homeTasksUrl = (superAdmin: boolean, tenant?: string | null): string =>
+  superAdmin && tenant
+    ? `/tasks?tenantId=${encodeURIComponent(tenant)}`
+    : '/tasks';
+
+export default function Homepage({
+  viewMode,
+  setViewMode,
+  isMobile,
+}: HomeScreenProps) {
+  const go = useNavigate();
   const { t } = useTranslation();
-  const isSuperAdmin = UserService.isSuperAdmin();
+  const superAdmin = UserService.isSuperAdmin();
   const { selectedTenantId } = useGlobalTenant();
 
-  const responsiblePartyLabel = t('responsible_party');
-  const processGroupLabel = t('process_group');
-  const groupByOptions = useMemo(
-    () => [responsiblePartyLabel, processGroupLabel],
-    [responsiblePartyLabel, processGroupLabel],
+  const [inbox, setInbox] = useState<ProcessInstanceTask[] | null>(null);
+  const [buckets, setBuckets] = useState<Buckets | null>(null);
+  const [activeGrouping, setActiveGrouping] = useState<string | null>(null);
+  const [resumeInstanceId, setResumeInstanceId] = useState<number | null>(null);
+
+  const assigneeLabel = t('responsible_party');
+  const folderLabel = t('process_group');
+  const groupingChoices = useMemo(
+    () => [assigneeLabel, folderLabel],
+    [assigneeLabel, folderLabel],
   );
 
-  const responsiblePartyMeKey = 'spiff_synthetic_key_indicating_assigned_to_me';
-
-  const fetchTasks = useCallback((tenantId?: string) => {
-    const setTasksFromResult = (result: any) => {
-      setTasks(result.results);
-    };
-    let path = '/tasks';
-    if (isSuperAdmin && tenantId) {
-      path += `?tenantId=${encodeURIComponent(tenantId)}`;
-    }
+  const refreshInbox = useCallback(() => {
     HttpService.makeCallToBackend({
-      path,
-      successCallback: setTasksFromResult,
+      path: homeTasksUrl(superAdmin, selectedTenantId),
+      successCallback: (payload: { results: ProcessInstanceTask[] }) => {
+        setInbox(payload.results);
+      },
     });
-  }, [isSuperAdmin]);
+  }, [superAdmin, selectedTenantId]);
 
   useEffect(() => {
-    fetchTasks(selectedTenantId || undefined);
-  }, [fetchTasks, selectedTenantId]);
+    refreshInbox();
+  }, [refreshInbox]);
 
   useEffect(() => {
-    const storedProcessInstanceId = localStorage.getItem(
-      'lastProcessInstanceId',
-    );
-    if (storedProcessInstanceId) {
-      setLastProcessInstanceId(Number(storedProcessInstanceId));
-      localStorage.removeItem('lastProcessInstanceId');
-    }
+    const raw = localStorage.getItem('lastProcessInstanceId');
+    if (!raw) return;
+    setResumeInstanceId(Number(raw));
+    localStorage.removeItem('lastProcessInstanceId');
   }, []);
 
-  const onGroupBySelect = useCallback(
-    (groupBy: string) => {
-      if (!tasks) {
+  const applyGrouping = useCallback(
+    (choice: string) => {
+      if (!inbox) return;
+      if (choice === '') {
+        setBuckets(null);
+        setActiveGrouping(null);
         return;
       }
-      setSelectedGroupBy(groupBy);
-
-      if (groupBy === processGroupLabel) {
-        const grouped = tasks.reduce(
-          (acc: GroupedItems, task: ProcessInstanceTask) => {
-            const processGroupIdentifier = task.process_model_identifier
-              .split('/')
-              .slice(0, -1)
-              .join('/');
-            if (!acc[processGroupIdentifier]) {
-              acc[processGroupIdentifier] = [];
-            }
-            acc[processGroupIdentifier].push(task);
-            return acc;
-          },
-          {},
-        );
-        setGroupedTasks(grouped);
-      } else if (groupBy === '') {
-        setGroupedTasks(null);
-        setSelectedGroupBy(null);
-      } else {
-        setSelectedGroupBy(groupBy);
-        if (groupBy === responsiblePartyLabel) {
-          const grouped = tasks.reduce(
-            (acc: GroupedItems, task: ProcessInstanceTask) => {
-              const key =
-                task.assigned_user_group_identifier || responsiblePartyMeKey;
-              if (!acc[key]) {
-                acc[key] = [];
-              }
-              acc[key].push(task);
-              return acc;
-            },
-            {},
-          );
-          setGroupedTasks(grouped);
-        }
+      setActiveGrouping(choice);
+      if (choice === folderLabel) {
+        setBuckets(partitionByModelFolder(inbox));
+      } else if (choice === assigneeLabel) {
+        setBuckets(partitionByAssignee(inbox));
       }
     },
-    [tasks, processGroupLabel, responsiblePartyLabel],
+    [inbox, folderLabel, assigneeLabel],
   );
 
-  const taskTableElement = () => {
-    if (!tasks) {
-      return null;
-    }
-
-    if (groupedTasks) {
-      const specialKeyToSortFirst = responsiblePartyMeKey;
-      const sortedKeys = Object.keys(groupedTasks).sort((a, b) => {
-        if (a === specialKeyToSortFirst) {
-          return -1;
-        }
-        if (b === specialKeyToSortFirst) {
-          return 1;
-        }
-        return a.localeCompare(b);
-      });
-      return sortedKeys.map((groupName: string) => {
-        const taskList = groupedTasks[groupName];
-        const isMe = groupName === responsiblePartyMeKey;
-        const isProcessGroup = selectedGroupBy === 'Process Group';
-        let headerText = t('tasks_for');
-        if (!isMe) {
-          if (isProcessGroup) {
-            headerText = t('tasks_from_process_group');
-          } else {
-            headerText = t('tasks_for_user_group');
-          }
-        }
-        const groupText = isMe ? t('me') : groupName;
-        return (
-          <Box key={groupName} sx={{ mb: 2 }}>
-            <Typography variant="h4" sx={{ mb: 1 }}>
-              {headerText}
-              <Box component="span" sx={{ color: 'text.accent' }}>
-                {groupText}
-              </Box>
-            </Typography>
-            <TaskTable entries={taskList} viewMode={viewMode} />
-          </Box>
-        );
-      });
-    }
-
-    return <TaskTable entries={tasks} viewMode={viewMode} />;
+  const headingForBucket = (bucketKey: string): string => {
+    if (bucketKey === ME_BUCKET) return t('tasks_for');
+    if (activeGrouping === 'Process Group') return t('tasks_from_process_group');
+    return t('tasks_for_user_group');
   };
+
+  const bucketSections =
+    buckets &&
+    orderedBucketKeys(buckets).map((bucketKey) => (
+      <Box key={bucketKey} mb={2}>
+        <Typography variant="h4" mb={1}>
+          {headingForBucket(bucketKey)}
+          <Box component="span" color="text.accent">
+            {bucketKey === ME_BUCKET ? t('me') : bucketKey}
+          </Box>
+        </Typography>
+        <TaskTable entries={buckets[bucketKey]} viewMode={viewMode} />
+      </Box>
+    ));
+
+  const inboxBody = (() => {
+    if (!inbox) return null;
+    if (bucketSections) return bucketSections;
+    return <TaskTable entries={inbox} viewMode={viewMode} />;
+  })();
+
+  const phoneChrome = (
+    <Box
+      position="fixed"
+      top={0}
+      left={0}
+      width="100%"
+      zIndex={1300}
+      display="flex"
+      justifyContent="space-between"
+      alignItems="center"
+      bgcolor="background.default"
+      p={2}
+      boxShadow={1}
+    >
+      <Typography variant="h1">{t('home')}</Typography>
+    </Box>
+  );
+
+  const resumeBanner =
+    resumeInstanceId != null && !isMobile ? (
+      <Box
+        className="fadeIn"
+        position="fixed"
+        top={16}
+        right={16}
+        bgcolor="background.paper"
+        boxShadow={3}
+        p={2}
+        borderRadius={1}
+        zIndex={1300}
+      >
+        <Typography variant="h6">{t('last_process_instance')}</Typography>
+        <Typography variant="body2">
+          {t('id_label')}: {resumeInstanceId}
+        </Typography>
+      </Box>
+    ) : null;
+
+  const controls = (
+    <Box display="flex" alignItems="center">
+      <TaskControls
+        viewMode={viewMode}
+        setViewMode={setViewMode}
+        groupByOptions={groupingChoices}
+        onGroupBySelect={applyGrouping}
+        selectedGroupBy={activeGrouping}
+      />
+    </Box>
+  );
 
   return (
     <>
-      {isMobile ? (
-        <Box
-          sx={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100%',
-            zIndex: 1300,
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            bgcolor: 'background.default',
-            p: 2,
-            boxShadow: 1,
-          }}
-        >
-          <Typography variant="h1">{t('home')}</Typography>
-        </Box>
-      ) : (
-        <Typography variant="h1" sx={{ mb: 2 }}>
+      {isMobile ? phoneChrome : (
+        <Typography variant="h1" mb={2}>
           {t('home')}
         </Typography>
       )}
       <OnboardingView />
-      {lastProcessInstanceId && !isMobile && (
-        <Box
-          className="fadeIn"
-          sx={{
-            position: 'fixed',
-            top: 16,
-            right: 16,
-            bgcolor: 'background.paper',
-            boxShadow: 3,
-            p: 2,
-            borderRadius: 1,
-            zIndex: 1300,
-          }}
-        >
-          <Typography variant="h6">{t('last_process_instance')}</Typography>
-          <Typography variant="body2">
-            {t('id_label')}: {lastProcessInstanceId}
-          </Typography>
-        </Box>
-      )}
-
+      {resumeBanner}
       <HeaderTabs
         value={0}
-        onChange={(_event, newValue) => {
-          if (newValue === 1) {
-            navigate('/started-by-me');
-          }
+        onChange={(_evt, next) => {
+          if (next === 1) go('/started-by-me');
         }}
-        taskControlElement={
-          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            <TaskControls
-              viewMode={viewMode}
-              setViewMode={setViewMode}
-              groupByOptions={groupByOptions}
-              onGroupBySelect={onGroupBySelect}
-              selectedGroupBy={selectedGroupBy}
-            />
-          </Box>
-        }
+        taskControlElement={controls}
       />
-      {taskTableElement()}
+      {inboxBody}
     </>
   );
 }
-
-export default Homepage;

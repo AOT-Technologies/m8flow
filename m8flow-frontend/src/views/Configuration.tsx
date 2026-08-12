@@ -1,114 +1,84 @@
 /**
- * m8flow Configuration section.
- *
- * Renders the configuration tab bar and its routed panels. Secrets is the only
- * built-in tab; extensions may contribute further tabs by declaring a
- * `configuration_tab_item` UX element.
- *
- * The active tab is derived from the current path rather than tracked in state,
- * so browser navigation and deep links stay in sync without an effect.
+ * Configuration section — secrets + extension tabs; active tab from path.
  */
 import { useEffect, useMemo } from 'react';
-import { Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Tab, Tabs } from '@mui/material';
 
+import ExtensionUxElementForDisplay from '../components/ExtensionUxElementForDisplay';
+import { setPageTitle } from '../helpers';
 import { usePermissionFetcher } from '../hooks/PermissionService';
 import { useUriListForPermissions } from '../hooks/UriListForPermissions';
-import { setPageTitle } from '../helpers';
-import { PermissionsToCheck } from '../interfaces';
-import { UiSchemaUxElement } from '../extension_ui_schema_interfaces';
-import ExtensionUxElementForDisplay from '../components/ExtensionUxElementForDisplay';
-import Extension from './Extension';
-import SecretList from './SecretList';
-import SecretNew from './SecretNew';
-import SecretShow from './SecretShow';
+import type { PermissionsToCheck } from '../interfaces';
+import type { UiSchemaUxElement } from '../extension_ui_schema_interfaces';
+import { ConfigurationRoutes } from './configurationRoutes';
 
-const BASE_PATH = '/configuration';
-const EXTENSION_PREFIX = `${BASE_PATH}/extension`;
+const ROOT = '/configuration';
+const EXT = `${ROOT}/extension`;
 
-type OwnProps = {
-  extensionUxElements?: UiSchemaUxElement[] | null;
-};
-
-/** Paths that should light up an extension's tab: its own page, plus any it claims. */
-function highlightPathsFor(element: UiSchemaUxElement): string[] {
-  const claimed = element.location_specific_configs?.highlight_on_tabs;
-  const pages = claimed?.length ? claimed : [element.page];
-  return pages.map((page: string) => `${EXTENSION_PREFIX}${page}`);
+function pathsForExtensionTab(el: UiSchemaUxElement): string[] {
+  const claimed = el.location_specific_configs?.highlight_on_tabs;
+  const pages = claimed?.length ? claimed : [el.page];
+  return pages.map((page: string) => `${EXT}${page}`);
 }
 
-export default function Configuration({ extensionUxElements }: OwnProps) {
+export default function Configuration({
+  extensionUxElements,
+}: {
+  extensionUxElements?: UiSchemaUxElement[] | null;
+}) {
   const { pathname } = useLocation();
-  const navigate = useNavigate();
+  const go = useNavigate();
   const { t } = useTranslation();
-
   const { targetUris } = useUriListForPermissions();
-  const permissionsToCheck: PermissionsToCheck = {
-    [targetUris.secretListPath]: ['GET'],
-  };
-  const { ability, permissionsLoaded } = usePermissionFetcher(permissionsToCheck);
+  const secretsUri = targetUris.secretListPath;
+
+  const { ability, permissionsLoaded } = usePermissionFetcher({
+    [secretsUri]: ['GET'],
+  } as PermissionsToCheck);
 
   useEffect(() => {
     setPageTitle([t('configuration')]);
   }, [t]);
 
-  const canViewSecrets = ability.can('GET', targetUris.secretListPath);
+  const secretsOk = ability.can('GET', secretsUri);
   const extensions = extensionUxElements ?? [];
 
-  // Tab 0 is Secrets when visible; extension tabs follow in declaration order.
-  const activeTab = useMemo(() => {
-    const extensionIndex = extensions.findIndex((element) =>
-      highlightPathsFor(element).includes(pathname),
+  const tabIndex = useMemo(() => {
+    const hit = extensions.findIndex((el) =>
+      pathsForExtensionTab(el).includes(pathname),
     );
-    if (extensionIndex === -1) {
-      return 0;
-    }
-    return extensionIndex + (canViewSecrets ? 1 : 0);
-  }, [pathname, extensions, canViewSecrets]);
+    if (hit < 0) return 0;
+    return hit + (secretsOk ? 1 : 0);
+  }, [pathname, extensions, secretsOk]);
 
-  if (!permissionsLoaded) {
-    return null;
-  }
-
-  const renderExtensionTab = (
-    element: UiSchemaUxElement,
-    index: number,
-  ) => (
-    <Tab
-      key={`${element.page}-${index}`}
-      label={element.label}
-      onClick={() => navigate(`${EXTENSION_PREFIX}${element.page}`)}
-    />
-  );
+  if (!permissionsLoaded) return null;
 
   return (
     <>
-      <Tabs value={activeTab}>
-        {canViewSecrets && (
+      <Tabs value={tabIndex}>
+        {secretsOk ? (
           <Tab
             label={t('secrets')}
             data-testid="configuration-tab-secrets"
-            onClick={() => navigate(`${BASE_PATH}/secrets`)}
+            onClick={() => go(`${ROOT}/secrets`)}
           />
-        )}
+        ) : null}
         <ExtensionUxElementForDisplay
           displayLocation="configuration_tab_item"
-          elementCallback={renderExtensionTab}
           extensionUxElements={extensionUxElements}
+          elementCallback={(el: UiSchemaUxElement, i: number) => (
+            <Tab
+              key={`${el.page}-${i}`}
+              label={el.label}
+              onClick={() => go(`${EXT}${el.page}`)}
+            />
+          )}
         />
       </Tabs>
       <br />
-      <Routes>
-        <Route path="/" element={<SecretList />} />
-        <Route path="secrets" element={<SecretList />} />
-        <Route path="secrets/new" element={<SecretNew />} />
-        <Route path="secrets/:secret_identifier" element={<SecretShow />} />
-        <Route
-          path="extension/:page_identifier"
-          element={<Extension displayErrors={false} />}
-        />
-      </Routes>
+      <ConfigurationRoutes />
     </>
   );
 }

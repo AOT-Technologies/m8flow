@@ -1,79 +1,83 @@
-import React, {
-  useState,
+/**
+ * M8Flow primary drawer orchestrator — composes catalog, access, tenant badge,
+ * and bottom chrome. Layout primitives differ from upstream SideNav on purpose.
+ */
+import {
   useEffect,
-  ReactElement,
-  MouseEventHandler,
-} from "react";
+  useState,
+  type MouseEventHandler,
+  type ReactElement,
+} from 'react';
 import {
   Box,
-  Typography,
+  Divider,
   IconButton,
+  Link as MuiLink,
   List,
   ListItem,
   ListItemIcon,
   ListItemText,
+  Stack,
   Tooltip,
-  Paper,
-  Link as MuiLink,
   useMediaQuery,
-  Chip,
-  Divider,
-} from "@mui/material";
+} from '@mui/material';
 import {
-  Home,
   ChevronLeft,
   ChevronRight,
-  Logout,
-  Person,
-  Brightness7,
-  Brightness4,
   Close as CloseIcon,
-  Schema,
-  Timeline,
-  Markunread,
-  SettingsApplicationsSharp,
-  Extension,
-  Flag,
-  Description,
-  Hub,
-  Business,
-  Cable,
-  CorporateFare,
-  Speed,
-  Storage,
-  VpnKey,
-} from "@mui/icons-material";
-import { Link, useLocation } from "react-router-dom";
-import { useTranslation } from "react-i18next";
-import appVersionInfo from "@spiffworkflow-frontend/helpers/appVersionInfo";
+} from '@mui/icons-material';
+import { Link, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import SpiffTooltip from '@spiffworkflow-frontend/components/SpiffTooltip';
+import ExtensionUxElementForDisplay from '@spiffworkflow-frontend/components/ExtensionUxElementForDisplay';
+import type { UiSchemaUxElement } from '@spiffworkflow-frontend/extension_ui_schema_interfaces';
+import { usePermissionFetcher } from '@spiffworkflow-frontend/hooks/PermissionService';
+
+import UserService from '../services/UserService';
+import { useUriListForPermissions } from '../hooks/UriListForPermissions';
+import { useConfig } from '../utils/useConfig';
+import SpiffLogo from './SpiffLogo';
+import GlobalTenantSelector from './GlobalTenantSelector';
 import {
-  DARK_MODE_ENABLED,
-  DOCUMENTATION_URL,
-  SPIFF_ENVIRONMENT,
-} from "@spiffworkflow-frontend/config";
-import UserService from "../services/UserService";
-import SpiffLogo from "./SpiffLogo";
-import GlobalTenantSelector from "./GlobalTenantSelector";
-import SpiffTooltip from "@spiffworkflow-frontend/components/SpiffTooltip";
-import { UiSchemaUxElement } from "@spiffworkflow-frontend/extension_ui_schema_interfaces";
-import ExtensionUxElementForDisplay from "@spiffworkflow-frontend/components/ExtensionUxElementForDisplay";
-import { useM8flowUriListForPermissions as useUriListForPermissions } from "../hooks/M8flowUriListForPermissions";
+  appendExtensionCatalogEntries,
+  buildSideNavCatalog,
+  iconForNavKey,
+  NAV_IDS,
+  resolveActiveNavId,
+  secondaryPanelHeightPx,
+  type SideNavCatalogEntry,
+} from './sideNavCatalog';
 import {
-  PermissionsToCheck,
-  NavItem,
-} from "@spiffworkflow-frontend/interfaces";
-import { usePermissionFetcher } from "@spiffworkflow-frontend/hooks/PermissionService";
-import { useConfig } from "../utils/useConfig";
+  buildSideNavPermissionPlan,
+  canSeeNavEntry,
+} from './sideNavAccess';
+import {
+  SideNavTenantBadgeCollapsed,
+  SideNavTenantBadgeExpanded,
+} from './sideNavTenantBadge';
+import {
+  SideNavBottomFoot,
+  SideNavBottomOverlays,
+  useSideNavChromeMenus,
+} from './sideNavBottomChrome';
 
-// Nav items that are visible only to super-admins (e.g. infra monitoring) cannot rely on a
-// backend permission URI, so we gate them with an explicit flag checked against UserService.
-type M8FlowNavItem = NavItem & { superAdminOnly?: boolean };
+const EXPANDED_WIDTH = 350;
+const RAIL_WIDTH = 64;
+const ACTIVE_ACCENT = 'primary.main';
 
-const drawerWidth = 350;
-const collapsedDrawerWidth = 64;
-const mainBlue = "primary.main";
+const DRAWER_SHELL_SX = {
+  position: 'relative' as const,
+  overflow: 'hidden' as const,
+  height: '100vh',
+  flexShrink: 0,
+  bgcolor: 'background.nav',
+  transition: 'width 0.3s',
+  borderRightWidth: 1,
+  borderRightStyle: 'solid' as const,
+  borderRightColor: '#e0e0e0',
+};
 
-type OwnProps = {
+type SideNavProps = {
   isCollapsed: boolean;
   onToggleCollapse: MouseEventHandler<HTMLButtonElement>;
   onToggleDarkMode: MouseEventHandler<HTMLButtonElement>;
@@ -83,154 +87,63 @@ type OwnProps = {
   extensionUxElements?: UiSchemaUxElement[] | null;
 };
 
-// Define an object to map route paths to identifiers
-const routeIdentifiers = {
-  HOME: "home",
-  PROCESSES: "processes",
-  PROCESS_INSTANCES: "processInstances",
-  MESSAGES: "messages",
-  CONFIGURATION: "configuration",
-  CONNECTORS: "connectors",
-  MCP_CONNECTION: "mcpConnection",
-  MANAGE_TOKEN: "manageToken",
-  TEMPLATES: "templates",
-  TENANT_MANAGEMENT: "tenantManagement",
-  MONITORING_CELERY: "monitoringCelery",
-  MONITORING_NATS: "monitoringNats",
-};
-
-function SideNav({
-  isCollapsed,
-  onToggleCollapse,
-  onToggleDarkMode,
-  isDark,
-  additionalNavElement,
-  setAdditionalNavElement,
-  extensionUxElements,
-}: OwnProps) {
-  const isMobile = useMediaQuery((theme: any) => theme.breakpoints.down("sm"));
-
-  const location = useLocation();
-
-  const { t, i18n } = useTranslation();
-
-  const { targetUris } = useUriListForPermissions();
-  const { NATS_MONITORING_ENABLED, MCP_CONNECTION_ENABLED } = useConfig();
-  const permissionRequestData: PermissionsToCheck = {
-    [targetUris.messageInstanceListPath]: ["GET"],
-    [targetUris.processGroupListPath]: ["GET"],
-    [targetUris.processInstanceListPath]: ["GET"],
-    [targetUris.processInstanceListForMePath]: ["POST"],
-    [targetUris.secretListPath]: ["GET"],
-    [targetUris.connectorsGroupedPath]: ["GET"],
-    [targetUris.m8flowMcpConnectionPath]: ["GET"],
-    // Gate on POST so the nav filter checks manage-nats-tokens (tenant-admin only)
-    // rather than defaulting to a never-requested GET, which hid the item for everyone.
-    [targetUris.m8flowNatsTokensPath]: ["POST"],
-    "/tasks/*": ["GET", "PUT"],
-    [targetUris.m8flowTenantManagementPath]: ["GET"],
-    "/m8flow/tenants": ["GET"],
-    "/m8flow/templates": ["GET"],
-  };
-  const { ability, permissionsLoaded } = usePermissionFetcher(
-    permissionRequestData,
-  );
-
-  // Determine the selected tab based on the current route
-  let selectedTab: string | null = null;
-  if (location.pathname === "/" || location.pathname === "/started-by-me") {
-    selectedTab = routeIdentifiers.HOME;
-  } else if (location.pathname.startsWith("/process-instances")) {
-    selectedTab = routeIdentifiers.PROCESS_INSTANCES;
-  } else if (location.pathname.startsWith("/process-")) {
-    selectedTab = routeIdentifiers.PROCESSES; // This might need further refinement
-  } else if (location.pathname === "/messages") {
-    selectedTab = routeIdentifiers.MESSAGES;
-  } else if (location.pathname.startsWith("/configuration")) {
-    selectedTab = routeIdentifiers.CONFIGURATION;
-  } else if (location.pathname.startsWith("/connectors")) {
-    selectedTab = routeIdentifiers.CONNECTORS;
-  } else if (location.pathname.startsWith("/mcp-connection")) {
-    selectedTab = routeIdentifiers.MCP_CONNECTION;
-  } else if (location.pathname.startsWith("/manage-token")) {
-    selectedTab = routeIdentifiers.MANAGE_TOKEN;
-  } else if (location.pathname.startsWith("/templates")) {
-    selectedTab = routeIdentifiers.TEMPLATES;
-  } else if (location.pathname.startsWith("/tenant-management")) {
-    selectedTab = routeIdentifiers.TENANT_MANAGEMENT;
-  } else if (location.pathname.startsWith("/monitoring/celery")) {
-    selectedTab = routeIdentifiers.MONITORING_CELERY;
-  } else if (location.pathname.startsWith("/monitoring/nats")) {
-    selectedTab = routeIdentifiers.MONITORING_NATS;
-  }
-
-  const versionInfo = appVersionInfo();
-  let aboutLinkElement = null;
-  if (Object.keys(versionInfo).length) {
-    aboutLinkElement = (
-      <MuiLink component={Link} to="/about">
-        {t("about")}
-      </MuiLink>
+function CollapseGlyph({
+  collapsed,
+  expandLabel,
+  collapseLabel,
+}: {
+  collapsed: boolean;
+  expandLabel: string;
+  collapseLabel: string;
+}) {
+  if (collapsed) {
+    return (
+      <SpiffTooltip title={expandLabel} placement="right">
+        <ChevronRight data-testid="expand-primary-nav" />
+      </SpiffTooltip>
     );
   }
-  const userEmail = UserService.getUserEmail();
-  const username = UserService.getPreferredUsername();
-  const [tenantId, setTenantId] = useState<string | null>(() => UserService.getTenantName());
-  let externalDocumentationUrl = "https://spiff-arena.readthedocs.io";
-  if (DOCUMENTATION_URL) {
-    externalDocumentationUrl = DOCUMENTATION_URL;
-  }
+  return (
+    <SpiffTooltip title={collapseLabel} placement="bottom">
+      <ChevronLeft data-testid="collapse-primary-nav" />
+    </SpiffTooltip>
+  );
+}
 
-  // State for controlling the display of the user profile section
-  const [showUserProfile, setShowUserProfile] = useState(false);
-  const [showLanguageMenu, setShowLanguageMenu] = useState(false);
+function SideNav(props: SideNavProps) {
+  const {
+    isCollapsed: railMode,
+    onToggleCollapse,
+    onToggleDarkMode,
+    isDark,
+    additionalNavElement,
+    setAdditionalNavElement,
+    extensionUxElements,
+  } = props;
 
-  const handlePersonIconClick = () => {
-    setShowUserProfile(!showUserProfile);
-  };
+  const narrowViewport = useMediaQuery(
+    (theme: { breakpoints: { down: (k: string) => string } }) =>
+      theme.breakpoints.down('sm'),
+  );
+  const { pathname } = useLocation();
+  const { t } = useTranslation();
+  const { targetUris } = useUriListForPermissions();
+  const { NATS_MONITORING_ENABLED, MCP_CONNECTION_ENABLED } = useConfig();
 
-  const handleLanguageMenuClick = () => {
-    setShowLanguageMenu(!showLanguageMenu);
-  };
+  const permissionPlan = buildSideNavPermissionPlan(targetUris);
+  const { ability, permissionsLoaded } = usePermissionFetcher(permissionPlan);
 
-  // Close user profile section when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const element = event.target as HTMLElement;
-      if (
-        element &&
-        !element.closest(".user-profile") &&
-        !element.closest(".person-icon")
-      ) {
-        setShowUserProfile(false);
-      }
-      if (
-        element &&
-        !element.closest(".language-menu") &&
-        !element.closest(".language-icon")
-      ) {
-        setShowLanguageMenu(false);
-      }
-    };
-
-    window.addEventListener("click", handleClickOutside);
-
-    return () => {
-      window.removeEventListener("click", handleClickOutside);
-    };
-  }, []);
+  const [tenantId, setTenantId] = useState<string | null>(() =>
+    UserService.getTenantName(),
+  );
 
   useEffect(() => {
-    const syncTenantName = () => {
-      setTenantId(UserService.getTenantName());
-    };
-
+    const syncTenantName = () => setTenantId(UserService.getTenantName());
     syncTenantName();
     window.addEventListener(
       UserService.TENANT_DISPLAY_NAME_UPDATED_EVENT,
       syncTenantName,
     );
-
     return () => {
       window.removeEventListener(
         UserService.TENANT_DISPLAY_NAME_UPDATED_EVENT,
@@ -239,577 +152,177 @@ function SideNav({
     };
   }, []);
 
-  const collapseOrExpandIcon = isCollapsed ? (
-    <SpiffTooltip title={t("expand_navigation")} placement="right">
-      <ChevronRight data-testid="expand-primary-nav" />
-    </SpiffTooltip>
-  ) : (
-    <SpiffTooltip title={t("collapse_navigation")} placement="bottom">
-      <ChevronLeft data-testid="collapse-primary-nav" />
-    </SpiffTooltip>
-  );
+  let activeId = resolveActiveNavId(pathname);
 
-  const navItems: M8FlowNavItem[] = [
-    {
-      text: t("home"),
-      icon: <Home />,
-      route: "/",
-      id: routeIdentifiers.HOME,
-      permissionRoutes: ["/tasks/*"],
-    },
-    {
-      text: t("processes"),
-      icon: <Schema />,
-      route: "/process-groups",
-      id: routeIdentifiers.PROCESSES,
-      permissionRoutes: [targetUris.processGroupListPath],
-    },
-    {
-      text: t("process_instances"),
-      icon: <Timeline />,
-      route: "/process-instances",
-      id: routeIdentifiers.PROCESS_INSTANCES,
-      permissionRoutes: [targetUris.processInstanceListPath],
-    },
-    {
-      text: t("messages"),
-      icon: <Markunread />,
-      route: "/messages",
-      id: routeIdentifiers.MESSAGES,
-      permissionRoutes: [targetUris.messageInstanceListPath],
-    },
-    {
-      text: t("configuration"),
-      icon: <SettingsApplicationsSharp />,
-      route: "/configuration",
-      id: routeIdentifiers.CONFIGURATION,
-      permissionRoutes: [
-        targetUris.secretListPath,
-      ],
-    },
-    {
-      text: t("connectors"),
-      icon: <Hub />,
-      route: "/connectors",
-      id: routeIdentifiers.CONNECTORS,
-      permissionRoutes: [targetUris.connectorsGroupedPath],
-    },
-    ...(MCP_CONNECTION_ENABLED
-      ? [
-          {
-            text: t("mcp_connection"),
-            icon: <Cable />,
-            route: "/mcp-connection",
-            id: routeIdentifiers.MCP_CONNECTION,
-            permissionRoutes: [targetUris.m8flowMcpConnectionPath],
-          },
-        ]
-      : []),
-    {
-      text: t("manage_token"),
-      icon: <VpnKey />,
-      route: "/manage-token",
-      id: routeIdentifiers.MANAGE_TOKEN,
-      permissionRoutes: [targetUris.m8flowNatsTokensPath],
-    },
-    {
-      text: t("templates"),
-      icon: <Description />,
-      route: "/templates",
-      id: routeIdentifiers.TEMPLATES,
-      permissionRoutes: ["/m8flow/templates"],
-    },
-    {
-      text: t("tenant_management"),
-      icon: <Business />,
-      route: "/tenant-management",
-      id: routeIdentifiers.TENANT_MANAGEMENT,
-      permissionRoutes: [targetUris.m8flowTenantManagementPath],
-    },
-    {
-      text: t("celery_monitoring"),
-      icon: <Speed />,
-      route: "/monitoring/celery",
-      id: routeIdentifiers.MONITORING_CELERY,
-      superAdminOnly: true,
-    },
-    ...(NATS_MONITORING_ENABLED
-      ? [
-          {
-            text: t("nats_monitoring"),
-            icon: <Storage />,
-            route: "/monitoring/nats",
-            id: routeIdentifiers.MONITORING_NATS,
-            superAdminOnly: true,
-          },
-        ]
-      : []),
-  ];
+  const catalog = buildSideNavCatalog({
+    t,
+    targetUris,
+    mcpEnabled: Boolean(MCP_CONNECTION_ENABLED),
+    natsMonitoringEnabled: Boolean(NATS_MONITORING_ENABLED),
+  });
 
-  const extensionHeaderMenuItemElement = (uxElement: UiSchemaUxElement) => {
-    const navItemPage = `/extensions${uxElement.page}`;
-    if (location.pathname === navItemPage) {
-      selectedTab = uxElement.page;
+  const absorbExtensionItem = (uxElement: UiSchemaUxElement) => {
+    const maybeActive = appendExtensionCatalogEntries(
+      catalog,
+      uxElement,
+      pathname,
+    );
+    if (maybeActive) {
+      activeId = maybeActive;
     }
-    navItems.push({
-      text: uxElement.label,
-      icon: <Extension />,
-      route: navItemPage,
-      id: uxElement.page,
-    });
   };
   ExtensionUxElementForDisplay({
-    displayLocation: "header_menu_item",
-    elementCallback: extensionHeaderMenuItemElement,
+    displayLocation: 'header_menu_item',
+    elementCallback: absorbExtensionItem,
     extensionUxElements,
   });
   ExtensionUxElementForDisplay({
-    displayLocation: "primary_nav_item",
-    elementCallback: extensionHeaderMenuItemElement,
+    displayLocation: 'primary_nav_item',
+    elementCallback: absorbExtensionItem,
     extensionUxElements,
   });
 
-  const visibleNavItems = navItems;
+  const reserveSecondaryPx = secondaryPanelHeightPx(catalog.length);
+  const showTenantBadge = Boolean(tenantId) && !UserService.isSuperAdmin();
+  const chromeMenus = useSideNavChromeMenus();
 
-  // 45 * number of nav items like "HOME" and "PROCESS INSTANCES" plus 140
-  const pixelsToRemoveFromAdditionalElement = 45 * visibleNavItems.length + 140;
+  const onNavClick = (entry: SideNavCatalogEntry) => {
+    // Keep TreePanel when staying on Processes; clear it for every other destination.
+    if (entry.id !== NAV_IDS.processes) {
+      setAdditionalNavElement(null);
+    }
+  };
 
-  const extensionUserProfileElement = (uxElement: UiSchemaUxElement) => {
-    const navItemPage = `/extensions${uxElement.page}`;
+  const renderEntry = (entry: SideNavCatalogEntry) => {
+    if (!canSeeNavEntry(entry, ability, permissionPlan)) {
+      return null;
+    }
+    const selected = activeId === entry.id;
     return (
-      <>
-        <br />
-        <MuiLink component={Link} to={navItemPage}>
-          {uxElement.label}
-        </MuiLink>
-      </>
+      <ListItem
+        component={Link}
+        to={entry.path}
+        key={`${entry.id}-${entry.path}`}
+        data-testid={`nav-item-${entry.id}`}
+        onClick={() => onNavClick(entry)}
+        sx={{
+          bgcolor: selected ? 'background.light' : 'inherit',
+          color: selected ? ACTIVE_ACCENT : 'inherit',
+          borderColor: selected ? ACTIVE_ACCENT : 'transparent',
+          borderLeftWidth: '4px',
+          borderStyle: 'solid',
+          justifyContent: railMode ? 'center' : 'flex-start',
+        }}
+      >
+        <Tooltip title={railMode ? entry.label : ''} placement="right">
+          <ListItemIcon
+            sx={{ color: 'inherit', minWidth: railMode ? 24 : 40 }}
+          >
+            {iconForNavKey(entry.iconKey)}
+          </ListItemIcon>
+        </Tooltip>
+        {railMode ? null : (
+          <ListItemText
+            primary={entry.label}
+            data-testid={`nav-${entry.label.toLowerCase().replace(' ', '-')}`}
+            primaryTypographyProps={{
+              fontSize: '0.875rem',
+              fontWeight: selected ? 'bold' : 'normal',
+            }}
+          />
+        )}
+      </ListItem>
     );
   };
 
-  const checkUserHasAccessToNavItem = (item: M8FlowNavItem) => {
-    if (item.superAdminOnly) {
-      return UserService.isSuperAdmin();
-    }
-
-    if (!("permissionRoutes" in item)) {
-      return true;
-    }
-
-    if (item.id === routeIdentifiers.HOME) {
-      return (
-        ability.can("PUT", "/tasks/*") ||
-        (UserService.isSuperAdmin() && ability.can("GET", "/tasks/*"))
-      );
-    }
-
-    let hasPermission = false;
-    item.permissionRoutes?.forEach((targetUri: string) => {
-      let method = "GET";
-      // if the uri is in the permissionRequestData then use the first action listed
-      if (targetUri in permissionRequestData) {
-        [method] = permissionRequestData[targetUri];
-      }
-      if (ability.can(method, targetUri)) {
-        hasPermission = true;
-      }
-    });
-    return hasPermission;
-  };
-
-  if (permissionsLoaded) {
-    return (
-      <>
-        <Box
-          sx={{
-            width: isCollapsed ? collapsedDrawerWidth : drawerWidth,
-            flexShrink: 0,
-            borderRight: "1px solid #e0e0e0",
-            height: "100vh",
-            bgcolor: "background.nav",
-            transition: "width 0.3s",
-            overflow: "hidden",
-            position: "relative",
-          }}
-        >
-          <Box
-            sx={{
-              p: 2,
-              height: 'fit-content',
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
-          >
-            {!isCollapsed && (
-              <Box
-                sx={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "flex-start",
-                  minWidth: 0,
-                  flexGrow: 1,
-                }}
-              >
-                <MuiLink component={Link} to="/" data-testid="nav-logo-link">
-                  <SpiffLogo />
-                </MuiLink>
-                {tenantId && !UserService.isSuperAdmin() && (
-                  <Tooltip
-                    title={tenantId}
-                    placement="bottom"
-                    enterDelay={500}
-                    enterNextDelay={300}
-                  >
-                    <Box
-                      data-testid="nav-tenant-name"
-                      onClick={(event) => event.stopPropagation()}
-                      sx={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 1,
-                        mt: 1.5,
-                        px: 1.25,
-                        py: 0.5,
-                        width: "100%",
-                        bgcolor: "background.light",
-                        border: "1px solid",
-                        borderColor: "divider",
-                        borderRadius: 1.5,
-                        cursor: "default",
-                        userSelect: "none",
-                      }}
-                    >
-                    <CorporateFare
-                      sx={{
-                        fontSize: "1.1rem",
-                        color: "primary.main",
-                        flexShrink: 0,
-                      }}
-                    />
-                    <Box sx={{ minWidth: 0 }}>
-                      <Typography
-                        variant="caption"
-                        sx={{
-                          display: "block",
-                          lineHeight: 1.2,
-                          fontSize: "0.625rem",
-                          letterSpacing: "0.06em",
-                          textTransform: "uppercase",
-                          color: "text.secondary",
-                        }}
-                      >
-                        {t("tenant")}
-                      </Typography>
-                      <Typography
-                        variant="body2"
-                        noWrap
-                        sx={{ fontWeight: 600, lineHeight: 1.3 }}
-                      >
-                        {tenantId}
-                      </Typography>
-                      </Box>
-                    </Box>
-                  </Tooltip>
-                )}
-              </Box>
-            )}
-            <IconButton
-              data-testid="nav-toggle-collapse-button"
-              onClick={(event) => {
-                onToggleCollapse(event);
-              }}
-              sx={{ ml: isCollapsed ? "auto" : 0 }}
-            >
-              {isMobile ? <CloseIcon /> : collapseOrExpandIcon}
-            </IconButton>
-          </Box>
-          <GlobalTenantSelector isCollapsed={isCollapsed} />
-          {isCollapsed && tenantId && !UserService.isSuperAdmin() && (
-            <Tooltip title={`${t("tenant")}: ${tenantId}`} placement="right">
-              <Box
-                data-testid="nav-tenant-name-collapsed"
-                sx={{
-                  display: "flex",
-                  justifyContent: "center",
-                  mb: 1,
-                  color: "text.secondary",
-                }}
-              >
-                <CorporateFare sx={{ fontSize: "1.25rem" }} />
-              </Box>
-            </Tooltip>
-          )}
-          <Divider sx={{ mx: 2, mb: 1 }} />
-          <List>
-            {visibleNavItems.map((item) => {
-              if (checkUserHasAccessToNavItem(item)) {
-                return (
-                  <ListItem
-                    component={Link}
-                    to={item.route}
-                    key={item.text}
-                    data-testid={`nav-item-${item.id}`}
-                    onClick={() => {
-                      // additionalNavElement is the TreePanel in this case so do not
-                      // remove it when you are navigating to the processes page from the processes page
-                      if (item.id !== routeIdentifiers.PROCESSES) {
-                        setAdditionalNavElement(null);
-                      }
-                    }}
-                    sx={{
-                      bgcolor:
-                        selectedTab === item.id
-                          ? "background.light"
-                          : "inherit",
-                      color: selectedTab === item.id ? mainBlue : "inherit",
-                      borderColor:
-                        selectedTab === item.id ? mainBlue : "transparent",
-                      borderLeftWidth: "4px",
-                      borderStyle: "solid",
-                      justifyContent: isCollapsed ? "center" : "flex-start",
-                    }}
-                  >
-                    <Tooltip
-                      title={isCollapsed ? item.text : ""}
-                      placement="right"
-                    >
-                      <ListItemIcon
-                        sx={{
-                          color: "inherit",
-                          minWidth: isCollapsed ? 24 : 40,
-                        }}
-                      >
-                        {item.icon}
-                      </ListItemIcon>
-                    </Tooltip>
-                    {!isCollapsed && (
-                      <ListItemText
-                        primary={item.text}
-                        data-testid={`nav-${item.text.toLowerCase().replace(" ", "-")}`}
-                        primaryTypographyProps={{
-                          fontSize: "0.875rem",
-                          fontWeight:
-                            selectedTab === item.id ? "bold" : "normal",
-                        }}
-                      />
-                    )}
-                  </ListItem>
-                );
-              }
-              return null;
-            })}
-          </List>
-          {!isCollapsed && (
-            <Box
-              sx={{
-                width: "100%",
-                height: `calc(100vh - ${pixelsToRemoveFromAdditionalElement}px)`,
-              }}
-            >
-              {additionalNavElement}
-            </Box>
-          )}
-          <Box
-            sx={{
-              position: "absolute",
-              bottom: 16,
-              left: isCollapsed ? "50%" : 16,
-              transform: isCollapsed ? "translateX(-50%)" : "none",
-              alignItems: "center", // Vertically center items
-              display: "flex",
-              flexDirection: isCollapsed ? "column" : "row",
-              gap: isCollapsed ? 0 : 1,
-            }}
-          >
-            <SpiffTooltip
-              title={t("user_actions")}
-              placement={isCollapsed ? "right" : "top"}
-            >
-              <IconButton
-                data-testid="nav-user-actions-button"
-                aria-label={t("user_actions")}
-                onClick={handlePersonIconClick}
-                className="person-icon"
-              >
-                <Person />
-              </IconButton>
-            </SpiffTooltip>
-            {DARK_MODE_ENABLED ? (
-              <SpiffTooltip
-                title={t("toggle_dark_mode")}
-                placement={isCollapsed ? "right" : "top"}
-              >
-                <IconButton data-testid="nav-toggle-dark-mode-button" onClick={onToggleDarkMode}>
-                  {isDark ? <Brightness7 /> : <Brightness4 />}
-                </IconButton>
-              </SpiffTooltip>
-            ) : null}
-            <SpiffTooltip
-              title={t("language")}
-              placement={isCollapsed ? "right" : "top"}
-            >
-              <IconButton
-                data-testid="nav-language-button"
-                aria-label={t("language")}
-                onClick={handleLanguageMenuClick}
-                className="language-icon"
-              >
-                <Flag />
-              </IconButton>
-            </SpiffTooltip>
-            {/* {SPIFF_ENVIRONMENT && (
-              <SpiffTooltip
-                title={t("environment")}
-                placement={isCollapsed ? "right" : "top"}
-              >
-                <Box sx={{ display: "flex", alignItems: "center" }}>
-                  <Chip
-                    label={SPIFF_ENVIRONMENT}
-                    color="primary"
-                    size="small"
-                    sx={{
-                      cursor: "default",
-                    }}
-                  />
-                </Box>
-              </SpiffTooltip>
-            )} */}
-          </Box>
-        </Box>
-        {showUserProfile && (
-          <Paper
-            elevation={3}
-            className="user-profile"
-            data-testid="nav-user-profile-panel"
-            sx={{
-              position: "fixed",
-              bottom: isCollapsed ? 100 : 60, // if it's collapsed, make it a little higher so it doesn't overlap with the tooltip to the right of the icon
-              left: 32,
-              right: "auto",
-              width: 256,
-              padding: 2,
-              zIndex: 1300,
-              bgcolor: "background.paper",
-            }}
-          >
-            <Tooltip title={username} placement="top" enterDelay={500}>
-              <Typography
-                variant="subtitle1"
-                noWrap
-                sx={{ fontWeight: 600 }}
-                data-testid="nav-username"
-              >
-                {username}
-              </Typography>
-            </Tooltip>
-            {username !== userEmail && (
-              <Typography
-                variant="body2"
-                color="text.secondary"
-                noWrap
-                data-testid="nav-user-email"
-              >
-                {userEmail}
-              </Typography>
-            )}
-            {tenantId && (
-              <Tooltip title={tenantId} placement="top" enterDelay={500}>
-                <Typography
-                  variant="body2"
-                  noWrap
-                  data-testid="nav-tenant-id"
-                  sx={{
-                    color: "text.secondary",
-                    fontWeight: 600,
-                    mt: 0.5,
-                  }}
-                >
-                  {tenantId}
-                </Typography>
-              </Tooltip>
-            )}
-            {/* <hr />
-            {aboutLinkElement}
-            <br />
-            <MuiLink
-              component="a"
-              href={externalDocumentationUrl}
-              target="_blank"
-              rel="noreferrer"
-            >
-              {t("documentation")}
-            </MuiLink> */}
-            <ExtensionUxElementForDisplay
-              displayLocation="user_profile_item"
-              elementCallback={extensionUserProfileElement}
-              extensionUxElements={extensionUxElements}
-            />
-            {!UserService.authenticationDisabled() && (
-              <>
-                <hr />
-                <MuiLink
-                  component="button"
-                  data-testid="sign-out-button"
-                  onClick={() => UserService.doLogout()}
-                  sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    textDecoration: "none",
-                    color: "inherit",
-                  }}
-                >
-                  <Logout />
-                  &nbsp;&nbsp;{t("sign_out")}
-                </MuiLink>
-              </>
-            )}
-          </Paper>
-        )}
-        {showLanguageMenu && (
-          <Paper
-            elevation={3}
-            className="language-menu"
-            data-testid="nav-language-menu"
-            sx={{
-              position: "fixed",
-              bottom: isCollapsed ? 80 : 60, // if it's collapsed, make it a little higher so it doesn't overlap with the tooltip to the right of the icon
-              left: isCollapsed ? 32 : 96,
-              right: "auto",
-              width: 128,
-              padding: 2,
-              zIndex: 1300,
-              bgcolor: "background.paper",
-            }}
-          >
-            {Object.keys(i18n.store.data)
-              .sort()
-              .map((language) => (
-                <MuiLink
-                  key={language}
-                  component="button"
-                  data-testid={`nav-language-option-${language}`}
-                  onClick={() => {
-                    i18n.changeLanguage(language);
-                    setShowLanguageMenu(false);
-                  }}
-                  sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    textDecoration: "none",
-                    color: "inherit",
-                    fontWeight:
-                      i18n.resolvedLanguage === language ? "bold" : "unset",
-                  }}
-                >
-                  {language}
-                </MuiLink>
-              ))}
-          </Paper>
-        )}
-      </>
-    );
+  if (!permissionsLoaded) {
+    return null;
   }
-  return null;
+
+  return (
+    <>
+      <Stack
+        sx={{
+          ...DRAWER_SHELL_SX,
+          width: railMode ? RAIL_WIDTH : EXPANDED_WIDTH,
+        }}
+      >
+        <Stack
+          direction="row"
+          alignItems="center"
+          justifyContent="space-between"
+          sx={{ p: 2, height: 'fit-content' }}
+        >
+          {railMode ? null : (
+            <Stack alignItems="flex-start" sx={{ minWidth: 0, flexGrow: 1 }}>
+              <MuiLink component={Link} to="/" data-testid="nav-logo-link">
+                <SpiffLogo />
+              </MuiLink>
+              {showTenantBadge && tenantId ? (
+                <SideNavTenantBadgeExpanded
+                  tenantLabel={tenantId}
+                  caption={t('tenant')}
+                />
+              ) : null}
+            </Stack>
+          )}
+          <IconButton
+            data-testid="nav-toggle-collapse-button"
+            onClick={onToggleCollapse}
+            sx={{ ml: railMode ? 'auto' : 0 }}
+          >
+            {narrowViewport ? (
+              <CloseIcon />
+            ) : (
+              <CollapseGlyph
+                collapsed={railMode}
+                expandLabel={t('expand_navigation')}
+                collapseLabel={t('collapse_navigation')}
+              />
+            )}
+          </IconButton>
+        </Stack>
+
+        <GlobalTenantSelector isCollapsed={railMode} />
+        {railMode && showTenantBadge && tenantId ? (
+          <SideNavTenantBadgeCollapsed
+            tenantLabel={tenantId}
+            caption={t('tenant')}
+          />
+        ) : null}
+        <Divider sx={{ mx: 2, mb: 1 }} />
+
+        <List>{catalog.map(renderEntry)}</List>
+
+        {railMode ? null : (
+          <Box
+            sx={{
+              width: '100%',
+              height: `calc(100vh - ${reserveSecondaryPx}px)`,
+            }}
+          >
+            {additionalNavElement}
+          </Box>
+        )}
+
+        <SideNavBottomFoot
+          railMode={railMode}
+          dark={isDark}
+          onDarkToggle={onToggleDarkMode}
+          onToggleProfile={chromeMenus.toggleProfile}
+          onToggleLanguage={chromeMenus.toggleLanguage}
+        />
+      </Stack>
+      <SideNavBottomOverlays
+        railMode={railMode}
+        profileOpen={chromeMenus.profileOpen}
+        languageOpen={chromeMenus.languageOpen}
+        tenantLabel={tenantId}
+        extensionUxElements={extensionUxElements}
+        onCloseLanguage={chromeMenus.closeLanguage}
+      />
+    </>
+  );
 }
 
 export default SideNav;

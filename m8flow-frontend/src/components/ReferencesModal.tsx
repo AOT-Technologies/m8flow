@@ -1,52 +1,47 @@
-// SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: 2026 AOT Technologies Inc.
-
-import React from 'react';
+/**
+ * Process-model reference list dialog (extracted from the diagram editor shell).
+ */
 import { Modal, UnorderedList, Link } from '@carbon/react';
-import { ProcessReference } from '@spiffworkflow-frontend/interfaces';
-import { modifyProcessIdentifierForPathParam } from '@spiffworkflow-frontend/helpers';
 import { useTranslation } from 'react-i18next';
+import { modifyProcessIdentifierForPathParam } from '../helpers';
+import type { ProcessReference } from '../interfaces';
 
-export type ReferencesModalProps = {
+type Props = {
   open: boolean;
   onClose: () => void;
   callers: ProcessReference[] | undefined;
 };
 
-export default function ReferencesModal({
-  open,
-  onClose,
-  callers,
-}: ReferencesModalProps) {
+export default function ReferencesModal({ open, onClose, callers }: Props) {
   const { t } = useTranslation();
-
-  if (!callers) {
-    return null;
-  }
+  if (!callers) return null;
 
   return (
     <Modal
       open={open}
+      passiveModal
       modalHeading={t('diagram_process_model_references')}
       onRequestClose={onClose}
-      passiveModal
       data-testid="references-modal"
     >
       <UnorderedList>
-        {callers.map((ref: ProcessReference) => (
-          <li key={`list-${ref.relative_location}`}>
-            <Link
-              size="lg"
-              data-testid={`reference-link-${ref.identifier}`}
-              href={`/process-models/${modifyProcessIdentifierForPathParam(
-                ref.relative_location,
-              )}`}
-            >
-              {`${ref.display_name}`}
-            </Link>{' '}
-            ({ref.relative_location})
-          </li>
-        ))}
+        {callers.map((item) => {
+          const href = `/process-models/${modifyProcessIdentifierForPathParam(
+            item.relative_location,
+          )}`;
+          return (
+            <li key={item.relative_location}>
+              <Link
+                size="lg"
+                href={href}
+                data-testid={`reference-link-${item.identifier}`}
+              >
+                {item.display_name}
+              </Link>{' '}
+              ({item.relative_location})
+            </li>
+          );
+        })}
       </UnorderedList>
     </Modal>
   );
