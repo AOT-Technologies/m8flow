@@ -12,6 +12,7 @@ from flask import g, request
 from sqlalchemy import or_
 
 from m8flow_backend.services.tenant_identity_helpers import authentication_identifier_from_payload
+from m8flow_backend.services.tenant_identity_helpers import _canonical_tenant_id_from_identifiers
 from m8flow_backend.services.tenant_identity_helpers import current_tenant_identifiers
 from m8flow_backend.services.tenant_identity_helpers import extract_realm_from_issuer
 from m8flow_backend.services.tenant_identity_helpers import organization_memberships_from_payload
@@ -625,7 +626,13 @@ def _selected_tenant_from_request() -> Optional[str]:
         return None
     selected_tenant = request.cookies.get(SELECTED_TENANT_COOKIE_NAME)
     if isinstance(selected_tenant, str) and selected_tenant.strip():
-        return selected_tenant.strip()
+        normalized_selected_tenant = _canonical_tenant_id_from_identifiers(selected_tenant.strip())
+        if normalized_selected_tenant:
+            return normalized_selected_tenant
+        LOGGER.info(
+            "Ignoring stale selected-tenant cookie for shared-realm request: %s",
+            selected_tenant.strip(),
+        )
     return None
 
 

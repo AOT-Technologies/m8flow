@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
+from typing import Callable
 
 from m8flow_backend.config import vault_enabled
 from m8flow_backend.config import (
@@ -14,10 +15,17 @@ from m8flow_backend.config import (
 from m8flow_backend.services.vault_client import (
     VaultAppRoleSecretId,
     VaultClient,
+    VaultSettings,
     get_vault_client,
 )
 
 _SAFE_NAME_PATTERN = re.compile(r"[^A-Za-z0-9._-]+")
+_BOOTSTRAP_MARKER_PATH = "bootstrap"
+_BOOTSTRAP_MARKER_STATUS_FIELD = "status"
+_BOOTSTRAP_MARKER_STATUS_VALUE = "initialized"
+
+
+VaultClientBuilder = Callable[[VaultSettings], VaultClient]
 
 
 @dataclass(frozen=True)
@@ -40,8 +48,13 @@ class TenantVaultProvisioningError(RuntimeError):
 class TenantVaultProvisioningService:
     """Provision Vault-side tenant isolation artifacts."""
 
-    def __init__(self, vault_client: VaultClient | None = None) -> None:
+    def __init__(
+        self,
+        vault_client: VaultClient | None = None,
+        vault_client_builder: VaultClientBuilder | None = None,
+    ) -> None:
         self._vault_client = vault_client or get_vault_client()
+        self._vault_client_builder = vault_client_builder or (lambda settings: VaultClient(settings=settings))
 
     def provision_tenant_identity(self, tenant_id: str) -> TenantVaultIdentity:
         normalized_tenant_id = self._require_non_empty(tenant_id, "tenant_id")
@@ -72,6 +85,15 @@ class TenantVaultProvisioningService:
                     role_name,
                     mount_point=approle_mount,
                 )
+            bootstrap_secret_id = secret_id or self._vault_client.generate_approle_secret_id(
+                role_name,
+                mount_point=approle_mount,
+            )
+            self._ensure_tenant_bootstrap_marker(
+                tenant_id=normalized_tenant_id,
+                role_id=role_id,
+                secret_id=bootstrap_secret_id.secret_id,
+            )
         except Exception as exc:
             raise TenantVaultProvisioningError(
                 f"Could not provision Vault identity for tenant '{normalized_tenant_id}': {exc}"
@@ -101,7 +123,11 @@ class TenantVaultProvisioningService:
     def _tenant_policy(cls, tenant_id: str) -> str:
         mount_point = cls._require_non_empty(vault_mount_point(), "vault_mount_point")
         secret_root = cls._tenant_secret_root(tenant_id)
+        bootstrap_path = cls._tenant_bootstrap_path(tenant_id)
         return (
+            f'path "{mount_point}/data/{bootstrap_path}" {{\n'
+            '  capabilities = ["create", "read", "update"]\n'
+            "}\n\n"
             f'path "{mount_point}/data/{secret_root}/*" {{\n'
             '  capabilities = ["create", "read", "update", "delete"]\n'
             "}\n\n"
@@ -117,6 +143,29 @@ class TenantVaultProvisioningService:
     def _tenant_secret_root(cls, tenant_id: str) -> str:
         prefix = cls._require_non_empty(vault_secret_path_prefix(), "vault_secret_path_prefix")
         return cls._join_vault_path(prefix, "tenants", tenant_id, "secrets")
+
+    @classmethod
+    def _tenant_bootstrap_path(cls, tenant_id: str) -> str:
+        prefix = cls._require_non_empty(vault_secret_path_prefix(), "vault_secret_path_prefix")
+        return cls._join_vault_path(prefix, "tenants", tenant_id, _BOOTSTRAP_MARKER_PATH)
+
+    def _ensure_tenant_bootstrap_marker(self, *, tenant_id: str, role_id: str, secret_id: str) -> None:
+        tenant_vault_client = self._tenant_vault_client(role_id=role_id, secret_id=secret_id)
+        bootstrap_path = self._tenant_bootstrap_path(tenant_id)
+        existing_document = tenant_vault_client.retrieve_secret_document(bootstrap_path)
+        if existing_document is not None:
+            return
+        tenant_vault_client.store_secret_document(
+            bootstrap_path,
+            {_BOOTSTRAP_MARKER_STATUS_FIELD: _BOOTSTRAP_MARKER_STATUS_VALUE},
+        )
+
+    def _tenant_vault_client(self, *, role_id: str, secret_id: str) -> VaultClient:
+        tenant_settings = self._vault_client.settings.with_approle_credentials(
+            role_id=role_id,
+            secret_id=secret_id,
+        )
+        return self._vault_client_builder(tenant_settings)
 
     @classmethod
     def _identity_name(cls, prefix: str, tenant_id: str) -> str:

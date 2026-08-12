@@ -15,6 +15,7 @@ This directory contains the Docker setup for running M8Flow: Compose files, Dock
 | **vault/config/vault.hcl** | Repo-owned local Vault server configuration (single-node Raft, built-in UI enabled, HTTP local-only listener). |
 | **vault/policies/m8flow-policy.hcl.tpl** | Template for the narrow broker/control-plane Vault policy used by both the manual bootstrap helpers and the demo AppRole flow. |
 | **vault/scripts/configure-m8flow-vault.sh / .ps1** | Manual local bootstrap helpers for KV v2 enablement and broker/control-plane policy creation after Vault is initialized and unsealed. |
+| **vault/scripts/print-tenant-vault-approle.sh / .ps1** | Local helpers that resolve one tenant row, mint a fresh tenant AppRole `secret_id`, and print tenant-scoped Vault UI login details plus direct URLs. |
 | **vault/demo/bootstrap_vault_demo.py** | Dev-only Vault bootstrap: initialize, unseal, enable `kv`, configure the shared broker AppRole, seed YAML secrets under canonical tenant UUIDs, and verify tenant-scoped Vault reads. |
 | **vault/demo/secrets.yml.sample** | Checked-in template for local development-only Vault seed data. Copy it to `vault/demo/secrets.yml`, then edit the `m8flow` tenant secrets locally before running `vault-demo`. |
 | **vault/demo/verify_backend_vault_demo.py** | Small verifier that proves the backend/Celery Vault wrapper reads a seeded secret through a tenant-scoped Vault client, not through the shared broker AppRole. |
@@ -65,7 +66,7 @@ For the full development-only bootstrap and seed flow:
 docker compose -f docker/m8flow-docker-compose.yml --profile vault --profile vault-demo up -d --build
 ```
 
-Before running that flow, copy `docker/vault/demo/secrets.yml.sample` to `docker/vault/demo/secrets.yml` and edit the secrets under:
+If you want real demo secrets seeded, copy `docker/vault/demo/secrets.yml.sample` to `docker/vault/demo/secrets.yml` and edit the secrets under:
 
 ```yaml
 tenants:
@@ -76,7 +77,21 @@ tenants:
 
 If you want the backend, Celery worker, and Flower to actually switch into Vault-backed secret mode during local development, set `M8FLOW_VAULT_ENABLED=true` in your local `.env`. The `vault-demo` profile now supplies the Vault connection and AppRole files through `/vault/demo/runtime.env`, but it does not force the enable flag anymore.
 
-With Vault mode enabled, M8Flow also auto-provisions a tenant-scoped Vault policy and AppRole whenever a tenant is created, and it reconciles the default shared `m8flow` tenant during startup bootstrap. Those per-tenant identities are separate from the shared local broker `m8flow` AppRole managed by `vault-demo`, which should only manage tenant identities and should not read tenant secret values directly.
+If `docker/vault/demo/secrets.yml` is absent, `vault-demo` still bootstraps the canonical shared-realm `m8flow` tenant path in Vault by writing a harmless `_m8flow_demo_bootstrap` marker secret. Copy the sample file when you want real local demo secrets seeded instead.
+
+With Vault mode enabled, M8Flow also auto-provisions a tenant-scoped Vault policy and AppRole whenever a tenant is created, and it reconciles the default shared `m8flow` tenant during startup bootstrap. As part of that provisioning, the tenant-scoped Vault identity writes a root-level bootstrap marker at `kv/<prefix>/tenants/<tenant-id>/bootstrap` so the tenant path exists immediately even before any user secrets are created. Those per-tenant identities are separate from the shared local broker `m8flow` AppRole managed by `vault-demo`, which should only manage tenant identities and should not read tenant secret values directly.
+
+To print one tenant's Vault AppRole login details for the local UI:
+
+```bash
+sh docker/vault/scripts/print-tenant-vault-approle.sh Test
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File docker/vault/scripts/print-tenant-vault-approle.ps1 -Tenant Test
+```
+
+Those helpers accept a tenant `id`, `slug`, or `name`, mint a fresh tenant AppRole `secret_id`, and print the AppRole auth URL plus the direct bootstrap/secrets URLs for that tenant. Each run creates a new `secret_id`.
 
 To fully rebuild the local stack, including `vault`, `vault-demo`, and the profile-gated init jobs:
 

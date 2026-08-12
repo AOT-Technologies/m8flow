@@ -5,14 +5,12 @@ import json
 import os
 import sys
 import time
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib import error, parse, request
 
-import yaml
-
 from demo_identity import wait_for_demo_tenant_identity
+from seeded_secrets import SeededSecretSpec, load_seeded_secret_specs
 
 
 def _truthy(value: str | None) -> bool:
@@ -44,18 +42,6 @@ POLICY_TEMPLATE = Path(
 )
 HEALTH_PATH = "sys/health?standbyok=true&perfstandbyok=true"
 LEADER_PATH = "sys/leader"
-
-
-@dataclass(frozen=True)
-class SeededSecret:
-    tenant_reference: str
-    tenant_id: str
-    secret_name: str
-    value: str
-
-    @property
-    def logical_path(self) -> str:
-        return f"{PATH_PREFIX}/tenants/{self.tenant_id}/secrets/{self.secret_name}"
 
 
 def log(message: str) -> None:
@@ -91,6 +77,10 @@ def format_missing_secrets_file_message(path: Path) -> str:
             "seeded for the m8flow tenant."
         )
     return message
+
+
+def seeded_secret_logical_path(secret: SeededSecretSpec) -> str:
+    return f"{PATH_PREFIX}/tenants/{secret.tenant_id}/secrets/{secret.secret_name}"
 
 
 def remove_generated_files() -> None:
@@ -431,67 +421,28 @@ def write_runtime_files(role_id: str, secret_id: str) -> None:
     )
 
 
-def load_seeded_secrets() -> list[SeededSecret]:
-    if not SECRETS_FILE.exists():
-        fail(format_missing_secrets_file_message(SECRETS_FILE))
-
-    raw_payload = yaml.safe_load(SECRETS_FILE.read_text(encoding="utf-8")) or {}
-    if not isinstance(raw_payload, dict):
-        fail(f"Vault demo secrets file must contain a top-level mapping: {SECRETS_FILE}")
-
-    tenants = raw_payload.get("tenants")
-    if not isinstance(tenants, dict) or not tenants:
-        fail(f"Vault demo secrets file must define at least one tenant under 'tenants': {SECRETS_FILE}")
-
+def load_seeded_secrets() -> list[SeededSecretSpec]:
     demo_identity = wait_for_demo_tenant_identity(
         timeout_seconds=WAIT_TIMEOUT_SECONDS,
         interval_seconds=WAIT_INTERVAL_SECONDS,
     )
-    seeded_secrets: list[SeededSecret] = []
-    for tenant_id, tenant_payload in tenants.items():
-        normalized_tenant_reference = str(tenant_id).strip()
-        if not normalized_tenant_reference or "/" in normalized_tenant_reference:
-            fail(f"Invalid tenant id in {SECRETS_FILE}: {tenant_id!r}")
-        resolved_tenant_id = (
-            demo_identity.organization_id
-            if normalized_tenant_reference == demo_identity.organization_alias
-            else normalized_tenant_reference
-        )
-
-        if isinstance(tenant_payload, dict) and "secrets" in tenant_payload:
-            secrets_payload = tenant_payload.get("secrets")
-        else:
-            secrets_payload = tenant_payload
-
-        if not isinstance(secrets_payload, dict) or not secrets_payload:
-            fail(f"Tenant '{normalized_tenant_reference}' must define at least one secret in {SECRETS_FILE}.")
-
-        for secret_name, secret_value in secrets_payload.items():
-            normalized_secret_name = str(secret_name).strip()
-            if not normalized_secret_name or "/" in normalized_secret_name:
-                fail(
-                    f"Invalid secret name for tenant '{normalized_tenant_reference}' in {SECRETS_FILE}: {secret_name!r}"
-                )
-            seeded_secrets.append(
-                SeededSecret(
-                    tenant_reference=normalized_tenant_reference,
-                    tenant_id=resolved_tenant_id,
-                    secret_name=normalized_secret_name,
-                    value=str(secret_value),
-                )
-            )
-
-    return seeded_secrets
+    return load_seeded_secret_specs(
+        SECRETS_FILE,
+        organization_alias=demo_identity.organization_alias,
+        organization_id=demo_identity.organization_id,
+        missing_file_message_factory=format_missing_secrets_file_message,
+        logger=log,
+    )
 
 
 def secret_api_path(logical_path: str) -> str:
     return f"{parse.quote(MOUNT_POINT, safe='')}/data/{parse.quote(logical_path, safe='/')}"
 
 
-def read_secret_value(secret: SeededSecret, token: str, *, allow_missing: bool = False) -> str | None:
+def read_secret_value(secret: SeededSecretSpec, token: str, *, allow_missing: bool = False) -> str | None:
     status_code, payload, _body = vault_request(
         "GET",
-        secret_api_path(secret.logical_path),
+        secret_api_path(seeded_secret_logical_path(secret)),
         token=token,
         expected_statuses=(200, 404) if allow_missing else (200,),
     )
@@ -503,17 +454,17 @@ def read_secret_value(secret: SeededSecret, token: str, *, allow_missing: bool =
     return value if isinstance(value, str) else str(value)
 
 
-def write_secret_value(secret: SeededSecret, token: str) -> None:
+def write_secret_value(secret: SeededSecretSpec, token: str) -> None:
     vault_request(
         "POST",
-        secret_api_path(secret.logical_path),
+        secret_api_path(seeded_secret_logical_path(secret)),
         token=token,
         payload={"data": {"value": secret.value}},
         expected_statuses=(200,),
     )
 
 
-def seed_demo_secrets(root_token: str, secrets: list[SeededSecret]) -> tuple[int, int]:
+def seed_demo_secrets(root_token: str, secrets: list[SeededSecretSpec]) -> tuple[int, int]:
     written = 0
     skipped = 0
 
@@ -531,7 +482,7 @@ def seed_demo_secrets(root_token: str, secrets: list[SeededSecret]) -> tuple[int
 
 def write_verification_report(
     *,
-    verified_secret: SeededSecret,
+    verified_secret: SeededSecretSpec,
     broker_direct_read_blocked: bool,
     tenant_policy_name: str,
     tenant_role_name: str,
@@ -556,14 +507,14 @@ def write_verification_report(
             "tenant_role_name": tenant_role_name,
             "verified_secret_tenant_id": verified_secret.tenant_id,
             "verified_secret_tenant_reference": verified_secret.tenant_reference,
-            "verified_secret_path": verified_secret.logical_path,
+            "verified_secret_path": seeded_secret_logical_path(verified_secret),
             "written": written,
         },
         mode=0o644,
     )
 
 
-def verify_bootstrap(role_id: str, secret_id: str, secrets: list[SeededSecret], written: int, skipped: int) -> None:
+def verify_bootstrap(role_id: str, secret_id: str, secrets: list[SeededSecretSpec], written: int, skipped: int) -> None:
     if not secrets:
         fail("Vault demo verification requires at least one seeded secret.")
 

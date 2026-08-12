@@ -24,11 +24,16 @@ def apply() -> None:
         return make_response(jsonify(secret.to_dict()), 200)
 
     def patched_secret_show_value(key: str):
-        backend = get_secret_backend()
-        secret = backend.get_secret(key)
-        secret_as_dict = secret.to_dict()
-        secret_as_dict["value"] = backend.get_secret_value(key)
-        return make_response(jsonify(secret_as_dict), 200)
+        del key
+        return make_response(
+            jsonify(
+                {
+                    "error_code": "secret_value_retrieval_disabled",
+                    "message": "Retrieving secret values through this endpoint is disabled in M8Flow.",
+                }
+            ),
+            404,
+        )
 
     def patched_secret_create(body: dict):
         secret_model = get_secret_backend().add_secret(body["key"], body["value"], g.user.id)

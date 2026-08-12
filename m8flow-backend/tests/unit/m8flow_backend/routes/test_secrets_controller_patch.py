@@ -133,8 +133,11 @@ def test_secret_crud_routes_delegate_to_common_backend(monkeypatch) -> None:
     assert show_response.status_code == 200
     assert show_response.get_json()["key"] == "API_TOKEN"
 
-    assert show_value_response.status_code == 200
-    assert show_value_response.get_json()["value"] == "vault-value"
+    assert show_value_response.status_code == 404
+    assert show_value_response.get_json() == {
+        "error_code": "secret_value_retrieval_disabled",
+        "message": "Retrieving secret values through this endpoint is disabled in M8Flow.",
+    }
 
     assert create_response.status_code == 201
     assert create_response.get_json()["user_id"] == 7
@@ -147,8 +150,6 @@ def test_secret_crud_routes_delegate_to_common_backend(monkeypatch) -> None:
 
     assert backend.calls == [
         ("get_secret", "API_TOKEN"),
-        ("get_secret", "API_TOKEN"),
-        ("get_secret_value", "API_TOKEN"),
         ("add_secret", "API_TOKEN", "vault-value", 7),
         ("update_secret", "API_TOKEN", "rotated-value", 7, False, "API_TOKEN_NEW"),
         ("delete_secret", "API_TOKEN", 99),

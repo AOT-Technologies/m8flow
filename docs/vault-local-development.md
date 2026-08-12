@@ -19,6 +19,10 @@ The local dev setup now has two distinct Vault identity layers:
 - Vault image: `hashicorp/vault:1.18.5`
 - Vault server config: [docker/vault/config/vault.hcl](../docker/vault/config/vault.hcl)
 - Policy template: [docker/vault/policies/m8flow-policy.hcl.tpl](../docker/vault/policies/m8flow-policy.hcl.tpl)
+- Tenant AppRole helper scripts:
+  [docker/vault/scripts/print-tenant-vault-approle.sh](../docker/vault/scripts/print-tenant-vault-approle.sh)
+  and
+  [docker/vault/scripts/print-tenant-vault-approle.ps1](../docker/vault/scripts/print-tenant-vault-approle.ps1)
 - Demo bootstrap script: [docker/vault/demo/bootstrap_vault_demo.py](../docker/vault/demo/bootstrap_vault_demo.py)
 - Demo seed template: [docker/vault/demo/secrets.yml.sample](../docker/vault/demo/secrets.yml.sample)
 - Runtime verification script: [docker/vault/demo/verify_backend_vault_demo.py](../docker/vault/demo/verify_backend_vault_demo.py)
@@ -50,6 +54,39 @@ When `M8FLOW_VAULT_ENABLED=true`, M8Flow now provisions Vault-side tenant identi
 - repeated startup/bootstrap passes reconcile the role and policy without rotating the existing tenant AppRole `secret_id`.
 
 The configured runtime token or AppRole is now a broker/control-plane identity. M8Flow uses it to create, reconcile, and resolve tenant-specific AppRoles, then performs tenant secret CRUD through tenant-scoped Vault clients derived from those AppRoles. If that broker identity can still read tenant KV data directly, the local setup is misconfigured.
+
+## Resolve One Tenant-Scoped AppRole
+
+Use these helpers when you want to sign in to the local Vault UI with one tenant's AppRole only.
+
+Both scripts:
+
+- accept a tenant `id`, `slug`, or `name`;
+- resolve the canonical tenant UUID from `m8flow_tenant`;
+- compute the tenant AppRole name using the repo's own provisioning logic;
+- mint a fresh tenant AppRole `secret_id`;
+- print the `role_id`, `secret_id`, AppRole auth URL, bootstrap URL, and tenant secrets URL.
+
+PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File docker/vault/scripts/print-tenant-vault-approle.ps1 -Tenant Test
+```
+
+POSIX shell:
+
+```bash
+sh docker/vault/scripts/print-tenant-vault-approle.sh Test
+```
+
+Use the printed `role_id` and `secret_id` to sign in at the printed `approle_auth_url`.
+
+Notes:
+
+- Each run mints a new tenant AppRole `secret_id`. Treat it like a credential.
+- If `M8FLOW_VAULT_OPERATOR_TOKEN` or `VAULT_TOKEN` is set in your host shell, the helpers use that operator token.
+- Otherwise, in the local `vault-demo` workflow they fall back to the persisted `root_token` from `/vault/demo/init.json`.
+- These helpers are local-development tooling. They are not intended for production Vault access flows.
 
 ## Start Only The Base Vault Service
 
@@ -95,7 +132,7 @@ Use this when you want an end-to-end local Vault demo with broker AppRole creden
 docker compose -f docker/m8flow-docker-compose.yml --profile vault --profile vault-demo up -d --build
 ```
 
-Before the first run, create your local seed file:
+If you want real demo secrets seeded, create your local seed file first:
 
 ```bash
 cp docker/vault/demo/secrets.yml.sample docker/vault/demo/secrets.yml
@@ -126,7 +163,8 @@ What the `vault-demo` profile does on each run:
 - creates or updates the shared broker `m8flow` AppRole;
 - reuses the persisted broker AppRole `secret_id` when it is still valid, otherwise generates a new one;
 - writes `runtime.env` plus file-backed broker AppRole credentials into `/vault/demo`;
-- seeds your local `docker/vault/demo/secrets.yml` file under the canonical tenant UUID that corresponds to the shared-realm `m8flow` organization alias;
+- if `docker/vault/demo/secrets.yml` exists, seeds it under the canonical tenant UUID that corresponds to the shared-realm `m8flow` organization alias;
+- if `docker/vault/demo/secrets.yml` is absent, writes a harmless `_m8flow_demo_bootstrap` marker secret so the canonical `m8flow` tenant path still exists in Vault after a clean rebuild;
 - skips existing seeded secrets by default;
 - overwrites seeded secrets only when `M8FLOW_VAULT_DEMO_OVERWRITE=true`;
 - provisions the seeded tenant's Vault policy and AppRole through the broker identity;
