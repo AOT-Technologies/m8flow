@@ -141,6 +141,10 @@ function Test-HasM8FlowBackendRuntimeDependencies {
     if ($LASTEXITCODE -ne 0) {
       return $false
     }
+    Invoke-UvPython @('-c', 'import mcp') 2>&1 > $null
+    if ($LASTEXITCODE -ne 0) {
+      return $false
+    }
     return $true
   } finally {
     $ErrorActionPreference = $oldPreference
@@ -157,7 +161,12 @@ function Sync-LocalBackendEnvironment {
     & uv @uvSyncArgs
 
     if (-not (Test-HasM8FlowBackendRuntimeDependencies)) {
-      $uvPipArgs = @('pip', 'install', 'nats-py>=2.6.0')
+      # nats-py: NATS event integration. mcp: MCP client SDK used by
+      # m8flow_backend/services/mcp_catalog_service.py (M8F-404 tools catalog)
+      # to talk to the separately-deployed m8flow-mcp server. Upper-bounded:
+      # mcp 2.0.0 renamed McpError -> MCPError, which breaks the
+      # `from mcp import McpError` import this service relies on.
+      $uvPipArgs = @('pip', 'install', 'nats-py>=2.6.0', 'mcp>=1.9.0,<2.0.0')
       & uv @uvPipArgs
     }
   } finally {

@@ -2297,6 +2297,133 @@ paths:
                 items:
                   type: object
 
+  /mcp-tools:
+    get:
+      operationId: m8flow_backend.routes.mcp_tools_controller.list_mcp_tools_catalog
+      summary: Returns the live MCP tool catalog from the m8flow-mcp server, as the caller
+      description: >
+        Opens a fresh MCP client session against the configured m8flow-mcp server,
+        forwarding the caller's own bearer token, and returns a flat UI-ready
+        summary of every tool the server currently exposes (name, description,
+        category, read/write badge, parameters). Restricted to tenant-admin and
+        super-admin.
+      tags:
+        - MCP Tools
+      responses:
+        "200":
+          description: MCP tool catalog
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  server_url:
+                    type: string
+                  protocol_version:
+                    type: string
+                  tool_count:
+                    type: integer
+                  tools:
+                    type: array
+                    items:
+                      type: object
+        "502":
+          description: The MCP server could not be reached or rejected the request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /mcp-tools/ping:
+    get:
+      operationId: m8flow_backend.routes.mcp_tools_controller.check_mcp_connection
+      summary: Bare connectivity/auth check against the m8flow-mcp server, as the caller
+      description: >
+        Times a bare MCP initialize() round-trip against the configured
+        m8flow-mcp server using the caller's own bearer token. Restricted to
+        tenant-admin and super-admin.
+      tags:
+        - MCP Tools
+      responses:
+        "200":
+          description: Connection check result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  latency_ms:
+                    type: integer
+                  protocol_version:
+                    type: string
+                    nullable: true
+                  authorized:
+                    type: boolean
+
+  /mcp-tools/execute:
+    post:
+      operationId: m8flow_backend.routes.mcp_tools_controller.execute_mcp_tool
+      summary: Executes one MCP tool as the caller
+      description: >
+        Calls one MCP tool by name against the configured m8flow-mcp server,
+        forwarding the caller's own bearer token. Tools badged "write" in the
+        catalog require confirm=true. Restricted to tenant-admin and super-admin.
+      tags:
+        - MCP Tools
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tool_name
+              properties:
+                tool_name:
+                  type: string
+                  description: Name of the MCP tool to call
+                arguments:
+                  type: object
+                  description: Arguments passed to the tool call
+                  default: {}
+                confirm:
+                  type: boolean
+                  description: Must be true to execute a write-badged tool
+                  default: false
+      responses:
+        "200":
+          description: Tool call result
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Missing confirm=true for a write-badged tool
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Tool disabled tenant-wide
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Unknown tool name
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: The MCP server could not be reached, or the tool call itself failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthResponse:
