@@ -25,6 +25,7 @@ const ProcessModelShowWithSaveAsTemplate = lazy(
 const ConnectorsPage = lazy(() => import('./views/Connectors'));
 const ConnectorConfigurePage = lazy(() => import('./views/ConnectorConfigure'));
 const McpConnectionPage = lazy(() => import('./views/McpConnection'));
+const McpToolsCatalogPage = lazy(() => import('./views/McpToolsCatalog'));
 const ManageTokenPage = lazy(() => import('./views/ManageToken'));
 const MonitoringCeleryPage = lazy(() => import('./views/MonitoringCeleryPage'));
 const MonitoringNatsPage = lazy(() => import('./views/MonitoringNatsPage'));
@@ -114,6 +115,13 @@ export function M8flowAppRoutes({
     {
       path: 'mcp-connection',
       element: <McpConnectionPage />,
+      when: MCP_CONNECTION_ENABLED,
+    },
+    {
+      // Self-guards on the admin-only mcp-tools permission (M8F-404); shares the
+      // MCP server URL flag with the connection page since it is meaningless without one.
+      path: 'mcp-tools',
+      element: <McpToolsCatalogPage />,
       when: MCP_CONNECTION_ENABLED,
     },
     { path: 'manage-token', element: <ManageTokenPage /> },

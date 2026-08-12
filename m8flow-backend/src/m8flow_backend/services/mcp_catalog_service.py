@@ -67,7 +67,16 @@ def _tool_tags(tool: Any) -> list[str]:
 
 
 def _tool_badge(tool: Any) -> str:
-    """"read" when the tool's annotations mark it read-only, else "write"."""
+    """"sensitive" if tenant-disabled via SENSITIVE_TOOL_NAMES; else "read" when the
+    tool's annotations mark it read-only, else "write".
+
+    Checked first: a sensitive tool is sensitive regardless of its readOnlyHint, and
+    the catalog UI needs this in the badge itself to render the locked state -- the
+    write-confirm vs. sensitive-disabled distinction is exactly what tells the UI
+    which of "Try it" or the locked message to show for a given tool.
+    """
+    if tool.name in SENSITIVE_TOOL_NAMES:
+        return "sensitive"
     annotations = getattr(tool, "annotations", None)
     read_only_hint = getattr(annotations, "readOnlyHint", None) if annotations is not None else None
     return "read" if read_only_hint is True else "write"
