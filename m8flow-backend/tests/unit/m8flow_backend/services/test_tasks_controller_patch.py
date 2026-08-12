@@ -80,10 +80,7 @@ def test_super_admin_per_instance_call_defers_to_original_handler(monkeypatch) -
 
 
 def test_super_admin_invalid_process_instance_id_takes_all_open_tasks_branch(monkeypatch) -> None:
-    # An invalid process_instance_id (e.g. "abc") resolves to None via
-    # _extract_process_instance_id, so a super-admin call must take the global
-    # all-open-tasks WRAP (omit_user_ownership_filter → original _get_tasks) rather
-    # than the per-instance original task_list_my_tasks handler.
+    # Invalid process_instance_id → None → SA all-open list (not per-instance handler).
     fake_tasks_controller_module, calls = _build_patched_tasks_controller(monkeypatch)
 
     monkeypatch.setattr(tasks_controller_patch, "is_super_admin_request", lambda: True)

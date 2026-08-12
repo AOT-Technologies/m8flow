@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 
 def _install_controller_fakes(monkeypatch) -> tuple[ModuleType, ModuleType, list, list]:
-    """Minimal upstream-shaped controller + queue fakes for WRAP tests."""
+    """Minimal controller + queue fakes for process-instance run patch tests."""
     from m8flow_backend.services import process_instances_controller_patch
 
     fake_controller_module = ModuleType("spiffworkflow_backend.routes.process_instances_controller")
@@ -102,7 +102,7 @@ def test_apply_preflights_queued_process_start_before_queueing(monkeypatch) -> N
     assert preflight_calls == [(process_instance, False)]
     assert queue_calls == [("queue", "asynchronous")]
     assert handle_error_calls == []
-    # WRAP restores module bindings after the call.
+    # Temporary queue/error bindings are restored after the call.
     assert fake_controller_module.queue_process_instance_if_appropriate.__name__ == (
         "fake_queue_process_instance_if_appropriate"
     )

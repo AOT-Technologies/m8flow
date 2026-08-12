@@ -18,9 +18,7 @@ def _task_sort_ts(task: object) -> float:
 
 
 def _seed_processor_with_completed_data(processor: object, process_instance: object) -> None:
-    """Seed the processor's workflow data with the instance's completed-task data and the
-    union of its data objects (existing + each completed task's, oldest-first), so readonly
-    views and re-runs see the values the instance actually executed with."""
+    """Merge completed-task data into the processor so re-runs see executed values."""
     from spiffworkflow_backend.services.process_instance_processor import ProcessInstanceProcessor
 
     completed_task_data = process_instance.get_data()
@@ -128,7 +126,7 @@ def _potential_owner_usernames_from_human_task(human_task: object) -> str | None
 
 
 def apply() -> None:
-    """Patch ProcessInstanceService: record BPMN XML version at creation time and fix completed-task data rehydration."""
+    """Record BPMN versions at create; seed completed data on run; telemetry + queue preflight."""
     global _PATCHED
     if _PATCHED:
         return
@@ -171,15 +169,13 @@ def apply() -> None:
                 raw_bytes = SpecFileService.get_data(process_model, primary_file_name)
                 xml_text = raw_bytes.decode("utf-8")
                 if xml_text:
-                    # Upstream only adds the ProcessInstanceModel to the session; it doesn't flush/commit.
-                    # We need an id + tenant id before we can store the version reference.
+                    # Need a flushed id + tenant before writing the version row.
                     db.session.flush()
                     tenant_id = getattr(process_instance_model, "m8f_tenant_id", None)
                     if tenant_id:
                         bpmn_hash = hashlib.sha256(xml_text.encode("utf-8")).hexdigest()
                         model_id = getattr(process_model, "id", "")
 
-                        # Upsert: insert if the (tenant, model, hash) combo doesn't exist yet.
                         db.session.execute(
                             sa.text(
                                 """
@@ -199,7 +195,6 @@ def apply() -> None:
                             },
                         )
 
-                        # Retrieve the version id (may have been inserted just now or previously).
                         version_row = db.session.execute(
                             sa.text(
                                 """
@@ -285,9 +280,9 @@ def apply() -> None:
         human_task,
         execution_mode: str | None = None,
     ) -> None:
-        """WRAP upstream complete_form_task: telemetry + queued follow-up preflight."""
+        """Complete form with task telemetry and queued follow-up preflight."""
         if not callable(original_complete_form_task):
-            raise RuntimeError("ProcessInstanceService.complete_form_task is missing; cannot WRAP")
+            raise RuntimeError("ProcessInstanceService.complete_form_task is missing")
 
         original_complete_task = processor.complete_task
 
@@ -334,10 +329,7 @@ def apply() -> None:
 
     @classmethod
     def patched_schedule_next_process_model_cycle(cls, process_instance_model) -> None:
-        # ProcessInstanceProcessor.save() invokes this as the workflow_completed_handler
-        # exactly once, at the moment a process instance transitions to completed —
-        # the only central hook point across every call site that constructs a
-        # ProcessInstanceProcessor with this handler.
+        # Invoked once when an instance reaches completed (workflow_completed_handler).
         original_schedule_next_process_model_cycle(process_instance_model)
 
         try:
@@ -372,13 +364,13 @@ def apply() -> None:
         execution_strategy_name: str | None = None,
         should_schedule_waiting_timer_events: bool = True,
     ) -> tuple[ProcessInstanceProcessor | None, TaskRunnability]:
-        """WRAP upstream run: force completed-task data load + seed merged data objects."""
+        """Run with completed-task data loaded and data objects seeded."""
         if not callable(original_run_process_instance_with_processor):
             raise RuntimeError(
-                "ProcessInstanceService.run_process_instance_with_processor is missing; cannot WRAP"
+                "ProcessInstanceService.run_process_instance_with_processor is missing"
             )
 
-        # Upstream resolves ProcessInstanceProcessor from the service module globals.
+        # run_process_instance_with_processor constructs ProcessInstanceProcessor from this module.
         if not hasattr(service_module, "ProcessInstanceProcessor"):
             service_module.ProcessInstanceProcessor = processor_module.ProcessInstanceProcessor
         OriginalProcessor = service_module.ProcessInstanceProcessor
@@ -403,7 +395,7 @@ def apply() -> None:
 
     @staticmethod
     def patched_spiff_task_to_api_task(processor, spiff_task):
-        """WRAP upstream spiff_task_to_api_task; prefer usernames when owners are surfaced."""
+        """Prefer usernames for potential owners when emails are unavailable."""
         from spiffworkflow_backend.models.human_task import HumanTaskModel
 
         def _rewrite_potential_owners(task: object) -> object:
@@ -429,7 +421,7 @@ def apply() -> None:
             return restores
 
         if not callable(original_spiff_task_to_api_task):
-            raise RuntimeError("ProcessInstanceService.spiff_task_to_api_task is missing; cannot WRAP")
+            raise RuntimeError("ProcessInstanceService.spiff_task_to_api_task is missing")
 
         try:
             task = original_spiff_task_to_api_task(processor, spiff_task)

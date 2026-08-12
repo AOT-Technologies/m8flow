@@ -13,18 +13,7 @@ def _should_handle_process_run_api_error(error: Exception) -> bool:
 
 
 def apply() -> None:
-    """Patch process instance routes for BPMN snapshots and queued-start preflight.
-
-    The frontend renders the diagram from `bpmn_xml_file_contents` embedded on the
-    process instance payload. Upstream loads that XML from the current process
-    model files (or git history if configured). In m8flow we force old instances
-    to display the BPMN as executed by looking up the version snapshot referenced
-    by bpmn_version_id on the process instance.
-
-    Process run keeps upstream `_process_instance_run` and only wraps the queue
-    binding (preflight before async enqueue) plus ErrorHandlingService so lane
-    assignment ApiErrors do not fault the instance.
-    """
+    """Serve BPMN version snapshots on get; preflight queued starts before enqueue."""
 
     global _PATCHED
     if _PATCHED:
@@ -71,8 +60,7 @@ def apply() -> None:
             process_identifier=process_identifier,
         )
 
-        # Only override the top-level diagram; subprocess/call-activity diagrams can be requested
-        # by providing process_identifier, which we do not snapshot today.
+        # Subprocess/call-activity diagrams (process_identifier set) are not snapshotted.
         if process_identifier:
             return response
 
@@ -103,10 +91,8 @@ def apply() -> None:
         ).first()
 
         if row is None:
-            # Legacy instance without a version reference — fall through to upstream.
             return response
 
-        # Force the snapshot XML — do not fall back to the current model files.
         payload["bpmn_xml_file_contents"] = row[0]
         payload["bpmn_xml_file_contents_retrieval_error"] = None
         return make_response(jsonify(payload), response.status_code)
@@ -120,8 +106,7 @@ def apply() -> None:
             execution_mode: str | None = None,
             task_guid: str | None = None,
         ) -> bool:
-            # m8flow delta: reject a queued start whose lanes can't be assigned before the
-            # worker picks it up (upstream only validates once the worker runs).
+            # Fail lane assignment before enqueue; the worker would otherwise surface it later.
             if should_queue_process_instance(execution_mode=execution_mode):
                 if not ProcessInstanceTmpService.is_enqueued_to_run_in_the_future(process_instance):
                     _validate_queued_process_start(process_instance, handle_error=False)
@@ -132,7 +117,7 @@ def apply() -> None:
             )
 
         class _RunErrorHandlingProxy:
-            """Upstream ErrorHandlingService with lane-assignment faults suppressed."""
+            """ErrorHandlingService proxy that skips faulting on lane-assignment ApiErrors."""
 
             def __getattr__(self, name: str):
                 return getattr(original_error_handling_service, name)

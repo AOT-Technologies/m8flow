@@ -32,7 +32,7 @@ def _task_data_for_display(task_model: object) -> dict:
     if isinstance(task_data, dict) and task_data:
         return task_data
 
-    # Completed user tasks keep submitted fields in the serialized delta, not the task-data hashes.
+    # Completed user tasks keep submitted fields in the serialized delta.
     properties_json = getattr(task_model, "properties_json", None)
     if not isinstance(properties_json, dict):
         return task_data if isinstance(task_data, dict) else {}
@@ -71,12 +71,7 @@ def _rewrite_assigned_group_identifiers(response: flask.wrappers.Response) -> fl
 
 
 def _extract_process_instance_id(args: tuple[object, ...], kwargs: dict[str, object]) -> int | None:
-    """Pull process_instance_id from the upstream task_list_my_tasks call signature.
-
-    Upstream signature is task_list_my_tasks(process_instance_id=None, page=1, per_page=100).
-    Connexion passes query params by name, so it normally arrives as the
-    process_instance_id kwarg, but guard against positional usage too.
-    """
+    """Read process_instance_id from kwargs or the first positional arg."""
     value = kwargs.get("process_instance_id")
     if value is None and args:
         value = args[0]
@@ -98,7 +93,7 @@ def _rule_looks_like_task_data_show(rule: object) -> bool:
 def _page_and_per_page_from_task_list_call(
     args: tuple[object, ...], kwargs: dict[str, object]
 ) -> tuple[object, object]:
-    """Compatibility with upstream task-list signatures for page/per_page."""
+    """Normalize page/per_page across task-list call shapes."""
     page = kwargs.get("page", 1)
     per_page = kwargs.get("per_page", 100)
     if len(args) >= 2:
@@ -111,7 +106,7 @@ def _page_and_per_page_from_task_list_call(
 
 
 def _is_process_initiator_ownership_clause(criterion: object) -> bool:
-    """True for predicates on process_initiator_id (the upstream user-ownership filters)."""
+    """True when a SQLAlchemy criterion filters on process_initiator_id."""
     try:
         for side in (getattr(criterion, "left", None), getattr(criterion, "right", None)):
             if side is None:
@@ -129,7 +124,7 @@ def _is_process_initiator_ownership_clause(criterion: object) -> bool:
 
 
 def _enrich_task_list_results_with_tenant_fields(response: flask.wrappers.Response) -> flask.wrappers.Response:
-    """Attach tenantId/tenantName for SA open-task rows after upstream serialization."""
+    """Attach tenantId/tenantName to open-task rows for super-admin lists."""
     payload = response.get_json(silent=True)
     if not isinstance(payload, dict):
         return response
@@ -181,11 +176,8 @@ def _enrich_task_list_results_with_tenant_fields(response: flask.wrappers.Respon
 
 
 @contextlib.contextmanager
-def _upstream_get_tasks_without_user_ownership(tenant_id: str | None) -> Iterator[None]:
-    """Reuse upstream `_get_tasks` while dropping initiator ownership filters.
-
-    Optionally injects an SA tenant predicate once, so pagination stays correct.
-    """
+def _get_tasks_without_user_ownership(tenant_id: str | None) -> Iterator[None]:
+    """Call `_get_tasks` with initiator ownership filters removed; optional SA tenant predicate."""
     from sqlalchemy.orm import Query
 
     omit_token = _omit_user_ownership_filter.set(True)
@@ -229,8 +221,7 @@ def _apply_module_patches():
 
     original_get_tasks = tasks_controller._get_tasks
     original_task_list_my_tasks = tasks_controller.task_list_my_tasks
-    # Upstream task list endpoints have varied across versions; fall back to _get_tasks
-    # when a specific handler does not exist.
+    # Older Spiff builds omit some list handlers; fall back to _get_tasks.
     original_task_list_for_me = getattr(tasks_controller, "task_list_for_me", original_get_tasks)
     original_task_list_for_my_open_processes = getattr(
         tasks_controller, "task_list_for_my_open_processes", original_get_tasks
@@ -265,9 +256,7 @@ def _apply_module_patches():
         except RuntimeError:
             filter_tenant_id = None
 
-        # Reuse upstream join/group/paginate via processes_started_by_user=True (outerjoin
-        # assigned users), with ownership predicates stripped for the SA global open list.
-        with _upstream_get_tasks_without_user_ownership(filter_tenant_id):
+        with _get_tasks_without_user_ownership(filter_tenant_id):
             response = original_get_tasks(
                 processes_started_by_user=True,
                 page=page,
@@ -282,11 +271,7 @@ def _apply_module_patches():
         return patched_get_tasks(page=page, per_page=per_page, omit_user_ownership_filter=True)
 
     def patched_task_list_my_tasks(*args, **kwargs) -> flask.wrappers.Response:
-        # The super-admin global "all open tasks" view backs the Homepage task list, which
-        # never scopes by process_instance_id. The per-instance "Tasks I can complete" call
-        # (ProcessInstanceShow) does pass process_instance_id; for that we defer to the
-        # original handler so super admins see only tasks they can actually complete (none
-        # for a read-only observer), letting the section auto-hide like it does for tenant admins.
+        # Homepage SA list has no process_instance_id; ProcessInstanceShow passes one and stays scoped.
         process_instance_id = _extract_process_instance_id(args, kwargs)
         if is_super_admin_request() and process_instance_id is None:
             return _task_list_all_open_tasks(*args, **kwargs)
@@ -347,8 +332,7 @@ def apply(flask_app: object | None = None) -> None:
         ):
             flask_app.view_functions[endpoint] = patched_task_data_show
 
-    # Connexion endpoint names and wrapper identities vary between environments.
-    # First try function identity, then fall back to the concrete task-data route path.
+    # Prefer identity match; fall back to the concrete task-data route path.
     for rule in flask_app.url_map.iter_rules():
         if "GET" not in rule.methods:
             continue
