@@ -1,40 +1,51 @@
+"""Playwright page dump helpers for local browser-test debugging."""
+
+from __future__ import annotations
+
 from playwright.sync_api import Page
 
+_TESTID_SELECTOR = "[data-testid]"
+_CONTROL_SELECTOR = 'input, button, a[role="button"], select, textarea'
 
-def print_page_details(page: Page) -> None:
-    """Print data-testid elements and interactable controls for debugging."""
+
+def dump_page_for_debug(page: Page) -> None:
+    """Write a short inventory of testids and unlabeled controls to stdout."""
     page.wait_for_load_state()
+    _emit_testid_inventory(page)
+    _emit_control_inventory(page)
 
+
+# Back-compat alias used by ad-hoc debugging sessions.
+print_page_details = dump_page_for_debug
+
+
+def _emit_testid_inventory(page: Page) -> None:
     print("\n--- Elements with data-testid ---")
-    elements_with_testid = page.query_selector_all("[data-testid]")
-    if not elements_with_testid:
+    nodes = page.query_selector_all(_TESTID_SELECTOR)
+    if not nodes:
         print("No elements with data-testid found.")
-    else:
-        for element in elements_with_testid:
-            data_testid = element.get_attribute("data-testid")
-            tag_name = element.evaluate("el => el.tagName.toLowerCase()")
-            if data_testid and tag_name != "svg":
-                print(f"  <{tag_name}> data-testid={data_testid}")
+        return
+    for node in nodes:
+        testid = node.get_attribute("data-testid")
+        tag = node.evaluate("n => n.tagName.toLowerCase()")
+        if testid and tag != "svg":
+            print(f"  <{tag}> data-testid={testid}")
 
+
+def _emit_control_inventory(page: Page) -> None:
     print("\n--- Input and Button Elements ---")
-    interactable = page.query_selector_all(
-        'input, button, a[role="button"], select, textarea'
-    )
-    if not interactable:
+    nodes = page.query_selector_all(_CONTROL_SELECTOR)
+    if not nodes:
         print("No interactable elements found.")
-    else:
-        for element in interactable:
-            if element.get_attribute("data-testid"):
-                continue
-            tag_name = element.evaluate("el => el.tagName.toLowerCase()")
-            el_id = element.get_attribute("id")
-            el_name = element.get_attribute("name")
-            aria_label = element.get_attribute("aria-label")
-            parts = [f"<{tag_name}>"]
-            if el_id:
-                parts.append(f"id='{el_id}'")
-            if el_name:
-                parts.append(f"name='{el_name}'")
-            if aria_label:
-                parts.append(f"aria-label='{aria_label}'")
-            print(f"  {', '.join(parts)}")
+        return
+    for node in nodes:
+        if node.get_attribute("data-testid"):
+            continue
+        tag = node.evaluate("n => n.tagName.toLowerCase()")
+        attrs = []
+        for key in ("id", "name", "aria-label"):
+            value = node.get_attribute(key)
+            if value:
+                attrs.append(f"{key}='{value}'")
+        suffix = f", {', '.join(attrs)}" if attrs else ""
+        print(f"  <{tag}>{suffix}")

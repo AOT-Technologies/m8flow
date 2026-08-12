@@ -1,364 +1,78 @@
+/**
+ * M8Flow app shell orchestrator — composes chrome, bootstrap, routes, and gates.
+ * Intentionally structured differently from upstream ContainerForExtensions.
+ */
+import './tenantLogoutPatch';
+
 import {
   Box,
-  Container,
   CssBaseline,
   IconButton,
-  Grid,
   ThemeProvider,
-  PaletteMode,
-  createTheme,
-  useMediaQuery,
 } from '@mui/material';
-import { Routes, Route, useLocation, Navigate } from 'react-router-dom';
 import MenuIcon from '@mui/icons-material/Menu';
-import { ReactElement, Suspense, lazy, useEffect, useState } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Navigate, useLocation } from 'react-router-dom';
 import { ErrorBoundary } from 'react-error-boundary';
 import { ErrorBoundaryFallback } from '@spiffworkflow-frontend/ErrorBoundaryFallack';
-import { pushFaroError } from './faro';
-import SideNav from './components/SideNav';
-
-import Extension from '@spiffworkflow-frontend/views/Extension';
-import { useM8flowUriListForPermissions as useUriListForPermissions } from './hooks/M8flowUriListForPermissions';
-import { PermissionsToCheck, ProcessFile, ProcessModel } from '@spiffworkflow-frontend/interfaces';
+import { UiSchemaDisplayLocation, UiSchemaUxElement } from '@spiffworkflow-frontend/extension_ui_schema_interfaces';
+import { PermissionsToCheck } from '@spiffworkflow-frontend/interfaces';
 import { usePermissionFetcher } from '@spiffworkflow-frontend/hooks/PermissionService';
-import {
-  ExtensionUiSchema,
-  UiSchemaDisplayLocation,
-  UiSchemaUxElement,
-} from '@spiffworkflow-frontend/extension_ui_schema_interfaces';
-import HttpService from './services/HttpService';
-import UserService from './services/UserService';
-import BaseRoutes from '@spiffworkflow-frontend/views/BaseRoutes';
-import BackendIsDown from '@spiffworkflow-frontend/views/BackendIsDown';
-import FrontendAccessDenied from '@spiffworkflow-frontend/views/FrontendAccessDenied';
-import Login from '@spiffworkflow-frontend/views/Login';
-import TenantAwareLogin from './views/TenantAwareLogin';
 import useAPIError from '@spiffworkflow-frontend/hooks/UseApiError';
 import ScrollToTop from '@spiffworkflow-frontend/components/ScrollToTop';
-import { createSpiffTheme } from '@spiffworkflow-frontend/assets/theme/SpiffTheme';
 import DynamicCSSInjection from '@spiffworkflow-frontend/components/DynamicCSSInjection';
+import BackendIsDown from '@spiffworkflow-frontend/views/BackendIsDown';
+import FrontendAccessDenied from '@spiffworkflow-frontend/views/FrontendAccessDenied';
 
-// M8Flow Extension: Import tenant selection
-import TenantSelectPage, {
-  M8FLOW_TENANT_STORAGE_KEY,
-} from './views/TenantSelectPage';
-import { GlobalTenantProvider, GLOBAL_TENANT_STORAGE_KEY } from './contexts/GlobalTenantContext';
+import { pushFaroError } from './faro';
+import SideNav from './components/SideNav';
+import { useUriListForPermissions } from './hooks/UriListForPermissions';
+import UserService from './services/UserService';
+import { GlobalTenantProvider } from './contexts/GlobalTenantContext';
 import { useConfig } from './utils/useConfig';
-import { RouteLoadingFallback } from './components/RouteLoadingFallback';
 import { resolveContainerContentState } from './utils/containerContentState';
+import { M8FLOW_TENANT_STORAGE_KEY } from './views/TenantSelectPage';
+import { M8flowAppRoutes } from './m8flowAppRoutes';
+import { NavActiveHighlightStyles } from './navActiveHighlightStyles';
+import { useAppShellChrome } from './useAppShellChrome';
+import { useExtensionBootstrap } from './useExtensionBootstrap';
 
-// Route-level code splitting for heavier pages.
-const ReportsPage = lazy(() => import('./views/ReportsPage'));
-const TenantManagementPage = lazy(() => import('./views/TenantManagementPage'));
-const TenantPage = lazy(() => import('./views/TenantPage'));
-const TemplateGalleryPage = lazy(() => import('./views/TemplateGalleryPage'));
-const TemplateModelerPage = lazy(() => import('./views/TemplateModelerPage'));
-const TemplateFileDiagramPage = lazy(() => import('./views/TemplateFileDiagramPage'));
-const TemplateFileFormPage = lazy(() => import('./views/TemplateFileFormPage'));
-const ProcessModelShowWithSaveAsTemplate = lazy(
-  () => import('./views/ProcessModelShowWithSaveAsTemplate'),
-);
-const ConnectorsPage = lazy(() => import('./views/Connectors'));
-const ConnectorConfigurePage = lazy(() => import('./views/ConnectorConfigure'));
-const McpConnectionPage = lazy(() => import('./views/McpConnection'));
-const ManageTokenPage = lazy(() => import('./views/ManageToken'));
-const MonitoringCeleryPage = lazy(() => import('./views/MonitoringCeleryPage'));
-const MonitoringNatsPage = lazy(() => import('./views/MonitoringNatsPage'));
-const ExternalFormAwareTaskShow = lazy(
-  () => import('./views/ExternalFormAwareTaskShow'),
-);
-
-// M8Flow Extension: clear tenant from localStorage on logout so next visit shows tenant selection
-const originalDoLogout = UserService.doLogout;
-UserService.doLogout = () => {
-  if (typeof window !== 'undefined') {
-    localStorage.removeItem(M8FLOW_TENANT_STORAGE_KEY);
-    localStorage.removeItem('m8f_tenant_id');
-    localStorage.removeItem(GLOBAL_TENANT_STORAGE_KEY);
-    document.cookie = 'm8flow_selected_tenant=; Max-Age=0; Path=/';
-  }
-  originalDoLogout();
-};
-
-/** When ENABLE_MULTITENANT: at "/" show the sign-in landing until the user authenticates. */
-function MultitenantRootGate({
-  extensionUxElements,
-  setAdditionalNavElement,
-  isMobile,
-  ability,
-  targetUris,
-  permissionsLoaded,
-}: {
-  extensionUxElements: UiSchemaUxElement[] | null;
-  setAdditionalNavElement: (el: ReactElement | null) => void;
-  isMobile: boolean;
-  ability: any;
-  targetUris: any;
-  permissionsLoaded: boolean;
-}) {
-  if (!permissionsLoaded) return null;
-
-  if (ability.can("GET", targetUris.m8flowTenantListPath)) {
-    return (
-      <RoleBasedRootGate
-        extensionUxElements={extensionUxElements}
-        setAdditionalNavElement={setAdditionalNavElement}
-        isMobile={isMobile}
-        ability={ability}
-        targetUris={targetUris}
-        permissionsLoaded={permissionsLoaded}
-      />
-    );
-  }
-
-  if (UserService.isLoggedIn()) {
-    return (
-      <RoleBasedRootGate
-        extensionUxElements={extensionUxElements}
-        setAdditionalNavElement={setAdditionalNavElement}
-        isMobile={isMobile}
-        ability={ability}
-        targetUris={targetUris}
-        permissionsLoaded={permissionsLoaded}
-      />
-    );
-  }
-
-  if (UserService.hasSelectedTenantCookie()) {
-    return (
-      <RoleBasedRootGate
-        extensionUxElements={extensionUxElements}
-        setAdditionalNavElement={setAdditionalNavElement}
-        isMobile={isMobile}
-        ability={ability}
-        targetUris={targetUris}
-        permissionsLoaded={permissionsLoaded}
-      />
-    );
-  }
-  return <TenantSelectPage />;
+function buildShellPermissionChecks(
+  targetUris: ReturnType<typeof useUriListForPermissions>['targetUris'],
+): PermissionsToCheck {
+  return {
+    [targetUris.extensionListPath]: ['GET'],
+    [targetUris.processInstanceListForMePath]: ['GET', 'POST'],
+    // Requested here so the process-instances route guard resolves once this
+    // shell's permissions load, without depending on sibling fetch ordering.
+    [targetUris.processInstanceListPath]: ['GET'],
+    [targetUris.processGroupListPath]: ['GET'],
+    [targetUris.dataStoreListPath]: ['GET'],
+    [targetUris.messageInstanceListPath]: ['GET'],
+    [targetUris.secretListPath]: ['GET'],
+    '/tasks/*': ['GET', 'PUT'],
+    [targetUris.m8flowTenantManagementPath]: ['GET'],
+    [targetUris.m8flowTenantListPath]: ['GET'],
+    [targetUris.m8flowTemplateListPath]: ['GET'],
+    [targetUris.connectorsGroupedPath]: ['GET'],
+    [targetUris.m8flowMcpConnectionPath]: ['GET'],
+  };
 }
 
-/** Redirects roles that don't have access to Home to their respective default pages. */
-function RoleBasedRootGate({
-  extensionUxElements,
-  setAdditionalNavElement,
-  isMobile,
-  ability,
-  targetUris,
-  permissionsLoaded,
-}: {
-  extensionUxElements: UiSchemaUxElement[] | null;
-  setAdditionalNavElement: (el: ReactElement | null) => void;
-  isMobile: boolean;
-  ability: any;
-  targetUris: any;
-  permissionsLoaded: boolean;
-}) {
-  if (!permissionsLoaded) return null;
-
-  // Users with task update permission can land on Home.
-  // Master super-admin can also land on Home with read-only task access.
-  if (
-    ability.can("PUT", "/tasks/*") ||
-    (UserService.isSuperAdmin() && ability.can("GET", "/tasks/*"))
-  ) {
-    return (
-      <BaseRoutes
-        extensionUxElements={extensionUxElements}
-        setAdditionalNavElement={setAdditionalNavElement}
-        isMobile={isMobile}
-      />
-    );
-  }
-
-  const fallbackRoutes: Array<{ route: string; method: string; uri: string }> =
-    [
-      {
-        route: "/process-groups",
-        method: "GET",
-        uri: targetUris.processGroupListPath,
-      },
-      {
-        route: "/process-instances",
-        method: "GET",
-        uri: targetUris.processInstanceListPath,
-      },
-      {
-        route: "/messages",
-        method: "GET",
-        uri: targetUris.messageInstanceListPath,
-      },
-      {
-        route: "/configuration",
-        method: "GET",
-        uri: targetUris.secretListPath,
-      },
-      {
-        route: "/connectors",
-        method: "GET",
-        uri: targetUris.connectorsGroupedPath,
-      },
-      {
-        route: "/templates",
-        method: "GET",
-        uri: targetUris.m8flowTemplateListPath,
-      },
-      {
-        route: "/tenant-management",
-        method: "GET",
-        uri: targetUris.m8flowTenantManagementPath,
-      },
-      {
-        route: "/tenants",
-        method: "GET",
-        uri: targetUris.m8flowTenantListPath,
-      },
-    ];
-  const firstAvailable = fallbackRoutes.find(({ method, uri }) =>
-    ability.can(method, uri),
-  );
-  if (firstAvailable) {
-    return <Navigate to={firstAvailable.route} replace />;
-  }
-
-  // No accessible routes at all — show BaseRoutes and let it handle access denied
-  return (
-    <BaseRoutes
-      extensionUxElements={extensionUxElements}
-      setAdditionalNavElement={setAdditionalNavElement}
-      isMobile={isMobile}
-    />
-  );
-}
-
-const fadeIn = 'fadeIn';
-const fadeOutImmediate = 'fadeOutImmediate';
-
-export default function ContainerForExtensions() {
-  const { t } = useTranslation();
-  const { ENABLE_MULTITENANT, NATS_MONITORING_ENABLED, MCP_CONNECTION_ENABLED } = useConfig();
-  const [backendIsUp, setBackendIsUp] = useState<boolean | null>(null);
-  const [canAccessFrontend, setCanAccessFrontend] = useState<boolean>(true);
-  const [extensionUxElements, setExtensionUxElements] = useState<
-    UiSchemaUxElement[] | null
-  >(null);
-
-  const [extensionCssFiles, setExtensionCssFiles] = useState<
-    Array<{ content: string; id: string }>
-  >([]);
-
-  const { targetUris } = useUriListForPermissions();
-  const permissionRequestData: PermissionsToCheck = {
-    [targetUris.extensionListPath]: ["GET"],
-    [targetUris.processInstanceListForMePath]: ["GET", "POST"],
-    // Requested here (not just by SideNav/ProcessInstanceListTabs) so the
-    // process-instances route guard below resolves deterministically once this
-    // component's permissions load, without depending on sibling fetch ordering.
-    [targetUris.processInstanceListPath]: ["GET"],
-    [targetUris.processGroupListPath]: ["GET"],
-    [targetUris.dataStoreListPath]: ["GET"],
-    [targetUris.messageInstanceListPath]: ["GET"],
-    [targetUris.secretListPath]: ["GET"],
-    "/tasks/*": ["GET", "PUT"],
-    [targetUris.m8flowTenantManagementPath]: ["GET"],
-    [targetUris.m8flowTenantListPath]: ["GET"],
-    [targetUris.m8flowTemplateListPath]: ["GET"],
-    [targetUris.connectorsGroupedPath]: ["GET"],
-    [targetUris.m8flowMcpConnectionPath]: ["GET"],
-  };
-  const { ability, permissionsLoaded } = usePermissionFetcher(
-    permissionRequestData,
-  );
-
-  const { removeError } = useAPIError();
-
-  const location = useLocation();
-
-  const storedTheme: PaletteMode = (localStorage.getItem('theme') ||
-    'light') as PaletteMode;
-  const [globalTheme, setGlobalTheme] = useState(
-    createTheme(createSpiffTheme(storedTheme)),
-  );
-  const isDark = globalTheme.palette.mode === 'dark';
-
-  const [displayLocation, setDisplayLocation] = useState(location);
-  const [transitionStage, setTransitionStage] = useState('fadeIn');
-  const [additionalNavElement, setAdditionalNavElement] =
-    useState<ReactElement | null>(null);
-
-  const [isNavCollapsed, setIsNavCollapsed] = useState<boolean>(() => {
-    const stored = localStorage.getItem('isNavCollapsed');
-    return stored ? JSON.parse(stored) : false;
-  });
-
-  const isMobile = useMediaQuery((theme: any) => theme.breakpoints.down('sm'));
-  const [isSideNavVisible, setIsSideNavVisible] = useState<boolean>(!isMobile);
-
-  const toggleNavCollapse = () => {
-    if (isMobile) {
-      setIsSideNavVisible(!isSideNavVisible);
-    } else {
-      const newCollapsedState = !isNavCollapsed;
-      setIsNavCollapsed(newCollapsedState);
-      localStorage.setItem('isNavCollapsed', JSON.stringify(newCollapsedState));
-    }
-  };
-
-  const toggleDarkMode = () => {
-    const desiredTheme: PaletteMode = isDark ? 'light' : 'dark';
-    setGlobalTheme(createTheme(createSpiffTheme(desiredTheme)));
-    localStorage.setItem('theme', desiredTheme);
-  };
-
+function useShellSideEffects(pathname: string, removeError: () => void) {
   useEffect(() => {
-    /**
-     * The housing app has an element with a white background
-     * and a very high z-index. This is a hack to remove it.
-     */
-    const element = document.querySelector('.cds--white');
-    if (element) {
-      element.classList.remove('cds--white');
-    }
+    document.querySelector('.cds--white')?.classList.remove('cds--white');
   }, []);
-  // never carry an error message across to a different path
+
   useEffect(() => {
     removeError();
-    // if we include the removeError function to the dependency array of this useEffect, it causes
-    // an infinite loop where the page with the error adds the error,
-    // then this runs and it removes the error, etc. it is ok not to include it here, i think, because it never changes.
+    // removeError identity is unstable; omitting it avoids an update loop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname]);
-
-  /** Respond to transition events, this softens screen changes (UX) */
-  useEffect(() => {
-    if (location !== displayLocation) {
-      // const isComingFromInterstitialOrProgress = /\/interstitial$|\/progress$/.test(displayLocation.pathname);
-      // setIsLongFadeIn(
-      //   isComingFromInterstitialOrProgress && location.pathname === '/',
-      // );
-      setTransitionStage(fadeOutImmediate);
-    }
-    if (transitionStage === fadeOutImmediate) {
-      setDisplayLocation(location);
-      setTransitionStage(fadeIn);
-    }
-  }, [location, displayLocation, transitionStage]);
+  }, [pathname]);
 
   useEffect(() => {
-    if (isMobile) {
-      setIsSideNavVisible(false);
-    } else {
-      setIsSideNavVisible(true);
-    }
-  }, [isMobile]);
-
-  useEffect(() => {
-    if (!UserService.isSuperAdmin()) {
-      return;
-    }
-    if (typeof window === 'undefined') {
+    if (!UserService.isSuperAdmin() || typeof window === 'undefined') {
       return;
     }
     localStorage.removeItem(M8FLOW_TENANT_STORAGE_KEY);
@@ -368,22 +82,17 @@ export default function ContainerForExtensions() {
   useEffect(() => {
     const onTaskCellClick = (event: MouseEvent) => {
       const target = event.target as HTMLElement | null;
-      if (!target) {
+      if (!target || target.closest('a,button,[role="button"]')) {
         return;
       }
-      if (target.closest('a,button,[role="button"]')) {
-        return;
-      }
-      const taskCell = target.closest('td[title^="task id:"]') as HTMLTableCellElement | null;
-      if (!taskCell) {
-        return;
-      }
-      const row = taskCell.closest('tr');
-      if (!row) {
-        return;
-      }
-      const taskLink = row.querySelector('a[href*="/tasks/"]') as HTMLAnchorElement | null;
-      if (!taskLink || !taskLink.href) {
+      const taskCell = target.closest(
+        'td[title^="task id:"]',
+      ) as HTMLTableCellElement | null;
+      const row = taskCell?.closest('tr');
+      const taskLink = row?.querySelector(
+        'a[href*="/tasks/"]',
+      ) as HTMLAnchorElement | null;
+      if (!taskLink?.href) {
         return;
       }
       window.location.assign(taskLink.href);
@@ -392,489 +101,222 @@ export default function ContainerForExtensions() {
     document.addEventListener('click', onTaskCellClick);
     return () => document.removeEventListener('click', onTaskCellClick);
   }, []);
+}
 
-  useEffect(() => {
-    const processExtensionResult = (processModels: ProcessModel[]) => {
-      const eni: UiSchemaUxElement[] = [];
-      const cssFiles: Array<{ content: string; id: string }> = [];
+function mergeTenantNavItems(
+  base: UiSchemaUxElement[] | null,
+  ability: { can: (m: string, u: string) => boolean },
+  tenantListPath: string,
+  tenantsLabel: string,
+): UiSchemaUxElement[] {
+  const items = [...(base || [])];
+  const showTenantsNav =
+    UserService.isSuperAdmin() && ability.can('GET', tenantListPath);
+  if (showTenantsNav) {
+    items.push({
+      page: '/../tenants',
+      label: tenantsLabel,
+      display_location: UiSchemaDisplayLocation.primary_nav_item,
+    } as UiSchemaUxElement);
+  }
+  return items;
+}
 
-      processModels.forEach((processModel: ProcessModel) => {
-        const extensionUiSchemaFile = processModel.files.find(
-          (file: ProcessFile) => file.name === 'extension_uischema.json',
-        );
-        if (extensionUiSchemaFile && extensionUiSchemaFile.file_contents) {
-          try {
-            const extensionUiSchema: ExtensionUiSchema = JSON.parse(
-              extensionUiSchemaFile.file_contents,
-            );
-            if (
-              extensionUiSchema &&
-              extensionUiSchema.ux_elements &&
-              !extensionUiSchema.disabled
-            ) {
-              // Process ux elements and extract CSS elements
-              extensionUiSchema.ux_elements.forEach(
-                (element: UiSchemaUxElement) => {
-                  if (
-                    element.display_location === UiSchemaDisplayLocation.css
-                  ) {
-                    // Find the CSS file in the process model files
-                    const cssFilename =
-                      element.location_specific_configs?.css_file;
-                    const cssFile = processModel.files.find(
-                      (file: ProcessFile) => file.name === cssFilename,
-                    );
-                    if (cssFile && cssFile.file_contents) {
-                      cssFiles.push({
-                        content: cssFile.file_contents,
-                        id: `${processModel.id}-${cssFilename}`.replace(
-                          /[^a-zA-Z0-9]/g,
-                          '-',
-                        ),
-                      });
-                    }
-                  } else {
-                    // Normal UI element
-                    eni.push(element);
-                  }
-                },
-              );
-            }
-          } catch (_jsonParseError: any) {
-            console.error(
-              `Unable to get navigation items for ${processModel.id}`,
-            );
-          }
-        }
-      });
+function ShellBody({
+  backendIsUp,
+  canAccessFrontend,
+  pathname,
+  routeTree,
+}: {
+  backendIsUp: boolean | null;
+  canAccessFrontend: boolean;
+  pathname: string;
+  routeTree: ReactNode;
+}) {
+  const contentState = resolveContainerContentState({
+    backendIsUp,
+    canAccessFrontend,
+    isLoggedIn: UserService.isLoggedIn(),
+    pathname,
+  });
 
-      if (eni.length > 0) {
-        setExtensionUxElements(eni);
-      }
-
-      if (cssFiles.length > 0) {
-        setExtensionCssFiles(cssFiles);
-      }
-    };
-
-    type HealthStatus = { ok: boolean; can_access_frontend?: boolean };
-    const getExtensions = (response: HealthStatus) => {
-      setBackendIsUp(true);
-
-      // Check if user has access to frontend
-      if (response.can_access_frontend !== undefined) {
-        setCanAccessFrontend(response.can_access_frontend);
-        if (response.can_access_frontend === false) {
-          setExtensionUxElements([]);
-          return;
-        }
-      }
-
-      if (!permissionsLoaded) {
-        return;
-      }
-      if (ability.can('GET', targetUris.extensionListPath)) {
-        HttpService.makeCallToBackend({
-          path: targetUris.extensionListPath,
-          successCallback: processExtensionResult,
-        });
-      } else {
-        // set to an empty array so we know that it loaded
-        setExtensionUxElements([]);
-      }
-    };
-
-    HttpService.makeCallToBackend({
-      path: targetUris.statusPath,
-      successCallback: getExtensions,
-      failureCallback: () => setBackendIsUp(false),
-    });
-  }, [
-    targetUris.extensionListPath,
-    targetUris.statusPath,
-    permissionsLoaded,
-    ability,
-  ]);
-
-  const routeComponents = () => {
-    return (
-      <Suspense fallback={<RouteLoadingFallback />}>
-        <Routes>
-          {/* M8Flow Extension: Tenant selection (default when ENABLE_MULTITENANT; gate shows home if tenant in localStorage) */}
-          {ENABLE_MULTITENANT && (
-            <>
-              <Route
-                path="/"
-                element={
-                  <MultitenantRootGate
-                    extensionUxElements={extensionUxElements}
-                    setAdditionalNavElement={setAdditionalNavElement}
-                    isMobile={isMobile}
-                    ability={ability}
-                    targetUris={targetUris}
-                    permissionsLoaded={permissionsLoaded}
-                  />
-                }
-              />
-              <Route path="tenant" element={<TenantSelectPage />} />
-            </>
-          )}
-          {!ENABLE_MULTITENANT && (
-            <>
-              {/* Redirect roles with no home access (like super-admin/integrator) to their defaults */}
-              <Route
-                path="/"
-                element={
-                  <RoleBasedRootGate
-                    extensionUxElements={extensionUxElements}
-                    setAdditionalNavElement={setAdditionalNavElement}
-                    isMobile={isMobile}
-                    ability={ability}
-                    targetUris={targetUris}
-                    permissionsLoaded={permissionsLoaded}
-                  />
-                }
-              />
-              <Route path="tenant" element={<Navigate to="/" replace />} />
-            </>
-          )}
-          {/* Reports route */}
-          <Route path="reports" element={<ReportsPage />} />
-          {/* M8Flow Extension: Tenant route */}
-          <Route
-            path="/tenant-management"
-            element={
-              !permissionsLoaded
-                ? null
-                : ability.can("GET", targetUris.m8flowTenantManagementPath)
-                  ? <TenantManagementPage />
-                  : <Navigate to="/" replace />
-            }
-          />
-          <Route
-            path="/tenants"
-            element={
-              !permissionsLoaded
-                ? null
-                : UserService.isSuperAdmin() && ability.can("GET", targetUris.m8flowTenantListPath)
-                  ? <TenantPage />
-                  : <Navigate to="/" replace />
-            }
-          />
-          {/* m8 Extension: Template Gallery and Template Modeler routes (more specific first) */}
-          <Route
-            path="templates/:templateId/files/:fileName"
-            element={<TemplateFileDiagramPage />}
-          />
-          <Route
-            path="templates/:templateId/form/:fileName"
-            element={<TemplateFileFormPage />}
-          />
-          <Route path="templates/:templateId" element={<TemplateModelerPage />} />
-          <Route path="templates" element={<TemplateGalleryPage />} />
-          {/* Connectors self-guards on permission + role (admin/editor/integrator). */}
-          {/* Connector-specific configuration form (more specific route first). */}
-          <Route
-            path="connectors/:connectorId/configure"
-            element={<ConnectorConfigurePage />}
-          />
-          <Route path="connectors" element={<ConnectorsPage />} />
-          {/* M8Flow Extension: MCP connection instructions; hidden unless an MCP server URL is configured. Self-guards on permission. */}
-          {MCP_CONNECTION_ENABLED && (
-            <Route path="mcp-connection" element={<McpConnectionPage />} />
-          )}
-          {/* M8Flow Extension: API token management. Self-guards on the nats-tokens permission. */}
-          <Route path="manage-token" element={<ManageTokenPage />} />
-          <Route
-            path="process-models/:process_model_id"
-            element={<ProcessModelShowWithSaveAsTemplate />}
-          />
-          {/* M8Flow Extension: Super-admin-only monitoring dashboards (Celery / NATS) */}
-          <Route
-            path="monitoring/celery"
-            element={
-              !permissionsLoaded
-                ? null
-                : UserService.isSuperAdmin()
-                  ? <MonitoringCeleryPage />
-                  : <Navigate to="/" replace />
-            }
-          />
-          {NATS_MONITORING_ENABLED && (
-            <Route
-              path="monitoring/nats"
-              element={
-                !permissionsLoaded
-                  ? null
-                  : UserService.isSuperAdmin()
-                    ? <MonitoringNatsPage />
-                    : <Navigate to="/" replace />
-              }
-            />
-          )}
-          <Route path="extensions/:page_identifier" element={<Extension />} />
-          <Route path="login" element={<TenantAwareLogin />} />
-          {/* Route guard: redirect users without process instance read access to home */}
-          {permissionsLoaded &&
-            !ability.can('GET', targetUris.processInstanceListForMePath) &&
-            !ability.can('GET', targetUris.processInstanceListPath) && (
-              <Route
-                path="process-instances/*"
-                element={<Navigate to="/" replace />}
-              />
-            )}
-          {/* m8 Extension: external-form user tasks show a "check your inbox" screen with
-              no in-app submit; all other tasks fall through to the upstream TaskShow. */}
-          <Route
-            path="tasks/:process_instance_id/:task_guid"
-            element={<ExternalFormAwareTaskShow />}
-          />
-          {/* Catch-all route must be last */}
-          <Route
-            path="*"
-            element={
-              <BaseRoutes
-                extensionUxElements={extensionUxElements}
-                setAdditionalNavElement={setAdditionalNavElement}
-                isMobile={isMobile}
-              />
-            }
-          />
-        </Routes>
-      </Suspense>
-    );
-  };
-
-  const backendIsDownPage = () => {
-    return [<BackendIsDown key="backendIsDownPage" />];
-  };
-
-  const frontendAccessDeniedPage = () => {
-    return [<FrontendAccessDenied key="frontendAccessDeniedPage" />];
-  };
-
-  const sessionExpiredRecoveryPage = () => {
-    const encodedOriginalUrl = UserService.getCurrentLocation();
-    return [
-      <Navigate
-        key="sessionExpiredRecoveryPage"
-        to={`/login?original_url=${encodedOriginalUrl}`}
-        replace
-      />,
-    ];
-  };
-
-  const innerComponents = () => {
-    const contentState = resolveContainerContentState({
-      backendIsUp,
-      canAccessFrontend,
-      isLoggedIn: UserService.isLoggedIn(),
-      pathname: location.pathname,
-    });
-
-    switch (contentState) {
-      case 'loading':
-        return [];
-      case 'backend-down':
-        return backendIsDownPage();
-      case 'frontend-access-denied':
-        return frontendAccessDeniedPage();
-      case 'session-expired-recovery':
-        return sessionExpiredRecoveryPage();
-      case 'routes':
-      default:
-        return routeComponents();
+  switch (contentState) {
+    case 'loading':
+      return null;
+    case 'backend-down':
+      return <BackendIsDown key="backendIsDownPage" />;
+    case 'frontend-access-denied':
+      return <FrontendAccessDenied key="frontendAccessDeniedPage" />;
+    case 'session-expired-recovery': {
+      const encodedOriginalUrl = UserService.getCurrentLocation();
+      return (
+        <Navigate
+          key="sessionExpiredRecoveryPage"
+          to={`/login?original_url=${encodedOriginalUrl}`}
+          replace
+        />
+      );
     }
+    case 'routes':
+    default:
+      return routeTree;
+  }
+}
+
+export default function ContainerForExtensions() {
+  const { t } = useTranslation();
+  const {
+    ENABLE_MULTITENANT,
+    NATS_MONITORING_ENABLED,
+    MCP_CONNECTION_ENABLED,
+  } = useConfig();
+  const location = useLocation();
+  const { removeError } = useAPIError();
+  const { targetUris } = useUriListForPermissions();
+  const { ability, permissionsLoaded } = usePermissionFetcher(
+    buildShellPermissionChecks(targetUris),
+  );
+
+  const chrome = useAppShellChrome(location);
+  const {
+    backendIsUp,
+    canAccessFrontend,
+    extensionUxElements,
+    extensionCssFiles,
+  } = useExtensionBootstrap({
+    ability,
+    permissionsLoaded,
+    uris: {
+      statusPath: targetUris.statusPath,
+      extensionListPath: targetUris.extensionListPath,
+    },
+  });
+
+  useShellSideEffects(location.pathname, removeError);
+
+  const gateProps = {
+    extensionUxElements,
+    setAdditionalNavElement: chrome.setAdditionalNavElement,
+    isMobile: chrome.isMobile,
+    ability,
+    targetUris,
+    permissionsLoaded,
   };
+
+  const routeTree = (
+    <M8flowAppRoutes
+      flags={{
+        ENABLE_MULTITENANT,
+        NATS_MONITORING_ENABLED,
+        MCP_CONNECTION_ENABLED,
+      }}
+      gateProps={gateProps}
+      ability={ability}
+      targetUris={targetUris}
+      permissionsLoaded={permissionsLoaded}
+    />
+  );
+
+  const navUxElements = mergeTenantNavItems(
+    extensionUxElements,
+    ability,
+    targetUris.m8flowTenantListPath,
+    t('tenants'),
+  );
 
   return (
     <GlobalTenantProvider>
-    <ThemeProvider theme={globalTheme}>
-      <CssBaseline />
-      <ScrollToTop />
-      {/* Inject any CSS files from extensions */}
-      {extensionCssFiles.map((cssFile) => (
-        <DynamicCSSInjection
-          key={cssFile.id}
-          cssContent={cssFile.content}
-          id={cssFile.id}
+      <ThemeProvider theme={chrome.globalTheme}>
+        <CssBaseline />
+        <ScrollToTop />
+        {extensionCssFiles.map(({ id, content }) => (
+          <DynamicCSSInjection key={id} cssContent={content} id={id} />
+        ))}
+        <NavActiveHighlightStyles
+          pathname={location.pathname}
+          theme={chrome.globalTheme}
         />
-      ))}
-
-      {/* Manual Highlighting for Tenants Route */}
-      {location.pathname === "/tenants" && (
-        <style>
-          {`
-            a[href$="/tenants"] {
-              background-color: ${(globalTheme.palette as any).background?.light || "#e3f2fd"} !important;
-              color: ${globalTheme.palette.primary.main} !important;
-              border-left-width: 4px !important;
-              border-style: solid !important;
-              border-color: ${globalTheme.palette.primary.main} !important;
-            }
-            a[href$="/tenants"] .MuiListItemIcon-root {
-              color: ${globalTheme.palette.primary.main} !important;
-            }
-            a[href$="/tenants"] .MuiTypography-root {
-              font-weight: bold !important;
-            }
-          `}
-        </style>
-      )}
-      {location.pathname === "/tenant-management" && (
-        <style>
-          {`
-            a[href$="/tenant-management"] {
-              background-color: ${(globalTheme.palette as any).background?.light || "#e3f2fd"} !important;
-              color: ${globalTheme.palette.primary.main} !important;
-              border-left-width: 4px !important;
-              border-style: solid !important;
-              border-color: ${globalTheme.palette.primary.main} !important;
-            }
-            a[href$="/tenant-management"] .MuiListItemIcon-root {
-              color: ${globalTheme.palette.primary.main} !important;
-            }
-            a[href$="/tenant-management"] .MuiTypography-root {
-              font-weight: bold !important;
-            }
-          `}
-        </style>
-      )}
-      {location.pathname.startsWith("/connectors") && (
-        <style>
-          {`
-            a[href$="/connectors"] {
-              background-color: ${(globalTheme.palette as any).background?.light || "#e3f2fd"} !important;
-              color: ${globalTheme.palette.primary.main} !important;
-              border-left-width: 4px !important;
-              border-style: solid !important;
-              border-color: ${globalTheme.palette.primary.main} !important;
-            }
-            a[href$="/connectors"] .MuiListItemIcon-root {
-              color: ${globalTheme.palette.primary.main} !important;
-            }
-            a[href$="/connectors"] .MuiTypography-root {
-              font-weight: bold !important;
-            }
-          `}
-        </style>
-      )}
-      {location.pathname.startsWith("/mcp-connection") && (
-        <style>
-          {`
-            a[href$="/mcp-connection"] {
-              background-color: ${(globalTheme.palette as any).background?.light || "#e3f2fd"} !important;
-              color: ${globalTheme.palette.primary.main} !important;
-              border-left-width: 4px !important;
-              border-style: solid !important;
-              border-color: ${globalTheme.palette.primary.main} !important;
-            }
-            a[href$="/mcp-connection"] .MuiListItemIcon-root {
-              color: ${globalTheme.palette.primary.main} !important;
-            }
-            a[href$="/mcp-connection"] .MuiTypography-root {
-              font-weight: bold !important;
-            }
-          `}
-        </style>
-      )}
-      <ErrorBoundary FallbackComponent={ErrorBoundaryFallback} onError={(error) => pushFaroError(error)}>
-        <Container
-          id="container-for-extensions-container"
-          maxWidth={false}
-          data-theme={globalTheme.palette.mode}
-          sx={{
-            // Hack to position the internal view over the "old" base components
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            alignItems: 'center',
-            zIndex: 1000,
-            padding: '0px !important',
-          }}
+        <ErrorBoundary
+          FallbackComponent={ErrorBoundaryFallback}
+          onError={(error) => pushFaroError(error)}
         >
-          <Grid
-            id="container-for-extensions-grid"
-            container
+          <Box
+            id="container-for-extensions-container"
+            data-theme={chrome.globalTheme.palette.mode}
+            component="main"
             sx={{
-              height: '100%',
+              position: 'absolute',
+              inset: 0,
+              zIndex: 1000,
+              p: '0 !important',
+              alignItems: 'center',
             }}
           >
             <Box
-              id="container-for-extensions-box"
+              id="container-for-extensions-grid"
               sx={{
                 display: 'flex',
                 width: '100%',
-                height: '100vh',
-                overflow: 'hidden', // Consider removing this if the child's overflow: auto is sufficient
+                height: '100%',
               }}
             >
-              {isSideNavVisible && (
-                <SideNav
-                  isCollapsed={isNavCollapsed}
-                  onToggleCollapse={toggleNavCollapse}
-                  onToggleDarkMode={toggleDarkMode}
-                  isDark={isDark}
-                  additionalNavElement={additionalNavElement}
-                  setAdditionalNavElement={setAdditionalNavElement}
-                  extensionUxElements={[
-                    ...(extensionUxElements || []),
-                    ...(UserService.isSuperAdmin() && ability?.can("GET", targetUris.m8flowTenantListPath)
-                      ? [
-                          {
-                            page: "/../tenants",
-                            label: t("tenants"),
-                            display_location:
-                              UiSchemaDisplayLocation.primary_nav_item,
-                          } as UiSchemaUxElement,
-                        ]
-                      : []),
-                  ]}
-                />
-              )}
-              {isMobile && !isSideNavVisible && (
-                <IconButton
-                  data-testid="mobile-menu-button"
-                  onClick={() => {
-                    setIsSideNavVisible(true);
-                    setIsNavCollapsed(false);
-                  }}
-                  sx={{
-                    position: 'absolute',
-                    top: 16,
-                    right: 16,
-                    zIndex: 1300,
-                  }}
-                >
-                  <MenuIcon />
-                </IconButton>
-              )}
               <Box
-                id="container-for-extensions-box-2"
-                className={`${transitionStage}`}
+                id="container-for-extensions-box"
                 sx={{
-                  bgcolor: 'background.default',
-                  minWidth: 0,
-                  height: '100%',
                   display: 'flex',
-                  flexDirection: 'column',
-                  flex: '1 1 0%',
-                  overflow: 'auto', // allow scrolling
-                }}
-                onAnimationEnd={(e) => {
-                  if (e.animationName === fadeOutImmediate) {
-                    setDisplayLocation(location);
-                    setTransitionStage(fadeIn);
-                  }
+                  width: '100%',
+                  height: '100vh',
+                  overflow: 'hidden',
                 }}
               >
-                {innerComponents()}
+                {chrome.isSideNavVisible ? (
+                  <SideNav
+                    isCollapsed={chrome.isNavCollapsed}
+                    onToggleCollapse={chrome.handleNavToggle}
+                    onToggleDarkMode={chrome.flipColorScheme}
+                    isDark={chrome.isDark}
+                    additionalNavElement={chrome.additionalNavElement}
+                    setAdditionalNavElement={chrome.setAdditionalNavElement}
+                    extensionUxElements={navUxElements}
+                  />
+                ) : null}
+
+                {chrome.isMobile && !chrome.isSideNavVisible ? (
+                  <IconButton
+                    data-testid="mobile-menu-button"
+                    onClick={chrome.openMobileNav}
+                    sx={{ position: 'absolute', top: 16, right: 16, zIndex: 1300 }}
+                  >
+                    <MenuIcon />
+                  </IconButton>
+                ) : null}
+
+                <Box
+                  id="container-for-extensions-box-2"
+                  className={chrome.transitionStage}
+                  sx={{
+                    bgcolor: 'background.default',
+                    minWidth: 0,
+                    height: '100%',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    flex: '1 1 0%',
+                    overflow: 'auto',
+                  }}
+                  onAnimationEnd={(e) => chrome.onRouteFadeEnd(e.animationName)}
+                >
+                  <ShellBody
+                    backendIsUp={backendIsUp}
+                    canAccessFrontend={canAccessFrontend}
+                    pathname={location.pathname}
+                    routeTree={routeTree}
+                  />
+                </Box>
               </Box>
             </Box>
-          </Grid>
-        </Container>
-      </ErrorBoundary>
-    </ThemeProvider>
+          </Box>
+        </ErrorBoundary>
+      </ThemeProvider>
     </GlobalTenantProvider>
   );
 }

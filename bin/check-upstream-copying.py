@@ -217,6 +217,9 @@ NONCOPYRIGHTABLE_ALLOWLIST: dict[str, str] = {
         "Minimal gunicorn boot wrapper (17 lines); overlap is the gunicorn/docker invocation idiom.",
     "m8flow-connector-proxy/bin/run_server_locally":
         "Minimal local-run wrapper (15 lines); overlap is the gunicorn/flask run invocation idiom.",
+    # Test harness one-liner — same jest-dom side-effect import every Vitest project uses.
+    "m8flow-frontend/src/test/vitest.setup.ts":
+        "Vitest setup entry; sole line is `import '@testing-library/jest-dom'` (Testing Library's required side-effect import). Non-copyrightable config/tooling contract.",
 }
 
 # Layer C1 — unambiguous copy evidence. These ALWAYS fail and are never

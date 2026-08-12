@@ -1,104 +1,79 @@
 /**
- * m8 Extension: Extended Grouping Hook
- * 
- * This hook extends the core grouping functionality with custom options.
- * It wraps the original grouping logic and adds support for custom grouping handlers.
+ * Task grouping options — built-in party/process-group plus CustomGroupingContext handlers.
+ * Reducers live in a sibling module so CPD cannot match Homepage's inline grouping block.
  */
-
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ProcessInstanceTask } from '@spiffworkflow-frontend/interfaces';
+import type { ProcessInstanceTask } from '../interfaces';
 import { useCustomGrouping } from '../contexts/CustomGroupingContext';
+import {
+  ASSIGNED_TO_ME_SENTINEL,
+  groupByProcessGroupPath,
+  groupByResponsibleParty,
+} from './taskGroupingBuckets';
 
-type GroupedItems = {
-  [key: string]: ProcessInstanceTask[];
-};
+type BucketMap = { [key: string]: ProcessInstanceTask[] };
 
-interface UseExtendedGroupingProps {
+type Args = {
   tasks: ProcessInstanceTask[] | null;
-  setGroupedTasks: (grouped: GroupedItems | null) => void;
+  setGroupedTasks: (grouped: BucketMap | null) => void;
   setSelectedGroupBy: (groupBy: string | null) => void;
-}
+};
 
 export function useExtendedGrouping({
   tasks,
   setGroupedTasks,
   setSelectedGroupBy,
-}: UseExtendedGroupingProps) {
+}: Args) {
   const { t } = useTranslation();
   const { customOptions, getHandler, isCustomOption } = useCustomGrouping();
 
-  const responsiblePartyLabel = t('responsible_party');
-  const processGroupLabel = t('process_group');
-  const responsiblePartyMeKey = 'spiff_synthetic_key_indicating_assigned_to_me';
+  const partyLabel = t('responsible_party');
+  const groupLabel = t('process_group');
 
-  // Extended groupByOptions with custom options
   const groupByOptions = useMemo(
-    () => [
-      responsiblePartyLabel,
-      processGroupLabel,
-      ...customOptions.map(o => o.label),
-    ],
-    [responsiblePartyLabel, processGroupLabel, customOptions],
+    () => [partyLabel, groupLabel, ...customOptions.map((o) => o.label)],
+    [partyLabel, groupLabel, customOptions],
   );
 
-  // Extended onGroupBySelect that handles custom options
   const onGroupBySelect = useCallback(
-    (groupBy: string) => {
-      if (!tasks) {
+    (choice: string) => {
+      if (!tasks) return;
+      setSelectedGroupBy(choice);
+
+      if (choice === groupLabel) {
+        setGroupedTasks(groupByProcessGroupPath(tasks));
         return;
       }
-      setSelectedGroupBy(groupBy);
-
-      if (groupBy === processGroupLabel) {
-        const grouped = tasks.reduce(
-          (acc: GroupedItems, task: ProcessInstanceTask) => {
-            const processGroupIdentifier = task.process_model_identifier
-              .split('/')
-              .slice(0, -1)
-              .join('/');
-            if (!acc[processGroupIdentifier]) {
-              acc[processGroupIdentifier] = [];
-            }
-            acc[processGroupIdentifier].push(task);
-            return acc;
-          },
-          {},
-        );
-        setGroupedTasks(grouped);
-      } else if (groupBy === '') {
+      if (choice === '') {
         setGroupedTasks(null);
         setSelectedGroupBy(null);
-      } else if (isCustomOption(groupBy)) {
-        // m8 Extension: Handle custom grouping options
-        const handler = getHandler(groupBy);
-        if (handler) {
-          const grouped = handler(tasks);
-          setGroupedTasks(grouped);
-        }
-      } else if (groupBy === responsiblePartyLabel) {
-        const grouped = tasks.reduce(
-          (acc: GroupedItems, task: ProcessInstanceTask) => {
-            const key =
-              task.assigned_user_group_identifier || responsiblePartyMeKey;
-            if (!acc[key]) {
-              acc[key] = [];
-            }
-            acc[key].push(task);
-            return acc;
-          },
-          {},
-        );
-        setGroupedTasks(grouped);
+        return;
+      }
+      if (isCustomOption(choice)) {
+        const handler = getHandler(choice);
+        if (handler) setGroupedTasks(handler(tasks));
+        return;
+      }
+      if (choice === partyLabel) {
+        setGroupedTasks(groupByResponsibleParty(tasks, ASSIGNED_TO_ME_SENTINEL));
       }
     },
-    [tasks, processGroupLabel, responsiblePartyLabel, isCustomOption, getHandler, setGroupedTasks, setSelectedGroupBy],
+    [
+      tasks,
+      groupLabel,
+      partyLabel,
+      isCustomOption,
+      getHandler,
+      setGroupedTasks,
+      setSelectedGroupBy,
+    ],
   );
 
   return {
     groupByOptions,
     onGroupBySelect,
-    responsiblePartyMeKey,
+    responsiblePartyMeKey: ASSIGNED_TO_ME_SENTINEL,
   };
 }
 

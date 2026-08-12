@@ -3,20 +3,12 @@ import * as cookie from 'cookie';
 import { BACKEND_BASE_URL } from '@spiffworkflow-frontend/config';
 import { AuthenticationOption } from '@spiffworkflow-frontend/interfaces';
 import { parseTaskShowUrl } from '@spiffworkflow-frontend/helpers';
+import CoreUserService from '@spiff-core/services/UserService';
 import {
   getEnableMultitenant,
   getMasterRealmIdentifier,
   getSharedRealmIdentifier,
 } from '../utils/useConfig';
-
-// NOTE: this currently stores the jwt token in local storage
-// which is considered insecure. Server set cookies seem to be considered
-// the most secure but they require both frontend and backend to be on the same
-// domain which we probably can't guarantee. We could also use cookies directly
-// but they have the same XSS issues as local storage.
-//
-// Some explanation:
-// https://dev.to/nilanth/how-to-secure-jwt-in-a-single-page-application-cko
 
 const SIGN_IN_PATH = '/';
 const AUTH_REALM_HINT_STORAGE_KEY = 'm8flow_auth_realm';
@@ -145,21 +137,16 @@ const rememberTenantDisplayName = (tenant: TenantDisplayNameReference) => {
   });
 };
 
-const getCookie = (key: string) => {
-  const parsedCookies = cookie.parse(document.cookie);
-  if (key in parsedCookies) {
-    return parsedCookies[key];
-  }
-  return null;
+// Cookie readers used by logout / tenant cookie helpers.
+const readBrowserCookie = (key: string) => {
+  const jar = cookie.parse(document.cookie);
+  return key in jar ? jar[key] : null;
 };
 
 const getCurrentLocation = (queryParams: string = globalThis.location.search) => {
-  let queryParamString = '';
-  if (queryParams) {
-    queryParamString = `${queryParams}`;
-  }
+  const suffix = queryParams ? `${queryParams}` : '';
   return encodeURIComponent(
-    `${globalThis.location.origin}${globalThis.location.pathname}${queryParamString}`,
+    `${globalThis.location.origin}${globalThis.location.pathname}${suffix}`,
   );
 };
 
@@ -241,19 +228,14 @@ const checkPathForTaskShowParams = (
   return null;
 };
 
-// required for logging out
-const getIdToken = () => {
-  return getCookie('id_token');
-};
-const getAccessToken = () => {
-  return getCookie('access_token');
-};
-const getAuthenticationIdentifier = () => {
-  return getCookie('authentication_identifier');
-};
+// Token cookies — thin wrappers around the browser cookie jar.
+const getIdToken = () => readBrowserCookie('id_token');
+const getAccessToken = () => readBrowserCookie('access_token');
+const getAuthenticationIdentifier = () =>
+  readBrowserCookie('authentication_identifier');
 
 const getSelectedTenantCookie = () => {
-  return getCookie('m8flow_selected_tenant');
+  return readBrowserCookie('m8flow_selected_tenant');
 };
 
 const hasSelectedTenantCookie = () => {
@@ -261,7 +243,7 @@ const hasSelectedTenantCookie = () => {
 };
 
 const getAuthenticationRealmHint = () => {
-  const cookieValue = getCookie(AUTH_REALM_HINT_STORAGE_KEY);
+  const cookieValue = readBrowserCookie(AUTH_REALM_HINT_STORAGE_KEY);
   if (cookieValue) {
     return cookieValue;
   }
@@ -448,15 +430,6 @@ const isLoggedIn = () => {
   return !tokenHasExpired(decodedAccessToken);
 };
 
-const isPublicUser = () => {
-  const idToken = getIdToken();
-  if (idToken) {
-    const idObject = jwtDecode(idToken);
-    return (idObject as any).public;
-  }
-  return false;
-};
-
 const SUPER_ADMIN_ROLE = 'super-admin';
 
 const groupIndicatesSuperAdmin = (group: string): boolean => {
@@ -588,80 +561,19 @@ const beginAutomaticReauthentication = ({
 };
 
 const doLogout = () => {
-  const idToken = getIdToken();
   clearAuthenticationRealmHint();
-
-  const frontendBaseUrl = globalThis.location.origin;
-  let logoutRedirectUrl = `${BACKEND_BASE_URL}/logout?redirect_url=${frontendBaseUrl}&id_token=${idToken}&authentication_identifier=${getAuthenticationIdentifier()}`;
-
-  // edge case. if the user is already logged out, just take them somewhere that will force them to sign in.
-  if (idToken === null) {
-    logoutRedirectUrl = SIGN_IN_PATH;
-  } else if (isPublicUser()) {
-    logoutRedirectUrl += '&backend_only=true';
+  const token = getIdToken();
+  if (token == null) {
+    globalThis.location.href = SIGN_IN_PATH;
+    return;
   }
 
-  globalThis.location.href = logoutRedirectUrl;
-};
-
-const getUserEmail = () => {
-  const idToken = getIdToken();
-  if (idToken) {
-    const idObject = jwtDecode(idToken);
-    return (idObject as any).email;
+  const authId = getAuthenticationIdentifier();
+  let target = `${BACKEND_BASE_URL}/logout?redirect_url=${globalThis.location.origin}&id_token=${token}&authentication_identifier=${authId}`;
+  if (CoreUserService.isPublicUser()) {
+    target += '&backend_only=true';
   }
-  return null;
-};
-
-const getUserName = () => {
-  const idToken = getIdToken();
-  if (idToken) {
-    const idObject = jwtDecode(idToken);
-    return (idObject as any).username;
-  }
-  return null;
-};
-
-const authenticationDisabled = () => {
-  const idToken = getIdToken();
-  if (idToken) {
-    const idObject = jwtDecode(idToken);
-    return (idObject as any).authentication_disabled;
-  }
-  return false;
-};
-
-/**
- * Return prefered username
- * Somehow if using Google as the OpenID provider, the field `preferred_username` is not returned
- * therefore a special handling is added to cover the issue.
- * Please refer to following link, section 5.1 Standard Claims to find the details:
- * https://openid.net/specs/openid-connect-core-1_0.html
- * @returns string
- */
-const getPreferredUsername = () => {
-  const idToken = getIdToken();
-  if (idToken) {
-    const idObject = jwtDecode(idToken);
-
-    if (idToken === undefined || idToken === 'undefined') {
-      return null;
-    }
-
-    if ((idObject as any).preferred_username !== undefined) {
-      return (idObject as any).preferred_username;
-    }
-
-    if ((idObject as any).name !== undefined) {
-      // note: handling response if OpenID is using Google SSO as the provider
-      return (idObject as any).name;
-    }
-
-    // fallback to `given_name` as the default value.
-    return (idObject as any).given_name;
-  }
-
-  return null;
+  globalThis.location.href = target;
 };
 
 const getTenantId = (): string | null => {
@@ -764,7 +676,7 @@ const getTenantName = (): string | null => {
 };
 
 const UserService = {
-  authenticationDisabled,
+  authenticationDisabled: CoreUserService.authenticationDisabled,
   beginAutomaticReauthentication,
   doLogin,
   doLogout,
@@ -772,17 +684,17 @@ const UserService = {
   getAuthenticationIdentifier,
   getAuthenticationRealmHint,
   getCurrentLocation,
-  getPreferredUsername,
+  getPreferredUsername: CoreUserService.getPreferredUsername,
   getOrganizationMemberships,
   getSelectedTenantCookie,
-  getUserEmail,
-  getUserName,
+  getUserEmail: CoreUserService.getUserEmail,
+  getUserName: CoreUserService.getUserName,
   getTenantId,
   rememberTenantDisplayName,
   hasSelectedTenantCookie,
   isLoggedIn,
   isSuperAdmin,
-  isPublicUser,
+  isPublicUser: CoreUserService.isPublicUser,
   redirectToLogin,
   setTenantId,
   TENANT_DISPLAY_NAME_UPDATED_EVENT,

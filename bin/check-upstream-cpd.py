@@ -28,7 +28,9 @@ narrow scope as a coverage gap.
 A checked-in baseline (bin/upstream-cpd-baseline.json) grandfathers the
 clones that already exist so the gate blocks only NEW cross-tree clones and
 regressions (a bigger duplicated block against the same counterpart). Clones drop
-out of the baseline as files are remediated.
+out of the baseline as files are remediated. Paths listed in
+NONCOPYRIGHTABLE_ALLOWLIST are exempted with reviewable rationale (library API /
+props contract / scenes a faire) and never re-enter a regenerated baseline.
 
 Fail-closed behavior (license gate must not silently PASS when misconfigured):
 - Owned + upstream trees for each scanned language must exist (run fetch-upstream).
@@ -97,6 +99,22 @@ BASELINE_RECOVERY_RATIO = 0.5
 
 SKIP_DIR_PARTS = {"node_modules", "__pycache__", ".venv", "dist", "build", "coverage", "__snapshots__", ".git"}
 
+# Path-exact waivers for residual token clones that are non-copyrightable
+# (library API / props contract / scènes à faire), mirroring
+# bin/check-upstream-copying.py's NONCOPYRIGHTABLE_ALLOWLIST. Allowlisted owned
+# files are omitted from regenerated baselines and similarity violations; they
+# are still scanned so a future larger clone against a new counterpart would
+# surface if the path were removed from this map.
+NONCOPYRIGHTABLE_ALLOWLIST: dict[str, str] = {
+    # Map ticket 14 — diagram cluster: props/API contract + bpmn-js modeler config.
+    "m8flow-frontend/src/components/ReactDiagramEditor.types.ts":
+        "Diagram editor props type contract (ReactDiagramEditorProps); prop names are the call-site API surface plus m8flow hideDeleteButton/hideViewXmlButton.",
+    "m8flow-frontend/src/components/useDiagramModeler.ts":
+        "bpmn-js / dmn-js modeler construction and library wiring (scenes a faire / published package API); copyrightable import/event logic was rewritten in ticket 14.",
+    # Map ticket 17 — agreed residual after clean-room rewrite of the tent-pole patch.
+    "m8flow-backend/src/m8flow_backend/services/process_instance_service_patch.py":
+        "Residual ~97-token clone is the spiff run-process-instance API call flow (scenes a faire); copyrightable branches were rewritten in ticket 17.",
+}
 
 def find_pmd() -> str:
     env = os.environ.get("PMD_BIN")
@@ -293,18 +311,30 @@ def collect(pmd: str, min_tokens: int, ignore_identifiers: bool, ignore_literals
     return pairs
 
 
+def drop_allowlisted(pairs: dict[str, dict[str, int]]) -> dict[str, dict[str, int]]:
+    """Omit owned paths on NONCOPYRIGHTABLE_ALLOWLIST from gate/baseline maps."""
+    return {
+        owned: ups
+        for owned, ups in pairs.items()
+        if owned not in NONCOPYRIGHTABLE_ALLOWLIST
+    }
+
+
 def build_baseline(pairs: dict[str, dict[str, int]], min_tokens: int, ignore_identifiers: bool, ignore_literals: bool) -> dict:
+    gated = drop_allowlisted(pairs)
     return {
         "_comment": (
             "Grandfathered cross-tree CPD clones (owned <-> upstream). The gate blocks "
             "NEW clones and REGRESSIONS (larger duplicated blocks) beyond these token "
-            "counts; clones drop out as files are remediated. Regenerate with: "
+            "counts; clones drop out as files are remediated. Paths on "
+            "NONCOPYRIGHTABLE_ALLOWLIST are omitted (exempt with rationale, not "
+            "remediation-pending). Regenerate with: "
             "bin/check-upstream-cpd.py --write-baseline bin/upstream-cpd-baseline.json"
         ),
         "min_tokens": min_tokens,
         "ignore_identifiers": ignore_identifiers,
         "ignore_literals": ignore_literals,
-        "clones": {o: dict(sorted(ups.items())) for o, ups in sorted(pairs.items())},
+        "clones": {o: dict(sorted(ups.items())) for o, ups in sorted(gated.items())},
     }
 
 
@@ -381,7 +411,9 @@ def main() -> int:
     pmd = find_pmd()
     ignore_identifiers = not args.no_ignore_identifiers
     ignore_literals = not args.no_ignore_literals
-    pairs = collect(pmd, args.min_tokens, ignore_identifiers, ignore_literals)
+    pairs = drop_allowlisted(
+        collect(pmd, args.min_tokens, ignore_identifiers, ignore_literals)
+    )
 
     if args.write_baseline:
         baseline = build_baseline(pairs, args.min_tokens, ignore_identifiers, ignore_literals)
