@@ -22,8 +22,8 @@ vi.mock('@spiffworkflow-frontend/hooks/PermissionService', () => ({
   })),
 }));
 
-vi.mock('../hooks/M8flowUriListForPermissions', () => ({
-  useM8flowUriListForPermissions: vi.fn(() => ({
+vi.mock('../hooks/UriListForPermissions', () => ({
+  useUriListForPermissions: vi.fn(() => ({
     targetUris: {
       processGroupListPath: '/process-groups',
       processInstanceListPath: '/process-instances',

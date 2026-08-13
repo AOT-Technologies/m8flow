@@ -1,6 +1,7 @@
 # m8flow-backend/src/m8flow_backend/services/tenant_scoping_patch.py
 from __future__ import annotations
 
+import importlib
 from collections.abc import Mapping
 from collections.abc import Sequence
 from typing import Any
@@ -10,8 +11,6 @@ from sqlalchemy import event, tuple_
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import with_loader_criteria
 
-from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin
-from m8flow_backend.models.tenant_scoped import TenantScoped
 from m8flow_backend.services.tenant_identity_helpers import current_tenant_id_or_none
 from m8flow_backend.tenancy import (
     LOGGER,
@@ -22,6 +21,50 @@ from m8flow_backend.tenancy import (
 
 _ORIGINALS: dict[str, Any] = {}
 _PATCHED = False
+
+_TENANT_ENTITIES: list[type] | None = None
+
+
+def _tenant_scoped_entities() -> list[type]:
+    """Every mapped class carrying m8f_tenant_id, regardless of its base classes.
+
+    m8flow's tenant column is applied to upstream tables by
+    m8flow_backend.models.tenant_schema, so tenant-scoped classes no longer
+    inherit M8fTenantScopedMixin.  Detection must therefore be column-based.
+    Any class that does still use the mixin (m8flow's own models) is included
+    too, because it has the column.
+
+    Cached after the first successful resolution; mappers are stable once the
+    application has booted.
+    """
+    global _TENANT_ENTITIES
+    if _TENANT_ENTITIES is not None:
+        return _TENANT_ENTITIES
+
+    try:
+        from spiffworkflow_backend.models.db import db
+
+        entities = [
+            mapper.class_
+            for mapper in db.Model.registry.mappers
+            if "m8f_tenant_id" in mapper.columns
+        ]
+    except Exception:  # mappers not configured yet - retry on the next query
+        LOGGER.debug("tenant scoping: mappers not ready, deferring entity resolution")
+        return []
+
+    if not entities:
+        return []
+
+    _TENANT_ENTITIES = entities
+    LOGGER.info("tenant scoping: %d tenant-scoped entities resolved", len(entities))
+    return _TENANT_ENTITIES
+
+
+def reset_tenant_scoped_entities() -> None:
+    """Clear the cache. For tests that build mappers more than once."""
+    global _TENANT_ENTITIES
+    _TENANT_ENTITIES = None
 
 
 def _require_tenant_scope_id() -> str:
@@ -114,7 +157,9 @@ def _patch_insert_or_ignore_duplicate() -> None:
         postgres_conflict_index_elements: list[str],
     ) -> Any:
         """Insert record(s), ignoring duplicates, with tenant scoping."""
-        if isinstance(model_class, type) and issubclass(model_class, TenantScoped):
+        # Column-based, not MRO-based: see _tenant_scoped_entities(). Upstream
+        # models get m8f_tenant_id from tenant_schema, not from TenantScoped.
+        if isinstance(model_class, type) and hasattr(model_class, "m8f_tenant_id"):
             if is_tenant_context_exempt_request() and not _locked_tenant_id_for_writes():
                 return _ORIGINALS["insert_or_ignore_duplicate"](
                     model_class, values, postgres_conflict_index_elements
@@ -130,6 +175,33 @@ def _patch_insert_or_ignore_duplicate() -> None:
         return _ORIGINALS["insert_or_ignore_duplicate"](model_class, values, postgres_conflict_index_elements)
 
     db_utils.insert_or_ignore_duplicate = patched_insert_or_ignore_duplicate
+
+    # Some upstream modules bind the function at import time:
+    #     from spiffworkflow_backend.utils.db_utils import insert_or_ignore_duplicate
+    # Patching db_utils alone leaves those bindings pointing at the ORIGINAL, so
+    # their inserts would bypass tenant scoping. Rebind the name in each module
+    # that imported it directly.
+    #
+    # This is why m8flow's copied models called db_utils.insert_or_ignore_duplicate()
+    # instead of importing the function - rebinding here removes the need for the copy.
+    for module_name in (
+        "spiffworkflow_backend.models.task_definition",
+        "spiffworkflow_backend.models.bpmn_process_definition",
+        "spiffworkflow_backend.models.json_data",
+    ):
+        try:
+            module = importlib.import_module(module_name)
+        except ImportError:
+            LOGGER.debug("tenant scoping: %s not importable, skipping rebind", module_name)
+            continue
+        if hasattr(module, "insert_or_ignore_duplicate"):
+            module.insert_or_ignore_duplicate = patched_insert_or_ignore_duplicate
+        else:
+            LOGGER.warning(
+                "tenant scoping: %s no longer imports insert_or_ignore_duplicate directly; "
+                "upstream may have changed - verify tenant scoping still applies there",
+                module_name,
+            )
 
 
 def _patch_task_draft_data() -> None:
@@ -356,7 +428,7 @@ def _set_tenant_on_flush(session: Session, _flush_context: Any, _instances: Any)
 
 
 def _tenant_scope_queries(execute_state: Any) -> None:
-    """Apply tenant scoping to all queries for TenantScoped models."""
+    """Apply tenant scoping to all queries for tenant-scoped models."""
     if is_tenant_context_exempt_request():
         return
     if not execute_state.is_select:
@@ -381,13 +453,24 @@ def _tenant_scope_queries(execute_state: Any) -> None:
         tenant_id = _resolve_tenant_id_for_db()
     except RuntimeError:
         return
+    # Detect tenant-scoped entities by the presence of the column, not by class
+    # inheritance.  Upstream models now receive m8f_tenant_id from
+    # m8flow_backend.models.tenant_schema rather than from M8fTenantScopedMixin,
+    # so an MRO-based check would silently stop filtering reads while writes
+    # continued to be stamped -- i.e. a cross-tenant data leak with no error.
+    entities = _tenant_scoped_entities()
+    if not entities:
+        return
     execute_state.statement = execute_state.statement.options(
-        with_loader_criteria(
-            M8fTenantScopedMixin,
-            lambda cls: cls.m8f_tenant_id == tenant_id,
-            include_aliases=True,
-            track_closure_variables=True,
-        )
+        *[
+            with_loader_criteria(
+                entity,
+                lambda cls: cls.m8f_tenant_id == tenant_id,
+                include_aliases=True,
+                track_closure_variables=True,
+            )
+            for entity in entities
+        ]
     )
 
 

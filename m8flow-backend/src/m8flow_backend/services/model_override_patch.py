@@ -10,47 +10,12 @@ from types import ModuleType
 
 
 # Mapping of spiffworkflow_backend model modules to their m8flow_backend overrides.
-_OVERRIDES = {
-    "spiffworkflow_backend.models.api_log_model": "m8flow_backend.models.api_log_model",
-    "spiffworkflow_backend.models.bpmn_process": "m8flow_backend.models.bpmn_process",
-    "spiffworkflow_backend.models.bpmn_process_definition": "m8flow_backend.models.bpmn_process_definition",
-    "spiffworkflow_backend.models.bpmn_process_definition_relationship": "m8flow_backend.models.bpmn_process_definition_relationship",
-    "spiffworkflow_backend.models.configuration": "m8flow_backend.models.configuration",
-    "spiffworkflow_backend.models.future_task": "m8flow_backend.models.future_task",
-    "spiffworkflow_backend.models.human_task": "m8flow_backend.models.human_task",
-    "spiffworkflow_backend.models.human_task_user": "m8flow_backend.models.human_task_user",
-    "spiffworkflow_backend.models.json_data_store": "m8flow_backend.models.json_data_store",
-    "spiffworkflow_backend.models.kkv_data_store": "m8flow_backend.models.kkv_data_store",
-    "spiffworkflow_backend.models.kkv_data_store_entry": "m8flow_backend.models.kkv_data_store_entry",
-    "spiffworkflow_backend.models.message_instance": "m8flow_backend.models.message_instance",
-    "spiffworkflow_backend.models.message_instance_correlation": "m8flow_backend.models.message_instance_correlation",
-    "spiffworkflow_backend.models.message_model": "m8flow_backend.models.message_model",
-    "spiffworkflow_backend.models.message_triggerable_process_model": "m8flow_backend.models.message_triggerable_process_model",
-    "spiffworkflow_backend.models.permission_assignment": "m8flow_backend.models.permission_assignment",
-    "spiffworkflow_backend.models.permission_target": "m8flow_backend.models.permission_target",
-    "spiffworkflow_backend.models.process_caller": "m8flow_backend.models.process_caller",
-    "spiffworkflow_backend.models.process_caller_relationship": "m8flow_backend.models.process_caller_relationship",
-    "spiffworkflow_backend.models.process_instance": "m8flow_backend.models.process_instance",
-    "spiffworkflow_backend.models.process_instance_error_detail": "m8flow_backend.models.process_instance_error_detail",
-    "spiffworkflow_backend.models.process_instance_event": "m8flow_backend.models.process_instance_event",
-    "spiffworkflow_backend.models.process_instance_file_data": "m8flow_backend.models.process_instance_file_data",
-    "spiffworkflow_backend.models.process_instance_metadata": "m8flow_backend.models.process_instance_metadata",
-    "spiffworkflow_backend.models.process_instance_migration_detail": "m8flow_backend.models.process_instance_migration_detail",
-    "spiffworkflow_backend.models.process_instance_queue": "m8flow_backend.models.process_instance_queue",
-    "spiffworkflow_backend.models.process_instance_report": "m8flow_backend.models.process_instance_report",
-    "spiffworkflow_backend.models.process_model_cycle": "m8flow_backend.models.process_model_cycle",
-    "spiffworkflow_backend.models.pkce_code_verifier": "m8flow_backend.models.pkce_code_verifier",
-    "spiffworkflow_backend.models.reference_cache": "m8flow_backend.models.reference_cache",
-    "spiffworkflow_backend.models.refresh_token": "m8flow_backend.models.refresh_token",
-    "spiffworkflow_backend.models.secret_model": "m8flow_backend.models.secret_model",
-    "spiffworkflow_backend.models.service_account": "m8flow_backend.models.service_account",
-    "spiffworkflow_backend.models.task": "m8flow_backend.models.task",
-    "spiffworkflow_backend.models.task_definition": "m8flow_backend.models.task_definition",
-    "spiffworkflow_backend.models.task_draft_data": "m8flow_backend.models.task_draft_data",
-    "spiffworkflow_backend.models.task_instructions_for_end_user": "m8flow_backend.models.task_instructions_for_end_user",
-    "spiffworkflow_backend.models.typeahead": "m8flow_backend.models.typeahead",
-    "spiffworkflow_backend.models.user": "m8flow_backend.models.user",
-}
+# Model overrides are no longer used. m8flow's schema delta is applied to
+# upstream's tables by m8flow_backend.models.tenant_schema, so upstream's own
+# model classes already carry m8flow's columns - there is nothing to override.
+#
+# Do not add entries here. Schema changes go in models/tenant_schema.py.
+_OVERRIDES: dict[str, str] = {}
 
 _PATCHED = False
 LOGGER = logging.getLogger(__name__)

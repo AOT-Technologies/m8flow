@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import contextlib
+import contextvars
+from collections.abc import Iterator
+
 import flask.wrappers
 from flask import current_app
 from flask import jsonify
 from flask import make_response
-from sqlalchemy import desc
-from sqlalchemy import func
 
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
 from m8flow_backend.services.tenant_identity_helpers import display_group_identifier
@@ -14,13 +16,23 @@ from m8flow_backend.tenancy import is_super_admin_request
 _MODULE_PATCHED = False
 _ORIGINAL_TASK_DATA_SHOW: object | None = None
 
+_omit_user_ownership_filter: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "m8flow_omit_task_user_ownership_filter", default=False
+)
+_task_list_tenant_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "m8flow_task_list_tenant_id", default=None
+)
+_task_list_tenant_filter_applied: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "m8flow_task_list_tenant_filter_applied", default=False
+)
+
 
 def _task_data_for_display(task_model: object) -> dict:
     task_data = task_model.get_data()
     if isinstance(task_data, dict) and task_data:
         return task_data
 
-    # Completed user tasks keep submitted fields in the serialized delta, not the task-data hashes.
+    # Completed user tasks keep submitted fields in the serialized delta.
     properties_json = getattr(task_model, "properties_json", None)
     if not isinstance(properties_json, dict):
         return task_data if isinstance(task_data, dict) else {}
@@ -59,12 +71,7 @@ def _rewrite_assigned_group_identifiers(response: flask.wrappers.Response) -> fl
 
 
 def _extract_process_instance_id(args: tuple[object, ...], kwargs: dict[str, object]) -> int | None:
-    """Pull process_instance_id from the upstream task_list_my_tasks call signature.
-
-    Upstream signature is task_list_my_tasks(process_instance_id=None, page=1, per_page=100).
-    Connexion passes query params by name, so it normally arrives as the
-    process_instance_id kwarg, but guard against positional usage too.
-    """
+    """Read process_instance_id from kwargs or the first positional arg."""
     value = kwargs.get("process_instance_id")
     if value is None and args:
         value = args[0]
@@ -83,6 +90,126 @@ def _rule_looks_like_task_data_show(rule: object) -> bool:
     return "task-data" in rule_path and "task_guid" in rule_path and "process_instance_id" in rule_path
 
 
+def _page_and_per_page_from_task_list_call(
+    args: tuple[object, ...], kwargs: dict[str, object]
+) -> tuple[object, object]:
+    """Normalize page/per_page across task-list call shapes."""
+    page = kwargs.get("page", 1)
+    per_page = kwargs.get("per_page", 100)
+    if len(args) >= 2:
+        page = args[1]
+    elif len(args) >= 1 and "page" not in kwargs:
+        page = args[0]
+    if len(args) >= 3:
+        per_page = args[2]
+    return page, per_page
+
+
+def _is_process_initiator_ownership_clause(criterion: object) -> bool:
+    """True when a SQLAlchemy criterion filters on process_initiator_id."""
+    try:
+        for side in (getattr(criterion, "left", None), getattr(criterion, "right", None)):
+            if side is None:
+                continue
+            name = getattr(side, "key", None) or getattr(side, "name", None)
+            if name == "process_initiator_id":
+                return True
+            inner = getattr(side, "element", None)
+            inner_name = getattr(inner, "key", None) or getattr(inner, "name", None)
+            if inner_name == "process_initiator_id":
+                return True
+    except Exception:
+        pass
+    return "process_initiator_id" in str(criterion)
+
+
+def _enrich_task_list_results_with_tenant_fields(response: flask.wrappers.Response) -> flask.wrappers.Response:
+    """Attach tenantId/tenantName to open-task rows for super-admin lists."""
+    payload = response.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return response
+
+    results = payload.get("results")
+    if not isinstance(results, list) or not results:
+        return response
+
+    from spiffworkflow_backend.models.process_instance import ProcessInstanceModel
+
+    process_instance_ids: set[int] = set()
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        raw_id = result.get("process_instance_id")
+        if isinstance(raw_id, int):
+            process_instance_ids.add(raw_id)
+
+    tenant_id_by_pi: dict[int, str | None] = {}
+    if process_instance_ids:
+        rows = (
+            ProcessInstanceModel.query.filter(ProcessInstanceModel.id.in_(process_instance_ids))
+            .with_entities(ProcessInstanceModel.id, ProcessInstanceModel.m8f_tenant_id)
+            .all()
+        )
+        tenant_id_by_pi = {row[0]: row[1] for row in rows}
+
+    tenant_ids = {tid for tid in tenant_id_by_pi.values() if isinstance(tid, str) and tid}
+    tenant_name_by_id: dict[str, str] = {}
+    if tenant_ids:
+        tenants = M8flowTenantModel.query.filter(M8flowTenantModel.id.in_(tenant_ids)).all()
+        tenant_name_by_id = {t.id: t.name for t in tenants}
+
+    enriched: list[object] = []
+    for result in results:
+        if not isinstance(result, dict):
+            enriched.append(result)
+            continue
+        item = dict(result)
+        pi_id = item.get("process_instance_id")
+        tid = tenant_id_by_pi.get(pi_id) if isinstance(pi_id, int) else item.get("tenant_id")
+        item["tenantId"] = tid
+        item["tenant_id"] = tid
+        item["tenantName"] = tenant_name_by_id.get(tid) if isinstance(tid, str) else None
+        enriched.append(item)
+
+    payload["results"] = enriched
+    return make_response(jsonify(payload), response.status_code)
+
+
+@contextlib.contextmanager
+def _get_tasks_without_user_ownership(tenant_id: str | None) -> Iterator[None]:
+    """Call `_get_tasks` with initiator ownership filters removed; optional SA tenant predicate."""
+    from sqlalchemy.orm import Query
+
+    omit_token = _omit_user_ownership_filter.set(True)
+    tenant_token = _task_list_tenant_id.set(tenant_id)
+    applied_token = _task_list_tenant_filter_applied.set(False)
+    original_filter = Query.filter
+
+    def _filter_without_user_ownership(self, *criteria):  # noqa: ANN001
+        if not _omit_user_ownership_filter.get():
+            return original_filter(self, *criteria)
+
+        stripped = tuple(c for c in criteria if not _is_process_initiator_ownership_clause(c))
+        query = original_filter(self, *stripped) if stripped else self
+
+        pending_tenant_id = _task_list_tenant_id.get()
+        if pending_tenant_id and not _task_list_tenant_filter_applied.get():
+            from spiffworkflow_backend.models.process_instance import ProcessInstanceModel
+
+            _task_list_tenant_filter_applied.set(True)
+            query = original_filter(query, ProcessInstanceModel.m8f_tenant_id == pending_tenant_id)
+        return query
+
+    Query.filter = _filter_without_user_ownership  # type: ignore[method-assign]
+    try:
+        yield
+    finally:
+        Query.filter = original_filter  # type: ignore[method-assign]
+        _omit_user_ownership_filter.reset(omit_token)
+        _task_list_tenant_id.reset(tenant_token)
+        _task_list_tenant_filter_applied.reset(applied_token)
+
+
 def _apply_module_patches():
     import importlib
 
@@ -94,8 +221,7 @@ def _apply_module_patches():
 
     original_get_tasks = tasks_controller._get_tasks
     original_task_list_my_tasks = tasks_controller.task_list_my_tasks
-    # Upstream task list endpoints have varied across versions; fall back to _get_tasks
-    # when a specific handler does not exist.
+    # Older Spiff builds omit some list handlers; fall back to _get_tasks.
     original_task_list_for_me = getattr(tasks_controller, "task_list_for_me", original_get_tasks)
     original_task_list_for_my_open_processes = getattr(
         tasks_controller, "task_list_for_my_open_processes", original_get_tasks
@@ -103,149 +229,67 @@ def _apply_module_patches():
     original_task_list_for_my_groups = getattr(tasks_controller, "task_list_for_my_groups", original_get_tasks)
     _ORIGINAL_TASK_DATA_SHOW = getattr(tasks_controller, "task_data_show", None)
 
-    def _task_list_all_open_tasks(*args, **kwargs) -> flask.wrappers.Response:
-        # Compatibility with upstream task-list signatures:
-        # - task_list_my_tasks(process_instance_id=None, page=1, per_page=100)
-        # - task_list_for_me(page=1, per_page=100)
-        page = kwargs.get("page", 1)
-        per_page = kwargs.get("per_page", 100)
-        if len(args) >= 2:
-            page = args[1]
-        elif len(args) >= 1 and "page" not in kwargs:
-            # Covers signatures where first positional arg is page.
-            page = args[0]
-        if len(args) >= 3:
-            per_page = args[2]
+    def patched_get_tasks(
+        processes_started_by_user: bool = True,
+        has_lane_assignment_id: bool = True,
+        page: int = 1,
+        per_page: int = 100,
+        user_group_identifier: str | None = None,
+        *,
+        omit_user_ownership_filter: bool = False,
+    ) -> flask.wrappers.Response:
+        if not omit_user_ownership_filter:
+            return _rewrite_assigned_group_identifiers(
+                original_get_tasks(
+                    processes_started_by_user=processes_started_by_user,
+                    has_lane_assignment_id=has_lane_assignment_id,
+                    page=page,
+                    per_page=per_page,
+                    user_group_identifier=user_group_identifier,
+                )
+            )
 
         from flask import request as flask_request
-        from spiffworkflow_backend.models.group import GroupModel
-        from spiffworkflow_backend.models.human_task import HumanTaskModel
-        from spiffworkflow_backend.models.human_task_user import HumanTaskUserModel
-        from spiffworkflow_backend.models.process_instance import ProcessInstanceModel
-        from spiffworkflow_backend.models.process_instance import ProcessInstanceStatus
-        from spiffworkflow_backend.models.user import UserModel
-        from spiffworkflow_backend.models.db import db
 
-        assigned_user = tasks_controller.aliased(UserModel)
-        human_tasks_query = (
-            db.session.query(HumanTaskModel)
-            .group_by(HumanTaskModel.id)  # type: ignore
-            .outerjoin(GroupModel, GroupModel.id == HumanTaskModel.lane_assignment_id)
-            .join(ProcessInstanceModel)
-            .join(UserModel, UserModel.id == ProcessInstanceModel.process_initiator_id)
-            .outerjoin(HumanTaskUserModel, HumanTaskModel.id == HumanTaskUserModel.human_task_id)
-            .outerjoin(assigned_user, assigned_user.id == HumanTaskUserModel.user_id)
-            .filter(
-                HumanTaskModel.completed == False,  # noqa: E712
-                ProcessInstanceModel.status != ProcessInstanceStatus.error.value,
+        try:
+            filter_tenant_id = flask_request.args.get("tenantId") or flask_request.args.get("tenant_id")
+        except RuntimeError:
+            filter_tenant_id = None
+
+        with _get_tasks_without_user_ownership(filter_tenant_id):
+            response = original_get_tasks(
+                processes_started_by_user=True,
+                page=page,
+                per_page=per_page,
             )
+        return _rewrite_assigned_group_identifiers(
+            _enrich_task_list_results_with_tenant_fields(response)
         )
 
-        # Super admin tenant filter
-        filter_tenant_id = flask_request.args.get("tenantId") or flask_request.args.get("tenant_id")
-        if filter_tenant_id:
-            human_tasks_query = human_tasks_query.filter(
-                ProcessInstanceModel.m8f_tenant_id == filter_tenant_id
-            )
-
-        potential_owner_usernames = tasks_controller._get_potential_owner_usernames(assigned_user)
-
-        process_model_identifier_column = ProcessInstanceModel.process_model_identifier
-        process_instance_status_column = ProcessInstanceModel.status.label("process_instance_status")  # type: ignore
-        user_username_column = UserModel.username.label("process_initiator_username")  # type: ignore
-        group_identifier_column = GroupModel.identifier.label("assigned_user_group_identifier")  # type: ignore
-        lane_name_column = HumanTaskModel.lane_name
-        tenant_id_column = ProcessInstanceModel.m8f_tenant_id.label("tenant_id")  # type: ignore
-        if current_app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] == "postgres":
-            process_model_identifier_column = func.max(ProcessInstanceModel.process_model_identifier).label(
-                "process_model_identifier"
-            )
-            process_instance_status_column = func.max(ProcessInstanceModel.status).label("process_instance_status")
-            user_username_column = func.max(UserModel.username).label("process_initiator_username")
-            group_identifier_column = func.max(GroupModel.identifier).label("assigned_user_group_identifier")
-            lane_name_column = func.max(HumanTaskModel.lane_name).label("lane_name")
-            tenant_id_column = func.max(ProcessInstanceModel.m8f_tenant_id).label("tenant_id")
-
-        human_tasks = (
-            human_tasks_query.add_columns(
-                process_model_identifier_column,
-                process_instance_status_column,
-                user_username_column,
-                group_identifier_column,
-                HumanTaskModel.task_name,
-                HumanTaskModel.task_title,
-                HumanTaskModel.process_model_display_name,
-                HumanTaskModel.process_instance_id,
-                HumanTaskModel.updated_at_in_seconds,
-                HumanTaskModel.created_at_in_seconds,
-                HumanTaskModel.json_metadata,
-                lane_name_column,
-                potential_owner_usernames,
-                tenant_id_column,
-            )
-            .order_by(desc(HumanTaskModel.id))  # type: ignore
-            .paginate(page=page, per_page=per_page, error_out=False)
-        )
-
-        # Enrich with tenant names
-        items = human_tasks.items
-        tenant_ids = {getattr(item, "tenant_id", None) for item in items if getattr(item, "tenant_id", None)}
-        tenant_name_by_id: dict[str, str] = {}
-        if tenant_ids:
-            tenants = M8flowTenantModel.query.filter(M8flowTenantModel.id.in_(tenant_ids)).all()
-            tenant_name_by_id = {t.id: t.name for t in tenants}
-
-        items_with_tenant: list = []
-        for item in items:
-            if hasattr(item, "_asdict"):
-                item_dict = dict(item._asdict())
-            elif hasattr(item, "__dict__"):
-                item_dict = {k: v for k, v in item.__dict__.items() if not k.startswith("_")}
-            else:
-                item_dict = item  # type: ignore[assignment]
-            if isinstance(item_dict, dict):
-                tid = item_dict.get("tenant_id")
-                item_dict["tenantId"] = tid
-                item_dict["tenantName"] = tenant_name_by_id.get(tid) if tid else None
-            items_with_tenant.append(item_dict)
-
-        response_json = {
-            "results": items_with_tenant,
-            "pagination": {
-                "count": len(items_with_tenant),
-                "total": human_tasks.total,
-                "pages": human_tasks.pages,
-            },
-        }
-        return make_response(jsonify(response_json), 200)
-
-    def patched_get_tasks(*args, **kwargs) -> flask.wrappers.Response:
-        return _rewrite_assigned_group_identifiers(original_get_tasks(*args, **kwargs))
+    def _task_list_all_open_tasks(*args, **kwargs) -> flask.wrappers.Response:
+        page, per_page = _page_and_per_page_from_task_list_call(args, kwargs)
+        return patched_get_tasks(page=page, per_page=per_page, omit_user_ownership_filter=True)
 
     def patched_task_list_my_tasks(*args, **kwargs) -> flask.wrappers.Response:
-        # The super-admin global "all open tasks" view backs the Homepage task list, which
-        # never scopes by process_instance_id. The per-instance "Tasks I can complete" call
-        # (ProcessInstanceShow) does pass process_instance_id; for that we defer to the
-        # original handler so super admins see only tasks they can actually complete (none
-        # for a read-only observer), letting the section auto-hide like it does for tenant admins.
+        # Homepage SA list has no process_instance_id; ProcessInstanceShow passes one and stays scoped.
         process_instance_id = _extract_process_instance_id(args, kwargs)
         if is_super_admin_request() and process_instance_id is None:
-            return _rewrite_assigned_group_identifiers(_task_list_all_open_tasks(*args, **kwargs))
+            return _task_list_all_open_tasks(*args, **kwargs)
         return _rewrite_assigned_group_identifiers(original_task_list_my_tasks(*args, **kwargs))
 
     def patched_task_list_for_me(*args, **kwargs) -> flask.wrappers.Response:
         if is_super_admin_request():
-            return _rewrite_assigned_group_identifiers(_task_list_all_open_tasks(*args, **kwargs))
+            return _task_list_all_open_tasks(*args, **kwargs)
         return _rewrite_assigned_group_identifiers(original_task_list_for_me(*args, **kwargs))
 
     def patched_task_list_for_my_open_processes(*args, **kwargs) -> flask.wrappers.Response:
         if is_super_admin_request():
-            return _rewrite_assigned_group_identifiers(_task_list_all_open_tasks(*args, **kwargs))
+            return _task_list_all_open_tasks(*args, **kwargs)
         return _rewrite_assigned_group_identifiers(original_task_list_for_my_open_processes(*args, **kwargs))
 
     def patched_task_list_for_my_groups(*args, **kwargs) -> flask.wrappers.Response:
         if is_super_admin_request():
-            return _rewrite_assigned_group_identifiers(_task_list_all_open_tasks(*args, **kwargs))
+            return _task_list_all_open_tasks(*args, **kwargs)
         return _rewrite_assigned_group_identifiers(original_task_list_for_my_groups(*args, **kwargs))
 
     def patched_task_data_show(
@@ -288,8 +332,7 @@ def apply(flask_app: object | None = None) -> None:
         ):
             flask_app.view_functions[endpoint] = patched_task_data_show
 
-    # Connexion endpoint names and wrapper identities vary between environments.
-    # First try function identity, then fall back to the concrete task-data route path.
+    # Prefer identity match; fall back to the concrete task-data route path.
     for rule in flask_app.url_map.iter_rules():
         if "GET" not in rule.methods:
             continue

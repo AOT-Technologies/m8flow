@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2026 AOT Technologies Inc.
+//
+// The bpmn-js / dmn-js CSS imports below are fixed asset paths published by
+// those packages; they are interface, not expression, and must match exactly.
+
 import React, { useState } from 'react';
 import { Button } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
@@ -53,16 +59,14 @@ export default function ReactDiagramEditor(props: ReactDiagramEditorProps) {
   const [showingReferences, setShowingReferences] = useState(false);
 
   const { targetUris } = useUriListForPermissions();
-  const permissionRequestData: PermissionsToCheck = {};
-  if (diagramType !== 'readonly') {
-    permissionRequestData[targetUris.processModelShowPath] = ['PUT'];
-    permissionRequestData[targetUris.processModelFileShowPath] = [
-      'POST',
-      'GET',
-      'PUT',
-      'DELETE',
-    ];
-  }
+  // A read-only diagram exposes no mutating controls, so it asks for nothing.
+  const permissionRequestData: PermissionsToCheck =
+    diagramType === 'readonly'
+      ? {}
+      : {
+          [targetUris.processModelShowPath]: ['PUT'],
+          [targetUris.processModelFileShowPath]: ['POST', 'GET', 'PUT', 'DELETE'],
+        };
   const { ability } = usePermissionFetcher(permissionRequestData);
   const navigate = useNavigate();
   const { t } = useTranslation();

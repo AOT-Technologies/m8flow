@@ -4,6 +4,7 @@ import viteTsconfigPaths from 'vite-tsconfig-paths';
 import svgr from 'vite-plugin-svgr';
 import path from 'path';
 import { overrideResolver } from './vite-plugin-override-resolver';
+import { fixPythonWorkerUrl } from './vite-plugin-python-worker';
 
 // Load repo root .env so MULTI_TENANT_ON is available even when npm start is run without sourcing .env
 const repoRoot = path.resolve(__dirname, '..');
@@ -71,6 +72,8 @@ export default defineConfig({
   plugins: [
     // Override resolver - must be first to check overrides before core
     overrideResolver(),
+    // Rewrite upstream EditDiagram worker URL for m8flow's Vite root/publicDir
+    fixPythonWorkerUrl(),
     // Use real React in tests to avoid ref type mismatch with @testing-library/react
     ...(process.env.VITEST ? [] : [preact({ devToolsEnabled: false })]),
     // viteTsconfigPaths(),
@@ -128,6 +131,21 @@ export default defineConfig({
       {
         find: '@spiffworkflow-frontend/components/ReactDiagramEditor',
         replacement: path.resolve(__dirname, './src/components/ReactDiagramEditor'),
+      },
+      // Escape hatch: ALWAYS resolves to the upstream original, never to an
+      // m8flow override. The override-resolver plugin only intercepts sources
+      // beginning '@spiffworkflow-frontend', so this prefix falls through to
+      // Vite's own alias handling untouched.
+      //
+      // This is what lets an override import the very file it overrides, so it
+      // can wrap upstream's component instead of carrying a copy of its body.
+      // Deliberately implemented as an alias rather than a plugin change: four
+      // existing files (helpers.tsx, i18n.ts, ProcessBreadcrumb.tsx,
+      // SecretNew.tsx) already import their own override path, and altering the
+      // plugin's resolution would change their behaviour.
+      {
+        find: '@spiff-core',
+        replacement: path.resolve(__dirname, '../spiffworkflow-frontend/src'),
       },
       // -- Generic fallbacks --
       {

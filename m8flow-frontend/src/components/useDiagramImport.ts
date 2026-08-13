@@ -1,3 +1,12 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2026 AOT Technologies Inc.
+//
+// Loads a BPMN/DMN diagram into a bpmn-js/dmn-js modeler and, for BPMN, paints
+// per-task run state onto the canvas. Re-expressed independently of upstream; the
+// only shared surface is the functional contract it must honour — the CSS marker
+// class names (defined in the stylesheets), the bpmn-js canvas/overlay API, and the
+// `{{PROCESS_ID}}`/`{{DECISION_ID}}` placeholders the seed-diagram templates carry.
+
 import React, { useEffect, useRef } from 'react';
 import HttpService from '@spiffworkflow-frontend/services/HttpService';
 import {
@@ -22,6 +31,47 @@ export type UseDiagramImportOptions = {
   setDiagramXMLString: (value: string) => void;
 };
 
+// The marker class the stylesheet defines for each task run state. Absent state ->
+// no marker. Data-driven so adding a state is a one-line change.
+const TASK_STATE_MARKER: Readonly<Record<string, string>> = {
+  COMPLETED: 'completed-task-highlight',
+  READY: 'active-task-highlight',
+  WAITING: 'active-task-highlight',
+  STARTED: 'active-task-highlight',
+  CANCELLED: 'cancelled-task-highlight',
+  ERROR: 'errored-task-highlight',
+};
+
+// Synthetic spec ids bpmn-js never renders as real shapes, plus the join/boundary
+// helper specs — none of these can carry a canvas marker.
+const NON_HIGHLIGHTABLE_SPEC = /^(Root|Start|End)$|EndJoin|BoundaryEvent(Parent|Join|Split)/;
+
+// bpmn-js throws this exact TypeError when a marker/overlay targets an element that
+// is not on the current canvas; it is expected and swallowed, anything else re-throws.
+const BPMN_MISSING_ELEMENT_ERROR = "Cannot read properties of undefined (reading 'id')";
+
+function isMultiInstanceChild(task: BasicTask): boolean {
+  return 'iteration' in (task.runtime_info ?? {});
+}
+
+function canHighlightTask(task: BasicTask): boolean {
+  return (
+    !isMultiInstanceChild(task) && !NON_HIGHLIGHTABLE_SPEC.test(task.bpmn_identifier)
+  );
+}
+
+// bpmn-js canvas/overlay calls only succeed for elements in the diagram being shown;
+// run `op` and let the "missing element" TypeError pass, re-throwing anything else.
+function withCanvasElement(op: () => void): void {
+  try {
+    op();
+  } catch (bpmnError: any) {
+    if (bpmnError?.message !== BPMN_MISSING_ELEMENT_ERROR) {
+      throw bpmnError;
+    }
+  }
+}
+
 export function useDiagramImport(options: UseDiagramImportOptions) {
   const {
     diagramModelerState,
@@ -36,247 +86,151 @@ export function useDiagramImport(options: UseDiagramImportOptions) {
     setDiagramXMLString,
   } = options;
 
-  // ── Stable refs for all mutable option values ──────────────────────────────
-  // Storing these in refs means the useEffect never re-runs just because
-  // a parent component re-rendered and passed a new function reference.
+  // Keep the latest options in a ref so the effect below can read current values
+  // without listing them as dependencies (it must only re-run per modeler instance).
   const optsRef = useRef(options);
   useEffect(() => {
     optsRef.current = options;
   });
 
-  // Track which "source" we last loaded so we never re-import the same diagram.
+  // The last-loaded source key, so an unchanged diagram is never re-imported.
   const lastLoadedSourceRef = useRef<string | null | undefined>(null);
 
   useEffect(() => {
     if (!diagramModelerState) return undefined;
 
-    // ── Helpers ──────────────────────────────────────────────────────────────
-    const taskSpecsThatCannotBeHighlighted = ['Root', 'Start', 'End'];
+    const reportError = (err: any) => console.error('ERROR:', err);
 
-    function handleError(err: any) {
-      console.error('ERROR:', err);
-    }
-
-    function taskIsMultiInstanceChild(task: BasicTask) {
-      return Object.hasOwn(task.runtime_info || {}, 'iteration');
-    }
-
-    function checkTaskCanBeHighlighted(task: BasicTask) {
-      const taskBpmnId = task.bpmn_identifier;
-      return (
-        !taskIsMultiInstanceChild(task) &&
-        !taskSpecsThatCannotBeHighlighted.includes(taskBpmnId) &&
-        !taskBpmnId.match(/EndJoin/) &&
-        !taskBpmnId.match(/BoundaryEventParent/) &&
-        !taskBpmnId.match(/BoundaryEventJoin/) &&
-        !taskBpmnId.match(/BoundaryEventSplit/)
-      );
-    }
-
-    function highlightBpmnIoElement(
+    const markTaskState = (
       canvas: any,
       task: BasicTask,
-      bpmnIoClassName: string,
-      bpmnProcessIdentifiers: string[],
-    ) {
-      if (checkTaskCanBeHighlighted(task)) {
-        try {
-          if (
-            bpmnProcessIdentifiers.includes(
-              task.bpmn_process_definition_identifier,
-            )
-          ) {
-            canvas.addMarker(task.bpmn_identifier, bpmnIoClassName);
-          }
-        } catch (bpmnIoError: any) {
-          if (
-            bpmnIoError.message !==
-            "Cannot read properties of undefined (reading 'id')"
-          ) {
-            throw bpmnIoError;
-          }
-        }
-      }
-    }
+      markerClass: string,
+      processIdentifiers: string[],
+    ) => {
+      if (!canHighlightTask(task)) return;
+      if (!processIdentifiers.includes(task.bpmn_process_definition_identifier)) return;
+      withCanvasElement(() => canvas.addMarker(task.bpmn_identifier, markerClass));
+    };
 
-    function addOverlayOnCallActivity(
-      task: BasicTask,
-      bpmnProcessIdentifiers: string[],
-    ) {
-      // Read from ref so this closure is always up-to-date without being in the dep array
-      const { onCallActivityOverlayClick: onOverlayClick, diagramType: dt } = optsRef.current;
-      if (
-        taskIsMultiInstanceChild(task) ||
-        !onOverlayClick ||
-        dt !== 'readonly' ||
-        !diagramModelerState
-      ) {
+    const buildDrilldownButton = (task: BasicTask): HTMLElement | null => {
+      const arrow = convertSvgElementToHtmlString(
+        React.createElement(CallActivityNavigateArrowUp, null),
+      );
+      const holder = document.createElement('template');
+      holder.innerHTML = `<button class="bjs-drilldown">${arrow}</button>`.trim();
+      const button = holder.content.firstChild as HTMLElement | null;
+      if (button) {
+        const forward = (nativeEvent: any) =>
+          optsRef.current.onCallActivityOverlayClick?.(task, nativeEvent);
+        button.addEventListener('click', forward);
+        button.addEventListener('auxclick', forward);
+      }
+      return button;
+    };
+
+    const addCallActivityDrilldown = (task: BasicTask, processIdentifiers: string[]) => {
+      const { onCallActivityOverlayClick: onClick, diagramType: dt } = optsRef.current;
+      if (isMultiInstanceChild(task) || !onClick || dt !== 'readonly' || !diagramModelerState) {
         return;
       }
-      function domify(htmlString: string) {
-        const template = document.createElement('template');
-        template.innerHTML = htmlString.trim();
-        return template.content.firstChild;
-      }
-      const createCallActivityOverlay = () => {
-        const overlays = diagramModelerState.get('overlays');
-        const icon = convertSvgElementToHtmlString(
-          React.createElement(CallActivityNavigateArrowUp, null),
-        );
-        const button: any = domify(
-          `<button class="bjs-drilldown">${icon}</button>`,
-        );
-        button.addEventListener('click', (newEvent: any) => {
-          onOverlayClick(task, newEvent);
-        });
-        button.addEventListener('auxclick', (newEvent: any) => {
-          onOverlayClick(task, newEvent);
-        });
-        overlays.add(task.bpmn_identifier, 'drilldown', {
+      if (!processIdentifiers.includes(task.bpmn_process_definition_identifier)) return;
+      const button = buildDrilldownButton(task);
+      if (!button) return;
+      withCanvasElement(() =>
+        diagramModelerState.get('overlays').add(task.bpmn_identifier, 'drilldown', {
           position: { bottom: -10, right: -8 },
           html: button,
-        });
-      };
-      try {
-        if (
-          bpmnProcessIdentifiers.includes(
-            task.bpmn_process_definition_identifier,
-          )
-        ) {
-          createCallActivityOverlay();
-        }
-      } catch (bpmnIoError: any) {
-        if (
-          bpmnIoError.message !==
-          "Cannot read properties of undefined (reading 'id')"
-        ) {
-          throw bpmnIoError;
-        }
-      }
-    }
+        }),
+      );
+    };
 
-    function onImportDone(event: any) {
-      const { error } = event;
-      if (error) {
-        handleError(error);
-        return;
-      }
-
-      // Read latest values from ref at the time this event fires
+    const paintTaskStates = () => {
       const { diagramType: dt, tasks: currentTasks } = optsRef.current;
-      if (dt === 'dmn') return;
+      if (dt === 'dmn' || !currentTasks) return;
 
       const canvas = diagramModelerState.get('canvas');
       canvas.zoom(FIT_VIEWPORT, 'auto');
+      const processIdentifiers = getBpmnProcessIdentifiers(canvas.getRootElement());
 
-      if (currentTasks) {
-        const bpmnProcessIdentifiers = getBpmnProcessIdentifiers(
-          canvas.getRootElement(),
-        );
-        currentTasks.forEach((task: BasicTask) => {
-          let className = '';
-          if (task.state === 'COMPLETED') {
-            className = 'completed-task-highlight';
-          } else if (['READY', 'WAITING', 'STARTED'].includes(task.state)) {
-            className = 'active-task-highlight';
-          } else if (task.state === 'CANCELLED') {
-            className = 'cancelled-task-highlight';
-          } else if (task.state === 'ERROR') {
-            className = 'errored-task-highlight';
-          }
-          if (className) {
-            highlightBpmnIoElement(
-              canvas,
-              task,
-              className,
-              bpmnProcessIdentifiers,
-            );
-          }
-          if (
-            task.typename === 'CallActivity' &&
-            !['FUTURE', 'LIKELY', 'MAYBE'].includes(task.state)
-          ) {
-            addOverlayOnCallActivity(task, bpmnProcessIdentifiers);
-          }
-        });
+      currentTasks.forEach((task: BasicTask) => {
+        const markerClass = TASK_STATE_MARKER[task.state];
+        if (markerClass) {
+          markTaskState(canvas, task, markerClass, processIdentifiers);
+        }
+        const isNavigableCallActivity =
+          task.typename === 'CallActivity' &&
+          !['FUTURE', 'LIKELY', 'MAYBE'].includes(task.state);
+        if (isNavigableCallActivity) {
+          addCallActivityDrilldown(task, processIdentifiers);
+        }
+      });
+    };
+
+    const onImportDone = (event: any) => {
+      if (event.error) {
+        reportError(event.error);
+        return;
       }
-    }
+      paintTaskStates();
+    };
 
-    function dmnTextHandler(text: string) {
-      const decisionId = `decision_${makeid(7)}`;
-      const newText = text.replaceAll('{{DECISION_ID}}', decisionId);
-      optsRef.current.setDiagramXMLString(newText);
-    }
+    // Seed diagrams ship with a placeholder id the editor stamps unique on first load.
+    const seedWithUniqueId = (template: string, token: string, prefix: string) => {
+      const uniqueId = `${prefix}_${makeid(7)}`;
+      optsRef.current.setDiagramXMLString(template.replaceAll(token, uniqueId));
+    };
 
-    function bpmnTextHandler(text: string) {
-      const processId = `Process_${makeid(7)}`;
-      const newText = text.replaceAll('{{PROCESS_ID}}', processId);
-      optsRef.current.setDiagramXMLString(newText);
-    }
-
-    function fetchDiagramFromURL(
-      urlToUse: string,
-      textHandler?: (text: string) => void,
-    ) {
-      fetch(urlToUse)
+    const loadFromUrl = (source: string, transform?: (text: string) => void) => {
+      fetch(source)
         .then((response) => response.text())
-        .then(textHandler ?? (() => {}))
-        .catch((err) => handleError(err));
-    }
+        .then(transform ?? (() => {}))
+        .catch(reportError);
+    };
 
-    function setDiagramXMLStringFromResponseJson(result: any) {
-      optsRef.current.setDiagramXMLString(result.file_contents);
-    }
-
-    function fetchDiagramFromJsonAPI() {
+    const loadFromBackendFile = () => {
       const { processModelId: pmId, fileName: fn } = optsRef.current;
       HttpService.makeCallToBackend({
         path: `/process-models/${pmId}/files/${fn}`,
-        successCallback: setDiagramXMLStringFromResponseJson,
+        successCallback: (result: any) =>
+          optsRef.current.setDiagramXMLString(result.file_contents),
       });
-    }
+    };
 
-    // Register the import.done listener once for this modeler instance
-    (diagramModelerState as any).on('import.done', onImportDone);
+    diagramModelerState.on('import.done', onImportDone);
+    const detach = () => diagramModelerState.off('import.done', onImportDone);
 
-    // ── Load the diagram (only if the source actually changed) ────────────────
-    // Read the current source values from the ref so we always use the latest
-    // values without needing them in the dependency array.
-    const { diagramXML: xml, url: urlVal, fileName: fn, diagramType: dt, performingXmlUpdates: performing } = optsRef.current;
+    // Read the current source from the ref; skip loading mid-XML-update.
+    const {
+      diagramXML: xml,
+      url: urlVal,
+      fileName: fn,
+      diagramType: dt,
+      performingXmlUpdates: performing,
+    } = optsRef.current;
+    if (performing) return detach;
 
-    if (performing) {
-      // Don't load while an XML update is in progress
-      return () => {
-        (diagramModelerState as any).off('import.done', onImportDone);
-      };
-    }
-
-    const currentSource = xml || urlVal || fn || dt;
-    if (lastLoadedSourceRef.current !== currentSource) {
-      lastLoadedSourceRef.current = currentSource;
+    const sourceKey = xml || urlVal || fn || dt;
+    if (lastLoadedSourceRef.current !== sourceKey) {
+      lastLoadedSourceRef.current = sourceKey;
       if (xml) {
         optsRef.current.setDiagramXMLString(xml);
       } else if (urlVal) {
-        fetchDiagramFromURL(urlVal);
+        loadFromUrl(urlVal);
       } else if (fn) {
-        fetchDiagramFromJsonAPI();
+        loadFromBackendFile();
+      } else if (dt === 'dmn') {
+        loadFromUrl('/new_dmn_diagram.dmn', (text) =>
+          seedWithUniqueId(text, '{{DECISION_ID}}', 'decision'),
+        );
       } else {
-        let newDiagramFileName = 'new_bpmn_diagram.bpmn';
-        let textHandler = bpmnTextHandler;
-        if (dt === 'dmn') {
-          newDiagramFileName = 'new_dmn_diagram.dmn';
-          textHandler = dmnTextHandler;
-        }
-        fetchDiagramFromURL(`/${newDiagramFileName}`, textHandler);
+        loadFromUrl('/new_bpmn_diagram.bpmn', (text) =>
+          seedWithUniqueId(text, '{{PROCESS_ID}}', 'Process'),
+        );
       }
     }
 
-    return () => {
-      (diagramModelerState as any).off('import.done', onImportDone);
-    };
-    // ── Only re-run when the modeler instance itself changes ─────────────────
-    // All other values (diagramXML, fileName, tasks, callbacks, etc.) are read
-    // from optsRef at runtime, so they never need to be in this array.
+    return detach;
+    // Re-run only when the modeler instance changes; all other inputs come from optsRef.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [diagramModelerState]);
 }

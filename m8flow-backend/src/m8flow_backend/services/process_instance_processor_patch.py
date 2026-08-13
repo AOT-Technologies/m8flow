@@ -226,67 +226,55 @@ def apply() -> None:
     def patched_get_potential_owners_from_task(self: ProcessInstanceProcessor, task: SpiffTask) -> PotentialOwnerIdList:
         """Resolve guest, initiator, lane-assignment, and lane-owner users within the current tenant."""
         task_spec = task.task_spec
-        task_lane = "process_initiator"
+        lanes_enabled = current_app.config.get("SPIFFWORKFLOW_BACKEND_USE_LANES_FOR_TASK_ASSIGNMENT") is not False
+        task_lane = task_spec.lane if (lanes_enabled and task_spec.lane) else "process_initiator"
 
-        if current_app.config.get("SPIFFWORKFLOW_BACKEND_USE_LANES_FOR_TASK_ASSIGNMENT") is not False:
-            if task_spec.lane is not None and task_spec.lane != "":
-                task_lane = task_spec.lane
+        def owners(added_by: object, *user_ids: object) -> PotentialOwnerIdList:
+            return {
+                "potential_owners": [{"added_by": added_by, "user_id": uid} for uid in user_ids],
+                "lane_assignment_id": None,
+            }
+
+        # Guest tasks and process-initiator lanes resolve to a single owner directly.
+        if task_spec.extensions.get("allowGuest") == "true":
+            return owners(HumanTaskUserAddedBy.guest.value, UserService.find_or_create_guest_user().id)
+        if re.match(r"(process.?)initiator", task_lane, re.IGNORECASE):
+            return owners(
+                HumanTaskUserAddedBy.process_initiator.value,
+                self.process_instance_model.process_initiator_id,
+            )
+
+        # Named-lane tasks: prefer explicit task-data lane owners (tenant-resolved), else fall
+        # back to group-based lane assignment.
+        explicit_lane_owners = _lane_owner_identifiers_for_task(task, task_lane)
+        if explicit_lane_owners is None:
+            potential_owners, lane_assignment_id = _lane_assignment_for_task_lane(
+                task_lane,
+                group_model_cls=GroupModel,
+                user_service_cls=UserService,
+                human_task_user_added_by=HumanTaskUserAddedBy,
+                processor=self,
+            )
+            return {"potential_owners": potential_owners, "lane_assignment_id": lane_assignment_id}
 
         potential_owners = []
-        lane_assignment_id = None
-
-        if "allowGuest" in task.task_spec.extensions and task.task_spec.extensions["allowGuest"] == "true":
-            guest_user = UserService.find_or_create_guest_user()
-            potential_owners = [{"added_by": HumanTaskUserAddedBy.guest.value, "user_id": guest_user.id}]
-        elif re.match(r"(process.?)initiator", task_lane, re.IGNORECASE):
-            potential_owners = [
-                {
-                    "added_by": HumanTaskUserAddedBy.process_initiator.value,
-                    "user_id": self.process_instance_model.process_initiator_id,
-                }
-            ]
-        else:
-            explicit_lane_owners = _lane_owner_identifiers_for_task(task, task_lane)
-            if explicit_lane_owners is not None:
-                seen_user_ids: set[object] = set()
-                for username_or_email in explicit_lane_owners:
-                    for lane_owner_user in _materialize_lane_owner_users_for_identifier(
-                        username_or_email,
-                        user_model_cls=UserModel,
-                        user_service_cls=UserService,
-                    ):
-                        user_id = getattr(lane_owner_user, "id", None)
-                        if user_id in seen_user_ids:
-                            continue
-                        seen_user_ids.add(user_id)
-                        potential_owners.append(
-                            {"added_by": HumanTaskUserAddedBy.lane_owner.value, "user_id": user_id}
-                        )
-                self.raise_if_no_potential_owners(
-                    potential_owners,
-                    (
-                        "No users found in task data lane owner list for lane:"
-                        f" {task_lane}. The user list used:"
-                        f" {explicit_lane_owners}"
-                    ),
-                )
-                return {
-                    "potential_owners": potential_owners,
-                    "lane_assignment_id": None,
-                }
-            else:
-                potential_owners, lane_assignment_id = _lane_assignment_for_task_lane(
-                    task_lane,
-                    group_model_cls=GroupModel,
-                    user_service_cls=UserService,
-                    human_task_user_added_by=HumanTaskUserAddedBy,
-                    processor=self,
-                )
-
-        return {
-            "potential_owners": potential_owners,
-            "lane_assignment_id": lane_assignment_id,
-        }
+        seen_user_ids: set[object] = set()
+        for identifier in explicit_lane_owners:
+            for lane_owner_user in _materialize_lane_owner_users_for_identifier(
+                identifier, user_model_cls=UserModel, user_service_cls=UserService
+            ):
+                user_id = getattr(lane_owner_user, "id", None)
+                if user_id not in seen_user_ids:
+                    seen_user_ids.add(user_id)
+                    potential_owners.append(
+                        {"added_by": HumanTaskUserAddedBy.lane_owner.value, "user_id": user_id}
+                    )
+        self.raise_if_no_potential_owners(
+            potential_owners,
+            f"No users found in task data lane owner list for lane: {task_lane}."
+            f" The user list used: {explicit_lane_owners}",
+        )
+        return {"potential_owners": potential_owners, "lane_assignment_id": None}
 
     original_evaluate = CustomBpmnScriptEngine.evaluate
 
