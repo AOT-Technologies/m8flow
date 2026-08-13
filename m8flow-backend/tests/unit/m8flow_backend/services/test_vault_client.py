@@ -2,11 +2,14 @@
 # ruff: noqa: E402
 from __future__ import annotations
 
+import base64
+import hashlib
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from cryptography.fernet import Fernet
 
 extension_root = Path(__file__).resolve().parents[4]
 repo_root = extension_root.parent
@@ -271,6 +274,30 @@ class TestVaultSettings:
         secret_id_file = tmp_path / "secret-id"
         role_id_file.write_text("role-123\n", encoding="utf-8")
         secret_id_file.write_text("secret-456\n", encoding="utf-8")
+        monkeypatch.setenv("M8FLOW_VAULT_ADDR", "https://vault.internal")
+        monkeypatch.delenv("M8FLOW_VAULT_TOKEN", raising=False)
+        monkeypatch.setenv("M8FLOW_VAULT_ROLE_ID_FILE", str(role_id_file))
+        monkeypatch.setenv("M8FLOW_VAULT_SECRET_ID_FILE", str(secret_id_file))
+
+        settings = VaultSettings.from_env()
+
+        assert settings.token is None
+        assert settings.role_id == "role-123"
+        assert settings.secret_id == "secret-456"
+        assert settings.auth_method == "approle"
+        assert settings.is_configured is True
+
+    def test_from_env_decrypts_encrypted_demo_approle_credentials_from_files(self, monkeypatch, tmp_path):
+        state_key = "0123456789abcdef0123456789abcdef"
+        digest = hashlib.sha256(state_key.encode("utf-8")).digest()
+        cipher = Fernet(base64.urlsafe_b64encode(digest))
+        prefix = "m8flow-vault-demo:enc:v1:"
+
+        role_id_file = tmp_path / "role-id"
+        secret_id_file = tmp_path / "secret-id"
+        role_id_file.write_text(prefix + cipher.encrypt(b"role-123\n").decode("utf-8") + "\n", encoding="utf-8")
+        secret_id_file.write_text(prefix + cipher.encrypt(b"secret-456\n").decode("utf-8") + "\n", encoding="utf-8")
+        monkeypatch.setenv("M8FLOW_BACKEND_ENCRYPTION_KEY", state_key)
         monkeypatch.setenv("M8FLOW_VAULT_ADDR", "https://vault.internal")
         monkeypatch.delenv("M8FLOW_VAULT_TOKEN", raising=False)
         monkeypatch.setenv("M8FLOW_VAULT_ROLE_ID_FILE", str(role_id_file))

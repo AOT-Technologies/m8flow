@@ -1,13 +1,18 @@
 """M8Flow Keycloak configuration from environment."""
 from __future__ import annotations
 
+import base64
+import hashlib
 import os
 from pathlib import Path
 from urllib.parse import urlparse
 
+from cryptography.fernet import Fernet, InvalidToken
+
 DEFAULT_KEYCLOAK_CLIENT_SECRET = "JXeQExm0JhQPLumgHtIIqf52bDalHz0q"
 DEFAULT_SHARED_REALM_NAME = "m8flow"
 DEFAULT_MASTER_REALM_NAME = "master"
+_VAULT_DEMO_ENCRYPTED_STATE_PREFIX = "m8flow-vault-demo:enc:v1:"
 
 
 def _get(key: str, default: str | None = None) -> str | None:
@@ -15,6 +20,39 @@ def _get(key: str, default: str | None = None) -> str | None:
     if value is not None and value != "":
         return value.strip()
     return default
+
+
+def _vault_demo_state_cipher() -> Fernet | None:
+    state_key = (
+        _get("M8FLOW_VAULT_DEMO_STATE_KEY")
+        or _get("M8FLOW_BACKEND_ENCRYPTION_KEY")
+        or _get("FLASK_SESSION_SECRET_KEY")
+    )
+    if not state_key:
+        return None
+
+    digest = hashlib.sha256(state_key.encode("utf-8")).digest()
+    return Fernet(base64.urlsafe_b64encode(digest))
+
+
+def _decrypt_vault_demo_state_value(value: str, *, path: Path) -> str:
+    if not value.startswith(_VAULT_DEMO_ENCRYPTED_STATE_PREFIX):
+        return value
+
+    cipher = _vault_demo_state_cipher()
+    if cipher is None:
+        raise RuntimeError(
+            "Vault demo state file is encrypted, but no state encryption key is configured "
+            f"for '{path}'."
+        )
+
+    ciphertext = value[len(_VAULT_DEMO_ENCRYPTED_STATE_PREFIX) :]
+    try:
+        decrypted = cipher.decrypt(ciphertext.encode("utf-8")).decode("utf-8").strip()
+    except InvalidToken as exc:
+        raise RuntimeError(f"Vault demo state file could not be decrypted: {path}") from exc
+
+    return decrypted or value
 
 
 def _read_env_value_from_file(path_value: str | None) -> str | None:
@@ -29,6 +67,9 @@ def _read_env_value_from_file(path_value: str | None) -> str | None:
         value = path.read_text(encoding="utf-8").strip()
     except OSError:
         return None
+
+    if value:
+        value = _decrypt_vault_demo_state_value(value, path=path)
 
     return value or None
 

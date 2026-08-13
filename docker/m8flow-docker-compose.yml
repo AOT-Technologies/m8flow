@@ -169,6 +169,7 @@ services:
     profiles: ["vault-demo"]
     image: m8flow-backend
     pull_policy: never
+    env_file: ../.env
     user: "0"
     entrypoint:
       - /bin/bash
@@ -187,7 +188,6 @@ services:
       M8FLOW_VAULT_TENANT_ROLE_PREFIX: "${M8FLOW_VAULT_TENANT_ROLE_PREFIX:-m8flow-tenant-role}"
       M8FLOW_VAULT_POLICY_NAME: "${M8FLOW_VAULT_POLICY_NAME:-m8flow}"
       M8FLOW_VAULT_APPROLE_NAME: "${M8FLOW_VAULT_APPROLE_NAME:-m8flow}"
-      M8FLOW_BACKEND_ENCRYPTION_KEY: "${M8FLOW_BACKEND_ENCRYPTION_KEY:-}"
       M8FLOW_VAULT_DEMO_STATE_DIR: "/vault/demo"
       M8FLOW_VAULT_DEMO_SECRETS_FILE: "/app/docker/vault/demo/secrets.yml"
       M8FLOW_VAULT_DEMO_OVERWRITE: "${M8FLOW_VAULT_DEMO_OVERWRITE:-false}"
@@ -201,6 +201,7 @@ services:
       SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__uri: "${KEYCLOAK_HOSTNAME:-http://localhost:6842}/realms/${M8FLOW_KEYCLOAK_SHARED_REALM:-m8flow}"
     volumes:
       - vault-demo-state:/vault/demo
+      - ../docker/vault/demo:/app/docker/vault/demo:ro
     depends_on:
       vault:
         condition: service_healthy

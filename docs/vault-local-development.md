@@ -204,8 +204,14 @@ The `vault-demo` bootstrap persists the local development init payload in encryp
 
 ```bash
 docker compose -f docker/m8flow-docker-compose.yml --profile vault --profile vault-demo \
-  run --rm --no-deps m8flow-backend sh -lc \
-  'python -c "import sys; sys.path.insert(0, \"/app/docker/vault/demo\"); import bootstrap_vault_demo as b; print(b.root_token_from_init(b.load_init_payload()))"'
+  run --rm --no-deps --entrypoint python m8flow-backend \
+  -c "import sys; sys.path.insert(0, '/app/docker/vault/demo'); import bootstrap_vault_demo as b; print(b.root_token_from_init(b.load_init_payload()))"
+```
+
+```powershell
+docker compose -f docker/m8flow-docker-compose.yml --profile vault --profile vault-demo `
+  run --rm --no-deps --entrypoint python m8flow-backend `
+  -c "import sys; sys.path.insert(0, '/app/docker/vault/demo'); import bootstrap_vault_demo as b; print(b.root_token_from_init(b.load_init_payload()))"
 ```
 
 Use the printed `root_token` value to sign in to the Vault UI with the `Token` auth method.
