@@ -44,14 +44,36 @@ _UNSET: Any = object()
 # session-scoped, so the selected tenant persists in localStorage across tests;
 # we reset it at setup so each test starts from "All Tenants" unless it opts in.
 _GLOBAL_TENANT_STORAGE_KEY = "m8flow_global_selected_tenant"
+_PROCESS_TREE_STORAGE_KEYS = (
+    "spifffavorites",
+    "recentProcessModels",
+)
 
 
 def reset_tenant_selection(page: Page) -> None:
-    """Clear the persisted global tenant selection (best-effort)."""
+    """Clear persisted super-admin process-navigation state (best-effort)."""
     try:
         page.evaluate(
-            "(key) => window.localStorage.removeItem(key)",
-            _GLOBAL_TENANT_STORAGE_KEY,
+            """(payload) => {
+              for (const key of payload.explicitKeys) {
+                window.localStorage.removeItem(key);
+              }
+              for (let index = window.localStorage.length - 1; index >= 0; index -= 1) {
+                const key = window.localStorage.key(index);
+                if (!key) {
+                  continue;
+                }
+                if (key.toLowerCase().includes('favorite')) {
+                  window.localStorage.removeItem(key);
+                }
+              }
+            }""",
+            {
+                "explicitKeys": [
+                    _GLOBAL_TENANT_STORAGE_KEY,
+                    *_PROCESS_TREE_STORAGE_KEYS,
+                ],
+            },
         )
     except Exception:
         pass

@@ -20,6 +20,29 @@ _PROCESS_GROUP_ID_INPUT = "#process-group-identifier"
 _PROCESS_GROUP_DESCRIPTION_INPUT = "#process-group-description"
 
 
+def _wait_for_process_group_detail(page: Page) -> None:
+    """Wait until the process-group detail view has taken over the page."""
+    try:
+        page.wait_for_url(
+            re.compile(r".*/process-groups/[^/?#]+(?:\?.*)?$"),
+            timeout=SHORT_TIMEOUT,
+        )
+    except PlaywrightTimeout:
+        pass
+
+    wait_for_app_ready(page)
+
+    for locator in (
+        page.get_by_test_id("breadcrumb-root-button"),
+        page.get_by_test_id("add-process-model-button"),
+    ):
+        try:
+            locator.wait_for(state="visible", timeout=SHORT_TIMEOUT)
+            return
+        except PlaywrightTimeout:
+            continue
+
+
 def _dismiss_blocking_overlays(page: Page) -> None:
     """Close MUI menus/popovers whose backdrop intercepts navigation (e.g. after process model actions)."""
     for _ in range(5):
@@ -171,7 +194,7 @@ def navigate_into_process_group(page: Page) -> None:
         TEST_PROCESS_GROUP_DISPLAY_NAME,
     )
     test_group.click()
-    wait_for_app_ready(page)
+    _wait_for_process_group_detail(page)
 
 
 def ensure_test_process_group_exists(page: Page) -> None:

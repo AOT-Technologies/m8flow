@@ -27,9 +27,9 @@ from helpers.mocks import (
 )
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def process_models_editor_page(browser, base_url) -> Page:
-    """Session-scoped editor page shared by all process_models tests."""
+    """Module-scoped editor page shared by one process_models test file."""
     creds = ROLE_USERS["editor"]
     ctx = browser.new_context(
         base_url=base_url,
@@ -82,10 +82,12 @@ def _install_clear_spiff_favorites_init_script(page: Page) -> None:
     page.add_init_script(
         """
         () => {
+          localStorage.removeItem('spifffavorites');
+          localStorage.removeItem('recentProcessModels');
           for (let i = localStorage.length - 1; i >= 0; i--) {
             const k = localStorage.key(i);
             if (k && k.toLowerCase().includes('favorite')) {
-              localStorage.setItem(k, '[]');
+              localStorage.removeItem(k);
             }
           }
         }
