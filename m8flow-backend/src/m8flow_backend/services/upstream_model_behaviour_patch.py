@@ -1,24 +1,8 @@
 # m8flow-backend/src/m8flow_backend/services/upstream_model_behaviour_patch.py
 """m8flow's method-level changes to upstream model classes.
 
-Most of m8flow's model differences are schema-only and are applied by
-``m8flow_backend.models.tenant_schema``. Two models also differ in *behaviour*,
-which a DDL listener cannot express:
-
-* ``ProcessInstanceModel.get_data`` reads the last completed task with
-  ``get_data()`` rather than upstream's ``json_data()``.
-* ``PermissionTargetModel.__init__`` accepts a ``command`` argument, matching the
-  ``command`` column m8flow adds to that table.
-* ``TaskModel.json_data`` merges the task's ``properties_json['delta']['updates']``
-  over the stored json data (and ``python_env_data`` tolerates a missing dict), so
-  in-flight lane/decision overrides show through ``get_data()``.
-
-These previously lived in m8flow's copies of the upstream model files. Expressing
-them here means those copies - and the ~330 lines of upstream code they carried -
-can be deleted.
-
-Follows the same shape as the other 36 patch modules: import the real upstream
-object, replace only what differs, guard for idempotency.
+Column and constraint changes belong in ``m8flow_backend.models.tenant_schema``.
+The three below are behavioural, so they are patched onto the classes here.
 """
 from __future__ import annotations
 
@@ -33,8 +17,8 @@ _PATCHED = False
 def _require(obj: Any, name: str) -> None:
     """Fail loudly if upstream no longer has what we are about to replace.
 
-    Without this, a rename upstream would leave us silently assigning a new
-    attribute while upstream's original kept running.
+    A rename upstream would otherwise leave us assigning a new attribute while
+    upstream's original kept running.
     """
     if not hasattr(obj, name):
         raise RuntimeError(
@@ -44,11 +28,10 @@ def _require(obj: Any, name: str) -> None:
 
 
 def _patch_process_instance_get_data() -> None:
-    """ProcessInstanceModel.get_data() should use the task's get_data().
+    """Resolve instance data through the task's get_data(), not its json_data().
 
-    Upstream returns ``last_completed_task.json_data()``. m8flow returns
-    ``last_completed_task.get_data()``. Both methods exist on TaskModel; they
-    differ in how task data is resolved.
+    Both exist on TaskModel and differ in how task data is resolved; upstream
+    calls the latter.
     """
     from spiffworkflow_backend.models.process_instance import ProcessInstanceModel
 
@@ -69,7 +52,7 @@ def _patch_permission_target_init() -> None:
     """PermissionTargetModel.__init__ accepts m8flow's `command` argument.
 
     The column itself is added by models.tenant_schema; this makes it settable
-    through the constructor, as m8flow's copy of the model did.
+    through the constructor.
     """
     from spiffworkflow_backend.models.permission_target import PermissionTargetModel
 
@@ -97,12 +80,11 @@ def _patch_permission_target_init() -> None:
 def _patch_task_json_data() -> None:
     """TaskModel.json_data() overlays the task's pending delta updates.
 
-    Upstream returns the stored json data verbatim. m8flow lets an in-flight task
-    carry ``properties_json['delta']['updates']`` - lane owners, a decision value -
-    that must win over the persisted data. python_env_data() is hardened at the same
-    time so a missing hash yields ``{}`` instead of a non-dict. get_data() is left
-    to upstream: it is already ``{**python_env_data(), **json_data()}``, so patching
-    these two feeds the merged result through it.
+    An in-flight task can carry ``properties_json['delta']['updates']`` - lane
+    owners, a decision value - which must win over the persisted data. Upstream
+    returns the stored data verbatim. python_env_data() is hardened alongside it so
+    a missing hash yields ``{}``. get_data() needs no patch: it is already
+    ``{**python_env_data(), **json_data()}``.
     """
     from spiffworkflow_backend.models.json_data import JsonDataModel
     from spiffworkflow_backend.models.task import TaskModel

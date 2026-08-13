@@ -1190,22 +1190,6 @@
           }
         },
         {
-          "id": "a7692d41-b905-4049-9004-f6bea690051d",
-          "name": "m8flow-employeeid",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-usermodel-attribute-mapper",
-          "consentRequired": false,
-          "config": {
-            "aggregate.attrs": "false",
-            "userinfo.token.claim": "true",
-            "multivalued": "false",
-            "user.attribute": "m8flow-employeeid",
-            "id.token.claim": "true",
-            "access.token.claim": "true",
-            "claim.name": "m8flow-employeeid"
-          }
-        },
-        {
           "id": "e8a7c4b2-1d5f-4a0e-9b3c-6f2e8d1a4c70",
           "name": "realm_id",
           "protocol": "openid-connect",

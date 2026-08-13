@@ -1,6 +1,5 @@
 /**
- * Primary-nav catalog as plain data. Icons are resolved at render time so the
- * shape stays distinct from upstream's inline JSX NavItem array.
+ * Primary-nav catalog as plain data; icons are resolved at render time.
  */
 import type { ReactElement } from 'react';
 import {

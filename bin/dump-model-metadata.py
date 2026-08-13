@@ -1,9 +1,8 @@
 #!/usr/bin/env python
 """Dump the ORM's view of the schema, for before/after comparison.
 
-Needs no database. Answers the question that matters when replacing copied
-model files with shims + a DDL listener: does the resulting SQLAlchemy metadata
-match what the copies declared?
+Needs no database. Use it to check that a change to the models or to
+m8flow_backend.models.tenant_schema leaves the SQLAlchemy metadata as intended.
 
 Usage:
     python bin/dump-model-metadata.py > after.json
@@ -20,16 +19,6 @@ REPO = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "m8flow-backend" / "src"))
 sys.path.insert(0, str(REPO / "spiffworkflow-backend" / "src"))
 
-# Order matters: the DDL listener must be installed before any model import,
-# exactly as migrations/env.py and the app boot sequence do it.
-try:
-    from m8flow_backend.models import tenant_schema
-
-    tenant_schema.register()
-except ImportError:
-    # Running against the pre-change code, where tenant_schema does not exist.
-    print("note: tenant_schema not present (pre-change code)", file=sys.stderr)
-
 from m8flow_backend.services import model_override_patch  # noqa: E402
 
 model_override_patch.apply()
@@ -38,6 +27,16 @@ import spiffworkflow_backend.load_database_models  # noqa: E402,F401
 
 # m8flow's own models are registered here, not by upstream's loader.
 import m8flow_backend.models._timestamps_bootstrap  # noqa: E402,F401
+
+# m8flow's additions to upstream's models, configured once they are imported -
+# exactly as migrations/env.py and the app boot sequence do it.
+try:
+    from m8flow_backend.models import tenant_schema  # noqa: E402
+
+    tenant_schema.configure()
+except ImportError:
+    # Running against the pre-change code, where tenant_schema does not exist.
+    print("note: tenant_schema not present (pre-change code)", file=sys.stderr)
 
 from spiffworkflow_backend.models.db import db  # noqa: E402
 

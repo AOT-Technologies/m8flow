@@ -88,15 +88,6 @@ def apply_patch_specs(
 
 
 PRE_APP_PATCH_SPECS: tuple[PatchSpec, ...] = (
-    # MUST BE FIRST. Installs the DDL listener that adds m8flow's tenant column
-    # and constraint changes to upstream's tables as they are constructed.
-    # Any model imported before this runs is built without m8flow's columns,
-    # which surfaces later as a NOT NULL violation on insert. Guarded by
-    # tenant_schema.assert_applied().
-    PatchSpec(
-        target="m8flow_backend.models.tenant_schema:register",
-        minimum_phase=BootPhase.PRE_BOOTSTRAP,
-    ),
     PatchSpec(
         target="m8flow_backend.services.spiff_config_patch:apply",
         minimum_phase=BootPhase.PRE_BOOTSTRAP,
@@ -109,8 +100,12 @@ PRE_APP_PATCH_SPECS: tuple[PatchSpec, ...] = (
         target="m8flow_backend.services.model_override_patch:apply",
         minimum_phase=BootPhase.PRE_BOOTSTRAP,
     ),
-    # Method-level differences on upstream models that tenant_schema (a DDL
-    # listener) cannot express. Must run after the models are importable.
+    # The two below import upstream models, so they have to follow the config and
+    # override patches above.
+    PatchSpec(
+        target="m8flow_backend.models.tenant_schema:configure",
+        minimum_phase=BootPhase.PRE_BOOTSTRAP,
+    ),
     PatchSpec(
         target="m8flow_backend.services.upstream_model_behaviour_patch:apply",
         minimum_phase=BootPhase.PRE_BOOTSTRAP,

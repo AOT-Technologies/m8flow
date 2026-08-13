@@ -1,33 +1,22 @@
 # m8flow-backend/src/m8flow_backend/models/tenant_schema.py
-"""m8flow's complete schema delta over upstream SpiffArena, in one place.
+"""m8flow's ORM delta over upstream SpiffArena, declared one model at a time.
 
-WHY THIS EXISTS
----------------
-m8flow used to express its schema changes by copying each upstream model file
-and editing it.  That put LGPL-2.1 upstream code inside the Apache-2.0 tree.
+Augments upstream's mapped classes in place: appends m8flow's columns to their
+Table, maps them onto their Mapper, and redefines the constraints m8flow changes.
+No database work happens here - the Alembic migrations own the physical schema and
+PostgreSQL RLS owns tenant isolation; this only teaches SQLAlchemy about them.
 
-Instead, this module registers a single SQLAlchemy DDL listener that applies
-m8flow's changes to upstream's tables as they are constructed.  Upstream's own
-mapped classes then carry m8flow's columns and constraints, so no model file
-needs to be copied or overridden at all.
+Usage - import the models, then call ``configure()``::
 
-WHAT IT DOES
-------------
-* adds ``m8f_tenant_id`` to the 36 tenant-scoped upstream tables
-* adds the two m8flow-only columns that live on upstream tables
-* widens composite UNIQUE constraints to include the tenant column
-* relaxes upstream's global single-column UNIQUE to per-tenant uniqueness
-* adds m8flow-specific constraints and drops indexes m8flow does not want
+    import spiffworkflow_backend.load_database_models
+    tenant_schema.configure()
 
-READ THIS BEFORE CHANGING A MODEL
----------------------------------
-Nothing in ``m8flow_backend/models/`` shadows upstream any more.  If you need a
-schema change on an upstream table, add it here - do not copy the upstream file.
+The app's patch registry, ``migrations/env.py`` and ``bin/dump-model-metadata.py``
+each do that.
 
-ORDERING REQUIREMENT
---------------------
-``register()`` must run before any model module is imported.  ``assert_applied()``
-turns a mistake into a loud boot failure instead of a missing column at runtime.
+To add a schema change, add the model to a tuple below (or give it its own
+``_extend_*`` function) and write the migration that makes the same change in the
+database.
 """
 from __future__ import annotations
 
@@ -40,7 +29,57 @@ from sqlalchemy import Integer
 from sqlalchemy import String
 from sqlalchemy import Table
 from sqlalchemy import UniqueConstraint
-from sqlalchemy import event
+
+from spiffworkflow_backend.models.api_log_model import APILogModel
+from spiffworkflow_backend.models.bpmn_process import BpmnProcessModel
+from spiffworkflow_backend.models.bpmn_process_definition import BpmnProcessDefinitionModel
+from spiffworkflow_backend.models.bpmn_process_definition_relationship import (
+    BpmnProcessDefinitionRelationshipModel,
+)
+from spiffworkflow_backend.models.configuration import ConfigurationModel
+from spiffworkflow_backend.models.future_task import FutureTaskModel
+from spiffworkflow_backend.models.human_task import HumanTaskModel
+from spiffworkflow_backend.models.human_task_user import HumanTaskUserModel
+from spiffworkflow_backend.models.json_data_store import JSONDataStoreModel
+from spiffworkflow_backend.models.kkv_data_store import KKVDataStoreModel
+from spiffworkflow_backend.models.kkv_data_store_entry import KKVDataStoreEntryModel
+from spiffworkflow_backend.models.message_instance import MessageInstanceModel
+from spiffworkflow_backend.models.message_instance_correlation import (
+    MessageInstanceCorrelationRuleModel,
+)
+from spiffworkflow_backend.models.message_model import MessageCorrelationPropertyModel
+from spiffworkflow_backend.models.message_model import MessageModel
+from spiffworkflow_backend.models.message_triggerable_process_model import (
+    MessageTriggerableProcessModel,
+)
+from spiffworkflow_backend.models.permission_assignment import PermissionAssignmentModel
+from spiffworkflow_backend.models.permission_target import PermissionTargetModel
+from spiffworkflow_backend.models.pkce_code_verifier import PkceCodeVerifierModel
+from spiffworkflow_backend.models.process_caller import ProcessCallerCacheModel
+from spiffworkflow_backend.models.process_caller_relationship import ProcessCallerRelationshipModel
+from spiffworkflow_backend.models.process_instance import ProcessInstanceModel
+from spiffworkflow_backend.models.process_instance_error_detail import ProcessInstanceErrorDetailModel
+from spiffworkflow_backend.models.process_instance_event import ProcessInstanceEventModel
+from spiffworkflow_backend.models.process_instance_file_data import ProcessInstanceFileDataModel
+from spiffworkflow_backend.models.process_instance_metadata import ProcessInstanceMetadataModel
+from spiffworkflow_backend.models.process_instance_migration_detail import (
+    ProcessInstanceMigrationDetailModel,
+)
+from spiffworkflow_backend.models.process_instance_queue import ProcessInstanceQueueModel
+from spiffworkflow_backend.models.process_instance_report import ProcessInstanceReportModel
+from spiffworkflow_backend.models.process_model_cycle import ProcessModelCycleModel
+from spiffworkflow_backend.models.reference_cache import ReferenceCacheModel
+from spiffworkflow_backend.models.refresh_token import RefreshTokenModel
+from spiffworkflow_backend.models.secret_model import SecretModel
+from spiffworkflow_backend.models.service_account import ServiceAccountModel
+from spiffworkflow_backend.models.task import TaskModel
+from spiffworkflow_backend.models.task_definition import TaskDefinitionModel
+from spiffworkflow_backend.models.task_draft_data import TaskDraftDataModel
+from spiffworkflow_backend.models.task_instructions_for_end_user import (
+    TaskInstructionsForEndUserModel,
+)
+from spiffworkflow_backend.models.typeahead import TypeaheadModel
+from spiffworkflow_backend.models.user import UserModel
 
 LOGGER = logging.getLogger(__name__)
 
@@ -49,166 +88,119 @@ TENANT_FK = "m8flow_tenant.id"
 
 
 # ---------------------------------------------------------------------------
-# Configuration - the complete m8flow schema delta
+# The registries
 # ---------------------------------------------------------------------------
 
-#: Upstream tables that gain ``m8f_tenant_id``.
-#: NOTE: ``user``, ``permission_target`` and ``permission_assignment`` are
-#: deliberately absent - users and permissions are shared across tenants.
-TENANT_TABLES: frozenset[str] = frozenset(
-    {
-        "api_log",
-        "bpmn_process",
-        "bpmn_process_definition",
-        "bpmn_process_definition_relationship",
-        "configuration",
-        "future_task",
-        "human_task",
-        "human_task_user",
-        "json_data_store",
-        "kkv_data_store",
-        "kkv_data_store_entry",
-        "message",
-        "message_correlation_property",
-        "message_instance",
-        "message_instance_correlation_rule",
-        "message_triggerable_process_model",
-        "pkce_code_verifier",
-        "process_caller_cache",
-        "process_caller_relationship",
-        "process_instance",
-        "process_instance_error_detail",
-        "process_instance_event",
-        "process_instance_file_data",
-        "process_instance_metadata",
-        "process_instance_migration_detail",
-        "process_instance_queue",
-        "process_instance_report",
-        "process_model_cycle",
-        "reference_cache",
-        "refresh_token",
-        "secret",
-        "service_account",
-        "task",
-        "task_definition",
-        "task_draft_data",
-        "task_instructions_for_end_user",
-        "typeahead",
-    }
+#: Models whose table gains ``m8f_tenant_id``.
+#: ``UserModel``, ``PermissionTargetModel`` and ``PermissionAssignmentModel`` are
+#: deliberately absent: users and permissions are shared across tenants.
+TENANT_SCOPED_MODELS: tuple[type, ...] = (
+    APILogModel,
+    BpmnProcessDefinitionModel,
+    BpmnProcessDefinitionRelationshipModel,
+    BpmnProcessModel,
+    ConfigurationModel,
+    FutureTaskModel,
+    HumanTaskModel,
+    HumanTaskUserModel,
+    JSONDataStoreModel,
+    KKVDataStoreEntryModel,
+    KKVDataStoreModel,
+    MessageCorrelationPropertyModel,
+    MessageInstanceCorrelationRuleModel,
+    MessageInstanceModel,
+    MessageModel,
+    MessageTriggerableProcessModel,
+    PkceCodeVerifierModel,
+    ProcessCallerCacheModel,
+    ProcessCallerRelationshipModel,
+    ProcessInstanceErrorDetailModel,
+    ProcessInstanceEventModel,
+    ProcessInstanceFileDataModel,
+    ProcessInstanceMetadataModel,
+    ProcessInstanceMigrationDetailModel,
+    ProcessInstanceModel,
+    ProcessInstanceQueueModel,
+    ProcessInstanceReportModel,
+    ProcessModelCycleModel,
+    ReferenceCacheModel,
+    RefreshTokenModel,
+    SecretModel,
+    ServiceAccountModel,
+    TaskDefinitionModel,
+    TaskDraftDataModel,
+    TaskInstructionsForEndUserModel,
+    TaskModel,
+    TypeaheadModel,
 )
 
-#: m8flow-only columns on upstream tables, beyond the tenant column.
-#: Factories, because a Column instance cannot be attached to two tables.
-EXTRA_COLUMNS: dict[str, list] = {
-    "process_instance": [
-        lambda: Column(
-            "bpmn_version_id",
-            Integer,
-            ForeignKey("process_model_bpmn_version.id"),
-            nullable=True,
-            index=True,
-        ),
-    ],
-    "permission_target": [
-        lambda: Column("command", String(255), nullable=True),
-    ],
-}
-
-#: Existing upstream composite UNIQUE constraints that must include the tenant
-#: column.  ``{table: (constraint_name, upstream_columns)}``
-WIDEN_UNIQUE: dict[str, tuple[str, list[str]]] = {
-    "bpmn_process_definition": (
+#: Upstream composite UNIQUE constraints that have to include the tenant column,
+#: or two tenants could not hold the same value.  The name is kept so the
+#: constraint keeps matching what the migrations created.
+#: ``(model, constraint name, upstream columns)``
+TENANT_SCOPED_UNIQUES: tuple[tuple[type, str, tuple[str, ...]], ...] = (
+    (
+        BpmnProcessDefinitionModel,
         "process_hash_unique",
-        ["full_process_model_hash", "single_process_hash"],
+        ("full_process_model_hash", "single_process_hash"),
     ),
-    "json_data_store": ("_identifier_location_unique", ["identifier", "location"]),
-    "kkv_data_store": ("_kkv_identifier_location_unique", ["identifier", "location"]),
-    "message": ("message_identifier_location_unique", ["identifier", "location"]),
-    "process_instance_report": (
+    (JSONDataStoreModel, "_identifier_location_unique", ("identifier", "location")),
+    (KKVDataStoreModel, "_kkv_identifier_location_unique", ("identifier", "location")),
+    (MessageModel, "message_identifier_location_unique", ("identifier", "location")),
+    (
+        ProcessInstanceReportModel,
         "process_instance_report_unique",
-        ["created_by_id", "identifier"],
+        ("created_by_id", "identifier"),
     ),
-    "reference_cache": (
+    (
+        ReferenceCacheModel,
         "reference_cache_uniq",
-        ["generation_id", "identifier", "relative_location", "type"],
+        ("generation_id", "identifier", "relative_location", "type"),
     ),
-    "service_account": ("service_account_uniq", ["name", "created_by_user_id"]),
-    "task_definition": (
+    (ServiceAccountModel, "service_account_uniq", ("name", "created_by_user_id")),
+    (
+        TaskDefinitionModel,
         "task_definition_unique",
-        ["bpmn_process_definition_id", "bpmn_identifier"],
+        ("bpmn_process_definition_id", "bpmn_identifier"),
     ),
-}
+)
 
-#: Constraints m8flow adds that upstream does not have at all.
-#: ``{table: [(name, columns), ...]}``
-ADD_UNIQUE: dict[str, list[tuple[str, list[str]]]] = {
-    "bpmn_process_definition": [
-        (
-            "bpmn_process_definition_full_process_model_hash_tenant_unique",
-            [TENANT_COLUMN, "full_process_model_hash"],
-        )
-    ],
-    "message_triggerable_process_model": [
-        (
-            "message_triggerable_process_model_message_name_tenant_unique",
-            [TENANT_COLUMN, "message_name"],
-        )
-    ],
-    "pkce_code_verifier": [
-        ("pkce_code_verifier_pkce_id_tenant_unique", [TENANT_COLUMN, "pkce_id"])
-    ],
-    "refresh_token": [
-        ("refresh_token_user_id_tenant_unique", [TENANT_COLUMN, "user_id"])
-    ],
-    "secret": [("secret_key_tenant_unique", [TENANT_COLUMN, "key"])],
-    "permission_target": [("permission_target_uri_command_unique", ["uri", "command"])],
-    "permission_assignment": [
-        (
-            "permission_assignment_unique",
-            ["principal_id", "permission_target_id", "permission"],
-        )
-    ],
-}
+#: Upstream's global single-column UNIQUE, re-declared per tenant.  Pairs with
+#: RELAXED_UNIQUES below, which removes the global one.
+#: ``(model, constraint name, columns)``
+ADDED_UNIQUES: tuple[tuple[type, str, tuple[str, ...]], ...] = (
+    (
+        BpmnProcessDefinitionModel,
+        "bpmn_process_definition_full_process_model_hash_tenant_unique",
+        (TENANT_COLUMN, "full_process_model_hash"),
+    ),
+    (
+        MessageTriggerableProcessModel,
+        "message_triggerable_process_model_message_name_tenant_unique",
+        (TENANT_COLUMN, "message_name"),
+    ),
+    (
+        PkceCodeVerifierModel,
+        "pkce_code_verifier_pkce_id_tenant_unique",
+        (TENANT_COLUMN, "pkce_id"),
+    ),
+    (RefreshTokenModel, "refresh_token_user_id_tenant_unique", (TENANT_COLUMN, "user_id")),
+    (SecretModel, "secret_key_tenant_unique", (TENANT_COLUMN, "key")),
+)
 
-#: Upstream single-column ``unique=True`` that must become per-tenant (or, for
-#: ``user`` and ``permission_target``, simply non-unique).  An index replaces it
-#: so lookups stay fast.
-RELAX_UNIQUE: dict[str, list[str]] = {
-    "bpmn_process_definition": ["full_process_model_hash"],
-    "message_triggerable_process_model": ["message_name"],
-    "permission_target": ["uri"],
-    "pkce_code_verifier": ["pkce_id"],
-    "refresh_token": ["user_id"],
-    "secret": ["key"],
-    "user": ["username"],
-}
-
-#: Upstream constraints m8flow replaces with its own (see ADD_UNIQUE).
-#: Without this the table ends up carrying both.
-DROP_UNIQUE_BY_NAME: dict[str, list[str]] = {
-    "permission_assignment": ["permission_assignment_uniq"],
-}
-
-#: Indexes upstream declares that m8flow drops (covered by composite constraints).
-DROP_INDEX: dict[str, list[str]] = {
-    "permission_assignment": ["principal_id", "permission_target_id"],
-}
-
-#: Explicit indexes m8flow adds.
-ADD_INDEX: dict[str, list[str]] = {
-    "permission_target": ["uri", "command"],
-}
-
-#: Every table this module touches - used by assert_applied().
-MANAGED_TABLES: frozenset[str] = (
-    TENANT_TABLES
-    | frozenset(EXTRA_COLUMNS)
-    | frozenset(WIDEN_UNIQUE)
-    | frozenset(ADD_UNIQUE)
-    | frozenset(RELAX_UNIQUE)
-    | frozenset(DROP_UNIQUE_BY_NAME)
-    | frozenset(DROP_INDEX)
-    | frozenset(ADD_INDEX)
+#: Upstream ``unique=True`` columns whose global uniqueness m8flow drops.  For the
+#: models in ADDED_UNIQUES a per-tenant constraint takes over; ``user.username``
+#: and ``permission_target.uri`` simply stop being unique, because the same person
+#: and the same permission URI exist in more than one tenant.
+#: ``(model, column)``
+RELAXED_UNIQUES: tuple[tuple[type, str], ...] = (
+    (BpmnProcessDefinitionModel, "full_process_model_hash"),
+    (MessageTriggerableProcessModel, "message_name"),
+    (PermissionTargetModel, "uri"),
+    (PkceCodeVerifierModel, "pkce_id"),
+    (RefreshTokenModel, "user_id"),
+    (SecretModel, "key"),
+    (UserModel, "username"),
 )
 
 
@@ -217,51 +209,103 @@ MANAGED_TABLES: frozenset[str] = (
 # ---------------------------------------------------------------------------
 
 
-def _tenant_column() -> Column:
-    return Column(
-        TENANT_COLUMN,
-        String(255),
-        ForeignKey(TENANT_FK),
-        nullable=False,
-        index=True,
+def add_mapped_column(model: type, column: Column) -> None:
+    """Add a column to a model that SQLAlchemy has already mapped.
+
+    Two places need to learn about it and they are reached differently: the Table
+    is what ``create_all()`` and Alembic autogenerate read, and ``append_column``
+    covers that; the Mapper is what queries and instance attributes read, and a
+    column appended after the class was mapped only reaches it via
+    ``add_property``.
+    """
+    table: Table = model.__table__
+    if column.name in table.c:
+        return
+    table.append_column(column)
+    model.__mapper__.add_property(column.name, column)
+
+
+def add_tenant_column(model: type) -> None:
+    """Give a model the tenant column every tenant-scoped row is keyed by."""
+    add_mapped_column(
+        model,
+        Column(TENANT_COLUMN, String(255), ForeignKey(TENANT_FK), nullable=False, index=True),
     )
 
 
-def _has_index(table: Table, column_names: list[str]) -> bool:
-    wanted = list(column_names)
-    return any([c.name for c in ix.columns] == wanted for ix in table.indexes)
-
-
-def _ensure_index(table: Table, column_name: str) -> None:
-    """Ensure a NON-unique index exists on the column.
-
-    Upstream may declare ``index=True, unique=True``, which builds an Index whose
-    own ``unique`` flag is True. Clearing ``Column.unique`` does not change that
-    Index, so the uniqueness survives as a unique index - and two tenants could
-    not share a value. Relax any existing index as well as creating a missing one.
-    """
-    if column_name not in table.c:
+def add_unique(model: type, name: str, column_names: tuple[str, ...]) -> None:
+    table: Table = model.__table__
+    if any(isinstance(c, UniqueConstraint) and c.name == name for c in table.constraints):
         return
+    _require_columns(model, column_names)
+    table.append_constraint(UniqueConstraint(*column_names, name=name))
+
+
+def tenant_scope_unique(model: type, name: str, upstream_columns: tuple[str, ...]) -> None:
+    """Widen an upstream UNIQUE so that it only applies within a tenant.
+
+    The name is reused, so the constraint keeps matching what the migrations
+    created.  Upstream's version is dropped by that name; if upstream declared it
+    without one, fall back to matching on its columns.
+    """
+    if _discard_unique_named(model.__table__, name) is None:
+        _discard_unique_over(model.__table__, upstream_columns)
+    add_unique(model, name, (TENANT_COLUMN, *upstream_columns))
+
+
+def relax_unique(model: type, column_name: str) -> None:
+    """Drop a column's global uniqueness, keeping it indexed.
+
+    Clearing ``Column.unique`` alone is not enough.  Upstream often declares
+    ``index=True, unique=True``, which also builds an Index carrying its own
+    ``unique`` flag - left alone, the uniqueness survives as a unique index and
+    two tenants still cannot share a value.
+    """
+    table: Table = model.__table__
+    _require_columns(model, (column_name,))
+    table.c[column_name].unique = False
+    _discard_unique_over(table, (column_name,))
+    ensure_index(model, column_name)
+
+
+def ensure_index(model: type, column_name: str) -> None:
+    """Ensure a non-unique index over the column, relaxing one that is unique."""
+    table: Table = model.__table__
+    _require_columns(model, (column_name,))
     for index in table.indexes:
-        if [c.name for c in index.columns] == [column_name]:
+        if _index_columns(index) == (column_name,):
             index.unique = False
             return
     Index(f"ix_{table.name}_{column_name}", table.c[column_name])
 
 
-def _drop_unique(table: Table, column_names: list[str]) -> bool:
-    """Remove a UniqueConstraint matching exactly these columns."""
-    removed = False
-    for constraint in list(table.constraints):
-        if not isinstance(constraint, UniqueConstraint):
-            continue
-        if [c.name for c in constraint.columns] == column_names:
-            table.constraints.discard(constraint)
-            removed = True
-    return removed
+def drop_index(model: type, column_name: str) -> None:
+    """Remove a single-column index, for columns a composite constraint covers."""
+    table: Table = model.__table__
+    for index in list(table.indexes):
+        if _index_columns(index) == (column_name,):
+            table.indexes.discard(index)
 
 
-def _drop_named_unique(table: Table, name: str) -> UniqueConstraint | None:
+def _index_columns(index: Index) -> tuple[str, ...]:
+    return tuple(c.name for c in index.columns)
+
+
+def _require_columns(model: type, column_names: tuple[str, ...]) -> None:
+    """Fail loudly when upstream no longer has a column m8flow builds on.
+
+    Silently skipping would leave the constraint - and the tenant isolation that
+    depends on it - quietly missing.
+    """
+    missing = [name for name in column_names if name not in model.__table__.c]
+    if missing:
+        raise RuntimeError(
+            f"upstream drift: {model.__name__}.{model.__table__.name} has no column(s) "
+            f"{missing}. m8flow_backend.models.tenant_schema needs updating."
+        )
+
+
+def _discard_unique_named(table: Table, name: str) -> UniqueConstraint | None:
     for constraint in list(table.constraints):
         if isinstance(constraint, UniqueConstraint) and constraint.name == name:
             table.constraints.discard(constraint)
@@ -269,179 +313,120 @@ def _drop_named_unique(table: Table, name: str) -> UniqueConstraint | None:
     return None
 
 
-def _add_unique(table: Table, name: str, column_names: list[str]) -> None:
-    if any(
-        isinstance(c, UniqueConstraint) and c.name == name for c in table.constraints
-    ):
-        return
-    missing = [c for c in column_names if c not in table.c]
-    if missing:
-        # Not an error: Alembic builds partial Table objects for operations like
-        # op.create_index(), containing only the columns that operation needs.
-        # Those are throwaway and must be left alone.
-        LOGGER.debug(
-            "tenant_schema: skipping %s on %s; columns %s absent (partial table)",
-            name, table.name, missing,
-        )
-        return
-    table.append_constraint(UniqueConstraint(*column_names, name=name))
+def _discard_unique_over(table: Table, column_names: tuple[str, ...]) -> None:
+    for constraint in list(table.constraints):
+        if not isinstance(constraint, UniqueConstraint):
+            continue
+        if tuple(c.name for c in constraint.columns) == column_names:
+            table.constraints.discard(constraint)
 
 
 # ---------------------------------------------------------------------------
-# The listener
+# Model extensions that are m8flow's alone
 # ---------------------------------------------------------------------------
 
 
-def apply_to_table(table: Table) -> None:
-    """Apply m8flow's schema delta to one upstream table.
+def _extend_process_instance() -> None:
+    """Link a process instance to the BPMN version it was started from.
 
-    Idempotent: safe to call twice on the same Table.
+    ``process_model_bpmn_version`` is an m8flow table, so upstream has no reason
+    to know about this column.
     """
-    name = table.name
-    if name not in MANAGED_TABLES:
+    add_mapped_column(
+        ProcessInstanceModel,
+        Column(
+            "bpmn_version_id",
+            Integer,
+            ForeignKey("process_model_bpmn_version.id"),
+            nullable=True,
+            index=True,
+        ),
+    )
+
+
+def _extend_permission_target() -> None:
+    """Let a permission target name the command it applies to.
+
+    Upstream keys targets on ``uri`` alone; m8flow permits the same URI once per
+    command, so uniqueness moves to the pair.  ``PermissionTargetModel.__init__``
+    is taught to accept ``command`` by
+    ``m8flow_backend.services.upstream_model_behaviour_patch``.
+    """
+    add_mapped_column(PermissionTargetModel, Column("command", String(255), nullable=True))
+    add_unique(PermissionTargetModel, "permission_target_uri_command_unique", ("uri", "command"))
+    ensure_index(PermissionTargetModel, "command")
+
+
+def _extend_permission_assignment() -> None:
+    """Re-declare upstream's uniqueness under the name m8flow's migrations use.
+
+    The columns are unchanged.  Upstream's two single-column indexes go with it:
+    m8flow's migrations never created them, and leaving them here would have
+    autogenerate propose adding them to every database.
+    """
+    _discard_unique_named(PermissionAssignmentModel.__table__, "permission_assignment_uniq")
+    add_unique(
+        PermissionAssignmentModel,
+        "permission_assignment_unique",
+        ("principal_id", "permission_target_id", "permission"),
+    )
+    drop_index(PermissionAssignmentModel, "principal_id")
+    drop_index(PermissionAssignmentModel, "permission_target_id")
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+_CONFIGURED = False
+
+
+def configure() -> None:
+    """Apply m8flow's delta to upstream's models.  Idempotent.
+
+    Call once the models are imported.  Order matters within the function: the
+    constraints below are declared over columns the first two steps add.
+    """
+    global _CONFIGURED
+    if _CONFIGURED:
         return
 
-    # Alembic constructs partial, throwaway Table objects while running migration
-    # operations - op.create_index() for instance builds one holding only the
-    # indexed column. Applying m8flow's delta to those is wrong and, before this
-    # guard, crashed the migration. Real mapped tables always declare a primary
-    # key; Alembic's stubs do not.
-    if not list(table.primary_key.columns):
-        LOGGER.debug("tenant_schema: skipping %s (no primary key - partial table)", name)
-        return
+    for model in TENANT_SCOPED_MODELS:
+        add_tenant_column(model)
 
-    # 1. tenant column
-    if name in TENANT_TABLES and TENANT_COLUMN not in table.c:
-        table.append_column(_tenant_column())
+    _extend_process_instance()
+    _extend_permission_target()
+    _extend_permission_assignment()
 
-    # 2. m8flow-only columns
-    for factory in EXTRA_COLUMNS.get(name, []):
-        column = factory()
-        if column.name not in table.c:
-            table.append_column(column)
+    for model, name, column_names in TENANT_SCOPED_UNIQUES:
+        tenant_scope_unique(model, name, column_names)
 
-    # 3. relax upstream's global UNIQUE into per-tenant uniqueness
-    for column_name in RELAX_UNIQUE.get(name, []):
-        if column_name in table.c:
-            table.c[column_name].unique = False
-        _drop_unique(table, [column_name])
-        _ensure_index(table, column_name)
+    for model, name, column_names in ADDED_UNIQUES:
+        add_unique(model, name, column_names)
 
-    # 4. widen an existing composite UNIQUE to include the tenant column
-    if name in WIDEN_UNIQUE:
-        constraint_name, upstream_columns = WIDEN_UNIQUE[name]
-        existing = _drop_named_unique(table, constraint_name)
-        if existing is None:
-            _drop_unique(table, upstream_columns)
-        _add_unique(table, constraint_name, [TENANT_COLUMN, *upstream_columns])
+    for model, column_name in RELAXED_UNIQUES:
+        relax_unique(model, column_name)
 
-    # 5a. upstream constraints m8flow replaces
-    for constraint_name in DROP_UNIQUE_BY_NAME.get(name, []):
-        _drop_named_unique(table, constraint_name)
+    _assert_mapped()
 
-    # 5b. constraints m8flow adds outright
-    for constraint_name, column_names in ADD_UNIQUE.get(name, []):
-        _add_unique(table, constraint_name, column_names)
-
-    # 6. indexes m8flow drops
-    for column_name in DROP_INDEX.get(name, []):
-        for index in list(table.indexes):
-            if [c.name for c in index.columns] == [column_name]:
-                table.indexes.discard(index)
-
-    # 7. indexes m8flow adds
-    for column_name in ADD_INDEX.get(name, []):
-        _ensure_index(table, column_name)
+    _CONFIGURED = True
+    LOGGER.info("tenant_schema: configured %d tenant-scoped models", len(TENANT_SCOPED_MODELS))
 
 
-_REGISTERED = False
-_APP_METADATA: object | None = None
-#: Returned while ``spiffworkflow_backend.models.db`` is still mid-import, so the
-#: listener cannot yet know the app metadata. Distinct from "not the app's".
-_METADATA_UNRESOLVED = object()
+def _assert_mapped() -> None:
+    """Catch a tenant column that reached the Table but not the Mapper.
 
-
-def _app_metadata() -> object:
-    """The one MetaData m8flow's delta belongs to: the app's mapped models.
-
-    Resolved lazily (importing db here, not at register() time, preserves the
-    "register the listener before importing any model" contract this module's
-    spec relies on) and cached. Scoping to this metadata keeps the listener off
-    throwaway Table objects that share a managed name but live in a different
-    MetaData:
-
-    * Alembic builds each migration operation against its own per-op MetaData, so a
-      hand-written compat migration that already creates m8flow's index/constraint
-      would otherwise collide with a listener-injected duplicate ("already exists").
-    * A migration unit test builds an isolated ``sa.MetaData()`` holding only the few
-      tables it needs; injecting m8flow's FK columns there points at tables the test
-      never created (NoReferencedTableError at create_all).
-
-    If a Table happens to attach while the db module is itself still importing, the
-    import re-enters and raises. That window holds no managed app table (db does not
-    define one), so returning _METADATA_UNRESOLVED - which the caller treats as
-    "apply", the pre-scoping default - is safe and avoids a spurious error log.
+    Tenant scoping selects its entities by looking for ``m8f_tenant_id`` in
+    ``mapper.columns``; a model missing there would silently query across every
+    tenant.
     """
-    global _APP_METADATA
-    if _APP_METADATA is None:
-        try:
-            from spiffworkflow_backend.models.db import db
-        except ImportError:
-            return _METADATA_UNRESOLVED
-        _APP_METADATA = db.metadata
-    return _APP_METADATA
-
-
-def register() -> None:
-    """Install the listener. Must run before any model module is imported."""
-    global _REGISTERED
-    if _REGISTERED:
-        return
-
-    @event.listens_for(Table, "after_parent_attach")
-    def _on_table_attached(table: Table, parent: object) -> None:  # noqa: ARG001
-        # Never raise from here. This fires for every Table SQLAlchemy or Alembic
-        # constructs, including internal ones we have no business touching, and an
-        # exception aborts whatever created the table - a migration, or app boot.
-        try:
-            # Only the app's own mapped tables carry m8flow's delta. A Table in any
-            # other MetaData (an Alembic op stub, a migration test's isolated schema)
-            # keeps a managed name but is not ours to touch - see _app_metadata().
-            target = _app_metadata()
-            if target is not _METADATA_UNRESOLVED and table.metadata is not target:
-                return
-            apply_to_table(table)
-        except Exception:
-            LOGGER.exception(
-                "tenant_schema: failed applying delta to %s - continuing", table.name
-            )
-
-    _REGISTERED = True
-    LOGGER.info("tenant_schema: listener registered for %d tables", len(MANAGED_TABLES))
-
-
-def assert_applied(metadata: object) -> None:
-    """Fail loudly if the listener registered too late to catch a table.
-
-    A missing tenant column would otherwise surface as a NOT NULL violation on
-    the first insert, in production, far from the cause.
-    """
-    tables = getattr(metadata, "tables", {})
-    missing_tenant = [
-        name
-        for name in sorted(TENANT_TABLES)
-        if name in tables and TENANT_COLUMN not in tables[name].c
+    unmapped = [
+        model.__name__
+        for model in TENANT_SCOPED_MODELS
+        if TENANT_COLUMN not in model.__mapper__.columns
     ]
-    missing_extra = [
-        f"{name}.{factory().name}"
-        for name, factories in EXTRA_COLUMNS.items()
-        if name in tables
-        for factory in factories
-        if factory().name not in tables[name].c
-    ]
-    if missing_tenant or missing_extra:
+    if unmapped:
         raise RuntimeError(
-            "tenant_schema was registered too late - these tables were built "
-            f"without m8flow's columns. tenant: {missing_tenant}; extra: {missing_extra}. "
-            "Call tenant_schema.register() before importing any model."
+            f"tenant_schema: {TENANT_COLUMN} is not mapped on {unmapped}. "
+            "These models would not be tenant-scoped at query time."
         )

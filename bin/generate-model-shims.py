@@ -5,8 +5,8 @@ Background
 ----------
 m8flow used to copy each upstream model file and add its tenant column, which
 placed LGPL-2.1 upstream code inside the Apache-2.0 tree.  The schema delta now
-lives in m8flow_backend/models/tenant_schema.py, applied to upstream's tables by
-a SQLAlchemy DDL listener, so the copies serve no purpose.
+lives in m8flow_backend/models/tenant_schema.py, which augments upstream's own
+mapped classes, so the copies serve no purpose.
 
 This script rewrites each copied model module as a shim that re-exports the
 upstream names, so existing `from m8flow_backend.models.X import Y` imports keep
@@ -66,19 +66,9 @@ HOLD: dict[str, str] = {}
 #       Must be 0. A Python Enum cannot be extended after definition, so if rows
 #       do exist the whole enum has to be replaced - raise it rather than guess.
 
-SHIM_TEMPLATE = '''"""m8flow compatibility shim for {upstream_module}.
-
-The model is defined upstream by SpiffArena (LGPL-2.1). m8flow's schema delta -
-the m8f_tenant_id column and any constraint changes - is applied centrally by
-m8flow_backend.models.tenant_schema. This module contributes nothing of its own.
-
-Kept so that existing `from m8flow_backend.models.{stem} import ...` imports keep
-working. New code should import from {upstream_module} directly.
-
-DO NOT reintroduce model definitions here. Schema changes belong in
-m8flow_backend/models/tenant_schema.py.
-"""
-from __future__ import annotations
+#: No per-module docstring: it would be the same sentence in every shim. What these
+#: modules are is recorded once, in m8flow_backend/models/__init__.py.
+SHIM_TEMPLATE = '''from __future__ import annotations
 
 from {upstream_module} import (  # noqa: F401
 {imports}

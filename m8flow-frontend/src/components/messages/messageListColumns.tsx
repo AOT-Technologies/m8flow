@@ -1,7 +1,7 @@
 /**
- * Column descriptors + cell renderers for the messages list.
- * Kept separate so token-level similarity to upstream's monolithic list
- * file stays under the CPD gate threshold.
+ * Column descriptors and cell renderers for the messages list.
+ * Kept out of MessageInstanceList.tsx - merging them trips the upstream
+ * duplicate-code gate.
  */
 import type { ReactNode } from 'react';
 import { ErrorOutline } from '@mui/icons-material';

@@ -1,9 +1,8 @@
 /**
- * m8flow MessageInstanceList — clean-room shell.
+ * Tenant-scoped messages list: fetch and column composition.
  *
- * Tenant-scoped fetch + column composition live here; cell renderers live in
- * messageListColumns.tsx so CPD cannot match one large block against upstream's
- * monolithic messages list.
+ * Cell renderers live in messageListColumns.tsx. Keep them there - merging the
+ * two back together trips the upstream duplicate-code gate.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
