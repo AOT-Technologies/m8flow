@@ -1,0 +1,85 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
+import { ThemeProvider, createTheme } from '@mui/material/styles';
+import ProcessModelCard from './ProcessModelCard';
+
+vi.mock('../../services/UserService', () => ({
+  default: {
+    isSuperAdmin: vi.fn(),
+  },
+}));
+
+vi.mock('@spiff-core/views/StartProcess/ProcessModelCard', () => ({
+  default: ({ model }: { model: { id: string; display_name?: string } }) => (
+    <div data-testid={`upstream-process-model-card-${model.id}`}>
+      {model.display_name || model.id}
+    </div>
+  ),
+}));
+
+vi.mock('react-i18next', () => ({
+  initReactI18next: {
+    type: '3rdParty',
+    init: vi.fn(),
+  },
+  useTranslation: () => ({
+    t: (key: string) => key,
+  }),
+}));
+
+import UserService from '../../services/UserService';
+
+const theme = createTheme();
+
+function renderCard(model: Record<string, unknown>) {
+  return render(
+    <ThemeProvider theme={theme}>
+      <MemoryRouter>
+        <ProcessModelCard model={model as any} />
+      </MemoryRouter>
+    </ThemeProvider>,
+  );
+}
+
+describe('ProcessModelCard', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('renders tenant chip when user is super-admin and tenantName is present', () => {
+    vi.mocked(UserService.isSuperAdmin).mockReturnValue(true);
+    renderCard({
+      id: 'hr/onboarding',
+      display_name: 'Onboarding',
+      description: 'Onboarding workflow',
+      tenantId: 'tenant-a',
+      tenantName: 'Acme Co.',
+    });
+    expect(screen.getByTestId('process-model-tenant-chip-hr/onboarding')).toHaveTextContent(
+      'Acme Co.',
+    );
+  });
+
+  it('hides tenant chip for non-super-admin even if tenantName is present', () => {
+    vi.mocked(UserService.isSuperAdmin).mockReturnValue(false);
+    renderCard({
+      id: 'hr/onboarding',
+      display_name: 'Onboarding',
+      description: '',
+      tenantId: 'tenant-a',
+      tenantName: 'Acme Co.',
+    });
+    expect(screen.queryByTestId('process-model-tenant-chip-hr/onboarding')).toBeNull();
+  });
+
+  it('hides tenant chip when tenantName is missing for super-admin', () => {
+    vi.mocked(UserService.isSuperAdmin).mockReturnValue(true);
+    renderCard({
+      id: 'hr/onboarding',
+      display_name: 'Onboarding',
+      description: '',
+    });
+    expect(screen.queryByTestId('process-model-tenant-chip-hr/onboarding')).toBeNull();
+  });
+});

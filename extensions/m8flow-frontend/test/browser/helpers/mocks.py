@@ -683,6 +683,8 @@ def mock_process_groups_api(
             route.fallback()
             return
         req = route.request
+        parsed = urlparse(req.url)
+        path = parsed.path.rstrip("/")
         if req.method == "POST":
             body: dict[str, Any] = {}
             if req.post_data:
@@ -710,10 +712,23 @@ def mock_process_groups_api(
             state.append(new_group)
             _json_response(route, new_group)
             return
+        detail_match = re.search(r"/process-groups/([^/?#]+)$", path)
+        if req.method == "GET" and detail_match:
+            group_id = detail_match.group(1)
+            group = next((item for item in state if item.get("id") == group_id), None)
+            if group is None:
+                route.fulfill(
+                    status=404,
+                    content_type="application/json",
+                    body=json.dumps({"message": "Process group not found"}),
+                )
+                return
+            _json_response(route, group)
+            return
         # Super-admin tenant filter: ``useProcessGroups`` appends ``tenantId``
         # when a tenant is selected in the global tenant filter.
         visible = state
-        qs = parse_qs(urlparse(req.url).query)
+        qs = parse_qs(parsed.query)
         if "tenantId" in qs:
             tid = qs["tenantId"][0]
             visible = [g for g in state if g.get("tenantId") == tid]
