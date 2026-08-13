@@ -24,10 +24,9 @@ on:
       environment:
         description: "Environment to deploy to"
         required: true
-        default: "dev"
+        default: "demo"
         type: choice
         options:
-          - dev
           - demo
           - qa
       image_uri:
@@ -71,10 +70,7 @@ jobs:
     if: |
       always() &&
       (needs.ci.result == 'success' || needs.ci.result == 'skipped') &&
-      (
-        (github.event_name == 'push' && github.ref == 'refs/heads/develop') ||
-        (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev')
-      )
+      github.event_name == 'push' && github.ref == 'refs/heads/develop'
     uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/cd-orchestrator.yaml@v1
     with:
       environment: dev
