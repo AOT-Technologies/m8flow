@@ -1,6 +1,5 @@
 /**
- * Secret detail — clean-room form layout (not upstream's table shell).
- * Blind edit only; never calls show-value.
+ * Secret detail. Blind edit only - never calls show-value.
  */
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';

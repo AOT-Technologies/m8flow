@@ -1,9 +1,8 @@
 /**
- * m8flow ProcessModelForm — clean-room create/edit form.
+ * Create/edit form for a process model.
  *
- * Delta vs upstream: on create, super-admins must pick a tenant; the POST body
- * carries `m8f_tenant_id`. Notification/metadata sections that upstream shows
- * are intentionally omitted from this product surface.
+ * Notification and metadata settings are deliberately not on this surface -
+ * their absence is a product decision, not a gap.
  */
 import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
