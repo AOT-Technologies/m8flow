@@ -21,6 +21,20 @@ from m8flow_backend.services import model_override_patch
 model_override_patch.apply()
 
 import spiffworkflow_backend.load_database_models  # noqa: F401
+
+# m8flow's own models, which upstream's loader does not cover. Without them the
+# m8flow_tenant table is absent and every m8f_tenant_id foreign key fails to
+# resolve during autogenerate.
+import m8flow_backend.models._timestamps_bootstrap  # noqa: F401
+
+# Alembic does not go through m8flow_backend.startup.patch_registry, so m8flow's
+# additions to upstream's models are configured explicitly here, once the models
+# above are imported. Without it autogenerate sees upstream's bare schema and
+# proposes dropping every m8flow column.
+from m8flow_backend.models import tenant_schema
+
+tenant_schema.configure()
+
 from spiffworkflow_backend.models.db import db
 
 config = context.config

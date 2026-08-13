@@ -4,6 +4,7 @@ import pytest
 
 from m8flow_backend.services.process_api_blueprint_patch import (
     _make_external_form_aware_get_task_model,
+    _patched_update_form_schema_with_task_data_as_needed as update_form_schema,
 )
 
 
@@ -111,3 +112,59 @@ def test_passes_through_when_no_error() -> None:
 
     assert isinstance(task_model, FakeTaskModel)
     assert len(original.calls) == 1
+
+
+# --- _update_form_schema_with_task_data_as_needed (re-expressed; parity) -------------
+
+def _placeholder(var: str) -> list[str]:
+    return [f"options_from_task_data_var:{var}"]
+
+
+def test_form_schema_resolves_dynamic_options_from_task_data() -> None:
+    schema = {"anyOf": _placeholder("choices")}
+    update_form_schema(schema, {"choices": [{"value": "a", "label": "Ay"}, {"value": "b", "label": "Bee"}]})
+    assert schema["anyOf"] == [
+        {"type": "string", "enum": ["a"], "title": "Ay"},
+        {"type": "string", "enum": ["b"], "title": "Bee"},
+    ]
+
+
+def test_form_schema_missing_variable_renders_empty_not_500() -> None:
+    # m8flow's divergence from upstream: missing source var -> empty options, no raise.
+    schema = {"items": _placeholder("absent")}
+    update_form_schema(schema, {})
+    assert schema["items"] == []
+
+
+def test_form_schema_empty_variable_renders_empty_not_500() -> None:
+    schema = {"anyOf": _placeholder("empties")}
+    update_form_schema(schema, {"empties": []})
+    assert schema["anyOf"] == []
+
+
+def test_form_schema_string_variable_is_client_error() -> None:
+    from spiffworkflow_backend.exceptions.api_error import ApiError
+
+    schema = {"anyOf": _placeholder("stringy")}
+    with pytest.raises(ApiError) as exc:
+        update_form_schema(schema, {"stringy": "not-a-list"})
+    assert exc.value.error_code == "invalid_form_data"
+    assert exc.value.status_code == 400
+
+
+def test_form_schema_non_option_list_left_untouched() -> None:
+    schema = {"items": [{"value": "x"}]}  # not the options_from_task_data_var placeholder
+    update_form_schema(schema, {})
+    assert schema["items"] == [{"value": "x"}]
+
+
+def test_form_schema_recurses_into_nested_dicts_and_lists() -> None:
+    schema = {
+        "properties": {
+            "field": {"anyOf": _placeholder("nested")},
+        },
+        "allOf": [{"items": _placeholder("also_nested")}],
+    }
+    update_form_schema(schema, {"nested": [{"value": "n", "label": "N"}], "also_nested": []})
+    assert schema["properties"]["field"]["anyOf"] == [{"type": "string", "enum": ["n"], "title": "N"}]
+    assert schema["allOf"][0]["items"] == []

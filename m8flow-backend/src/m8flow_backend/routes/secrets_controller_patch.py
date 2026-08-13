@@ -21,48 +21,52 @@ def apply() -> None:
 
     original_secret_list = secrets_controller.secret_list
 
+    def _secret_tenant_id(secret: object) -> str | None:
+        tid = getattr(secret, "m8f_tenant_id", None)
+        return tid if isinstance(tid, str) and tid else None
+
     def patched_secret_list(page: int = 1, per_page: int = 100):
+        # Non-super-admins get upstream's tenant-scoped listing unchanged.
         if not is_super_admin_request():
             return original_secret_list(page=page, per_page=per_page)
 
-        filter_tenant_id = flask_request.args.get("tenantId") or flask_request.args.get("tenant_id")
-
+        tenant_filter = flask_request.args.get("tenantId") or flask_request.args.get("tenant_id")
         query = SecretModel.query.order_by(SecretModel.key).join(UserModel).add_columns(UserModel.username)
+        if tenant_filter:
+            query = query.filter(SecretModel.m8f_tenant_id == tenant_filter)
+        page_result = query.paginate(page=page, per_page=per_page, error_out=False)
+        rows = list(page_result.items)
 
-        if filter_tenant_id:
-            query = query.filter(SecretModel.m8f_tenant_id == filter_tenant_id)
-
-        secrets = query.paginate(page=page, per_page=per_page, error_out=False)
-
-        tenant_ids: set[str] = set()
-        for secret, _ in secrets.items:
-            tid = getattr(secret, "m8f_tenant_id", None)
-            if isinstance(tid, str) and tid:
-                tenant_ids.add(tid)
-
-        tenant_name_by_id: dict[str, str] = {}
+        tenant_ids = {tid for secret, _ in rows if (tid := _secret_tenant_id(secret))}
+        tenant_names: dict[str, str] = {}
         if tenant_ids:
-            tenants = M8flowTenantModel.query.filter(M8flowTenantModel.id.in_(tenant_ids)).all()
-            tenant_name_by_id = {t.id: t.name for t in tenants}
+            tenant_names = {
+                tenant.id: tenant.name
+                for tenant in M8flowTenantModel.query.filter(M8flowTenantModel.id.in_(tenant_ids)).all()
+            }
 
-        results = []
-        for secret, username in secrets.items:
-            s = secret.to_dict()
-            s["username"] = username
-            tid = getattr(secret, "m8f_tenant_id", None)
-            s["tenantId"] = tid
-            s["tenantName"] = tenant_name_by_id.get(tid) if isinstance(tid, str) else None
-            results.append(s)
+        def serialize(secret: object, username: str) -> dict:
+            tid = _secret_tenant_id(secret)
+            return {
+                **secret.to_dict(),
+                "username": username,
+                "tenantId": getattr(secret, "m8f_tenant_id", None),
+                "tenantName": tenant_names.get(tid) if tid else None,
+            }
 
-        response_json = {
-            "results": results,
-            "pagination": {
-                "count": len(secrets.items),
-                "total": secrets.total,
-                "pages": secrets.pages,
-            },
-        }
-        return make_response(jsonify(response_json), 200)
+        return make_response(
+            jsonify(
+                {
+                    "results": [serialize(secret, username) for secret, username in rows],
+                    "pagination": {
+                        "count": len(rows),
+                        "total": page_result.total,
+                        "pages": page_result.pages,
+                    },
+                }
+            ),
+            200,
+        )
 
     secrets_controller.secret_list = patched_secret_list
     _PATCHED = True

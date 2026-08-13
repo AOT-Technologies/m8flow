@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2026 AOT Technologies Inc.
+
 import { defineAbility } from '@casl/ability';
 import {
   createBrowserRouter,
@@ -164,9 +167,10 @@ export default function App() {
   };
 
   /**
-   * Note that QueryClientProvider and ReactQueryDevTools
-   * are React Query, now branded under the Tanstack packages.
-   * https://tanstack.com/query/latest
+   * Builds the app shell: a fatal-config short circuit, then the provider stack
+   * (query client, API error boundary, CASL ability) wrapped around the router
+   * outlet. Rendered via the router's `Component` so providers mount once and
+   * survive navigation.
    */
   const layout = () => {
     if (CONFIGURATION_ERRORS.length > 0) {

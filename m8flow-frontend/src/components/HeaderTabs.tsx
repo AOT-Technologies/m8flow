@@ -1,76 +1,72 @@
-import React from "react";
-import { Box, Tabs, Tab } from "@mui/material";
-import { useTranslation } from "react-i18next";
-import { useM8flowUriListForPermissions as useUriListForPermissions } from "../hooks/M8flowUriListForPermissions";
-import { usePermissionFetcher } from "@spiffworkflow-frontend/hooks/PermissionService";
-import UserService from "../services/UserService";
+/**
+ * Homepage header tabs — SA / permission-aware tab set.
+ */
+import { Stack, Tab, Tabs } from '@mui/material';
+import { useTranslation } from 'react-i18next';
+import { usePermissionFetcher } from '../hooks/PermissionService';
+import { useUriListForPermissions } from '../hooks/UriListForPermissions';
+import UserService from '../services/UserService';
 
-type HeaderTabsProps = {
+type Props = {
   value: number;
-  onChange: (event: React.SyntheticEvent, newValue: number) => void;
-  taskControlElement: any;
+  onChange: (event: React.SyntheticEvent, next: number) => void;
+  taskControlElement: React.ReactNode;
 };
 
 export default function HeaderTabs({
   value,
   onChange,
   taskControlElement,
-}: HeaderTabsProps) {
+}: Props) {
   const { t } = useTranslation();
   const { targetUris } = useUriListForPermissions();
+  const listUri = targetUris.processInstanceListForMePath;
   const { ability, permissionsLoaded } = usePermissionFetcher({
-    [targetUris.processInstanceListForMePath]: ["POST"],
+    [listUri]: ['POST'],
   });
-
-  const superAdmin = UserService.isSuperAdmin();
 
   if (!permissionsLoaded) return null;
 
-  // Determine the label for the first tab based on user role
-  const tasksTabLabel = superAdmin
-    ? t("tasks")
-    : t("tasks_assigned_to_me");
+  const sa = UserService.isSuperAdmin();
+  const items = [
+    {
+      label: sa ? t('tasks') : t('tasks_assigned_to_me'),
+      testId: 'tab-tasks-assigned-to-me',
+    },
+  ];
+  if (!sa && ability.can('POST', listUri)) {
+    items.push({
+      label: t('workflows_created_by_me'),
+      testId: 'tab-workflows-created-by-me',
+    });
+  }
 
   return (
-    <Box
+    <Stack
+      direction="row"
+      alignItems="center"
+      justifyContent="space-between"
       sx={{
         mb: 2,
-        display: "flex",
-        justifyContent: "space-between",
-        borderWidth: "2px",
-        borderBottomStyle: "solid",
-        borderColor: "borders.table",
-        alignItems: "center",
+        borderBottom: (theme) => `2px solid ${theme.palette.borders?.table ?? theme.palette.divider}`,
       }}
     >
       <Tabs
         value={value}
-        TabIndicatorProps={{
-          style: { height: 3 },
-        }}
         onChange={onChange}
-        sx={{ flexGrow: 1 }} // Make the Tabs container flexible
+        TabIndicatorProps={{ style: { height: 3 } }}
+        sx={{ flex: 1 }}
       >
-        <Tab label={tasksTabLabel} sx={{ textTransform: "none" }} data-testid="tab-tasks-assigned-to-me" />
-        {/* Hide Workflows created by me for super-admin and for users who cannot start process instances */}
-        {!superAdmin && ability.can("POST", targetUris.processInstanceListForMePath) && (
+        {items.map((item) => (
           <Tab
-            label={t("workflows_created_by_me")}
-            sx={{ textTransform: "none" }}
-            data-testid="tab-workflows-created-by-me"
+            key={item.testId}
+            label={item.label}
+            data-testid={item.testId}
+            sx={{ textTransform: 'none' }}
           />
-        )}
+        ))}
       </Tabs>
-      <Box
-        sx={{
-          display: "flex",
-          justifyContent: "right",
-          alignItems: "center",
-          verticalAlign: "center",
-        }}
-      >
-        {taskControlElement}
-      </Box>
-    </Box>
+      {taskControlElement}
+    </Stack>
   );
 }

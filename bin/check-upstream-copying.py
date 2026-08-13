@@ -8,6 +8,11 @@ file?" Upstream trees (spiffworkflow-backend/, spiffworkflow-frontend/,
 spiff-arena-common/) must already be present locally (fetched by
 bin/fetch-upstream.sh; they are gitignored).
 
+LOCAL REPRO NOTE: to reproduce CI exactly, also pull the connector-proxy upstream
+trees, which the default fetch omits, or m8flow-connector-proxy/ silently compares
+against nothing:
+    ./bin/fetch-upstream-extra.sh connector-proxy-demo connector-proxies
+
 Detection is layered because a single similarity percentage is not enough:
 
   A  whole-file line similarity (difflib.SequenceMatcher over code lines)
@@ -139,6 +144,84 @@ def _skip_path(rel: str) -> bool:
         return True
     return any(s in ("/" + rel) for s in SKIP_PATH_SUBSTRINGS)
 
+
+# Reviewable non-copyrightability allowlist.
+#
+# A path-EXACT set of config/data assets whose overlap with upstream is dictated by
+# an external tool, framework, spec, or standard - not copied creative expression.
+# Each was verified file-by-file (no shared distinctive comments, no copied creative
+# block; only framework/spec/tool-mandated bytes). Copyright does not attach to such
+# bytes (merger / scenes a faire / third-party-tool provenance), so these need no
+# baseline entry and are exempt from the ratio/containment/block/comment SIMILARITY
+# signals.
+#
+# This is deliberately NOT the coarse SKIP_FILENAMES set: entries are full repo paths
+# so exactly one file is waived, each carries its rationale inline for review, and a
+# license/attribution MARKER on an allowlisted file still fails (the waiver covers
+# similarity, never a copied license header). Whether any of these can and SHOULD be
+# regenerated for full independence is tracked in the config/data-asset report
+# (m8flow LGPL de-contamination map, ticket 05) - the realm export in particular is
+# allowlisted only as an interim measure pending regeneration.
+NONCOPYRIGHTABLE_ALLOWLIST: dict[str, str] = {
+    "m8flow-backend/migrations/script.py.mako":
+        "Alembic's own stock migration template; identical for any Alembic project.",
+    "m8flow-backend/migrations/alembic.ini":
+        "Alembic [loggers]/[handlers] config schema; m8flow's comments are independently written.",
+    "m8flow-backend/keycloak/realm_exports/m8flow-tenant-template.json":
+        "Keycloak realm export; residual overlap is Keycloak built-in default scaffolding only (authenticationFlows, requiredActions, client-registration policy). Spiff-derived private key material (KeyProvider) and spiff identifiers were purged; the KeyProvider block is inert (create_realm uses minimal-create + partialImport, so Keycloak generates fresh per-realm keys).",
+    "m8flow-backend/keycloak/themes/m8flow/login/login.ftl":
+        "Keycloak login theme; overlap is the theme-SPI markup contract (kc* classes, msg() keys), heavily m8flow-customized otherwise.",
+    "m8flow-connector-proxy/dev.docker-compose.yml":
+        "docker-compose schema + env-var keys; m8flow's own service/context/volumes.",
+    "m8flow-nats-consumer/pyproject.toml":
+        "PEP-621 project/build skeleton; m8flow's own name/deps.",
+    "m8flow-connector-proxy/pyproject.toml":
+        "PEP-621 project/build skeleton; m8flow's own name/deps (compared against connector-proxy-demo, present only in CI's extra fetch).",
+    "extensions/m8flow-frontend/test/browser/pyproject.toml":
+        "PEP-621 project/build skeleton; m8flow's own name/deps.",
+    "m8flow-frontend/package.json":
+        "npm manifest; overlap is the shared framework dependency list (version facts); m8flow's own name/scripts.",
+    "m8flow-frontend/tsconfig.json":
+        "TS/vite compiler options; m8flow adds its own @spiff-core path aliases.",
+    "m8flow-frontend/public/manifest.json":
+        "W3C web-app-manifest spec keys; m8flow's own name/icons.",
+    "m8flow-frontend/public/keycloak.json":
+        "Keycloak JS-adapter config keys; differs only by port.",
+    "m8flow-frontend/public/new_bpmn_diagram.bpmn":
+        "Blank Camunda-Modeler BPMN export; the {{PROCESS_ID}} token is interop-required by the frontend.",
+    "m8flow-frontend/public/new_dmn_diagram.dmn":
+        "Blank Camunda-Modeler DMN export; tool-generated seed diagram.",
+    # ReactDiagramEditor cluster (map ticket 14). m8flow already split upstream's 980-line
+    # monolith into a thin component + hooks; the copied-logic file (useDiagramImport) was
+    # rewritten clean-room. These four carry only non-copyrightable contract: fixed bpmn-js/
+    # dmn-js CSS asset import paths, the component's props interface/destructure, and standard
+    # MUI/i18n JSX. (bpmn-js/bpmn-js-spiffworkflow event/API wiring is scenes a faire.)
+    "m8flow-frontend/src/components/ReactDiagramEditor.types.ts":
+        "Diagram editor props type contract (ReactDiagramEditorProps) — the component's API surface; prop names are the contract with upstream call sites, plus m8flow's own hideDeleteButton/hideViewXmlButton.",
+    "m8flow-frontend/src/components/ReactDiagramEditor.tsx":
+        "Thin diagram-editor shell; overlap is fixed bpmn-js/dmn-js CSS asset import paths (published by those packages, must match exactly) and the props destructure.",
+    "m8flow-frontend/src/components/DiagramEditorControls.tsx":
+        "Zoom controls; overlap is MUI icon imports + standard i18n tooltip/IconButton JSX (the diagram_zoom_* translation keys are the i18n contract).",
+    "m8flow-frontend/src/components/DiagramEditorToolbar.tsx":
+        "Diagram toolbar; overlap is the props type/destructure contract and MUI/casl/i18n framework JSX.",
+    # Surfaced by the shebang/Dockerfile scan (gate coverage audit). Structure is
+    # m8flow's own; residual overlap is a functional contract (the backend's
+    # SPIFFWORKFLOW_BACKEND_* config-key names) or standard Docker/gunicorn build idiom.
+    "m8flow-backend/bin/local_development_environment_setup":
+        "Dev env-var loader, re-expressed independently (ratio 0.27, block 3); residual overlap is the SPIFFWORKFLOW_BACKEND_* config-key names the backend reads (functional contract), not copied logic.",
+    "m8flow-connector-proxy/Dockerfile":
+        "Container build for the connector proxy; overlap is standard Docker build steps (FROM/RUN/COPY/CMD), m8flow's own layout otherwise.",
+    "m8flow-connector-proxy/dev.Dockerfile":
+        "Dev container build; standard Docker build-step idiom (8 lines).",
+    "m8flow-connector-proxy/bin/boot_server_in_docker":
+        "Minimal gunicorn boot wrapper (17 lines); overlap is the gunicorn/docker invocation idiom.",
+    "m8flow-connector-proxy/bin/run_server_locally":
+        "Minimal local-run wrapper (15 lines); overlap is the gunicorn/flask run invocation idiom.",
+    # Test harness one-liner — same jest-dom side-effect import every Vitest project uses.
+    "m8flow-frontend/src/test/vitest.setup.ts":
+        "Vitest setup entry; sole line is `import '@testing-library/jest-dom'` (Testing Library's required side-effect import). Non-copyrightable config/tooling contract.",
+}
+
 # Layer C1 — unambiguous copy evidence. These ALWAYS fail and are never
 # grandfathered. Kept deliberately conservative: "SpiffWorkflow" alone is NOT a
 # marker (the framework is referenced legitimately all over m8flow). Extend with
@@ -230,26 +313,95 @@ def code_lines(lines: list[str]) -> list[str]:
     return [s for ln in lines if (s := ln.strip())]
 
 
+# A line that any independent re-expression of the same behaviour would share because
+# it carries no copyrightable authorship — a reference (import), pure punctuation/JSX
+# scaffolding, or a canonical single-call framework idiom. Discounting these from the
+# ratio/containment/block comparison lets a genuine clean-room recompose (which imports
+# the upstream leaves via @spiff-core and re-expresses the structure) clear the gate,
+# while a real body-copy keeps its DISTINCTIVE high-signal lines and still fails.
+# See the frontend override recipe (map ticket 12 / 07).
+_LOW_SIGNAL_MIN_LEN = 12
+_FROM_IMPORT_RE = re.compile(r"\bfrom\s+['\"][^'\"]+['\"]\s*;?$")
+_PUNCT_ONLY_RE = re.compile(r"^[(){}\[\];,<>/&|?:.=\s]+$")
+_BARE_TAG_RE = re.compile(r"^</?[A-Za-z][\w.]*\s*/?>$")            # <Routes> </Tabs> <br />
+_HOOK_IDIOM_RE = re.compile(r"^(const|let)\s+[\w{},:\s]+=\s*use[A-Z]\w*\(\)\s*;?$")
+
+
+def _is_low_signal(s: str) -> bool:
+    if len(s) < _LOW_SIGNAL_MIN_LEN:
+        return True
+    if s.startswith(("import ", "export {", "export * ", "from ")):
+        return True
+    if _FROM_IMPORT_RE.search(s):          # `} from '@mui/material';`
+        return True
+    if _PUNCT_ONLY_RE.match(s):
+        return True
+    if _BARE_TAG_RE.match(s):
+        return True
+    if _HOOK_IDIOM_RE.match(s):            # `const navigate = useNavigate();`
+        return True
+    return False
+
+
+def discriminating(code: list[str]) -> list[str]:
+    """Drop low-signal, non-copyrightable lines — the discriminating subset used for
+    similarity scoring. Applied symmetrically to both files (see _is_low_signal)."""
+    return [s for s in code if not _is_low_signal(s)]
+
+
 def compare_code(a_code: list[str], b_code: list[str]) -> tuple[float, float, int]:
-    """Return (symmetric ratio, containment of a in b, longest contiguous block)."""
-    sm = difflib.SequenceMatcher(None, a_code, b_code, autojunk=False)
+    """Return (symmetric ratio, containment of a in b, longest contiguous block).
+
+    Scored on the DISCRIMINATING lines only: shared framework idiom/imports/scaffolding
+    do not count as copying, but every distinctive line of a real copy still does."""
+    a_sig = discriminating(a_code)
+    b_sig = discriminating(b_code)
+    sm = difflib.SequenceMatcher(None, a_sig, b_sig, autojunk=False)
     blocks = sm.get_matching_blocks()
     matched = sum(b.size for b in blocks)
     longest = max((b.size for b in blocks), default=0)
     ratio = sm.ratio()
-    containment = matched / len(a_code) if a_code else 0.0
+    containment = matched / len(a_sig) if a_sig else 0.0
     return ratio, containment, longest
 
 
+def _has_shebang(path: Path) -> bool:
+    """True if the file starts with a ``#!`` shebang. Read as bytes so binaries are
+    safely rejected (they will not begin with the two ASCII bytes ``#!``)."""
+    try:
+        with open(path, "rb") as fh:
+            return fh.read(2) == b"#!"
+    except OSError:
+        return False
+
+
+def _is_scannable(path: Path, suffixes: set[str]) -> bool:
+    """Decide whether a file is compared against upstream.
+
+    Keying purely on suffix misses two classes spiff-arena ships that are copied
+    wholesale: ``Dockerfile`` / ``*.Dockerfile`` (no scannable suffix) and executable
+    ``bin/`` scripts written shebang-first with NO extension (e.g. ``get_token``). Both
+    are caught here in addition to the suffix allow-set. See the gate coverage audit."""
+    if path.suffix in suffixes:
+        return True
+    name = path.name
+    if name == "Dockerfile" or name.endswith(".Dockerfile"):
+        return True
+    # Any-suffix shebang: a `.sh` script is already covered by suffix; this catches the
+    # extensionless (and oddly-suffixed) executable scripts a suffix filter would drop.
+    return _has_shebang(path)
+
+
 def iter_tree_files(root_path: Path, suffixes: set[str]):
-    """Yield files under root_path with a matching suffix, pruning SKIP_DIR_PARTS
-    (so huge trees like node_modules are never traversed)."""
+    """Yield files under root_path that _is_scannable (matching suffix, a Dockerfile, or
+    a shebang script), pruning SKIP_DIR_PARTS (so huge trees like node_modules are never
+    traversed)."""
     for dirpath, dirnames, filenames in os.walk(root_path):
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIR_PARTS]
         for fn in filenames:
-            if Path(fn).suffix not in suffixes:
-                continue
             path = Path(dirpath) / fn
+            if not _is_scannable(path, suffixes):
+                continue
             if _skip_path(str(path.relative_to(REPO_ROOT))):
                 continue
             yield path
@@ -459,9 +611,9 @@ def changed_files(base_ref: str) -> list[str]:
         f
         for f in out.splitlines()
         if f.startswith(roots)
-        and Path(f).suffix in TEXT_SUFFIXES
-        and not _skip_path(f)
         and (REPO_ROOT / f).is_file()
+        and _is_scannable(REPO_ROOT / f, TEXT_SUFFIXES)
+        and not _skip_path(f)
     )
 
 
@@ -478,6 +630,10 @@ def _flagged(r: FileResult, thr: float, ct: float, blk: int) -> bool:
 def build_baseline(results: list[FileResult], thr: float, ct: float, blk: int) -> dict:
     files = {}
     for r in results:
+        # Allowlisted assets are exempt (see NONCOPYRIGHTABLE_ALLOWLIST); keep them
+        # out of a regenerated baseline so --write-baseline never re-adds them.
+        if r.apache_path in NONCOPYRIGHTABLE_ALLOWLIST:
+            continue
         if _flagged(r, thr, ct, blk):
             files[r.apache_path] = {
                 "upstream": r.upstream_path,
@@ -507,6 +663,12 @@ def evaluate(r: FileResult, baseline: dict[str, dict], thr: float, ct: float, bl
     # C1 markers: always fatal, never grandfathered.
     for m in r.markers:
         violations.append(f"MARKER (never grandfathered): {m}")
+
+    # Reviewable non-copyrightability allowlist: waive the similarity signals for a
+    # path-exact config/data asset whose overlap is framework/spec/tool-dictated
+    # (verified). Markers above are intentionally NOT waived.
+    if r.apache_path in NONCOPYRIGHTABLE_ALLOWLIST:
+        return violations
 
     if r.upstream_path is None:
         return violations
