@@ -1,26 +1,29 @@
+/**
+ * Backend HTTP client. Token auth, GET 401 retry, text fetch, PUT.
+ */
 import { BACKEND_BASE_URL } from '@spiffworkflow-frontend/config';
 import { objectIsEmpty } from '@spiffworkflow-frontend/helpers';
 import UserService from './UserService';
 
-const HttpMethods = {
+export const HttpMethods = {
   GET: 'GET',
   POST: 'POST',
   PUT: 'PUT',
   DELETE: 'DELETE',
+} as const;
+
+const STATUS_PHRASE: Record<number, string> = {
+  400: 'Bad Request',
+  401: 'Unauthorized',
+  403: 'Forbidden',
+  404: 'Not Found',
+  413: 'Payload Too Large',
+  500: 'Internal Server Error',
+  502: 'Bad Gateway',
+  503: 'Service Unavailable',
 };
 
-export const getBasicHeaders = (): Record<string, string> => {
-  const headers: Record<string, string> = {};
-
-  const accessToken = UserService.getAccessToken();
-  if (accessToken) {
-    headers.Authorization = `Bearer ${accessToken}`;
-  }
-
-  return headers;
-};
-
-type backendCallProps = {
+type CallArgs = {
   path: string;
   successCallback: Function;
   failureCallback?: Function;
@@ -30,10 +33,8 @@ type backendCallProps = {
   postBody?: any;
 };
 
-type requestExecutionResult = {
-  response: Response;
-  text: string;
-};
+type RawExchange = { response: Response; text: string };
+type NormalizedErrorResult = Record<string, unknown> & { message: string };
 
 export class UnauthenticatedError extends Error {
   constructor(message: string) {
@@ -49,52 +50,30 @@ export class UnexpectedResponseError extends Error {
   }
 }
 
-const messageForHttpError = (statusCode: number, statusText: string) => {
-  let errorMessage = `HTTP Error ${statusCode}`;
-  if (statusText) {
-    errorMessage += `: ${statusText}`;
-  } else {
-    let httpTextForCode = '';
-    switch (statusCode) {
-      case 400:
-        httpTextForCode = 'Bad Request';
-        break;
-      case 401:
-        httpTextForCode = 'Unauthorized';
-        break;
-      case 403:
-        httpTextForCode = 'Forbidden';
-        break;
-      case 404:
-        httpTextForCode = 'Not Found';
-        break;
-      case 413:
-        httpTextForCode = 'Payload Too Large';
-        break;
-      case 500:
-        httpTextForCode = 'Internal Server Error';
-        break;
-      case 502:
-        httpTextForCode = 'Bad Gateway';
-        break;
-      case 503:
-        httpTextForCode = 'Service Unavailable';
-        break;
-      default:
-        break;
-    }
-    if (httpTextForCode) {
-      errorMessage += `: ${httpTextForCode}`;
-    }
+export const getBasicHeaders = (): Record<string, string> => {
+  const out: Record<string, string> = {};
+  const token = UserService.getAccessToken();
+  if (token) {
+    out.Authorization = `Bearer ${token}`;
   }
-  return errorMessage;
+  return out;
+};
+
+export const messageForHttpError = (code: number, phrase: string) => {
+  const bits = [`HTTP Error ${code}`];
+  if (phrase) {
+    bits.push(phrase);
+  } else if (STATUS_PHRASE[code]) {
+    bits.push(STATUS_PHRASE[code]);
+  }
+  return bits.length > 1 ? `${bits[0]}: ${bits[1]}` : bits[0];
 };
 
 const normalizeErrorResult = (
   payload: unknown,
   statusCode: number,
   statusText: string,
-) => {
+): NormalizedErrorResult => {
   const fallbackMessage = messageForHttpError(statusCode, statusText);
 
   if (payload && typeof payload === 'object') {
@@ -102,75 +81,123 @@ const normalizeErrorResult = (
     const existingMessage =
       typeof normalized.message === 'string' ? normalized.message.trim() : '';
     if (existingMessage) {
-      return normalized;
+      return normalized as NormalizedErrorResult;
     }
 
     const detailMessage =
       typeof normalized.detail === 'string' ? normalized.detail.trim() : '';
     if (detailMessage) {
       normalized.message = detailMessage;
-      return normalized;
+      return normalized as NormalizedErrorResult;
     }
 
     const titleMessage =
       typeof normalized.title === 'string' ? normalized.title.trim() : '';
     normalized.message = titleMessage || fallbackMessage;
-    return normalized;
+    return normalized as NormalizedErrorResult;
   }
 
   return { message: fallbackMessage };
 };
 
-const shouldRetryUnauthenticatedRequest = ({
-  httpMethod,
-  hasRetried,
-}: {
-  httpMethod: string;
-  hasRetried: boolean;
-}) => {
-  // A second GET often succeeds after another concurrent request refreshes auth cookies.
-  return !hasRetried && httpMethod === HttpMethods.GET;
+const looksLikeHtmlDocument = (body: string) => {
+  const head = body.trimStart().slice(0, 16).toLowerCase();
+  return head.startsWith('<!') || head.startsWith('<html');
 };
 
-const executeBackendRequest = ({
-  path,
+const stripVersionPrefix = (path: string) => path.replace(/^\/v1\.0/, '');
+
+const assembleFetchInit = ({
   httpMethod = 'GET',
   extraHeaders = {},
   postBody = {},
-}: Pick<backendCallProps, 'path' | 'httpMethod' | 'extraHeaders' | 'postBody'>): Promise<
-  requestExecutionResult
-> => {
+}: Pick<CallArgs, 'httpMethod' | 'extraHeaders' | 'postBody'>): RequestInit => {
   const headers = getBasicHeaders();
-
   if (!objectIsEmpty(extraHeaders)) {
     Object.assign(headers, extraHeaders);
   }
 
-  const httpArgs = {};
-
-  if (postBody instanceof FormData) {
-    Object.assign(httpArgs, { body: postBody });
-  } else if (typeof postBody === 'object') {
-    if (!objectIsEmpty(postBody)) {
-      // NOTE: stringify strips out keys with value undefined
-      Object.assign(httpArgs, { body: JSON.stringify(postBody) });
-      Object.assign(headers, { 'Content-Type': 'application/json' });
-    }
-  } else {
-    Object.assign(httpArgs, { body: postBody });
-  }
-
-  Object.assign(httpArgs, {
-    headers: new Headers(headers as any),
+  const init: RequestInit = {
     method: httpMethod,
     credentials: 'include',
+  };
+
+  if (postBody instanceof FormData) {
+    init.body = postBody;
+  } else if (typeof postBody === 'object') {
+    if (!objectIsEmpty(postBody)) {
+      init.body = JSON.stringify(postBody);
+      headers['Content-Type'] = 'application/json';
+    }
+  } else {
+    init.body = postBody;
+  }
+
+  init.headers = new Headers(headers as HeadersInit);
+  return init;
+};
+
+const exchangeOnce = ({
+  path,
+  httpMethod,
+  extraHeaders,
+  postBody,
+}: Pick<CallArgs, 'path' | 'httpMethod' | 'extraHeaders' | 'postBody'>): Promise<RawExchange> => {
+  const url = `${BACKEND_BASE_URL}${stripVersionPrefix(path)}`;
+  return fetch(url, assembleFetchInit({ httpMethod, extraHeaders, postBody })).then(
+    (response) => response.text().then((text) => ({ response, text })),
+  );
+};
+
+const mayRetryGetAfter401 = (method: string, alreadyRetried: boolean) =>
+  !alreadyRetried && method === HttpMethods.GET;
+
+const withGetAuthRetry = (
+  method: string,
+  run: () => Promise<RawExchange>,
+  alreadyRetried = false,
+): Promise<RawExchange> =>
+  run().then((exchange) => {
+    if (exchange.response.status !== 401) {
+      return exchange;
+    }
+    if (mayRetryGetAfter401(method, alreadyRetried)) {
+      return withGetAuthRetry(method, run, true);
+    }
+    throw new UnauthenticatedError('You must be authenticated to do this.');
   });
 
-  const updatedPath = path.replace(/^\/v1\.0/, '');
+const parseJsonOrThrow = (exchange: RawExchange) => {
+  try {
+    return JSON.parse(exchange.text);
+  } catch (err) {
+    const statusLine = messageForHttpError(
+      exchange.response.status,
+      exchange.response.statusText,
+    );
+    let detail = `Received unexpected response from server. ${statusLine}.`;
+    if (looksLikeHtmlDocument(exchange.text)) {
+      detail +=
+        ' The response was HTML (e.g. the app index page) instead of JSON. ' +
+        'Ensure the backend is running (e.g. port 8000) and that VITE_BACKEND_BASE_URL points to it; ' +
+        'when using npm start with a relative URL, the Vite proxy forwards /v1.0 to the backend.';
+    }
+    console.error(`${detail} Body: ${exchange.text}`);
+    if (err instanceof SyntaxError) {
+      throw new UnexpectedResponseError(detail);
+    }
+    throw err;
+  }
+};
 
-  return fetch(`${BACKEND_BASE_URL}${updatedPath}`, httpArgs).then((response) =>
-    response.text().then((text) => ({ response, text })),
-  );
+const redirectHomeIfUnauthenticated = (err: any) => {
+  if (err?.name !== 'UnauthenticatedError') {
+    return false;
+  }
+  if (window.location.pathname !== '/login') {
+    UserService.redirectToLogin();
+  }
+  return true;
 };
 
 const makeCallToBackend = ({
@@ -181,149 +208,83 @@ const makeCallToBackend = ({
   httpMethod = 'GET',
   extraHeaders = {},
   postBody = {},
-}: backendCallProps) => {
-  const makeRequest = (hasRetried = false): Promise<requestExecutionResult> => {
-    return executeBackendRequest({
-      path,
-      httpMethod,
-      extraHeaders,
-      postBody,
-    }).then((result) => {
-      if (result.response.status === 401) {
-        if (
-          shouldRetryUnauthenticatedRequest({
-            httpMethod,
-            hasRetried,
-          })
-        ) {
-          return makeRequest(true);
-        }
-        throw new UnauthenticatedError('You must be authenticated to do this.');
-      }
-      return result;
-    });
-  };
+}: CallArgs) => {
+  withGetAuthRetry(httpMethod, () =>
+    exchangeOnce({ path, httpMethod, extraHeaders, postBody }),
+  )
+    .then((exchange) => {
+      const payload = parseJsonOrThrow(exchange);
 
-  makeRequest()
-    .then((result: any) => {
-      let jsonResult = null;
-      const isHtml =
-        typeof result.text === 'string' &&
-        (result.text.trimStart().startsWith('<!') || result.text.trimStart().startsWith('<html'));
-      try {
-        jsonResult = JSON.parse(result.text);
-      } catch (error) {
-        const httpStatusMesage = messageForHttpError(
-          result.response.status,
-          result.response.statusText,
-        );
-        let baseMessage = `Received unexpected response from server. ${httpStatusMesage}.`;
-        if (isHtml) {
-          baseMessage +=
-            ' The response was HTML (e.g. the app index page) instead of JSON. ' +
-            'Ensure the backend is running (e.g. port 8000) and that VITE_BACKEND_BASE_URL points to it; ' +
-            'when using npm start with a relative URL, the Vite proxy forwards /v1.0 to the backend.';
-        }
-        console.error(`${baseMessage} Body: ${result.text}`);
-        if (error instanceof SyntaxError) {
-          throw new UnexpectedResponseError(baseMessage);
-        }
-        throw error;
-      }
-      if (result.response.status === 403) {
+      if (exchange.response.status === 403) {
         const normalizedError = normalizeErrorResult(
-          jsonResult,
-          result.response.status,
-          result.response.statusText,
+          payload,
+          exchange.response.status,
+          exchange.response.statusText,
         );
         if (onUnauthorized) {
           onUnauthorized(normalizedError);
         } else if (UserService.isPublicUser()) {
           window.location.href = '/public/sign-out';
         } else {
-          // Hopefully we can make this service a hook and use the error message context directly
-
           alert(normalizedError.message);
         }
-      } else if (!result.response.ok) {
+        return;
+      }
+
+      if (!exchange.response.ok) {
         const normalizedError = normalizeErrorResult(
-          jsonResult,
-          result.response.status,
-          result.response.statusText,
+          payload,
+          exchange.response.status,
+          exchange.response.statusText,
         );
         if (failureCallback) {
           failureCallback(normalizedError);
-        } else {
-          let message = 'A server error occurred.';
-          if (normalizedError.message) {
-            message = String(normalizedError.message);
-          }
-          console.error(message);
-
-          alert(message);
+          return;
         }
-      } else {
-        successCallback(jsonResult);
+        console.error(normalizedError.message);
+        alert(normalizedError.message);
+        return;
       }
+
+      successCallback(payload);
     })
-    .catch((error) => {
-      if (error.name !== 'UnauthenticatedError') {
-        if (failureCallback) {
-          failureCallback(error);
-        } else {
-          console.error(error.message);
-        }
-      } else if (window.location.pathname !== '/login') {
-        // The block is for authentication errors.
-        // If we're already on the login page, do nothing.
-        // Otherwise, redirect to login page.
-        UserService.redirectToLogin();
+    .catch((err) => {
+      if (redirectHomeIfUnauthenticated(err)) {
+        return;
+      }
+      if (failureCallback) {
+        failureCallback(err);
+      } else {
+        console.error(err.message);
       }
     });
 };
 
 /**
- * GET request that returns response body as text (e.g. for XML). Uses same auth/headers as makeCallToBackend.
+ * Same auth as JSON calls; returns raw response text (e.g. BPMN XML).
  */
 const fetchTextFromBackend = (
   path: string,
   successCallback: (text: string) => void,
   failureCallback?: (err: unknown) => void,
 ) => {
-  const makeRequest = (hasRetried = false): Promise<requestExecutionResult> => {
-    return executeBackendRequest({
-      path,
-      httpMethod: HttpMethods.GET,
-    }).then((result) => {
-      if (result.response.status === 401) {
-        if (
-          shouldRetryUnauthenticatedRequest({
-            httpMethod: HttpMethods.GET,
-            hasRetried,
-          })
-        ) {
-          return makeRequest(true);
-        }
-        throw new UnauthenticatedError('You must be authenticated to do this.');
-      }
-      return result;
-    });
-  };
-
-  makeRequest()
+  withGetAuthRetry(HttpMethods.GET, () =>
+    exchangeOnce({ path, httpMethod: HttpMethods.GET }),
+  )
     .then(({ response, text }) => {
       if (response.ok) {
         successCallback(text);
-      } else if (failureCallback) {
-        failureCallback(new Error(response.statusText || `HTTP ${response.status}`));
+        return;
       }
+      failureCallback?.(
+        new Error(response.statusText || `HTTP ${response.status}`),
+      );
     })
     .catch((err) => {
-      if (err.name !== 'UnauthenticatedError' && failureCallback) {
-        failureCallback(err);
-      } else if (err.name === 'UnauthenticatedError' && window.location.pathname !== '/login') {
-        UserService.redirectToLogin();
+      if (redirectHomeIfUnauthenticated(err)) {
+        return;
       }
+      failureCallback?.(err);
     });
 };
 

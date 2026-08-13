@@ -6,14 +6,14 @@ _PATCHED = False
 
 
 def apply() -> None:
-    """Patch secret endpoints to use the common backend and super-admin tenant filtering."""
+    """Patch secret endpoints to use the common backend layer."""
     global _PATCHED
     if _PATCHED:
         return
 
     from flask import g
-    from flask import request as flask_request
     from flask import jsonify, make_response
+    from flask import request as flask_request
 
     secrets_controller = importlib.import_module("spiffworkflow_backend.routes.secrets_controller")
     from spiffworkflow_backend.services.user_service import UserService
@@ -56,13 +56,13 @@ def apply() -> None:
         return make_response(jsonify({"ok": True}), 200)
 
     def patched_secret_list(page: int = 1, per_page: int = 100):
-        filter_tenant_id = None
+        tenant_id = None
         if is_super_admin_request():
-            filter_tenant_id = flask_request.args.get("tenantId") or flask_request.args.get("tenant_id")
+            tenant_id = flask_request.args.get("tenantId") or flask_request.args.get("tenant_id")
         payload = get_secret_backend().serialize_secret_list_result(
             page=page,
             per_page=per_page,
-            tenant_id=filter_tenant_id,
+            tenant_id=tenant_id,
         )
         return make_response(jsonify(payload), 200)
 

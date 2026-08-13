@@ -19,7 +19,8 @@
     "baseUrl": ".",
     "paths": {
       "@spiffworkflow-frontend/*": ["../spiffworkflow-frontend/src/*"],
-      "@spiffworkflow-frontend-assets/*": ["../spiffworkflow-frontend/src/assets/*"]
+      "@spiffworkflow-frontend-assets/*": ["../spiffworkflow-frontend/src/assets/*"],
+      "@spiff-core/*": ["../spiffworkflow-frontend/src/*"]
     }
   },
   "include": ["src"]

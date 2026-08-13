@@ -32,10 +32,6 @@ class FakeSecretBackend:
         self.calls.append(("get_secret", key))
         return FakeSecret(key=key, user_id=7)
 
-    def get_secret_value(self, key: str) -> str:
-        self.calls.append(("get_secret_value", key))
-        return "vault-value"
-
     def add_secret(self, key: str, value: str, user_id: int) -> FakeSecret:
         self.calls.append(("add_secret", key, value, user_id))
         return FakeSecret(key=key, user_id=user_id)
@@ -60,8 +56,16 @@ class FakeSecretBackend:
         tenant_id: str | None = None,
     ) -> dict[str, object]:
         self.calls.append(("serialize_secret_list_result", page, per_page, tenant_id))
+        effective_tenant_id = tenant_id or "tenant-from-context"
         return {
-            "results": [{"key": "API_TOKEN", "tenantId": tenant_id}],
+            "results": [
+                {
+                    "key": "API_TOKEN",
+                    "tenantId": effective_tenant_id,
+                    "tenantName": f"Tenant {effective_tenant_id}",
+                    "username": "vault-user",
+                }
+            ],
             "pagination": {"count": 1, "total": 1, "pages": 1},
         }
 
@@ -156,7 +160,7 @@ def test_secret_crud_routes_delegate_to_common_backend(monkeypatch) -> None:
     ]
 
 
-def test_secret_list_applies_super_admin_tenant_filter(monkeypatch) -> None:
+def test_secret_list_delegates_to_common_backend_with_super_admin_filter(monkeypatch) -> None:
     backend = FakeSecretBackend()
     state = {"is_super_admin": True}
     secrets_controller = _load_patch(monkeypatch, backend, state)
@@ -171,10 +175,20 @@ def test_secret_list_applies_super_admin_tenant_filter(monkeypatch) -> None:
             default_response = secrets_controller.secret_list(page=3, per_page=10)
 
     assert response.status_code == 200
-    assert response.get_json()["results"][0]["tenantId"] == "tenant-b"
+    assert response.get_json()["results"][0] == {
+        "key": "API_TOKEN",
+        "tenantId": "tenant-b",
+        "tenantName": "Tenant tenant-b",
+        "username": "vault-user",
+    }
 
     assert default_response.status_code == 200
-    assert default_response.get_json()["results"][0]["tenantId"] is None
+    assert default_response.get_json()["results"][0] == {
+        "key": "API_TOKEN",
+        "tenantId": "tenant-from-context",
+        "tenantName": "Tenant tenant-from-context",
+        "username": "vault-user",
+    }
 
     assert backend.calls == [
         ("serialize_secret_list_result", 2, 25, "tenant-b"),

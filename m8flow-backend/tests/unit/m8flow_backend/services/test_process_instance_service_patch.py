@@ -117,7 +117,35 @@ def test_apply_forces_completed_task_data_when_rehydrating_process_instance(monk
         def update_form_task_data(cls, process_instance, spiff_task, data, user):
             return None
 
+        @classmethod
+        def run_process_instance_with_processor(
+            cls,
+            process_instance,
+            status_value: str | None = None,
+            execution_strategy_name: str | None = None,
+            should_schedule_waiting_timer_events: bool = True,
+        ):
+            # Upstream-shaped body: resolves ProcessInstanceProcessor from this module.
+            task_runnability = FakeTaskRunnability.unknown_if_ready_tasks
+            with FakeProcessInstanceQueueService.dequeued(process_instance):
+                FakeProcessInstanceMigrator.run(process_instance)
+                processor = fake_service_module.ProcessInstanceProcessor(
+                    process_instance,
+                    workflow_completed_handler=cls.schedule_next_process_model_cycle,
+                )
+            if status_value and cls.can_optimistically_skip(processor, status_value):
+                return (processor, task_runnability)
+            fake_db_module.db.session.refresh(process_instance)
+            if status_value is None or process_instance.status == status_value:
+                task_runnability = processor.do_engine_steps(
+                    save=True,
+                    execution_strategy_name=execution_strategy_name,
+                    should_schedule_waiting_timer_events=should_schedule_waiting_timer_events,
+                )
+            return (processor, task_runnability)
+
     fake_service_module.ProcessInstanceService = FakeProcessInstanceService
+    fake_service_module.ProcessInstanceProcessor = FakeProcessInstanceProcessor
     fake_processor_module.ProcessInstanceProcessor = FakeProcessInstanceProcessor
     fake_queue_module.ProcessInstanceQueueService = FakeProcessInstanceQueueService
     fake_migrator_module.ProcessInstanceMigrator = FakeProcessInstanceMigrator
@@ -716,7 +744,22 @@ def test_apply_preflights_queued_form_submissions_before_returning(monkeypatch) 
                 }
             )
 
+        @classmethod
+        def complete_form_task(cls, processor, spiff_task, data, user, human_task, execution_mode=None):
+            # Upstream-shaped: looks up should_queue_process_instance on this module.
+            cls.update_form_task_data(processor.process_instance_model, spiff_task, data, user)
+            processor.complete_task(spiff_task, human_task, user=user)
+            if fake_service_module.should_queue_process_instance(execution_mode):
+                processor.bpmn_process_instance.refresh_waiting_tasks()
+                tasks = processor.bpmn_process_instance.get_tasks(
+                    state=FakeTaskState.WAITING | FakeTaskState.READY
+                )
+                FakeJinjaService.add_instruction_for_end_user_if_appropriate(
+                    tasks, processor.process_instance_model.id, set()
+                )
+
     fake_service_module.ProcessInstanceService = FakeProcessInstanceService
+    fake_service_module.should_queue_process_instance = lambda execution_mode: True
     fake_processor_module.ProcessInstanceProcessor = FakeProcessInstanceProcessor
     fake_queue_module.ProcessInstanceQueueService = FakeProcessInstanceQueueService
     fake_migrator_module.ProcessInstanceMigrator = FakeProcessInstanceMigrator
@@ -966,12 +1009,65 @@ def _apply_patch_for_api_task_tests(
         def update_form_task_data(cls, process_instance, spiff_task, data, user):
             return None
 
-    if upstream_raises_type_error:
         @staticmethod
-        def _upstream_spiff_task_to_api_task(_processor, _spiff_task):
-            raise TypeError("sequence item 0: expected str instance, NoneType found")
+        def spiff_task_to_api_task(processor, spiff_task):
+            # Upstream-shaped: join owner emails (raises TypeError when any email is None).
+            from spiffworkflow_backend.services.authorization_service import AuthorizationService
+            from spiffworkflow_backend.exceptions.error import UserDoesNotHaveAccessToTaskError
+            from spiffworkflow_backend.models.human_task import HumanTaskModel
+            from spiffworkflow_backend.models.task import Task
+            from SpiffWorkflow.util.task import TaskState
 
-        FakeProcessInstanceService.spiff_task_to_api_task = _upstream_spiff_task_to_api_task
+            task_guid = str(spiff_task.id)
+            can_complete_local = True
+            try:
+                AuthorizationService.assert_user_can_complete_task(
+                    processor.process_instance_model.id, task_guid, SimpleNamespace(id=0)
+                )
+            except UserDoesNotHaveAccessToTaskError:
+                can_complete_local = False
+
+            assigned_user_group_identifier = None
+            potential_owner_usernames = None
+            if not can_complete_local:
+                blocked = HumanTaskModel.query.filter_by(task_id=task_guid).first()
+                if blocked is not None and blocked.lane_assignment_id is None and blocked.potential_owners:
+                    user_list = [u.email for u in blocked.potential_owners]
+                    potential_owner_usernames = ",".join(user_list)
+
+            return Task(
+                spiff_task.id,
+                spiff_task.task_spec.bpmn_id,
+                spiff_task.task_spec.bpmn_name,
+                spiff_task.task_spec.description,
+                TaskState.get_name(spiff_task.state),
+                can_complete=can_complete_local,
+                lane=getattr(spiff_task.task_spec, "lane", None),
+                process_identifier=spiff_task.task_spec._wf_spec.name,
+                process_instance_id=processor.process_instance_model.id,
+                process_model_identifier=processor.process_model_identifier,
+                process_model_display_name=processor.process_model_display_name,
+                properties=dict(getattr(spiff_task.task_spec, "extensions", {}) or {}),
+                parent=None,
+                event_definition=None,
+                error_message=None,
+                assigned_user_group_identifier=assigned_user_group_identifier,
+                potential_owner_usernames=potential_owner_usernames,
+            )
+
+    if upstream_raises_type_error:
+        # Force the first attempt to fail like upstream's email join; coerce+retry succeeds.
+        _real_upstream = FakeProcessInstanceService.spiff_task_to_api_task
+        _calls = {"n": 0}
+
+        def _upstream_spiff_task_to_api_task(processor, spiff_task):
+            _calls["n"] += 1
+            if _calls["n"] == 1:
+                raise TypeError("sequence item 0: expected str instance, NoneType found")
+            return _real_upstream(processor, spiff_task)
+
+        FakeProcessInstanceService.spiff_task_to_api_task = staticmethod(_upstream_spiff_task_to_api_task)
+
     fake_service_module.ProcessInstanceService = FakeProcessInstanceService
     fake_processor_module.ProcessInstanceProcessor = FakeProcessInstanceProcessor
     fake_queue_module.ProcessInstanceQueueService = FakeProcessInstanceQueueService

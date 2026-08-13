@@ -4,11 +4,19 @@ from dataclasses import dataclass, field
 import sys
 from types import ModuleType
 
-import pytest
 from flask import Flask
 from flask import jsonify
 
 from m8flow_backend.routes import tasks_controller_patch
+
+
+def test_is_process_initiator_ownership_clause_detects_initiator_predicates() -> None:
+    left = type("Col", (), {"key": "process_initiator_id"})()
+    right = 7
+    criterion = type("Bin", (), {"left": left, "right": right})()
+    assert tasks_controller_patch._is_process_initiator_ownership_clause(criterion) is True
+    other = type("Bin", (), {"left": type("Col", (), {"key": "status"})(), "right": "ok"})()
+    assert tasks_controller_patch._is_process_initiator_ownership_clause(other) is False
 
 
 def test_extract_process_instance_id_handles_kwargs_args_and_invalid_values() -> None:
@@ -25,11 +33,15 @@ def _build_patched_tasks_controller(monkeypatch):
     fake_tasks_controller_module = ModuleType("spiffworkflow_backend.routes.tasks_controller")
     calls: list[str] = []
 
-    def fake_task_list_my_tasks(*args, **kwargs):
+    def fake_get_tasks(*args, **kwargs):
         calls.append("original")
         return jsonify({"results": [{"id": "original"}], "pagination": {"count": 1, "total": 1, "pages": 1}})
 
-    fake_tasks_controller_module._get_tasks = fake_task_list_my_tasks
+    def fake_task_list_my_tasks(*args, **kwargs):
+        calls.append("original_my_tasks")
+        return jsonify({"results": [{"id": "original"}], "pagination": {"count": 1, "total": 1, "pages": 1}})
+
+    fake_tasks_controller_module._get_tasks = fake_get_tasks
     fake_tasks_controller_module.task_list_my_tasks = fake_task_list_my_tasks
 
     monkeypatch.setitem(
@@ -63,28 +75,28 @@ def test_super_admin_per_instance_call_defers_to_original_handler(monkeypatch) -
         response = fake_tasks_controller_module.task_list_my_tasks(process_instance_id=5)
         payload = response.get_json()
 
-    assert calls == ["original"]
+    assert calls == ["original_my_tasks"]
     assert payload["results"][0]["id"] == "original"
 
 
 def test_super_admin_invalid_process_instance_id_takes_all_open_tasks_branch(monkeypatch) -> None:
-    # An invalid process_instance_id (e.g. "abc") resolves to None via
-    # _extract_process_instance_id, so a super-admin call must take the global
-    # all-open-tasks branch rather than deferring to the original handler. The fake
-    # tasks_controller module cannot satisfy the global view's DB/model dependencies,
-    # so that branch raises here -- but crucially the ORIGINAL handler is never
-    # invoked (calls stays empty), which is what proves the routing decision is
-    # intentional for an unparseable process_instance_id.
+    # Invalid process_instance_id → None → SA all-open list (not per-instance handler).
     fake_tasks_controller_module, calls = _build_patched_tasks_controller(monkeypatch)
 
     monkeypatch.setattr(tasks_controller_patch, "is_super_admin_request", lambda: True)
+    monkeypatch.setattr(
+        tasks_controller_patch,
+        "_enrich_task_list_results_with_tenant_fields",
+        lambda response: response,
+    )
 
     app = Flask(__name__)
     with app.app_context():
-        with pytest.raises(Exception):
-            fake_tasks_controller_module.task_list_my_tasks(process_instance_id="abc")
+        response = fake_tasks_controller_module.task_list_my_tasks(process_instance_id="abc")
+        payload = response.get_json()
 
-    assert calls == []
+    assert calls == ["original"]
+    assert payload["results"][0]["id"] == "original"
 
 
 def test_non_super_admin_uses_original_handler(monkeypatch) -> None:
@@ -97,7 +109,7 @@ def test_non_super_admin_uses_original_handler(monkeypatch) -> None:
         response = fake_tasks_controller_module.task_list_my_tasks()
         payload = response.get_json()
 
-    assert calls == ["original"]
+    assert calls == ["original_my_tasks"]
     assert payload["results"][0]["id"] == "original"
 
 

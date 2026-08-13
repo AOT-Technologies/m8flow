@@ -1,484 +1,211 @@
-import { useState } from 'react';
+/**
+ * Create/edit form for a process model.
+ *
+ * Notification and metadata settings are deliberately not on this surface -
+ * their absence is a product decision, not a gap.
+ */
+import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import {
   Button,
   TextField,
   Select,
   MenuItem,
-  IconButton,
   Typography,
   FormControl,
   InputLabel,
+  Stack,
+  Box,
 } from '@mui/material';
-import Grid from '@mui/material/Grid';
-import { Add as AddAlt, Delete as TrashCan } from '@mui/icons-material';
+
 import { modifyProcessIdentifierForPathParam, slugifyString } from '../helpers';
 import HttpService from '../services/HttpService';
 import TenantService from '../services/TenantService';
 import UserService from '../services/UserService';
-import SpiffTooltip from '@spiffworkflow-frontend/components/SpiffTooltip';
+import { ProcessModel } from '../interfaces';
 
-type OwnProps = {
+type ProcessModelFormProps = {
   mode: string;
   processModel: ProcessModel;
   processGroupId?: string;
-  setProcessModel: (..._args: any[]) => any;
+  setProcessModel: (...args: any[]) => any;
 };
+
+const IDENTIFIER_RE = /^[a-z0-9][0-9a-z.-]+[a-z0-9]$/;
 
 export default function ProcessModelForm({
   mode,
-  processModel,
-  processGroupId,
-  setProcessModel,
-}: OwnProps) {
-  const [identifierInvalid, setIdentifierInvalid] = useState<boolean>(false);
-  const [idHasBeenUpdatedByUser, setIdHasBeenUpdatedByUser] =
-    useState<boolean>(false);
-  const [displayNameInvalid, setDisplayNameInvalid] = useState<boolean>(false);
-  const [superAdminTenantId, setSuperAdminTenantId] = useState<string>('');
-  const [superAdminTenantInvalid, setSuperAdminTenantInvalid] =
-    useState<boolean>(false);
+  processModel: model,
+  processGroupId: groupId,
+  setProcessModel: setModel,
+}: ProcessModelFormProps) {
   const { t } = useTranslation();
-  const navigate = useNavigate();
+  const go = useNavigate();
 
-  const isSuperAdminCreate = mode === 'new' && UserService.isSuperAdmin();
-  const { data: tenants = [], isLoading: tenantsLoading } = useQuery({
+  const [badId, setBadId] = useState(false);
+  const [idEdited, setIdEdited] = useState(false);
+  const [badName, setBadName] = useState(false);
+  const [chosenTenant, setChosenTenant] = useState('');
+  const [badTenant, setBadTenant] = useState(false);
+
+  const isCreate = mode === 'new';
+  const requireTenant = isCreate && UserService.isSuperAdmin();
+  const { data: tenantOptions = [], isLoading: loadingTenants } = useQuery({
     queryKey: ['tenants'],
     queryFn: () => TenantService.getAllTenants(),
-    enabled: isSuperAdminCreate,
+    enabled: requireTenant,
   });
 
-  const navigateToProcessModel = (result: ProcessModel) => {
-    if ('id' in result) {
-      const modifiedProcessModelPathFromResult =
-        modifyProcessIdentifierForPathParam(result.id);
-      navigate(`/process-models/${modifiedProcessModelPathFromResult}`);
-    }
+  const merge = (patch: Partial<ProcessModel>) => setModel({ ...model, ...patch });
+
+  const afterSave = (saved: ProcessModel) => {
+    if (!saved?.id) return;
+    go(`/process-models/${modifyProcessIdentifierForPathParam(saved.id)}`);
   };
 
-  const hasValidIdentifier = (identifierToCheck: string) => {
-    return identifierToCheck.match(/^[a-z0-9][0-9a-z.-]+[a-z0-9]$/);
+  const handleDisplayName = (value: string) => {
+    setBadName(false);
+    const patch: Partial<ProcessModel> = { display_name: value };
+    if (!idEdited && isCreate) patch.id = slugifyString(value);
+    merge(patch);
   };
 
-  const handleFormSubmission = (event: any) => {
-    event.preventDefault();
-    let hasErrors = false;
-    if (mode === 'new' && !hasValidIdentifier(processModel.id)) {
-      setIdentifierInvalid(true);
-      hasErrors = true;
+  const handleSubmit = (evt: FormEvent) => {
+    evt.preventDefault();
+
+    let failed = false;
+    if (isCreate && !IDENTIFIER_RE.test(model.id)) {
+      setBadId(true);
+      failed = true;
     }
-    if (processModel.display_name === '') {
-      setDisplayNameInvalid(true);
-      hasErrors = true;
+    if (!model.display_name) {
+      setBadName(true);
+      failed = true;
     }
-    if (isSuperAdminCreate && !superAdminTenantId.trim()) {
-      setSuperAdminTenantInvalid(true);
-      hasErrors = true;
+    if (requireTenant && !chosenTenant.trim()) {
+      setBadTenant(true);
+      failed = true;
     }
-    if (hasErrors) {
-      return;
-    }
-    let path = `/process-models/${modifyProcessIdentifierForPathParam(
-      processGroupId || '',
-    )}`;
-    let httpMethod = 'POST';
-    if (mode === 'edit') {
-      httpMethod = 'PUT';
-      path = `/process-models/${modifyProcessIdentifierForPathParam(
-        processModel.id,
-      )}`;
-    }
-    const postBody = {
-      display_name: processModel.display_name,
-      description: processModel.description,
-      metadata_extraction_paths: processModel.metadata_extraction_paths,
-      fault_or_suspend_on_exception: processModel.fault_or_suspend_on_exception,
-      exception_notification_addresses:
-        processModel.exception_notification_addresses,
+    if (failed) return;
+
+    const isEdit = mode === 'edit';
+    const endpoint = isEdit
+      ? `/process-models/${modifyProcessIdentifierForPathParam(model.id)}`
+      : `/process-models/${modifyProcessIdentifierForPathParam(groupId || '')}`;
+
+    const payload: Record<string, unknown> = {
+      display_name: model.display_name,
+      description: model.description,
+      metadata_extraction_paths: model.metadata_extraction_paths,
+      fault_or_suspend_on_exception: model.fault_or_suspend_on_exception,
+      exception_notification_addresses: model.exception_notification_addresses,
     };
-    if (mode === 'new') {
-      Object.assign(postBody, {
-        id: `${processGroupId}/${processModel.id}`,
-      });
-    }
-    if (isSuperAdminCreate && superAdminTenantId.trim()) {
-      Object.assign(postBody, { m8f_tenant_id: superAdminTenantId.trim() });
+    if (isCreate) payload.id = `${groupId}/${model.id}`;
+    if (requireTenant && chosenTenant.trim()) {
+      payload.m8f_tenant_id = chosenTenant.trim();
     }
 
     HttpService.makeCallToBackend({
-      path,
-      successCallback: navigateToProcessModel,
-      httpMethod,
-      postBody,
+      path: endpoint,
+      successCallback: afterSave,
+      httpMethod: isEdit ? 'PUT' : 'POST',
+      postBody: payload,
     });
-  };
-
-  const updateProcessModel = (newValues: any) => {
-    const processModelToCopy = {
-      ...processModel,
-    };
-    Object.assign(processModelToCopy, newValues);
-    setProcessModel(processModelToCopy);
-  };
-
-  const metadataExtractionPathForm = (
-    index: number,
-    metadataExtractionPath: MetadataExtractionPath,
-  ) => {
-    return (
-      <Grid container spacing={2} alignItems="center" sx={{ mb: 1 }}>
-        <Grid size={{ xs: 3 }}>
-          <TextField
-            id={`process-model-metadata-extraction-path-key-${index}`}
-            data-testid={`metadata-extraction-key-input-${index}`}
-            label={t('extraction_key')}
-            value={metadataExtractionPath.key}
-            onChange={(event: any) => {
-              const cep: MetadataExtractionPath[] =
-                processModel.metadata_extraction_paths || [];
-              const newMeta = { ...metadataExtractionPath };
-              newMeta.key = event.target.value;
-              cep[index] = newMeta;
-              updateProcessModel({ metadata_extraction_paths: cep });
-            }}
-            fullWidth
-          />
-        </Grid>
-        <Grid size={{ xs: 6 }}>
-          <TextField
-            id={`process-model-metadata-extraction-path-${index}`}
-            data-testid={`metadata-extraction-path-input-${index}`}
-            label={t('extraction_path')}
-            value={metadataExtractionPath.path}
-            onChange={(event: any) => {
-              const cep: MetadataExtractionPath[] =
-                processModel.metadata_extraction_paths || [];
-              const newMeta = { ...metadataExtractionPath };
-              newMeta.path = event.target.value;
-              cep[index] = newMeta;
-              updateProcessModel({ metadata_extraction_paths: cep });
-            }}
-            fullWidth
-          />
-        </Grid>
-        <Grid size={{ xs: 1 }}>
-          <SpiffTooltip title={t('remove_key')}>
-            <IconButton
-              data-testid={`metadata-extraction-remove-button-${index}`}
-              aria-label={t('remove_key')}
-              onClick={() => {
-                const cep: MetadataExtractionPath[] =
-                  processModel.metadata_extraction_paths || [];
-                cep.splice(index, 1);
-                updateProcessModel({ metadata_extraction_paths: cep });
-              }}
-            >
-              <TrashCan />
-            </IconButton>
-          </SpiffTooltip>
-        </Grid>
-      </Grid>
-    );
-  };
-
-  const metadataExtractionPathFormArea = () => {
-    if (processModel.metadata_extraction_paths) {
-      return processModel.metadata_extraction_paths.map(
-        (metadataExtractionPath: MetadataExtractionPath, index: number) => {
-          return metadataExtractionPathForm(index, metadataExtractionPath);
-        },
-      );
-    }
-    return null;
-  };
-
-  const addBlankMetadataExtractionPath = () => {
-    const cep: MetadataExtractionPath[] =
-      processModel.metadata_extraction_paths || [];
-    cep.push({ key: '', path: '' });
-    updateProcessModel({ metadata_extraction_paths: cep });
-  };
-
-  const notificationAddressForm = (
-    index: number,
-    notificationAddress: string,
-  ) => {
-    return (
-      <Grid container spacing={2} alignItems="center" sx={{ mb: 1 }}>
-        <Grid size={{ xs: 10 }}>
-          <TextField
-            id={`process-model-notification-address-key-${index}`}
-            data-testid={`notification-address-input-${index}`}
-            label={t("address")}
-            value={notificationAddress}
-            onChange={(event: any) => {
-              const notificationAddresses: string[] =
-                processModel.exception_notification_addresses || [];
-              notificationAddresses[index] = event.target.value;
-              updateProcessModel({
-                exception_notification_addresses: notificationAddresses,
-              });
-            }}
-            fullWidth
-          />
-        </Grid>
-        <Grid size={{ xs: 2 }}>
-          <SpiffTooltip title={t('remove_address')}>
-            <IconButton
-              data-testid={`notification-address-remove-button-${index}`}
-              aria-label={t('remove_address')}
-              onClick={() => {
-                const notificationAddresses: string[] =
-                  processModel.exception_notification_addresses || [];
-                notificationAddresses.splice(index, 1);
-                updateProcessModel({
-                  exception_notification_addresses: notificationAddresses,
-                });
-              }}
-            >
-              <TrashCan />
-            </IconButton>
-          </SpiffTooltip>
-        </Grid>
-      </Grid>
-    );
-  };
-
-  const notificationAddressFormArea = () => {
-    if (processModel.exception_notification_addresses) {
-      return processModel.exception_notification_addresses.map(
-        (notificationAddress: string, index: number) => {
-          return notificationAddressForm(index, notificationAddress);
-        },
-      );
-    }
-    return null;
-  };
-
-  const addBlankNotificationAddress = () => {
-    const notificationAddresses: string[] =
-      processModel.exception_notification_addresses || [];
-    notificationAddresses.push('');
-    updateProcessModel({
-      exception_notification_addresses: notificationAddresses,
-    });
-  };
-
-  const onDisplayNameChanged = (newDisplayName: any) => {
-    setDisplayNameInvalid(false);
-    const updateDict = { display_name: newDisplayName };
-    if (!idHasBeenUpdatedByUser && mode === 'new') {
-      Object.assign(updateDict, { id: slugifyString(newDisplayName) });
-    }
-    updateProcessModel(updateDict);
-  };
-
-  const onNotificationTypeChanged = (newNotificationType: string) => {
-    const updateDict = { fault_or_suspend_on_exception: newNotificationType };
-    updateProcessModel(updateDict);
-  };
-
-  const formElements = () => {
-    const textInputs = [
-      <TextField
-        id="process-model-display-name"
-        key="process-model-display-name"
-        name="display_name"
-        data-testid="process-model-display-name-input"
-        error={displayNameInvalid}
-        helperText={displayNameInvalid ? t('display_name_required') : ''}
-        label={t('display_name')}
-        value={processModel.display_name}
-        onChange={(event: any) => {
-          onDisplayNameChanged(event.target.value);
-        }}
-        fullWidth
-        sx={{ mb: 2 }}
-      />,
-    ];
-
-    if (isSuperAdminCreate) {
-      textInputs.push(
-        <FormControl
-          key="super-admin-tenant-select"
-          fullWidth
-          error={superAdminTenantInvalid}
-          sx={{ mb: 2 }}
-          disabled={tenantsLoading}
-        >
-          <InputLabel id="super-admin-tenant-label">{t('tenant')}</InputLabel>
-          <Select
-            labelId="super-admin-tenant-label"
-            id="super-admin-tenant-id"
-            data-testid="super-admin-tenant-select"
-            value={superAdminTenantId}
-            label={t('tenant')}
-            onChange={(e) => {
-              setSuperAdminTenantId(e.target.value as string);
-              if (superAdminTenantInvalid && (e.target.value as string).trim()) {
-                setSuperAdminTenantInvalid(false);
-              }
-            }}
-          >
-            <MenuItem value="">
-              <em>{t('select_tenant_placeholder')}</em>
-            </MenuItem>
-            {tenants.map((tenant) => (
-              <MenuItem key={tenant.id} value={tenant.id}>
-                {tenant.name} ({tenant.slug})
-              </MenuItem>
-            ))}
-          </Select>
-          {superAdminTenantInvalid ? (
-            <Typography variant="caption" color="error" sx={{ mt: 0.5, ml: 1.5 }}>
-              {t('tenant_required_for_super_admin')}
-            </Typography>
-          ) : null}
-        </FormControl>,
-      );
-    }
-
-    if (mode === 'new') {
-      textInputs.push(
-        <TextField
-          id="process-model-identifier"
-          key="process-model-identifier"
-          name="id"
-          data-testid="process-model-identifier-input"
-          error={identifierInvalid}
-          helperText={
-            identifierInvalid ? t('identifier_validation_message') : ''
-          }
-          label={t('identifier')}
-          value={processModel.id}
-          onChange={(event: any) => {
-            updateProcessModel({ id: event.target.value });
-            // was invalid, and now valid
-            if (identifierInvalid && hasValidIdentifier(event.target.value)) {
-              setIdentifierInvalid(false);
-            }
-            setIdHasBeenUpdatedByUser(true);
-          }}
-          fullWidth
-          sx={{ mb: 2 }}
-        />,
-      );
-    }
-
-    textInputs.push(
-      <TextField
-        id="process-model-description"
-        key="process-model-description"
-        name="description"
-        data-testid="process-model-description-input"
-        label={t('description')}
-        value={processModel.description}
-        onChange={(event: any) =>
-          updateProcessModel({ description: event.target.value })
-        }
-        multiline
-        fullWidth
-        sx={{ mb: 2 }}
-      />,
-    );
-
-    /* textInputs.push(
-      <FormControl fullWidth>
-        <InputLabel id="notification-type-select-label">
-          {t('notification_type')}
-        </InputLabel>
-        <Select
-          id="notification-type"
-          key="notification-type"
-          value={processModel.fault_or_suspend_on_exception}
-          labelId="notification-type-select-label"
-          label={t('notification_type')}
-          onChange={(event: any) => {
-            onNotificationTypeChanged(event.target.value);
-          }}
-          fullWidth
-          sx={{ mb: 2 }}
-        >
-          <MenuItem value="fault">{t('fault')}</MenuItem>
-          <MenuItem value="suspend">{t('suspend')}</MenuItem>
-        </Select>
-      </FormControl>,
-    ); */
-    /* textInputs.push(
-      <Typography variant="h3" sx={{ mt: 2, mb: 1 }}>
-        {t('notification_addresses')}
-      </Typography>,
-    );
-
-    textInputs.push(
-      <Typography variant="body2" sx={{ mb: 2 }}>
-        {t('notification_addresses_help')}
-      </Typography>,
-    );
-    textInputs.push(<>{notificationAddressFormArea()}</>);
-    textInputs.push(
-      <Button
-        data-testid="add-notification-address-button"
-        startIcon={<AddAlt />}
-        variant="outlined"
-        size="small"
-        onClick={() => {
-          addBlankNotificationAddress();
-        }}
-        sx={{ mt: 1, mb: 2 }}
-      >
-        {t('add_notification_address')}
-      </Button>,
-    ); */
-
-    /* textInputs.push(
-      <Typography variant="h3" sx={{ mt: 2, mb: 1 }}>
-        {t('metadata_extractions')}
-      </Typography>,
-    );
-
-    textInputs.push(
-      <Typography variant="body2" sx={{ mb: 2 }}>
-        {t('metadata_extractions_help')}
-      </Typography>,
-    );
-    textInputs.push(<>{metadataExtractionPathFormArea()}</>);
-    textInputs.push(
-      <Button
-        data-testid="add-metadata-extraction-path-button"
-        startIcon={<AddAlt />}
-        variant="outlined"
-        size="small"
-        onClick={() => {
-          addBlankMetadataExtractionPath();
-        }}
-        sx={{ mt: 1, mb: 2 }}
-      >
-        {t('add_metadata_extraction_path')}
-      </Button>,
-    ); */
-
-    return textInputs;
-  };
-
-  const formButtons = () => {
-    return (
-      <Grid container justifyContent="flex-start" sx={{ mt: 2 }}>
-        <Grid>
-          <Button data-testid="process-model-submit-button" variant="contained" type="submit">
-            {t('submit')}
-          </Button>
-        </Grid>
-      </Grid>
-    );
   };
 
   return (
-    <form data-testid="process-model-form" onSubmit={handleFormSubmission}>
-      {formElements()}
-      {formButtons()}
-    </form>
+    <Box
+      component="form"
+      data-testid="process-model-form"
+      onSubmit={handleSubmit}
+    >
+      <Stack spacing={2}>
+        <TextField
+          id="m8-model-display-name"
+          name="display_name"
+          data-testid="process-model-display-name-input"
+          error={badName}
+          helperText={badName ? t('display_name_required') : ''}
+          label={t('display_name')}
+          value={model.display_name}
+          onChange={(e) => handleDisplayName(e.target.value)}
+          fullWidth
+        />
+
+        {requireTenant ? (
+          <FormControl fullWidth error={badTenant} disabled={loadingTenants}>
+            <InputLabel id="m8-tenant-label">{t('tenant')}</InputLabel>
+            <Select
+              labelId="m8-tenant-label"
+              id="m8-tenant-id"
+              data-testid="super-admin-tenant-select"
+              value={chosenTenant}
+              label={t('tenant')}
+              onChange={(e) => {
+                const next = String(e.target.value);
+                setChosenTenant(next);
+                if (badTenant && next.trim()) setBadTenant(false);
+              }}
+            >
+              <MenuItem value="">
+                <em>{t('select_tenant_placeholder')}</em>
+              </MenuItem>
+              {tenantOptions.map((tenant) => (
+                <MenuItem key={tenant.id} value={tenant.id}>
+                  {tenant.name} ({tenant.slug})
+                </MenuItem>
+              ))}
+            </Select>
+            {badTenant ? (
+              <Typography variant="caption" color="error" sx={{ mt: 0.5, ml: 1.5 }}>
+                {t('tenant_required_for_super_admin')}
+              </Typography>
+            ) : null}
+          </FormControl>
+        ) : null}
+
+        {isCreate ? (
+          <TextField
+            id="m8-model-identifier"
+            name="id"
+            data-testid="process-model-identifier-input"
+            error={badId}
+            helperText={badId ? t('identifier_validation_message') : ''}
+            label={t('identifier')}
+            value={model.id}
+            onChange={(e) => {
+              const next = e.target.value;
+              merge({ id: next });
+              if (badId && IDENTIFIER_RE.test(next)) setBadId(false);
+              setIdEdited(true);
+            }}
+            fullWidth
+          />
+        ) : null}
+
+        <TextField
+          id="m8-model-description"
+          name="description"
+          data-testid="process-model-description-input"
+          label={t('description')}
+          value={model.description}
+          onChange={(e) => merge({ description: e.target.value })}
+          multiline
+          fullWidth
+        />
+
+        <Box>
+          <Button
+            data-testid="process-model-submit-button"
+            variant="contained"
+            type="submit"
+          >
+            {t('submit')}
+          </Button>
+        </Box>
+      </Stack>
+    </Box>
   );
 }

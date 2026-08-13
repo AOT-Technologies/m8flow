@@ -55,16 +55,17 @@ def apply() -> None:
         architecture because duplicate emails are allowed across recreated users.
         """
         group = cls.find_or_create_group(group_identifier)
-        users = find_users_for_current_tenant_by_identifier(username)
+        matched_users = find_users_for_current_tenant_by_identifier(username)
 
-        if users:
-            user_to_group_identifiers = []
-            for user in users:
-                user_to_group_identifiers.append({"username": user.username, "group_identifier": group.identifier})
-                cls.add_user_to_group(user, group)
-            return (None, user_to_group_identifiers)
+        # No local user yet in this tenant -> park the assignment until one appears.
+        if not matched_users:
+            return cls.add_waiting_group_assignment(username, group)
 
-        return cls.add_waiting_group_assignment(username, group)
+        assigned = []
+        for user in matched_users:
+            cls.add_user_to_group(user, group)
+            assigned.append({"username": user.username, "group_identifier": group.identifier})
+        return (None, assigned)
 
     user_service.UserService.add_user_to_group_or_add_to_waiting = patched_add_user_to_group_or_add_to_waiting
     logger.info("UserService.add_user_to_group_or_add_to_waiting patched for username-only tenant matching")
@@ -74,32 +75,33 @@ def apply() -> None:
         """Apply only username-based waiting assignments that belong to the current tenant's groups."""
         tenant_identifiers = current_tenant_identifiers()
 
-        waiting = (
-            user_service.UserGroupAssignmentWaitingModel()
-            .query.filter(user_service.UserGroupAssignmentWaitingModel.username.in_([user.username]))  # type: ignore[arg-type]
-            .all()
+        def belongs_to_current_tenant(group_identifier: str) -> bool:
+            # No active tenant scope -> apply everything (single-tenant / bootstrap path).
+            if not tenant_identifiers:
+                return True
+            return any(is_group_for_tenant(group_identifier, tid) for tid in tenant_identifiers)
+
+        waiting_model = user_service.UserGroupAssignmentWaitingModel
+
+        exact_matches = (
+            waiting_model().query.filter(waiting_model.username.in_([user.username])).all()  # type: ignore[arg-type]
         )
-        for assignment in waiting:
-            if tenant_identifiers and not any(
-                is_group_for_tenant(assignment.group.identifier, tenant_id) for tenant_id in tenant_identifiers
-            ):
+        for assignment in exact_matches:
+            if not belongs_to_current_tenant(assignment.group.identifier):
                 continue
             cls.add_user_to_group(user, assignment.group)
             db.session.delete(assignment)
 
-        wildcards = (
-            user_service.UserGroupAssignmentWaitingModel()
-            .query.filter(user_service.UserGroupAssignmentWaitingModel.username.regexp_match("^REGEX:"))  # type: ignore[arg-type]
-            .all()
+        wildcard_matches = (
+            waiting_model().query.filter(waiting_model.username.regexp_match("^REGEX:")).all()  # type: ignore[arg-type]
         )
-        for wildcard in wildcards:
-            if tenant_identifiers and not any(
-                is_group_for_tenant(wildcard.group.identifier, tenant_id) for tenant_id in tenant_identifiers
-            ):
+        for wildcard in wildcard_matches:
+            if not belongs_to_current_tenant(wildcard.group.identifier):
                 continue
             pattern = wildcard.pattern_from_wildcard_username()
             if pattern is not None and re.match(pattern, user.username):
                 cls.add_user_to_group(user, wildcard.group)
+
         db.session.commit()
 
     user_service.UserService.apply_waiting_group_assignments = patched_apply_waiting_group_assignments
