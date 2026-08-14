@@ -96,7 +96,9 @@ def test_present_file_with_empty_tenant_secret_mapping_is_rejected(tmp_path: Pat
 def test_bootstrap_main_failure_output_logs_safe_exception_text(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
 ) -> None:
+    monkeypatch.setattr(bootstrap_vault_demo, "STATE_DIR", tmp_path / "vault-demo-state")
     monkeypatch.setattr(bootstrap_vault_demo, "wait_for_vault_status", lambda: (_ for _ in ()).throw(
         RuntimeError("secret_id=secret-123 role_id=role-456 root_token=root-789 value=demo-secret")
     ))
