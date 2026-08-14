@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from urllib.parse import urlparse
 
-DEFAULT_KEYCLOAK_CLIENT_SECRET = "JXeQExm0JhQPLumgHtIIqf52bDalHz0q"
+DEFAULT_KEYCLOAK_CLIENT_SECRET = "f041b49ae7f1a35daa10917459814bcd"
 DEFAULT_SHARED_REALM_NAME = "m8flow"
 DEFAULT_MASTER_REALM_NAME = "master"
 
