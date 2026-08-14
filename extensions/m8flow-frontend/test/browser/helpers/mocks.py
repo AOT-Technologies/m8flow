@@ -1479,7 +1479,7 @@ MOCK_PROCESS_INSTANCE_M8FLOW: dict[str, Any] = {
     "status": "complete",
     "start_in_seconds": 1700000000,
     "end_in_seconds": 1700000500,
-    "tenantId": "m8flow",
+    "tenantId": M8FLOW_TENANT_ID,
     "tenantName": "M8Flow",
 }
 
@@ -1490,7 +1490,7 @@ MOCK_PROCESS_INSTANCE_ACME: dict[str, Any] = {
     "status": "error",
     "start_in_seconds": 1700100000,
     "end_in_seconds": None,
-    "tenantId": "acme",
+    "tenantId": ACME_TENANT_ID,
     "tenantName": "Acme Corp",
 }
 
@@ -1501,17 +1501,80 @@ MOCK_PROCESS_INSTANCE_SUSPENDED: dict[str, Any] = {
     "status": "suspended",
     "start_in_seconds": 1700200000,
     "end_in_seconds": None,
-    "tenantId": "acme",
+    "tenantId": ACME_TENANT_ID,
     "tenantName": "Acme Corp",
 }
 
-ALL_MOCK_PROCESS_INSTANCES: list[dict[str, Any]] = [
+# Cross-tenant catalogue for SA filter tests. Distinct from
+# ALL_MOCK_PROCESS_INSTANCES (single Expense Approval) so default list tests
+# keep their original row.
+ALL_MOCK_CROSS_TENANT_PROCESS_INSTANCES: list[dict[str, Any]] = [
     MOCK_PROCESS_INSTANCE_M8FLOW,
     MOCK_PROCESS_INSTANCE_ACME,
     MOCK_PROCESS_INSTANCE_SUSPENDED,
 ]
 
 _PROCESS_INSTANCE_LIST_RE = re.compile(r"/process-instances(/for-me)?(\?|$)")
+_TASKS_LIST_PATH_RE = re.compile(r"/tasks/?$")
+
+
+def is_tasks_list_get(request: Any) -> bool:
+    """True when *request* is the Home inbox ``GET /tasks`` (not ``/tasks/:id``)."""
+    if getattr(request, "method", None) != "GET":
+        return False
+    path = urlparse(request.url).path.rstrip("/")
+    return bool(_TASKS_LIST_PATH_RE.search(path))
+
+
+def is_process_instance_list_post(request: Any) -> bool:
+    """True when *request* is a process-instance list/report POST."""
+    if getattr(request, "method", None) != "POST":
+        return False
+    return bool(_PROCESS_INSTANCE_LIST_RE.search(urlparse(request.url).path))
+
+
+def is_process_instance_table_list_post(request: Any) -> bool:
+    """True for the paginated table POST, not pie-chart ``per_page=1`` probes."""
+    if not is_process_instance_list_post(request):
+        return False
+    per_page = parse_qs(urlparse(request.url).query).get("per_page", [None])[0]
+    return per_page not in (None, "1")
+
+
+def tenant_id_filters_from_post(request: Any) -> list[dict[str, Any]]:
+    """Return ``tenant_id`` entries from a process-instance list POST body."""
+    raw = getattr(request, "post_data", None)
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return []
+    if not isinstance(data, dict):
+        return []
+    filters: list[Any] = []
+    meta = data.get("report_metadata") or {}
+    if isinstance(meta, dict):
+        filters.extend(meta.get("filter_by") or [])
+    filters.extend(data.get("filter_by") or [])
+    filters.extend(data.get("additionalReportFilters") or [])
+    return [
+        f
+        for f in filters
+        if isinstance(f, dict) and f.get("field_name") == "tenant_id"
+    ]
+
+
+def _tenant_id_from_pi_request(request: Any) -> str | None:
+    """Tenant id from ``x-m8flow-tenant-id`` or POST ``filter_by`` (last wins)."""
+    header = request.headers.get("x-m8flow-tenant-id")
+    if header:
+        return header
+    filters = tenant_id_filters_from_post(request)
+    if not filters:
+        return None
+    value = filters[-1].get("field_value")
+    return str(value) if value else None
 
 
 def mock_process_instances_api(
@@ -1524,7 +1587,8 @@ def mock_process_instances_api(
     (id, process, start/end, started-by, last-milestone, status). The frontend
     injects a ``tenantName`` column client-side for super admins, so the mock
     only supplies the data and these base columns. Honors the
-    ``x-m8flow-tenant-id`` request header for cross-tenant isolation assertions.
+    ``x-m8flow-tenant-id`` header and POST ``filter_by`` ``tenant_id`` (the
+    list wrapper sends the latter).
     """
     source = instances if instances is not None else ALL_MOCK_PROCESS_INSTANCES
 
@@ -1535,16 +1599,29 @@ def mock_process_instances_api(
             route.fallback()
             return
         items = list(source)
-        tid = route.request.headers.get("x-m8flow-tenant-id")
+        tid = _tenant_id_from_pi_request(route.request)
         if tid:
             items = [i for i in items if i.get("tenantId") == tid]
+        incoming_filters: list[Any] = []
+        raw = route.request.post_data
+        if raw:
+            try:
+                body = json.loads(raw)
+            except (TypeError, json.JSONDecodeError):
+                body = {}
+            if isinstance(body, dict):
+                meta = body.get("report_metadata") or {}
+                if isinstance(meta, dict):
+                    incoming_filters = list(meta.get("filter_by") or [])
         page_slice, pagination = _paginate_template_results(items, url)
+        # Echo filter_by so WithFilters does not replace an empty-columns first
+        # payload with a blank filter list and refetch unscoped.
         _json_response(route, {
             "results": page_slice,
             "pagination": pagination,
             "report_metadata": {
                 "columns": copy.deepcopy(PROCESS_INSTANCE_DEFAULT_COLUMNS),
-                "filter_by": [],
+                "filter_by": incoming_filters,
                 "order_by": [],
             },
             "report_hash": "mock-process-instance-hash",

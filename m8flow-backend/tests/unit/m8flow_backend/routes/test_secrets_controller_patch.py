@@ -194,3 +194,20 @@ def test_secret_list_delegates_to_common_backend_with_super_admin_filter(monkeyp
         ("serialize_secret_list_result", 2, 25, "tenant-b"),
         ("serialize_secret_list_result", 3, 10, None),
     ]
+
+
+def test_secret_list_accepts_tenant_id_query_alias_for_super_admin(monkeypatch) -> None:
+    backend = FakeSecretBackend()
+    state = {"is_super_admin": True}
+    secrets_controller = _load_patch(monkeypatch, backend, state)
+    app = Flask(__name__)
+
+    with app.app_context():
+        with app.test_request_context("/?tenant_id=tenant-b"):
+            response = secrets_controller.secret_list()
+
+    assert response.status_code == 200
+    assert response.get_json()["results"][0]["tenantId"] == "tenant-b"
+    assert backend.calls == [
+        ("serialize_secret_list_result", 1, 100, "tenant-b"),
+    ]
