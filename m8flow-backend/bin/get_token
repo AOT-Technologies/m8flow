@@ -53,7 +53,7 @@ def main() -> None:
 
     client_id = os.getenv("BACKEND_CLIENT_ID", "m8flow-backend")
     client_secret = os.getenv(
-        "BACKEND_CLIENT_secret", "JXeQExm0JhQPLumgHtIIqf52bDalHz0q"
+        "BACKEND_CLIENT_secret", "f041b49ae7f1a35daa10917459814bcd"
     )
 
     response = requests.post(
