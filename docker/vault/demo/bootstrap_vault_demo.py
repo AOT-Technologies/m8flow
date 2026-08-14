@@ -7,14 +7,15 @@ import os
 import sys
 import time
 import hashlib
+import re
 from pathlib import Path
 from typing import Any
 from urllib import error, parse, request
 
 from cryptography.fernet import Fernet, InvalidToken
 
-from demo_identity import wait_for_demo_tenant_identity
-from seeded_secrets import SeededSecretSpec, load_seeded_secret_specs
+from demo_identity import ensure_backend_src_on_path, wait_for_demo_tenant_identity
+from seeded_secrets import SeededSecretSpec, default_seeded_secret_spec, load_seeded_secret_specs
 
 
 def _truthy(value: str | None) -> bool:
@@ -50,6 +51,30 @@ _ENCRYPTED_STATE_PREFIX = "m8flow-vault-demo:enc:v1:"
 
 def fail(message: str) -> None:
     raise RuntimeError(message)
+
+
+def _redact_sensitive_exception_message(message: str) -> str:
+    sanitized = " ".join(message.split())
+    sanitized = re.sub(
+        r"((?:secret_id|role_id|root_token|client_token|access_token|refresh_token|token|value)\s*=\s*)([^,\s]+)",
+        r"\1[redacted]",
+        sanitized,
+        flags=re.I,
+    )
+    sanitized = re.sub(
+        r'("(?:secret_id|role_id|root_token|client_token|access_token|refresh_token|token|value)"\s*:\s*")([^"]+)(")',
+        r"\1[redacted]\3",
+        sanitized,
+        flags=re.I,
+    )
+    return sanitized
+
+
+def format_bootstrap_failure_message(exc: Exception) -> str:
+    message = _redact_sensitive_exception_message(str(exc))
+    if message:
+        return f"{type(exc).__name__}: {message}"
+    return type(exc).__name__
 
 
 def _set_file_mode(path: Path, mode: int) -> None:
@@ -464,7 +489,39 @@ def write_runtime_files(role_id: str, secret_id: str) -> None:
     )
 
 
+def default_demo_bootstrap_secret_spec() -> SeededSecretSpec:
+    ensure_backend_src_on_path()
+
+    from m8flow_backend.config import default_organization_alias
+    from m8flow_backend.startup.shared_realm_bootstrap import resolve_default_shared_realm_tenant_id
+
+    organization_alias = (os.getenv("M8FLOW_VAULT_DEMO_DEFAULT_TENANT_ALIAS") or default_organization_alias()).strip()
+    if not organization_alias:
+        fail("The Vault demo default organization alias is not configured.")
+
+    organization_id = resolve_default_shared_realm_tenant_id()
+    if isinstance(organization_id, str) and organization_id.strip():
+        return default_seeded_secret_spec(
+            organization_alias=organization_alias,
+            organization_id=organization_id.strip(),
+        )
+
+    demo_identity = wait_for_demo_tenant_identity(
+        timeout_seconds=WAIT_TIMEOUT_SECONDS,
+        interval_seconds=WAIT_INTERVAL_SECONDS,
+        organization_alias=organization_alias,
+    )
+    return default_seeded_secret_spec(
+        organization_alias=demo_identity.organization_alias,
+        organization_id=demo_identity.organization_id,
+    )
+
+
 def load_seeded_secrets() -> list[SeededSecretSpec]:
+    if not SECRETS_FILE.exists():
+        log_missing_secrets_file_notice(format_missing_secrets_file_message(SECRETS_FILE))
+        return [default_demo_bootstrap_secret_spec()]
+
     demo_identity = wait_for_demo_tenant_identity(
         timeout_seconds=WAIT_TIMEOUT_SECONDS,
         interval_seconds=WAIT_INTERVAL_SECONDS,
@@ -476,6 +533,12 @@ def load_seeded_secrets() -> list[SeededSecretSpec]:
         missing_file_message_factory=format_missing_secrets_file_message,
         logger=log_missing_secrets_file_notice,
     )
+
+
+def verification_target_secret(secrets: list[SeededSecretSpec]) -> SeededSecretSpec:
+    if secrets:
+        return secrets[0]
+    return default_demo_bootstrap_secret_spec()
 
 
 def secret_api_path(logical_path: str) -> str:
@@ -538,19 +601,13 @@ def write_verification_report(
 
 
 def verify_bootstrap(secrets: list[SeededSecretSpec]) -> None:
-    if not secrets:
-        fail("Vault demo verification requires at least one seeded secret.")
-
     status = wait_for_vault_status()
     if status.get("initialized") is not True or status.get("sealed") is not False:
         fail("Vault demo verification failed because Vault is not ready.")
 
-    verified_secret = secrets[0]
+    verified_secret = verification_target_secret(secrets)
 
-    backend_src = Path("/app/m8flow-backend/src")
-    backend_src_str = str(backend_src)
-    if backend_src_str not in sys.path:
-        sys.path.insert(0, backend_src_str)
+    ensure_backend_src_on_path()
 
     os.environ["M8FLOW_VAULT_ADDR"] = VAULT_ADDR
     os.environ["M8FLOW_VAULT_MOUNT_POINT"] = MOUNT_POINT
@@ -631,8 +688,12 @@ def main() -> int:
 
         print("vault-demo: Bootstrap complete", flush=True)
         return 0
-    except Exception:
-        print("vault-demo: Bootstrap failed.", file=sys.stderr, flush=True)
+    except Exception as exc:
+        print(
+            f"vault-demo: Bootstrap failed: {format_bootstrap_failure_message(exc)}",
+            file=sys.stderr,
+            flush=True,
+        )
         return 1
 
 

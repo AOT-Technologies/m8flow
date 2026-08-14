@@ -5,7 +5,9 @@ param(
   [Parameter(Mandatory = $true, Position = 0)]
   [string]$Tenant,
 
-  [string]$VaultUiBaseUrl
+  [string]$VaultUiBaseUrl,
+
+  [switch]$ShowSecretId
 )
 
 $ErrorActionPreference = 'Stop'
@@ -29,6 +31,15 @@ function Invoke-Compose {
   )
 
   & docker compose -f $composeFile @Arguments
+}
+
+function Write-StderrWarning {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Message
+  )
+
+  [Console]::Error.WriteLine("WARNING: $Message")
 }
 
 function Normalize-VaultUiBaseUrl {
@@ -266,22 +277,36 @@ if ($LASTEXITCODE -ne 0) {
   throw "Could not generate a secret_id for tenant AppRole '$($tenantMetadata.RoleName)'."
 }
 $secretId = ($secretIdOutput -join [Environment]::NewLine).Trim()
+if (-not $secretId) {
+  throw "Generated secret_id for tenant AppRole '$($tenantMetadata.RoleName)' was empty."
+}
 
 $authUrl = "$resolvedVaultUiBaseUrl/ui/vault/auth?with=approle"
 $bootstrapUrl = "$resolvedVaultUiBaseUrl/ui/vault/secrets/kv/show/$($tenantMetadata.BootstrapPath)"
 $secretsUrl = "$resolvedVaultUiBaseUrl/ui/vault/secrets/kv/list/$($tenantMetadata.SecretsPath)/"
+$secretIdOutputValue = if ($ShowSecretId) {
+  Write-StderrWarning 'Printing a fresh tenant AppRole secret_id to stdout. Treat it as a credential and avoid saving it in shell history or CI logs.'
+  $secretId
+} else {
+  '[hidden; rerun with -ShowSecretId]'
+}
 
 Write-Host "tenant_name=$($tenantRow.Name)"
 Write-Host "tenant_slug=$($tenantRow.Slug)"
 Write-Host "tenant_id=$($tenantRow.Id)"
 Write-Host "role_name=$($tenantMetadata.RoleName)"
 Write-Host "role_id=$roleId"
-Write-Host "secret_id=$secretId"
+Write-Host "secret_id=$secretIdOutputValue"
 Write-Host "approle_auth_url=$authUrl"
 Write-Host "bootstrap_url=$bootstrapUrl"
 Write-Host "tenant_secrets_url=$secretsUrl"
 Write-Host ''
 Write-Host 'This script minted a fresh tenant AppRole secret_id for local use.'
-Write-Host 'Use the AppRole auth method in the Vault UI and sign in with:'
-Write-Host "  Role ID:   $roleId"
-Write-Host "  Secret ID: $secretId"
+if ($ShowSecretId) {
+  Write-Host 'Use the AppRole auth method in the Vault UI and sign in with:'
+  Write-Host "  Role ID:   $roleId"
+  Write-Host "  Secret ID: $secretId"
+} else {
+  Write-Host 'The secret_id is hidden by default.'
+  Write-Host 'Re-run with -ShowSecretId if you need the one-time credential for a local Vault UI AppRole sign-in.'
+}

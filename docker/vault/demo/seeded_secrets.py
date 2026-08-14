@@ -25,7 +25,7 @@ def _normalized_non_empty(value: object, message: str) -> str:
     raise RuntimeError(message)
 
 
-def _default_seeded_secret(*, organization_alias: str, organization_id: str) -> SeededSecretSpec:
+def default_seeded_secret_spec(*, organization_alias: str, organization_id: str) -> SeededSecretSpec:
     return SeededSecretSpec(
         tenant_reference=organization_alias,
         tenant_id=organization_id,
@@ -52,7 +52,7 @@ def load_seeded_secret_specs(
                 f"Proceeding with a demo bootstrap marker secret for tenant '{resolved_alias}'."
             )
         return [
-            _default_seeded_secret(
+            default_seeded_secret_spec(
                 organization_alias=resolved_alias,
                 organization_id=resolved_organization_id,
             )

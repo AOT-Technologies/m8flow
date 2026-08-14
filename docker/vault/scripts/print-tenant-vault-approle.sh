@@ -10,7 +10,8 @@ db_service="${M8FLOW_DB_SERVICE_NAME:-m8flow-db}"
 backend_service="${M8FLOW_BACKEND_SERVICE_NAME:-m8flow-backend}"
 vault_ui_base_url="${M8FLOW_VAULT_UI_BASE_URL:-}"
 operator_token="${M8FLOW_VAULT_OPERATOR_TOKEN:-${VAULT_TOKEN:-}}"
-tenant_identifier="${1:-}"
+show_secret_id=0
+tenant_identifier=""
 postgres_user="${POSTGRES_USER:-postgres}"
 postgres_db="${POSTGRES_DB:-postgres}"
 path_prefix="${M8FLOW_VAULT_SECRET_PATH_PREFIX:-m8flow}"
@@ -19,6 +20,10 @@ tenant_role_prefix="${M8FLOW_VAULT_TENANT_ROLE_PREFIX:-m8flow-tenant-role}"
 fail() {
   echo >&2 "print-tenant-vault-approle: $*"
   exit 1
+}
+
+warn() {
+  echo >&2 "WARNING: $*"
 }
 
 compose() {
@@ -152,6 +157,13 @@ resolve_role_and_paths() {
   printf '%s\n%s\n%s\n' "$role_name" "$bootstrap_path" "$secrets_path"
 }
 
+usage() {
+  cat <<'EOF'
+Usage:
+  sh docker/vault/scripts/print-tenant-vault-approle.sh [--show-secret-id] <tenant-id-or-slug-or-name>
+EOF
+}
+
 require_command docker
 require_command cut
 require_command sed
@@ -159,7 +171,33 @@ require_command tail
 require_command tr
 
 [ -f "$compose_file" ] || fail "Compose file not found at $compose_file."
-[ -n "$tenant_identifier" ] || fail "Usage: sh docker/vault/scripts/print-tenant-vault-approle.sh <tenant-id-or-slug-or-name>"
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --show-secret-id)
+      show_secret_id=1
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      fail "Unknown option '$1'. $(usage)"
+      ;;
+    *)
+      if [ -n "$tenant_identifier" ]; then
+        fail "Only one tenant identifier may be provided. $(usage)"
+      fi
+      tenant_identifier=$1
+      ;;
+  esac
+  shift
+done
+
+[ -n "$tenant_identifier" ] || fail "$(usage)"
 
 tenant_row=$(resolve_tenant_row "$tenant_identifier")
 tenant_id=$(printf '%s' "$tenant_row" | cut -d '|' -f 1)
@@ -191,10 +229,18 @@ secret_id=$(compose exec -T \
   -e VAULT_ROLE_NAME="$role_name" \
   "$vault_service" sh -c 'vault write -f -field=secret_id "auth/approle/role/$VAULT_ROLE_NAME/secret-id"') \
   || fail "Could not generate a secret_id for tenant AppRole '$role_name'."
+[ -n "$secret_id" ] || fail "Generated secret_id for tenant AppRole '$role_name' was empty."
 
 auth_url="$resolved_vault_ui_base_url/ui/vault/auth?with=approle"
 bootstrap_url="$resolved_vault_ui_base_url/ui/vault/secrets/kv/show/$bootstrap_path"
 secrets_url="$resolved_vault_ui_base_url/ui/vault/secrets/kv/list/$secrets_path/"
+
+if [ "$show_secret_id" -eq 1 ]; then
+  warn "Printing a fresh tenant AppRole secret_id to stdout. Treat it as a credential and avoid saving it in shell history or CI logs."
+  secret_id_output=$secret_id
+else
+  secret_id_output='[hidden; rerun with --show-secret-id]'
+fi
 
 cat <<EOF
 tenant_name=$tenant_name
@@ -202,13 +248,23 @@ tenant_slug=$tenant_slug
 tenant_id=$tenant_id
 role_name=$role_name
 role_id=$role_id
-secret_id=$secret_id
+secret_id=$secret_id_output
 approle_auth_url=$auth_url
 bootstrap_url=$bootstrap_url
 tenant_secrets_url=$secrets_url
 
 This script minted a fresh tenant AppRole secret_id for local use.
+EOF
+
+if [ "$show_secret_id" -eq 1 ]; then
+  cat <<EOF
 Use the AppRole auth method in the Vault UI and sign in with:
   Role ID:   $role_id
   Secret ID: $secret_id
 EOF
+else
+  cat <<'EOF'
+The secret_id is hidden by default.
+Re-run with --show-secret-id if you need the one-time credential for a local Vault UI AppRole sign-in.
+EOF
+fi

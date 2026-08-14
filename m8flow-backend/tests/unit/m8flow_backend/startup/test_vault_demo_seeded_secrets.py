@@ -21,6 +21,7 @@ from seeded_secrets import (
     DEMO_BOOTSTRAP_SECRET_NAME,
     DEMO_BOOTSTRAP_SECRET_VALUE,
     SeededSecretSpec,
+    default_seeded_secret_spec,
     load_seeded_secret_specs,
 )
 import bootstrap_vault_demo
@@ -92,7 +93,7 @@ def test_present_file_with_empty_tenant_secret_mapping_is_rejected(tmp_path: Pat
         )
 
 
-def test_bootstrap_main_failure_output_hides_exception_text(
+def test_bootstrap_main_failure_output_logs_safe_exception_text(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -104,11 +105,45 @@ def test_bootstrap_main_failure_output_hides_exception_text(
 
     captured = capsys.readouterr()
     assert result == 1
-    assert captured.err.strip() == "vault-demo: Bootstrap failed."
-    assert "secret-123" not in captured.err
-    assert "role-456" not in captured.err
-    assert "root-789" not in captured.err
-    assert "demo-secret" not in captured.err
+    assert captured.err.strip() == (
+        "vault-demo: Bootstrap failed: RuntimeError: "
+        "secret_id=[redacted] role_id=[redacted] root_token=[redacted] value=[redacted]"
+    )
+
+
+def test_load_seeded_secrets_missing_file_uses_bootstrap_marker_without_waiting_for_full_demo_identity(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    secrets_file = tmp_path / "secrets.yml"
+    fallback_secret = SeededSecretSpec(
+        tenant_reference="m8flow",
+        tenant_id="tenant-123",
+        secret_name=DEMO_BOOTSTRAP_SECRET_NAME,
+        value=DEMO_BOOTSTRAP_SECRET_VALUE,
+    )
+
+    monkeypatch.setattr(bootstrap_vault_demo, "SECRETS_FILE", secrets_file)
+    monkeypatch.setattr(bootstrap_vault_demo, "default_demo_bootstrap_secret_spec", lambda: fallback_secret)
+    monkeypatch.setattr(
+        bootstrap_vault_demo,
+        "wait_for_demo_tenant_identity",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("should not be called")),
+    )
+
+    assert bootstrap_vault_demo.load_seeded_secrets() == [fallback_secret]
+
+
+def test_verification_target_secret_falls_back_to_bootstrap_marker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fallback_secret = default_seeded_secret_spec(
+        organization_alias="m8flow",
+        organization_id="tenant-123",
+    )
+    monkeypatch.setattr(bootstrap_vault_demo, "default_demo_bootstrap_secret_spec", lambda: fallback_secret)
+
+    assert bootstrap_vault_demo.verification_target_secret([]) == fallback_secret
 
 
 def test_vault_request_error_suppresses_response_body(monkeypatch: pytest.MonkeyPatch) -> None:

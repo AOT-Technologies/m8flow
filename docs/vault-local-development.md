@@ -64,7 +64,8 @@ Both scripts:
 - resolve the canonical tenant UUID from `m8flow_tenant`;
 - compute the tenant AppRole name using the repo's own provisioning logic;
 - mint a fresh tenant AppRole `secret_id`;
-- print the `role_id`, `secret_id`, AppRole auth URL, bootstrap URL, and tenant secrets URL.
+- print the `role_id`, a masked `secret_id` by default, the AppRole auth URL, the bootstrap URL, and the tenant secrets URL.
+- only print the real `secret_id` when you pass an explicit reveal flag.
 
 PowerShell:
 
@@ -78,11 +79,23 @@ POSIX shell:
 sh docker/vault/scripts/print-tenant-vault-approle.sh Test
 ```
 
-Use the printed `role_id` and `secret_id` to sign in at the printed `approle_auth_url`.
+If you need the actual `secret_id` for a one-time local AppRole sign-in, opt in explicitly:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File docker/vault/scripts/print-tenant-vault-approle.ps1 -Tenant Test -ShowSecretId
+```
+
+```bash
+sh docker/vault/scripts/print-tenant-vault-approle.sh --show-secret-id Test
+```
+
+Use the printed `role_id` and, when explicitly revealed, the `secret_id` to sign in at the printed `approle_auth_url`.
 
 Notes:
 
 - Each run mints a new tenant AppRole `secret_id`. Treat it like a credential.
+- The real `secret_id` is hidden by default so it does not land in routine shell output or copied logs by accident.
+- When you reveal it with `-ShowSecretId` or `--show-secret-id`, the scripts print a warning to `stderr` before writing the secret to `stdout`.
 - If `M8FLOW_VAULT_OPERATOR_TOKEN` or `VAULT_TOKEN` is set in your host shell, the helpers use that operator token.
 - Otherwise, in the local `vault-demo` workflow they fall back to the encrypted persisted `root_token` from `/vault/demo/init.json` by using the repo-owned bootstrap decryption helper.
 - These helpers are local-development tooling. They are not intended for production Vault access flows.
