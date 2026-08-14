@@ -155,7 +155,6 @@ export default function ReactDiagramEditor(props: ReactDiagramEditorProps) {
     <>
       <DiagramEditorToolbar
         diagramType={diagramType}
-        processModelId={processModelId}
         fileName={fileName}
         isPrimaryFile={isPrimaryFile}
         disableSaveButton={disableSaveButton}
