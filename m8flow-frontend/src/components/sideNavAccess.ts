@@ -66,6 +66,8 @@ export function buildSideNavPermissionPlan(
     [targetUris.secretListPath]: ['GET'],
     [targetUris.connectorsGroupedPath]: ['GET'],
     [targetUris.m8flowMcpConnectionPath]: ['GET'],
+    // Admin-only catalog (tenant-admin/super-admin); hidden for everyone else.
+    [targetUris.m8flowMcpToolsCatalogPath]: ['GET'],
     // POST gates manage-nats-tokens (tenant-admin); a bare GET hid the item for all.
     [targetUris.m8flowNatsTokensPath]: ['POST'],
     '/tasks/*': ['GET', 'PUT'],

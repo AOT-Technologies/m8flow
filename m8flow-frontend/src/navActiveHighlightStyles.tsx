@@ -15,6 +15,7 @@ const NAV_HIGHLIGHT_SPECS: HighlightSpec[] = [
   { hrefSuffix: '/tenant-management', mode: 'exact' },
   { hrefSuffix: '/connectors', mode: 'prefix' },
   { hrefSuffix: '/mcp-connection', mode: 'prefix' },
+  { hrefSuffix: '/mcp-tools', mode: 'prefix' },
 ];
 
 function pathMatches(pathname: string, spec: HighlightSpec): boolean {

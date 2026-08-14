@@ -3,6 +3,7 @@
  */
 import type { ReactElement } from 'react';
 import {
+  Build,
   Business,
   Cable,
   Description,
@@ -28,6 +29,7 @@ export const NAV_IDS = {
   configuration: 'configuration',
   connectors: 'connectors',
   mcpConnection: 'mcpConnection',
+  mcpToolsCatalog: 'mcpToolsCatalog',
   manageToken: 'manageToken',
   templates: 'templates',
   tenantManagement: 'tenantManagement',
@@ -43,6 +45,7 @@ export type SideNavIconKey =
   | 'settings'
   | 'hub'
   | 'cable'
+  | 'build'
   | 'vpnKey'
   | 'description'
   | 'business'
@@ -67,6 +70,7 @@ const ICON_MAP: Record<SideNavIconKey, () => ReactElement> = {
   settings: () => <SettingsApplicationsSharp />,
   hub: () => <Hub />,
   cable: () => <Cable />,
+  build: () => <Build />,
   vpnKey: () => <VpnKey />,
   description: () => <Description />,
   business: () => <Business />,
@@ -141,6 +145,13 @@ export function buildSideNavCatalog(opts: CatalogOpts): SideNavCatalogEntry[] {
       id: NAV_IDS.mcpConnection,
       permissionRoutes: [targetUris.m8flowMcpConnectionPath],
     });
+    entries.push({
+      label: t('mcp_tools_catalog'),
+      iconKey: 'build',
+      path: '/mcp-tools',
+      id: NAV_IDS.mcpToolsCatalog,
+      permissionRoutes: [targetUris.m8flowMcpToolsCatalogPath],
+    });
   }
 
   entries.push(
@@ -196,6 +207,7 @@ const PATH_ACTIVE_RULES: Array<{ test: (p: string) => boolean; id: string }> = [
   { test: (p) => p.startsWith('/configuration'), id: NAV_IDS.configuration },
   { test: (p) => p.startsWith('/connectors'), id: NAV_IDS.connectors },
   { test: (p) => p.startsWith('/mcp-connection'), id: NAV_IDS.mcpConnection },
+  { test: (p) => p.startsWith('/mcp-tools'), id: NAV_IDS.mcpToolsCatalog },
   { test: (p) => p.startsWith('/manage-token'), id: NAV_IDS.manageToken },
   { test: (p) => p.startsWith('/templates'), id: NAV_IDS.templates },
   { test: (p) => p.startsWith('/tenant-management'), id: NAV_IDS.tenantManagement },
