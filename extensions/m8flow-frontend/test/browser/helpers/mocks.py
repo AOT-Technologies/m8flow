@@ -1818,14 +1818,14 @@ def mock_permissions_api_custom(
 
     - ``deny_connectors`` -> GET on the connectors-grouped URI is denied, so the
       Connectors page redirects to "/" and the nav item is hidden.
-    - ``deny_secrets`` -> POST on the secrets URI is denied, so the per-card
-      "Configure" button is not rendered.
+    - ``deny_secrets`` -> POST is denied on the credential URIs (secrets and
+      connector profiles), so the per-card "Configure" button is not rendered.
     """
 
     def _allowed(url: str, method: str) -> bool:
         if deny_connectors and "connectors-grouped" in url and method == "GET":
             return False
-        if deny_secrets and "secret" in url and method == "POST":
+        if deny_secrets and method == "POST" and ("secret" in url or "connector-profiles" in url):
             return False
         return True
 

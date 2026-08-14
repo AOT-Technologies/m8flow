@@ -39,7 +39,7 @@ export default function Connectors() {
 
   const permissionRequestData: PermissionsToCheck = {
     [targetUris.connectorsGroupedPath]: ['GET'],
-    [targetUris.secretListPath]: ['POST'],
+    [targetUris.connectorProfilesPath]: ['POST'],
   };
   const { ability, permissionsLoaded } = usePermissionFetcher(
     permissionRequestData,
@@ -250,6 +250,19 @@ export default function Connectors() {
                     color="success"
                     variant="outlined"
                   />
+                  {connector.supportsProfiles && (
+                    <Chip
+                      label={
+                        connector.profileCount === 1
+                          ? `1 ${t('connector_profile')}`
+                          : `${connector.profileCount ?? 0} ${t('connector_profiles')}`
+                      }
+                      size="small"
+                      variant="outlined"
+                      color={connector.profileCount ? 'primary' : 'default'}
+                      data-testid={`connector-profile-count-${connector.id}`}
+                    />
+                  )}
                 </Box>
 
                 <Typography
@@ -270,13 +283,12 @@ export default function Connectors() {
                   >
                     {t('view_operations')}
                   </Button>
-                  <Can I="POST" a={targetUris.secretListPath} ability={ability}>
+                  <Can I="POST" a={targetUris.connectorProfilesPath} ability={ability}>
                     <Button
                       variant="outlined"
                       size="small"
                       onClick={() =>
-                        connector.configFields &&
-                        connector.configFields.length > 0
+                        connector.supportsProfiles
                           ? navigate(`/connectors/${connector.id}/configure`)
                           : navigate('/configuration/secrets')
                       }

@@ -32,22 +32,32 @@ export interface ConnectorOperation {
   parameters: ConnectorOperationParam[];
 }
 
+/**
+ * One field of a connector profile, as described by the backend connector
+ * registry. `id` is the connector command's parameter name, which is what the
+ * runtime injects the saved value under.
+ */
 export interface ConnectorConfigField {
   id: string;
-  /**
-   * Canonical Secret key (e.g. GITHUB_PAT_TOKEN). Matches the names the sample
-   * templates reference. When absent, the key falls back to `{connectorId}_{id}`.
-   */
-  secretKey?: string;
   label: string;
-  type: 'text' | 'password';
+  type: 'text' | 'password' | 'number' | 'boolean' | 'select';
   required: boolean;
+  /** True for values kept in the secret store and never sent back to the UI. */
+  secret?: boolean;
+  /** Form section this field belongs to. */
+  group?: string;
+  /** config_param | secret_param */
+  binding?: string;
+  /** Options for `select` fields. */
+  choices?: { value: unknown; label: string }[];
+  default?: unknown;
   /** Optional input-format hint the configure form validates against. */
   format?: 'url' | 'email' | 'port' | 'number';
   /** Optional length bounds enforced on the trimmed value. */
   minLength?: number;
   maxLength?: number;
   helpText?: string;
+  example?: string;
 }
 
 export interface ConnectorGroup {
@@ -59,7 +69,12 @@ export interface ConnectorGroup {
   operationCount: number;
   operations: ConnectorOperation[];
   docsUrl?: string;
-  configFields?: ConnectorConfigField[];
+  /** Fields a saved profile supplies for this connector. */
+  profileFields?: ConnectorConfigField[];
+  /** Whether this connector has anything a profile could hold. */
+  supportsProfiles?: boolean;
+  /** Active profiles configured for the current tenant. */
+  profileCount?: number;
 }
 
 interface ConnectorOperationsModalProps {

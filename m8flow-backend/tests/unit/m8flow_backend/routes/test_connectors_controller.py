@@ -1,8 +1,8 @@
 """Unit tests for the grouped-connectors controller.
 
-Covers the secret-key contract that ties the Connectors "Configure" form to the
-runtime resolver (M8FLOW_SECRET:(?P<name>\\w+)) and the metadata-driven shaping
-of the /m8flow/connectors-grouped response.
+Covers the shaping of /m8flow/connectors-grouped now that display metadata and
+profile fields come from the connector registry rather than a table in this
+module.
 """
 
 import json
@@ -10,83 +10,79 @@ from unittest.mock import patch
 
 from flask import Flask
 
-from m8flow_backend.routes import connectors_controller
 from m8flow_backend.routes.connectors_controller import (
-    CONNECTOR_METADATA,
-    _SECRET_KEY_RE,
     connectors_grouped,
-    effective_secret_key,
+    format_operation_name,
 )
 
 
-def _call_grouped(flat_operations):
+def _call_grouped(flat_operations, profile_counts=None):
     """Invoke connectors_grouped() with a stubbed connector list."""
     app = Flask(__name__)
     with patch(
         "spiffworkflow_backend.services.service_task_service."
         "ServiceTaskService.available_connectors",
         return_value=flat_operations,
+    ), patch(
+        "m8flow_backend.routes.connectors_controller._profile_counts",
+        return_value=profile_counts or {},
     ), app.app_context():
         response = connectors_grouped()
     return json.loads(response.get_data(as_text=True))
 
 
-def test_all_shipped_secret_keys_are_resolvable():
-    """Every config field's effective key must satisfy ^\\w+$.
-
-    Otherwise the secret it creates could never be referenced via M8FLOW_SECRET.
-    """
-    for connector_key, meta in CONNECTOR_METADATA.items():
-        for field in meta.get("configFields", []):
-            key = effective_secret_key(connector_key, field)
-            assert _SECRET_KEY_RE.match(key), (
-                f"{connector_key}.{field['id']} -> invalid secret key {key!r}"
-            )
-
-
-def test_connectors_grouped_includes_config_fields_only_when_defined():
+def test_grouped_connectors_carry_profile_fields_from_the_registry():
     groups = _call_grouped(
         [
-            {"id": "github/CreatePullRequest", "parameters": []},
+            {"id": "smtp/SendHTMLEmail", "parameters": []},
             {"id": "http/GetRequestV2", "parameters": []},
-        ]
-    )
-    by_id = {g["id"]: g for g in groups}
-
-    assert "configFields" in by_id["github"]
-    keys = {f["secretKey"] for f in by_id["github"]["configFields"]}
-    assert "GITHUB_PAT_TOKEN" in keys
-
-    # HTTP declares no configFields, so the key must be absent entirely.
-    assert "configFields" not in by_id["http"]
-
-
-def test_connectors_grouped_drops_field_with_invalid_secret_key():
-    bad_meta = {
-        "name": "Bad",
-        "description": "",
-        "icon": "extension",
-        "configFields": [
-            {
-                "id": "thing",
-                "secretKey": "BAD-KEY",  # hyphen -> unresolvable
-                "label": "Thing",
-                "type": "text",
-                "required": True,
-            }
         ],
-    }
-    with patch.dict(
-        connectors_controller.CONNECTOR_METADATA, {"bad": bad_meta}, clear=False
-    ):
-        groups = _call_grouped([{"id": "bad/DoThing", "parameters": []}])
-
-    bad = next(g for g in groups if g["id"] == "bad")
-    assert "configFields" not in bad
-
-
-def test_effective_secret_key_falls_back_to_derived_name():
-    assert (
-        effective_secret_key("widget", {"id": "api_key", "label": "x", "type": "text", "required": True})
-        == "widget_api_key"
+        profile_counts={"smtp": 2},
     )
+    by_id = {group["id"]: group for group in groups}
+
+    smtp = by_id["smtp"]
+    assert smtp["name"] == "SMTP"
+    assert smtp["supportsProfiles"] is True
+    assert smtp["profileCount"] == 2
+    field_ids = [field["id"] for field in smtp["profileFields"]]
+    # The names must match the connector command's keyword arguments.
+    assert "smtp_host" in field_ids
+    assert "smtp_password" in field_ids
+
+    # HTTP takes its inputs per task, so it has nothing a profile could hold.
+    assert by_id["http"]["supportsProfiles"] is False
+    assert by_id["http"]["profileFields"] == []
+
+
+def test_connector_without_a_definition_still_lists_its_operations():
+    groups = _call_grouped([{"id": "mystery_v2/DoThing", "parameters": []}])
+    mystery = next(group for group in groups if group["id"] == "mystery_v2")
+
+    assert mystery["name"] == "Mystery"
+    assert mystery["supportsProfiles"] is False
+    assert mystery["operationCount"] == 1
+    assert mystery["operations"][0]["name"] == "Do Thing"
+
+
+def test_profile_count_failure_does_not_break_the_listing():
+    app = Flask(__name__)
+    with patch(
+        "spiffworkflow_backend.services.service_task_service."
+        "ServiceTaskService.available_connectors",
+        return_value=[{"id": "smtp/SendHTMLEmail", "parameters": []}],
+    ), patch(
+        "m8flow_backend.services.connector_profile_service."
+        "ConnectorProfileService.profile_counts",
+        side_effect=RuntimeError("no tenant context"),
+    ), app.app_context():
+        response = connectors_grouped()
+
+    groups = json.loads(response.get_data(as_text=True))
+    assert groups[0]["profileCount"] == 0
+
+
+def test_format_operation_name():
+    assert format_operation_name("SendHTMLEmail") == "Send HTML Email"
+    assert format_operation_name("GetRequestV2") == "GET Request"
+    assert format_operation_name("ListPullRequests") == "List Pull Requests"

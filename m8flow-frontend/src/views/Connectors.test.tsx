@@ -31,6 +31,7 @@ vi.mock('../hooks/M8flowUriListForPermissions', () => ({
   useM8flowUriListForPermissions: vi.fn(() => ({
     targetUris: {
       connectorsGroupedPath: '/m8flow/connectors-grouped',
+      connectorProfilesPath: '/m8flow/connector-profiles',
       secretListPath: '/secrets',
     },
   })),
@@ -101,16 +102,18 @@ beforeEach(() => {
       ...base,
       id: 'github',
       name: 'GitHub',
-      configFields: [
-        { id: 'pat_token', secretKey: 'GITHUB_PAT_TOKEN', label: 'PAT', type: 'password', required: true },
+      supportsProfiles: true,
+      profileCount: 2,
+      profileFields: [
+        { id: 'token', label: 'PAT', type: 'password', required: true, secret: true },
       ],
     },
-    { ...base, id: 'http', name: 'HTTP' },
+    { ...base, id: 'http', name: 'HTTP', supportsProfiles: false, profileFields: [] },
   ];
 });
 
 describe('Connectors configure navigation', () => {
-  it('routes connectors with configFields to the configure form', async () => {
+  it('routes connectors that support profiles to the profile screen', async () => {
     renderPage();
     const btn = await screen.findByTestId('connector-configure-github');
     fireEvent.click(btn);
@@ -119,12 +122,19 @@ describe('Connectors configure navigation', () => {
     );
   });
 
-  it('routes connectors without configFields to the generic secrets page', async () => {
+  it('routes connectors without profile fields to the generic secrets page', async () => {
     renderPage();
     const btn = await screen.findByTestId('connector-configure-http');
     fireEvent.click(btn);
     await waitFor(() =>
       expect(h.navigate).toHaveBeenCalledWith('/configuration/secrets'),
     );
+  });
+
+  it('shows the profile count only for connectors that support profiles', async () => {
+    renderPage();
+    const count = await screen.findByTestId('connector-profile-count-github');
+    expect(count.textContent).toContain('2');
+    expect(screen.queryByTestId('connector-profile-count-http')).toBeNull();
   });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Link as RouterLink,
@@ -11,17 +11,34 @@ import {
   Box,
   Breadcrumbs,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  FormControlLabel,
   IconButton,
   InputAdornment,
   Link,
+  MenuItem,
   Paper,
   Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import {
+  Add as AddIcon,
+  Delete as DeleteIcon,
+  Edit as EditIcon,
+  StarBorder as StarBorderIcon,
   Visibility as VisibilityIcon,
   VisibilityOff as VisibilityOffIcon,
 } from '@mui/icons-material';
@@ -33,115 +50,81 @@ import { PermissionsToCheck } from '@spiffworkflow-frontend/interfaces';
 import { usePermissionFetcher } from '@spiffworkflow-frontend/hooks/PermissionService';
 import { ConnectorNameAvatar } from '../utils/connectorCardDisplay';
 import { Notification } from '../components/Notification';
-import {
-  type ConnectorConfigField,
-  type ConnectorGroup,
-} from '../components/ConnectorOperationsModal';
+import { type ConnectorConfigField } from '../components/ConnectorOperationsModal';
 import { validateConnectorField } from '../utils/connectorFieldValidation';
 
-interface FieldState {
-  /** Current input value. Empty means "leave unchanged" when the secret already exists. */
-  value: string;
-  /** Whether a secret for this field already exists (write-only: value is never loaded). */
-  isSet: boolean;
-  /** Validation error message for this field, if any. */
-  error?: string;
+interface ConnectorTemplate {
+  id: string;
+  name: string;
+  description: string;
+  docsUrl?: string;
+  supportsProfiles: boolean;
+  groups: { id: string; label: string }[];
+  profileFields: ConnectorConfigField[];
 }
 
-/**
- * Compose the Secret key for a connector config field.
- *
- * Prefers the field's explicit `secretKey` (the canonical name the sample
- * templates reference, e.g. GITHUB_PAT_TOKEN). Falls back to
- * `{connectorId}_{fieldId}` when none is declared. The result is normalized to
- * word characters only: the runtime resolver matches
- * `M8FLOW_SECRET:(?P<name>\w+)` and `\w` excludes "-", so any non-word char in a
- * connector/field id (or a malformed explicit key) would otherwise produce a
- * secret that can never be resolved. The replace is a no-op for the existing
- * all-uppercase explicit keys.
- */
-export const secretKeyFor = (
-  connectorId: string,
-  field: ConnectorConfigField,
-): string =>
-  (field.secretKey ?? `${connectorId}_${field.id}`).replace(/\W/g, '_');
+interface ConnectorProfile {
+  id: number;
+  connector_type: string;
+  profile_name: string;
+  display_name: string;
+  description: string | null;
+  config: Record<string, unknown>;
+  configured_secrets: string[];
+  is_active: boolean;
+  is_default: boolean;
+}
 
-const callBackend = (opts: {
+const callBackend = <T,>(opts: {
   path: string;
-  httpMethod: string;
-  postBody?: any;
-}): Promise<unknown> =>
+  httpMethod?: string;
+  postBody?: unknown;
+}): Promise<T> =>
   new Promise((resolve, reject) => {
     HttpService.makeCallToBackend({
       path: opts.path,
-      httpMethod: opts.httpMethod,
+      httpMethod: opts.httpMethod ?? 'GET',
       postBody: opts.postBody,
-      successCallback: resolve,
+      successCallback: resolve as (result: unknown) => void,
       failureCallback: reject,
     });
   });
 
-/** Page size when scanning existing secrets. */
-const SECRETS_PER_PAGE = 100;
+/** Values the edit dialog holds, keyed by field id. */
+type FormValues = Record<string, string | boolean>;
 
-/**
- * Fetch every Secret key visible to the active tenant.
- *
- * Follows pagination (`{ results, pagination: { pages } }`) so keys beyond the
- * first page are not missed — fetching only page 1 would wrongly report a
- * connector secret as "not configured" for tenants with many secrets, forcing a
- * spurious required-field error and a POST create that conflicts with the
- * already-existing key. Correct even if the server caps `per_page`, since it
- * relies on the reported page count.
- */
-const fetchAllSecretKeys = async (): Promise<Set<string>> => {
-  const keys = new Set<string>();
-  const collect = (res: any) =>
-    (res?.results ?? []).forEach((r: any) => {
-      if (r?.key) {
-        keys.add(r.key);
-      }
-    });
-
-  const firstPage: any = await callBackend({
-    path: `/secrets?per_page=${SECRETS_PER_PAGE}&page=1`,
-    httpMethod: 'GET',
+const initialValues = (
+  fields: ConnectorConfigField[],
+  profile: ConnectorProfile | null,
+): FormValues => {
+  const values: FormValues = {};
+  fields.forEach((field) => {
+    if (field.type === 'boolean') {
+      const stored = profile ? profile.config[field.id] : field.default;
+      values[field.id] = stored === undefined || stored === null ? false : !!stored;
+      return;
+    }
+    if (field.secret) {
+      // Stored secrets are never returned by the API; an empty box means
+      // "keep what is saved".
+      values[field.id] = '';
+      return;
+    }
+    const stored = profile ? profile.config[field.id] : field.default;
+    values[field.id] = stored === undefined || stored === null ? '' : String(stored);
   });
-  collect(firstPage);
-
-  const totalPages = Number(firstPage?.pagination?.pages) || 1;
-  if (totalPages > 1) {
-    const remaining = await Promise.all(
-      Array.from({ length: totalPages - 1 }, (_, i) =>
-        callBackend({
-          path: `/secrets?per_page=${SECRETS_PER_PAGE}&page=${i + 2}`,
-          httpMethod: 'GET',
-        }),
-      ),
-    );
-    remaining.forEach(collect);
-  }
-  return keys;
+  return values;
 };
 
 /**
- * Connector-specific configuration form.
+ * Connector profiles.
  *
- * Reached via /connectors/:connectorId/configure for connectors that declare
- * `configFields` in the backend connector metadata. Saves/updates each field as
- * a Secret record through the standard /v1.0/secrets endpoints. Connectors with
- * no configurable fields never route here (the Connectors page redirects them to
- * Configuration > Secrets instead).
+ * Reached from Connectors -> Configure. A profile is a named credential and
+ * configuration set - "smtp-staging", "smtp-production" - that a BPMN service
+ * task binds to by name instead of spelling out hosts and passwords.
  *
- * Secret values are write-only by design, so existing values are never pre-filled:
- * a field whose secret already exists is shown as "Configured" and left unchanged
- * unless the user types a new value.
- *
- * Access is intentionally gated on secret WRITE (POST) permission: this is a
- * credential-entry form whose only purpose is to create/update secrets, and the
- * Connectors page only surfaces the "Configure" action to POST-capable users.
- * Users without write access are redirected away rather than shown a read-only
- * view.
+ * Secret values are write-only: a saved secret shows as "Configured" and is
+ * left untouched unless the user types a replacement.
  */
 export default function ConnectorConfigure() {
   const { t } = useTranslation();
@@ -151,184 +134,194 @@ export default function ConnectorConfigure() {
 
   const permissionRequestData: PermissionsToCheck = {
     [targetUris.connectorsGroupedPath]: ['GET'],
-    [targetUris.secretListPath]: ['GET', 'POST'],
+    [targetUris.connectorProfilesPath]: ['GET', 'POST'],
   };
-  const { ability, permissionsLoaded } = usePermissionFetcher(
-    permissionRequestData,
-  );
-  const canManageSecrets = ability.can('POST', targetUris.secretListPath);
+  const { ability, permissionsLoaded } = usePermissionFetcher(permissionRequestData);
+  const canManageProfiles = ability.can('POST', targetUris.connectorProfilesPath);
 
   const [loading, setLoading] = useState(true);
-  const [connector, setConnector] = useState<ConnectorGroup | null>(null);
+  const [template, setTemplate] = useState<ConnectorTemplate | null>(null);
+  const [profiles, setProfiles] = useState<ConnectorProfile[]>([]);
   const [notFound, setNotFound] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [fieldStates, setFieldStates] = useState<Record<string, FieldState>>({});
-  const [visibleFields, setVisibleFields] = useState<Record<string, boolean>>({});
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  const [editing, setEditing] = useState<ConnectorProfile | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [profileName, setProfileName] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [values, setValues] = useState<FormValues>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [visibleSecrets, setVisibleSecrets] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [showSuccess, setShowSuccess] = useState(false);
 
-  const configFields: ConnectorConfigField[] = useMemo(
-    () => connector?.configFields ?? [],
-    [connector],
-  );
-
-  // Save is disabled while any field shows an active validation error.
-  const hasActiveErrors = useMemo(
-    () => Object.values(fieldStates).some((state) => !!state.error),
-    [fieldStates],
+  const fields: ConnectorConfigField[] = useMemo(
+    () => template?.profileFields ?? [],
+    [template],
   );
 
   useEffect(() => {
     setPageTitle([t('connectors'), connectorId ?? '']);
   }, [t, connectorId]);
 
+  const reloadProfiles = useCallback(() => {
+    if (!connectorId) {
+      return Promise.resolve();
+    }
+    return callBackend<ConnectorProfile[]>({
+      path: `/m8flow/connector-profiles?connector_type=${encodeURIComponent(connectorId)}`,
+    }).then((result) => {
+      setProfiles(Array.isArray(result) ? result : []);
+    });
+  }, [connectorId]);
+
   useEffect(() => {
-    if (!permissionsLoaded || !canManageSecrets || !connectorId) {
+    if (!permissionsLoaded || !canManageProfiles || !connectorId) {
       return;
     }
     setLoading(true);
     setLoadError(null);
 
-    // 1. Load the connector definition (field schema lives here).
-    HttpService.makeCallToBackend({
-      path: '/m8flow/connectors-grouped',
-      successCallback: (result: unknown) => {
-        const list = Array.isArray(result) ? (result as ConnectorGroup[]) : [];
-        const match = list.find((c) => c.id === connectorId) ?? null;
-        if (!match || !match.configFields || match.configFields.length === 0) {
+    callBackend<ConnectorTemplate>({
+      path: `/m8flow/connector-templates/${encodeURIComponent(connectorId)}`,
+    })
+      .then((result) => {
+        if (!result || !result.supportsProfiles) {
+          // Connectors with nothing to configure (e.g. HTTP) have no profiles.
           setNotFound(true);
           setLoading(false);
-          return;
+          return undefined;
         }
-        setConnector(match);
-
-        // 2. Determine which fields already have a saved secret (keys only).
-        //    Scans every page so a secret beyond page 1 is still detected.
-        fetchAllSecretKeys()
-          .then((keys) => {
-            const initial: Record<string, FieldState> = {};
-            match.configFields!.forEach((field) => {
-              initial[field.id] = {
-                value: '',
-                isSet: keys.has(secretKeyFor(connectorId, field)),
-              };
-            });
-            setFieldStates(initial);
-            setLoading(false);
-          })
-          .catch(() => {
-            setLoadError(t('connector_config_load_failed'));
-            setLoading(false);
-          });
-      },
-      failureCallback: () => {
+        setTemplate(result);
+        return reloadProfiles().then(() => setLoading(false));
+      })
+      .catch(() => {
         setLoadError(t('connector_config_load_failed'));
         setLoading(false);
-      },
-    });
-  }, [permissionsLoaded, canManageSecrets, connectorId, t]);
+      });
+  }, [permissionsLoaded, canManageProfiles, connectorId, reloadProfiles, t]);
 
-  const handleValueChange = (fieldId: string, value: string) => {
-    const field = configFields.find((f) => f.id === fieldId);
-    setFieldStates((prev) => {
-      const prevState = prev[fieldId];
-      const error = field
-        ? validateConnectorField(field, value, !!prevState?.isSet, t)
-        : undefined;
-      return {
-        ...prev,
-        [fieldId]: { ...prevState, value, error },
-      };
-    });
+  const openCreate = () => {
+    setEditing(null);
+    setProfileName('');
+    setDisplayName('');
+    setValues(initialValues(fields, null));
+    setErrors({});
+    setVisibleSecrets({});
+    setSaveError(null);
+    setDialogOpen(true);
   };
 
-  const toggleVisibility = (fieldId: string) => {
-    setVisibleFields((prev) => ({ ...prev, [fieldId]: !prev[fieldId] }));
+  const openEdit = (profile: ConnectorProfile) => {
+    setEditing(profile);
+    setProfileName(profile.profile_name);
+    setDisplayName(profile.display_name);
+    setValues(initialValues(fields, profile));
+    setErrors({});
+    setVisibleSecrets({});
+    setSaveError(null);
+    setDialogOpen(true);
+  };
+
+  const isConfigured = (field: ConnectorConfigField) =>
+    !!editing && editing.configured_secrets.includes(field.id);
+
+  const validateAll = (): Record<string, string> => {
+    const found: Record<string, string> = {};
+    if (!profileName.trim()) {
+      found.__name = t('connector_profile_name_required');
+    }
+    fields.forEach((field) => {
+      if (field.type === 'boolean' || field.type === 'select') {
+        return;
+      }
+      const raw = String(values[field.id] ?? '');
+      const error = validateConnectorField(field, raw, isConfigured(field), t);
+      if (error) {
+        found[field.id] = error;
+      }
+    });
+    return found;
   };
 
   const handleSave = () => {
-    if (!connectorId) {
+    const found = validateAll();
+    if (Object.keys(found).length > 0) {
+      setErrors(found);
       return;
     }
 
-    // Full validation pass over every field (required, whitespace-only, length,
-    // format). Catches untouched-but-empty required fields the live check on
-    // change never ran against.
-    let hasError = false;
-    const validated = { ...fieldStates };
-    configFields.forEach((field) => {
-      const state = validated[field.id];
-      const error = validateConnectorField(
-        field,
-        state?.value ?? '',
-        !!state?.isSet,
-        t,
-      );
-      validated[field.id] = { ...state, value: state?.value ?? '', isSet: !!state?.isSet, error };
-      if (error) {
-        hasError = true;
+    const config: Record<string, unknown> = {};
+    fields.forEach((field) => {
+      const value = values[field.id];
+      if (field.type === 'boolean') {
+        config[field.id] = !!value;
+        return;
       }
+      const text = String(value ?? '').trim();
+      if (field.secret && text === '') {
+        // Blank secret means "leave the stored value alone".
+        return;
+      }
+      config[field.id] = text;
     });
-    if (hasError) {
-      setFieldStates(validated);
-      return;
-    }
 
-    // Build one create/update per field that has a value entered. The trimmed
-    // value is what gets persisted so stray leading/trailing whitespace is never
-    // stored in the secret.
-    const tasks = configFields
-      .map((field) => {
-        const state = fieldStates[field.id];
-        const value = (state?.value ?? '').trim();
-        if (value === '') {
-          return null; // blank -> leave unchanged
-        }
-        const key = secretKeyFor(connectorId, field);
-        if (state?.isSet) {
-          return callBackend({
-            path: `/secrets/${key}`,
-            httpMethod: 'PUT',
-            postBody: { value },
-          });
-        }
-        return callBackend({
-          path: '/secrets',
-          httpMethod: 'POST',
-          postBody: { key, value },
-        });
-      })
-      .filter((task): task is Promise<unknown> => task !== null);
-
-    if (tasks.length === 0) {
-      // Nothing changed; treat as a no-op success so the user gets feedback.
-      setShowSuccess(true);
-      return;
-    }
+    const body = {
+      connector_type: connectorId,
+      profile_name: profileName.trim(),
+      display_name: displayName.trim() || profileName.trim(),
+      config,
+    };
 
     setSaving(true);
     setSaveError(null);
-    Promise.all(tasks)
-      .then(() => {
-        // Everything entered is now persisted; reflect that in the form state.
-        setFieldStates((prev) => {
-          const next = { ...prev };
-          configFields.forEach((field) => {
-            const state = next[field.id];
-            if (state && state.value.trim() !== '') {
-              next[field.id] = { value: '', isSet: true };
-            }
-          });
-          return next;
+    const request = editing
+      ? callBackend({
+          path: `/m8flow/connector-profiles/${editing.id}`,
+          httpMethod: 'PATCH',
+          postBody: body,
+        })
+      : callBackend({
+          path: '/m8flow/connector-profiles',
+          httpMethod: 'POST',
+          postBody: body,
         });
+
+    request
+      .then(() => reloadProfiles())
+      .then(() => {
         setSaving(false);
-        setShowSuccess(true);
+        setDialogOpen(false);
+        setSuccessMessage(t('connector_profile_saved'));
       })
-      .catch(() => {
+      .catch((error: any) => {
         setSaving(false);
-        setSaveError(t('connector_config_save_failed'));
+        setSaveError(error?.message || t('connector_config_save_failed'));
       });
+  };
+
+  const handleDelete = (profile: ConnectorProfile) => {
+    // eslint-disable-next-line no-alert
+    if (!window.confirm(t('connector_profile_delete_confirm', { name: profile.display_name }))) {
+      return;
+    }
+    callBackend({
+      path: `/m8flow/connector-profiles/${profile.id}`,
+      httpMethod: 'DELETE',
+    })
+      .then(() => reloadProfiles())
+      .then(() => setSuccessMessage(t('connector_profile_deleted')))
+      .catch(() => setLoadError(t('connector_config_save_failed')));
+  };
+
+  const handleSetDefault = (profile: ConnectorProfile) => {
+    callBackend({
+      path: `/m8flow/connector-profiles/${profile.id}/default`,
+      httpMethod: 'POST',
+    })
+      .then(() => reloadProfiles())
+      .catch(() => setLoadError(t('connector_config_save_failed')));
   };
 
   if (!permissionsLoaded) {
@@ -339,193 +332,269 @@ export default function ConnectorConfigure() {
     );
   }
 
-  if (!canManageSecrets) {
+  if (!canManageProfiles) {
     return <Navigate to="/connectors" replace />;
   }
 
-  // Connectors without configurable fields fall back to the generic Secrets page.
   if (notFound) {
-    return <Navigate to="/configuration/secrets" replace />;
+    return <Navigate to="/connectors" replace />;
   }
 
-  return (
-    <Box sx={{ p: 3 }}>
-      {showSuccess && (
-        <Notification
-          title={t('connector_config_saved')}
-          onClose={() => setShowSuccess(false)}
+  const renderField = (field: ConnectorConfigField) => {
+    const error = errors[field.id];
+    const configured = isConfigured(field);
+
+    if (field.type === 'boolean') {
+      return (
+        <FormControlLabel
+          key={field.id}
+          control={
+            <Checkbox
+              checked={!!values[field.id]}
+              onChange={(event) =>
+                setValues((prev) => ({ ...prev, [field.id]: event.target.checked }))
+              }
+            />
+          }
+          label={field.label}
         />
+      );
+    }
+
+    const common = {
+      fullWidth: true,
+      'data-testid': `connector-profile-field-${field.id}`,
+      label: field.label,
+      required: field.required && !configured,
+      value: String(values[field.id] ?? ''),
+      error: !!error,
+      helperText: error || (configured ? t('connector_config_field_set') : field.helpText),
+      onChange: (event: { target: { value: string } }) => {
+        const next = event.target.value;
+        setValues((prev) => ({ ...prev, [field.id]: next }));
+        setErrors((prev) => {
+          const { [field.id]: _removed, ...rest } = prev;
+          return rest;
+        });
+      },
+    };
+
+    if (field.type === 'select') {
+      return (
+        <TextField key={field.id} {...common} select>
+          {(field.choices ?? []).map((choice) => (
+            <MenuItem key={String(choice.value)} value={String(choice.value)}>
+              {choice.label}
+            </MenuItem>
+          ))}
+        </TextField>
+      );
+    }
+
+    if (field.secret) {
+      const visible = !!visibleSecrets[field.id];
+      return (
+        <TextField
+          key={field.id}
+          {...common}
+          type={visible ? 'text' : 'password'}
+          placeholder={configured ? t('connector_config_leave_blank_hint') : undefined}
+          InputProps={{
+            endAdornment: (
+              <InputAdornment position="end">
+                <IconButton
+                  aria-label={field.label}
+                  edge="end"
+                  onClick={() =>
+                    setVisibleSecrets((prev) => ({ ...prev, [field.id]: !prev[field.id] }))
+                  }
+                >
+                  {visible ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                </IconButton>
+              </InputAdornment>
+            ),
+          }}
+        />
+      );
+    }
+
+    return (
+      <TextField
+        key={field.id}
+        {...common}
+        type={field.type === 'number' ? 'number' : 'text'}
+      />
+    );
+  };
+
+  return (
+    <Box sx={{ p: 3 }} data-testid="connector-profiles-page">
+      {successMessage && (
+        <Notification title={successMessage} onClose={() => setSuccessMessage(null)} />
       )}
       <Breadcrumbs aria-label="breadcrumb" sx={{ mb: 1 }}>
-        <Link
-          component={RouterLink}
-          to="/connectors"
-          underline="hover"
-          color="primary"
-        >
+        <Link component={RouterLink} to="/connectors" underline="hover" color="primary">
           {t('connectors')}
         </Link>
-        <Typography color="text.primary">
-          {connector?.name ?? connectorId ?? ''}
-        </Typography>
+        <Typography color="text.primary">{template?.name ?? connectorId ?? ''}</Typography>
       </Breadcrumbs>
+
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1 }}>
+        <ConnectorNameAvatar
+          displayName={template?.name ?? connectorId ?? ''}
+          pluginKey={connectorId ?? ''}
+        />
+        <Typography variant="h5" sx={{ fontWeight: 700 }}>
+          {t('connector_profiles_title')}
+        </Typography>
+        <Box sx={{ flexGrow: 1 }} />
+        <Can I="POST" a={targetUris.connectorProfilesPath} ability={ability}>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={openCreate}
+            data-testid="connector-profile-add"
+          >
+            {t('connector_profile_add')}
+          </Button>
+        </Can>
+      </Box>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        {t('connector_profiles_help')}
+      </Typography>
+
+      {loadError && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {loadError}
+        </Alert>
+      )}
 
       {loading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
           <CircularProgress />
         </Box>
-      ) : loadError ? (
-        <Alert severity="error" sx={{ mt: 2 }}>
-          {loadError}
-        </Alert>
-      ) : connector ? (
-        <>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 2, mb: 1 }}>
-            <ConnectorNameAvatar
-              displayName={connector.name}
-              pluginKey={connector.id}
-            />
-            <Typography variant="h4" sx={{ fontWeight: 700 }}>
-              {t('connector_configure_title', { name: connector.name })}
-            </Typography>
-          </Box>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-            {t('connector_config_subtitle')}
-          </Typography>
-
-          {saveError && (
-            <Alert severity="error" sx={{ mb: 2 }}>
-              {saveError}
-            </Alert>
-          )}
-
-          <Paper
-            elevation={0}
-            sx={{
-              p: 3,
-              maxWidth: 640,
-              border: '1px solid',
-              borderColor: 'divider',
-              borderRadius: 2,
-            }}
-          >
-            <Stack spacing={3}>
-              {configFields.map((field) => {
-                const state = fieldStates[field.id];
-                const isPassword = field.type === 'password';
-                const isVisible = !!visibleFields[field.id];
-                const secretKey = secretKeyFor(connectorId!, field);
-                return (
-                  <Box key={field.id}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                        {field.label}
-                        {field.required ? ' *' : ''}
-                      </Typography>
-                      {state?.isSet && (
-                        <Chip
-                          label={t('connector_config_field_set')}
-                          size="small"
-                          color="success"
-                          variant="outlined"
-                        />
-                      )}
-                    </Box>
-                    <TextField
-                      fullWidth
-                      size="small"
-                      type={isPassword && !isVisible ? 'password' : 'text'}
-                      value={state?.value ?? ''}
-                      onChange={(e) => handleValueChange(field.id, e.target.value)}
-                      error={!!state?.error}
-                      helperText={state?.error}
-                      placeholder={
-                        state?.isSet
-                          ? t('connector_config_leave_blank_hint')
-                          : undefined
-                      }
-                      data-testid={`connector-config-field-${field.id}`}
-                      slotProps={
-                        isPassword
-                          ? {
-                              input: {
-                                endAdornment: (
-                                  <InputAdornment position="end">
-                                    <IconButton
-                                      size="small"
-                                      aria-label={t('toggle_visibility')}
-                                      onClick={() => toggleVisibility(field.id)}
-                                      edge="end"
-                                    >
-                                      {isVisible ? (
-                                        <VisibilityOffIcon fontSize="small" />
-                                      ) : (
-                                        <VisibilityIcon fontSize="small" />
-                                      )}
-                                    </IconButton>
-                                  </InputAdornment>
-                                ),
-                              },
-                            }
-                          : undefined
-                      }
-                    />
-                    {field.helpText && (
-                      <Typography variant="caption" color="text.secondary">
-                        {field.helpText}
-                      </Typography>
-                    )}
-                    <Typography
-                      variant="caption"
-                      color="text.secondary"
-                      component="div"
-                      sx={{ mt: 0.5 }}
-                    >
-                      {t('connector_config_reference_hint')}{' '}
-                      <Box
-                        component="code"
-                        sx={{
-                          fontFamily: 'monospace',
-                          bgcolor: 'action.hover',
-                          px: 0.5,
-                          borderRadius: 0.5,
-                        }}
-                      >
-                        M8FLOW_SECRET:{secretKey}
-                      </Box>
+      ) : (
+        <Paper variant="outlined">
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>{t('connector_profile_name')}</TableCell>
+                <TableCell>{t('connector_profile_identifier')}</TableCell>
+                <TableCell align="right" />
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {profiles.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={3}>
+                    <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
+                      {t('connector_profiles_empty')}
                     </Typography>
-                  </Box>
-                );
-              })}
-            </Stack>
-
-            <Stack direction="row" spacing={2} sx={{ mt: 3 }}>
-              <Can I="POST" a={targetUris.secretListPath} ability={ability}>
-                <Button
-                  variant="contained"
-                  onClick={handleSave}
-                  disabled={saving || hasActiveErrors}
-                  data-testid="connector-config-save"
+                  </TableCell>
+                </TableRow>
+              )}
+              {profiles.map((profile) => (
+                <TableRow
+                  key={profile.id}
+                  hover
+                  data-testid={`connector-profile-row-${profile.profile_name}`}
                 >
-                  {saving ? (
-                    <CircularProgress size={20} sx={{ color: 'inherit' }} />
-                  ) : (
-                    t('connector_config_save')
-                  )}
-                </Button>
-              </Can>
-              <Button
-                variant="outlined"
-                onClick={() => navigate('/connectors')}
-                disabled={saving}
-                data-testid="connector-config-cancel"
-              >
-                {t('cancel')}
-              </Button>
-            </Stack>
-          </Paper>
-        </>
-      ) : null}
+                  <TableCell>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <Typography variant="body2">{profile.display_name}</Typography>
+                      {profile.is_default && (
+                        <Chip size="small" color="primary" label={t('connector_profile_default')} />
+                      )}
+                    </Stack>
+                  </TableCell>
+                  <TableCell>
+                    <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+                      {profile.profile_name}
+                    </Typography>
+                  </TableCell>
+                  <TableCell align="right">
+                    {!profile.is_default && (
+                      <Tooltip title={t('connector_profile_make_default')}>
+                        <IconButton
+                          size="small"
+                          aria-label={t('connector_profile_make_default')}
+                          data-testid={`connector-profile-default-${profile.profile_name}`}
+                          onClick={() => handleSetDefault(profile)}
+                        >
+                          <StarBorderIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    )}
+                    <Tooltip title={t('edit')}>
+                      <IconButton
+                        size="small"
+                        aria-label={t('edit')}
+                        data-testid={`connector-profile-edit-${profile.profile_name}`}
+                        onClick={() => openEdit(profile)}
+                      >
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title={t('delete')}>
+                      <IconButton
+                        size="small"
+                        aria-label={t('delete')}
+                        data-testid={`connector-profile-delete-${profile.profile_name}`}
+                        onClick={() => handleDelete(profile)}
+                      >
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Paper>
+      )}
+
+      <Button sx={{ mt: 2 }} onClick={() => navigate('/connectors')}>
+        {t('back')}
+      </Button>
+
+      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          {editing ? t('connector_profile_edit') : t('connector_profile_add')}
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            {saveError && <Alert severity="error">{saveError}</Alert>}
+            <TextField
+              fullWidth
+              required
+              data-testid="connector-profile-identifier-input"
+              label={t('connector_profile_identifier')}
+              value={profileName}
+              error={!!errors.__name}
+              helperText={errors.__name || t('connector_profile_identifier_help')}
+              onChange={(event) => setProfileName(event.target.value)}
+            />
+            <TextField
+              fullWidth
+              label={t('connector_profile_name')}
+              value={displayName}
+              onChange={(event) => setDisplayName(event.target.value)}
+            />
+            {fields.map(renderField)}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDialogOpen(false)}>{t('cancel')}</Button>
+          <Button
+            variant="contained"
+            onClick={handleSave}
+            disabled={saving}
+            data-testid="connector-profile-save"
+          >
+            {saving ? t('saving') : t('save')}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

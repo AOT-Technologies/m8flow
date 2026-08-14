@@ -232,6 +232,32 @@ permissions:
     groups: ["tenant-admin", "editor", "integrator", "super-admin"]
     actions: [read]
     uri: /m8flow/connectors-grouped
+  # Connector schemas are not tenant data; anyone who can open the modeler needs them.
+  read-connector-templates:
+    groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter", "integrator", "super-admin"]
+    actions: [read]
+    uri: /m8flow/connector-templates
+  read-connector-template-items:
+    groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter", "integrator", "super-admin"]
+    actions: [read]
+    uri: /m8flow/connector-templates/*
+  # The modeler's profile dropdown needs read; only secret managers may write.
+  read-connector-profiles:
+    groups: ["tenant-admin", "editor", "viewer", "reviewer", "integrator", "super-admin"]
+    actions: [read]
+    uri: /m8flow/connector-profiles
+  read-connector-profile-items:
+    groups: ["tenant-admin", "editor", "viewer", "reviewer", "integrator", "super-admin"]
+    actions: [read]
+    uri: /m8flow/connector-profiles/*
+  manage-connector-profiles:
+    groups: ["tenant-admin", "integrator"]
+    actions: [all]
+    uri: /m8flow/connector-profiles
+  manage-connector-profile-items:
+    groups: ["tenant-admin", "integrator"]
+    actions: [all]
+    uri: /m8flow/connector-profiles/*
   read-mcp-connection-page:
     groups: ["everybody"]
     actions: [read]

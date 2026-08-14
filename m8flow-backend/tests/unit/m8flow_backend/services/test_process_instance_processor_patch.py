@@ -23,9 +23,14 @@ def test_apply_injects_workflow_data_objects_into_script_evaluation(monkeypatch)
 
     class FakeCustomBpmnScriptEngine:
         calls: list[dict[str, object] | None] = []
+        execute_calls: list[dict[str, object] | None] = []
 
         def evaluate(self, task, expression: str, external_context: dict | None = None):  # noqa: ANN001
             FakeCustomBpmnScriptEngine.calls.append(external_context)
+            return external_context
+
+        def execute(self, task, script: str, external_context: dict | None = None):  # noqa: ANN001
+            FakeCustomBpmnScriptEngine.execute_calls.append(external_context)
             return external_context
 
     class FakeProcessInstanceProcessor:
@@ -74,6 +79,96 @@ def test_apply_injects_workflow_data_objects_into_script_evaluation(monkeypatch)
     assert FakeProcessInstanceProcessor.get_tasks_with_data_calls == [task.workflow]
 
 
+def test_apply_gives_script_tasks_the_context_evaluation_already_had(monkeypatch) -> None:
+    """A service task's resultVariable must reach the script task that reads it.
+
+    Without this the script dies on NameError even though the connector returned
+    the value, because a script executes against its task data alone while
+    parameter expressions go through evaluate().
+    """
+    engine_class, task = _script_engine_for_execute(
+        monkeypatch,
+        completed_tasks_with_data=[
+            SimpleNamespace(data={"stripe_compose": {"price_id": "price_1"}}, last_state_change=1.0),
+            SimpleNamespace(data={"subscription_response": {"http_status": 200}}, last_state_change=2.0),
+        ],
+    )
+
+    engine_class().execute(task, "stripe_response = subscription_response")
+
+    supplied = engine_class.execute_calls[-1]
+    assert supplied["subscription_response"] == {"http_status": 200}
+    assert supplied["stripe_compose"] == {"price_id": "price_1"}
+
+
+def test_apply_never_shadows_a_name_the_script_task_already_has(monkeypatch) -> None:
+    """SpiffWorkflow raises ValueError if a name is in both task data and the
+    external context, and the task's own value has to win regardless."""
+    engine_class, task = _script_engine_for_execute(
+        monkeypatch,
+        completed_tasks_with_data=[
+            SimpleNamespace(data={"amount": 300, "subscription_response": {"http_status": 200}}, last_state_change=1.0),
+        ],
+    )
+    task.data = {"amount": 999}
+
+    engine_class().execute(task, "total = amount")
+
+    supplied = engine_class.execute_calls[-1]
+    assert "amount" not in supplied
+    assert supplied["subscription_response"] == {"http_status": 200}
+
+
+def _script_engine_for_execute(monkeypatch, completed_tasks_with_data):  # noqa: ANN001
+    """Apply the patch against fake spiffworkflow modules; return (engine class, task)."""
+    fake_interfaces_module = ModuleType("spiffworkflow_backend.interfaces")
+    fake_human_task_user_module = ModuleType("spiffworkflow_backend.models.human_task_user")
+    fake_user_service_module = ModuleType("spiffworkflow_backend.services.user_service")
+    fake_processor_module = ModuleType("spiffworkflow_backend.services.process_instance_processor")
+
+    class FakeAddedBy:
+        guest = SimpleNamespace(value="guest")
+        process_initiator = SimpleNamespace(value="process_initiator")
+        lane_owner = SimpleNamespace(value="lane_owner")
+        lane_assignment = SimpleNamespace(value="lane_assignment")
+
+    class FakeCustomBpmnScriptEngine:
+        execute_calls: list[dict[str, object] | None] = []
+
+        def evaluate(self, task, expression: str, external_context: dict | None = None):  # noqa: ANN001
+            return external_context
+
+        def execute(self, task, script: str, external_context: dict | None = None):  # noqa: ANN001
+            FakeCustomBpmnScriptEngine.execute_calls.append(external_context)
+            return True
+
+    class FakeProcessInstanceProcessor:
+        @classmethod
+        def get_tasks_with_data(cls, _workflow):  # noqa: ANN001
+            return completed_tasks_with_data
+
+    fake_interfaces_module.PotentialOwnerIdList = dict
+    fake_human_task_user_module.HumanTaskUserAddedBy = FakeAddedBy
+    fake_user_service_module.UserService = SimpleNamespace()
+    fake_processor_module.CustomBpmnScriptEngine = FakeCustomBpmnScriptEngine
+    fake_processor_module.ProcessInstanceProcessor = FakeProcessInstanceProcessor
+
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.interfaces", fake_interfaces_module)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.models.human_task_user", fake_human_task_user_module)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.services.user_service", fake_user_service_module)
+    monkeypatch.setitem(
+        sys.modules,
+        "spiffworkflow_backend.services.process_instance_processor",
+        fake_processor_module,
+    )
+    monkeypatch.setattr(process_instance_processor_patch, "_PATCHED", False)
+
+    process_instance_processor_patch.apply()
+
+    task = SimpleNamespace(workflow=SimpleNamespace(data={}, data_objects={}), data={})
+    return FakeCustomBpmnScriptEngine, task
+
+
 def _setup_processor_patch_fakes(monkeypatch, completed_tasks_with_data=None):  # noqa: ANN001
     """Return (FakeEngine class, apply_fn) with all spiffworkflow modules monkeypatched."""
     fake_interfaces_module = ModuleType("spiffworkflow_backend.interfaces")
@@ -92,9 +187,14 @@ def _setup_processor_patch_fakes(monkeypatch, completed_tasks_with_data=None):  
 
     class FakeCustomBpmnScriptEngine:
         calls: list[dict[str, object] | None] = []
+        execute_calls: list[dict[str, object] | None] = []
 
         def evaluate(self, task, expression: str, external_context: dict | None = None):  # noqa: ANN001
             FakeCustomBpmnScriptEngine.calls.append(external_context)
+            return external_context
+
+        def execute(self, task, script: str, external_context: dict | None = None):  # noqa: ANN001
+            FakeCustomBpmnScriptEngine.execute_calls.append(external_context)
             return external_context
 
     class FakeProcessInstanceProcessor:
@@ -297,6 +397,9 @@ def _setup_potential_owner_patch_fakes(  # noqa: ANN001
 
     class FakeCustomBpmnScriptEngine:
         def evaluate(self, task, expression: str, external_context: dict | None = None):  # noqa: ANN001
+            return external_context
+
+        def execute(self, task, script: str, external_context: dict | None = None):  # noqa: ANN001
             return external_context
 
     class FakeProcessInstanceProcessor:

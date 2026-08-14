@@ -277,10 +277,11 @@ def apply() -> None:
         return {"potential_owners": potential_owners, "lane_assignment_id": None}
 
     original_evaluate = CustomBpmnScriptEngine.evaluate
+    original_execute = CustomBpmnScriptEngine.execute
 
-    def patched_evaluate(self, task, expression: str, external_context: dict | None = None):  # noqa: ANN001
-        """Expose workflow-level and completed-task data to script and DMN evaluation."""
-        merged_external_context = {}
+    def wider_context(task, external_context: dict | None) -> dict:  # noqa: ANN001
+        """Workflow-level, data-object and completed-task values, under the caller's own."""
+        merged_external_context: dict = {}
         task_workflow = getattr(task, "workflow", None)
 
         workflow_data = getattr(task_workflow, "data", None)
@@ -307,8 +308,34 @@ def apply() -> None:
         if isinstance(external_context, dict) and external_context:
             merged_external_context.update(external_context)
 
-        return original_evaluate(self, task, expression, external_context=merged_external_context)
+        return merged_external_context
+
+    def patched_evaluate(self, task, expression: str, external_context: dict | None = None):  # noqa: ANN001
+        """Expose workflow-level and completed-task data to expression and DMN evaluation."""
+        return original_evaluate(self, task, expression, external_context=wider_context(task, external_context))
+
+    def patched_execute(self, task, script: str, external_context: dict | None = None):  # noqa: ANN001
+        """Give a script task the same context expression evaluation already gets.
+
+        A script runs against its own task data alone, so a value produced by an
+        earlier task can be missing from it - most visibly a service task's
+        resultVariable, which leaves the next script dying on
+        ``NameError: name 'subscription_response' is not defined`` even though the
+        connector returned 200 and the value is in the workflow data. The parameter
+        expressions on that same service task resolve fine, because those go through
+        evaluate(), which has had this wider context all along.
+
+        Only names the task data lacks are passed: SpiffWorkflow's
+        TaskDataEnvironment.check_for_overwrite raises ValueError when a name is in
+        both the task data and the external context, and task data must win anyway.
+        """
+        task_data = getattr(task, "data", None)
+        merged_external_context = wider_context(task, external_context)
+        if isinstance(task_data, dict):
+            merged_external_context = {k: v for k, v in merged_external_context.items() if k not in task_data}
+        return original_execute(self, task, script, merged_external_context)
 
     CustomBpmnScriptEngine.evaluate = patched_evaluate
+    CustomBpmnScriptEngine.execute = patched_execute
     ProcessInstanceProcessor.get_potential_owners_from_task = patched_get_potential_owners_from_task
     _PATCHED = True

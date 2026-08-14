@@ -91,6 +91,19 @@ Templates that integrate with external services (SMTP email, Salesforce, Slack, 
 - Go to **Configuration → Secrets** in the M8Flow UI.
 - Add every secret listed in the template's guide below before you start the process.
 
+> **Connector profiles — the alternative to per-field secrets.**
+> Under **Connectors → *connector* → Configure** you can save a named profile
+> (for example `smtp-staging`) holding that connector's host, user and password.
+> In the Process Editor, select a Service Task and pick the profile from the
+> **Connector profile** dropdown: its values are supplied at run time, the
+> credential fields disappear from the task, and nothing sensitive is stored in
+> the diagram. Each tenant keeps its own profiles.
+>
+> The templates below still use `M8FLOW_SECRET` variables and keep working as
+> they always have — a profile is opt-in, per Service Task. To move a template
+> onto a profile, open the Service Task, choose a profile, and the credential
+> parameters it supplies are cleared for you.
+
 **3. (Optional) Map lanes to different groups**
 
 The lane names in each template (e.g. `Approvers`, `Support`) correspond directly to Keycloak group identifiers. If your tenant organises work under different groups, open the template in the **Process Editor**, select the lane, and rename it to the target group identifier (for example `Reviewers`). Everyone in that group will then be able to claim and complete the lane's tasks.

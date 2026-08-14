@@ -2297,6 +2297,194 @@ paths:
                 items:
                   type: object
 
+  /connector-templates:
+    get:
+      operationId: m8flow_backend.routes.connector_profiles_controller.connector_template_list
+      summary: Schemas for every connector known to this backend
+      tags:
+        - Connectors
+      responses:
+        "200":
+          description: Connector descriptors
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /connector-templates/{connector_type}:
+    parameters:
+      - name: connector_type
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: m8flow_backend.routes.connector_profiles_controller.connector_template_show
+      summary: Schema for one connector
+      tags:
+        - Connectors
+      responses:
+        "200":
+          description: Connector descriptor
+          content:
+            application/json:
+              schema:
+                type: object
+        "404":
+          description: No such connector
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /connector-profiles:
+    get:
+      operationId: m8flow_backend.routes.connector_profiles_controller.connector_profile_list
+      summary: Connector profiles for the active tenant
+      tags:
+        - Connectors
+      parameters:
+        - name: connector_type
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Profiles, without secret values
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ConnectorProfile"
+    post:
+      operationId: m8flow_backend.routes.connector_profiles_controller.connector_profile_create
+      summary: Create a connector profile
+      tags:
+        - Connectors
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConnectorProfileWriteRequest"
+      responses:
+        "201":
+          description: Profile created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectorProfile"
+        "400":
+          description: Validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: A profile with that name already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /connector-profiles/{configuration_id}:
+    parameters:
+      - name: configuration_id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      operationId: m8flow_backend.routes.connector_profiles_controller.connector_profile_show
+      summary: One connector profile
+      tags:
+        - Connectors
+      responses:
+        "200":
+          description: Profile, without secret values
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectorProfile"
+        "404":
+          description: No such profile in this tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: m8flow_backend.routes.connector_profiles_controller.connector_profile_update
+      summary: Update a connector profile
+      tags:
+        - Connectors
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConnectorProfileWriteRequest"
+      responses:
+        "200":
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectorProfile"
+        "404":
+          description: No such profile in this tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: m8flow_backend.routes.connector_profiles_controller.connector_profile_delete
+      summary: Delete a connector profile and its stored secrets
+      tags:
+        - Connectors
+      responses:
+        "200":
+          description: Profile deleted
+          content:
+            application/json:
+              schema:
+                type: object
+        "404":
+          description: No such profile in this tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /connector-profiles/{configuration_id}/default:
+    parameters:
+      - name: configuration_id
+        in: path
+        required: true
+        schema:
+          type: integer
+    post:
+      operationId: m8flow_backend.routes.connector_profiles_controller.connector_profile_set_default
+      summary: Make this the default profile for its connector
+      tags:
+        - Connectors
+      responses:
+        "200":
+          description: Profile is now the default
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectorProfile"
+        "404":
+          description: No such profile in this tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthResponse:
@@ -2842,6 +3030,64 @@ components:
 
     ErrorResponse:
       $ref: "#/components/schemas/ErrorData"
+
+    ConnectorProfile:
+      type: object
+      description: A named connector credential set. Never carries secret values.
+      properties:
+        id:
+          type: integer
+        connector_type:
+          type: string
+        profile_name:
+          type: string
+          description: Stable name a BPMN service task binds to.
+        display_name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        config:
+          type: object
+          description: Non-sensitive configuration values.
+          additionalProperties: true
+        configured_secrets:
+          type: array
+          description: Names of the secret fields that have a stored value.
+          items:
+            type: string
+        is_active:
+          type: boolean
+        is_default:
+          type: boolean
+        created_at_in_seconds:
+          type: integer
+        updated_at_in_seconds:
+          type: integer
+
+    ConnectorProfileWriteRequest:
+      type: object
+      properties:
+        connector_type:
+          type: string
+          description: Required on create; ignored on update.
+        profile_name:
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        is_active:
+          type: boolean
+        is_default:
+          type: boolean
+        config:
+          type: object
+          description: >
+            Field values keyed by connector field name. On update, a secret left
+            blank keeps its stored value; an explicit null clears it.
+          additionalProperties: true
 
     CreateProcessModelFromTemplateRequest:
       type: object
