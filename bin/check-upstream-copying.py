@@ -171,8 +171,6 @@ NONCOPYRIGHTABLE_ALLOWLIST: dict[str, str] = {
         "Keycloak realm export; residual overlap is Keycloak built-in default scaffolding only (authenticationFlows, requiredActions, client-registration policy). Spiff-derived private key material (KeyProvider) and spiff identifiers were purged; the KeyProvider block is inert (create_realm uses minimal-create + partialImport, so Keycloak generates fresh per-realm keys).",
     "m8flow-backend/keycloak/themes/m8flow/login/login.ftl":
         "Keycloak login theme; overlap is the theme-SPI markup contract (kc* classes, msg() keys), heavily m8flow-customized otherwise.",
-    "m8flow-connector-proxy/dev.docker-compose.yml":
-        "docker-compose schema + env-var keys; m8flow's own service/context/volumes.",
     "m8flow-nats-consumer/pyproject.toml":
         "PEP-621 project/build skeleton; m8flow's own name/deps.",
     "m8flow-connector-proxy/pyproject.toml":
@@ -185,12 +183,10 @@ NONCOPYRIGHTABLE_ALLOWLIST: dict[str, str] = {
         "TS/vite compiler options; m8flow adds its own @spiff-core path aliases.",
     "m8flow-frontend/public/manifest.json":
         "W3C web-app-manifest spec keys; m8flow's own name/icons.",
-    "m8flow-frontend/public/keycloak.json":
-        "Keycloak JS-adapter config keys; differs only by port.",
     "m8flow-frontend/public/new_bpmn_diagram.bpmn":
-        "Blank Camunda-Modeler BPMN export; the {{PROCESS_ID}} token is interop-required by the frontend.",
+        "Blank canvas for a new diagram, authored by m8flow (own definitions/DI ids and bounds, no exporter attribution). Residual overlap is the OMG BPMN 2.0 element skeleton every blank diagram must carry; the {{PROCESS_ID}} token is interop-required by useDiagramImport.",
     "m8flow-frontend/public/new_dmn_diagram.dmn":
-        "Blank Camunda-Modeler DMN export; tool-generated seed diagram.",
+        "Blank canvas for a new decision, authored by m8flow (own definitions/DI ids and bounds). Residual overlap is the OMG DMN 1.3 skeleton dmn-js requires (decision -> decisionTable -> input/output plus a DMNDI shape); the {{DECISION_ID}} token is interop-required by useDiagramImport.",
     # ReactDiagramEditor cluster (map ticket 14). m8flow already split upstream's 980-line
     # monolith into a thin component + hooks; the copied-logic file (useDiagramImport) was
     # rewritten clean-room. These four carry only non-copyrightable contract: fixed bpmn-js/
@@ -402,7 +398,7 @@ def iter_tree_files(root_path: Path, suffixes: set[str]):
             path = Path(dirpath) / fn
             if not _is_scannable(path, suffixes):
                 continue
-            if _skip_path(str(path.relative_to(REPO_ROOT))):
+            if _skip_path(path.relative_to(REPO_ROOT).as_posix()):
                 continue
             yield path
 
@@ -461,7 +457,7 @@ def get_upstream_index() -> tuple[dict[int, list[str]], dict[str, list[str]]]:
         if not root_path.is_dir():
             continue
         for path in iter_tree_files(root_path, TEXT_SUFFIXES):
-            rel = str(path.relative_to(REPO_ROOT))
+            rel = path.relative_to(REPO_ROOT).as_posix()
             base_index.setdefault(path.name, []).append(rel)
             for h in set(_meaningful_hashes(_read_lines(path))):
                 line_index.setdefault(h, []).append(rel)
@@ -570,7 +566,7 @@ def analyze(apache_path: str, thr: float, ct: float, blk: int) -> FileResult:
     upstream = resolve_upstream(apache_path, thr, ct, blk)
     if upstream is None:
         return result
-    result.upstream_path = str(upstream.relative_to(REPO_ROOT))
+    result.upstream_path = upstream.relative_to(REPO_ROOT).as_posix()
     b_lines = _read_lines(upstream)
 
     ratio, containment, longest = compare_code(a_code, code_lines(b_lines))
@@ -592,7 +588,7 @@ def iter_source_files() -> list[str]:
         if not root_path.is_dir():
             continue
         for path in iter_tree_files(root_path, TEXT_SUFFIXES):
-            files.append(str(path.relative_to(REPO_ROOT)))
+            files.append(path.relative_to(REPO_ROOT).as_posix())
     return sorted(files)
 
 
