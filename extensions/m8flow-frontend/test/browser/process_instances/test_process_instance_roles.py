@@ -10,6 +10,7 @@ from playwright.sync_api import Page, expect
 from helpers.config import BASE_URL, ELEMENT_TIMEOUT
 from helpers.waiters import wait_for_app_ready
 from process_instances._process_instances_page import ProcessInstancesPage
+from roles._super_admin_utils import setup_super_admin_session
 
 logger = logging.getLogger(__name__)
 
@@ -85,3 +86,16 @@ def test_super_admin_sees_all_and_find_by_id_but_not_for_me(
     expect(pip.find_by_id_tab).to_be_visible(timeout=ELEMENT_TIMEOUT)
     expect(pip.for_me_tab).not_to_be_visible(timeout=ELEMENT_TIMEOUT)
     logger.info("Super admin sees All + Find By ID tabs and not For Me.")
+
+
+def test_super_admin_for_me_redirects_to_all(super_admin_page: Page) -> None:
+    """CHK-07: opening /process-instances/for-me redirects to /all; For Me stays hidden."""
+    page = super_admin_page
+    setup_super_admin_session(page)
+    page.goto(f"{BASE_URL}/process-instances/for-me")
+    wait_for_app_ready(page)
+    expect(page).to_have_url(re.compile(r"/process-instances/all"), timeout=ELEMENT_TIMEOUT)
+    pip = ProcessInstancesPage(page)
+    expect(pip.all_tab).to_be_visible(timeout=ELEMENT_TIMEOUT)
+    expect(pip.for_me_tab).not_to_be_visible(timeout=ELEMENT_TIMEOUT)
+    logger.info("Super-admin /process-instances/for-me redirected to /all; For Me stayed hidden.")
