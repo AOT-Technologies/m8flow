@@ -115,8 +115,18 @@ class Settings(BaseSettings):
 
     @property
     def has_oidc_client(self) -> bool:
-        """True when a confidential Keycloak client is configured for browser login."""
-        return bool(self.client_id and self.client_secret)
+        """True only when browser login has been explicitly opted into.
+
+        ``client_secret`` alone is not enough: ROPC auto-login also requires it
+        (confidential client), so a bare secret does not imply "enable browser
+        OAuth". ``mcp_oidc_base_url`` is the field the README documents users
+        setting specifically to turn browser login on -- requiring it here keeps
+        ROPC/static-bearer setups (e.g. a backend forwarding a caller's own
+        token) from being silently routed through the OIDCProxy, which only
+        recognizes tokens it issued itself and otherwise hangs instead of
+        rejecting cleanly.
+        """
+        return bool(self.client_id and self.client_secret and self.mcp_oidc_base_url)
 
     @property
     def has_ropc_credentials(self) -> bool:
