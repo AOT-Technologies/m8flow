@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 from cryptography.fernet import Fernet
+from flask import Flask
 
 extension_root = Path(__file__).resolve().parents[4]
 repo_root = extension_root.parent
@@ -229,6 +230,21 @@ class FakeHvacClient:
 
     def is_authenticated(self) -> bool:
         return self.authenticated
+
+
+class FakeAuditLogService:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+        self.latest_event_calls: list[dict[str, object]] = []
+        self.latest_event_response = None
+
+    def try_record_event(self, **kwargs):
+        self.calls.append(dict(kwargs))
+        return kwargs
+
+    def try_latest_event(self, **kwargs):
+        self.latest_event_calls.append(dict(kwargs))
+        return self.latest_event_response
 
 
 def _settings(**overrides) -> VaultSettings:
@@ -618,6 +634,174 @@ class TestVaultClientOperations:
         assert available is True
         assert fake_client.sys.health_calls == [
             {"method": "GET", "standby_ok": True, "performance_standby_code": 200}
+        ]
+
+    def test_check_availability_records_success_audit_event(self):
+        fake_client = FakeHvacClient()
+        fake_audit = FakeAuditLogService()
+        client = VaultClient(
+            settings=_settings(),
+            client_factory=lambda _settings: fake_client,
+            audit_log_service=fake_audit,
+        )
+        app = Flask(__name__)
+
+        with app.app_context():
+            available = client.check_availability()
+
+        assert available is True
+        assert fake_audit.calls == [
+            {
+                "category": "vault",
+                "event_type": "vault.health.check",
+                "source": "vault_client",
+                "status": "success",
+                "severity": "info",
+                "message": "Vault availability check succeeded.",
+                "details": {
+                    "configured": True,
+                    "authenticated": True,
+                    "mount_point": "kv",
+                    "auth_method": "token",
+                },
+            }
+        ]
+
+    def test_check_availability_records_failed_audit_event_without_leaking_exception_text(self, caplog):
+        fake_client = FakeHvacClient()
+        fake_client.sys.health_exception = OSError("token=secret-123")
+        fake_audit = FakeAuditLogService()
+        client = VaultClient(
+            settings=_settings(),
+            client_factory=lambda _settings: fake_client,
+            audit_log_service=fake_audit,
+        )
+        app = Flask(__name__)
+
+        with caplog.at_level("WARNING", logger="m8flow.vault.client"):
+            with app.app_context():
+                available = client.check_availability()
+
+        assert available is False
+        assert "token=secret-123" not in caplog.text
+        assert fake_audit.calls == [
+            {
+                "category": "vault",
+                "event_type": "vault.health.check",
+                "source": "vault_client",
+                "status": "failed",
+                "severity": "error",
+                "message": "Vault availability check failed.",
+                "details": {
+                    "configured": True,
+                    "mount_point": "kv",
+                    "auth_method": "token",
+                    "error_type": "OSError",
+                },
+            }
+        ]
+        assert "token=secret-123" not in repr(fake_audit.calls[0])
+
+    def test_check_availability_transition_audit_records_initial_observation(self):
+        fake_client = FakeHvacClient()
+        fake_audit = FakeAuditLogService()
+        client = VaultClient(
+            settings=_settings(),
+            client_factory=lambda _settings: fake_client,
+            audit_log_service=fake_audit,
+        )
+        app = Flask(__name__)
+
+        with app.app_context():
+            available = client.check_availability(transitions_only=True)
+
+        assert available is True
+        assert fake_audit.latest_event_calls == [
+            {
+                "category": "vault",
+                "event_type": "vault.health.check",
+                "source": "vault_client",
+            }
+        ]
+        assert fake_audit.calls == [
+            {
+                "category": "vault",
+                "event_type": "vault.health.check",
+                "source": "vault_client",
+                "status": "success",
+                "severity": "info",
+                "message": "Vault availability check succeeded.",
+                "details": {
+                    "configured": True,
+                    "authenticated": True,
+                    "mount_point": "kv",
+                    "auth_method": "token",
+                },
+            }
+        ]
+
+    def test_check_availability_transition_audit_skips_duplicate_status(self):
+        fake_client = FakeHvacClient()
+        fake_audit = FakeAuditLogService()
+        fake_audit.latest_event_response = SimpleNamespace(status="success")
+        client = VaultClient(
+            settings=_settings(),
+            client_factory=lambda _settings: fake_client,
+            audit_log_service=fake_audit,
+        )
+        app = Flask(__name__)
+
+        with app.app_context():
+            available = client.check_availability(transitions_only=True)
+
+        assert available is True
+        assert fake_audit.latest_event_calls == [
+            {
+                "category": "vault",
+                "event_type": "vault.health.check",
+                "source": "vault_client",
+            }
+        ]
+        assert fake_audit.calls == []
+
+    def test_check_availability_transition_audit_records_status_change(self):
+        fake_client = FakeHvacClient()
+        fake_client.sys.health_exception = OSError("connection refused")
+        fake_audit = FakeAuditLogService()
+        fake_audit.latest_event_response = SimpleNamespace(status="success")
+        client = VaultClient(
+            settings=_settings(),
+            client_factory=lambda _settings: fake_client,
+            audit_log_service=fake_audit,
+        )
+        app = Flask(__name__)
+
+        with app.app_context():
+            available = client.check_availability(transitions_only=True)
+
+        assert available is False
+        assert fake_audit.latest_event_calls == [
+            {
+                "category": "vault",
+                "event_type": "vault.health.check",
+                "source": "vault_client",
+            }
+        ]
+        assert fake_audit.calls == [
+            {
+                "category": "vault",
+                "event_type": "vault.health.check",
+                "source": "vault_client",
+                "status": "failed",
+                "severity": "error",
+                "message": "Vault availability check failed.",
+                "details": {
+                    "configured": True,
+                    "mount_point": "kv",
+                    "auth_method": "token",
+                    "error_type": "OSError",
+                },
+            }
         ]
 
     def test_assert_startup_ready_uses_mount_metadata_endpoint(self):

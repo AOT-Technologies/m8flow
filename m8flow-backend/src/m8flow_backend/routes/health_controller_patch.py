@@ -22,6 +22,11 @@ from m8flow_backend.tenancy import set_context_tenant_id
 
 _PATCHED = False
 logger = logging.getLogger(__name__)
+_VAULT_DISABLED_STATUS = {
+    "enabled": False,
+    "configured": False,
+    "healthy": None,
+}
 
 
 def _health_controller_module():
@@ -34,6 +39,40 @@ def _is_health_status_endpoint(endpoint: str | None) -> bool:
     return endpoint == "spiffworkflow_backend.routes.health_controller.status" or endpoint.endswith(
         "health_controller.status"
     )
+
+
+def _vault_status_payload() -> dict[str, Any]:
+    from m8flow_backend.config import vault_enabled
+    from m8flow_backend.services.vault_client import VaultSettings, get_vault_client
+
+    if not vault_enabled():
+        return dict(_VAULT_DISABLED_STATUS)
+
+    try:
+        settings = VaultSettings.from_env()
+    except Exception:
+        logger.warning("health_controller_patch: vault settings resolution failed", exc_info=True)
+        return {
+            "enabled": True,
+            "configured": False,
+            "healthy": False,
+        }
+
+    payload = {
+        "enabled": True,
+        "configured": settings.is_configured,
+        "healthy": False,
+        "mount_point": settings.mount_point,
+        "auth_method": settings.auth_method,
+    }
+    if not settings.is_configured:
+        return payload
+
+    payload["healthy"] = get_vault_client().check_availability(
+        audit=True,
+        transitions_only=True,
+    )
+    return payload
 
 
 def _selected_tenant_from_status_request() -> str | None:
@@ -329,7 +368,13 @@ def apply(flask_app: Any | None = None) -> None:
                 )
 
         _preserve_status_auth_cookies_for_external_token(decoded_token)
-        return make_response({"ok": True, "can_access_frontend": can_access_frontend}, 200)
+        return make_response(
+            {
+                "ok": True,
+                "can_access_frontend": can_access_frontend,
+            },
+            200,
+        )
 
     health_controller.status = patched_status
 

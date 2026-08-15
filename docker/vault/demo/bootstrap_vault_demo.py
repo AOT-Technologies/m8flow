@@ -33,6 +33,10 @@ BROKER_APPROLE_NAME = (os.getenv("M8FLOW_VAULT_APPROLE_NAME") or "m8flow").strip
 DEMO_OVERWRITE = _truthy(os.getenv("M8FLOW_VAULT_DEMO_OVERWRITE"))
 WAIT_TIMEOUT_SECONDS = float(os.getenv("M8FLOW_VAULT_DEMO_WAIT_TIMEOUT_SECONDS") or "180")
 WAIT_INTERVAL_SECONDS = float(os.getenv("M8FLOW_VAULT_DEMO_WAIT_INTERVAL_SECONDS") or "2")
+VAULT_REQUEST_TIMEOUT_SECONDS = float(os.getenv("M8FLOW_VAULT_DEMO_HTTP_TIMEOUT_SECONDS") or "10")
+INIT_REQUEST_TIMEOUT_SECONDS = float(
+    os.getenv("M8FLOW_VAULT_DEMO_INIT_TIMEOUT_SECONDS") or str(max(VAULT_REQUEST_TIMEOUT_SECONDS, 30.0))
+)
 STATE_DIR = Path(os.getenv("M8FLOW_VAULT_DEMO_STATE_DIR") or "/vault/demo")
 INIT_FILE = STATE_DIR / "init.json"
 ROLE_ID_FILE = STATE_DIR / "m8flow-role-id"
@@ -171,6 +175,7 @@ def vault_request(
     token: str | None = None,
     payload: dict[str, Any] | None = None,
     expected_statuses: tuple[int, ...] = (200,),
+    timeout_seconds: float = VAULT_REQUEST_TIMEOUT_SECONDS,
 ) -> tuple[int, dict[str, Any] | None, str]:
     url = f"{VAULT_ADDR}/v1/{api_path.lstrip('/')}"
     headers: dict[str, str] = {}
@@ -185,12 +190,15 @@ def vault_request(
     response_body: str
     req = request.Request(url, data=data, headers=headers, method=method)
     try:
-        with request.urlopen(req, timeout=10) as response:
+        with request.urlopen(req, timeout=timeout_seconds) as response:
             response_status = int(response.getcode())
             response_body = response.read().decode("utf-8")
     except error.HTTPError as exc:
         response_status = int(exc.code)
         response_body = exc.read().decode("utf-8")
+    except TimeoutError as exc:
+        del exc
+        fail(f"Vault API {method} /v1/{api_path.lstrip('/')} timed out after {timeout_seconds:g}s.")
     except error.URLError as exc:
         del exc
         fail(f"Could not reach Vault at {VAULT_ADDR}.")
@@ -306,6 +314,7 @@ def initialize_if_needed(status: dict[str, Any]) -> dict[str, Any]:
         "sys/init",
         payload={"secret_shares": 1, "secret_threshold": 1},
         expected_statuses=(200,),
+        timeout_seconds=INIT_REQUEST_TIMEOUT_SECONDS,
     )
     if not isinstance(payload, dict):
         fail("Vault init did not return a JSON payload.")

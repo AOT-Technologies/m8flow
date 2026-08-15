@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
+  Alert,
   Box,
   Button,
   Dialog,
@@ -41,6 +42,16 @@ type SecretRow = {
   tenantId?: string;
 };
 
+function getErrorMessage(error: any, fallback: string): string {
+  if (typeof error?.detail === 'string' && error.detail) {
+    return error.detail;
+  }
+  if (typeof error?.message === 'string' && error.message) {
+    return error.message;
+  }
+  return fallback;
+}
+
 function secretsListPath(page: number, perPage: number, tenantId?: string | null) {
   const qs = new URLSearchParams({
     per_page: String(perPage),
@@ -66,6 +77,8 @@ export default function SecretList() {
   const [rows, setRows] = useState<SecretRow[]>([]);
   const [pageMeta, setPageMeta] = useState<any>(null);
   const [pendingDelete, setPendingDelete] = useState<SecretRow | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   const { ability, permissionsLoaded } = usePermissionFetcher({
     [targetUris.authenticationListPath]: ['GET'],
@@ -83,9 +96,19 @@ export default function SecretList() {
       successCallback: (payload: any) => {
         setRows(payload.results ?? []);
         setPageMeta(payload.pagination);
+        setErrorMessage('');
+        setLoaded(true);
+      },
+      failureCallback: (error: unknown) => {
+        setRows([]);
+        setPageMeta(null);
+        setErrorMessage(
+          getErrorMessage(error, 'Could not list secrets.'),
+        );
+        setLoaded(true);
       },
     });
-  }, [searchParams, sa, selectedTenantId]);
+  }, [searchParams, sa, selectedTenantId, t]);
 
   useEffect(() => {
     if (!permissionsLoaded) return;
@@ -95,6 +118,7 @@ export default function SecretList() {
       go('/configuration/authentications');
       return;
     }
+    setLoaded(false);
     load();
   }, [
     permissionsLoaded,
@@ -113,7 +137,7 @@ export default function SecretList() {
     });
   };
 
-  if (!pageMeta) {
+  if (!permissionsLoaded || !loaded) {
     return null;
   }
 
@@ -189,6 +213,10 @@ export default function SecretList() {
           pagination={pageMeta}
           tableToDisplay={table}
         />
+      ) : errorMessage ? (
+        <Alert severity="error" data-testid="secret-list-error">
+          {errorMessage}
+        </Alert>
       ) : (
         <p>{t('no_secrets_to_display')}</p>
       )}

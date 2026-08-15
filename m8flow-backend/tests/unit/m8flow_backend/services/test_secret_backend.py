@@ -19,6 +19,7 @@ for path in (repo_root, extension_src, backend_src):
         sys.path.insert(0, path_str)
 
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel, TenantStatus
+from m8flow_backend.models.process_model_bpmn_version import ProcessModelBpmnVersionModel  # noqa: F401
 from m8flow_backend.models.user import UserModel
 from m8flow_backend.services import secret_backend as secret_backend_module
 from m8flow_backend.services.secret_backend_contract import SecretBackend, SecretRecord
@@ -51,10 +52,13 @@ class FakeVaultClient:
         self.delete_calls: list[str] = []
         self.retrieve_calls: list[str] = []
         self.list_calls: list[str] = []
+        self.availability_checks: list[dict[str, object]] = []
         self.fail_store: Exception | None = None
         self.fail_delete: Exception | None = None
         self.fail_retrieve: Exception | None = None
         self.fail_list: Exception | None = None
+        self.availability_result = True
+        self.audit_log_service: FakeAuditLogService | None = None
 
     def store_secret_document(self, path: str, document: dict[str, object]) -> dict[str, object]:
         self.store_calls.append((path, dict(document)))
@@ -105,6 +109,44 @@ class FakeVaultClient:
         value = document.get("value")
         return None if value is None else str(value)
 
+    def check_availability(self, *, audit: bool = True, transitions_only: bool = False) -> bool:
+        self.availability_checks.append(
+            {
+                "audit": audit,
+                "transitions_only": transitions_only,
+            }
+        )
+        if audit and self.audit_log_service is not None:
+            latest_event = None
+            if transitions_only and hasattr(self.audit_log_service, "try_latest_event"):
+                latest_event = self.audit_log_service.try_latest_event(
+                    category="vault",
+                    event_type="vault.health.check",
+                    source="vault_client",
+                )
+            next_status = "success" if self.availability_result else "failed"
+            previous_status = str(getattr(latest_event, "status", "") or "").strip()
+            if not transitions_only or previous_status != next_status:
+                self.audit_log_service.try_record_event(
+                    category="vault",
+                    event_type="vault.health.check",
+                    source="vault_client",
+                    status=next_status,
+                    severity="info" if self.availability_result else "error",
+                    message=(
+                        "Vault availability check succeeded."
+                        if self.availability_result
+                        else "Vault availability check failed."
+                    ),
+                    details={
+                        "configured": True,
+                        "authenticated": self.availability_result,
+                        "mount_point": "kv",
+                        "auth_method": "approle",
+                    },
+                )
+        return self.availability_result
+
 
 class FakeTenantScopedVaultClientProvider:
     def __init__(self, default_client: FakeVaultClient) -> None:
@@ -120,6 +162,21 @@ class FakeTenantScopedVaultClientProvider:
             raise error
         vault_client = self.clients_by_tenant.get(tenant_id, self.default_client)
         return SimpleNamespace(vault_client=vault_client)
+
+
+class FakeAuditLogService:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def try_record_event(self, **kwargs):
+        self.calls.append(dict(kwargs))
+        return kwargs
+
+    def try_latest_event(self, **filters):
+        for call in reversed(self.calls):
+            if all(call.get(key) == value for key, value in filters.items()):
+                return SimpleNamespace(**call)
+        return None
 
 
 @pytest.fixture
@@ -179,10 +236,13 @@ def user(app):
 def _backend(
     fake_vault: FakeVaultClient,
     provider: FakeTenantScopedVaultClientProvider | None = None,
+    audit_log_service: FakeAuditLogService | None = None,
 ) -> VaultBackedSecretBackend:
+    fake_vault.audit_log_service = audit_log_service
     return VaultBackedSecretBackend(
         vault_client=fake_vault,
         tenant_vault_client_provider=provider or FakeTenantScopedVaultClientProvider(fake_vault),
+        audit_log_service=audit_log_service,
     )
 
 
@@ -274,6 +334,254 @@ def test_vault_mode_returns_runtime_error_without_exposing_sensitive_exception_t
     assert "TenantScopedVaultClientError" in caplog.text
     assert "secret-123" not in caplog.text
     assert "demo-secret" not in caplog.text
+
+
+def test_vault_mode_records_audit_events_for_secret_crud(app, tenants, user) -> None:
+    fake_vault = FakeVaultClient()
+    fake_audit = FakeAuditLogService()
+    backend = _backend(fake_vault, audit_log_service=fake_audit)
+
+    with app.test_request_context("/"):
+        g.m8flow_tenant_id = tenants[0]
+        backend.add_secret("API_TOKEN", "vault-value", user)
+        backend.get_secret_value("API_TOKEN")
+        backend.update_secret("API_TOKEN", "rotated-value", user_id=user)
+        backend.delete_secret("API_TOKEN", user)
+
+    assert [call["event_type"] for call in fake_audit.calls] == [
+        "vault.secret.create",
+        "vault.secret.read",
+        "vault.secret.update",
+        "vault.secret.delete",
+    ]
+    assert [call["status"] for call in fake_audit.calls] == ["success", "success", "success", "success"]
+    assert fake_audit.calls[0]["details"] == {"backend": "vault"}
+    assert fake_audit.calls[1]["details"] == {"backend": "vault", "read_mode": "value"}
+    assert fake_audit.calls[2]["details"] == {"backend": "vault", "renamed": False, "previous_key": None}
+    assert fake_audit.calls[3]["details"] == {"backend": "vault", "deleted": True}
+    for call in fake_audit.calls:
+        assert call["category"] == "vault"
+        assert call["source"] == "secret_backend"
+        assert call["resource_type"] == "secret"
+        assert call["resource_name"] == "API_TOKEN"
+        assert call["tenant_id"] == tenants[0]
+        assert "vault-value" not in repr(call)
+        assert "rotated-value" not in repr(call)
+
+
+def test_vault_mode_records_audit_events_for_secret_list(app, tenants, user) -> None:
+    fake_vault = FakeVaultClient()
+    fake_audit = FakeAuditLogService()
+    backend = _backend(fake_vault, audit_log_service=fake_audit)
+
+    with app.test_request_context("/"):
+        g.m8flow_tenant_id = tenants[0]
+        backend.add_secret("API_TOKEN", "vault-value", user)
+        fake_audit.calls.clear()
+
+        payload = backend.serialize_secret_list_result()
+
+    assert payload["results"][0]["key"] == "API_TOKEN"
+    assert fake_audit.calls == [
+        {
+            "category": "vault",
+            "event_type": "vault.secret.list",
+            "source": "secret_backend",
+            "status": "success",
+            "severity": "info",
+            "message": "Vault secret list succeeded.",
+            "tenant_id": tenants[0],
+            "resource_type": "secret",
+            "resource_id": None,
+            "resource_name": "*",
+            "details": {
+                "backend": "vault",
+                "listed_count": 1,
+                "scope": "tenant",
+            },
+        }
+    ]
+
+
+def test_vault_mode_records_failed_audit_event_without_sensitive_error_details(app, tenants, user) -> None:
+    fake_vault = FakeVaultClient()
+    provider = FakeTenantScopedVaultClientProvider(fake_vault)
+    provider.errors_by_tenant[tenants[0]] = TenantScopedVaultClientError("secret_id=secret-123 value=demo-secret")
+    fake_audit = FakeAuditLogService()
+    backend = _backend(fake_vault, provider=provider, audit_log_service=fake_audit)
+
+    with app.test_request_context("/"):
+        g.m8flow_tenant_id = tenants[0]
+        with pytest.raises(ApiError):
+            backend.add_secret("API_TOKEN", "vault-value", user)
+
+    assert fake_audit.calls == [
+        {
+            "category": "vault",
+            "event_type": "vault.secret.create",
+            "source": "secret_backend",
+            "status": "failed",
+            "severity": "error",
+            "message": "Vault secret create failed.",
+            "tenant_id": tenants[0],
+            "resource_type": "secret",
+            "resource_id": None,
+            "resource_name": "API_TOKEN",
+            "details": {
+                "backend": "vault",
+                "error_code": "vault_create_error",
+                "error_type": "TenantScopedVaultClientError",
+                "status_code": 503,
+            },
+        }
+    ]
+    assert "secret-123" not in repr(fake_audit.calls[0])
+    assert "demo-secret" not in repr(fake_audit.calls[0])
+
+
+def test_vault_mode_records_failed_audit_event_for_secret_list(app, tenants, user) -> None:
+    fake_vault = FakeVaultClient()
+    fake_vault.fail_list = VaultConnectionError("value=demo-secret")
+    fake_audit = FakeAuditLogService()
+    backend = _backend(fake_vault, audit_log_service=fake_audit)
+
+    with app.test_request_context("/"):
+        g.m8flow_tenant_id = tenants[0]
+        backend.add_secret("API_TOKEN", "vault-value", user)
+        fake_audit.calls.clear()
+
+        with pytest.raises(ApiError) as exc_info:
+            backend.serialize_secret_list_result()
+
+    assert exc_info.value.error_code == "vault_list_error"
+    assert exc_info.value.message == "Could not list secrets."
+    assert fake_audit.calls == [
+        {
+            "category": "vault",
+            "event_type": "vault.secret.list",
+            "source": "secret_backend",
+            "status": "failed",
+            "severity": "error",
+            "message": "Vault secret list failed.",
+            "tenant_id": tenants[0],
+            "resource_type": "secret",
+            "resource_id": None,
+            "resource_name": "*",
+            "details": {
+                "backend": "vault",
+                "error_code": "vault_list_error",
+                "status_code": 503,
+                "scope": "tenant",
+            },
+        }
+    ]
+    assert "demo-secret" not in repr(fake_audit.calls[0])
+
+
+def test_vault_mode_records_health_check_and_returns_vault_down_when_vault_is_unavailable(
+    app,
+    tenants,
+    user,
+) -> None:
+    fake_vault = FakeVaultClient()
+    fake_vault.availability_result = False
+    provider = FakeTenantScopedVaultClientProvider(fake_vault)
+    tenant_error = TenantScopedVaultClientError("could not resolve tenant-scoped client")
+    tenant_error.__cause__ = VaultConnectionError("vault unavailable")
+    provider.errors_by_tenant[tenants[0]] = tenant_error
+    fake_audit = FakeAuditLogService()
+    backend = _backend(fake_vault, provider=provider, audit_log_service=fake_audit)
+
+    with app.test_request_context("/"):
+        g.m8flow_tenant_id = tenants[0]
+        with pytest.raises(ApiError) as exc_info:
+            backend.serialize_secret_list_result()
+
+    assert exc_info.value.error_code == "vault_unavailable"
+    assert exc_info.value.message == "Vault is down."
+    assert fake_vault.availability_checks == [
+        {"audit": False, "transitions_only": False},
+        {"audit": True, "transitions_only": True},
+    ]
+    assert fake_audit.calls == [
+        {
+            "category": "vault",
+            "event_type": "vault.health.check",
+            "source": "vault_client",
+            "status": "failed",
+            "severity": "error",
+            "message": "Vault availability check failed.",
+            "details": {
+                "configured": True,
+                "authenticated": False,
+                "mount_point": "kv",
+                "auth_method": "approle",
+            },
+        },
+        {
+            "category": "vault",
+            "event_type": "vault.secret.list",
+            "source": "secret_backend",
+            "status": "failed",
+            "severity": "error",
+            "message": "Vault secret list failed.",
+            "tenant_id": tenants[0],
+            "resource_type": "secret",
+            "resource_id": None,
+            "resource_name": "*",
+            "details": {
+                "backend": "vault",
+                "error_code": "vault_unavailable",
+                "status_code": 503,
+                "scope": "tenant",
+            },
+        },
+    ]
+
+
+def test_vault_mode_logs_recovery_and_next_outage_transition(app, tenants, user) -> None:
+    fake_vault = FakeVaultClient()
+    fake_audit = FakeAuditLogService()
+    backend = _backend(fake_vault, audit_log_service=fake_audit)
+
+    with app.test_request_context("/"):
+        g.m8flow_tenant_id = tenants[0]
+        backend.add_secret("API_TOKEN", "vault-value", user)
+        fake_audit.calls.clear()
+
+        fake_vault.fail_list = VaultConnectionError("vault unavailable")
+        fake_vault.availability_result = False
+        with pytest.raises(ApiError) as first_error:
+            backend.serialize_secret_list_result()
+
+        fake_vault.fail_list = None
+        fake_vault.availability_result = True
+        payload = backend.serialize_secret_list_result()
+
+        fake_vault.fail_list = VaultConnectionError("vault unavailable again")
+        fake_vault.availability_result = False
+        with pytest.raises(ApiError) as second_error:
+            backend.serialize_secret_list_result()
+
+    assert first_error.value.error_code == "vault_unavailable"
+    assert payload["results"][0]["key"] == "API_TOKEN"
+    assert second_error.value.error_code == "vault_unavailable"
+    assert [call["event_type"] for call in fake_audit.calls] == [
+        "vault.health.check",
+        "vault.secret.list",
+        "vault.health.check",
+        "vault.secret.list",
+        "vault.health.check",
+        "vault.secret.list",
+    ]
+    assert [call["status"] for call in fake_audit.calls] == [
+        "failed",
+        "failed",
+        "success",
+        "success",
+        "failed",
+        "failed",
+    ]
 
 
 def test_vault_mode_does_not_fallback_to_legacy_secret_table(app, tenants, user) -> None:
