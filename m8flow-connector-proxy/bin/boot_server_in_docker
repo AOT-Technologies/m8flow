@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# m8flow-connector-proxy/bin/boot_server_in_docker
+# Container/production entrypoint: boots the connector proxy under gunicorn.
+# Local dev instead uses bin/run_server_locally (Flask's dev server).
 
 function error_handler() {
   >&2 echo "Exited with BAD EXIT CODE '${2}' in ${0} script at line: ${1}."
@@ -7,11 +10,19 @@ function error_handler() {
 trap 'error_handler ${LINENO} $?' ERR
 set -o errtrace -o errexit -o nounset -o pipefail
 
-port="${CONNECTOR_PROXY_PORT:-}"
-if [[ -z "$port" ]]; then
-  port=7004
-fi
-
+port="${CONNECTOR_PROXY_PORT:-7004}"
 workers=3
 
-exec poetry run gunicorn --bind "0.0.0.0:$port" --workers="$workers" --limit-request-line 8192 --timeout 90 --capture-output --access-logfile '-' --log-level debug app:app
+# --limit-request-line raises gunicorn's request-line cap above its 4094-byte
+# default; some connector OAuth callbacks carry longer query strings than that.
+# `exec` so gunicorn replaces this shell and keeps correct PID-1 signal handling
+# in the container -- keep this the last statement in the script.
+exec poetry run gunicorn \
+  --bind "0.0.0.0:${port}" \
+  --workers="${workers}" \
+  --limit-request-line 8192 \
+  --timeout 90 \
+  --capture-output \
+  --access-logfile '-' \
+  --log-level debug \
+  app:app
