@@ -190,6 +190,8 @@ NONCOPYRIGHTABLE_ALLOWLIST: dict[str, str] = {
         "sharing a common ancestor, not LGPL copying: passwordVisibility.js is Keycloak's own "
         "native script (m8flow doesn't even ship a copy, it inherits via the theme parent chain), "
         "and the theme-SPI kc-*/msg() contract cannot be renamed regardless of ancestry.",
+    "m8flow-connector-proxy/dev.docker-compose.yml":
+        "docker-compose schema + env-var keys; m8flow's own service/context/volumes.",
     "m8flow-nats-consumer/pyproject.toml":
         "PEP-621 project/build skeleton; m8flow's own name/deps.",
     "m8flow-connector-proxy/pyproject.toml":
@@ -205,6 +207,8 @@ NONCOPYRIGHTABLE_ALLOWLIST: dict[str, str] = {
         "display/theme_color/background_color/start_url keys every unbranded manifest carries "
         "(ratio 0.5 -> 0.25). No custom brand color or multi-size icon set exists yet to further "
         "differentiate this without fabricating assets.",
+    "m8flow-frontend/public/keycloak.json":
+        "Keycloak JS-adapter config keys; differs only by port.",
     "m8flow-frontend/public/new_bpmn_diagram.bpmn":
         "Blank canvas for a new diagram, regenerated from scratch (own definitions/diagram/plane/"
         "shape ids, own targetNamespace, shifted bounds; ratio 0.615 -> 0.53, containment 0.615 -> "
