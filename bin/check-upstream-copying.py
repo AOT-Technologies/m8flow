@@ -160,7 +160,8 @@ def _skip_path(rel: str) -> bool:
 # license/attribution MARKER on an allowlisted file still fails (the waiver covers
 # similarity, never a copied license header). Whether any of these can and SHOULD be
 # regenerated for full independence is tracked in the config/data-asset report
-# (m8flow LGPL de-contamination map, ticket 05).
+# (m8flow LGPL de-contamination map, ticket 05) - the realm export in particular is
+# allowlisted only as an interim measure pending regeneration.
 NONCOPYRIGHTABLE_ALLOWLIST: dict[str, str] = {
     "m8flow-backend/migrations/script.py.mako":
         "Not a copy of spiffworkflow-backend's expression at all: this is Alembic's own stock "
@@ -176,19 +177,7 @@ NONCOPYRIGHTABLE_ALLOWLIST: dict[str, str] = {
         "lines are the parts of alembic.ini every Alembic project gets verbatim from the same "
         "`alembic init` scaffold.",
     "m8flow-backend/keycloak/realm_exports/m8flow-tenant-template.json":
-        "Keycloak realm export. REGENERATED from scratch on a clean Keycloak 26.6.1 by "
-        "m8flow-backend/keycloak/regenerate-realm-template.sh (the existing template was never "
-        "imported into that instance), so this is Keycloak's own generated output, not a copy: "
-        "0 UUIDs shared with either upstream export (was 126), no upstream client secret, no "
-        "spiff identifiers, keycloakVersion 26.6.1 vs upstream's 22.0.4. The residual overlap "
-        "vs spiffworkflow-local-realm.json is entirely Keycloak's built-in scaffolding that its "
-        "exporter emits verbatim into every realm -- the \"builtIn\": true authenticationFlows "
-        "(browser, direct grant, clients, reset credentials, incl. Keycloak's own "
-        "\"autheticatorFlow\" misspelling) and the stock requiredActions block. Two "
-        "independently generated realm exports necessarily share it; it cannot be re-expressed "
-        "without breaking import. Provenance is enforced by "
-        "tests/unit/m8flow_backend/keycloak/test_realm_template_contract.py, which fails if "
-        "UUID overlap with upstream ever rises above 0.",
+        "Keycloak realm export; residual overlap is Keycloak built-in default scaffolding only (authenticationFlows, requiredActions, client-registration policy). Spiff-derived private key material (KeyProvider) and spiff identifiers were purged; the KeyProvider block is inert (create_realm uses minimal-create + partialImport, so Keycloak generates fresh per-realm keys).",
     "m8flow-backend/keycloak/themes/m8flow/login/login.ftl":
         "Rebuilt (map ticket 14 follow-up) directly from Keycloak's own base theme login.ftl "
         "(Apache-2.0, github.com/keycloak/keycloak @ 26.6.1 -- the pinned image version, see "
@@ -445,7 +434,7 @@ def iter_tree_files(root_path: Path, suffixes: set[str]):
             path = Path(dirpath) / fn
             if not _is_scannable(path, suffixes):
                 continue
-            if _skip_path(path.relative_to(REPO_ROOT).as_posix()):
+            if _skip_path(str(path.relative_to(REPO_ROOT))):
                 continue
             yield path
 
@@ -504,7 +493,7 @@ def get_upstream_index() -> tuple[dict[int, list[str]], dict[str, list[str]]]:
         if not root_path.is_dir():
             continue
         for path in iter_tree_files(root_path, TEXT_SUFFIXES):
-            rel = path.relative_to(REPO_ROOT).as_posix()
+            rel = str(path.relative_to(REPO_ROOT))
             base_index.setdefault(path.name, []).append(rel)
             for h in set(_meaningful_hashes(_read_lines(path))):
                 line_index.setdefault(h, []).append(rel)
@@ -613,7 +602,7 @@ def analyze(apache_path: str, thr: float, ct: float, blk: int) -> FileResult:
     upstream = resolve_upstream(apache_path, thr, ct, blk)
     if upstream is None:
         return result
-    result.upstream_path = upstream.relative_to(REPO_ROOT).as_posix()
+    result.upstream_path = str(upstream.relative_to(REPO_ROOT))
     b_lines = _read_lines(upstream)
 
     ratio, containment, longest = compare_code(a_code, code_lines(b_lines))
@@ -635,7 +624,7 @@ def iter_source_files() -> list[str]:
         if not root_path.is_dir():
             continue
         for path in iter_tree_files(root_path, TEXT_SUFFIXES):
-            files.append(path.relative_to(REPO_ROOT).as_posix())
+            files.append(str(path.relative_to(REPO_ROOT)))
     return sorted(files)
 
 

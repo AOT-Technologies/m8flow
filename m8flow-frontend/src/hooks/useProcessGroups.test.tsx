@@ -10,7 +10,22 @@ vi.mock('../services/HttpService', () => ({
   },
 }));
 
+vi.mock('../services/UserService', () => ({
+  default: {
+    isSuperAdmin: vi.fn(() => false),
+  },
+}));
+
+vi.mock('../contexts/GlobalTenantContext', () => ({
+  useGlobalTenant: vi.fn(() => ({
+    selectedTenantId: '',
+    setSelectedTenantId: vi.fn(),
+  })),
+}));
+
 import HttpService from '../services/HttpService';
+import UserService from '../services/UserService';
+import { useGlobalTenant } from '../contexts/GlobalTenantContext';
 
 function makeWrapper() {
   const client = new QueryClient({
@@ -24,6 +39,11 @@ function makeWrapper() {
 describe('useProcessGroups (m8flow override)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(UserService.isSuperAdmin).mockReturnValue(false);
+    vi.mocked(useGlobalTenant).mockReturnValue({
+      selectedTenantId: '',
+      setSelectedTenantId: vi.fn(),
+    });
   });
 
   it('does NOT append tenantId to the URL when none is provided', () => {
@@ -58,6 +78,35 @@ describe('useProcessGroups (m8flow override)', () => {
       '/process-models?filter_runnable_by_user=true',
     );
     expect(lastCall?.[0]?.path).toContain('&tenantId=tenant-a');
+  });
+
+  it('inherits GlobalTenant.selectedTenantId when tenantId is omitted for super-admin', () => {
+    vi.mocked(UserService.isSuperAdmin).mockReturnValue(true);
+    vi.mocked(useGlobalTenant).mockReturnValue({
+      selectedTenantId: 'tenant-from-global',
+      setSelectedTenantId: vi.fn(),
+    });
+    renderHook(() => useProcessGroups({ processInfo: {} }), {
+      wrapper: makeWrapper(),
+    });
+    const lastCall = vi.mocked(HttpService.makeCallToBackend).mock.calls.at(-1);
+    expect(lastCall?.[0]?.path).toBe(
+      '/process-groups?tenantId=tenant-from-global',
+    );
+  });
+
+  it('uses an explicit tenantId over GlobalTenant.selectedTenantId for super-admin', () => {
+    vi.mocked(UserService.isSuperAdmin).mockReturnValue(true);
+    vi.mocked(useGlobalTenant).mockReturnValue({
+      selectedTenantId: 'tenant-from-global',
+      setSelectedTenantId: vi.fn(),
+    });
+    renderHook(
+      () => useProcessGroups({ processInfo: {}, tenantId: 'tenant-explicit' }),
+      { wrapper: makeWrapper() },
+    );
+    const lastCall = vi.mocked(HttpService.makeCallToBackend).mock.calls.at(-1);
+    expect(lastCall?.[0]?.path).toBe('/process-groups?tenantId=tenant-explicit');
   });
 
   it('url-encodes special characters in the tenant id', () => {
