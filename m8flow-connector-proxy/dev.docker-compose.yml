@@ -1,0 +1,16 @@
+
+services:
+  m8flow-connector-proxy:
+    build:
+      context: m8flow-connector-proxy
+      dockerfile: dev.Dockerfile
+    user: "${RUN_AS}"
+    environment:
+      FLASK_DEBUG: "1"
+      POETRY_VIRTUALENVS_IN_PROJECT: "true"
+      XDG_CACHE_HOME: "/app/.cache"
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - ./m8flow-connector-proxy:/app
