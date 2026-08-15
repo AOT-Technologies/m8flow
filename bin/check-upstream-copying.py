@@ -145,117 +145,52 @@ def _skip_path(rel: str) -> bool:
     return any(s in ("/" + rel) for s in SKIP_PATH_SUBSTRINGS)
 
 
-# Reviewable non-copyrightability allowlist.
-#
-# A path-EXACT set of config/data assets whose overlap with upstream is dictated by
-# an external tool, framework, spec, or standard - not copied creative expression.
-# Each was verified file-by-file (no shared distinctive comments, no copied creative
-# block; only framework/spec/tool-mandated bytes). Copyright does not attach to such
-# bytes (merger / scenes a faire / third-party-tool provenance), so these need no
-# baseline entry and are exempt from the ratio/containment/block/comment SIMILARITY
-# signals.
-#
-# This is deliberately NOT the coarse SKIP_FILENAMES set: entries are full repo paths
-# so exactly one file is waived, each carries its rationale inline for review, and a
-# license/attribution MARKER on an allowlisted file still fails (the waiver covers
-# similarity, never a copied license header). Whether any of these can and SHOULD be
-# regenerated for full independence is tracked in the config/data-asset report
-# (m8flow LGPL de-contamination map, ticket 05) - the realm export in particular is
-# allowlisted only as an interim measure pending regeneration.
-NONCOPYRIGHTABLE_ALLOWLIST: dict[str, str] = {
-    "m8flow-backend/migrations/script.py.mako":
-        "Not a copy of spiffworkflow-backend's expression at all: this is Alembic's own stock "
-        "`alembic init`-generated migration template (Alembic is MIT-licensed, a third party to "
-        "both m8flow and spiff-arena). Ratio/containment are 1.0 only because both projects ran "
-        "the same `alembic init` and committed the unmodified tool output -- same root cause as "
-        "the login.ftl finding (flagged against the wrong 'upstream'), just too trivial (14 lines) "
-        "to be worth regenerating: re-running `alembic init` today would reproduce this exact file.",
-    "m8flow-backend/migrations/alembic.ini":
-        "Same situation as script.py.mako: Alembic's own generated [loggers]/[handlers]/[formatters] "
-        "config schema (MIT-licensed, third-party tool output), not spiffworkflow-backend's "
-        "expression. m8flow's own comments/DB-URL wiring are independently written; the matching "
-        "lines are the parts of alembic.ini every Alembic project gets verbatim from the same "
-        "`alembic init` scaffold.",
-    "m8flow-backend/keycloak/realm_exports/m8flow-tenant-template.json":
-        "Keycloak realm export; residual overlap is Keycloak built-in default scaffolding only (authenticationFlows, requiredActions, client-registration policy). Spiff-derived private key material (KeyProvider) and spiff identifiers were purged; the KeyProvider block is inert (create_realm uses minimal-create + partialImport, so Keycloak generates fresh per-realm keys).",
-    "m8flow-backend/keycloak/themes/m8flow/login/login.ftl":
-        "Rebuilt (map ticket 14 follow-up) directly from Keycloak's own base theme login.ftl "
-        "(Apache-2.0, github.com/keycloak/keycloak @ 26.6.1 -- the pinned image version, see "
-        "start_keycloak.sh) rather than continuing to diff against spiffworkflow-backend's "
-        "spifftheme fork of that same file. The diff against genuine Keycloak base is now exactly "
-        "two additive, clearly-commented m8flow blocks (isM8flowRealmLogin master-realm link, "
-        "usernameHidden restart affordance) -- confirmed by `diff` against a fresh 26.6.1 "
-        "sparse-checkout, zero lines removed or altered. The remaining ratio/containment against "
-        "spiffworkflow-backend (0.55/0.43) is two independent Apache-2.0 Keycloak derivatives "
-        "sharing a common ancestor, not LGPL copying: passwordVisibility.js is Keycloak's own "
-        "native script (m8flow doesn't even ship a copy, it inherits via the theme parent chain), "
-        "and the theme-SPI kc-*/msg() contract cannot be renamed regardless of ancestry.",
-    "m8flow-connector-proxy/dev.docker-compose.yml":
-        "docker-compose schema + env-var keys; m8flow's own service/context/volumes.",
-    "m8flow-nats-consumer/pyproject.toml":
-        "PEP-621 project/build skeleton; m8flow's own name/deps.",
-    "m8flow-connector-proxy/pyproject.toml":
-        "PEP-621 project/build skeleton; m8flow's own name/deps (compared against connector-proxy-demo, present only in CI's extra fetch).",
+# Per-file similarity ceilings at the current measured values. Fail if a file
+# exceeds these (plus drift). Markers still always fail. Omitted from a
+# regenerated baseline.
+FILE_GATES: dict[str, dict[str, float | int]] = {
     "extensions/m8flow-frontend/test/browser/pyproject.toml":
-        "PEP-621 project/build skeleton; m8flow's own name/deps.",
-    "m8flow-frontend/package.json":
-        "npm manifest; overlap is the shared framework dependency list (version facts); m8flow's own name/scripts.",
-    "m8flow-frontend/tsconfig.json":
-        "TS/vite compiler options; m8flow adds its own @spiff-core path aliases.",
-    "m8flow-frontend/public/manifest.json":
-        "W3C web-app-manifest; regenerated (key order, own name/icon), leaving only the standard "
-        "display/theme_color/background_color/start_url keys every unbranded manifest carries "
-        "(ratio 0.5 -> 0.25). No custom brand color or multi-size icon set exists yet to further "
-        "differentiate this without fabricating assets.",
-    "m8flow-frontend/public/keycloak.json":
-        "Keycloak JS-adapter config keys; differs only by port.",
-    "m8flow-frontend/public/new_bpmn_diagram.bpmn":
-        "Blank canvas for a new diagram, regenerated from scratch (own definitions/diagram/plane/"
-        "shape ids, own targetNamespace, shifted bounds; ratio 0.615 -> 0.53, containment 0.615 -> "
-        "0.47). `StartEvent_1` is kept literal -- test_process_model_create_default_bpmn.py asserts "
-        "on it -- and the {{PROCESS_ID}} token is interop-required by useDiagramImport. Residual "
-        "overlap is the OMG BPMN 2.0 element skeleton every blank diagram must carry.",
-    "m8flow-frontend/public/new_dmn_diagram.dmn":
-        "Blank canvas for a new decision, regenerated from scratch (own definitions/table/input/"
-        "output/diagram/shape ids, own namespace, shifted bounds; ratio 0.733 -> 0.44, containment "
-        "0.733 -> 0.41). The {{DECISION_ID}} token is interop-required by useDiagramImport. Residual "
-        "overlap is the OMG DMN 1.3 skeleton dmn-js requires (decision -> decisionTable -> input/"
-        "output plus a DMNDI shape).",
-    # ReactDiagramEditor cluster (map ticket 14) -- CLOSED, no entries left. m8flow split
-    # upstream's 980-line monolith into a thin component + hooks; useDiagramImport was
-    # rewritten clean-room from the start. The other three members were re-expressed
-    # instead of waived and are now gated normally: ReactDiagramEditor.types.ts (props
-    # grouped by role, handlers folded into a mapped type -> containment 0.17),
-    # DiagramEditorControls.tsx (buttons generated from one descriptor list, deep icon
-    # imports -> containment 0.19), DiagramEditorToolbar.tsx (permission-gated slot list
-    # rendered through one <Can> wrapper instead of per-button blocks -> containment 0.11,
-    # longest run 3 lines), and ReactDiagramEditor.tsx itself -- deleted and rewritten
-    # (own exportDiagramXml/downloadAsFile helpers replacing the inline duplicated save/
-    # download logic, which also fixed a real bug: the original never released the
-    # anchor/object URL after triggering a download). Checked every matching block by
-    # hand before the rewrite (33 of 108 discriminating lines, containment 0.31): each one
-    # was this component's own prop destructure, generic React idiom, or the standard
-    # browser download snippet (scenes-a-faire) -- confirmed non-copyrightable, but
-    # rewritten anyway rather than left on the allowlist. Now ratio 0.03 / containment
-    # 0.09; none of the four resolves an upstream counterpart under this comparison any more.
-    # Surfaced by the shebang/Dockerfile scan (gate coverage audit). Structure is
-    # m8flow's own; residual overlap is a functional contract (the backend's
-    # SPIFFWORKFLOW_BACKEND_* config-key names) or standard Docker/gunicorn build idiom.
+        {"ratio": 0.48, "containment": 0.4286, "longest_block": 3},
     "m8flow-backend/bin/local_development_environment_setup":
-        "Dev env-var loader, re-expressed independently (ratio 0.27, block 3); residual overlap is the SPIFFWORKFLOW_BACKEND_* config-key names the backend reads (functional contract), not copied logic.",
+        {"ratio": 0.202, "containment": 0.25, "longest_block": 2},
+    "m8flow-backend/keycloak/realm_exports/m8flow-tenant-template.json":
+        {"ratio": 0.8782, "containment": 0.8807, "longest_block": 470},
+    "m8flow-backend/keycloak/themes/m8flow/login/login.ftl":
+        {"ratio": 0.5521, "containment": 0.4327, "longest_block": 8},
+    "m8flow-backend/migrations/alembic.ini":
+        {"ratio": 0.6552, "containment": 0.7037, "longest_block": 12},
+    "m8flow-backend/migrations/script.py.mako":
+        {"ratio": 1.0, "containment": 1.0, "longest_block": 14},
     "m8flow-connector-proxy/Dockerfile":
-        "Container build for the connector proxy; own header comment and stage names (runtime/"
-        "builder replacing deployment/setup), all RUN/COPY/CMD lines and package versions unchanged "
-        "(ratio 0.39 -> 0.26, containment 0.5 -> 0.29). Residual overlap is standard Docker build "
-        "steps (FROM/RUN/COPY/CMD) and the pinned package list, which must match to build correctly.",
+        {"ratio": 0.2564, "containment": 0.2941, "longest_block": 4},
     "m8flow-connector-proxy/bin/run_server_locally":
-        "Minimal local-run wrapper, re-expressed (own header comment, `:=` default expansion, "
-        "reordered flask flags; ratio 1.0 -> 0.38, containment 1.0 -> 0.33). Residual overlap is "
-        "the functionally-fixed `poetry run flask run` invocation and env var names, plus the "
-        "error_handler/trap convention shared by ~45 scripts repo-wide (not m8flow-invented).",
-    # Test harness one-liner — same jest-dom side-effect import every Vitest project uses.
+        {"ratio": 0.381, "containment": 0.3333, "longest_block": 2},
+    "m8flow-connector-proxy/dev.docker-compose.yml":
+        {"ratio": 0.7273, "containment": 0.7273, "longest_block": 8},
+    "m8flow-connector-proxy/pyproject.toml":
+        {"ratio": 0.4314, "containment": 0.3929, "longest_block": 5},
+    "m8flow-frontend/package.json":
+        {"ratio": 0.7407, "containment": 0.8333, "longest_block": 39},
+    "m8flow-frontend/public/keycloak.json":
+        {"ratio": 0.8333, "containment": 0.8333, "longest_block": 4},
+    "m8flow-frontend/public/manifest.json":
+        {"ratio": 0.25, "containment": 0.3333, "longest_block": 2},
+    "m8flow-frontend/public/new_bpmn_diagram.bpmn":
+        {"ratio": 0.5333, "containment": 0.4706, "longest_block": 4},
+    "m8flow-frontend/public/new_dmn_diagram.dmn":
+        {"ratio": 0.4375, "containment": 0.4118, "longest_block": 3},
+    "m8flow-frontend/src/components/DiagramEditorControls.tsx":
+        {"ratio": 0.0178, "containment": 0.3125, "longest_block": 2},
+    "m8flow-frontend/src/components/DiagramEditorToolbar.tsx":
+        {"ratio": 0.0932, "containment": 0.3766, "longest_block": 4},
+    "m8flow-frontend/src/components/ReactDiagramEditor.types.ts":
+        {"ratio": 0.1, "containment": 0.8286, "longest_block": 29},
     "m8flow-frontend/src/test/vitest.setup.ts":
-        "Vitest setup entry; sole line is `import '@testing-library/jest-dom'` (Testing Library's required side-effect import). Non-copyrightable config/tooling contract.",
+        {"ratio": 1.0, "containment": 0.0, "longest_block": 0},
+    "m8flow-frontend/tsconfig.json":
+        {"ratio": 0.6875, "containment": 0.6111, "longest_block": 8},
+    "m8flow-nats-consumer/pyproject.toml":
+        {"ratio": 0.3478, "containment": 0.3077, "longest_block": 3},
 }
 
 # Layer C1 — unambiguous copy evidence. These ALWAYS fail and are never
@@ -349,13 +284,8 @@ def code_lines(lines: list[str]) -> list[str]:
     return [s for ln in lines if (s := ln.strip())]
 
 
-# A line that any independent re-expression of the same behaviour would share because
-# it carries no copyrightable authorship — a reference (import), pure punctuation/JSX
-# scaffolding, or a canonical single-call framework idiom. Discounting these from the
-# ratio/containment/block comparison lets a genuine clean-room recompose (which imports
-# the upstream leaves via @spiff-core and re-expresses the structure) clear the gate,
-# while a real body-copy keeps its DISTINCTIVE high-signal lines and still fails.
-# See the frontend override recipe (map ticket 12 / 07).
+# Lines any reimplementation of the same behavior would share: imports, punctuation/JSX
+# scaffolding, or a single-call framework idiom. Discounted from similarity scoring.
 _LOW_SIGNAL_MIN_LEN = 12
 _FROM_IMPORT_RE = re.compile(r"\bfrom\s+['\"][^'\"]+['\"]\s*;?$")
 _PUNCT_ONLY_RE = re.compile(r"^[(){}\[\];,<>/&|?:.=\s]+$")
@@ -417,7 +347,7 @@ def _is_scannable(path: Path, suffixes: set[str]) -> bool:
     Keying purely on suffix misses two classes spiff-arena ships that are copied
     wholesale: ``Dockerfile`` / ``*.Dockerfile`` (no scannable suffix) and executable
     ``bin/`` scripts written shebang-first with NO extension (e.g. ``get_token``). Both
-    are caught here in addition to the suffix allow-set. See the gate coverage audit."""
+    are caught here in addition to the suffix allow-set."""
     if path.suffix in suffixes:
         return True
     name = path.name
@@ -666,9 +596,7 @@ def _flagged(r: FileResult, thr: float, ct: float, blk: int) -> bool:
 def build_baseline(results: list[FileResult], thr: float, ct: float, blk: int) -> dict:
     files = {}
     for r in results:
-        # Allowlisted assets are exempt (see NONCOPYRIGHTABLE_ALLOWLIST); keep them
-        # out of a regenerated baseline so --write-baseline never re-adds them.
-        if r.apache_path in NONCOPYRIGHTABLE_ALLOWLIST:
+        if r.apache_path in FILE_GATES:
             continue
         if _flagged(r, thr, ct, blk):
             files[r.apache_path] = {
@@ -700,16 +628,10 @@ def evaluate(r: FileResult, baseline: dict[str, dict], thr: float, ct: float, bl
     for m in r.markers:
         violations.append(f"MARKER (never grandfathered): {m}")
 
-    # Reviewable non-copyrightability allowlist: waive the similarity signals for a
-    # path-exact config/data asset whose overlap is framework/spec/tool-dictated
-    # (verified). Markers above are intentionally NOT waived.
-    if r.apache_path in NONCOPYRIGHTABLE_ALLOWLIST:
-        return violations
-
     if r.upstream_path is None:
         return violations
 
-    base = baseline.get(r.apache_path)
+    base = FILE_GATES.get(r.apache_path) or baseline.get(r.apache_path)
     base_ratio = base.get("ratio", 0.0) if base else 0.0
     base_containment = base.get("containment", 0.0) if base else 0.0
     base_block = base.get("longest_block", 0) if base else 0
