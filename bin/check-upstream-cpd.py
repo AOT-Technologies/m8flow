@@ -100,11 +100,11 @@ BASELINE_RECOVERY_RATIO = 0.5
 SKIP_DIR_PARTS = {"node_modules", "__pycache__", ".venv", "dist", "build", "coverage", "__snapshots__", ".git"}
 
 # Path-exact waivers for residual token clones that are non-copyrightable
-# (library API / props contract / scènes à faire), mirroring
-# bin/check-upstream-copying.py's NONCOPYRIGHTABLE_ALLOWLIST. Allowlisted owned
-# files are omitted from regenerated baselines and similarity violations; they
-# are still scanned so a future larger clone against a new counterpart would
-# surface if the path were removed from this map.
+# (library API / props contract / scènes à faire), matching the purpose of
+# FILE_GATES in bin/check-upstream-copying.py. These owned files are omitted
+# from regenerated baselines and similarity violations; they are still scanned
+# so a future larger clone against a new counterpart would surface if the path
+# were removed from this map.
 NONCOPYRIGHTABLE_ALLOWLIST: dict[str, str] = {
     # Map ticket 14 — diagram cluster: props/API contract + bpmn-js modeler config.
     "m8flow-frontend/src/components/ReactDiagramEditor.types.ts":
