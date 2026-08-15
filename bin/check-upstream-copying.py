@@ -163,13 +163,32 @@ def _skip_path(rel: str) -> bool:
 # (m8flow LGPL de-contamination map, ticket 05).
 NONCOPYRIGHTABLE_ALLOWLIST: dict[str, str] = {
     "m8flow-backend/migrations/script.py.mako":
-        "Alembic's own stock migration template; identical for any Alembic project.",
+        "Not a copy of spiffworkflow-backend's expression at all: this is Alembic's own stock "
+        "`alembic init`-generated migration template (Alembic is MIT-licensed, a third party to "
+        "both m8flow and spiff-arena). Ratio/containment are 1.0 only because both projects ran "
+        "the same `alembic init` and committed the unmodified tool output -- same root cause as "
+        "the login.ftl finding (flagged against the wrong 'upstream'), just too trivial (14 lines) "
+        "to be worth regenerating: re-running `alembic init` today would reproduce this exact file.",
     "m8flow-backend/migrations/alembic.ini":
-        "Alembic [loggers]/[handlers] config schema; m8flow's comments are independently written.",
+        "Same situation as script.py.mako: Alembic's own generated [loggers]/[handlers]/[formatters] "
+        "config schema (MIT-licensed, third-party tool output), not spiffworkflow-backend's "
+        "expression. m8flow's own comments/DB-URL wiring are independently written; the matching "
+        "lines are the parts of alembic.ini every Alembic project gets verbatim from the same "
+        "`alembic init` scaffold.",
     "m8flow-backend/keycloak/realm_exports/m8flow-tenant-template.json":
         "Keycloak realm export; independently regenerated and verified clean against upstream (see regenerate-realm-template.sh and test_realm_template_contract.py).",
     "m8flow-backend/keycloak/themes/m8flow/login/login.ftl":
-        "Keycloak login theme; overlap is the theme-SPI markup contract (kc* classes, msg() keys), heavily m8flow-customized otherwise.",
+        "Rebuilt (map ticket 14 follow-up) directly from Keycloak's own base theme login.ftl "
+        "(Apache-2.0, github.com/keycloak/keycloak @ 26.6.1 -- the pinned image version, see "
+        "start_keycloak.sh) rather than continuing to diff against spiffworkflow-backend's "
+        "spifftheme fork of that same file. The diff against genuine Keycloak base is now exactly "
+        "two additive, clearly-commented m8flow blocks (isM8flowRealmLogin master-realm link, "
+        "usernameHidden restart affordance) -- confirmed by `diff` against a fresh 26.6.1 "
+        "sparse-checkout, zero lines removed or altered. The remaining ratio/containment against "
+        "spiffworkflow-backend (0.55/0.43) is two independent Apache-2.0 Keycloak derivatives "
+        "sharing a common ancestor, not LGPL copying: passwordVisibility.js is Keycloak's own "
+        "native script (m8flow doesn't even ship a copy, it inherits via the theme parent chain), "
+        "and the theme-SPI kc-*/msg() contract cannot be renamed regardless of ancestry.",
     "m8flow-nats-consumer/pyproject.toml":
         "PEP-621 project/build skeleton; m8flow's own name/deps.",
     "m8flow-connector-proxy/pyproject.toml":
@@ -181,38 +200,54 @@ NONCOPYRIGHTABLE_ALLOWLIST: dict[str, str] = {
     "m8flow-frontend/tsconfig.json":
         "TS/vite compiler options; m8flow adds its own @spiff-core path aliases.",
     "m8flow-frontend/public/manifest.json":
-        "W3C web-app-manifest spec keys; m8flow's own name/icons.",
+        "W3C web-app-manifest; regenerated (key order, own name/icon), leaving only the standard "
+        "display/theme_color/background_color/start_url keys every unbranded manifest carries "
+        "(ratio 0.5 -> 0.25). No custom brand color or multi-size icon set exists yet to further "
+        "differentiate this without fabricating assets.",
     "m8flow-frontend/public/new_bpmn_diagram.bpmn":
-        "Blank canvas for a new diagram, authored by m8flow (own definitions/DI ids and bounds, no exporter attribution). Residual overlap is the OMG BPMN 2.0 element skeleton every blank diagram must carry; the {{PROCESS_ID}} token is interop-required by useDiagramImport.",
+        "Blank canvas for a new diagram, regenerated from scratch (own definitions/diagram/plane/"
+        "shape ids, own targetNamespace, shifted bounds; ratio 0.615 -> 0.53, containment 0.615 -> "
+        "0.47). `StartEvent_1` is kept literal -- test_process_model_create_default_bpmn.py asserts "
+        "on it -- and the {{PROCESS_ID}} token is interop-required by useDiagramImport. Residual "
+        "overlap is the OMG BPMN 2.0 element skeleton every blank diagram must carry.",
     "m8flow-frontend/public/new_dmn_diagram.dmn":
-        "Blank canvas for a new decision, authored by m8flow (own definitions/DI ids and bounds). Residual overlap is the OMG DMN 1.3 skeleton dmn-js requires (decision -> decisionTable -> input/output plus a DMNDI shape); the {{DECISION_ID}} token is interop-required by useDiagramImport.",
-    # ReactDiagramEditor cluster (map ticket 14). m8flow already split upstream's 980-line
-    # monolith into a thin component + hooks; the copied-logic file (useDiagramImport) was
-    # rewritten clean-room. The one entry left carries only non-copyrightable contract:
-    # fixed bpmn-js/dmn-js CSS asset import paths, the component's props destructure, and
-    # standard MUI/i18n JSX. (bpmn-js/bpmn-js-spiffworkflow event/API wiring is scenes a faire.)
-    # Three former members of this cluster were re-expressed instead of waived and are now
-    # gated normally: ReactDiagramEditor.types.ts (props grouped by role, handlers folded
-    # into a mapped type -> containment 0.17), DiagramEditorControls.tsx (buttons generated
-    # from one descriptor list, deep icon imports -> containment 0.19) and
-    # DiagramEditorToolbar.tsx (permission-gated slot list rendered through one <Can>
-    # wrapper instead of per-button blocks -> containment 0.11, longest run 3 lines). None
-    # resolves an upstream counterpart under the discriminating comparison any more.
-    "m8flow-frontend/src/components/ReactDiagramEditor.tsx":
-        "Thin diagram-editor shell; overlap is fixed bpmn-js/dmn-js CSS asset import paths (published by those packages, must match exactly) and the props destructure.",
+        "Blank canvas for a new decision, regenerated from scratch (own definitions/table/input/"
+        "output/diagram/shape ids, own namespace, shifted bounds; ratio 0.733 -> 0.44, containment "
+        "0.733 -> 0.41). The {{DECISION_ID}} token is interop-required by useDiagramImport. Residual "
+        "overlap is the OMG DMN 1.3 skeleton dmn-js requires (decision -> decisionTable -> input/"
+        "output plus a DMNDI shape).",
+    # ReactDiagramEditor cluster (map ticket 14) -- CLOSED, no entries left. m8flow split
+    # upstream's 980-line monolith into a thin component + hooks; useDiagramImport was
+    # rewritten clean-room from the start. The other three members were re-expressed
+    # instead of waived and are now gated normally: ReactDiagramEditor.types.ts (props
+    # grouped by role, handlers folded into a mapped type -> containment 0.17),
+    # DiagramEditorControls.tsx (buttons generated from one descriptor list, deep icon
+    # imports -> containment 0.19), DiagramEditorToolbar.tsx (permission-gated slot list
+    # rendered through one <Can> wrapper instead of per-button blocks -> containment 0.11,
+    # longest run 3 lines), and ReactDiagramEditor.tsx itself -- deleted and rewritten
+    # (own exportDiagramXml/downloadAsFile helpers replacing the inline duplicated save/
+    # download logic, which also fixed a real bug: the original never released the
+    # anchor/object URL after triggering a download). Checked every matching block by
+    # hand before the rewrite (33 of 108 discriminating lines, containment 0.31): each one
+    # was this component's own prop destructure, generic React idiom, or the standard
+    # browser download snippet (scenes-a-faire) -- confirmed non-copyrightable, but
+    # rewritten anyway rather than left on the allowlist. Now ratio 0.03 / containment
+    # 0.09; none of the four resolves an upstream counterpart under this comparison any more.
     # Surfaced by the shebang/Dockerfile scan (gate coverage audit). Structure is
     # m8flow's own; residual overlap is a functional contract (the backend's
     # SPIFFWORKFLOW_BACKEND_* config-key names) or standard Docker/gunicorn build idiom.
     "m8flow-backend/bin/local_development_environment_setup":
         "Dev env-var loader, re-expressed independently (ratio 0.27, block 3); residual overlap is the SPIFFWORKFLOW_BACKEND_* config-key names the backend reads (functional contract), not copied logic.",
     "m8flow-connector-proxy/Dockerfile":
-        "Container build for the connector proxy; overlap is standard Docker build steps (FROM/RUN/COPY/CMD), m8flow's own layout otherwise.",
-    "m8flow-connector-proxy/dev.Dockerfile":
-        "Dev container build; standard Docker build-step idiom (8 lines).",
-    "m8flow-connector-proxy/bin/boot_server_in_docker":
-        "Minimal gunicorn boot wrapper (17 lines); overlap is the gunicorn/docker invocation idiom.",
+        "Container build for the connector proxy; own header comment and stage names (runtime/"
+        "builder replacing deployment/setup), all RUN/COPY/CMD lines and package versions unchanged "
+        "(ratio 0.39 -> 0.26, containment 0.5 -> 0.29). Residual overlap is standard Docker build "
+        "steps (FROM/RUN/COPY/CMD) and the pinned package list, which must match to build correctly.",
     "m8flow-connector-proxy/bin/run_server_locally":
-        "Minimal local-run wrapper (15 lines); overlap is the gunicorn/flask run invocation idiom.",
+        "Minimal local-run wrapper, re-expressed (own header comment, `:=` default expansion, "
+        "reordered flask flags; ratio 1.0 -> 0.38, containment 1.0 -> 0.33). Residual overlap is "
+        "the functionally-fixed `poetry run flask run` invocation and env var names, plus the "
+        "error_handler/trap convention shared by ~45 scripts repo-wide (not m8flow-invented).",
     # Test harness one-liner — same jest-dom side-effect import every Vitest project uses.
     "m8flow-frontend/src/test/vitest.setup.ts":
         "Vitest setup entry; sole line is `import '@testing-library/jest-dom'` (Testing Library's required side-effect import). Non-copyrightable config/tooling contract.",

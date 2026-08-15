@@ -1,12 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" id="Definitions_m8flow_blank_process" targetNamespace="http://bpmn.io/schema/bpmn">
+<!--
+  Seed template for a brand-new BPMN diagram (see useDiagramImport.ts). The
+  `{{PROCESS_ID}}` token is replaced with a generated id at load time; every
+  other id here is fixed on purpose. `StartEvent_1` in particular is asserted
+  on by test_process_model_create_default_bpmn.py, so don't rename it.
+-->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" id="m8flow-new-process-definitions" targetNamespace="http://m8flow.aot-technologies.com/schema/bpmn">
   <bpmn:process id="{{PROCESS_ID}}" isExecutable="true">
     <bpmn:startEvent id="StartEvent_1" />
   </bpmn:process>
-  <bpmndi:BPMNDiagram id="BPMNDiagram_m8flow_blank">
-    <bpmndi:BPMNPlane id="BPMNPlane_m8flow_blank" bpmnElement="{{PROCESS_ID}}">
-      <bpmndi:BPMNShape id="BPMNShape_StartEvent_1" bpmnElement="StartEvent_1">
-        <dc:Bounds x="160" y="140" width="36" height="36" />
+  <bpmndi:BPMNDiagram id="m8flow-new-process-diagram">
+    <bpmndi:BPMNPlane id="m8flow-new-process-plane" bpmnElement="{{PROCESS_ID}}">
+      <bpmndi:BPMNShape id="m8flow-start-event-shape" bpmnElement="StartEvent_1">
+        <dc:Bounds x="180" y="160" width="36" height="36" />
       </bpmndi:BPMNShape>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>
