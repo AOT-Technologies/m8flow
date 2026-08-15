@@ -60,7 +60,7 @@ def test_apply_runtime_rewrites_upstream_defaults_on_flask_config() -> None:
             "uri": "http://localhost:6842/realms/spiffworkflow-local",
             "internal_uri": "http://localhost:6842/realms/spiffworkflow-local",
             "client_id": "spiffworkflow-backend",
-            "client_secret": "JXeQExm0JhQPLumgHtIIqf52bDalHz0q",
+            "client_secret": "f041b49ae7f1a35daa10917459814bcd",
         }
     ]
 
