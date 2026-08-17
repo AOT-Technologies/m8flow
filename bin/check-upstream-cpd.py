@@ -100,11 +100,11 @@ BASELINE_RECOVERY_RATIO = 0.5
 SKIP_DIR_PARTS = {"node_modules", "__pycache__", ".venv", "dist", "build", "coverage", "__snapshots__", ".git"}
 
 # Path-exact waivers for residual token clones that are non-copyrightable
-# (library API / props contract / scènes à faire), mirroring
-# bin/check-upstream-copying.py's NONCOPYRIGHTABLE_ALLOWLIST. Allowlisted owned
-# files are omitted from regenerated baselines and similarity violations; they
-# are still scanned so a future larger clone against a new counterpart would
-# surface if the path were removed from this map.
+# (library API / props contract / scènes à faire), matching the purpose of
+# FILE_GATES in bin/check-upstream-copying.py. These owned files are omitted
+# from regenerated baselines and similarity violations; they are still scanned
+# so a future larger clone against a new counterpart would surface if the path
+# were removed from this map.
 NONCOPYRIGHTABLE_ALLOWLIST: dict[str, str] = {
     # Map ticket 14 — diagram cluster: props/API contract + bpmn-js modeler config.
     "m8flow-frontend/src/components/ReactDiagramEditor.types.ts":
@@ -189,7 +189,7 @@ def stage_typescript() -> tuple[Path, dict[str, str]]:
                 )
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(src, dst)
-            mapping[str(dst.resolve())] = str(rel)
+            mapping[str(dst.resolve())] = rel.as_posix()
     return staged_root, mapping
 
 
@@ -270,7 +270,7 @@ def cross_tree_pairs(clones: list[dict], owned: list[str], upstream: list[str], 
                     continue
             else:
                 try:
-                    rel = str(Path(abs_path).resolve().relative_to(REPO_ROOT))
+                    rel = Path(abs_path).resolve().relative_to(REPO_ROOT).as_posix()
                 except ValueError:
                     continue
             rels.append(rel)
