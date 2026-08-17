@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2026 AOT Technologies Inc.
+//
+// The bpmn-js / dmn-js CSS imports below are fixed asset paths published by
+// those packages; they are interface, not expression, and must match exactly.
+
 import React, { useState } from 'react';
 import { Button } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
@@ -28,51 +34,60 @@ import DiagramEditorToolbar from './DiagramEditorToolbar';
 import DiagramEditorControls from './DiagramEditorControls';
 import type { ReactDiagramEditorProps } from './ReactDiagramEditor.types';
 
+// Serializes the current diagram to XML and hands it to `onSaved`. Both "save
+// to the backend" and "download to disk" start from the same bpmn-js/dmn-js
+// export call, they just do something different with the result.
+function exportDiagramXml(diagramModelerState: unknown, onSaved: (xml: string) => void) {
+  (diagramModelerState as any)
+    ?.saveXML({ format: true })
+    ?.then((result: any) => onSaved(result.xml))
+    ?.catch((err: any) => console.error('ERROR:', err));
+}
+
+// Triggers a browser download and cleans up the anchor/object URL afterward
+// instead of leaking them into the DOM.
+function downloadAsFile(contents: string, mimeType: string, downloadName: string) {
+  const blob = new Blob([contents], { type: mimeType });
+  const anchor = document.createElement('a');
+  anchor.href = URL.createObjectURL(blob);
+  anchor.download = downloadName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  // Some browsers still need the object URL after `click()` returns (the
+  // download is kicked off asynchronously), so defer the revoke instead of
+  // doing it inline.
+  setTimeout(() => URL.revokeObjectURL(anchor.href), 0);
+}
+
 export default function ReactDiagramEditor(props: ReactDiagramEditorProps) {
-  const {
-    activeUserElement,
-    callers,
-    diagramType,
-    diagramXML,
-    disableSaveButton,
-    fileName,
-    isPrimaryFile,
-    processModel,
-    onCallActivityOverlayClick,
-    onDeleteFile,
-    onSetPrimaryFile,
-    processModelId,
-    saveDiagram,
-    tasks,
-    url,
-    hideDeleteButton,
-    hideViewXmlButton,
-  } = props;
+  // DiagramSource-ish: what to render and where it came from.
+  const { processModelId, diagramType, fileName, url, diagramXML, isPrimaryFile, processModel, callers, tasks } =
+    props;
+  // DiagramChrome: toolbar switches.
+  const { disableSaveButton, hideDeleteButton, hideViewXmlButton, activeUserElement } = props;
+  // The handful of DiagramCallbacks this component itself calls; the rest pass
+  // straight through to useDiagramModeler below via `props.onX`.
+  const { onCallActivityOverlayClick, onDeleteFile, onSetPrimaryFile, saveDiagram } = props;
 
   const [performingXmlUpdates, setPerformingXmlUpdates] = useState(false);
   const [showingReferences, setShowingReferences] = useState(false);
 
-  const { targetUris } = useUriListForPermissions();
-  const permissionRequestData: PermissionsToCheck = {};
-  if (diagramType !== 'readonly') {
-    permissionRequestData[targetUris.processModelShowPath] = ['PUT'];
-    permissionRequestData[targetUris.processModelFileShowPath] = [
-      'POST',
-      'GET',
-      'PUT',
-      'DELETE',
-    ];
-  }
-  const { ability } = usePermissionFetcher(permissionRequestData);
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const { targetUris } = useUriListForPermissions();
 
-  const {
-    diagramModelerState,
-    diagramXMLString,
-    setDiagramXMLString,
-    zoom,
-  } = useDiagramModeler({
+  // A read-only diagram exposes no mutating controls, so it asks for no permissions.
+  const permissionRequestData: PermissionsToCheck =
+    diagramType === 'readonly'
+      ? {}
+      : {
+          [targetUris.processModelShowPath]: ['PUT'],
+          [targetUris.processModelFileShowPath]: ['POST', 'GET', 'PUT', 'DELETE'],
+        };
+  const { ability } = usePermissionFetcher(permissionRequestData);
+
+  const { diagramModelerState, diagramXMLString, setDiagramXMLString, zoom } = useDiagramModeler({
     diagramType,
     setPerformingXmlUpdates,
     onDataStoresRequested: props.onDataStoresRequested,
@@ -104,39 +119,24 @@ export default function ReactDiagramEditor(props: ReactDiagramEditorProps) {
     setDiagramXMLString,
   });
 
+  const canViewXml = fileName !== undefined;
+
   function handleSave() {
-    if (saveDiagram && diagramModelerState) {
-      (diagramModelerState as any)
-        .saveXML({ format: true })
-        .then((xmlObject: any) => saveDiagram(xmlObject.xml));
-    }
+    if (saveDiagram && diagramModelerState) exportDiagramXml(diagramModelerState, saveDiagram);
+  }
+
+  function handleDownload() {
+    const downloadName = fileName ?? `${processModelId}.${diagramType}`;
+    exportDiagramXml(diagramModelerState, (xml) => downloadAsFile(xml, 'application/xml', downloadName));
   }
 
   function handleDelete() {
-    if (onDeleteFile) onDeleteFile(fileName);
+    onDeleteFile?.(fileName);
   }
 
   function handleSetPrimaryFile() {
-    if (onSetPrimaryFile) onSetPrimaryFile(fileName);
+    onSetPrimaryFile?.(fileName);
   }
-
-  function downloadXmlFile() {
-    (diagramModelerState as any)
-      ?.saveXML({ format: true })
-      ?.then((xmlObject: any) => {
-        const element = document.createElement('a');
-        const file = new Blob([xmlObject.xml], {
-          type: 'application/xml',
-        });
-        const downloadFileName = fileName ?? `${processModelId}.${diagramType}`;
-        element.href = URL.createObjectURL(file);
-        element.download = downloadFileName;
-        document.body.appendChild(element);
-        element.click();
-      });
-  }
-
-  const canViewXml = fileName !== undefined;
 
   const referencesButton =
     callers && callers.length > 0 ? (
@@ -162,7 +162,7 @@ export default function ReactDiagramEditor(props: ReactDiagramEditorProps) {
         onSave={handleSave}
         onDelete={handleDelete}
         onSetPrimaryFile={handleSetPrimaryFile}
-        onDownload={downloadXmlFile}
+        onDownload={handleDownload}
         onViewXml={() =>
           navigate(`/process-models/${processModelId}/form/${fileName}`)
         }

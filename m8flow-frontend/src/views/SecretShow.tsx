@@ -1,198 +1,120 @@
+/**
+ * Secret detail. Blind edit only - never calls show-value.
+ */
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useParams, useNavigate } from 'react-router-dom';
-import {
-  Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Button,
-  TextField,
-  Paper,
-} from '@mui/material';
-import HttpService from '../services/HttpService';
-import { PermissionsToCheck, Secret } from '../interfaces';
-import { Notification } from '../components/Notification';
-import ConfirmButton from '../components/ConfirmButton';
-import { useUriListForPermissions } from '../hooks/UriListForPermissions';
-import { usePermissionFetcher } from '../hooks/PermissionService';
+import { useNavigate, useParams } from 'react-router-dom';
+import { Box, Button, Stack, TextField, Typography } from '@mui/material';
 import { Can } from '../contexts/Can';
+import ConfirmButton from '../components/ConfirmButton';
 import ProcessBreadcrumb from '../components/ProcessBreadcrumb';
+import { Notification } from '../components/Notification';
+import { usePermissionFetcher } from '../hooks/PermissionService';
+import { useUriListForPermissions } from '../hooks/UriListForPermissions';
+import HttpService from '../services/HttpService';
+import type { PermissionsToCheck, Secret } from '../interfaces';
 
-/**
- * M8Flow override of SecretShow.
- *
- * Differences from upstream:
- * - Removed the "Retrieve secret value" button and the `handleShowSecretValue`
- *   function so that secret values are never exposed in the UI.
- * - Only offers an "Edit secret value" option (blind update) for users with
- *   PUT permission on the secret.
- * - Removed the permission check for `secretShowValuePath` (GET on show-value
- *   endpoint) since it is no longer used.
- * - Uses breadcrumb navigation instead of a back arrow button.
- */
+const HOME = '/configuration/secrets';
+
 export default function SecretShow() {
   const { t } = useTranslation();
-  const navigate = useNavigate();
-  const params = useParams();
+  const go = useNavigate();
+  const { secret_identifier: keyFromRoute } = useParams();
 
-  const [secret, setSecret] = useState<Secret | null>(null);
-  const [displaySecretValue, setDisplaySecretValue] = useState<boolean>(false);
-  const [showSuccessNotification, setShowSuccessNotification] =
-    useState<boolean>(false);
+  const [entry, setEntry] = useState<Secret | null>(null);
+  const [draftOpen, setDraftOpen] = useState(false);
+  const [flash, setFlash] = useState(false);
 
   const { targetUris } = useUriListForPermissions();
-  const permissionRequestData: PermissionsToCheck = {
-    [targetUris.secretShowPath]: ['PUT', 'DELETE', 'GET'],
-  };
-  const { ability, permissionsLoaded } = usePermissionFetcher(
-    permissionRequestData,
-  );
+  const uri = targetUris.secretShowPath;
+  const { ability, permissionsLoaded } = usePermissionFetcher({
+    [uri]: ['PUT', 'DELETE', 'GET'],
+  } as PermissionsToCheck);
 
   useEffect(() => {
     HttpService.makeCallToBackend({
-      path: `/secrets/${params.secret_identifier}`,
-      successCallback: setSecret,
+      path: `/secrets/${keyFromRoute}`,
+      successCallback: setEntry,
     });
-  }, [params.secret_identifier]);
+  }, [keyFromRoute]);
 
-  const handleSecretValueChange = (event: any) => {
-    if (secret) {
-      const newSecret = { ...secret, value: event.target.value };
-      setSecret(newSecret);
-    }
-  };
+  if (!entry || !permissionsLoaded) return null;
 
-  const updateSecretValue = () => {
-    if (secret) {
-      HttpService.makeCallToBackend({
-        path: `/secrets/${secret.key}`,
-        successCallback: () => {
-          setShowSuccessNotification(true);
-        },
-        httpMethod: 'PUT',
-        postBody: {
-          value: secret.value,
-        },
-      });
-    }
-  };
+  const crumbs = [
+    [t('configuration'), '/configuration'],
+    [t('secrets'), HOME],
+    [entry.key],
+  ];
 
-  const navigateToSecrets = (_result: any) => {
-    navigate(`/configuration/secrets`);
-  };
+  return (
+    <Box>
+      {flash ? (
+        <Notification title={t('secret_updated')} onClose={() => setFlash(false)} />
+      ) : null}
+      <ProcessBreadcrumb hotCrumbs={crumbs} />
+      <Typography variant="h4" component="h1" gutterBottom>
+        {t('secret_key')}: {entry.key}
+      </Typography>
 
-  const deleteSecret = () => {
-    if (secret === null) {
-      return;
-    }
-    HttpService.makeCallToBackend({
-      path: `/secrets/${secret.key}`,
-      successCallback: navigateToSecrets,
-      httpMethod: 'DELETE',
-    });
-  };
+      <Stack direction="row" spacing={2} sx={{ mb: 3 }}>
+        <Can I="DELETE" a={uri} ability={ability}>
+          <ConfirmButton
+            description={t('delete_secret_confirmation')}
+            buttonLabel={t('delete')}
+            onConfirmation={() =>
+              HttpService.makeCallToBackend({
+                path: `/secrets/${entry.key}`,
+                httpMethod: 'DELETE',
+                successCallback: () => go(HOME),
+              })
+            }
+          />
+        </Can>
+        <Can I="PUT" a={uri} ability={ability}>
+          <Button
+            disabled={draftOpen}
+            variant="contained"
+            color="warning"
+            onClick={() => setDraftOpen(true)}
+          >
+            {t('edit_secret_value')}
+          </Button>
+        </Can>
+      </Stack>
 
-  const successNotificationComponent = (
-    <Notification
-      title={t('secret_updated')}
-      onClose={() => setShowSuccessNotification(false)}
-    />
-  );
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+        {t('key')}: {keyFromRoute}
+      </Typography>
 
-  if (secret && permissionsLoaded) {
-    const breadcrumbs = [
-      [t('configuration'), '/configuration'],
-      [t('secrets'), '/configuration/secrets'],
-      [secret.key],
-    ];
-
-    return (
-      <>
-        {showSuccessNotification && successNotificationComponent}
-        <ProcessBreadcrumb hotCrumbs={breadcrumbs} />
-        <h1>
-          {t('secret_key')}: {secret.key}
-        </h1>
-        <Stack direction="row" spacing={3}>
-          <Can I="DELETE" a={targetUris.secretShowPath} ability={ability}>
-            <ConfirmButton
-              description={t('delete_secret_confirmation')}
-              onConfirmation={deleteSecret}
-              buttonLabel={t('delete')}
-            />
-          </Can>
-          <Can I="PUT" a={targetUris.secretShowPath} ability={ability}>
+      {draftOpen ? (
+        <Stack spacing={2} maxWidth={480}>
+          <TextField
+            id="secret_value"
+            name="secret_value"
+            label={t('secret_value')}
+            aria-label={t('secret_value')}
+            value={entry.value ?? ''}
+            disabled={!ability.can('PUT', uri)}
+            onChange={(e) => setEntry({ ...entry, value: e.target.value })}
+          />
+          <Can I="PUT" a={uri} ability={ability}>
             <Button
-              disabled={displaySecretValue}
               variant="contained"
               color="warning"
-              onClick={() => setDisplaySecretValue(true)}
+              onClick={() =>
+                HttpService.makeCallToBackend({
+                  path: `/secrets/${entry.key}`,
+                  httpMethod: 'PUT',
+                  postBody: { value: entry.value },
+                  successCallback: () => setFlash(true),
+                })
+              }
             >
-              {t('edit_secret_value')}
+              {t('update_value_button')}
             </Button>
           </Can>
         </Stack>
-        <div>
-          <TableContainer component={Paper}>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCell>{t('key')}</TableCell>
-                  {displaySecretValue && (
-                    <>
-                      <TableCell>{t('value')}</TableCell>
-                      <TableCell>{t('actions')}</TableCell>
-                    </>
-                  )}
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                <TableRow>
-                  <TableCell>{params.secret_identifier}</TableCell>
-                  {displaySecretValue && (
-                    <>
-                      <TableCell aria-label={t('secret_value')}>
-                        <TextField
-                          id="secret_value"
-                          name="secret_value"
-                          label={t('secret_value')}
-                          value={secret.value}
-                          onChange={handleSecretValueChange}
-                          disabled={
-                            !ability.can('PUT', targetUris.secretShowPath)
-                          }
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Can
-                          I="PUT"
-                          a={targetUris.secretShowPath}
-                          ability={ability}
-                        >
-                          {displaySecretValue && (
-                            <Button
-                              variant="contained"
-                              color="warning"
-                              onClick={updateSecretValue}
-                            >
-                              {t('update_value_button')}
-                            </Button>
-                          )}
-                        </Can>
-                      </TableCell>
-                    </>
-                  )}
-                </TableRow>
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </div>
-      </>
-    );
-  }
-  return null;
+      ) : null}
+    </Box>
+  );
 }

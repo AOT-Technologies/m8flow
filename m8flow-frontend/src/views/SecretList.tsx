@@ -1,3 +1,6 @@
+/**
+ * Secrets index — clean-room. Super-admin gets tenantId query + tenant column.
+ */
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
@@ -21,199 +24,167 @@ import {
 } from '@mui/material';
 import { MdDelete } from 'react-icons/md';
 import { Can } from '@casl/react';
+
 import PaginationForTable from '../components/PaginationForTable';
-import HttpService from '../services/HttpService';
 import { getPageInfoFromSearchParams } from '../helpers';
-import { useUriListForPermissions } from '../hooks/UriListForPermissions';
-import { PermissionsToCheck } from '../interfaces';
 import { usePermissionFetcher } from '../hooks/PermissionService';
-import UserService from '../services/UserService';
+import { useUriListForPermissions } from '../hooks/UriListForPermissions';
 import { useGlobalTenant } from '../contexts/GlobalTenantContext';
+import HttpService from '../services/HttpService';
+import UserService from '../services/UserService';
+import type { PermissionsToCheck } from '../interfaces';
 import {
   getSmtpStatus,
   type SmtpStatus,
 } from '../services/ExternalFormNotificationService';
 
+type SecretRow = {
+  id: string | number;
+  key: string;
+  username?: string;
+  tenantName?: string;
+  tenantId?: string;
+};
+
+function secretsListPath(
+  page: number,
+  perPage: number,
+  tenantId?: string | null,
+) {
+  const qs = new URLSearchParams({
+    per_page: String(perPage),
+    page: String(page),
+  });
+
+  if (tenantId) {
+    qs.set('tenantId', tenantId);
+  }
+
+  return `/secrets?${qs.toString()}`;
+}
+
+function tenantLabel(row: SecretRow): string {
+  return row.tenantName || row.tenantId || '-';
+}
+
 export default function SecretList() {
-  const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
-
-  const [secrets, setSecrets] = useState([]);
-  const [pagination, setPagination] = useState(null);
-  const [secretToDelete, setSecretToDelete] = useState<any>(null);
-  // Null until the SMTP status resolves; stays null if the call fails or the user
-  // lacks permission, in which case no banner is shown at all.
-  const [smtpStatus, setSmtpStatus] = useState<SmtpStatus | null>(null);
   const { t } = useTranslation();
+  const go = useNavigate();
+  const [searchParams] = useSearchParams();
 
-  const isSuperAdmin = UserService.isSuperAdmin();
+  const sa = UserService.isSuperAdmin();
   const { selectedTenantId } = useGlobalTenant();
-
   const { targetUris } = useUriListForPermissions();
-  const permissionRequestData: PermissionsToCheck = {
+
+  const [rows, setRows] = useState<SecretRow[]>([]);
+  const [pageMeta, setPageMeta] = useState<any>(null);
+  const [pendingDelete, setPendingDelete] = useState<SecretRow | null>(null);
+
+  // Null until the SMTP status resolves.
+  // A failed request or insufficient permission keeps the banner hidden.
+  const [smtpStatus, setSmtpStatus] = useState<SmtpStatus | null>(null);
+
+  const { ability, permissionsLoaded } = usePermissionFetcher({
     [targetUris.authenticationListPath]: ['GET'],
     [targetUris.secretListPath]: ['GET', 'POST', 'DELETE'],
-  };
-  const { ability, permissionsLoaded } = usePermissionFetcher(
-    permissionRequestData,
-  );
+  } as PermissionsToCheck);
 
-  const fetchSecrets = useCallback(() => {
-    const setSecretsFromResult = (result: any) => {
-      setSecrets(result.results);
-      setPagination(result.pagination);
-    };
+  const load = useCallback(() => {
     const { page, perPage } = getPageInfoFromSearchParams(searchParams);
-    let path = `/secrets?per_page=${perPage}&page=${page}`;
-    if (isSuperAdmin && selectedTenantId) {
-      path += `&tenantId=${encodeURIComponent(selectedTenantId)}`;
-    }
+
     HttpService.makeCallToBackend({
-      path,
-      successCallback: setSecretsFromResult,
+      path: secretsListPath(
+        page,
+        perPage,
+        sa ? selectedTenantId : null,
+      ),
+      successCallback: (payload: any) => {
+        setRows(payload.results ?? []);
+        setPageMeta(payload.pagination);
+      },
     });
-  }, [searchParams, isSuperAdmin, selectedTenantId]);
+  }, [searchParams, sa, selectedTenantId]);
 
   useEffect(() => {
-    if (permissionsLoaded) {
-      if (
-        !ability.can('GET', targetUris.secretListPath) &&
-        ability.can('GET', targetUris.authenticationListPath)
-      ) {
-        navigate('/configuration/authentications');
-      } else {
-        fetchSecrets();
-      }
+    if (!permissionsLoaded) {
+      return;
     }
+
+    const canSecrets = ability.can('GET', targetUris.secretListPath);
+    const canAuth = ability.can(
+      'GET',
+      targetUris.authenticationListPath,
+    );
+
+    if (!canSecrets && canAuth) {
+      go('/configuration/authentications');
+      return;
+    }
+
+    load();
   }, [
     permissionsLoaded,
     ability,
-    navigate,
+    go,
     targetUris.authenticationListPath,
     targetUris.secretListPath,
-    fetchSecrets,
+    load,
   ]);
 
-  // External form notification emails silently do nothing until the tenant's NATS_SMTP_*
-  // secrets exist, and nothing on this page named those keys. Surface the gap here, where
-  // the fix lives. A failure leaves the banner hidden — that covers a 403 for a user who
-  // cannot read the status, and the 400 a super admin gets before choosing a tenant.
+  // External form notification emails silently do nothing until the tenant's
+  // NATS_SMTP_* secrets exist. Surface the configuration gap here.
   //
-  // Depends on selectedTenantId: the answer is per-tenant, and the secrets table below
-  // already re-fetches on switch, so the banner must not keep the previous verdict.
+  // The status is per-tenant, so reset it whenever the selected tenant changes.
   useEffect(() => {
     let cancelled = false;
-    const tenantId = isSuperAdmin ? selectedTenantId : null;
+
+    const tenantId = sa ? selectedTenantId : null;
+
     setSmtpStatus(null);
+
     getSmtpStatus(tenantId)
       .then((result) => {
         if (!cancelled) {
           setSmtpStatus(result);
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        // Keep the banner hidden when the status request fails.
+      });
+
     return () => {
       cancelled = true;
     };
-  }, [isSuperAdmin, selectedTenantId]);
+  }, [sa, selectedTenantId]);
 
-  const reloadSecrets = (_result: any) => {
-    window.location.reload();
-  };
-
-  const handleDeleteSecret = (key: any) => {
+  const confirmDelete = (key: string) => {
     HttpService.makeCallToBackend({
       path: `/secrets/${key}`,
-      successCallback: reloadSecrets,
       httpMethod: 'DELETE',
+      successCallback: () => window.location.reload(),
     });
-  };
-
-  const buildTable = () => {
-    const rows = secrets.map((row) => {
-      const tenantName = (row as any).tenantName || (row as any).tenantId || '-';
-      return (
-        <TableRow key={(row as any).key}>
-          <TableCell>
-            <Link to={`/configuration/secrets/${(row as any).key}`}>
-              {(row as any).id}
-            </Link>
-          </TableCell>
-          <TableCell>
-            <Link to={`/configuration/secrets/${(row as any).key}`}>
-              {(row as any).key}
-            </Link>
-          </TableCell>
-          <TableCell>{(row as any).username}</TableCell>
-          {isSuperAdmin && (
-            <TableCell data-testid="secret-list-tenant-cell">
-              <Typography variant="body2">{tenantName}</Typography>
-            </TableCell>
-          )}
-          <TableCell aria-label="Delete">
-            <Can I="DELETE" a={targetUris.secretListPath} ability={ability}>
-              <MdDelete onClick={() => setSecretToDelete(row)} />
-            </Can>
-          </TableCell>
-        </TableRow>
-      );
-    });
-    return (
-      <TableContainer component={Paper}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>{t('id')}</TableCell>
-              <TableCell>{t('secret_key')}</TableCell>
-              <TableCell>{t('creator')}</TableCell>
-              {isSuperAdmin && <TableCell>{t('tenant')}</TableCell>}
-              <TableCell>{t('delete')}</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>{rows}</TableBody>
-        </Table>
-      </TableContainer>
-    );
-  };
-
-  const SecretsDisplayArea = () => {
-    // Still loading: render nothing rather than flashing "no secrets to display".
-    if (!pagination) {
-      return null;
-    }
-    const { page, perPage } = getPageInfoFromSearchParams(searchParams);
-    let displayText = null;
-    if (secrets?.length > 0) {
-      displayText = (
-        <PaginationForTable
-          page={page}
-          perPage={perPage}
-          pagination={pagination as any}
-          tableToDisplay={buildTable()}
-        />
-      );
-    } else {
-      displayText = <p>{t('no_secrets_to_display')}</p>;
-    }
-    return displayText;
   };
 
   const externalFormEmailBanner = () => {
     if (!smtpStatus) {
       return null;
     }
+
     const keys = smtpStatus.configured
       ? smtpStatus.required_keys
       : smtpStatus.missing_required_keys;
-    // "These keys are missing" is wrong when the secret exists but cannot be decrypted —
-    // adding it again would not help. Show the backend's specific reason instead.
+
+    // "These keys are missing" is wrong when the secret exists but cannot
+    // be decrypted. Show the backend's specific reason instead.
     const unreadable = smtpStatus.unreadable_keys ?? [];
+
     const headline =
       unreadable.length > 0 && smtpStatus.reason
         ? smtpStatus.reason
-        : (smtpStatus.configured
-            ? t('external_form_smtp_configured_hint')
-            : t('external_form_smtp_missing_hint'));
+        : smtpStatus.configured
+          ? t('external_form_smtp_configured_hint')
+          : t('external_form_smtp_missing_hint');
+
     return (
       <Alert
         severity={smtpStatus.configured ? 'info' : 'warning'}
@@ -224,7 +195,11 @@ export default function SecretList() {
             : 'external-form-smtp-not-configured'
         }
         action={
-          <Can I="POST" a={targetUris.secretListPath} ability={ability}>
+          <Can
+            I="POST"
+            a={targetUris.secretListPath}
+            ability={ability}
+          >
             <Button
               size="small"
               component={Link}
@@ -255,67 +230,155 @@ export default function SecretList() {
     );
   };
 
-  // The banner must render even before the secrets call resolves — a tenant with no
-  // secrets at all is exactly the case that needs the warning most.
-  if (permissionsLoaded) {
-    return (
-      <div>
-        {externalFormEmailBanner()}
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: { xs: 'flex-start', sm: 'center' },
-            justifyContent: 'space-between',
-            gap: 2,
-            flexDirection: { xs: 'column', sm: 'row' },
-            mb: 2,
-          }}
-        >
-          <Typography variant="h1">{t('secrets')}</Typography>
-          <Can I="POST" a={targetUris.secretListPath} ability={ability}>
-            <Button
-              component={Link}
-              variant="contained"
-              to="/configuration/secrets/new"
-            >
-              {t('add_a_secret')}
-            </Button>
-          </Can>
-        </Box>
-        {SecretsDisplayArea()}
-        <Dialog
-          open={!!secretToDelete}
-          onClose={() => setSecretToDelete(null)}
-        >
-          <DialogTitle>{t('delete_secret_title')}</DialogTitle>
-          <DialogContent>
-            <DialogContentText>
-              {t('delete_secret_confirm', { name: secretToDelete?.key })}
-            </DialogContentText>
-            <DialogContentText
-              sx={{ color: 'error.main', fontWeight: 500, mt: 1 }}
-            >
-              {t('action_cannot_be_undone')}
-            </DialogContentText>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setSecretToDelete(null)}>
-              {t('cancel')}
-            </Button>
-            <Button
-              color="error"
-              variant="contained"
-              onClick={() => {
-                handleDeleteSecret(secretToDelete?.key);
-                setSecretToDelete(null);
-              }}
-            >
-              {t('delete')}
-            </Button>
-          </DialogActions>
-        </Dialog>
-      </div>
-    );
+  if (!permissionsLoaded || !pageMeta) {
+    return null;
   }
-  return null;
+
+  const { page, perPage } =
+    getPageInfoFromSearchParams(searchParams);
+
+  const table = (
+    <TableContainer component={Paper}>
+      <Table>
+        <TableHead>
+          <TableRow>
+            <TableCell>{t('id')}</TableCell>
+            <TableCell>{t('secret_key')}</TableCell>
+            <TableCell>{t('creator')}</TableCell>
+            {sa ? <TableCell>{t('tenant')}</TableCell> : null}
+            <TableCell>{t('delete')}</TableCell>
+          </TableRow>
+        </TableHead>
+
+        <TableBody>
+          {rows.map((row) => (
+            <TableRow key={row.key}>
+              <TableCell>
+                <Link to={`/configuration/secrets/${row.key}`}>
+                  {row.id}
+                </Link>
+              </TableCell>
+
+              <TableCell>
+                <Link to={`/configuration/secrets/${row.key}`}>
+                  {row.key}
+                </Link>
+              </TableCell>
+
+              <TableCell>{row.username}</TableCell>
+
+              {sa ? (
+                <TableCell data-testid="secret-list-tenant-cell">
+                  <Typography variant="body2">
+                    {tenantLabel(row)}
+                  </Typography>
+                </TableCell>
+              ) : null}
+
+              <TableCell aria-label="Delete">
+                <Can
+                  I="DELETE"
+                  a={targetUris.secretListPath}
+                  ability={ability}
+                >
+                  <MdDelete
+                    onClick={() => setPendingDelete(row)}
+                  />
+                </Can>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </TableContainer>
+  );
+
+  return (
+    <div>
+      {externalFormEmailBanner()}
+
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: { xs: 'flex-start', sm: 'center' },
+          justifyContent: 'space-between',
+          gap: 2,
+          flexDirection: { xs: 'column', sm: 'row' },
+          mb: 2,
+        }}
+      >
+        <Typography variant="h1">{t('secrets')}</Typography>
+
+        <Can
+          I="POST"
+          a={targetUris.secretListPath}
+          ability={ability}
+        >
+          <Button
+            component={Link}
+            variant="contained"
+            to="/configuration/secrets/new"
+          >
+            {t('add_a_secret')}
+          </Button>
+        </Can>
+      </Box>
+
+      {rows.length > 0 ? (
+        <PaginationForTable
+          page={page}
+          perPage={perPage}
+          pagination={pageMeta}
+          tableToDisplay={table}
+        />
+      ) : (
+        <p>{t('no_secrets_to_display')}</p>
+      )}
+
+      <Dialog
+        open={!!pendingDelete}
+        onClose={() => setPendingDelete(null)}
+      >
+        <DialogTitle>{t('delete_secret_title')}</DialogTitle>
+
+        <DialogContent>
+          <DialogContentText>
+            {t('delete_secret_confirm', {
+              name: pendingDelete?.key,
+            })}
+          </DialogContentText>
+
+          <DialogContentText
+            sx={{
+              color: 'error.main',
+              fontWeight: 500,
+              mt: 1,
+            }}
+          >
+            {t('action_cannot_be_undone')}
+          </DialogContentText>
+        </DialogContent>
+
+        <DialogActions>
+          <Button onClick={() => setPendingDelete(null)}>
+            {t('cancel')}
+          </Button>
+
+          <Button
+            color="error"
+            variant="contained"
+            onClick={() => {
+              if (pendingDelete?.key) {
+                confirmDelete(pendingDelete.key);
+              }
+
+              setPendingDelete(null);
+            }}
+          >
+            {t('delete')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </div>
+  );
 }

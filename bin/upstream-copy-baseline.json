@@ -1,0 +1,7 @@
+{
+  "_comment": "Grandfathered upstream-copy signals. The gate blocks NEW copying and REGRESSIONS beyond these values; files drop out as they are remediated. Regenerate with: bin/check-upstream-copying.py --all --write-baseline bin/upstream-copy-baseline.json",
+  "threshold": 0.5,
+  "containment": 0.25,
+  "block_lines": 40,
+  "files": {}
+}

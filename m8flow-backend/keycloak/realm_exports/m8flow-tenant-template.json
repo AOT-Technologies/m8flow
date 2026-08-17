@@ -355,7 +355,7 @@
       "__M8FLOW_SPOKE_CLIENT_ID__": [
         {
           "id": "4d71d1bb-d627-43c8-bc07-d542f816e04b",
-          "name": "spiffworkflow-admin",
+          "name": "m8flow-admin",
           "composite": false,
           "clientRole": true,
           "containerId": "f44558af-3601-4e54-b854-08396a247544",
@@ -596,7 +596,9 @@
       "requiredActions": [
         "UPDATE_PASSWORD"
       ],
-      "realmRoles": ["default-roles-m8flow"],
+      "realmRoles": [
+        "default-roles-m8flow"
+      ],
       "notBefore": 0,
       "groups": [],
       "credentials": [
@@ -619,7 +621,9 @@
       "requiredActions": [
         "UPDATE_PASSWORD"
       ],
-      "realmRoles": ["default-roles-m8flow"],
+      "realmRoles": [
+        "default-roles-m8flow"
+      ],
       "notBefore": 0,
       "groups": [],
       "credentials": [
@@ -642,7 +646,9 @@
       "requiredActions": [
         "UPDATE_PASSWORD"
       ],
-      "realmRoles": ["default-roles-m8flow"],
+      "realmRoles": [
+        "default-roles-m8flow"
+      ],
       "notBefore": 0,
       "groups": [],
       "credentials": [
@@ -665,7 +671,9 @@
       "requiredActions": [
         "UPDATE_PASSWORD"
       ],
-      "realmRoles": ["default-roles-m8flow"],
+      "realmRoles": [
+        "default-roles-m8flow"
+      ],
       "notBefore": 0,
       "groups": [],
       "credentials": [
@@ -688,7 +696,9 @@
       "requiredActions": [
         "UPDATE_PASSWORD"
       ],
-      "realmRoles": ["default-roles-m8flow"],
+      "realmRoles": [
+        "default-roles-m8flow"
+      ],
       "notBefore": 0,
       "groups": [],
       "credentials": [
@@ -1180,22 +1190,6 @@
           }
         },
         {
-          "id": "a7692d41-b905-4049-9004-f6bea690051d",
-          "name": "spiffworkflow-employeeid",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-usermodel-attribute-mapper",
-          "consentRequired": false,
-          "config": {
-            "aggregate.attrs": "false",
-            "userinfo.token.claim": "true",
-            "multivalued": "false",
-            "user.attribute": "spiffworkflow-employeeid",
-            "id.token.claim": "true",
-            "access.token.claim": "true",
-            "claim.name": "spiffworkflow-employeeid"
-          }
-        },
-        {
           "id": "e8a7c4b2-1d5f-4a0e-9b3c-6f2e8d1a4c70",
           "name": "realm_id",
           "protocol": "openid-connect",
@@ -1336,7 +1330,7 @@
             "logic": "POSITIVE",
             "decisionStrategy": "UNANIMOUS",
             "config": {
-              "roles": "[{\"id\":\"__M8FLOW_SPOKE_CLIENT_ID__/spiffworkflow-admin\",\"required\":false}]"
+              "roles": "[{\"id\":\"__M8FLOW_SPOKE_CLIENT_ID__/m8flow-admin\",\"required\":false}]"
             }
           },
           {
@@ -2078,88 +2072,6 @@
         "providerId": "declarative-user-profile",
         "subComponents": {},
         "config": {}
-      }
-    ],
-    "org.keycloak.keys.KeyProvider": [
-      {
-        "id": "1f9958a4-b3ac-4a1b-af95-fd8e6053864a",
-        "name": "hmac-generated",
-        "providerId": "hmac-generated",
-        "subComponents": {},
-        "config": {
-          "kid": [
-            "4e99c641-0494-49d5-979f-45cb5126f6f1"
-          ],
-          "secret": [
-            "4wV4voiQmFajEegv83Ugd8DxFoy3JpN4YzO5qMx4XfB7Abq8NKU4Az5AkSpxYBSdb5GJEQypA4aLmnaDyCWLIw"
-          ],
-          "priority": [
-            "100"
-          ],
-          "algorithm": [
-            "HS256"
-          ]
-        }
-      },
-      {
-        "id": "70fe0720-f3b7-47b4-a625-ae8fb6635da1",
-        "name": "aes-generated",
-        "providerId": "aes-generated",
-        "subComponents": {},
-        "config": {
-          "kid": [
-            "76118b54-fc74-4149-9028-fab1fdc07860"
-          ],
-          "secret": [
-            "DvxTn0KA4TEUPqSFBw8qAw"
-          ],
-          "priority": [
-            "100"
-          ]
-        }
-      },
-      {
-        "id": "a12fdd97-1d72-4d9e-9e6a-f9e0b5d4e5f0",
-        "name": "rsa-generated",
-        "providerId": "rsa-generated",
-        "subComponents": {},
-        "config": {
-          "privateKey": [
-            "MIIEpAIBAAKCAQEAimbfmG2pL3qesWhUrQayRyYBbRFE0Ul5Ii/AW8Kq6Kad9R2n2sT2BvXWnsWBH6KuINUFJz3Tb+gWy235Jy0Idmekwx63JR20//ZJ7dyQ+b1iadmYPpqyixGL7NrVxQYT0AEGLcD/Fwsh869F3jgfQt7N15q2arRnOrW5NMwi+IvtHxZRZ3UluxShut2577ef8cakwCv4zoTV29y+Z3XhtlKZ4WOCuqIHL3SRHwNkb+k8cY0Gwc88FHl/ihFR0fX/lc7W2AHRd98ex8il4kBFfShBZur8ZLE7QWQdXRY2EYYr3D/W6/5wf/R2fAvbVmGzcYGZ2qm6d+K1XH8VU3X84wIDAQABAoIBABXXrHwa+nOCz57CD3MLNoGiDuGOsySwisyJartQmraC7TTtDDurkASDMe72zq0WeJK368tIp6DmqQpL/eFf6xD8xHUC2PajnJg033AJuluftvNroupmcb0e9M1ZsBkbH29Zagc4iUmyuRYDWGx8wPpFvYjEYvuuIwiR+3vIp9A/0ZbcBwdtml3Of5gYTXChPj28PrA4K7oFib2Zu1aYCBEdF8h9bKRF/UlvyWeSajjddexSQ6gkEjzAEMpliCDbOGSFGwNu1pY7FF4EpyJbalzdpn44m5v9bqfS9/CDrIOOUus88Nn5wCD2OAmAQnWn0Hnh7at4A5fw3VBUmEt70ckCgYEAx0Fg8Gp3SuMaytrf9HJHJcltyDRsdSxysF1ZvDV9cDUsD28QOa/wFJRVsABxqElU+W6QEc20NMgOHVyPFed5UhQA6WfmydzGIcF5C6T5IbE/5Uk3ptGuPdI0aR7rlRfefQOnUBr28dz5UDBTb93t9+Klxcss+nLGRbugnFBAtTUCgYEAsdD+92nuF/GfET97vbHxtJ6+epHddttWlsa5PVeVOZBE/LUsOZRxmxm4afvZGOkhUrvmA1+U0arcp9crS5+Ol2LUGh/9efqLvoBImBxLwB37VcIYLJi0EVPrhVPh+9r3vah1YMBhtapS0VtuEZOr47Yz7asBg1s1Z06l+bD1JLcCgYA+3YS9NYn/qZl5aQcBs9B4vo2RfeC+M1DYDgvS0rmJ3mzRTcQ7vyOrCoXiarFxW/mgXN69jz4M7RVu9BX83jQrzj3fZjWteKdWXRlYsCseEzNKnwgc7MjhnmGEzQmc15QNs0plfqxs8MAEKcsZX1bGP873kbvWJMIjnCf3SWaxBQKBgQCh9zt2w19jIewA+vFMbXw7SGk6Hgk6zTlG50YtkMxU/YtJIAFjhUohu8DVkNhDr35x7MLribF1dYu9ueku3ew1CokmLsNkywllAVaebw+0s9qOV9hLLuC989HQxQJPtTj54SrhcPrPTZBYME7G5dqo9PrB3oTnUDoJmoLmOABjawKBgQCeyd12ShpKYHZS4ZvE87OfXanuNfpVxhcXOqYHpQz2W0a+oUu9e78MlwTVooR4O52W/Ohch2FPEzq/1DBjJrK6PrMY8DS018BIVpQ9DS35/Ga9NtSi8DX7jTXacYPwL9n/+//U3vw0mjaoMXgCv44nYu4ro62J6wvVM98hjQmLJw=="
-          ],
-          "keyUse": [
-            "SIG"
-          ],
-          "certificate": [
-            "MIICqTCCAZECBgGBz6+bXzANBgkqhkiG9w0BAQsFADAYMRYwFAYDVQQDDA1zcGlmZndvcmtmbG93MB4XDTIyMDcwNTE4NDUwMVoXDTMyMDcwNTE4NDY0MVowGDEWMBQGA1UEAwwNc3BpZmZ3b3JrZmxvdzCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAIpm35htqS96nrFoVK0GskcmAW0RRNFJeSIvwFvCquimnfUdp9rE9gb11p7FgR+iriDVBSc902/oFstt+SctCHZnpMMetyUdtP/2Se3ckPm9YmnZmD6asosRi+za1cUGE9ABBi3A/xcLIfOvRd44H0Lezdeatmq0Zzq1uTTMIviL7R8WUWd1JbsUobrdue+3n/HGpMAr+M6E1dvcvmd14bZSmeFjgrqiBy90kR8DZG/pPHGNBsHPPBR5f4oRUdH1/5XO1tgB0XffHsfIpeJARX0oQWbq/GSxO0FkHV0WNhGGK9w/1uv+cH/0dnwL21Zhs3GBmdqpunfitVx/FVN1/OMCAwEAATANBgkqhkiG9w0BAQsFAAOCAQEAaI7BEPZpf4MU7bMWmNgyfRTRDy5wtpyfuLPGHZ9EqtnvwwzsmlmXXsC55SLXx3wJETm+rFqeRFbo/hamlRajzzD317AUpE7nhnONTukmh6UuB8hXoWiQTD+YDYMy8kneSP4zvfm27F+TgUC4cvJSYuWVaCxFx52kxqW1hZkBzYUcfi21Qb1jRrbTbso37BxuVX+GdN015If3DPD6QnAhLPAYEFA9jiL16YeMdWHdvlXXmvriDegMUYQjFYPRh6iPzUEdG6KGHItF4AkOYBQAcoaYhfxpxofVlDdOqMZ/1c7AAbe4lR6/jYQ0CbHwdUu4dzJQe3vxr7GdxcB1ypvXPA=="
-          ],
-          "priority": [
-            "100"
-          ]
-        }
-      },
-      {
-        "id": "e16c740d-3ae2-4cc5-a68d-49d99e079672",
-        "name": "rsa-enc-generated",
-        "providerId": "rsa-enc-generated",
-        "subComponents": {},
-        "config": {
-          "privateKey": [
-            "MIIEowIBAAKCAQEAsqGsclDQDFSTn8HS1LiiNAnTwn3CS8HXPLDYMHr/jUQ8r5eD+vQY5ICh5V5c8l8J6ydbpzffFEKam54Ypp4yzaWJZ4huYBMf4vL7xrAZ4VXBreu16BIxOrThzrJe9WmI8+Annzo62mNYZbjf4WNpZDURmxZSo7v6Czprd5O6T4N5bxr8sjRRptZR8hxtrRvJnuC0jF+dLHIO5SKR1hUVG/gbpIBqGcsLkNC9nnS6M/N5YFzUIV5JhXo3+mrR/yvw7m+oS5yRsN0raCSXVenNP05Dhsd4FOYqoXBBcdgXXbiDxed0HWB/g5dASqyMydHriddGr8FU0W8/uZmF79wxPwIDAQABAoIBAFsWCaL5Bj1jWytZYDJMO5mhcTN5gPu0ShaObo66CVl1dCRtdEUg9xh9ZxBYf7ivMZWRKjEoUj44gDHd+d/sRyeJw3jhnraqydWl5TC5V1kJq4sN6GH/9M5kscf+OGGXgNgqcsnEnYICqm6kSLTbRkBstx+H0HfhQG09StNcpuIn4MsoMZT8XmZbXRLb3FhfpuTSX3t2nbSDRfUf7LI1EDnFQen/AJAA5lOHthLCdz4Gj1vfalOFjCMYOUWmL/mCDEb38F6QJZxkyhmS/r2kM09PFLOio6z3J8C8mVeq7uao0s5xAKj5SJqx4r+TTvL5aOF8JBWm8Hz1Vcip9/MjsQECgYEA/8Hpb4RggNyn+YzTxqxtPtbLFL0YywtNT+gutmJH1gyTjfx7p3dmA/NsdIeuJmBpZfA7oDXIqfj2M9QLfC5bdKnggQzrIO3BgClI88zOIWd229Bt6D1yx92k4+9eaRwOKBPn8+u0mCk8TBv32ecMLQ9o8AKNIHeCZQjByvOrIMECgYEAss0J3TzrRuEOpnxJ9fNOeB3rNpIFrpNua+oEQI4gDbBvyT7osBKkGqfXJpUQMftr8a6uBHLHV7/Wq6/aRkRhk+aER8h01DUIWGLmbCUdkFSJZ8iObMZQvURtckhzxxhYu0Ybwn0RJg/zzR4onTRO+eL1fTnb5Id55PyPt3Pp0f8CgYEAovDOoP6MYOyzk5h1/7gwrX04ytCicBGWQtdgk0/QBn3ir+3wdcPq2Y+HREKA3/BClfBUfIBnhGqZqHFqk8YQ/CWSY4Vwc30l71neIX0UwlFhdy+2JeSoMM9z0sfYtUxrdHsiJtO/LcXvpWmYIVpC9p4/s9FcShf5mhbXKE7PcsECgYBN7qqvAH94LF4rWJ8QEZWRK1E7Ptg1KFOHu79Qt+HmtZFzwPTA0c8vQxq22V/uuSxqcf2tOK4EZDxYJtTXrbRuN5pOg2PQnrDdfXX7iw3gu8gMMVFKvgGxDSM7HbNBAy6hqcQtuD+CPI/CRrPjGUqXBkKD63UZnacWlLK7fk1a1wKBgExUaqOBKmr0vldVn66E1XzZj4F4+fV5Ggka9289pBNBRlJFD4VmIYkDkOrLimyy2cYeCkocrOvF6HMJqTcOzD50pj44OWkYFRbs6vK0S7iLSX0eR158XOR9C+uZzp1vIA4sYwW3504HVdVoIU5M8ItSgDsFjGnvHopTGu3MBWPT"
-          ],
-          "keyUse": [
-            "ENC"
-          ],
-          "certificate": [
-            "MIICqTCCAZECBgGBz6+byzANBgkqhkiG9w0BAQsFADAYMRYwFAYDVQQDDA1zcGlmZndvcmtmbG93MB4XDTIyMDcwNTE4NDUwMVoXDTMyMDcwNTE4NDY0MVowGDEWMBQGA1UEAwwNc3BpZmZ3b3JrZmxvdzCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALKhrHJQ0AxUk5/B0tS4ojQJ08J9wkvB1zyw2DB6/41EPK+Xg/r0GOSAoeVeXPJfCesnW6c33xRCmpueGKaeMs2liWeIbmATH+Ly+8awGeFVwa3rtegSMTq04c6yXvVpiPPgJ586OtpjWGW43+FjaWQ1EZsWUqO7+gs6a3eTuk+DeW8a/LI0UabWUfIcba0byZ7gtIxfnSxyDuUikdYVFRv4G6SAahnLC5DQvZ50ujPzeWBc1CFeSYV6N/pq0f8r8O5vqEuckbDdK2gkl1XpzT9OQ4bHeBTmKqFwQXHYF124g8XndB1gf4OXQEqsjMnR64nXRq/BVNFvP7mZhe/cMT8CAwEAATANBgkqhkiG9w0BAQsFAAOCAQEArDDC7bYbuBg33PbUQi7P77lV7PuE9uQU1F3HqulhkARQeM/xmBdJRj9CHjj62shkI3An70tJtGBJkVAHltmvjC+A6IDO5I8IbnPkvWJFu9HwphdP/C1HXYmGPPe7yGdKpy6mdCZ+LMZP7BENhOlx9yXLDFYtcGvqZ4u3XvfsLqUsRGqZHNlhVJD13dUbI6pvbwMsb3gIxozgTIa2ySHMbHafln2UQk5jD0eOIVkaNAdlHqMHiBpPjkoVxnhAmJ/dUIAqKBvuIbCOu9N0kOQSl82LqC7CZ21JCyT86Ll3n1RTkxY5G3JzGW4dyJMOGSyVnWaQ9Z+C92ZMFcOt611M2A=="
-          ],
-          "priority": [
-            "100"
-          ],
-          "algorithm": [
-            "RSA-OAEP"
-          ]
-        }
       }
     ]
   },

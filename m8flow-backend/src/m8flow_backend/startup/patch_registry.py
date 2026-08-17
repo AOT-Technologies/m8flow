@@ -100,6 +100,16 @@ PRE_APP_PATCH_SPECS: tuple[PatchSpec, ...] = (
         target="m8flow_backend.services.model_override_patch:apply",
         minimum_phase=BootPhase.PRE_BOOTSTRAP,
     ),
+    # The two below import upstream models, so they have to follow the config and
+    # override patches above.
+    PatchSpec(
+        target="m8flow_backend.models.tenant_schema:configure",
+        minimum_phase=BootPhase.PRE_BOOTSTRAP,
+    ),
+    PatchSpec(
+        target="m8flow_backend.services.upstream_model_behaviour_patch:apply",
+        minimum_phase=BootPhase.PRE_BOOTSTRAP,
+    ),
     PatchSpec(
         target="m8flow_backend.services.openapi_merge_patch:apply",
         minimum_phase=BootPhase.PRE_BOOTSTRAP,

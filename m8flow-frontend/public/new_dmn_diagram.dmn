@@ -1,19 +1,23 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" xmlns:dmndi="https://www.omg.org/spec/DMN/20191111/DMNDI/" xmlns:dc="http://www.omg.org/spec/DMN/20180521/DC/" id="Definitions_76910d7" name="DRD" namespace="http://camunda.org/schema/1.0/dmn">
+<!--
+  Seed template for a brand-new DMN decision table (see useDiagramImport.ts).
+  The `{{DECISION_ID}}` token is replaced with a generated id at load time.
+-->
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" xmlns:dmndi="https://www.omg.org/spec/DMN/20191111/DMNDI/" xmlns:dc="http://www.omg.org/spec/DMN/20180521/DC/" id="m8flow-new-decision-definitions" name="DRD" namespace="http://m8flow.aot-technologies.com/schema/dmn">
   <decision id="{{DECISION_ID}}" name="Decision">
-    <decisionTable id="decisionTable_1">
-      <input id="input_1">
-        <inputExpression id="inputExpression_1" typeRef="string">
+    <decisionTable id="m8flow-decision-table">
+      <input id="m8flow-decision-input">
+        <inputExpression id="m8flow-decision-input-expression" typeRef="string">
           <text></text>
         </inputExpression>
       </input>
-      <output id="output_1" typeRef="string" />
+      <output id="m8flow-decision-output" typeRef="string" />
     </decisionTable>
   </decision>
   <dmndi:DMNDI>
-    <dmndi:DMNDiagram id="DMNDiagram_1cykosu">
-      <dmndi:DMNShape id="DMNShape_1dhfq2s" dmnElementRef="{{DECISION_ID}}">
-        <dc:Bounds height="80" width="180" x="157" y="151" />
+    <dmndi:DMNDiagram id="m8flow-new-decision-diagram">
+      <dmndi:DMNShape id="m8flow-decision-shape" dmnElementRef="{{DECISION_ID}}">
+        <dc:Bounds height="80" width="180" x="180" y="160" />
       </dmndi:DMNShape>
     </dmndi:DMNDiagram>
   </dmndi:DMNDI>

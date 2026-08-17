@@ -1,0 +1,7 @@
+{
+  "_comment": "Grandfathered cross-tree CPD clones (owned <-> upstream). The gate blocks NEW clones and REGRESSIONS (larger duplicated blocks) beyond these token counts; clones drop out as files are remediated. Paths on NONCOPYRIGHTABLE_ALLOWLIST are omitted (exempt with rationale, not remediation-pending). Regenerate with: bin/check-upstream-cpd.py --write-baseline bin/upstream-cpd-baseline.json",
+  "min_tokens": 75,
+  "ignore_identifiers": true,
+  "ignore_literals": true,
+  "clones": {}
+}
