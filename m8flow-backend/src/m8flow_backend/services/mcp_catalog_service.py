@@ -19,16 +19,11 @@ import httpx
 from mcp import McpError
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
+from mcp.types import CallToolResult
 
 from m8flow_backend.config import mcp_server_url
 
 logger = logging.getLogger(__name__)
-
-# Tool names disabled for MCP clients tenant-wide. Currently empty: no shipped MCP
-# tool ships as sensitive yet. This is the seam a future "Manage permissions" admin
-# toggle will populate -- execute_tool() is the single enforcement point that reads
-# this constant, so that future ticket has one obvious place to replace it.
-SENSITIVE_TOOL_NAMES: frozenset[str] = frozenset()
 
 _AUTH_ERROR_STATUS_CODES = frozenset({401, 403})
 
@@ -67,16 +62,13 @@ def _tool_tags(tool: Any) -> list[str]:
 
 
 def _tool_badge(tool: Any) -> str:
-    """"sensitive" if tenant-disabled via SENSITIVE_TOOL_NAMES; else "read" when the
-    tool's annotations mark it read-only, else "write".
+    """"read" when the tool's annotations mark it read-only, else "write".
 
-    Checked first: a sensitive tool is sensitive regardless of its readOnlyHint, and
-    the catalog UI needs this in the badge itself to render the locked state -- the
-    write-confirm vs. sensitive-disabled distinction is exactly what tells the UI
-    which of "Try it" or the locked message to show for a given tool.
+    Read-only means the tool's ``annotations.readOnlyHint`` is exactly ``True``; a
+    missing or absent hint is treated as "write", the safe default. The catalog UI
+    reads this badge to decide whether "Try it" needs a confirmation step, and
+    ``execute_tool()`` enforces that same distinction server-side.
     """
-    if tool.name in SENSITIVE_TOOL_NAMES:
-        return "sensitive"
     annotations = getattr(tool, "annotations", None)
     read_only_hint = getattr(annotations, "readOnlyHint", None) if annotations is not None else None
     return "read" if read_only_hint is True else "write"
@@ -253,47 +245,35 @@ async def execute_tool(
     arguments: dict[str, Any],
     confirm: bool,
 ) -> dict[str, Any]:
-    """Call one MCP tool as this caller, enforcing the sensitive/write-confirm gates.
+    """Call one MCP tool as this caller, enforcing the write-confirm gate.
 
-    Order of checks: (1) ``tool_name`` is not tenant-disabled via
-    ``SENSITIVE_TOOL_NAMES`` -- a local, no-network check, so it never wastes a
-    round trip on a tool nobody may run; (2) the catalog's badge for the tool is
-    "write" implies ``confirm`` must be exactly ``True``. Only once both pass does
-    this issue ``tools/call``. Every failure path returns an error dict shaped like
-    ``{"error", "message", "status_code"}`` instead of raising, so a thin controller
-    can pass it straight through as the HTTP response body/status.
+    A single MCP session does all three round trips -- ``initialize()``,
+    ``list_tools()`` (to resolve the tool and its badge), then ``tools/call`` -- so
+    one execution costs one connection and one initialize, not two. The gates run
+    against the freshly listed tool: an unknown ``tool_name`` is a 404, and a
+    "write"-badged tool requires ``confirm`` to be exactly ``True`` before
+    ``tools/call`` is ever issued. Every failure path returns an error dict shaped
+    like ``{"error", "message", "status_code"}`` instead of raising, so a thin
+    controller can pass it straight through as the HTTP response body/status. That
+    is also why an auth rejection *by the MCP server* is reported as 502 rather
+    than 401/403: the caller's own token already passed this backend's authn/RBAC,
+    and answering the POST with 401 would read as an expired session client-side.
+
+    Neither gate returns from inside the ``async with`` blocks: those run inside
+    anyio task groups, where returning mid-unwind is a known source of spurious
+    cancellation errors. Both instead record their outcome in ``early`` and let the
+    session close normally before this returns.
     """
-    if tool_name in SENSITIVE_TOOL_NAMES:
-        return {
-            "error": "sensitive_tool_disabled",
-            "message": "Disabled for MCP clients in this tenant. Enable it under Manage permissions.",
-            "status_code": 403,
-        }
-
-    catalog = await get_catalog(token)
-    if "error" in catalog:
+    server_url = mcp_server_url()
+    if not server_url:
         return {
             "error": "catalog_unavailable",
-            "message": catalog["error"],
+            "message": "M8FLOW_MCP_SERVER_URL is not configured.",
             "status_code": 502,
         }
 
-    tool_entry = next((entry for entry in catalog["tools"] if entry["name"] == tool_name), None)
-    if tool_entry is None:
-        return {
-            "error": "tool_not_found",
-            "message": f"No MCP tool named '{tool_name}' was found in the catalog.",
-            "status_code": 404,
-        }
-
-    if tool_entry["badge"] == "write" and confirm is not True:
-        return {
-            "error": "confirmation_required",
-            "message": "This tool performs a write operation and requires confirm=true to execute.",
-            "status_code": 400,
-        }
-
-    server_url = mcp_server_url()
+    early: dict[str, Any] | None = None
+    call_result: CallToolResult | None = None
     try:
         async with streamablehttp_client(server_url, headers=_auth_headers(token)) as (
             read_stream,
@@ -302,16 +282,60 @@ async def execute_tool(
         ):
             async with ClientSession(read_stream, write_stream) as session:
                 await session.initialize()
-                call_result = await session.call_tool(tool_name, arguments)
+                list_tools_result = await session.list_tools()
+                tool_entry = next(
+                    (tool for tool in list_tools_result.tools if tool.name == tool_name), None
+                )
+                if tool_entry is None:
+                    early = {
+                        "error": "tool_not_found",
+                        "message": f"No MCP tool named '{tool_name}' was found in the catalog.",
+                        "status_code": 404,
+                    }
+                elif _tool_badge(tool_entry) == "write" and confirm is not True:
+                    early = {
+                        "error": "confirmation_required",
+                        "message": (
+                            "This tool performs a write operation and requires confirm=true to execute."
+                        ),
+                        "status_code": 400,
+                    }
+                else:
+                    call_result = await session.call_tool(tool_name, arguments)
     except Exception as exc:
         # See the NOTE in ping(): unwrap before reading a status code, since httpx
         # exceptions arrive wrapped in an ExceptionGroup here too.
-        status = _http_status_from_exception(exc) or 502
+        #
+        # An auth rejection from the separately-deployed MCP server is NOT this
+        # endpoint's own 401/403: the caller's token is perfectly valid for
+        # m8flow-backend (it already passed this route's own authn/RBAC) and only the
+        # MCP server refused it. Forwarding 401 verbatim would make the frontend's
+        # HttpService treat the POST as an expired session and bounce the admin to
+        # the login page, so auth rejections are normalized to 502 -- the same status
+        # get_catalog/list_mcp_tools_catalog already return for the identical
+        # failure. The human-readable reason survives in "message".
+        status = _http_status_from_exception(exc)
+        if status is None or status in _AUTH_ERROR_STATUS_CODES:
+            status = 502
         logger.warning("mcp_catalog_service.execute_tool failed for %s: %s", tool_name, exc)
         return {
             "error": "mcp_call_failed",
             "message": _connection_error_message(exc),
             "status_code": status,
+        }
+
+    if early is not None:
+        return early
+
+    if call_result is None:
+        # Only reachable if the session's own task group absorbed the exception
+        # raised by call_tool() (an anyio TaskGroup __aexit__ returns True when it
+        # swallows a cancellation belonging to its own cancel scope). Guarding keeps
+        # this function's "return an error dict, never raise" contract total.
+        return {
+            "error": "mcp_call_failed",
+            "message": f"The MCP session closed before '{tool_name}' returned a result.",
+            "status_code": 502,
         }
 
     if call_result.isError:

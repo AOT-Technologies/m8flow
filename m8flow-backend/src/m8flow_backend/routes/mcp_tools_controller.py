@@ -73,11 +73,12 @@ def execute_mcp_tool(body: dict[str, Any]) -> flask.wrappers.Response:
     """POST /m8flow/mcp-tools/execute -- call one MCP tool, as this caller.
 
     Body: ``{"tool_name": "...", "arguments": {...}, "confirm": bool}``. The
-    service enforces the sensitive/write-confirm gates and returns
+    service enforces the write-confirm gate and returns
     ``{"error", "message", "status_code"}`` on any rejection -- that
-    ``status_code`` (400 missing confirm, 403 sensitive tool disabled, 404
-    unknown tool, 502 MCP call failure) is passed straight through as the HTTP
-    status code.
+    ``status_code`` (400 missing confirm for a write-badged tool, 404 unknown
+    tool, 502 MCP call failure) is passed straight through as the HTTP status
+    code. An auth rejection by the MCP server itself is normalized to 502 by the
+    service, so it never surfaces here as this endpoint's own 401/403.
     """
     tool_name = body.get("tool_name")
     arguments = body.get("arguments") or {}

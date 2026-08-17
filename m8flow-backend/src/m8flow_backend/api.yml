@@ -3097,12 +3097,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-        "403":
-          description: Tool disabled tenant-wide
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Unknown tool name
           content:
@@ -3110,7 +3104,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "502":
-          description: The MCP server could not be reached, or the tool call itself failed
+          description: >
+            The MCP server could not be reached, rejected the forwarded token, or
+            the tool call itself failed
           content:
             application/json:
               schema:

@@ -128,23 +128,32 @@ def test_execute_mcp_tool_maps_service_status_code_400_through():
     assert body["error_code"] == "confirmation_required"
 
 
-def test_execute_mcp_tool_maps_service_status_code_403_through():
+def test_execute_mcp_tool_maps_upstream_auth_rejection_through_as_502():
+    """An auth rejection by the MCP server reaches this controller as a 502.
+
+    The service normalizes the upstream 401/403 itself (see
+    ``mcp_catalog_service.execute_tool``) precisely so this endpoint never answers
+    a POST with 401 -- the frontend's HttpService would read that as an expired
+    session and redirect the admin to login. The controller just passes the
+    service's status through; the reason survives in the message.
+    """
     with _request_context(), patch.object(
         mcp_tools_controller.mcp_catalog_service,
         "execute_tool",
         AsyncMock(
             return_value={
-                "error": "sensitive_tool_disabled",
-                "message": "Disabled for MCP clients in this tenant.",
-                "status_code": 403,
+                "error": "mcp_call_failed",
+                "message": "Not authorized to reach the MCP server (HTTP 403).",
+                "status_code": 502,
             }
         ),
     ):
         response = mcp_tools_controller.execute_mcp_tool({"tool_name": "dangerous_tool"})
 
-    assert response.status_code == 403
+    assert response.status_code == 502
     body = json.loads(response.get_data(as_text=True))
-    assert body["error_code"] == "sensitive_tool_disabled"
+    assert body["error_code"] == "mcp_call_failed"
+    assert "HTTP 403" in body["message"]
 
 
 def test_execute_mcp_tool_defaults_to_400_when_service_omits_status_code():
