@@ -29,45 +29,6 @@ def _serialize(secret, username, tenant_names):
     }
 
 
-def test_non_super_admin_delegates_to_upstream(monkeypatch):
-    """Non-super-admin callers get upstream's tenant-scoped listing unchanged."""
-    secrets_controller = types.ModuleType(
-        "spiffworkflow_backend.routes.secrets_controller"
-    )
-    secrets_controller.secret_list = lambda page=1, per_page=100: (
-        "ORIGINAL",
-        page,
-        per_page,
-    )
-
-    import spiffworkflow_backend.routes as routes_pkg
-
-    monkeypatch.setattr(routes_pkg, "secrets_controller", secrets_controller, raising=False)
-    monkeypatch.setitem(
-        sys.modules,
-        "spiffworkflow_backend.routes.secrets_controller",
-        secrets_controller,
-    )
-    monkeypatch.setitem(
-        sys.modules,
-        "spiffworkflow_backend.models.secret_model",
-        types.SimpleNamespace(SecretModel=types.SimpleNamespace()),
-    )
-    monkeypatch.setitem(
-        sys.modules,
-        "spiffworkflow_backend.models.user",
-        types.SimpleNamespace(UserModel=types.SimpleNamespace()),
-    )
-    monkeypatch.setattr("m8flow_backend.tenancy.is_super_admin_request", lambda: False)
-
-    import m8flow_backend.routes.secrets_controller_patch as patch_module
-
-    monkeypatch.setattr(patch_module, "_PATCHED", False)
-    patch_module.apply()
-
-    assert secrets_controller.secret_list(page=2, per_page=10) == ("ORIGINAL", 2, 10)
-
-
 def test_serialize_shapes_tenant_details():
     """A secret carries username + tenantId/tenantName; a null tenant id yields null names."""
     tenant_names = {"tenant-a": "Tenant A"}
@@ -88,12 +49,36 @@ def test_serialize_shapes_tenant_details():
     }
 
 
+class _FakeExpr:
+    """Stand-in for the SQLAlchemy expression `SecretModel.key.startswith(...)` produces."""
+
+    def __init__(self, value) -> None:
+        self.value = value
+
+    def __invert__(self):
+        return _FakeExpr(("not", self.value))
+
+    def __eq__(self, other):
+        return isinstance(other, _FakeExpr) and self.value == other.value
+
+    def __repr__(self):
+        return repr(self.value)
+
+
 class _FakeColumn:
     def __init__(self, name: str) -> None:
         self.name = name
 
     def __eq__(self, other):
         return (self.name, other)
+
+    def startswith(self, prefix):
+        return _FakeExpr(("startswith", self.name, prefix))
+
+
+# Matches SECRET_REF_PREFIX ("cnx") from m8flow_backend.connectors.base, which
+# patched_secret_list always excludes from the listing regardless of caller.
+_PROFILE_SECRET_FILTER = _FakeExpr(("not", ("startswith", "key", "cnx/")))
 
 
 class _FakeSecretQuery:
@@ -185,6 +170,27 @@ def _install_sa_secret_list(
     return secrets_controller, query
 
 
+def test_non_super_admin_secret_list_excludes_profile_secrets_only(monkeypatch):
+    """Non-super-admins get the profile-secret exclusion filter but never a tenant filter,
+    even when a tenant query param is present -- tenant scoping for them is applied by the
+    tenant-scoping patch, not here."""
+    from flask import Flask
+
+    secrets_controller, query = _install_sa_secret_list(
+        monkeypatch,
+        [(_Secret("db_url", "tenant-a"), "alice")],
+        is_super_admin=False,
+    )
+
+    app = Flask(__name__)
+    with app.app_context():
+        with app.test_request_context("/secrets?tenantId=tenant-a"):
+            response = secrets_controller.secret_list(page=2, per_page=10)
+
+    assert query.filters == [_PROFILE_SECRET_FILTER]
+    assert response.get_json()["results"][0]["tenantId"] == "tenant-a"
+
+
 def test_super_admin_secret_list_injects_tenant_fields_and_filters(monkeypatch):
     from flask import Flask
 
@@ -201,7 +207,7 @@ def test_super_admin_secret_list_injects_tenant_fields_and_filters(monkeypatch):
         with app.test_request_context("/secrets?tenantId=tenant-a"):
             response = secrets_controller.secret_list(page=1, per_page=50)
 
-    assert query.filters == [("m8f_tenant_id", "tenant-a")]
+    assert query.filters == [_PROFILE_SECRET_FILTER, ("m8f_tenant_id", "tenant-a")]
     assert response.status_code == 200
     payload = response.get_json()
     assert payload["pagination"] == {"count": 2, "total": 2, "pages": 1}
@@ -229,7 +235,7 @@ def test_super_admin_secret_list_without_tenant_query_does_not_filter(monkeypatc
         with app.test_request_context("/secrets"):
             response = secrets_controller.secret_list()
 
-    assert query.filters == []
+    assert query.filters == [_PROFILE_SECRET_FILTER]
     assert response.get_json()["results"][0]["tenantId"] == "tenant-a"
     assert response.get_json()["results"][0]["tenantName"] is None
 
@@ -244,4 +250,4 @@ def test_super_admin_secret_list_accepts_tenant_id_query_alias(monkeypatch):
         with app.test_request_context("/secrets?tenant_id=tenant-b"):
             secrets_controller.secret_list()
 
-    assert query.filters == [("m8f_tenant_id", "tenant-b")]
+    assert query.filters == [_PROFILE_SECRET_FILTER, ("m8f_tenant_id", "tenant-b")]

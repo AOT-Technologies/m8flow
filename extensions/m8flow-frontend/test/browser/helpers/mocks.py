@@ -1389,72 +1389,6 @@ def mock_secrets_api(
     page.route("**/secrets*", _handle)
 
 
-# ---- Connectors ------------------------------------------------------------
-# Connectors are global plugin definitions (not tenant-scoped); the grouped
-# endpoint returns the same catalogue regardless of the selected tenant.
-
-MOCK_CONNECTOR_HTTP: dict[str, Any] = {
-    "id": "http",
-    "name": "HTTP",
-    "description": "Make HTTP requests to external services.",
-    "status": "available",
-    "icon": "",
-    "operationCount": 2,
-    "operations": [
-        {
-            "id": "http/GetRequest",
-            "name": "Get Request",
-            "rawName": "GetRequest",
-            "description": "Perform an HTTP GET request.",
-            "parameters": [{"id": "url", "type": "str", "required": True}],
-        },
-        {
-            "id": "http/PostRequest",
-            "name": "Post Request",
-            "rawName": "PostRequest",
-            "description": "Perform an HTTP POST request.",
-            "parameters": [{"id": "url", "type": "str", "required": True}],
-        },
-    ],
-}
-
-MOCK_CONNECTOR_SLACK: dict[str, Any] = {
-    "id": "slack",
-    "name": "Slack",
-    "description": "Send messages to Slack channels.",
-    "status": "available",
-    "icon": "",
-    "operationCount": 1,
-    "operations": [
-        {
-            "id": "slack/PostMessage",
-            "name": "Post Message",
-            "rawName": "PostMessage",
-            "description": "Post a message to a channel.",
-            "parameters": [{"id": "channel", "type": "str", "required": True}],
-        },
-    ],
-}
-
-ALL_MOCK_CONNECTORS: list[dict[str, Any]] = [MOCK_CONNECTOR_HTTP, MOCK_CONNECTOR_SLACK]
-
-
-def mock_connectors_api(
-    page: Page,
-    connectors: list[dict[str, Any]] | None = None,
-) -> None:
-    """Intercept GET ``/m8flow/connectors-grouped`` and return the catalogue."""
-    source = connectors if connectors is not None else ALL_MOCK_CONNECTORS
-
-    def _handle(route: Route) -> None:
-        if route.request.method != "GET":
-            route.fallback()
-            return
-        _json_response(route, source)
-
-    page.route("**/m8flow/connectors-grouped*", _handle)
-
-
 # ---- Process instances -----------------------------------------------------
 
 MOCK_PROCESS_INSTANCE_M8FLOW: dict[str, Any] = {
@@ -1745,6 +1679,19 @@ MOCK_CONNECTOR_HTTP: dict[str, Any] = {
     "icon": "globe",
     "operationCount": 3,
     "docsUrl": "https://github.com/AOT-Technologies/m8flow/tree/main/m8flow-connector-proxy#http-connector",
+    "supportsProfiles": True,
+    "profileFields": [
+        {
+            "id": "base_url",
+            "label": "Base URL",
+            "type": "string",
+            "required": True,
+            "group": None,
+            "binding": "config_param",
+            "secret": False,
+        },
+    ],
+    "profileCount": 0,
     "operations": [
         {
             "id": "http/GetRequest",
@@ -1780,6 +1727,7 @@ MOCK_CONNECTOR_HTTP: dict[str, Any] = {
 
 # Exactly one operation -> exercises the singular "1 operation" chip.
 # Empty description -> exercises the use_via_service_task fallback text.
+# No `supportsProfiles` -> the legacy Configure-routes-to-/configuration/secrets fixture.
 MOCK_CONNECTOR_SLACK: dict[str, Any] = {
     "id": "slack",
     "name": "Slack",
@@ -1808,6 +1756,19 @@ MOCK_CONNECTOR_SMTP: dict[str, Any] = {
     "status": "available",
     "icon": "mail",
     "operationCount": 2,
+    "supportsProfiles": True,
+    "profileFields": [
+        {
+            "id": "host",
+            "label": "Host",
+            "type": "string",
+            "required": True,
+            "group": None,
+            "binding": "config_param",
+            "secret": False,
+        },
+    ],
+    "profileCount": 0,
     "operations": [
         {
             "id": "smtp/SendEmail",

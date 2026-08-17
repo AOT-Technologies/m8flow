@@ -46,7 +46,7 @@ def test_super_admin_connectors_configure_restricted(super_admin_page: Page) -> 
     setup_super_admin_session(page, connectors=ALL_MOCK_CONNECTORS)
     open_page(page, "/connectors")
     expect(page.get_by_test_id("connector-view-ops-http")).to_be_visible(timeout=15_000)
-    # "Configure" (write affordance) is gated by POST on secrets -- hidden for read-only.
+    # "Configure" (write affordance) is gated by POST on secrets/connector-profiles -- hidden for read-only.
     expect(page.get_by_test_id("connector-configure-http")).to_have_count(0)
     expect(page.get_by_test_id("connector-configure-slack")).to_have_count(0)
     logger.info("Super-admin cannot see connector Configure/modify controls.")

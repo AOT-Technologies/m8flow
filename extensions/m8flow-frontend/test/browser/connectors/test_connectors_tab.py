@@ -129,12 +129,30 @@ def test_connector_description_fallback(mocked_connectors_page: Page) -> None:
 # --- Configure button -----------------------------------------------------
 
 
-def test_configure_button_navigates(mocked_connectors_page: Page) -> None:
-    """The Configure button routes to the secrets configuration page."""
+def test_configure_button_navigates_to_profile_page_when_supported(
+    mocked_connectors_page: Page,
+) -> None:
+    """A connector with supportsProfiles routes Configure to its profile-CRUD page."""
     page = mocked_connectors_page
     navigate_to_connectors(page)
     configure = page.get_by_test_id(
         f"connector-configure-{MOCK_CONNECTOR_HTTP['id']}"
+    )
+    expect(configure).to_be_visible()
+    configure.click()
+    expect(page).to_have_url(
+        re.compile(rf"/connectors/{MOCK_CONNECTOR_HTTP['id']}/configure")
+    )
+
+
+def test_configure_button_navigates_to_secrets_when_profiles_unsupported(
+    mocked_connectors_page: Page,
+) -> None:
+    """A connector without supportsProfiles still routes Configure to the legacy secrets page."""
+    page = mocked_connectors_page
+    navigate_to_connectors(page)
+    configure = page.get_by_test_id(
+        f"connector-configure-{MOCK_CONNECTOR_SLACK['id']}"
     )
     expect(configure).to_be_visible()
     configure.click()

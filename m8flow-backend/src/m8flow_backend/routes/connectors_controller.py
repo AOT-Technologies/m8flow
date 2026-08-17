@@ -24,7 +24,10 @@ _CONNECTOR_DOCS_BASE = (
     "https://github.com/AOT-Technologies/m8flow/tree/main/m8flow-connector-proxy"
 )
 
-_UPPERCASE_ABBREVS = {"HTTP", "HTML", "SMTP", "API", "URL", "SQL", "SSH", "FTP", "AWS", "GCP"}
+_UPPERCASE_ABBREVS = {
+    "HTTP", "HTML", "SMTP", "API", "URL", "SQL", "SSH", "FTP", "AWS", "GCP",
+    "GET", "POST", "PUT", "DELETE", "PATCH",
+}
 
 _SPLIT_RE = re.compile(
     r"""
