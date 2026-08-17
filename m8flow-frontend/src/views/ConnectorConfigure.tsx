@@ -1,11 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  Link as RouterLink,
-  Navigate,
-  useNavigate,
-  useParams,
-} from 'react-router-dom';
+import { Link as RouterLink, Navigate, useParams } from 'react-router-dom';
 import {
   Alert,
   Box,
@@ -128,7 +123,6 @@ const initialValues = (
  */
 export default function ConnectorConfigure() {
   const { t } = useTranslation();
-  const navigate = useNavigate();
   const { connectorId } = useParams();
   const { targetUris } = useUriListForPermissions();
 
@@ -279,7 +273,7 @@ export default function ConnectorConfigure() {
     const request = editing
       ? callBackend({
           path: `/m8flow/connector-profiles/${editing.id}`,
-          httpMethod: 'PATCH',
+          httpMethod: 'PUT',
           postBody: body,
         })
       : callBackend({
@@ -552,10 +546,6 @@ export default function ConnectorConfigure() {
           </Table>
         </Paper>
       )}
-
-      <Button sx={{ mt: 2 }} onClick={() => navigate('/connectors')}>
-        {t('back')}
-      </Button>
 
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>

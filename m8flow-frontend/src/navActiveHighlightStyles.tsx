@@ -33,7 +33,6 @@ function highlightCss(hrefSuffix: string, theme: Theme): string {
     a[href$="${hrefSuffix}"] {
       background-color: ${lightBg} !important;
       color: ${accent} !important;
-      border-left-width: 4px !important;
       border-style: solid !important;
       border-color: ${accent} !important;
     }

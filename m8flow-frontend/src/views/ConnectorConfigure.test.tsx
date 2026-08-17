@@ -15,7 +15,7 @@ const h = vi.hoisted(() => ({
 
 vi.mock('../services/HttpService', () => ({
   default: {
-    HttpMethods: { GET: 'GET', POST: 'POST', PATCH: 'PATCH', DELETE: 'DELETE' },
+    HttpMethods: { GET: 'GET', POST: 'POST', PUT: 'PUT', DELETE: 'DELETE' },
     makeCallToBackend: vi.fn((opts: any) => {
       h.calls.push(opts);
       const { path, httpMethod = 'GET', successCallback } = opts;
@@ -232,7 +232,7 @@ describe('ConnectorConfigure edit', () => {
     expect(screen.getByText('connector_config_field_set')).toBeInTheDocument();
   });
 
-  it('omits an untouched secret from the patch so the stored value survives', async () => {
+  it('omits an untouched secret from the update so the stored value survives', async () => {
     renderPage();
     await screen.findByTestId('connector-profile-row-smtp-staging');
     fireEvent.click(screen.getByTestId('connector-profile-edit-smtp-staging'));
@@ -242,12 +242,12 @@ describe('ConnectorConfigure edit', () => {
     fireEvent.click(screen.getByTestId('connector-profile-save'));
 
     await waitFor(() => {
-      const patch = h.calls.find(
-        (c) => c.path === '/m8flow/connector-profiles/7' && c.httpMethod === 'PATCH',
+      const update = h.calls.find(
+        (c) => c.path === '/m8flow/connector-profiles/7' && c.httpMethod === 'PUT',
       );
-      expect(patch).toBeTruthy();
-      expect(patch.postBody.config).toEqual({ smtp_host: 'smtp.new.example.com' });
-      expect('smtp_password' in patch.postBody.config).toBe(false);
+      expect(update).toBeTruthy();
+      expect(update.postBody.config).toEqual({ smtp_host: 'smtp.new.example.com' });
+      expect('smtp_password' in update.postBody.config).toBe(false);
     });
   });
 });

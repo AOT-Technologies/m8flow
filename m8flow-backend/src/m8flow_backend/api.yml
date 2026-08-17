@@ -2416,7 +2416,9 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-    patch:
+    # PUT, not PATCH: the upstream authorization filter maps only
+    # GET/POST/PUT/DELETE to a permission, so a PATCH route is always denied.
+    put:
       operationId: m8flow_backend.routes.connector_profiles_controller.connector_profile_update
       summary: Update a connector profile
       tags:
