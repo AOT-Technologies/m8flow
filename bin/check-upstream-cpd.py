@@ -189,7 +189,7 @@ def stage_typescript() -> tuple[Path, dict[str, str]]:
                 )
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(src, dst)
-            mapping[str(dst.resolve())] = str(rel)
+            mapping[str(dst.resolve())] = rel.as_posix()
     return staged_root, mapping
 
 
@@ -270,7 +270,7 @@ def cross_tree_pairs(clones: list[dict], owned: list[str], upstream: list[str], 
                     continue
             else:
                 try:
-                    rel = str(Path(abs_path).resolve().relative_to(REPO_ROOT))
+                    rel = Path(abs_path).resolve().relative_to(REPO_ROOT).as_posix()
                 except ValueError:
                     continue
             rels.append(rel)
