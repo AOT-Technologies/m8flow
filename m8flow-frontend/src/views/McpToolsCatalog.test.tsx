@@ -113,7 +113,7 @@ beforeEach(() => {
         name: 'get_secret_value',
         description: 'Returns a decrypted secret',
         category: 'secrets',
-        badge: 'sensitive',
+        badge: 'read',
         parameters: [],
       },
     ],
@@ -166,13 +166,6 @@ describe('McpToolsCatalog', () => {
     expect(screen.getByTestId('mcp-tool-get_secret_value')).toBeInTheDocument();
   });
 
-  it('shows the locked message instead of Try-it for a sensitive tool', async () => {
-    renderPage();
-    await screen.findByTestId('mcp-tool-get_secret_value');
-    expect(screen.getByTestId('mcp-tool-locked-get_secret_value')).toBeInTheDocument();
-    expect(screen.queryByTestId('mcp-tool-execute-get_secret_value')).toBeNull();
-  });
-
   it('executes a read tool immediately without a confirmation dialog', async () => {
     renderPage();
     await screen.findByTestId('mcp-tool-list_things');
@@ -214,6 +207,43 @@ describe('McpToolsCatalog', () => {
           postBody: { tool_name: 'create_thing', arguments: { name: 'widget' }, confirm: true },
         }),
       ),
+    );
+  });
+
+  it('blocks execution with a "field required" error when a required param is empty', async () => {
+    renderPage();
+    await screen.findByTestId('mcp-tool-create_thing');
+
+    // `name` is required and deliberately left empty.
+    fireEvent.click(screen.getByTestId('mcp-tool-execute-create_thing'));
+    fireEvent.click(await screen.findByTestId('mcp-tool-confirm-run-create_thing'));
+
+    expect(await screen.findByText('mcp_tools_field_required')).toBeInTheDocument();
+    expect(screen.queryByText('mcp_tools_invalid_json')).toBeNull();
+    expect(h.makeCallToBackend).not.toHaveBeenCalledWith(
+      expect.objectContaining({ path: '/m8flow/mcp-tools/execute' }),
+    );
+  });
+
+  it('blocks execution with an "invalid json" error when an object param is malformed', async () => {
+    renderPage();
+    await screen.findByTestId('mcp-tool-create_thing');
+
+    fireEvent.change(
+      screen.getByTestId('mcp-tool-param-create_thing-name').querySelector('input')!,
+      { target: { value: 'widget' } },
+    );
+    fireEvent.change(
+      screen.getByTestId('mcp-tool-param-create_thing-payload').querySelector('textarea')!,
+      { target: { value: '{not json' } },
+    );
+    fireEvent.click(screen.getByTestId('mcp-tool-execute-create_thing'));
+    fireEvent.click(await screen.findByTestId('mcp-tool-confirm-run-create_thing'));
+
+    expect(await screen.findByText('mcp_tools_invalid_json')).toBeInTheDocument();
+    expect(screen.queryByText('mcp_tools_field_required')).toBeNull();
+    expect(h.makeCallToBackend).not.toHaveBeenCalledWith(
+      expect.objectContaining({ path: '/m8flow/mcp-tools/execute' }),
     );
   });
 

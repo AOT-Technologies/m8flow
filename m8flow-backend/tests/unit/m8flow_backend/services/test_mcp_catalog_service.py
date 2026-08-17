@@ -81,6 +81,54 @@ def _install_fake_client(monkeypatch, session, *, raise_exc: BaseException | Non
         monkeypatch.setattr(mcp_catalog_service, "ClientSession", _fake_client_session(session))
 
 
+def _install_connection_counting_fake_client(monkeypatch, session):
+    """Install the fake client and return the list it appends one entry per connection to.
+
+    Same wiring as ``_install_fake_client``, except the ``streamablehttp_client``
+    stand-in records every call. The returned list's length is therefore the exact
+    number of MCP client connections a service function opened.
+    """
+    connections = []
+
+    def factory(server_url, headers=None):
+        connections.append({"server_url": server_url, "headers": headers})
+        return _FakeStreamContext()
+
+    monkeypatch.setattr(mcp_catalog_service, "mcp_server_url", lambda: "https://mcp.example")
+    monkeypatch.setattr(mcp_catalog_service, "streamablehttp_client", factory)
+    monkeypatch.setattr(mcp_catalog_service, "ClientSession", _fake_client_session(session))
+    return connections
+
+
+class _SwallowingSessionContext:
+    """A ``ClientSession`` stand-in whose ``__aexit__`` absorbs the exception.
+
+    Models the one narrow real-world case where a body exception never reaches
+    ``execute_tool``'s ``except``: an anyio task group ``__aexit__`` returns True
+    when it swallows a cancellation belonging to its own cancel scope, so control
+    resumes after the ``async with`` with no result recorded.
+    """
+
+    def __init__(self, session):
+        self._session = session
+
+    async def __aenter__(self):
+        return self._session
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return True
+
+
+def _http_status_error(status_code: int) -> httpx.HTTPStatusError:
+    """An ``httpx.HTTPStatusError`` carrying a real response with ``status_code``."""
+    request = httpx.Request("POST", "https://mcp.example")
+    return httpx.HTTPStatusError(
+        f"{status_code} error",
+        request=request,
+        response=httpx.Response(status_code, request=request),
+    )
+
+
 def _make_tool(name: str, *, read_only: bool, tags: list[str] | None = None, properties=None, required=None):
     return SimpleNamespace(
         name=name,
@@ -129,32 +177,6 @@ def test_get_catalog_happy_path_derives_category_and_badge_from_tags_and_annotat
     assert tools_by_name["delete_report"]["badge"] == "write"
     assert tools_by_name["noop"]["category"] == "uncategorized"
     assert tools_by_name["noop"]["badge"] == "read"
-
-
-def test_get_catalog_marks_a_sensitive_tool_name_with_the_sensitive_badge(monkeypatch):
-    """Proves the catalog's badge -- not just execute_tool's own gate -- reflects
-    SENSITIVE_TOOL_NAMES, since the McpToolsCatalog UI decides whether to render the
-    locked "Try it" state purely from this field. SENSITIVE_TOOL_NAMES ships empty
-    (see the module docstring); this monkeypatches it locally, the same way
-    test_execute_tool_blocks_a_tool_added_to_sensitive_tool_names does below.
-    """
-    monkeypatch.setattr(mcp_catalog_service, "SENSITIVE_TOOL_NAMES", frozenset({"get_secret_value"}))
-    sensitive_tool = _make_tool("get_secret_value", read_only=True, tags=["secrets"])
-    other_tool = _make_tool("list_reports", read_only=True, tags=["reporting"])
-
-    session = SimpleNamespace(
-        initialize=AsyncMock(return_value=SimpleNamespace(protocolVersion="2024-11-05")),
-        list_tools=AsyncMock(return_value=SimpleNamespace(tools=[sensitive_tool, other_tool])),
-    )
-    _install_fake_client(monkeypatch, session)
-
-    result = asyncio.run(mcp_catalog_service.get_catalog("token-abc"))
-
-    tools_by_name = {tool["name"]: tool for tool in result["tools"]}
-    # Sensitive wins even though this tool's own readOnlyHint is True -- badge must
-    # never fall back to "read" for a tenant-disabled tool.
-    assert tools_by_name["get_secret_value"]["badge"] == "sensitive"
-    assert tools_by_name["list_reports"]["badge"] == "read"
 
 
 def test_get_catalog_returns_error_dict_instead_of_raising_on_connection_failure(monkeypatch):
@@ -246,24 +268,132 @@ def test_execute_tool_blocks_write_tool_without_confirm(monkeypatch):
     session.call_tool.assert_not_awaited()
 
 
-def test_execute_tool_blocks_a_tool_added_to_sensitive_tool_names(monkeypatch):
-    """Proves the SENSITIVE_TOOL_NAMES seam works, without shipping a real sensitive tool.
-
-    SENSITIVE_TOOL_NAMES ships empty (see the module docstring for why); this
-    monkeypatches it locally to prove execute_tool's enforcement point reads
-    it and short-circuits -- before ever attempting an MCP connection.
+def test_execute_tool_returns_404_when_the_tool_name_is_not_in_the_catalog(monkeypatch):
+    """The unknown-tool gate now runs inside the single session, against the tools
+    just listed there -- not against a separately fetched catalog. It must still be
+    a 404, and must still stop before ``tools/call`` is issued.
     """
-    monkeypatch.setattr(mcp_catalog_service, "SENSITIVE_TOOL_NAMES", frozenset({"delete_everything"}))
+    session = SimpleNamespace(
+        initialize=AsyncMock(return_value=SimpleNamespace(protocolVersion="2024-11-05")),
+        list_tools=AsyncMock(
+            return_value=SimpleNamespace(tools=[_make_tool("list_reports", read_only=True)])
+        ),
+        call_tool=AsyncMock(side_effect=AssertionError("call_tool must not run for an unknown tool")),
+    )
+    _install_fake_client(monkeypatch, session)
 
-    def _fail_if_a_connection_is_attempted(*_args, **_kwargs):
-        raise AssertionError("a sensitive tool must be blocked before any MCP connection is attempted")
-
-    monkeypatch.setattr(mcp_catalog_service, "streamablehttp_client", _fail_if_a_connection_is_attempted)
-
-    result = asyncio.run(mcp_catalog_service.execute_tool("token-abc", "delete_everything", {}, True))
+    result = asyncio.run(mcp_catalog_service.execute_tool("token-abc", "no_such_tool", {}, True))
 
     assert result == {
-        "error": "sensitive_tool_disabled",
-        "message": "Disabled for MCP clients in this tenant. Enable it under Manage permissions.",
-        "status_code": 403,
+        "error": "tool_not_found",
+        "message": "No MCP tool named 'no_such_tool' was found in the catalog.",
+        "status_code": 404,
     }
+    session.call_tool.assert_not_awaited()
+
+
+def test_execute_tool_reports_an_upstream_401_as_502_not_401(monkeypatch):
+    """Regression guard: an MCP-server auth rejection must never become this
+    endpoint's own 401.
+
+    The caller's token already passed m8flow-backend's own authn/RBAC to reach
+    here; only the separately-deployed MCP server refused it. A 401 on this POST
+    would make the frontend's HttpService treat the session as expired and bounce
+    the admin to the login page, so the status is normalized to 502 (matching what
+    get_catalog returns for the identical failure) while the reason stays in the
+    message.
+    """
+    _install_fake_client(monkeypatch, session=None, raise_exc=_http_status_error(401))
+
+    result = asyncio.run(mcp_catalog_service.execute_tool("token-abc", "list_reports", {}, True))
+
+    assert result["status_code"] == 502
+    assert result["error"] == "mcp_call_failed"
+    assert result["message"] == "Not authorized to reach the MCP server (HTTP 401)."
+
+
+def test_execute_tool_reports_a_taskgroup_wrapped_upstream_403_as_502(monkeypatch):
+    """Same normalization for a 403, and through the ExceptionGroup wrapper the
+    real transport always adds (streamablehttp_client/ClientSession run their I/O
+    inside anyio task groups)."""
+    wrapped = BaseExceptionGroup(
+        "unhandled errors in a TaskGroup", [_http_status_error(403)]
+    )
+    _install_fake_client(monkeypatch, session=None, raise_exc=wrapped)
+
+    result = asyncio.run(mcp_catalog_service.execute_tool("token-abc", "list_reports", {}, True))
+
+    assert result["status_code"] == 502
+    assert result["message"] == "Not authorized to reach the MCP server (HTTP 403)."
+
+
+def test_execute_tool_still_forwards_a_non_auth_upstream_status(monkeypatch):
+    """Only auth rejections are rewritten; other upstream statuses pass through."""
+    _install_fake_client(monkeypatch, session=None, raise_exc=_http_status_error(429))
+
+    result = asyncio.run(mcp_catalog_service.execute_tool("token-abc", "list_reports", {}, True))
+
+    assert result["status_code"] == 429
+    assert result["message"] == "MCP server returned HTTP 429."
+
+
+def test_execute_tool_returns_an_error_dict_when_the_session_swallows_the_call_failure(monkeypatch):
+    """No AttributeError may escape when the session closes without a result.
+
+    ``execute_tool`` promises to return an error dict rather than raise. If the
+    session's own ``__aexit__`` absorbs the exception raised by ``call_tool()``,
+    the code after the ``async with`` sees no result and no ``early`` outcome --
+    dereferencing ``call_result.isError`` there would 500 the endpoint with a
+    stack trace.
+    """
+    read_tool = _make_tool("list_reports", read_only=True, tags=["reporting"])
+    session = SimpleNamespace(
+        initialize=AsyncMock(return_value=SimpleNamespace(protocolVersion="2024-11-05")),
+        list_tools=AsyncMock(return_value=SimpleNamespace(tools=[read_tool])),
+        call_tool=AsyncMock(side_effect=RuntimeError("transport died mid-call")),
+    )
+    monkeypatch.setattr(mcp_catalog_service, "mcp_server_url", lambda: "https://mcp.example")
+    monkeypatch.setattr(
+        mcp_catalog_service, "streamablehttp_client", _fake_streamablehttp_client(None)
+    )
+    monkeypatch.setattr(
+        mcp_catalog_service,
+        "ClientSession",
+        lambda read_stream, write_stream: _SwallowingSessionContext(session),
+    )
+
+    result = asyncio.run(mcp_catalog_service.execute_tool("token-abc", "list_reports", {}, True))
+
+    assert result == {
+        "error": "mcp_call_failed",
+        "message": "The MCP session closed before 'list_reports' returned a result.",
+        "status_code": 502,
+    }
+
+
+def test_execute_tool_opens_exactly_one_connection_and_initializes_once(monkeypatch):
+    """Regression guard for the single-session refactor.
+
+    execute_tool used to call get_catalog() first (one connection + initialize) and
+    then open a second session to make the actual call. Resolving the tool from the
+    same session's own list_tools() halves that cost, so this pins the counts: one
+    connection, one initialize, one list_tools, one call_tool.
+    """
+    read_tool = _make_tool("list_reports", read_only=True, tags=["reporting"])
+    call_result = SimpleNamespace(isError=False, structuredContent={"rows": []}, content=None)
+
+    session = SimpleNamespace(
+        initialize=AsyncMock(return_value=SimpleNamespace(protocolVersion="2024-11-05")),
+        list_tools=AsyncMock(return_value=SimpleNamespace(tools=[read_tool])),
+        call_tool=AsyncMock(return_value=call_result),
+    )
+    connections = _install_connection_counting_fake_client(monkeypatch, session)
+
+    result = asyncio.run(mcp_catalog_service.execute_tool("token-abc", "list_reports", {}, False))
+
+    assert result == {"result": {"rows": []}}
+    assert len(connections) == 1, f"expected exactly one MCP connection, opened {len(connections)}"
+    assert connections[0]["headers"] == {"Authorization": "Bearer token-abc"}
+    assert session.initialize.await_count == 1
+    assert session.list_tools.await_count == 1
+    assert session.call_tool.await_count == 1

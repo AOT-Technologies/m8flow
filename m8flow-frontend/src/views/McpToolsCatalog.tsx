@@ -27,7 +27,6 @@ import {
 import {
   Build as BuildIcon,
   ExpandMore as ExpandMoreIcon,
-  Lock as LockIcon,
   PlayArrow as PlayArrowIcon,
   Search as SearchIcon,
   Sync as SyncIcon,
@@ -46,7 +45,7 @@ interface McpToolParameter {
   description: string;
 }
 
-type McpToolBadge = 'read' | 'write' | 'sensitive';
+type McpToolBadge = 'read' | 'write';
 
 interface McpToolSummary {
   name: string;
@@ -88,9 +87,8 @@ function humanizeCategory(category: string): string {
     .join(' ');
 }
 
-function badgeColor(badge: McpToolBadge): 'default' | 'warning' | 'error' {
+function badgeColor(badge: McpToolBadge): 'default' | 'warning' {
   if (badge === 'write') return 'warning';
-  if (badge === 'sensitive') return 'error';
   return 'default';
 }
 
@@ -149,7 +147,7 @@ function ToolTryIt({
       }
       if (outcome.skip) {
         if (param.required) {
-          setValidationError(t('mcp_tools_invalid_json'));
+          setValidationError(t('mcp_tools_field_required'));
           return null;
         }
         continue;
@@ -387,17 +385,7 @@ function ToolAccordion({
           </Box>
         )}
 
-        {tool.badge === 'sensitive' ? (
-          <Alert
-            severity="warning"
-            icon={<LockIcon fontSize="inherit" />}
-            data-testid={`mcp-tool-locked-${tool.name}`}
-          >
-            {t('mcp_tools_sensitive_locked_message')}
-          </Alert>
-        ) : (
-          <ToolTryIt tool={tool} execution={execution} canExecute={canExecute} onExecute={onExecute} />
-        )}
+        <ToolTryIt tool={tool} execution={execution} canExecute={canExecute} onExecute={onExecute} />
       </AccordionDetails>
     </Accordion>
   );

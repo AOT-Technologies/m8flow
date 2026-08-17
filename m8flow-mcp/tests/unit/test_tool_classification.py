@@ -1,11 +1,11 @@
 """Guard test: every registered MCP tool must carry classification metadata.
 
-M8F-404 introduces a sensitivity seam (``SENSITIVE_TOOL_NAMES`` in
-``src.mcp_tools``) that depends on every tool having accurate ``tags`` and
-``annotations`` (in particular ``readOnlyHint``). This test builds the real
-FastMCP server (not the lightweight ``MockFastMCP`` used by other unit tests,
-which discards ``tags``/``annotations``) so a future tool added without them
-fails loudly instead of silently falling through the classification seam.
+Asserts that every tool registered by ``register_tools()`` declares a non-empty
+``tags`` set and ``annotations`` with an explicit ``readOnlyHint`` (never
+``None``). It builds the real FastMCP server rather than the lightweight
+``MockFastMCP`` used by other unit tests, which discards
+``tags``/``annotations``, so a future tool added without that metadata fails
+loudly here instead of shipping unclassified.
 """
 
 from __future__ import annotations
