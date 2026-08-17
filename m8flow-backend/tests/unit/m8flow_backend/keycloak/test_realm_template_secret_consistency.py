@@ -6,11 +6,17 @@ vars at runtime, but each one falls back to this exact value in dev/bootstrap
 contexts). Rotating the secret means updating it in ALL of these at once; a partial
 rotation only surfaces at runtime when a stale default fails to authenticate. This
 test fails loudly and immediately instead.
+
+Each consumer below is matched by a regex anchored to its actual assignment site
+(the env var default, the dict key, the constant), not a raw substring count. That
+way an unrelated comment, duplicate example, or reformatting elsewhere in the file
+can't fail this test -- only a real mismatch (or a missing/renamed assignment) can.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -23,20 +29,46 @@ TEMPLATE_PATH = BACKEND_ROOT / "keycloak" / "realm_exports" / "m8flow-tenant-tem
 
 SPOKE_PLACEHOLDER = "__M8FLOW_SPOKE_CLIENT_ID__"
 
-# Every file that hardcodes the spoke client secret as a default, and how many times
-# it must appear there. Regenerating/rotating the secret has to move in ALL of these
-# at once, or local dev, docker, and the bootstrap scripts disagree about how to
-# authenticate.
-SECRET_CONSUMERS = {
-    "m8flow-backend/src/m8flow_backend/config.py": 1,
-    "m8flow-backend/src/m8flow_backend/services/upstream_auth_defaults_patch.py": 1,
-    "m8flow-backend/keycloak/start_keycloak.sh": 1,
-    "m8flow-backend/bin/ensure_keycloak_master_super_admin.sh": 1,
-    "m8flow-backend/bin/local_development_environment_setup": 1,
-    "m8flow-backend/bin/get_token": 1,
-    "m8flow-backend/tests/unit/m8flow_backend/services/test_upstream_auth_defaults_patch.py": 1,
-    "docker/keycloak-entrypoint.sh": 1,
-    "sample.env": 3,
+# Every file that hardcodes the spoke client secret as a default, and the regex(es)
+# that pin down exactly where. Each regex must match exactly once and capture the
+# secret value in group 1. Rotating the secret has to move in ALL of these at once,
+# or local dev, docker, and the bootstrap scripts disagree about how to authenticate.
+SECRET_CONSUMERS: dict[str, list[str]] = {
+    "m8flow-backend/src/m8flow_backend/config.py": [
+        r'DEFAULT_KEYCLOAK_CLIENT_SECRET\s*=\s*"([^"]+)"',
+    ],
+    "m8flow-backend/src/m8flow_backend/services/upstream_auth_defaults_patch.py": [
+        r'DEFAULT_CLIENT_SECRET\s*=\s*"([^"]+)"',
+    ],
+    "m8flow-backend/keycloak/start_keycloak.sh": [
+        r"keycloak_master_client_secret=\"\$\{M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET:-"
+        r"\$\{M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET:-([^}]+)\}\}\"",
+    ],
+    "m8flow-backend/bin/ensure_keycloak_master_super_admin.sh": [
+        r"keycloak_client_secret=\"\$\{M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET:-"
+        r"\$\{M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET:-([^}]+)\}\}\"",
+    ],
+    "m8flow-backend/bin/local_development_environment_setup": [
+        r'SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__client_secret="([^"]+)"',
+    ],
+    "m8flow-backend/bin/get_token": [
+        r'"BACKEND_CLIENT_secret",\s*"([^"]+)"',
+    ],
+    # Anchored to the "spiffworkflow-local" fixture dict specifically -- this file
+    # also has an unrelated "custom-secret"/"secret" client_secret used elsewhere in
+    # the same test module to exercise the non-default path.
+    "m8flow-backend/tests/unit/m8flow_backend/services/test_upstream_auth_defaults_patch.py": [
+        r'realms/spiffworkflow-local(?:(?!client_secret)[\s\S])*?"client_secret":\s*"([^"]+)"',
+    ],
+    "docker/keycloak-entrypoint.sh": [
+        r"M8FLOW_SPOKE_CLIENT_SECRET=\"\$\{M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET:-"
+        r"\$\{M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET:-([^}]+)\}\}\"",
+    ],
+    "sample.env": [
+        r"SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__client_secret=(\S+)",
+        r"SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__1__client_secret=(\S+)",
+        r"#\s*M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET=(\S+)",
+    ],
 }
 
 
@@ -54,16 +86,31 @@ def spoke_secret(template: dict) -> str:
     return secret
 
 
-@pytest.mark.parametrize(("relative_path", "expected_count"), sorted(SECRET_CONSUMERS.items()))
+_CASES = sorted(
+    (relative_path, index, pattern)
+    for relative_path, patterns in SECRET_CONSUMERS.items()
+    for index, pattern in enumerate(patterns)
+)
+
+
+@pytest.mark.parametrize(("relative_path", "index", "pattern"), _CASES)
 def test_spoke_client_secret_matches_every_consumer(
-    spoke_secret: str, relative_path: str, expected_count: int
+    spoke_secret: str, relative_path: str, index: int, pattern: str
 ) -> None:
     """Catches a partial rotation, which would otherwise only surface at runtime."""
     path = REPO_ROOT / relative_path
     assert path.exists(), f"expected secret consumer is missing: {relative_path}"
-    actual_count = path.read_text(encoding="utf-8").count(spoke_secret)
-    assert actual_count == expected_count, (
-        f"{relative_path} does not carry the template's spoke client secret "
-        f"{expected_count}x (found {actual_count}x). Rotating the secret must update "
-        f"the template and all {len(SECRET_CONSUMERS)} consumers together."
+    contents = path.read_text(encoding="utf-8")
+    matches = re.findall(pattern, contents)
+    assert len(matches) == 1, (
+        f"{relative_path} does not carry exactly one assignment matching "
+        f"{pattern!r} (found {len(matches)}). The secret's assignment site may have "
+        "been renamed, removed, or duplicated -- update SECRET_CONSUMERS if that "
+        "was intentional."
+    )
+    (actual_secret,) = matches
+    assert actual_secret == spoke_secret, (
+        f"{relative_path} carries a stale spoke client secret for pattern "
+        f"{pattern!r} (found {actual_secret!r}, expected {spoke_secret!r}). "
+        f"Rotating the secret must update the template and all consumers together."
     )

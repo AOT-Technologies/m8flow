@@ -40,7 +40,8 @@ import type { ReactDiagramEditorProps } from './ReactDiagramEditor.types';
 function exportDiagramXml(diagramModelerState: unknown, onSaved: (xml: string) => void) {
   (diagramModelerState as any)
     ?.saveXML({ format: true })
-    ?.then((result: any) => onSaved(result.xml));
+    ?.then((result: any) => onSaved(result.xml))
+    ?.catch((err: any) => console.error('ERROR:', err));
 }
 
 // Triggers a browser download and cleans up the anchor/object URL afterward
@@ -53,7 +54,10 @@ function downloadAsFile(contents: string, mimeType: string, downloadName: string
   document.body.appendChild(anchor);
   anchor.click();
   document.body.removeChild(anchor);
-  URL.revokeObjectURL(anchor.href);
+  // Some browsers still need the object URL after `click()` returns (the
+  // download is kicked off asynchronously), so defer the revoke instead of
+  // doing it inline.
+  setTimeout(() => URL.revokeObjectURL(anchor.href), 0);
 }
 
 export default function ReactDiagramEditor(props: ReactDiagramEditorProps) {
