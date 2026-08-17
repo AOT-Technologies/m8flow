@@ -368,7 +368,7 @@ def iter_tree_files(root_path: Path, suffixes: set[str]):
             path = Path(dirpath) / fn
             if not _is_scannable(path, suffixes):
                 continue
-            if _skip_path(str(path.relative_to(REPO_ROOT))):
+            if _skip_path(path.relative_to(REPO_ROOT).as_posix()):
                 continue
             yield path
 
@@ -427,7 +427,7 @@ def get_upstream_index() -> tuple[dict[int, list[str]], dict[str, list[str]]]:
         if not root_path.is_dir():
             continue
         for path in iter_tree_files(root_path, TEXT_SUFFIXES):
-            rel = str(path.relative_to(REPO_ROOT))
+            rel = path.relative_to(REPO_ROOT).as_posix()
             base_index.setdefault(path.name, []).append(rel)
             for h in set(_meaningful_hashes(_read_lines(path))):
                 line_index.setdefault(h, []).append(rel)
@@ -536,7 +536,7 @@ def analyze(apache_path: str, thr: float, ct: float, blk: int) -> FileResult:
     upstream = resolve_upstream(apache_path, thr, ct, blk)
     if upstream is None:
         return result
-    result.upstream_path = str(upstream.relative_to(REPO_ROOT))
+    result.upstream_path = upstream.relative_to(REPO_ROOT).as_posix()
     b_lines = _read_lines(upstream)
 
     ratio, containment, longest = compare_code(a_code, code_lines(b_lines))
@@ -558,7 +558,7 @@ def iter_source_files() -> list[str]:
         if not root_path.is_dir():
             continue
         for path in iter_tree_files(root_path, TEXT_SUFFIXES):
-            files.append(str(path.relative_to(REPO_ROOT)))
+            files.append(path.relative_to(REPO_ROOT).as_posix())
     return sorted(files)
 
 
