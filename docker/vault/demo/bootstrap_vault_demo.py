@@ -15,7 +15,7 @@ from urllib import error, parse, request
 from cryptography.fernet import Fernet, InvalidToken
 
 from demo_identity import ensure_backend_src_on_path, wait_for_demo_tenant_identity
-from seeded_secrets import SeededSecretSpec, default_seeded_secret_spec, load_seeded_secret_specs
+from seeded_secrets import SeededSecretSpec, load_seeded_secret_specs
 
 
 def _truthy(value: str | None) -> bool:
@@ -47,6 +47,7 @@ POLICY_TEMPLATE = Path(
 HEALTH_PATH = "sys/health?standbyok=true&perfstandbyok=true"
 LEADER_PATH = "sys/leader"
 _ENCRYPTED_STATE_PREFIX = "m8flow-vault-demo:enc:v1:"
+_LEGACY_DEMO_BOOTSTRAP_SECRET_NAME = "_m8flow_demo_bootstrap"
 
 
 def fail(message: str) -> None:
@@ -150,7 +151,7 @@ def format_missing_secrets_file_message(path: Path) -> str:
 
 def log_missing_secrets_file_notice(_message: str) -> None:
     print(
-        "vault-demo: Vault demo secrets file is missing. Proceeding with the demo bootstrap marker secret.",
+        "vault-demo: Vault demo secrets file is missing. Proceeding without seeding demo secrets.",
         flush=True,
     )
 
@@ -489,7 +490,7 @@ def write_runtime_files(role_id: str, secret_id: str) -> None:
     )
 
 
-def default_demo_bootstrap_secret_spec() -> SeededSecretSpec:
+def resolve_demo_tenant_identity() -> tuple[str, str]:
     ensure_backend_src_on_path()
 
     from m8flow_backend.config import default_organization_alias
@@ -501,48 +502,37 @@ def default_demo_bootstrap_secret_spec() -> SeededSecretSpec:
 
     organization_id = resolve_default_shared_realm_tenant_id()
     if isinstance(organization_id, str) and organization_id.strip():
-        return default_seeded_secret_spec(
-            organization_alias=organization_alias,
-            organization_id=organization_id.strip(),
-        )
+        return organization_alias, organization_id.strip()
 
     demo_identity = wait_for_demo_tenant_identity(
         timeout_seconds=WAIT_TIMEOUT_SECONDS,
         interval_seconds=WAIT_INTERVAL_SECONDS,
         organization_alias=organization_alias,
     )
-    return default_seeded_secret_spec(
-        organization_alias=demo_identity.organization_alias,
-        organization_id=demo_identity.organization_id,
-    )
+    return demo_identity.organization_alias, demo_identity.organization_id
 
 
 def load_seeded_secrets() -> list[SeededSecretSpec]:
     if not SECRETS_FILE.exists():
         log_missing_secrets_file_notice(format_missing_secrets_file_message(SECRETS_FILE))
-        return [default_demo_bootstrap_secret_spec()]
+        return []
 
-    demo_identity = wait_for_demo_tenant_identity(
-        timeout_seconds=WAIT_TIMEOUT_SECONDS,
-        interval_seconds=WAIT_INTERVAL_SECONDS,
-    )
+    organization_alias, organization_id = resolve_demo_tenant_identity()
     return load_seeded_secret_specs(
         SECRETS_FILE,
-        organization_alias=demo_identity.organization_alias,
-        organization_id=demo_identity.organization_id,
+        organization_alias=organization_alias,
+        organization_id=organization_id,
         missing_file_message_factory=format_missing_secrets_file_message,
         logger=log_missing_secrets_file_notice,
     )
 
 
-def verification_target_secret(secrets: list[SeededSecretSpec]) -> SeededSecretSpec:
-    if secrets:
-        return secrets[0]
-    return default_demo_bootstrap_secret_spec()
-
-
 def secret_api_path(logical_path: str) -> str:
     return f"{parse.quote(MOUNT_POINT, safe='')}/data/{parse.quote(logical_path, safe='/')}"
+
+
+def secret_metadata_api_path(logical_path: str) -> str:
+    return f"{parse.quote(MOUNT_POINT, safe='')}/metadata/{parse.quote(logical_path, safe='/')}"
 
 
 def read_secret_value(secret: SeededSecretSpec, token: str, *, allow_missing: bool = False) -> str | None:
@@ -568,6 +558,30 @@ def write_secret_value(secret: SeededSecretSpec, token: str) -> None:
         payload={"data": {"value": secret.value}},
         expected_statuses=(200,),
     )
+
+
+def delete_secret_if_present(secret: SeededSecretSpec, token: str) -> bool:
+    if read_secret_value(secret, token, allow_missing=True) is None:
+        return False
+
+    vault_request(
+        "DELETE",
+        secret_metadata_api_path(seeded_secret_logical_path(secret)),
+        token=token,
+        expected_statuses=(200, 204),
+    )
+    return True
+
+
+def cleanup_legacy_demo_bootstrap_secret(root_token: str) -> bool:
+    organization_alias, organization_id = resolve_demo_tenant_identity()
+    legacy_secret = SeededSecretSpec(
+        tenant_reference=organization_alias,
+        tenant_id=organization_id,
+        secret_name=_LEGACY_DEMO_BOOTSTRAP_SECRET_NAME,
+        value="",
+    )
+    return delete_secret_if_present(legacy_secret, root_token)
 
 
 def seed_demo_secrets(root_token: str, secrets: list[SeededSecretSpec]) -> tuple[int, int]:
@@ -605,8 +619,6 @@ def verify_bootstrap(secrets: list[SeededSecretSpec]) -> None:
     if status.get("initialized") is not True or status.get("sealed") is not False:
         fail("Vault demo verification failed because Vault is not ready.")
 
-    verified_secret = verification_target_secret(secrets)
-
     ensure_backend_src_on_path()
 
     os.environ["M8FLOW_VAULT_ADDR"] = VAULT_ADDR
@@ -628,8 +640,15 @@ def verify_bootstrap(secrets: list[SeededSecretSpec]) -> None:
     if not broker_client.check_availability():
         fail("Vault demo verification failed because the backend Vault client wrapper reported Vault unavailable.")
 
-    TenantVaultProvisioningService(vault_client=broker_client).provision_tenant_identity(verified_secret.tenant_id)
-    logical_path = f"tenants/{verified_secret.tenant_id}/secrets/{verified_secret.secret_name}"
+    if secrets:
+        verified_secret = secrets[0]
+        verified_tenant_id = verified_secret.tenant_id
+        logical_path = f"tenants/{verified_tenant_id}/secrets/{verified_secret.secret_name}"
+    else:
+        _organization_alias, verified_tenant_id = resolve_demo_tenant_identity()
+        logical_path = f"tenants/{verified_tenant_id}/secrets/__vault_demo_probe__"
+
+    TenantVaultProvisioningService(vault_client=broker_client).provision_tenant_identity(verified_tenant_id)
 
     broker_direct_read_blocked = False
     try:
@@ -646,13 +665,16 @@ def verify_bootstrap(secrets: list[SeededSecretSpec]) -> None:
             )
 
     tenant_client = TenantScopedVaultClientProvider(broker_vault_client=broker_client).for_tenant(
-        verified_secret.tenant_id
+        verified_tenant_id
     )
-    wrapper_value = tenant_client.vault_client.retrieve_secret(logical_path)
-    if wrapper_value != verified_secret.value:
-        fail(
-            f"Vault demo verification failed for tenant-scoped backend wrapper path '{logical_path}'."
-        )
+    if secrets:
+        wrapper_value = tenant_client.vault_client.retrieve_secret(logical_path)
+        if wrapper_value != verified_secret.value:
+            fail(
+                f"Vault demo verification failed for tenant-scoped backend wrapper path '{logical_path}'."
+            )
+    else:
+        tenant_client.vault_client.list_secret_names(f"tenants/{verified_tenant_id}/secrets")
 
     write_verification_report(
         broker_direct_read_blocked=broker_direct_read_blocked,
@@ -683,6 +705,8 @@ def main() -> int:
         write_runtime_files(role_id, secret_id)
 
         seeded_secrets = load_seeded_secrets()
+        if not seeded_secrets:
+            cleanup_legacy_demo_bootstrap_secret(root_token)
         seed_demo_secrets(root_token, seeded_secrets)
         verify_bootstrap(seeded_secrets)
 

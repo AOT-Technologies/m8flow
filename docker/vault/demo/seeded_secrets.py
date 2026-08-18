@@ -6,10 +6,6 @@ from typing import Callable
 
 import yaml
 
-DEMO_BOOTSTRAP_SECRET_NAME = "_m8flow_demo_bootstrap"
-DEMO_BOOTSTRAP_SECRET_VALUE = "initialized"
-
-
 @dataclass(frozen=True)
 class SeededSecretSpec:
     tenant_reference: str
@@ -23,15 +19,6 @@ def _normalized_non_empty(value: object, message: str) -> str:
     if normalized:
         return normalized
     raise RuntimeError(message)
-
-
-def default_seeded_secret_spec(*, organization_alias: str, organization_id: str) -> SeededSecretSpec:
-    return SeededSecretSpec(
-        tenant_reference=organization_alias,
-        tenant_id=organization_id,
-        secret_name=DEMO_BOOTSTRAP_SECRET_NAME,
-        value=DEMO_BOOTSTRAP_SECRET_VALUE,
-    )
 
 
 def load_seeded_secret_specs(
@@ -49,14 +36,9 @@ def load_seeded_secret_specs(
         if logger is not None:
             logger(
                 f"{missing_file_message_factory(secrets_file)} "
-                f"Proceeding with a demo bootstrap marker secret for tenant '{resolved_alias}'."
+                f"Proceeding without seeding any demo secrets for tenant '{resolved_alias}'."
             )
-        return [
-            default_seeded_secret_spec(
-                organization_alias=resolved_alias,
-                organization_id=resolved_organization_id,
-            )
-        ]
+        return []
 
     raw_payload = yaml.safe_load(secrets_file.read_text(encoding="utf-8")) or {}
     if not isinstance(raw_payload, dict):

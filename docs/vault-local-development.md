@@ -64,7 +64,7 @@ Both scripts:
 - resolve the canonical tenant UUID from `m8flow_tenant`;
 - compute the tenant AppRole name using the repo's own provisioning logic;
 - mint a fresh tenant AppRole `secret_id`;
-- print the `role_id`, a masked `secret_id` by default, the AppRole auth URL, the bootstrap URL, and the tenant secrets URL.
+- print the `role_id`, a masked `secret_id` by default, the AppRole auth URL, and the tenant secrets URL.
 - only print the real `secret_id` when you pass an explicit reveal flag.
 
 PowerShell:
@@ -176,12 +176,14 @@ What the `vault-demo` profile does on each run:
 - reuses the persisted broker AppRole `secret_id` when it is still valid, otherwise generates a new one;
 - writes `runtime.env` plus encrypted file-backed broker AppRole credentials into `/vault/demo`;
 - if `docker/vault/demo/secrets.yml` exists, seeds it under the canonical tenant UUID that corresponds to the shared-realm `m8flow` organization alias;
-- if `docker/vault/demo/secrets.yml` is absent, writes a harmless `_m8flow_demo_bootstrap` marker secret so the canonical `m8flow` tenant path still exists in Vault after a clean rebuild;
+- if `docker/vault/demo/secrets.yml` is absent, skips tenant secret seeding entirely while still bootstrapping Vault and the canonical `m8flow` tenant identity;
 - skips existing seeded secrets by default;
 - overwrites seeded secrets only when `M8FLOW_VAULT_DEMO_OVERWRITE=true`;
 - provisions the seeded tenant's Vault policy and AppRole through the broker identity;
 - verifies the broker identity cannot read the tenant secret directly;
 - verifies the repo's backend `VaultClient` can read the seeded secret only after switching into a tenant-scoped Vault client.
+
+When no real secret has been seeded yet, the tenant `secrets/` path will not appear in the Vault UI. That is normal for KV v2: empty folders are not persisted separately from secret documents.
 
 That `m8flow` AppRole is the shared local broker identity. It is separate from the per-tenant AppRoles that M8Flow provisions when tenant creation/bootstrap runs.
 

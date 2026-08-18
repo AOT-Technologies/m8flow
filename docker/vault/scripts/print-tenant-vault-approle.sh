@@ -152,9 +152,8 @@ resolve_tenant_row() {
 resolve_role_and_paths() {
   tenant_id=$1
   role_name="$(sanitize_name_component "$tenant_role_prefix")-$(sanitize_name_component "$tenant_id")"
-  bootstrap_path=$(join_vault_path "$path_prefix" tenants "$tenant_id" bootstrap)
   secrets_path=$(join_vault_path "$path_prefix" tenants "$tenant_id" secrets)
-  printf '%s\n%s\n%s\n' "$role_name" "$bootstrap_path" "$secrets_path"
+  printf '%s\n%s\n' "$role_name" "$secrets_path"
 }
 
 usage() {
@@ -206,11 +205,9 @@ tenant_slug=$(printf '%s' "$tenant_row" | cut -d '|' -f 3)
 
 role_and_paths=$(resolve_role_and_paths "$tenant_id") || fail "Could not resolve tenant Vault role metadata."
 role_name=$(printf '%s\n' "$role_and_paths" | sed -n '1p')
-bootstrap_path=$(printf '%s\n' "$role_and_paths" | sed -n '2p')
-secrets_path=$(printf '%s\n' "$role_and_paths" | sed -n '3p')
+secrets_path=$(printf '%s\n' "$role_and_paths" | sed -n '2p')
 
 [ -n "$role_name" ] || fail "Resolved tenant role name was empty."
-[ -n "$bootstrap_path" ] || fail "Resolved tenant bootstrap path was empty."
 [ -n "$secrets_path" ] || fail "Resolved tenant secrets path was empty."
 
 resolved_operator_token=$(resolve_operator_token)
@@ -232,7 +229,6 @@ secret_id=$(compose exec -T \
 [ -n "$secret_id" ] || fail "Generated secret_id for tenant AppRole '$role_name' was empty."
 
 auth_url="$resolved_vault_ui_base_url/ui/vault/auth?with=approle"
-bootstrap_url="$resolved_vault_ui_base_url/ui/vault/secrets/kv/show/$bootstrap_path"
 secrets_url="$resolved_vault_ui_base_url/ui/vault/secrets/kv/list/$secrets_path/"
 
 if [ "$show_secret_id" -eq 1 ]; then
@@ -250,7 +246,6 @@ role_name=$role_name
 role_id=$role_id
 secret_id=$secret_id_output
 approle_auth_url=$auth_url
-bootstrap_url=$bootstrap_url
 tenant_secrets_url=$secrets_url
 
 This script minted a fresh tenant AppRole secret_id for local use.
