@@ -57,12 +57,12 @@ def main() -> int:
             timeout_seconds=WAIT_TIMEOUT_SECONDS,
             interval_seconds=WAIT_INTERVAL_SECONDS,
         )
-        seeded_secret = load_seeded_secret_specs(
+        seeded_secrets = load_seeded_secret_specs(
             secrets_file,
             organization_alias=identity.organization_alias,
             organization_id=identity.organization_id,
             missing_file_message_factory=format_missing_secrets_file_message,
-        )[0]
+        )
 
         from m8flow_backend.services.tenant_scoped_vault_client_provider import TenantScopedVaultClientProvider
         from m8flow_backend.services.tenant_vault_provisioning_service import TenantVaultProvisioningService
@@ -72,9 +72,16 @@ def main() -> int:
         if not broker_client.check_availability():
             fail("Vault client wrapper reported Vault unavailable.")
 
-        logical_path = f"tenants/{seeded_secret.tenant_id}/secrets/{seeded_secret.secret_name}"
+        if seeded_secrets:
+            seeded_secret = seeded_secrets[0]
+            tenant_id = seeded_secret.tenant_id
+            logical_path = f"tenants/{tenant_id}/secrets/{seeded_secret.secret_name}"
+        else:
+            seeded_secret = None
+            tenant_id = identity.organization_id
+            logical_path = f"tenants/{tenant_id}/secrets/__vault_demo_probe__"
         provisioned_identity = TenantVaultProvisioningService(vault_client=broker_client).provision_tenant_identity(
-            seeded_secret.tenant_id
+            tenant_id
         )
 
         broker_direct_read_blocked = False
@@ -91,15 +98,16 @@ def main() -> int:
                     "The local demo should only read tenant secrets through a tenant-scoped Vault client."
                 )
 
-        client = TenantScopedVaultClientProvider(broker_vault_client=broker_client).for_tenant(
-            seeded_secret.tenant_id
-        )
-        resolved_value = client.vault_client.retrieve_secret(logical_path)
-        if resolved_value != seeded_secret.value:
-            fail(
-                f"Vault client wrapper read '{logical_path}', but the resolved value "
-                "did not match the seeded demo secret."
-            )
+        client = TenantScopedVaultClientProvider(broker_vault_client=broker_client).for_tenant(tenant_id)
+        if seeded_secret is not None:
+            resolved_value = client.vault_client.retrieve_secret(logical_path)
+            if resolved_value != seeded_secret.value:
+                fail(
+                    f"Vault client wrapper read '{logical_path}', but the resolved value "
+                    "did not match the seeded demo secret."
+                )
+        else:
+            client.vault_client.list_secret_names(f"tenants/{tenant_id}/secrets")
 
         del broker_direct_read_blocked
         del identity

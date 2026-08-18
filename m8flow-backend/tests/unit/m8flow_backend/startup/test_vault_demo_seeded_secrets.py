@@ -18,17 +18,14 @@ if demo_src_str not in sys.path:
     sys.path.insert(0, demo_src_str)
 
 from seeded_secrets import (
-    DEMO_BOOTSTRAP_SECRET_NAME,
-    DEMO_BOOTSTRAP_SECRET_VALUE,
     SeededSecretSpec,
-    default_seeded_secret_spec,
     load_seeded_secret_specs,
 )
 import bootstrap_vault_demo
 import verify_backend_vault_demo
 
 
-def test_missing_secrets_file_falls_back_to_demo_bootstrap_secret(tmp_path: Path) -> None:
+def test_missing_secrets_file_skips_demo_seeding(tmp_path: Path) -> None:
     messages: list[str] = []
     secrets_file = tmp_path / "secrets.yml"
 
@@ -40,16 +37,9 @@ def test_missing_secrets_file_falls_back_to_demo_bootstrap_secret(tmp_path: Path
         logger=messages.append,
     )
 
-    assert secrets == [
-        SeededSecretSpec(
-            tenant_reference="m8flow",
-            tenant_id="tenant-123",
-            secret_name=DEMO_BOOTSTRAP_SECRET_NAME,
-            value=DEMO_BOOTSTRAP_SECRET_VALUE,
-        )
-    ]
+    assert secrets == []
     assert messages == [
-        f"missing {secrets_file} Proceeding with a demo bootstrap marker secret for tenant 'm8flow'."
+        f"missing {secrets_file} Proceeding without seeding any demo secrets for tenant 'm8flow'."
     ]
 
 
@@ -113,39 +103,133 @@ def test_bootstrap_main_failure_output_logs_safe_exception_text(
     )
 
 
-def test_load_seeded_secrets_missing_file_uses_bootstrap_marker_without_waiting_for_full_demo_identity(
+def test_load_seeded_secrets_missing_file_skips_demo_identity_resolution(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     secrets_file = tmp_path / "secrets.yml"
-    fallback_secret = SeededSecretSpec(
-        tenant_reference="m8flow",
-        tenant_id="tenant-123",
-        secret_name=DEMO_BOOTSTRAP_SECRET_NAME,
-        value=DEMO_BOOTSTRAP_SECRET_VALUE,
-    )
 
     monkeypatch.setattr(bootstrap_vault_demo, "SECRETS_FILE", secrets_file)
-    monkeypatch.setattr(bootstrap_vault_demo, "default_demo_bootstrap_secret_spec", lambda: fallback_secret)
     monkeypatch.setattr(
         bootstrap_vault_demo,
         "wait_for_demo_tenant_identity",
         lambda **kwargs: (_ for _ in ()).throw(AssertionError("should not be called")),
     )
 
-    assert bootstrap_vault_demo.load_seeded_secrets() == [fallback_secret]
+    assert bootstrap_vault_demo.load_seeded_secrets() == []
 
 
-def test_verification_target_secret_falls_back_to_bootstrap_marker(
+def test_verify_bootstrap_without_seeded_secrets_resolves_demo_tenant_identity(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fallback_secret = default_seeded_secret_spec(
-        organization_alias="m8flow",
-        organization_id="tenant-123",
-    )
-    monkeypatch.setattr(bootstrap_vault_demo, "default_demo_bootstrap_secret_spec", lambda: fallback_secret)
+    class FakeBrokerClient:
+        def __init__(self, settings=None):
+            self.settings = settings
 
-    assert bootstrap_vault_demo.verification_target_secret([]) == fallback_secret
+        def check_availability(self):
+            return True
+
+        def retrieve_secret(self, path):
+            assert path == "tenants/tenant-123/secrets/__vault_demo_probe__"
+            return None
+
+    class FakeTenantVaultClient:
+        def list_secret_names(self, path):
+            assert path == "tenants/tenant-123/secrets"
+            return []
+
+    class FakeTenantScopedClient:
+        vault_client = FakeTenantVaultClient()
+
+    class FakeProvider:
+        def __init__(self, *, broker_vault_client):
+            self.broker_vault_client = broker_vault_client
+
+        def for_tenant(self, tenant_id):
+            assert tenant_id == "tenant-123"
+            return FakeTenantScopedClient()
+
+    class FakeProvisioner:
+        def __init__(self, *, vault_client):
+            self.vault_client = vault_client
+
+        def provision_tenant_identity(self, tenant_id):
+            assert tenant_id == "tenant-123"
+            return object()
+
+    monkeypatch.setattr(
+        bootstrap_vault_demo,
+        "wait_for_vault_status",
+        lambda: {"initialized": True, "sealed": False},
+    )
+    monkeypatch.setattr(bootstrap_vault_demo, "resolve_demo_tenant_identity", lambda: ("m8flow", "tenant-123"))
+    monkeypatch.setenv("M8FLOW_BACKEND_ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef")
+    monkeypatch.setattr(bootstrap_vault_demo, "ROLE_ID_FILE", Path("/tmp/role-id"))
+    monkeypatch.setattr(bootstrap_vault_demo, "SECRET_ID_FILE", Path("/tmp/secret-id"))
+
+    fake_provider_module = ModuleType("m8flow_backend.services.tenant_scoped_vault_client_provider")
+    fake_provider_module.TenantScopedVaultClientProvider = FakeProvider
+    monkeypatch.setitem(
+        sys.modules,
+        "m8flow_backend.services.tenant_scoped_vault_client_provider",
+        fake_provider_module,
+    )
+
+    fake_provisioning_module = ModuleType("m8flow_backend.services.tenant_vault_provisioning_service")
+    fake_provisioning_module.TenantVaultProvisioningService = FakeProvisioner
+    monkeypatch.setitem(
+        sys.modules,
+        "m8flow_backend.services.tenant_vault_provisioning_service",
+        fake_provisioning_module,
+    )
+
+    fake_vault_client_module = ModuleType("m8flow_backend.services.vault_client")
+    fake_vault_client_module.VaultClient = FakeBrokerClient
+    fake_vault_client_module.VaultClientError = RuntimeError
+    fake_vault_client_module.VaultSettings = type("VaultSettings", (), {"from_env": staticmethod(lambda: object())})
+    monkeypatch.setitem(
+        sys.modules,
+        "m8flow_backend.services.vault_client",
+        fake_vault_client_module,
+    )
+
+    bootstrap_vault_demo.verify_bootstrap([])
+
+
+def test_cleanup_legacy_demo_bootstrap_secret_deletes_marker_when_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    legacy_secret = SeededSecretSpec(
+        tenant_reference="m8flow",
+        tenant_id="tenant-123",
+        secret_name="_m8flow_demo_bootstrap",
+        value="",
+    )
+
+    monkeypatch.setattr(bootstrap_vault_demo, "resolve_demo_tenant_identity", lambda: ("m8flow", "tenant-123"))
+    monkeypatch.setattr(
+        bootstrap_vault_demo,
+        "read_secret_value",
+        lambda secret, token, allow_missing=False: "initialized" if secret == legacy_secret else None,
+    )
+
+    deleted: list[tuple[str, str, tuple[int, ...]]] = []
+
+    def fake_vault_request(method, api_path, *, token=None, payload=None, expected_statuses=(200,)):
+        del payload
+        deleted.append((method, api_path, expected_statuses))
+        return 204, None, ""
+
+    monkeypatch.setattr(bootstrap_vault_demo, "vault_request", fake_vault_request)
+
+    assert bootstrap_vault_demo.cleanup_legacy_demo_bootstrap_secret("root-token") is True
+    assert deleted == [
+        (
+            "DELETE",
+            "kv/metadata/m8flow/tenants/tenant-123/secrets/_m8flow_demo_bootstrap",
+            (200, 204),
+        )
+    ]
 
 
 def test_vault_request_error_suppresses_response_body(monkeypatch: pytest.MonkeyPatch) -> None:

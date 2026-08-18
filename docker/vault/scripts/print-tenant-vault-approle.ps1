@@ -222,7 +222,6 @@ function Get-TenantVaultMetadata {
   $roleName = '{0}-{1}' -f (Get-SanitizedVaultNameComponent -Value $tenantRolePrefix), (Get-SanitizedVaultNameComponent -Value $TenantId)
   return [pscustomobject]@{
     RoleName = $roleName
-    BootstrapPath = Join-VaultPath -Parts @($pathPrefix, 'tenants', $TenantId, 'bootstrap')
     SecretsPath = Join-VaultPath -Parts @($pathPrefix, 'tenants', $TenantId, 'secrets')
   }
 }
@@ -282,7 +281,6 @@ if (-not $secretId) {
 }
 
 $authUrl = "$resolvedVaultUiBaseUrl/ui/vault/auth?with=approle"
-$bootstrapUrl = "$resolvedVaultUiBaseUrl/ui/vault/secrets/kv/show/$($tenantMetadata.BootstrapPath)"
 $secretsUrl = "$resolvedVaultUiBaseUrl/ui/vault/secrets/kv/list/$($tenantMetadata.SecretsPath)/"
 $secretIdOutputValue = if ($ShowSecretId) {
   Write-StderrWarning 'Printing a fresh tenant AppRole secret_id to stdout. Treat it as a credential and avoid saving it in shell history or CI logs.'
@@ -298,7 +296,6 @@ Write-Host "role_name=$($tenantMetadata.RoleName)"
 Write-Host "role_id=$roleId"
 Write-Host "secret_id=$secretIdOutputValue"
 Write-Host "approle_auth_url=$authUrl"
-Write-Host "bootstrap_url=$bootstrapUrl"
 Write-Host "tenant_secrets_url=$secretsUrl"
 Write-Host ''
 Write-Host 'This script minted a fresh tenant AppRole secret_id for local use.'

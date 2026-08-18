@@ -77,9 +77,9 @@ tenants:
 
 If you want the backend, Celery worker, and Flower to actually switch into Vault-backed secret mode during local development, set `M8FLOW_VAULT_ENABLED=true` in your local `.env`. The `vault-demo` profile now supplies the Vault connection and AppRole files through `/vault/demo/runtime.env`, but it does not force the enable flag anymore.
 
-If `docker/vault/demo/secrets.yml` is absent, `vault-demo` still bootstraps the canonical shared-realm `m8flow` tenant path in Vault by writing a harmless `_m8flow_demo_bootstrap` marker secret. Copy the sample file when you want real local demo secrets seeded instead.
+If `docker/vault/demo/secrets.yml` is absent, `vault-demo` still bootstraps Vault plus the canonical shared-realm `m8flow` tenant identity, but it does not create any tenant secret. Copy the sample file when you want real local demo secrets seeded instead.
 
-With Vault mode enabled, M8Flow also auto-provisions a tenant-scoped Vault policy and AppRole whenever a tenant is created, and it reconciles the default shared `m8flow` tenant during startup bootstrap. As part of that provisioning, the tenant-scoped Vault identity writes a root-level bootstrap marker at `kv/<prefix>/tenants/<tenant-id>/bootstrap` so the tenant path exists immediately even before any user secrets are created. Those per-tenant identities are separate from the shared local broker `m8flow` AppRole managed by `vault-demo`, which should only manage tenant identities and should not read tenant secret values directly.
+With Vault mode enabled, M8Flow also auto-provisions a tenant-scoped Vault policy and AppRole whenever a tenant is created, and it reconciles the default shared `m8flow` tenant during startup bootstrap. Those per-tenant identities are separate from the shared local broker `m8flow` AppRole managed by `vault-demo`, which should only manage tenant identities and should not read tenant secret values directly. In Vault KV v2, a tenant path only becomes visible in the UI after the first real secret is written under that tenant's `secrets/` subtree.
 
 To print one tenant's Vault AppRole login details for the local UI:
 
@@ -91,7 +91,7 @@ sh docker/vault/scripts/print-tenant-vault-approle.sh Test
 powershell -ExecutionPolicy Bypass -File docker/vault/scripts/print-tenant-vault-approle.ps1 -Tenant Test
 ```
 
-Those helpers accept a tenant `id`, `slug`, or `name`, mint a fresh tenant AppRole `secret_id`, and print the AppRole auth URL plus the direct bootstrap/secrets URLs for that tenant. Each run creates a new `secret_id`.
+Those helpers accept a tenant `id`, `slug`, or `name`, mint a fresh tenant AppRole `secret_id`, and print the AppRole auth URL plus the tenant secrets URL. Each run creates a new `secret_id`.
 
 To fully rebuild the local stack, including `vault`, `vault-demo`, and the profile-gated init jobs:
 

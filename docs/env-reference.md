@@ -82,7 +82,7 @@ Examples:
 - `M8FLOW_VAULT_SKIP_VERIFY` / `VAULT_SKIP_VERIFY` (optional): Set to `true` only when TLS certificate verification must be disabled for a non-production environment.
 - `M8FLOW_VAULT_CACERT` / `VAULT_CACERT` (optional): CA bundle path used to verify Vault TLS certificates. When set, it takes precedence over `*_SKIP_VERIFY`.
 - `M8FLOW_VAULT_PORT` (optional, Docker Compose local dev): Host port that publishes the local Vault API and built-in UI. Default: `8200`.
-- `M8FLOW_VAULT_DEMO_OVERWRITE` (optional, Docker Compose local dev): When `true`, the `vault-demo` bootstrap overwrites secrets defined in your local `docker/vault/demo/secrets.yml` file. Start from `docker/vault/demo/secrets.yml.sample` when you want real demo secrets; otherwise the bootstrap falls back to a harmless `_m8flow_demo_bootstrap` marker under the canonical `m8flow` tenant path. Default: `false`.
+- `M8FLOW_VAULT_DEMO_OVERWRITE` (optional, Docker Compose local dev): When `true`, the `vault-demo` bootstrap overwrites secrets defined in your local `docker/vault/demo/secrets.yml` file. Start from `docker/vault/demo/secrets.yml.sample` when you want real demo secrets. If the file is absent, `vault-demo` still bootstraps Vault and tenant identities but does not seed any tenant secret. Default: `false`.
 
 Per-tenant Vault identity notes:
 
@@ -101,6 +101,7 @@ Local Docker Compose notes:
 - The local `vault-demo` profile still creates one shared development broker policy/AppRole (`m8flow`) for backend/Celery startup. That identity is separate from the per-tenant AppRoles created by M8Flow when tenants are provisioned, and it should not read tenant secrets directly.
 - The `vault-demo` profile writes encrypted AppRole credential files, `runtime.env`, and verification artifacts into the named Docker volume mounted at `/vault/demo`.
 - The `vault-demo` bootstrap resolves the shared-realm `m8flow` organization to its canonical tenant UUID before it writes seeded secrets, so there is no post-start metadata mirror phase.
+- In Vault KV v2, empty folders are not real persisted objects. A tenant secrets path becomes visible in the Vault UI only after the first real secret is written under `tenants/{tenant_id}/secrets/...`.
 - Do not point containerized backend/Celery startup at `http://localhost:8200`; inside those containers, `localhost` is the container itself.
 - See [vault-local-development.md](./vault-local-development.md) for init, unseal, policy bootstrap, and reset steps.
 

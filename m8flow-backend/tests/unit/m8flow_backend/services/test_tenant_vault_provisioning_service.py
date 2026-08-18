@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any
-
 import pytest
 
 extension_root = Path(__file__).resolve().parents[4]
@@ -83,23 +81,6 @@ class FakeTenantProvisioningVaultClient:
         )
 
 
-class FakeTenantScopedVaultClient:
-    def __init__(self) -> None:
-        self.documents: dict[str, dict[str, Any]] = {}
-        self.retrieve_calls: list[str] = []
-        self.store_calls: list[dict[str, Any]] = []
-
-    def retrieve_secret_document(self, path: str) -> dict[str, Any] | None:
-        self.retrieve_calls.append(path)
-        document = self.documents.get(path)
-        return None if document is None else dict(document)
-
-    def store_secret_document(self, path: str, document: dict[str, Any]) -> dict[str, Any]:
-        self.store_calls.append({"path": path, "document": dict(document)})
-        self.documents[path] = dict(document)
-        return {"data": {"path": path}}
-
-
 def test_provision_tenant_identity_creates_policy_and_approle(monkeypatch) -> None:
     monkeypatch.setenv("M8FLOW_VAULT_MOUNT_POINT", "kv")
     monkeypatch.setenv("M8FLOW_VAULT_SECRET_PATH_PREFIX", "m8flow")
@@ -108,12 +89,7 @@ def test_provision_tenant_identity_creates_policy_and_approle(monkeypatch) -> No
     monkeypatch.setenv("M8FLOW_VAULT_TENANT_ROLE_PREFIX", "m8flow-tenant-role")
 
     fake_vault_client = FakeTenantProvisioningVaultClient()
-    built_settings: list[VaultSettings] = []
-    tenant_vault_client = FakeTenantScopedVaultClient()
-    service = TenantVaultProvisioningService(
-        vault_client=fake_vault_client,
-        vault_client_builder=lambda settings: built_settings.append(settings) or tenant_vault_client,
-    )
+    service = TenantVaultProvisioningService(vault_client=fake_vault_client)
 
     result = service.provision_tenant_identity("org-uuid-123")
 
@@ -130,9 +106,6 @@ def test_provision_tenant_identity_creates_policy_and_approle(monkeypatch) -> No
         {
             "policy_name": "m8flow-tenant-policy-org-uuid-123",
             "policy": (
-                'path "kv/data/m8flow/tenants/org-uuid-123/bootstrap" {\n'
-                '  capabilities = ["create", "read", "update"]\n'
-                "}\n\n"
                 'path "kv/data/m8flow/tenants/org-uuid-123/secrets/*" {\n'
                 '  capabilities = ["create", "read", "update", "delete"]\n'
                 "}\n\n"
@@ -159,28 +132,6 @@ def test_provision_tenant_identity_creates_policy_and_approle(monkeypatch) -> No
             "mount_point": "approle",
         }
     ]
-    assert built_settings == [
-        VaultSettings(
-            addr="https://vault.example.com",
-            token=None,
-            role_id="role-id-for-m8flow-tenant-role-org-uuid-123",
-            secret_id="secret-id-for-m8flow-tenant-role-org-uuid-123",
-            namespace="engineering",
-            mount_point="kv",
-            secret_path_prefix="m8flow",
-            verify=True,
-            timeout_seconds=5.0,
-        )
-    ]
-    assert tenant_vault_client.retrieve_calls == [
-        "m8flow/tenants/org-uuid-123/bootstrap",
-    ]
-    assert tenant_vault_client.store_calls == [
-        {
-            "path": "m8flow/tenants/org-uuid-123/bootstrap",
-            "document": {"status": "initialized"},
-        }
-    ]
 
 
 def test_provision_tenant_identity_does_not_rotate_secret_for_existing_role(monkeypatch) -> None:
@@ -194,42 +145,14 @@ def test_provision_tenant_identity_does_not_rotate_secret_for_existing_role(monk
     fake_vault_client.roles["m8flow-tenant-role-org-uuid-123"] = {
         "token_policies": ["m8flow-tenant-policy-org-uuid-123"]
     }
-    built_settings: list[VaultSettings] = []
-    tenant_vault_client = FakeTenantScopedVaultClient()
-    tenant_vault_client.documents["m8flow/tenants/org-uuid-123/bootstrap"] = {"status": "initialized"}
-    service = TenantVaultProvisioningService(
-        vault_client=fake_vault_client,
-        vault_client_builder=lambda settings: built_settings.append(settings) or tenant_vault_client,
-    )
+    service = TenantVaultProvisioningService(vault_client=fake_vault_client)
 
     result = service.provision_tenant_identity("org-uuid-123")
 
     assert result.secret_id is None
     assert result.secret_id_accessor is None
     assert result.created_new_secret_id is False
-    assert fake_vault_client.secret_id_calls == [
-        {
-            "role_name": "m8flow-tenant-role-org-uuid-123",
-            "mount_point": "approle",
-        }
-    ]
-    assert built_settings == [
-        VaultSettings(
-            addr="https://vault.example.com",
-            token=None,
-            role_id="role-id-for-m8flow-tenant-role-org-uuid-123",
-            secret_id="secret-id-for-m8flow-tenant-role-org-uuid-123",
-            namespace="engineering",
-            mount_point="kv",
-            secret_path_prefix="m8flow",
-            verify=True,
-            timeout_seconds=5.0,
-        )
-    ]
-    assert tenant_vault_client.retrieve_calls == [
-        "m8flow/tenants/org-uuid-123/bootstrap",
-    ]
-    assert tenant_vault_client.store_calls == []
+    assert fake_vault_client.secret_id_calls == []
 
 
 def test_provision_tenant_identity_sanitizes_policy_and_role_names(monkeypatch) -> None:
@@ -240,11 +163,7 @@ def test_provision_tenant_identity_sanitizes_policy_and_role_names(monkeypatch) 
     monkeypatch.setenv("M8FLOW_VAULT_TENANT_ROLE_PREFIX", "tenant/role")
 
     fake_vault_client = FakeTenantProvisioningVaultClient()
-    tenant_vault_client = FakeTenantScopedVaultClient()
-    service = TenantVaultProvisioningService(
-        vault_client=fake_vault_client,
-        vault_client_builder=lambda settings: tenant_vault_client,
-    )
+    service = TenantVaultProvisioningService(vault_client=fake_vault_client)
 
     result = service.provision_tenant_identity("tenant / blue")
 
