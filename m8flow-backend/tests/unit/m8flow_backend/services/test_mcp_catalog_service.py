@@ -22,18 +22,9 @@ from m8flow_backend.services import mcp_catalog_service
 
 
 def test_mcp_package_is_importable():
-    """Lightweight regression guard for the runtime-only dependency install step.
-
-    ``mcp`` is not a pinned dependency in any pyproject.toml -- it is installed
-    at runtime on top of the synced venv (see bin/run_m8flow_backend.sh's
-    ``sync_m8flow_backend_runtime_dependencies`` and the matching CI step in
-    .github/workflows/ci.yml) precisely because ``mcp_catalog_service`` needs it
-    but spiffworkflow-backend's own pyproject.toml does not declare it. Every
-    other test in this file already depends on that install step transitively
-    (importing ``mcp_catalog_service`` imports ``mcp``), so this mostly gives a
-    clearer failure than an opaque collection error if that step is ever
-    dropped -- but pin it explicitly anyway.
-    """
+    """Regression guard for the runtime-only dependency install step (mcp is
+    installed at runtime, not pinned in any pyproject.toml -- see
+    bin/run_m8flow_backend.sh)."""
     import mcp  # noqa: F401 -- presence is the assertion
 
 
@@ -147,10 +138,21 @@ def _http_status_error(status_code: int) -> httpx.HTTPStatusError:
     )
 
 
-def _make_tool(name: str, *, read_only: bool, tags: list[str] | None = None, properties=None, required=None):
+_NO_DESCRIPTION_OVERRIDE = object()
+
+
+def _make_tool(
+    name: str,
+    *,
+    read_only: bool,
+    tags: list[str] | None = None,
+    properties=None,
+    required=None,
+    description: object = _NO_DESCRIPTION_OVERRIDE,
+):
     return SimpleNamespace(
         name=name,
-        description=f"{name} description",
+        description=f"{name} description" if description is _NO_DESCRIPTION_OVERRIDE else description,
         meta={"fastmcp": {"tags": tags or []}},
         annotations=SimpleNamespace(readOnlyHint=read_only),
         inputSchema={"properties": properties or {}, "required": required or []},
@@ -206,11 +208,8 @@ def test_get_catalog_returns_error_dict_instead_of_raising_on_connection_failure
 
 
 def test_get_catalog_error_message_never_leaks_raw_exception_text(monkeypatch):
-    """Security regression guard: a connection failure's raw exception text --
-    which can carry internal hostnames, ports, or OS-level socket detail (e.g.
-    ``[Errno 61] Connection refused: internal-mcp.svc.cluster.local:9000``) --
-    must never reach this API response. The full exception is still logged
-    server-side (see the ``logger.warning(...)`` in ``get_catalog``)."""
+    """Raw exception text (can carry internal hostnames/ports) must never
+    reach the API response."""
     _install_fake_client(
         monkeypatch,
         session=None,
@@ -238,9 +237,7 @@ def test_get_catalog_error_message_never_leaks_mcp_error_details(monkeypatch):
 
 
 def test_get_catalog_returns_error_dict_when_server_url_not_configured(monkeypatch):
-    """503, not the 502 every other get_catalog failure defaults to: this path
-    never attempts an outbound call at all, so it is this backend's own
-    misconfiguration rather than 'the upstream MCP server misbehaved'."""
+    """503, not 502: this path never attempts an outbound call."""
     monkeypatch.setattr(mcp_catalog_service, "mcp_server_url", lambda: "")
 
     result = asyncio.run(mcp_catalog_service.get_catalog("token-abc"))
@@ -252,13 +249,8 @@ def test_get_catalog_returns_error_dict_when_server_url_not_configured(monkeypat
 
 
 def test_get_catalog_tolerates_a_tool_whose_input_schema_is_malformed(monkeypatch):
-    """Regression guard: a buggy/malicious upstream MCP server can return a
-    structurally-valid Tool (satisfying the mcp SDK's own pydantic parsing)
-    whose inputSchema.properties/required are not a dict/list at all -- the mcp
-    SDK never schema-validates those nested values itself. _tool_parameters runs
-    from get_catalog's list comprehension, which sits OUTSIDE get_catalog's own
-    connection/protocol try/except, so a single malformed tool entry must not
-    500 the whole catalog."""
+    """A malformed upstream inputSchema.properties/required (not a dict/list)
+    must degrade that tool's parameters to [] rather than crash the catalog."""
     well_formed_tool = _make_tool(
         "list_reports", read_only=True, properties={"limit": {"type": "integer"}}, required=["limit"]
     )
@@ -276,17 +268,39 @@ def test_get_catalog_tolerates_a_tool_whose_input_schema_is_malformed(monkeypatc
     assert tools_by_name["list_reports"]["parameters"] == [
         {"name": "limit", "type": "integer", "required": True, "description": ""}
     ]
-    # Degrades to an empty parameter list rather than raising.
     assert tools_by_name["weird_tool"]["parameters"] == []
 
 
+def test_get_catalog_coerces_a_non_string_tool_description_to_empty_string(monkeypatch):
+    """A non-string tool.description (dict/int/None) must coerce to "" rather
+    than reach the API response."""
+    dict_description_tool = _make_tool("weird_tool", read_only=True, description={"nested": "dict"})
+    int_description_tool = _make_tool("other_weird_tool", read_only=True, description=404)
+    none_description_tool = _make_tool("no_description_tool", read_only=True, description=None)
+
+    session = SimpleNamespace(
+        initialize=AsyncMock(return_value=SimpleNamespace(protocolVersion="2024-11-05")),
+        list_tools=AsyncMock(
+            return_value=SimpleNamespace(
+                tools=[dict_description_tool, int_description_tool, none_description_tool]
+            )
+        ),
+    )
+    _install_fake_client(monkeypatch, session)
+
+    result = asyncio.run(mcp_catalog_service.get_catalog("token-abc"))
+
+    descriptions_by_name = {tool["name"]: tool["description"] for tool in result["tools"]}
+    assert descriptions_by_name == {
+        "weird_tool": "",
+        "other_weird_tool": "",
+        "no_description_tool": "",
+    }
+
+
 def test_get_catalog_forwards_a_well_formed_bearer_header_for_an_empty_or_whitespace_token(monkeypatch):
-    """Locks in _auth_headers' documented behavior end to end: an empty/blank
-    token still produces a well-formed (if empty) Bearer header, never a
-    missing Authorization header and never a crash. Complements
-    test_mcp_tools_controller.py's
-    test_list_mcp_tools_catalog_forwards_empty_token_when_header_missing, which
-    covers the controller's half of this same contract."""
+    """An empty/blank token still produces a well-formed Bearer header, never
+    a missing Authorization header."""
     session = SimpleNamespace(
         initialize=AsyncMock(return_value=SimpleNamespace(protocolVersion="2024-11-05")),
         list_tools=AsyncMock(return_value=SimpleNamespace(tools=[])),
@@ -333,11 +347,8 @@ def test_ping_failure_returns_not_ok_without_raising(monkeypatch):
 
 
 def test_ping_failure_response_never_carries_raw_exception_text(monkeypatch):
-    """ping()'s response shape (ok/latency_ms/protocol_version/authorized) has no
-    field for an error message at all -- lock that in explicitly so a future edit
-    cannot reintroduce one populated from raw exception text (the failure mode
-    get_catalog/execute_tool's ``_connection_error_message`` sanitization guards
-    against)."""
+    """ping()'s response shape has no field for an error message at all --
+    lock that in so it can't be reintroduced from raw exception text."""
     _install_fake_client(
         monkeypatch,
         session=None,
@@ -356,9 +367,7 @@ def test_ping_failure_response_never_carries_raw_exception_text(monkeypatch):
 
 
 def test_execute_tool_returns_503_when_server_url_not_configured(monkeypatch):
-    """Same 503-vs-502 distinction as get_catalog's: this path never attempts an
-    outbound call, so it is this backend's own misconfiguration, not an upstream
-    failure."""
+    """Same 503-vs-502 distinction as get_catalog's."""
     monkeypatch.setattr(mcp_catalog_service, "mcp_server_url", lambda: "")
 
     result = asyncio.run(mcp_catalog_service.execute_tool("token-abc", "list_reports", {}, False))
@@ -477,9 +486,7 @@ def test_execute_tool_still_forwards_a_non_auth_upstream_status(monkeypatch):
 
 
 def test_execute_tool_error_message_never_leaks_raw_exception_text(monkeypatch):
-    """Same sanitization as get_catalog's for the non-HTTP (plain connection
-    failure) branch: the raw exception text must never reach this response,
-    only the generic, sanitized message. See _connection_error_message."""
+    """Same sanitization as get_catalog's, for the non-HTTP failure branch."""
     _install_fake_client(
         monkeypatch,
         session=None,

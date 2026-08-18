@@ -602,11 +602,9 @@ jobs:
       - name: Install uv
         run: pip install uv
       - name: Install M8Flow MCP dependencies
-        # Plain `pip install -e ".[dev]"` cannot resolve this: m8flow-telemetry[asgi]
-        # is a local sibling package pinned via [tool.uv.sources] (path = "../m8flow-telemetry")
-        # in pyproject.toml, a uv-only mechanism -- plain pip ignores it and looks for
-        # "m8flow-telemetry" on PyPI instead, where it does not exist. `uv sync` reads
-        # that source override (and the checked-in uv.lock) correctly.
+        # Plain pip can't resolve m8flow-telemetry[asgi]: it's a local sibling
+        # package pinned via [tool.uv.sources] in pyproject.toml, a uv-only
+        # mechanism. `uv sync` reads that override (and uv.lock) correctly.
         working-directory: m8flow-mcp
         run: uv sync --extra dev
       - name: Test M8Flow MCP

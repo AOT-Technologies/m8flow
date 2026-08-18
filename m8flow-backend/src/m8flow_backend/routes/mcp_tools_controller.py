@@ -58,11 +58,9 @@ def _bearer_token() -> str:
 def list_mcp_tools_catalog() -> flask.wrappers.Response:
     """GET /m8flow/mcp-tools -- the live MCP tool catalog, as this caller.
 
-    ``get_catalog`` defaults to 502 (upstream unreachable/misbehaving) for a
-    plain ``{"error": ...}``, but sets an explicit ``status_code`` of 503 for
-    its one self-inflicted failure -- ``M8FLOW_MCP_SERVER_URL`` not configured,
-    which never even attempts an outbound call. Reading that key here (instead
-    of hardcoding 502) lets that distinction reach the HTTP response.
+    ``get_catalog`` returns an explicit ``status_code`` (503) only for its
+    self-inflicted failure -- ``M8FLOW_MCP_SERVER_URL`` not configured; every
+    other failure is keyless and defaults to 502 here.
     """
     result = _run_coroutine(mcp_catalog_service.get_catalog(_bearer_token()))
     if "error" in result:
@@ -87,12 +85,9 @@ def execute_mcp_tool(body: dict[str, Any] | None) -> flask.wrappers.Response:
     code. An auth rejection by the MCP server itself is normalized to 502 by the
     service, so it never surfaces here as this endpoint's own 401/403.
 
-    api.yml's requestBody schema marks this ``required: true`` / ``type:
-    object``, but that schema validation runs in Connexion's request pipeline,
-    not in this function -- a malformed or empty JSON body can still reach here
-    as ``None`` (or, in principle, some other non-dict value). Guard for that
-    explicitly: this must answer with a controlled 400, not an unhandled
-    AttributeError (-> 500) from calling ``.get`` on a non-dict.
+    api.yml's requestBody schema validates shape (object body, non-empty
+    tool_name, object arguments), but that runs in Connexion's request
+    pipeline, not in this function, so each is guarded explicitly below too.
     """
     if not isinstance(body, dict):
         return error_response(
@@ -102,14 +97,14 @@ def execute_mcp_tool(body: dict[str, Any] | None) -> flask.wrappers.Response:
         )
 
     tool_name = body.get("tool_name")
+    if not isinstance(tool_name, str) or not tool_name.strip():
+        return error_response(
+            "invalid_request_body",
+            "The 'tool_name' field must be a non-empty string.",
+            400,
+        )
+
     arguments = body.get("arguments") or {}
-    # Same defense-in-depth reasoning as the `body` guard above: api.yml types
-    # `arguments` as an object, but that is Connexion's schema validation, not
-    # this function's. A non-dict `arguments` (e.g. a JSON array or string)
-    # would otherwise sail through to mcp_catalog_service.execute_tool() and
-    # fail deep inside the MCP client SDK's own call -- landing as an opaque,
-    # misleadingly-worded 502 ("Could not connect to the MCP server.") instead
-    # of an immediate, accurate 400.
     if not isinstance(arguments, dict):
         return error_response(
             "invalid_request_body",
