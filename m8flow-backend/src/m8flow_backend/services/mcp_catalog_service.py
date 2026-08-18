@@ -77,15 +77,9 @@ def _tool_badge(tool: Any) -> str:
 def _tool_parameters(tool: Any) -> list[dict[str, Any]]:
     """Derive the catalog's parameter list from a tool's JSON-Schema inputSchema.
 
-    ``inputSchema`` only has to be *some* dict to satisfy the ``mcp`` client
-    SDK's own pydantic parsing of the wire ``Tool`` object -- its nested
-    ``properties``/``required`` are never themselves schema-validated, so a
-    buggy or malicious upstream MCP server can hand back a well-formed ``Tool``
-    whose ``properties``/``required`` are not a dict/list at all (e.g. a bare
-    string). This function runs from ``get_catalog``'s list comprehension,
-    outside that function's own connection/protocol try/except, so it must not
-    raise on that shape itself -- a single bad tool entry must degrade to an
-    empty parameter list for that tool, not 500 the whole catalog.
+    ``properties``/``required`` are never schema-validated by the mcp SDK
+    itself, so a malformed upstream tool must degrade to an empty parameter
+    list here rather than raise -- this runs outside get_catalog's try/except.
     """
     schema = getattr(tool, "inputSchema", None) or {}
     properties = schema.get("properties") or {}
@@ -109,12 +103,24 @@ def _tool_parameters(tool: Any) -> list[dict[str, Any]]:
     return parameters
 
 
+def _tool_description(tool: Any) -> str:
+    """A tool's description, guaranteed to be a string.
+
+    The mcp SDK types this ``str | None``, but this codebase pins a wide
+    ``mcp>=1.9.0,<2.0.0`` range -- guard it explicitly too, same as
+    ``_tool_parameters``, so a non-string value degrades to ``""`` instead of
+    reaching the API response.
+    """
+    description = getattr(tool, "description", None)
+    return description if isinstance(description, str) else ""
+
+
 def _tool_summary(tool: Any) -> dict[str, Any]:
     """Catalog entry for one MCP tool: display metadata plus derived parameters."""
     tags = _tool_tags(tool)
     return {
         "name": tool.name,
-        "description": tool.description or "",
+        "description": _tool_description(tool),
         "category": tags[0] if tags else "uncategorized",
         "badge": _tool_badge(tool),
         "parameters": _tool_parameters(tool),
@@ -159,13 +165,9 @@ def _http_status_from_exception(exc: BaseException) -> int | None:
 def _connection_error_message(exc: BaseException) -> str:
     """A clear, user-facing message for an MCP connection/auth/protocol failure.
 
-    Deliberately never interpolates the raw exception text into the returned
-    message: an ``httpx.ConnectError``/``McpError``'s ``str()`` can carry
-    internal hostnames, ports, or other upstream diagnostic detail that must not
-    reach an API response. The full exception is already logged server-side by
-    every caller of this function (each wraps its call in a ``logger.warning``
-    right before returning) -- this return value is client-facing only, so an
-    HTTP status code (not sensitive) is as specific as it gets.
+    Never interpolates the raw exception text: it can carry internal
+    hostnames/ports that must not reach an API response. The full exception
+    is still logged server-side by every caller of this function.
     """
     leaf = _unwrap_exception_group(exc)
     if isinstance(leaf, httpx.HTTPStatusError):
@@ -189,12 +191,10 @@ async def get_catalog(token: str) -> dict[str, Any]:
     return-a-dict-rather-than-raise convention this codebase's controllers already
     use for outbound-call failures (see ``routes/keycloak_controller.py``).
 
-    A missing ``M8FLOW_MCP_SERVER_URL`` also carries an explicit
-    ``"status_code": 503``: unlike every other error path here, this one never
-    even attempts an outbound call, so it is this backend's own misconfiguration
-    rather than "the upstream MCP server is unreachable/misbehaving" (502) --
-    ``list_mcp_tools_catalog`` reads this key and falls back to 502 for every
-    other (keyless) error dict this function returns.
+    A missing ``M8FLOW_MCP_SERVER_URL`` carries an explicit ``"status_code":
+    503`` (no outbound call is ever attempted, so it's our own
+    misconfiguration, not an upstream failure) -- every other error here stays
+    keyless, defaulting to 502 in ``list_mcp_tools_catalog``.
     """
     server_url = mcp_server_url()
     if not server_url:
@@ -294,9 +294,8 @@ async def execute_tool(
     cancellation errors. Both instead record their outcome in ``early`` and let the
     session close normally before this returns.
 
-    A missing ``M8FLOW_MCP_SERVER_URL`` is reported as 503, not 502: as in
-    ``get_catalog``, this path never attempts an outbound call at all, so it is
-    this backend's own misconfiguration rather than an upstream failure.
+    A missing ``M8FLOW_MCP_SERVER_URL`` is reported as 503, not 502, for the
+    same reason as ``get_catalog``: no outbound call is ever attempted.
     """
     server_url = mcp_server_url()
     if not server_url:

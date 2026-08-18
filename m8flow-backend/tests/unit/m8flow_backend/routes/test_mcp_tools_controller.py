@@ -58,10 +58,8 @@ def test_list_mcp_tools_catalog_maps_error_dict_to_502():
 
 
 def test_list_mcp_tools_catalog_passes_through_a_service_provided_status_code():
-    """get_catalog sets an explicit status_code (503) only for its one
-    self-inflicted failure -- M8FLOW_MCP_SERVER_URL not configured -- to
-    distinguish it from every other (keyless, defaults-to-502) failure here.
-    The controller must forward that 503, not flatten it to the 502 default."""
+    """get_catalog's one explicit status_code (503) must be forwarded, not
+    flattened to the 502 default."""
     with _request_context(), patch.object(
         mcp_tools_controller.mcp_catalog_service,
         "get_catalog",
@@ -190,9 +188,8 @@ def test_execute_mcp_tool_defaults_to_400_when_service_omits_status_code():
 
 
 def test_execute_mcp_tool_returns_400_not_500_when_body_is_none():
-    """Regression guard: api.yml's requestBody schema is enforced by Connexion's
-    request pipeline, not by this function -- a malformed/empty JSON body can
-    still reach here as None. Dereferencing `.get` on it must not 500."""
+    """A malformed/empty JSON body can reach here as None; dereferencing
+    `.get` on it must not 500."""
     with _request_context(), patch.object(
         mcp_tools_controller.mcp_catalog_service,
         "execute_tool",
@@ -221,11 +218,8 @@ def test_execute_mcp_tool_returns_400_not_500_when_body_is_not_a_dict():
 
 
 def test_execute_mcp_tool_returns_400_when_arguments_is_not_a_dict():
-    """api.yml types `arguments` as an object, but that is Connexion's schema
-    validation, not this function's. Without this guard, a non-dict arguments
-    value (e.g. a JSON array) would sail through to the service and fail deep
-    inside the MCP client SDK's own call, surfacing as an opaque, misleadingly-
-    worded 502 instead of an immediate, accurate 400."""
+    """A non-dict arguments value would otherwise reach the service and fail
+    there as an opaque 502 instead of an immediate 400."""
     with _request_context(), patch.object(
         mcp_tools_controller.mcp_catalog_service,
         "execute_tool",
@@ -239,3 +233,49 @@ def test_execute_mcp_tool_returns_400_when_arguments_is_not_a_dict():
     body = json.loads(response.get_data(as_text=True))
     assert body["error_code"] == "invalid_request_body"
     mock_execute.assert_not_awaited()
+
+
+def test_execute_mcp_tool_returns_400_when_tool_name_is_missing():
+    with _request_context(), patch.object(
+        mcp_tools_controller.mcp_catalog_service,
+        "execute_tool",
+        AsyncMock(side_effect=AssertionError("the service must never be called for a missing tool_name")),
+    ) as mock_execute:
+        response = mcp_tools_controller.execute_mcp_tool({"arguments": {}})
+
+    assert response.status_code == 400
+    body = json.loads(response.get_data(as_text=True))
+    assert body["error_code"] == "invalid_request_body"
+    mock_execute.assert_not_awaited()
+
+
+def test_execute_mcp_tool_returns_400_when_tool_name_is_blank_or_whitespace():
+    for blank_tool_name in ["", "   "]:
+        with _request_context(), patch.object(
+            mcp_tools_controller.mcp_catalog_service,
+            "execute_tool",
+            AsyncMock(side_effect=AssertionError("the service must never be called for a blank tool_name")),
+        ) as mock_execute:
+            response = mcp_tools_controller.execute_mcp_tool({"tool_name": blank_tool_name})
+
+        assert response.status_code == 400, blank_tool_name
+        body = json.loads(response.get_data(as_text=True))
+        assert body["error_code"] == "invalid_request_body"
+        mock_execute.assert_not_awaited()
+
+
+def test_execute_mcp_tool_returns_400_when_tool_name_is_not_a_string():
+    for non_string_tool_name in [123, ["list_reports"], {"name": "list_reports"}]:
+        with _request_context(), patch.object(
+            mcp_tools_controller.mcp_catalog_service,
+            "execute_tool",
+            AsyncMock(
+                side_effect=AssertionError("the service must never be called for a non-string tool_name")
+            ),
+        ) as mock_execute:
+            response = mcp_tools_controller.execute_mcp_tool({"tool_name": non_string_tool_name})
+
+        assert response.status_code == 400, non_string_tool_name
+        body = json.loads(response.get_data(as_text=True))
+        assert body["error_code"] == "invalid_request_body"
+        mock_execute.assert_not_awaited()
