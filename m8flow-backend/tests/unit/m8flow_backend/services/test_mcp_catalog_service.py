@@ -15,8 +15,26 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import httpx
+from mcp import McpError
+from mcp.types import ErrorData
 
 from m8flow_backend.services import mcp_catalog_service
+
+
+def test_mcp_package_is_importable():
+    """Lightweight regression guard for the runtime-only dependency install step.
+
+    ``mcp`` is not a pinned dependency in any pyproject.toml -- it is installed
+    at runtime on top of the synced venv (see bin/run_m8flow_backend.sh's
+    ``sync_m8flow_backend_runtime_dependencies`` and the matching CI step in
+    .github/workflows/ci.yml) precisely because ``mcp_catalog_service`` needs it
+    but spiffworkflow-backend's own pyproject.toml does not declare it. Every
+    other test in this file already depends on that install step transitively
+    (importing ``mcp_catalog_service`` imports ``mcp``), so this mostly gives a
+    clearer failure than an opaque collection error if that step is ever
+    dropped -- but pin it explicitly anyway.
+    """
+    import mcp  # noqa: F401 -- presence is the assertion
 
 
 class _FakeStreamContext:
@@ -184,8 +202,39 @@ def test_get_catalog_returns_error_dict_instead_of_raising_on_connection_failure
 
     result = asyncio.run(mcp_catalog_service.get_catalog("token-abc"))
 
-    assert list(result.keys()) == ["error"]
-    assert "boom" in result["error"]
+    assert result == {"error": "Could not connect to the MCP server."}
+
+
+def test_get_catalog_error_message_never_leaks_raw_exception_text(monkeypatch):
+    """Security regression guard: a connection failure's raw exception text --
+    which can carry internal hostnames, ports, or OS-level socket detail (e.g.
+    ``[Errno 61] Connection refused: internal-mcp.svc.cluster.local:9000``) --
+    must never reach this API response. The full exception is still logged
+    server-side (see the ``logger.warning(...)`` in ``get_catalog``)."""
+    _install_fake_client(
+        monkeypatch,
+        session=None,
+        raise_exc=httpx.ConnectError(
+            "[Errno 61] Connection refused: internal-mcp.svc.cluster.local:9000"
+        ),
+    )
+
+    result = asyncio.run(mcp_catalog_service.get_catalog("token-abc"))
+
+    assert result == {"error": "Could not connect to the MCP server."}
+    assert "internal-mcp.svc.cluster.local" not in result["error"]
+    assert "9000" not in result["error"]
+
+
+def test_get_catalog_error_message_never_leaks_mcp_error_details(monkeypatch):
+    """Same sanitization for a protocol-level McpError from the server itself."""
+    mcp_error = McpError(ErrorData(code=-32000, message="internal trace: token=super-secret-value"))
+    _install_fake_client(monkeypatch, session=None, raise_exc=mcp_error)
+
+    result = asyncio.run(mcp_catalog_service.get_catalog("token-abc"))
+
+    assert result == {"error": "MCP server rejected the request."}
+    assert "super-secret-value" not in result["error"]
 
 
 def test_get_catalog_returns_error_dict_when_server_url_not_configured(monkeypatch):
@@ -224,6 +273,24 @@ def test_ping_failure_returns_not_ok_without_raising(monkeypatch):
     assert result["protocol_version"] is None
     # A plain connection failure never disproves authorization.
     assert result["authorized"] is True
+
+
+def test_ping_failure_response_never_carries_raw_exception_text(monkeypatch):
+    """ping()'s response shape (ok/latency_ms/protocol_version/authorized) has no
+    field for an error message at all -- lock that in explicitly so a future edit
+    cannot reintroduce one populated from raw exception text (the failure mode
+    get_catalog/execute_tool's ``_connection_error_message`` sanitization guards
+    against)."""
+    _install_fake_client(
+        monkeypatch,
+        session=None,
+        raise_exc=httpx.ConnectError("internal-mcp.svc.cluster.local:9000 refused"),
+    )
+
+    result = asyncio.run(mcp_catalog_service.ping("token-abc"))
+
+    assert set(result.keys()) == {"ok", "latency_ms", "protocol_version", "authorized"}
+    assert "internal-mcp" not in str(result)
 
 
 # ---------------------------------------------------------------------------
@@ -335,6 +402,23 @@ def test_execute_tool_still_forwards_a_non_auth_upstream_status(monkeypatch):
 
     assert result["status_code"] == 429
     assert result["message"] == "MCP server returned HTTP 429."
+
+
+def test_execute_tool_error_message_never_leaks_raw_exception_text(monkeypatch):
+    """Same sanitization as get_catalog's for the non-HTTP (plain connection
+    failure) branch: the raw exception text must never reach this response,
+    only the generic, sanitized message. See _connection_error_message."""
+    _install_fake_client(
+        monkeypatch,
+        session=None,
+        raise_exc=httpx.ConnectError("internal-mcp.svc.cluster.local:9000 refused"),
+    )
+
+    result = asyncio.run(mcp_catalog_service.execute_tool("token-abc", "list_reports", {}, True))
+
+    assert result["status_code"] == 502
+    assert result["message"] == "Could not connect to the MCP server."
+    assert "internal-mcp" not in result["message"]
 
 
 def test_execute_tool_returns_an_error_dict_when_the_session_swallows_the_call_failure(monkeypatch):

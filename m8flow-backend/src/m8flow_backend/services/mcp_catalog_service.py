@@ -143,7 +143,16 @@ def _http_status_from_exception(exc: BaseException) -> int | None:
 
 
 def _connection_error_message(exc: BaseException) -> str:
-    """A clear, user-facing message for an MCP connection/auth/protocol failure."""
+    """A clear, user-facing message for an MCP connection/auth/protocol failure.
+
+    Deliberately never interpolates the raw exception text into the returned
+    message: an ``httpx.ConnectError``/``McpError``'s ``str()`` can carry
+    internal hostnames, ports, or other upstream diagnostic detail that must not
+    reach an API response. The full exception is already logged server-side by
+    every caller of this function (each wraps its call in a ``logger.warning``
+    right before returning) -- this return value is client-facing only, so an
+    HTTP status code (not sensitive) is as specific as it gets.
+    """
     leaf = _unwrap_exception_group(exc)
     if isinstance(leaf, httpx.HTTPStatusError):
         status = leaf.response.status_code if leaf.response is not None else None
@@ -151,8 +160,8 @@ def _connection_error_message(exc: BaseException) -> str:
             return f"Not authorized to reach the MCP server (HTTP {status})."
         return f"MCP server returned HTTP {status}."
     if isinstance(leaf, McpError):
-        return f"MCP server rejected the request: {leaf}"
-    return f"Could not connect to the MCP server: {leaf}"
+        return "MCP server rejected the request."
+    return "Could not connect to the MCP server."
 
 
 async def get_catalog(token: str) -> dict[str, Any]:
