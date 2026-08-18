@@ -1,4 +1,4 @@
-"""Add generic audit_log table for Vault and future application audit events.
+"""Add generic m8flow_audit_log table for Vault and future application audit events.
 
 Revision ID: q1r2s3t4u5v6
 Revises: p9i0j1k2l3m4
@@ -16,7 +16,15 @@ down_revision = "p9i0j1k2l3m4"
 branch_labels = None
 depends_on = None
 
-AUDIT_LOG_TABLE = "audit_log"
+AUDIT_LOG_TABLE = "m8flow_audit_log"
+AUDIT_LOG_CATEGORY_INDEX = "ix_m8flow_audit_log_category"
+AUDIT_LOG_CORRELATION_INDEX = "ix_m8flow_audit_log_correlation_id"
+AUDIT_LOG_EVENT_TYPE_INDEX = "ix_m8flow_audit_log_event_type"
+AUDIT_LOG_TENANT_INDEX = "ix_m8flow_audit_log_m8f_tenant_id"
+AUDIT_LOG_REQUEST_INDEX = "ix_m8flow_audit_log_request_id"
+AUDIT_LOG_STATUS_INDEX = "ix_m8flow_audit_log_status"
+AUDIT_LOG_CATEGORY_CREATED_AT_INDEX = "ix_m8flow_audit_log_category_created_at"
+AUDIT_LOG_TENANT_CREATED_AT_INDEX = "ix_m8flow_audit_log_tenant_created_at"
 
 
 def upgrade():
@@ -45,14 +53,22 @@ def upgrade():
     )
 
     with op.batch_alter_table(AUDIT_LOG_TABLE, schema=None) as batch_op:
-        batch_op.create_index(batch_op.f("ix_audit_log_category"), ["category"], unique=False)
-        batch_op.create_index(batch_op.f("ix_audit_log_correlation_id"), ["correlation_id"], unique=False)
-        batch_op.create_index(batch_op.f("ix_audit_log_event_type"), ["event_type"], unique=False)
-        batch_op.create_index(batch_op.f("ix_audit_log_m8f_tenant_id"), ["m8f_tenant_id"], unique=False)
-        batch_op.create_index(batch_op.f("ix_audit_log_request_id"), ["request_id"], unique=False)
-        batch_op.create_index(batch_op.f("ix_audit_log_status"), ["status"], unique=False)
-        batch_op.create_index("ix_audit_log_category_created_at", ["category", "created_at_in_seconds"], unique=False)
-        batch_op.create_index("ix_audit_log_tenant_created_at", ["m8f_tenant_id", "created_at_in_seconds"], unique=False)
+        batch_op.create_index(AUDIT_LOG_CATEGORY_INDEX, ["category"], unique=False)
+        batch_op.create_index(AUDIT_LOG_CORRELATION_INDEX, ["correlation_id"], unique=False)
+        batch_op.create_index(AUDIT_LOG_EVENT_TYPE_INDEX, ["event_type"], unique=False)
+        batch_op.create_index(AUDIT_LOG_TENANT_INDEX, ["m8f_tenant_id"], unique=False)
+        batch_op.create_index(AUDIT_LOG_REQUEST_INDEX, ["request_id"], unique=False)
+        batch_op.create_index(AUDIT_LOG_STATUS_INDEX, ["status"], unique=False)
+        batch_op.create_index(
+            AUDIT_LOG_CATEGORY_CREATED_AT_INDEX,
+            ["category", "created_at_in_seconds"],
+            unique=False,
+        )
+        batch_op.create_index(
+            AUDIT_LOG_TENANT_CREATED_AT_INDEX,
+            ["m8f_tenant_id", "created_at_in_seconds"],
+            unique=False,
+        )
 
     with op.batch_alter_table(AUDIT_LOG_TABLE, schema=None) as batch_op:
         batch_op.alter_column("severity", server_default=None)
@@ -60,13 +76,13 @@ def upgrade():
 
 def downgrade():
     with op.batch_alter_table(AUDIT_LOG_TABLE, schema=None) as batch_op:
-        batch_op.drop_index("ix_audit_log_tenant_created_at")
-        batch_op.drop_index("ix_audit_log_category_created_at")
-        batch_op.drop_index(batch_op.f("ix_audit_log_status"))
-        batch_op.drop_index(batch_op.f("ix_audit_log_request_id"))
-        batch_op.drop_index(batch_op.f("ix_audit_log_m8f_tenant_id"))
-        batch_op.drop_index(batch_op.f("ix_audit_log_event_type"))
-        batch_op.drop_index(batch_op.f("ix_audit_log_correlation_id"))
-        batch_op.drop_index(batch_op.f("ix_audit_log_category"))
+        batch_op.drop_index(AUDIT_LOG_TENANT_CREATED_AT_INDEX)
+        batch_op.drop_index(AUDIT_LOG_CATEGORY_CREATED_AT_INDEX)
+        batch_op.drop_index(AUDIT_LOG_STATUS_INDEX)
+        batch_op.drop_index(AUDIT_LOG_REQUEST_INDEX)
+        batch_op.drop_index(AUDIT_LOG_TENANT_INDEX)
+        batch_op.drop_index(AUDIT_LOG_EVENT_TYPE_INDEX)
+        batch_op.drop_index(AUDIT_LOG_CORRELATION_INDEX)
+        batch_op.drop_index(AUDIT_LOG_CATEGORY_INDEX)
 
     op.drop_table(AUDIT_LOG_TABLE)

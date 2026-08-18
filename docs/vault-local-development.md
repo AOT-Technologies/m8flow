@@ -187,6 +187,54 @@ That `m8flow` AppRole is the shared local broker identity. It is separate from t
 
 The backend, Celery worker, Celery Flower, and the optional NATS workers mount `/vault/demo` read-only. Their startup commands load `runtime.env` automatically when it exists so the demo profile can supply the Vault address plus file-backed AppRole credentials. `M8FLOW_VAULT_ENABLED` is still controlled by your local `.env`.
 
+## Backend Vault Access Flow
+
+The backend does not read tenant secrets with the shared broker identity directly.
+
+Instead, the current implementation does this:
+
+1. The backend starts with a broker/control-plane Vault identity from env such as `M8FLOW_VAULT_TOKEN` or `M8FLOW_VAULT_ROLE_ID` plus `M8FLOW_VAULT_SECRET_ID`.
+2. A secret CRUD or list request reaches `VaultBackedSecretBackend`.
+3. The backend resolves the current tenant id and asks `TenantScopedVaultClientProvider` for a tenant-scoped Vault client.
+4. The provider uses the broker Vault client to read the tenant AppRole, read its `role_id`, and mint a fresh tenant `secret_id`.
+5. The provider builds a new tenant `VaultClient` with that `role_id` and `secret_id`.
+6. That tenant `VaultClient` logs in to Vault through AppRole and receives a Vault client token.
+7. The tenant-scoped token performs the actual KV read, write, delete, or list operation under `kv/m8flow/tenants/{tenant_id}/secrets/...`.
+
+Here is the current flow, based on the code paths in `secret_backend.py`, `tenant_scoped_vault_client_provider.py`, `tenant_vault_provisioning_service.py`, and `vault_client.py`:
+
+```mermaid
+sequenceDiagram
+    participant Req as Backend request
+    participant SB as VaultBackedSecretBackend
+    participant TP as TenantScopedVaultClientProvider
+    participant BV as Broker VaultClient
+    participant V as Vault
+    participant TV as Tenant VaultClient
+
+    Req->>SB: read/store/delete secret for tenant T
+    SB->>TP: for_tenant(T)
+    TP->>BV: read_approle(role_name for T)
+    TP->>BV: read_approle_role_id(role_name for T)
+    TP->>BV: generate_approle_secret_id(role_name for T)
+    BV->>V: broker identity calls AppRole endpoints
+    TP->>TV: new VaultClient(role_id + fresh secret_id)
+    TV->>V: approle.login(role_id, secret_id)
+    V-->>TV: client_token
+    SB->>TV: kv read/write/delete/list
+    TV->>V: tenant-scoped KV operation
+    V-->>TV: result
+    TV-->>SB: result
+    SB-->>Req: API response
+```
+
+Notes:
+
+- The broker identity is a control-plane identity. It is used to manage tenant AppRoles and mint tenant-scoped access, not to read tenant secret values directly.
+- The data-plane secret operation happens with the tenant Vault token returned by the AppRole login.
+- The current code already mints a fresh tenant `secret_id` when it builds a tenant-scoped client.
+- The current code does not yet enforce explicit AppRole TTL or one-time-use settings in M8Flow itself. If you need a hardened production posture, configure or implement `secret_id_ttl`, `secret_id_num_uses`, `token_ttl`, and `token_max_ttl`.
+
 ## Recreate The Full Stack With Vault Demo
 
 If you want to fully rebuild the local stack and include both `vault` and `vault-demo`, first enable Vault-backed runtime behavior in your local `.env`:
@@ -209,18 +257,174 @@ That sequence:
 - rebuilds the application images plus the profile-gated helpers;
 - starts the base stack, `vault`, `vault-demo`, and the one-off `init` jobs in one pass.
 
+## Application Audit Log
+
+Vault-related application audit events are stored in the generic database table `m8flow_audit_log`.
+
+Even though the first use case is Vault monitoring, the table is intentionally broader than Vault so future application audit events can reuse the same schema.
+
+Important naming note:
+
+- the actual table name is `m8flow_audit_log`
+- if you see older discussion referring to `audit_log` or `m8flow_audit_table`, use `m8flow_audit_log`
+
+### What Each Column Means
+
+When writing a row to `m8flow_audit_log`, use the columns like this:
+
+- `id`
+  Use a generated unique identifier. The backend `AuditLogService` generates this automatically.
+- `category`
+  Use a broad functional area such as `vault`.
+- `event_type`
+  Use a machine-readable specific event name such as `vault.secret.read` or `vault.health.check`.
+- `source`
+  Use the backend component that produced the event, for example `secret_backend` or `vault_client`.
+- `status`
+  Use the outcome of the event. Current Vault usage writes values such as `success`, `failed`, or `skipped`.
+- `severity`
+  Use the operator-facing importance of the event. Current Vault usage writes values such as `info`, `warning`, or `error`.
+- `message`
+  Use a short human-readable summary that is safe to show in logs and dashboards. Do not include secret values, tokens, passwords, or raw credentials.
+- `m8f_tenant_id`
+  Use the tenant id when the event is tenant-scoped. Leave it empty for non-tenant events if there is no active tenant context.
+- `actor_type`
+  Use the actor kind that caused the event. Current request-driven backend usage usually resolves this to `user`.
+- `actor_id`
+  Use the actor identifier when available, such as the authenticated user id.
+- `actor_username`
+  Use the actor username when available.
+- `resource_type`
+  Use the type of resource the event is about, for example `secret`.
+- `resource_id`
+  Use the resource identifier when one exists. For Vault list and health events this may be empty.
+- `resource_name`
+  Use a stable operator-friendly resource label, such as the secret key `API_TOKEN`.
+- `request_id`
+  Use the request id when the event is tied to an HTTP request. The service can populate this automatically from `X-Request-ID`.
+- `correlation_id`
+  Use the distributed-tracing or cross-service correlation id when available. The service can populate this automatically from `X-Correlation-ID`.
+- `details`
+  Use structured JSON for safe diagnostic context such as `error_code`, `mount_point`, `listed_count`, `scope`, or `read_mode`. Do not put secret material here.
+- `created_at_in_seconds`
+  Set automatically by the model mixin.
+- `updated_at_in_seconds`
+  Set automatically by the model mixin.
+
+### What Is Required vs Optional
+
+The backend `AuditLogService.record_event(...)` requires:
+
+- `category`
+- `event_type`
+- `source`
+- `status`
+
+Everything else is optional, but you should normally also provide:
+
+- `severity`
+- `message`
+- `details`
+
+And when the event is tied to a tenant-scoped resource, you should also provide:
+
+- `m8f_tenant_id`
+- `resource_type`
+- `resource_name`
+
+The service will automatically fill these from request context when available:
+
+- `id`
+- `severity` defaulting to `info`
+- `m8f_tenant_id`
+- `actor_type`
+- `actor_id`
+- `actor_username`
+- `request_id`
+- `correlation_id`
+
+### Current Vault Examples
+
+Example 1: successful tenant secret read
+
+```text
+category: vault
+event_type: vault.secret.read
+source: secret_backend
+status: success
+severity: info
+message: Vault secret read succeeded.
+m8f_tenant_id: 99d64b37-dae5-4524-9a64-ea254d360f81
+actor_type: user
+actor_id: 1
+actor_username: admin
+resource_type: secret
+resource_id: 61510292a5725d9fa58a49a74a86a8d2
+resource_name: API_TOKEN
+details: {"backend": "vault", "read_mode": "record"}
+```
+
+Example 2: failed tenant secret list because Vault is unavailable
+
+```text
+category: vault
+event_type: vault.secret.list
+source: secret_backend
+status: failed
+severity: error
+message: Vault secret list failed.
+m8f_tenant_id: 99d64b37-dae5-4524-9a64-ea254d360f81
+actor_type: user
+actor_id: 1
+actor_username: admin
+resource_type: secret
+resource_id: <empty>
+resource_name: *
+details: {"backend": "vault", "error_code": "vault_unavailable", "status_code": 503, "scope": "tenant"}
+```
+
+Example 3: Vault health transition to unhealthy
+
+```text
+category: vault
+event_type: vault.health.check
+source: vault_client
+status: failed
+severity: error
+message: Vault availability check failed.
+m8f_tenant_id: 99d64b37-dae5-4524-9a64-ea254d360f81
+actor_type: user
+actor_id: 1
+actor_username: admin
+resource_type: <empty>
+resource_id: <empty>
+resource_name: <empty>
+details: {"configured": true, "mount_point": "kv", "auth_method": "approle", "error_type": "VaultConnectionError"}
+```
+
+### Safe Usage Rules
+
+- Put the event classification in `category`, `event_type`, `status`, and `severity`.
+- Put human-readable summary text in `message`.
+- Put structured diagnostic data in `details`.
+- Put stable resource identity in `resource_type`, `resource_id`, and `resource_name`.
+- Never put secret values, tokens, passwords, unseal keys, AppRole `secret_id` values, or raw authorization headers into `message` or `details`.
+- Prefer `details` keys such as `error_code`, `status_code`, `scope`, `backend`, `mount_point`, `read_mode`, `listed_count`, `renamed`, or `deleted`.
+
 ## Vault UI Login
 
 Open the local Vault UI at `http://127.0.0.1:${M8FLOW_VAULT_PORT:-8200}/ui/`.
 
 The `vault-demo` bootstrap persists the local development init payload in encrypted form at `/vault/demo/init.json`. To print the usable `root_token` without depending on a running backend container:
 
+Bash:
 ```bash
 docker compose -f docker/m8flow-docker-compose.yml --profile vault --profile vault-demo \
   run --rm --no-deps --entrypoint python m8flow-backend \
   -c "import sys; sys.path.insert(0, '/app/docker/vault/demo'); import bootstrap_vault_demo as b; print(b.root_token_from_init(b.load_init_payload()))"
 ```
 
+PowerShell:
 ```powershell
 docker compose -f docker/m8flow-docker-compose.yml --profile vault --profile vault-demo `
   run --rm --no-deps --entrypoint python m8flow-backend `

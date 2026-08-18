@@ -15,10 +15,10 @@ class AuditLogModel(SpiffworkflowBaseDBModel, AuditDateTimeMixin):
     categories without another schema redesign.
     """
 
-    __tablename__ = "audit_log"
+    __tablename__ = "m8flow_audit_log"
     __table_args__ = (
-        db.Index("ix_audit_log_category_created_at", "category", "created_at_in_seconds"),
-        db.Index("ix_audit_log_tenant_created_at", "m8f_tenant_id", "created_at_in_seconds"),
+        db.Index("ix_m8flow_audit_log_category_created_at", "category", "created_at_in_seconds"),
+        db.Index("ix_m8flow_audit_log_tenant_created_at", "m8f_tenant_id", "created_at_in_seconds"),
     )
 
     id: str = db.Column(db.String(64), primary_key=True, nullable=False)
