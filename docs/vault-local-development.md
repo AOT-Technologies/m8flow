@@ -99,7 +99,6 @@ The tenant Vault identity is built from the canonical tenant UUID, not from the 
 
 The generated tenant policy is limited to the tenant's own subtree:
 
-- bootstrap marker path: `kv/m8flow/tenants/{tenant_id}/bootstrap`
 - secret value path pattern: `kv/m8flow/tenants/{tenant_id}/secrets/{secret_name}`
 - KV metadata list path pattern: `kv/metadata/m8flow/tenants/{tenant_id}/secrets/...`
 
@@ -109,14 +108,11 @@ On first provisioning, M8Flow:
 - creates or updates the tenant AppRole;
 - reads the AppRole `role_id`;
 - generates an initial AppRole `secret_id`;
-- logs in through that tenant AppRole;
-- ensures the bootstrap marker exists at `kv/m8flow/tenants/{tenant_id}/bootstrap` with:
-
-```json
-{"status": "initialized"}
-```
+- returns that initial identity material to the provisioning flow without creating a placeholder KV secret.
 
 On later reconciliation passes, M8Flow still reconciles the policy and AppRole, but it does not rotate the original tenant AppRole `secret_id` just because startup ran again.
+
+There is no longer a bootstrap-marker secret for tenant initialization. In KV v2, the tenant `secrets/` path becomes visible in the Vault UI only after the first real secret is written.
 
 ### Failure Behavior During Tenant Creation
 
@@ -267,7 +263,7 @@ That `m8flow` AppRole is the shared local broker identity. It is separate from t
 
 The backend, Celery worker, Celery Flower, and the optional NATS workers mount `/vault/demo` read-only. Their startup commands load `runtime.env` automatically when it exists so the demo profile can supply the Vault address plus file-backed AppRole credentials. `M8FLOW_VAULT_ENABLED` is still controlled by your local `.env`.
 
-## Backend Vault Access Flow
+## Runtime Auth Flow
 
 The backend does not read tenant secrets with the shared broker identity directly.
 
@@ -314,6 +310,39 @@ Notes:
 - The data-plane secret operation happens with the tenant Vault token returned by the AppRole login.
 - The current code already mints a fresh tenant `secret_id` when it builds a tenant-scoped client.
 - The current code does not yet enforce explicit AppRole TTL or one-time-use settings in M8Flow itself. If you need a hardened production posture, configure or implement `secret_id_ttl`, `secret_id_num_uses`, `token_ttl`, and `token_max_ttl`.
+
+### Broker Authentication At Startup
+
+At backend startup, `configure_vault()` reads `VaultSettings.from_env()` and then:
+
+- leaves the app on the legacy secret backend when `M8FLOW_VAULT_ENABLED=false`;
+- fails startup immediately when Vault mode is enabled but `M8FLOW_VAULT_ADDR` or the broker credentials are incomplete;
+- validates that Vault is initialized, unsealed, authenticated, and pointed at a KV v2 mount before the app starts serving Vault-backed secret requests.
+
+The broker/control-plane identity can be supplied in one of two ways:
+
+- token auth: `M8FLOW_VAULT_TOKEN` or `VAULT_TOKEN`, optionally through the matching `*_FILE` variant;
+- AppRole auth: `M8FLOW_VAULT_ROLE_ID` plus `M8FLOW_VAULT_SECRET_ID`, optionally through the matching `*_FILE` variants.
+
+If the broker identity itself is configured as an AppRole, Vault issues a broker client token during that AppRole login. If the broker identity is configured as a token, M8Flow uses that token directly.
+
+### Is The Secret Read Using A Short-Lived Token?
+
+Yes, the actual tenant secret read/write/delete/list operation is performed with a Vault client token returned by the tenant AppRole login, not with the broker identity directly.
+
+What is dynamic today:
+
+- M8Flow mints a fresh tenant AppRole `secret_id` when it builds a tenant-scoped client.
+- M8Flow logs in with that tenant AppRole and receives a client token for the data-plane operation.
+
+What is not yet enforced by M8Flow itself:
+
+- explicit `secret_id_ttl`;
+- explicit `secret_id_num_uses`;
+- explicit `token_ttl`;
+- explicit `token_max_ttl`.
+
+So the operation uses a Vault-issued token, but whether it is truly short-lived or one-time-use depends on the Vault-side AppRole role configuration you apply.
 
 ## Vault-Down Behavior
 
@@ -378,6 +407,17 @@ Instead, current audit behavior is transition-based:
 
 The failing secret operation itself is still logged separately, for example as `vault.secret.list` with `status=failed` and `error_code=vault_unavailable`.
 
+## Failure-Mode Matrix
+
+| Condition | Startup behavior | `GET /v1.0/vault-status` | Secret API behavior | Audit behavior | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `M8FLOW_VAULT_ENABLED=false` | Backend starts normally on legacy secret backend | `200` with `enabled=false`, `configured=false`, `healthy=null` | Secret routes use the legacy database backend | No Vault health or Vault secret events should be emitted for routine secret usage | This is a runtime mode switch, not a data migration. |
+| Vault mode enabled but broker config is incomplete | Backend startup fails fast | Not available because the backend did not start | Not available because the backend did not start | No request-time Vault audit rows because startup never completed | Fix `M8FLOW_VAULT_ADDR` plus token or AppRole broker credentials first. |
+| Vault mode enabled and Vault is healthy | Backend starts on Vault backend | `200` with `ok=true`, `healthy=true` | Secret CRUD/list requests succeed through tenant-scoped Vault clients | Secret operations are logged; health rows are logged only on state transition | The broker identity is control-plane only; tenant operations use a tenant-scoped client token. |
+| Vault becomes unavailable after startup | Backend keeps running | `503` with `ok=false`, `healthy=false` | Connection-related secret failures return `503`, `error_code=vault_unavailable`, `message=Vault is down.` | One `vault.health.check` failure row is written on the healthy -> unhealthy transition, plus failed secret-operation rows | Repeated failed probes without a state change do not keep appending duplicate health rows. |
+| Requested secret key does not exist | Backend keeps running | Unchanged from overall Vault health | Read/delete flows return `404` with a safe missing-secret error, not a generic connection error | The failed secret operation can still be audited without exposing secret content | This is different from `vault_unavailable`; missing data is not treated as a Vault outage. |
+| Secret-value endpoint is called directly | Backend keeps running | Unchanged from overall Vault health | `GET /secrets/{key}/value` returns `404` with `error_code=secret_value_retrieval_disabled` | No Vault read of the secret value should happen for that route | Hiding the button in the frontend was not the protection boundary; the backend route itself is disabled. |
+
 ## Recreate The Full Stack With Vault Demo
 
 If you want to fully rebuild the local stack and include both `vault` and `vault-demo`, first enable Vault-backed runtime behavior in your local `.env`:
@@ -400,7 +440,7 @@ That sequence:
 - rebuilds the application images plus the profile-gated helpers;
 - starts the base stack, `vault`, `vault-demo`, and the one-off `init` jobs in one pass.
 
-## Application Audit Log
+## Audit Log Reference
 
 Vault-related application audit events are stored in the generic database table `m8flow_audit_log`.
 
@@ -573,6 +613,42 @@ In the current implementation:
 - Put stable resource identity in `resource_type`, `resource_id`, and `resource_name`.
 - Never put secret values, tokens, passwords, unseal keys, AppRole `secret_id` values, or raw authorization headers into `message` or `details`.
 - Prefer `details` keys such as `error_code`, `status_code`, `scope`, `backend`, `mount_point`, `read_mode`, `listed_count`, `renamed`, or `deleted`.
+- `AuditLogService` also redacts known sensitive fields such as `secret_id`, `role_id`, `root_token`, `client_token`, `password`, and `value` before persistence, but callers should still treat "do not log secret material" as a hard rule rather than relying on redaction as a fallback.
+
+## Migration And Rollback
+
+`M8FLOW_VAULT_ENABLED` is a runtime backend switch. It is not a secret-data migration command.
+
+What enabling Vault mode does today:
+
+- switches secret API operations to `VaultBackedSecretBackend`;
+- requires a healthy broker/control-plane Vault identity at startup;
+- keeps using the same API surface, but resolves secret operations through tenant-scoped Vault clients.
+
+What enabling Vault mode does not do automatically:
+
+- it does not copy existing legacy database secrets into Vault;
+- it does not backfill or mirror Vault secrets into the database;
+- it does not rotate or shorten AppRole TTL settings by itself.
+
+What disabling Vault mode does today:
+
+- switches secret API operations back to `LegacyDatabaseSecretBackend`;
+- stops reading Vault-backed secrets through the application path;
+- does not delete Vault secrets, Vault AppRoles, or Vault policies.
+
+That means rollback is operationally simple but data-sensitive:
+
+1. If you turn Vault mode on in an environment that already has database secrets, import or recreate the required secrets in Vault first.
+2. Validate the broker identity and `/v1.0/vault-status` before you depend on the Vault-backed path.
+3. If you roll Vault mode back off, verify that the legacy database still contains the secrets the application will now expect to read.
+4. Do not assume "toggle the flag back" restores secret data parity between the database and Vault.
+
+For the schema side, the generic application audit table was introduced by Alembic revision `q1r2s3t4u5v6`.
+
+- Upgrading adds `m8flow_audit_log` and its indexes.
+- Downgrading that revision drops only `m8flow_audit_log` and its indexes.
+- That migration does not create, move, or delete Vault secret data.
 
 ## Vault UI Login
 
