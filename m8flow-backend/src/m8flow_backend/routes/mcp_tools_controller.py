@@ -69,7 +69,7 @@ def check_mcp_connection() -> flask.wrappers.Response:
     return make_response(jsonify(result), 200)
 
 
-def execute_mcp_tool(body: dict[str, Any]) -> flask.wrappers.Response:
+def execute_mcp_tool(body: dict[str, Any] | None) -> flask.wrappers.Response:
     """POST /m8flow/mcp-tools/execute -- call one MCP tool, as this caller.
 
     Body: ``{"tool_name": "...", "arguments": {...}, "confirm": bool}``. The
@@ -79,7 +79,21 @@ def execute_mcp_tool(body: dict[str, Any]) -> flask.wrappers.Response:
     tool, 502 MCP call failure) is passed straight through as the HTTP status
     code. An auth rejection by the MCP server itself is normalized to 502 by the
     service, so it never surfaces here as this endpoint's own 401/403.
+
+    api.yml's requestBody schema marks this ``required: true`` / ``type:
+    object``, but that schema validation runs in Connexion's request pipeline,
+    not in this function -- a malformed or empty JSON body can still reach here
+    as ``None`` (or, in principle, some other non-dict value). Guard for that
+    explicitly: this must answer with a controlled 400, not an unhandled
+    AttributeError (-> 500) from calling ``.get`` on a non-dict.
     """
+    if not isinstance(body, dict):
+        return error_response(
+            "invalid_request_body",
+            "Request body must be a JSON object with a 'tool_name' field.",
+            400,
+        )
+
     tool_name = body.get("tool_name")
     arguments = body.get("arguments") or {}
     confirm = body.get("confirm", False)

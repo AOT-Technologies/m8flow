@@ -23,6 +23,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from flask import Flask
+from flask import request
 
 from spiffworkflow_backend.exceptions.error import NotAuthorizedError
 from spiffworkflow_backend.models.db import db
@@ -50,6 +51,21 @@ PERMISSIONS_PATH = (
     / "permissions"
     / "m8flow.yml"
 )
+
+
+def _execute_mcp_tool_view():
+    """Adapter reproducing Connexion's requestBody-injection for execute_mcp_tool.
+
+    Production wires POST /m8flow/mcp-tools/execute through Connexion (api.yml's
+    operationId), which parses the JSON body against the requestBody schema and
+    calls ``execute_mcp_tool(body=...)`` itself. A bare Flask app (this file's
+    ``_make_app``, unlike the real Connexion app) does not do that parsing/
+    injection, so this reproduces just that one piece of glue -- the same spirit
+    as the ``NotAuthorizedError`` -> 403 ``errorhandler`` below, which
+    reconstructs the other piece of Connexion-provided plumbing this bare app
+    would otherwise lack.
+    """
+    return mcp_tools_controller.execute_mcp_tool(request.get_json(silent=True))
 
 
 def _make_app() -> Flask:
@@ -90,6 +106,12 @@ def _make_app() -> Flask:
         "mcp_tools_ping",
         mcp_tools_controller.check_mcp_connection,
         methods=["GET"],
+    )
+    app.add_url_rule(
+        "/v1.0/m8flow/mcp-tools/execute",
+        "mcp_tools_execute",
+        _execute_mcp_tool_view,
+        methods=["POST"],
     )
 
     # omni_auth's permission check raises NotAuthorizedError (not an
@@ -215,3 +237,51 @@ def test_non_admin_editor_gets_403_from_catalog(monkeypatch) -> None:
         assert refreshed_user is not None
         assert f"{ORG_TENANT_ID}:editor" in {group.identifier for group in refreshed_user.groups}
         assert f"{ORG_TENANT_ID}:tenant-admin" not in {group.identifier for group in refreshed_user.groups}
+
+
+def test_tenant_admin_gets_200_from_post_execute(monkeypatch) -> None:
+    """POST /execute needs the 'create' action (see
+    test_read_action_alone_cannot_authorize_the_post_execute_endpoint in
+    test_mcp_tools_permissions.py) -- a real HTTP-level check that the
+    execute-mcp-tools grant actually authorizes it end to end, closing the gap
+    left by the GET-only coverage above."""
+    app = _make_app()
+    client = _log_in_as(monkeypatch, app, username="tenant-admin-user", subject="tenant-admin-subject", role="tenant-admin")
+
+    execute_result = {"result": "done"}
+    mock_execute = AsyncMock(return_value=execute_result)
+    monkeypatch.setattr(mcp_tools_controller.mcp_catalog_service, "execute_tool", mock_execute)
+
+    response = client.post(
+        "/v1.0/m8flow/mcp-tools/execute",
+        headers={"Authorization": "Bearer tenant-admin-token"},
+        json={"tool_name": "list_reports", "arguments": {}, "confirm": False},
+    )
+
+    assert response.status_code == 200, response.get_data(as_text=True)
+    assert response.get_json() == execute_result
+    mock_execute.assert_awaited_once_with("Bearer tenant-admin-token", "list_reports", {}, False)
+
+
+def test_non_admin_editor_gets_403_from_post_execute(monkeypatch) -> None:
+    """AGENTS.md: shared-realm/RBAC changes must not be validated with admin-only
+    users -- and this is the POST/'create' action counterpart of
+    test_non_admin_editor_gets_403_from_catalog above (GET/'read')."""
+    app = _make_app()
+    client = _log_in_as(monkeypatch, app, username="editor", subject="editor-subject", role="editor")
+
+    # If authorization were (incorrectly) bypassed, this mock succeeding would
+    # make the 403 assertion below fail loudly rather than accidentally passing
+    # for the wrong reason.
+    mock_execute = AsyncMock(return_value={"result": "done"})
+    monkeypatch.setattr(mcp_tools_controller.mcp_catalog_service, "execute_tool", mock_execute)
+
+    response = client.post(
+        "/v1.0/m8flow/mcp-tools/execute",
+        headers={"Authorization": "Bearer editor-token"},
+        json={"tool_name": "list_reports", "arguments": {}, "confirm": False},
+    )
+
+    assert response.status_code == 403, response.get_data(as_text=True)
+    assert response.get_json()["error_code"] == "not_authorized"
+    mock_execute.assert_not_awaited()

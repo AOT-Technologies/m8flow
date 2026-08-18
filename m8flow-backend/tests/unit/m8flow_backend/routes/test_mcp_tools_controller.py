@@ -165,3 +165,34 @@ def test_execute_mcp_tool_defaults_to_400_when_service_omits_status_code():
         response = mcp_tools_controller.execute_mcp_tool({"tool_name": "some_tool"})
 
     assert response.status_code == 400
+
+
+def test_execute_mcp_tool_returns_400_not_500_when_body_is_none():
+    """Regression guard: api.yml's requestBody schema is enforced by Connexion's
+    request pipeline, not by this function -- a malformed/empty JSON body can
+    still reach here as None. Dereferencing `.get` on it must not 500."""
+    with _request_context(), patch.object(
+        mcp_tools_controller.mcp_catalog_service,
+        "execute_tool",
+        AsyncMock(side_effect=AssertionError("the service must never be called for an invalid body")),
+    ) as mock_execute:
+        response = mcp_tools_controller.execute_mcp_tool(None)
+
+    assert response.status_code == 400
+    body = json.loads(response.get_data(as_text=True))
+    assert body["error_code"] == "invalid_request_body"
+    mock_execute.assert_not_awaited()
+
+
+def test_execute_mcp_tool_returns_400_not_500_when_body_is_not_a_dict():
+    with _request_context(), patch.object(
+        mcp_tools_controller.mcp_catalog_service,
+        "execute_tool",
+        AsyncMock(side_effect=AssertionError("the service must never be called for an invalid body")),
+    ) as mock_execute:
+        response = mcp_tools_controller.execute_mcp_tool("not-a-dict")
+
+    assert response.status_code == 400
+    body = json.loads(response.get_data(as_text=True))
+    assert body["error_code"] == "invalid_request_body"
+    mock_execute.assert_not_awaited()
