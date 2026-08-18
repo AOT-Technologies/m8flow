@@ -238,11 +238,68 @@ def test_get_catalog_error_message_never_leaks_mcp_error_details(monkeypatch):
 
 
 def test_get_catalog_returns_error_dict_when_server_url_not_configured(monkeypatch):
+    """503, not the 502 every other get_catalog failure defaults to: this path
+    never attempts an outbound call at all, so it is this backend's own
+    misconfiguration rather than 'the upstream MCP server misbehaved'."""
     monkeypatch.setattr(mcp_catalog_service, "mcp_server_url", lambda: "")
 
     result = asyncio.run(mcp_catalog_service.get_catalog("token-abc"))
 
-    assert result == {"error": "M8FLOW_MCP_SERVER_URL is not configured."}
+    assert result == {
+        "error": "M8FLOW_MCP_SERVER_URL is not configured.",
+        "status_code": 503,
+    }
+
+
+def test_get_catalog_tolerates_a_tool_whose_input_schema_is_malformed(monkeypatch):
+    """Regression guard: a buggy/malicious upstream MCP server can return a
+    structurally-valid Tool (satisfying the mcp SDK's own pydantic parsing)
+    whose inputSchema.properties/required are not a dict/list at all -- the mcp
+    SDK never schema-validates those nested values itself. _tool_parameters runs
+    from get_catalog's list comprehension, which sits OUTSIDE get_catalog's own
+    connection/protocol try/except, so a single malformed tool entry must not
+    500 the whole catalog."""
+    well_formed_tool = _make_tool(
+        "list_reports", read_only=True, properties={"limit": {"type": "integer"}}, required=["limit"]
+    )
+    malformed_tool = _make_tool("weird_tool", read_only=True, properties="not-a-dict", required=123)
+
+    session = SimpleNamespace(
+        initialize=AsyncMock(return_value=SimpleNamespace(protocolVersion="2024-11-05")),
+        list_tools=AsyncMock(return_value=SimpleNamespace(tools=[well_formed_tool, malformed_tool])),
+    )
+    _install_fake_client(monkeypatch, session)
+
+    result = asyncio.run(mcp_catalog_service.get_catalog("token-abc"))
+
+    tools_by_name = {tool["name"]: tool for tool in result["tools"]}
+    assert tools_by_name["list_reports"]["parameters"] == [
+        {"name": "limit", "type": "integer", "required": True, "description": ""}
+    ]
+    # Degrades to an empty parameter list rather than raising.
+    assert tools_by_name["weird_tool"]["parameters"] == []
+
+
+def test_get_catalog_forwards_a_well_formed_bearer_header_for_an_empty_or_whitespace_token(monkeypatch):
+    """Locks in _auth_headers' documented behavior end to end: an empty/blank
+    token still produces a well-formed (if empty) Bearer header, never a
+    missing Authorization header and never a crash. Complements
+    test_mcp_tools_controller.py's
+    test_list_mcp_tools_catalog_forwards_empty_token_when_header_missing, which
+    covers the controller's half of this same contract."""
+    session = SimpleNamespace(
+        initialize=AsyncMock(return_value=SimpleNamespace(protocolVersion="2024-11-05")),
+        list_tools=AsyncMock(return_value=SimpleNamespace(tools=[])),
+    )
+    connections = _install_connection_counting_fake_client(monkeypatch, session)
+
+    asyncio.run(mcp_catalog_service.get_catalog(""))
+    asyncio.run(mcp_catalog_service.get_catalog("   "))
+
+    assert [connection["headers"] for connection in connections] == [
+        {"Authorization": "Bearer "},
+        {"Authorization": "Bearer "},
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -296,6 +353,21 @@ def test_ping_failure_response_never_carries_raw_exception_text(monkeypatch):
 # ---------------------------------------------------------------------------
 # execute_tool
 # ---------------------------------------------------------------------------
+
+
+def test_execute_tool_returns_503_when_server_url_not_configured(monkeypatch):
+    """Same 503-vs-502 distinction as get_catalog's: this path never attempts an
+    outbound call, so it is this backend's own misconfiguration, not an upstream
+    failure."""
+    monkeypatch.setattr(mcp_catalog_service, "mcp_server_url", lambda: "")
+
+    result = asyncio.run(mcp_catalog_service.execute_tool("token-abc", "list_reports", {}, False))
+
+    assert result == {
+        "error": "catalog_unavailable",
+        "message": "M8FLOW_MCP_SERVER_URL is not configured.",
+        "status_code": 503,
+    }
 
 
 def test_execute_tool_happy_path_for_a_read_tool(monkeypatch):

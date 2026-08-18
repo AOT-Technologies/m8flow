@@ -75,10 +75,24 @@ def _tool_badge(tool: Any) -> str:
 
 
 def _tool_parameters(tool: Any) -> list[dict[str, Any]]:
-    """Derive the catalog's parameter list from a tool's JSON-Schema inputSchema."""
+    """Derive the catalog's parameter list from a tool's JSON-Schema inputSchema.
+
+    ``inputSchema`` only has to be *some* dict to satisfy the ``mcp`` client
+    SDK's own pydantic parsing of the wire ``Tool`` object -- its nested
+    ``properties``/``required`` are never themselves schema-validated, so a
+    buggy or malicious upstream MCP server can hand back a well-formed ``Tool``
+    whose ``properties``/``required`` are not a dict/list at all (e.g. a bare
+    string). This function runs from ``get_catalog``'s list comprehension,
+    outside that function's own connection/protocol try/except, so it must not
+    raise on that shape itself -- a single bad tool entry must degrade to an
+    empty parameter list for that tool, not 500 the whole catalog.
+    """
     schema = getattr(tool, "inputSchema", None) or {}
     properties = schema.get("properties") or {}
-    required_names = set(schema.get("required") or [])
+    if not isinstance(properties, dict):
+        properties = {}
+    required = schema.get("required") or []
+    required_names = set(required) if isinstance(required, list) else set()
 
     parameters: list[dict[str, Any]] = []
     for param_name, param_schema in properties.items():
@@ -174,10 +188,17 @@ async def get_catalog(token: str) -> dict[str, Any]:
     failures -- returns ``{"error": <message>}`` instead, mirroring the
     return-a-dict-rather-than-raise convention this codebase's controllers already
     use for outbound-call failures (see ``routes/keycloak_controller.py``).
+
+    A missing ``M8FLOW_MCP_SERVER_URL`` also carries an explicit
+    ``"status_code": 503``: unlike every other error path here, this one never
+    even attempts an outbound call, so it is this backend's own misconfiguration
+    rather than "the upstream MCP server is unreachable/misbehaving" (502) --
+    ``list_mcp_tools_catalog`` reads this key and falls back to 502 for every
+    other (keyless) error dict this function returns.
     """
     server_url = mcp_server_url()
     if not server_url:
-        return {"error": "M8FLOW_MCP_SERVER_URL is not configured."}
+        return {"error": "M8FLOW_MCP_SERVER_URL is not configured.", "status_code": 503}
 
     try:
         async with streamablehttp_client(server_url, headers=_auth_headers(token)) as (
@@ -272,13 +293,17 @@ async def execute_tool(
     anyio task groups, where returning mid-unwind is a known source of spurious
     cancellation errors. Both instead record their outcome in ``early`` and let the
     session close normally before this returns.
+
+    A missing ``M8FLOW_MCP_SERVER_URL`` is reported as 503, not 502: as in
+    ``get_catalog``, this path never attempts an outbound call at all, so it is
+    this backend's own misconfiguration rather than an upstream failure.
     """
     server_url = mcp_server_url()
     if not server_url:
         return {
             "error": "catalog_unavailable",
             "message": "M8FLOW_MCP_SERVER_URL is not configured.",
-            "status_code": 502,
+            "status_code": 503,
         }
 
     early: dict[str, Any] | None = None
