@@ -3025,6 +3025,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: M8FLOW_MCP_SERVER_URL is not configured on this backend
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /mcp-tools/ping:
     get:
@@ -3092,7 +3098,9 @@ paths:
               schema:
                 type: object
         "400":
-          description: Missing confirm=true for a write-badged tool
+          description: >
+            Malformed request body (not a JSON object, or arguments is not a JSON
+            object), or confirm=true missing for a write-badged tool
           content:
             application/json:
               schema:
@@ -3107,6 +3115,12 @@ paths:
           description: >
             The MCP server could not be reached, rejected the forwarded token, or
             the tool call itself failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: M8FLOW_MCP_SERVER_URL is not configured on this backend
           content:
             application/json:
               schema:

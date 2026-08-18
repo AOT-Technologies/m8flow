@@ -57,6 +57,28 @@ def test_list_mcp_tools_catalog_maps_error_dict_to_502():
     assert "boom" in body["message"]
 
 
+def test_list_mcp_tools_catalog_passes_through_a_service_provided_status_code():
+    """get_catalog sets an explicit status_code (503) only for its one
+    self-inflicted failure -- M8FLOW_MCP_SERVER_URL not configured -- to
+    distinguish it from every other (keyless, defaults-to-502) failure here.
+    The controller must forward that 503, not flatten it to the 502 default."""
+    with _request_context(), patch.object(
+        mcp_tools_controller.mcp_catalog_service,
+        "get_catalog",
+        AsyncMock(
+            return_value={
+                "error": "M8FLOW_MCP_SERVER_URL is not configured.",
+                "status_code": 503,
+            }
+        ),
+    ):
+        response = mcp_tools_controller.list_mcp_tools_catalog()
+
+    assert response.status_code == 503
+    body = json.loads(response.get_data(as_text=True))
+    assert body["error_code"] == "mcp_catalog_unavailable"
+
+
 def test_list_mcp_tools_catalog_forwards_empty_token_when_header_missing():
     """No Authorization header -> "" forwarded, never None (service does
     `token.strip() if isinstance(token, str) else ""`, so a raw string is the
@@ -191,6 +213,27 @@ def test_execute_mcp_tool_returns_400_not_500_when_body_is_not_a_dict():
         AsyncMock(side_effect=AssertionError("the service must never be called for an invalid body")),
     ) as mock_execute:
         response = mcp_tools_controller.execute_mcp_tool("not-a-dict")
+
+    assert response.status_code == 400
+    body = json.loads(response.get_data(as_text=True))
+    assert body["error_code"] == "invalid_request_body"
+    mock_execute.assert_not_awaited()
+
+
+def test_execute_mcp_tool_returns_400_when_arguments_is_not_a_dict():
+    """api.yml types `arguments` as an object, but that is Connexion's schema
+    validation, not this function's. Without this guard, a non-dict arguments
+    value (e.g. a JSON array) would sail through to the service and fail deep
+    inside the MCP client SDK's own call, surfacing as an opaque, misleadingly-
+    worded 502 instead of an immediate, accurate 400."""
+    with _request_context(), patch.object(
+        mcp_tools_controller.mcp_catalog_service,
+        "execute_tool",
+        AsyncMock(side_effect=AssertionError("the service must never be called for invalid arguments")),
+    ) as mock_execute:
+        response = mcp_tools_controller.execute_mcp_tool(
+            {"tool_name": "some_tool", "arguments": ["not", "a", "dict"]}
+        )
 
     assert response.status_code == 400
     body = json.loads(response.get_data(as_text=True))

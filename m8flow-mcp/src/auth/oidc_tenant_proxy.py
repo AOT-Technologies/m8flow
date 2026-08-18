@@ -86,9 +86,7 @@ class TenantSelectingOIDCProxy(OIDCProxy):
 
     # -- callback interception ------------------------------------------------
 
-    async def _handle_idp_callback_with_tenant_selection(
-        self, request: Request
-    ) -> HTMLResponse | RedirectResponse:
+    async def _handle_idp_callback_with_tenant_selection(self, request: Request) -> HTMLResponse | RedirectResponse:
         """Run the standard callback, then interpose tenant selection when needed."""
         response = await self._handle_idp_callback(request)
         try:
