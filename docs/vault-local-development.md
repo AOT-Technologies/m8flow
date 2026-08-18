@@ -43,6 +43,32 @@ The `vault-demo` profile stores generated local-only files inside the named demo
 
 Because those files live in a Docker volume instead of the repository, they are not committed and do not need `.gitignore` entries.
 
+## Current vs Production Posture
+
+This document describes the current M8Flow Vault implementation and the local `vault-demo` workflow. It is not a production hardening guide.
+
+What is true today:
+
+- M8Flow uses a broker/control-plane Vault identity to manage per-tenant AppRoles and to mint tenant-scoped clients.
+- Tenant secret CRUD happens through tenant-scoped Vault tokens derived from those tenant AppRoles.
+- The local `vault-demo` workflow stores development bootstrap state in a Docker volume and encrypts those local files at rest.
+- The backend exposes a dedicated Vault health endpoint at `/v1.0/vault-status` and writes Vault-related application audit events to `m8flow_audit_log`.
+
+What is intentionally local-development-only:
+
+- single-node HTTP Vault;
+- no TLS;
+- no HA;
+- no production-grade unseal strategy;
+- persisted development bootstrap state in Docker volumes;
+- helper scripts that can reveal a tenant AppRole `secret_id` when you opt in explicitly.
+
+What is still not production-hardened in the current code:
+
+- M8Flow does not yet enforce AppRole TTL or one-time-use settings such as `secret_id_ttl`, `secret_id_num_uses`, `token_ttl`, or `token_max_ttl`;
+- the broker identity is still a high-privilege control-plane credential and must be treated as such;
+- this document does not define a production auth method, TLS setup, audit-device configuration, or secret rotation policy.
+
 ## Per-Tenant Vault Identities
 
 When `M8FLOW_VAULT_ENABLED=true`, M8Flow now provisions Vault-side tenant identities automatically:
@@ -53,6 +79,58 @@ When `M8FLOW_VAULT_ENABLED=true`, M8Flow now provisions Vault-side tenant identi
 - repeated startup/bootstrap passes reconcile the role and policy without rotating the existing tenant AppRole `secret_id`.
 
 The configured runtime token or AppRole is now a broker/control-plane identity. M8Flow uses it to create, reconcile, and resolve tenant-specific AppRoles, then performs tenant secret CRUD through tenant-scoped Vault clients derived from those AppRoles. If that broker identity can still read tenant KV data directly, the local setup is misconfigured.
+
+## Tenant Lifecycle
+
+When Vault mode is enabled, tenant provisioning now has an explicit Vault lifecycle.
+
+### New Tenant Creation
+
+On the tenant-create API path, M8Flow currently does this in order:
+
+1. Create the Keycloak organization.
+2. Create the local `m8flow_tenant` row.
+3. Provision the tenant's Vault policy and AppRole.
+
+The tenant Vault identity is built from the canonical tenant UUID, not from the display name. The current naming logic uses the configured prefixes plus Vault-safe normalization:
+
+- policy name: `{M8FLOW_VAULT_TENANT_POLICY_PREFIX}-{tenant_id}`
+- AppRole name: `{M8FLOW_VAULT_TENANT_ROLE_PREFIX}-{tenant_id}`
+
+The generated tenant policy is limited to the tenant's own subtree:
+
+- bootstrap marker path: `kv/m8flow/tenants/{tenant_id}/bootstrap`
+- secret value path pattern: `kv/m8flow/tenants/{tenant_id}/secrets/{secret_name}`
+- KV metadata list path pattern: `kv/metadata/m8flow/tenants/{tenant_id}/secrets/...`
+
+On first provisioning, M8Flow:
+
+- creates or updates the tenant ACL policy;
+- creates or updates the tenant AppRole;
+- reads the AppRole `role_id`;
+- generates an initial AppRole `secret_id`;
+- logs in through that tenant AppRole;
+- ensures the bootstrap marker exists at `kv/m8flow/tenants/{tenant_id}/bootstrap` with:
+
+```json
+{"status": "initialized"}
+```
+
+On later reconciliation passes, M8Flow still reconciles the policy and AppRole, but it does not rotate the original tenant AppRole `secret_id` just because startup ran again.
+
+### Failure Behavior During Tenant Creation
+
+If Vault provisioning fails during the tenant-create API flow, M8Flow returns `502` and attempts to roll the tenant creation back:
+
+- the local tenant row is deleted;
+- the Keycloak organization is deleted;
+- the response explains that Vault provisioning could not be completed.
+
+If cleanup itself fails, the response warns that manual cleanup may still be required.
+
+### Shared-Realm Default Tenant
+
+The same provisioning logic is also used for the canonical shared-realm `m8flow` tenant during shared-realm bootstrap. That is why a clean local rebuild can create the `m8flow` tenant path even before you create any additional tenant manually.
 
 ## Resolve One Tenant-Scoped AppRole
 
@@ -235,6 +313,69 @@ Notes:
 - The current code already mints a fresh tenant `secret_id` when it builds a tenant-scoped client.
 - The current code does not yet enforce explicit AppRole TTL or one-time-use settings in M8Flow itself. If you need a hardened production posture, configure or implement `secret_id_ttl`, `secret_id_num_uses`, `token_ttl`, and `token_max_ttl`.
 
+## Vault-Down Behavior
+
+M8Flow now treats Vault availability as a first-class runtime condition instead of a generic secret error.
+
+### Dedicated Status Endpoint
+
+The backend exposes a separate Vault health endpoint:
+
+- `GET /v1.0/vault-status`
+
+Current behavior:
+
+- returns `200` with `ok: true` when Vault is disabled;
+- returns `200` with `ok: true` when Vault is enabled, configured, and healthy;
+- returns `503` with `ok: false` when Vault is enabled and unhealthy.
+
+Current payload shape:
+
+```json
+{
+  "ok": true,
+  "enabled": true,
+  "configured": true,
+  "healthy": true,
+  "mount_point": "kv",
+  "auth_method": "approle"
+}
+```
+
+When Vault is disabled, the payload is reduced to:
+
+```json
+{
+  "ok": true,
+  "enabled": false,
+  "configured": false,
+  "healthy": null
+}
+```
+
+### Secret Operations When Vault Is Unavailable
+
+When a secret operation fails because Vault cannot be reached, the backend converts that failure into a consistent API error:
+
+- `error_code`: `vault_unavailable`
+- HTTP status: `503`
+- message: `Vault is down.`
+
+For the current Secrets UI, the frontend surfaces the backend `detail`/`message` value, so the user-facing error on the secrets page is expected to show `Vault is down.` for that class of failure.
+
+### Audit Behavior On Outage And Recovery
+
+Vault health checks are not written to `m8flow_audit_log` on every probe.
+
+Instead, current audit behavior is transition-based:
+
+- first observed healthy state: logs `vault.health.check` with `status=success`;
+- healthy -> unhealthy: logs `vault.health.check` with `status=failed`;
+- unhealthy -> healthy: logs `vault.health.check` with `status=success`;
+- repeated probes that do not change the state do not emit another health transition row.
+
+The failing secret operation itself is still logged separately, for example as `vault.secret.list` with `status=failed` and `error_code=vault_unavailable`.
+
 ## Recreate The Full Stack With Vault Demo
 
 If you want to fully rebuild the local stack and include both `vault` and `vault-demo`, first enable Vault-backed runtime behavior in your local `.env`:
@@ -401,6 +542,26 @@ resource_id: <empty>
 resource_name: <empty>
 details: {"configured": true, "mount_point": "kv", "auth_method": "approle", "error_type": "VaultConnectionError"}
 ```
+
+### Vault Event Catalog
+
+Current Vault-related application audit events are:
+
+| Event type | Source | When it is recorded | Typical statuses | Notes |
+| --- | --- | --- | --- | --- |
+| `vault.secret.create` | `secret_backend` | Secret create attempt is completed | `success`, `failed` | Failure details include safe fields such as `error_code` and `status_code`. |
+| `vault.secret.read` | `secret_backend` | Secret read attempt is completed | `success`, `failed` | Recorded for backend secret reads, not for arbitrary direct Vault UI reads. |
+| `vault.secret.update` | `secret_backend` | Secret update attempt is completed | `success`, `failed` | Includes safe flags such as `renamed` and `previous_key` when applicable. |
+| `vault.secret.delete` | `secret_backend` | Secret delete attempt is completed | `success`, `failed` | Missing-secret failures are logged without exposing secret values. |
+| `vault.secret.list` | `secret_backend` | Secret list request is completed | `success`, `failed` | Success details include `listed_count`; failure details may include `vault_unavailable`. |
+| `vault.health.check` | `vault_client` | Vault availability is checked in an auditable path | `success`, `failed`, `skipped` | Health rows are normally transition-based so the table does not fill with duplicate probes. |
+
+In the current implementation:
+
+- secret CRUD and list rows are request-level events;
+- health rows are infrastructure-state events;
+- all of them use `category=vault`;
+- none of them should ever contain secret values, tokens, passwords, unseal keys, or AppRole `secret_id` values.
 
 ### Safe Usage Rules
 
