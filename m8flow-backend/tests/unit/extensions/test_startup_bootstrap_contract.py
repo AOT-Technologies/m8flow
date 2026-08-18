@@ -105,6 +105,11 @@ def test_configure_created_app_runs_shared_realm_reconciliation_before_permissio
     )
     monkeypatch.setattr(
         sequence,
+        "register_vault_status_route",
+        lambda flask_app: calls.append("register_vault_status_route"),
+    )
+    monkeypatch.setattr(
+        sequence,
         "register_root_route",
         lambda flask_app: calls.append("register_root_route"),
     )
