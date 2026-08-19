@@ -87,6 +87,23 @@ def _int(value: object, default: int = 0) -> int:
         return default
 
 
+def _float(value: object, default: float = 0.0) -> float:
+    """Coerce a monitoring field to float.
+
+    Separate from ``_int`` because /varz reports ``cpu`` (and ``mem`` ratios) as
+    fractional percentages; truncating 12.5% to 12% loses real signal on a dashboard whose
+    whole job is showing load.
+    """
+    if isinstance(value, bool) or value is None:
+        return default
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 class NatsMonitoringService:
     # ------------------------------------------------------------------ HTTP
 
@@ -133,7 +150,7 @@ class NatsMonitoringService:
             "outBytes": _int(varz.get("out_bytes")),
             "slowConsumers": _int(varz.get("slow_consumers")),
             "memoryBytes": _int(varz.get("mem")),
-            "cpuPercent": _int(varz.get("cpu")),
+            "cpuPercent": _float(varz.get("cpu")),
         }
 
     @classmethod

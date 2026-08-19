@@ -17,6 +17,7 @@ import {
   Translate,
   formatBytes,
   formatNumber,
+  formatPercent,
   loadErrorMessage,
 } from "./natsFormat";
 
@@ -173,7 +174,7 @@ export default function NatsOverviewPanel({
         <Stat
           label={translate("nats_memory", "Memory")}
           value={formatBytes(overview.memoryBytes)}
-          hint={`${overview.cpuPercent}% ${translate("nats_cpu", "CPU")}`}
+          hint={`${formatPercent(overview.cpuPercent)}% ${translate("nats_cpu", "CPU")}`}
         />
       </Stack>
 

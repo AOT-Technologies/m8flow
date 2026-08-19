@@ -28,6 +28,16 @@ export function formatNumber(value: number | null | undefined): string {
   return (value ?? 0).toLocaleString();
 }
 
+/**
+ * CPU load from /varz, which NATS reports as a fractional percentage. Rendered to one
+ * decimal so the API can keep full precision without the UI showing 0.7500000000000001,
+ * and trimmed back to a whole number when the fraction is zero.
+ */
+export function formatPercent(value: number | null | undefined): string {
+  const percent = value ?? 0;
+  return Number.isInteger(percent) ? String(percent) : percent.toFixed(1);
+}
+
 export function formatEpochSeconds(seconds: number | null | undefined): string {
   if (!seconds) {
     return "—";

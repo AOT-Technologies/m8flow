@@ -3416,7 +3416,10 @@ components:
         memoryBytes:
           type: integer
         cpuPercent:
-          type: integer
+          # NATS reports /varz cpu as a fractional percentage (e.g. 12.5), so this is a
+          # number rather than an integer -- typing it as integer truncated real load.
+          type: number
+          format: float
         jetstream:
           $ref: "#/components/schemas/NatsJetStreamTotals"
 

@@ -28,6 +28,7 @@ from m8flow_backend.services.nats_event_audit_query_service import (
     NatsEventAuditQueryService,
 )
 from m8flow_backend.services.nats_monitoring_service import NatsMonitoringService
+from m8flow_backend.config import TRUTHY as TRUTHY_ARG_VALUES
 from m8flow_backend.tenancy import get_tenant_id
 from spiffworkflow_backend.exceptions.api_error import ApiError
 
@@ -104,7 +105,12 @@ def _int_arg(name: str, default: int | None = None) -> int | None:
 
 
 def _bool_arg(name: str) -> bool:
-    return str(request.args.get(name, "")).lower() == "true"
+    """Read a query-string flag using the same vocabulary as the environment flags.
+
+    ``?allTenants=1`` and ``?allTenants=true`` mean the same thing; anything unrecognised
+    is false, so a typo scopes the request *down* rather than widening it.
+    """
+    return str(request.args.get(name, "")).strip().lower() in TRUTHY_ARG_VALUES
 
 
 @handle_api_errors

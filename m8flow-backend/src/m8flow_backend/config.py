@@ -17,10 +17,11 @@ def _get(key: str, default: str | None = None) -> str | None:
     return default
 
 
-# Spellings an operator may reasonably reach for in a .env or a compose file. Anything
-# outside this set is false, so a typo fails closed rather than silently enabling a
-# feature. Kept in one place so every flag answers to the same vocabulary.
-_TRUTHY = frozenset({"true", "1", "yes", "on"})
+# Spellings an operator may reasonably reach for in a .env, a compose file, or a query
+# string. Anything outside this set is false, so a typo fails closed rather than silently
+# enabling a feature. Exported (not underscore-private) because request handlers parse
+# boolean query args against the same vocabulary — see nats_monitoring_controller._bool_arg.
+TRUTHY = frozenset({"true", "1", "yes", "on"})
 
 
 def _get_bool(key: str, default: bool = False) -> bool:
@@ -28,7 +29,7 @@ def _get_bool(key: str, default: bool = False) -> bool:
     raw = _get(key)
     if raw is None:
         return default
-    return raw.strip().lower() in _TRUTHY
+    return raw.strip().lower() in TRUTHY
 
 
 def keycloak_url() -> str:

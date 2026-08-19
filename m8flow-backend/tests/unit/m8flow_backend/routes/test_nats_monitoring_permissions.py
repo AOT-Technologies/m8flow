@@ -14,6 +14,7 @@ tables on login.
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -37,6 +38,10 @@ PERMISSIONS_PATH = (
     / "config"
     / "permissions"
     / "m8flow.yml"
+)
+
+API_SPEC_PATH = (
+    Path(__file__).resolve().parents[4] / "src" / "m8flow_backend" / "api.yml"
 )
 
 MONITORING_URI_PREFIX = "/m8flow/nats/"
@@ -187,3 +192,84 @@ class TestWildcardOverlapIsHarmless:
             or str(perm.get("uri", "")).startswith("DENY:")
         ]
         assert not denied, f"DENY rules change the overlap semantics asserted above: {denied}"
+
+
+class TestEveryNatsRouteHasADeliberateAccessClass:
+    """Enumerate every ``/nats/*`` route in api.yml and pin who may read it.
+
+    The narrower guards above name URIs by hand, which cannot catch a route that does not
+    exist yet. This one reads the OpenAPI spec, so a newly added endpoint under this subtree
+    fails until it is classified here — the failure mode the wildcard grants make easy, where
+    ``/m8flow/nats/events/*`` silently confers tenant-admin access on a subpath added later.
+
+    Classification is by design intent:
+      - broker-wide JetStream state cannot be filtered per tenant -> super-admin only
+      - audit-backed routes carry a tenant per row -> tenant-admin may read their own
+    """
+
+    # Audit-backed routes. `summary` is here on purpose, not by accident: the Event history
+    # tab a tenant-admin sees renders its counts from it (NatsEventsPanel), and the
+    # controller pins non-super-admins to their active tenant exactly as it does for the
+    # list itself (test_summary_uses_the_same_scoping).
+    TENANT_ADMIN_READABLE = {
+        "/nats/events",
+        "/nats/events/summary",
+        "/nats/events/{event_id}",
+    }
+
+    # Broker-wide: reported per account by JetStream, so no honest per-tenant filter exists.
+    SUPER_ADMIN_ONLY = {
+        "/nats/overview",
+        "/nats/streams",
+        "/nats/tenants",
+        "/nats/streams/{stream_name}/messages",
+    }
+
+    @staticmethod
+    def _spec_paths() -> set[str]:
+        with open(API_SPEC_PATH, encoding="utf-8") as fh:
+            spec = yaml.safe_load(fh)
+        # `/nats-tokens` is API-key management, a different feature with its own grants.
+        return {path for path in spec["paths"] if path.startswith("/nats/")}
+
+    @staticmethod
+    def _concrete(path: str) -> str:
+        """Turn an OpenAPI template into a URI the matcher can be asked about."""
+        return "/m8flow" + re.sub(r"\{[^}]+\}", "sample-value", path)
+
+    def test_every_route_in_the_spec_is_classified(self) -> None:
+        """The guard that makes the two tests below meaningful as routes are added."""
+        classified = self.TENANT_ADMIN_READABLE | self.SUPER_ADMIN_ONLY
+        unclassified = self._spec_paths() - classified
+        assert not unclassified, (
+            f"new NATS route(s) {sorted(unclassified)} are not classified here. Decide whether "
+            "each is tenant-scopable or broker-wide, add it above, and check the wildcard "
+            "grants confer the access you intend."
+        )
+
+    def test_no_route_is_classified_that_the_spec_does_not_define(self) -> None:
+        """Keeps the lists from rotting into fiction after a route is renamed or removed."""
+        stale = (self.TENANT_ADMIN_READABLE | self.SUPER_ADMIN_ONLY) - self._spec_paths()
+        assert not stale, f"classified route(s) no longer in api.yml: {sorted(stale)}"
+
+    def test_tenant_admins_reach_exactly_the_audit_backed_routes(self) -> None:
+        granted = {
+            path
+            for path in self._spec_paths()
+            if any(
+                _matches(target, self._concrete(path))
+                for _, target in _targets_for_group("tenant-admin")
+            )
+        }
+        assert granted == self.TENANT_ADMIN_READABLE
+
+    def test_super_admins_reach_every_route_in_the_subtree(self) -> None:
+        ungranted = {
+            path
+            for path in self._spec_paths()
+            if not any(
+                _matches(target, self._concrete(path))
+                for _, target in _targets_for_group("super-admin")
+            )
+        }
+        assert not ungranted, f"super-admin cannot reach {sorted(ungranted)}"
