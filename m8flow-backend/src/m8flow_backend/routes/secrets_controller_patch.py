@@ -46,7 +46,6 @@ def apply() -> None:
             key=key,
             value=body["value"],
             user_id=g.user.id,
-            new_key=body.get("key"),
         )
         return make_response(jsonify({"ok": True}), 200)
 

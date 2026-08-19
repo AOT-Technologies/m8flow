@@ -177,6 +177,10 @@ class FakeAppRoleAuth:
         token_policies: list[str],
         bind_secret_id: bool,
         token_no_default_policy: bool,
+        secret_id_num_uses: int | None = None,
+        secret_id_ttl: str | int | None = None,
+        token_ttl: str | int | None = None,
+        token_max_ttl: str | int | None = None,
     ) -> dict[str, object] | None:
         self.create_or_update_calls.append(
             {
@@ -185,6 +189,10 @@ class FakeAppRoleAuth:
                 "token_policies": token_policies,
                 "bind_secret_id": bind_secret_id,
                 "token_no_default_policy": token_no_default_policy,
+                "secret_id_num_uses": secret_id_num_uses,
+                "secret_id_ttl": secret_id_ttl,
+                "token_ttl": token_ttl,
+                "token_max_ttl": token_max_ttl,
             }
         )
         if self.create_or_update_exception is not None:
@@ -394,6 +402,10 @@ class TestVaultClientOperations:
             "tenant-role",
             mount_point="approle-custom",
             token_policies=["tenant-policy"],
+            secret_id_num_uses=1,
+            secret_id_ttl="10m",
+            token_ttl="10m",
+            token_max_ttl="30m",
         )
 
         assert result == {"data": {"created": True}}
@@ -404,6 +416,10 @@ class TestVaultClientOperations:
                 "token_policies": ["tenant-policy"],
                 "bind_secret_id": True,
                 "token_no_default_policy": True,
+                "secret_id_num_uses": 1,
+                "secret_id_ttl": "10m",
+                "token_ttl": "10m",
+                "token_max_ttl": "30m",
             }
         ]
 

@@ -228,7 +228,7 @@ services:
         fi
         if [ "$$M8FLOW_NATS_ENABLED" = "true" ]; then
           PYTHONPATH=/app:/app/m8flow-backend/src:/app/spiffworkflow-backend/src \
-          exec python m8flow-nats-consumer/consumer.py
+          exec python m8flow-nats-consumer/trigger_event_consumer.py
         else
           echo "M8FLOW_NATS_ENABLED is not true. Consumer idling."
           exec tail -f /dev/null
@@ -601,8 +601,13 @@ services:
       M8FLOW_KEYCLOAK_MASTER_REALM: "${M8FLOW_KEYCLOAK_MASTER_REALM:-master}"
       # Super-admin monitoring dashboards embedded in the UI (browser-reachable URLs).
       M8FLOW_CELERY_FLOWER_URL: "${M8FLOW_CELERY_FLOWER_URL:-http://localhost:6850}"
-      # Leave empty to hide the NATS section; set when running the optional NATS compose.
-      M8FLOW_NATS_UI_URL: "${M8FLOW_NATS_UI_URL:-}"
+      # Set to "true" to surface the built-in NATS monitoring section; leave false when the
+      # optional NATS compose is not running.
+      M8FLOW_NATS_MONITORING_ENABLED: "${M8FLOW_NATS_MONITORING_ENABLED:-false}"
+      # Mirrors the backend flag so the UI can hide the payload-viewing affordance.
+      M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED: "${M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED:-false}"
+      # Browser-reachable Grafana URL for the "View trends" link; empty hides it.
+      M8FLOW_GRAFANA_URL: "${M8FLOW_GRAFANA_URL:-}"
       # Browser-reachable URL of the m8flow MCP server; leave empty to hide the MCP connection page.
       M8FLOW_MCP_SERVER_URL: "${M8FLOW_MCP_SERVER_URL:-}"
       M8FLOW_FRONTEND_FARO_COLLECTOR_URL: "${M8FLOW_FRONTEND_FARO_COLLECTOR_URL:-}"

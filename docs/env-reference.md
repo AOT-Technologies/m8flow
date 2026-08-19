@@ -21,7 +21,6 @@ These control what **your machine** listens on when you run [docker/m8flow-docke
 | `REDIS_HOST_PORT` | `6848` | Redis on host |
 | `M8FLOW_BACKEND_CELERY_FLOWER_PORT` | `6850` | Celery Flower (host and in-container bind) |
 | `M8FLOW_NATS_MONITORING_PORT` | `6851` | NATS monitoring (host → container 8222) |
-| `M8FLOW_NATS_UI_PORT` | `6852` | NATS UI (host → container 31311) |
 | `MINIO_LOCAL_DEV_API_PORT` | `16846` | Standalone MinIO dev API ([minio.local-dev.docker-compose.yml](../docker/minio.local-dev.docker-compose.yml)) |
 | `MINIO_LOCAL_DEV_CONSOLE_PORT` | `16847` | Standalone MinIO dev console |
 
@@ -44,9 +43,19 @@ Also align URL-style settings with the above (e.g. `M8FLOW_BACKEND_URL`, `KEYCLO
 The UI embeds the Celery and NATS operations dashboards as super-admin-only sections (sidebar **Celery** / **NATS**) via an iframe, so operators no longer leave the app. URLs must be **browser-reachable** (resolved from the user's browser, not from inside a container).
 
 - `M8FLOW_CELERY_FLOWER_URL` (optional): URL of the Celery Flower dashboard embedded in the **Celery** section. Default `http://localhost:6850` (matches `M8FLOW_BACKEND_CELERY_FLOWER_PORT`). Flower keeps its own basic auth (`M8FLOW_BACKEND_CELERY_FLOWER_BASIC_AUTH`), so a basic-auth prompt may appear inside the embedded frame.
-- `M8FLOW_NATS_UI_URL` (optional): URL of the NATS NUI dashboard embedded in the **NATS** section. **Empty by default**, which hides the NATS section entirely (NATS is disabled by default). When running the optional [m8flow-nats-docker-compose.yml](../docker/m8flow-nats-docker-compose.yml), set e.g. `http://localhost:6852` (matches `M8FLOW_NATS_UI_PORT`).
+- `M8FLOW_NATS_MONITORING_ENABLED` (optional): shows the **NATS** monitoring section, served by the built-in dashboard rather than an embedded third-party UI. **`false` by default**, matching `M8FLOW_NATS_ENABLED`; set to `true` when running the optional [m8flow-nats-docker-compose.yml](../docker/m8flow-nats-docker-compose.yml). (Replaces the removed `M8FLOW_NATS_UI_URL`, which pointed at the third-party NUI dashboard.)
 
-Both are consumed by the frontend at build time (`VITE_*`) and at runtime in Docker (injected into `window.spiffworkflowFrontendJsenv` by [docker/scripts/m8flow_frontend_entrypoint.sh](../docker/scripts/m8flow_frontend_entrypoint.sh)). If an embedded dashboard refuses framing (e.g. via `X-Frame-Options`), the section shows an "Open in new tab" fallback.
+- `M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED` (optional): allows raw message payloads to be read through the monitoring API and shown in the UI. **`false` by default** — payloads carry tenant business data and notification recipients, and m8flow's streams retain them indefinitely. Even when enabled, browsing a stream by sequence (`/nats/streams/{name}/messages`) stays super-admin only; a tenant-admin sees the payload of an event in their own tenant, because the stream and the sequence are both taken from the tenant-scoped audit row rather than from the request. Reads never acknowledge a message.
+- `M8FLOW_GRAFANA_URL` (optional): browser-reachable Grafana URL, linked from the NATS **Overview** tab for metric history. Empty hides the link. Grafana runs with anonymous auth disabled, so it is linked to rather than embedded.
+
+These are consumed by the frontend at build time (`VITE_*`) and at runtime in Docker (injected into `window.spiffworkflowFrontendJsenv` by [docker/scripts/m8flow_frontend_entrypoint.sh](../docker/scripts/m8flow_frontend_entrypoint.sh)). If an embedded dashboard refuses framing (e.g. via `X-Frame-Options`), the section shows an "Open in new tab" fallback.
+
+Backend-side NATS monitoring settings:
+
+- `M8FLOW_NATS_MONITORING_URL` (optional): base URL of the NATS server's monitoring endpoints. Default `http://nats:8222`, reached over the internal docker network, so the monitoring port never needs publishing to a browser.
+- `M8FLOW_NATS_MESSAGE_PREVIEW_MAX_BYTES` (optional): cap on how much of a payload a preview returns. Default `4096`.
+- `M8FLOW_NATS_AUDIT_RETENTION_DAYS` (optional): how long terminal event-audit rows are kept before the notification worker's sweep prunes them. Default `90`; `0` disables pruning. In-flight (`queued`) rows are never pruned.
+- `M8FLOW_NATS_BROKER_METRICS_INTERVAL_SECONDS` (optional): how often `m8flow-nats-consumer` polls the broker to emit per-stream/per-consumer metrics feeding the "M8Flow NATS Trigger Consumer Overview" and "M8Flow NATS Notification Worker Overview" Grafana dashboards. Default `20`. Coupled to `OTEL_METRIC_EXPORT_INTERVAL` (default `60000`ms) — polling faster than roughly half that interval buys nothing, since an OTel gauge is last-value-wins per export tick.
 
 ## Connector attachment paths
 
@@ -78,11 +87,49 @@ Examples:
 - `M8FLOW_VAULT_APPROLE_MOUNT_POINT` (optional): Vault auth mount used when M8Flow provisions per-tenant AppRoles. Default: `approle`.
 - `M8FLOW_VAULT_TENANT_POLICY_PREFIX` (optional): Prefix used for auto-created per-tenant Vault ACL policies. Effective policy names look like `{prefix}-{tenant_id}` after Vault-safe normalization. Default: `m8flow-tenant-policy`.
 - `M8FLOW_VAULT_TENANT_ROLE_PREFIX` (optional): Prefix used for auto-created per-tenant Vault AppRoles. Effective role names look like `{prefix}-{tenant_id}` after Vault-safe normalization. Default: `m8flow-tenant-role`.
+- `M8FLOW_VAULT_TENANT_SECRET_ID_NUM_USES` (optional): How many times a generated tenant AppRole `secret_id` may be used. Default: `1`.
+- `M8FLOW_VAULT_TENANT_SECRET_ID_TTL` (optional): TTL assigned to generated tenant AppRole `secret_id` values. Default: `10m`.
+- `M8FLOW_VAULT_TENANT_TOKEN_TTL` (optional): Initial TTL assigned to tenant AppRole login tokens. Default: `10m`.
+- `M8FLOW_VAULT_TENANT_TOKEN_MAX_TTL` (optional): Maximum TTL assigned to tenant AppRole login tokens. Default: `30m`.
 - `M8FLOW_VAULT_TIMEOUT_SECONDS` (optional): Request timeout for Vault API calls. Default: `5`.
 - `M8FLOW_VAULT_SKIP_VERIFY` / `VAULT_SKIP_VERIFY` (optional): Set to `true` only when TLS certificate verification must be disabled for a non-production environment.
 - `M8FLOW_VAULT_CACERT` / `VAULT_CACERT` (optional): CA bundle path used to verify Vault TLS certificates. When set, it takes precedence over `*_SKIP_VERIFY`.
 - `M8FLOW_VAULT_PORT` (optional, Docker Compose local dev): Host port that publishes the local Vault API and built-in UI. Default: `8200`.
 - `M8FLOW_VAULT_DEMO_OVERWRITE` (optional, Docker Compose local dev): When `true`, the `vault-demo` bootstrap overwrites secrets defined in your local `docker/vault/demo/secrets.yml` file. Start from `docker/vault/demo/secrets.yml.sample` when you want real demo secrets. If the file is absent, `vault-demo` still bootstraps Vault and tenant identities but does not seed any tenant secret. Default: `false`.
+
+Tenant AppRole lifetime settings:
+
+- These four `M8FLOW_VAULT_TENANT_*` variables apply to the per-tenant AppRoles that M8Flow creates automatically for tenant secret access.
+- They are passed through to Vault when M8Flow creates or updates the tenant AppRole role definition.
+- They do not configure the shared broker/control-plane AppRole used by the local `vault-demo` bootstrap.
+
+- `M8FLOW_VAULT_TENANT_SECRET_ID_NUM_USES`
+  Integer. Default `1`.
+  Controls how many AppRole logins a newly generated tenant `secret_id` may perform before Vault rejects it.
+  `1` means single-use. `0` means unlimited reuse.
+  In the current M8Flow flow, a fresh tenant `secret_id` is minted when the app builds a tenant-scoped Vault client, so `1` is the safer default.
+
+- `M8FLOW_VAULT_TENANT_SECRET_ID_TTL`
+  Vault duration string such as `10m`, `1h`, or `24h`. Default `10m`.
+  Controls how long a generated tenant `secret_id` stays valid if it is not used immediately.
+  This limits the exposure window of a leaked but unused `secret_id`.
+
+- `M8FLOW_VAULT_TENANT_TOKEN_TTL`
+  Vault duration string. Default `10m`.
+  Controls the initial lease duration of the Vault client token returned after a successful tenant AppRole login.
+  This is the token that actually performs the tenant secret read, write, delete, or list operation.
+
+- `M8FLOW_VAULT_TENANT_TOKEN_MAX_TTL`
+  Vault duration string. Default `30m`.
+  Controls the maximum lifetime Vault will allow for tokens issued from that tenant AppRole, including renewal limits when renewal is used.
+  This should normally be greater than or equal to `M8FLOW_VAULT_TENANT_TOKEN_TTL`.
+  Example: if `M8FLOW_VAULT_TENANT_TOKEN_TTL=10m` and `M8FLOW_VAULT_TENANT_TOKEN_MAX_TTL=30m`, Vault issues the tenant token with `10m` initially. If renewal is used, it can be extended, but never past `30m` total.
+
+Practical guidance:
+
+- Lower values reduce the useful lifetime of leaked credentials, but make slow or long-running flows less tolerant.
+- Higher values reduce re-authentication frequency, but increase the window in which a leaked `secret_id` or tenant token remains useful.
+- For request-driven secret access, the current defaults are intentionally short-lived: single-use `secret_id`, `10m` initial token TTL, and `30m` max token TTL.
 
 Per-tenant Vault identity notes:
 
@@ -92,6 +139,7 @@ Per-tenant Vault identity notes:
 - The configured runtime token or runtime AppRole is now a broker/control-plane identity. M8Flow uses it to manage tenant policies/AppRoles and to mint tenant-scoped Vault clients for tenant secret CRUD.
 - A healthy configuration does not let that broker identity read tenant secret values directly; only the derived tenant-scoped client should have data-plane access inside `tenants/{tenant_id}/secrets/...`.
 - On a brand-new tenant, M8Flow generates an initial AppRole `secret_id`. On later startup/bootstrap passes, the role and policy are reconciled idempotently without rotating that `secret_id`.
+- By default, tenant AppRoles are provisioned with `secret_id_num_uses=1`, `secret_id_ttl=10m`, `token_ttl=10m`, and `token_max_ttl=30m`. Override those with the `M8FLOW_VAULT_TENANT_*` settings when your environment needs different values.
 
 Local Docker Compose notes:
 

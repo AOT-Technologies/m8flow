@@ -42,9 +42,8 @@ class FakeSecretBackend:
         value: str,
         user_id: int | None = None,
         create_if_not_exists: bool | None = False,
-        new_key: str | None = None,
     ) -> None:
-        self.calls.append(("update_secret", key, value, user_id, create_if_not_exists, new_key))
+        self.calls.append(("update_secret", key, value, user_id, create_if_not_exists))
 
     def delete_secret(self, key: str, user_id: int) -> None:
         self.calls.append(("delete_secret", key, user_id))
@@ -155,7 +154,7 @@ def test_secret_crud_routes_delegate_to_common_backend(monkeypatch) -> None:
     assert backend.calls == [
         ("get_secret", "API_TOKEN"),
         ("add_secret", "API_TOKEN", "vault-value", 7),
-        ("update_secret", "API_TOKEN", "rotated-value", 7, False, "API_TOKEN_NEW"),
+        ("update_secret", "API_TOKEN", "rotated-value", 7, False),
         ("delete_secret", "API_TOKEN", 99),
     ]
 

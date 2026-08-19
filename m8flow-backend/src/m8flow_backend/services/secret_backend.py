@@ -23,6 +23,7 @@ from m8flow_backend.services.vault_client import (
     VaultConnectionError,
     get_vault_client,
 )
+from m8flow_backend.services.vault_path_utils import vault_safe_tenant_path_component
 from spiffworkflow_backend.exceptions.api_error import ApiError
 from spiffworkflow_backend.models.db import db
 from spiffworkflow_backend.models.user import UserModel
@@ -181,15 +182,12 @@ class LegacyDatabaseSecretBackend:
         value: str,
         user_id: int | None = None,
         create_if_not_exists: bool | None = False,
-        new_key: str | None = None,
     ) -> None:
         from spiffworkflow_backend.models.secret_model import SecretModel
 
         secret_model = SecretModel.query.filter(SecretModel.key == key).first()
         if secret_model:
             secret_model.value = _encrypt_secret_value(value)
-            if new_key:
-                secret_model.key = new_key
             db.session.add(secret_model)
             try:
                 db.session.commit()
@@ -526,7 +524,6 @@ class VaultBackedSecretBackend:
         value: str,
         user_id: int | None = None,
         create_if_not_exists: bool | None = False,
-        new_key: str | None = None,
     ) -> None:
         tenant_id = self._require_current_tenant_id()
         try:
@@ -604,48 +601,11 @@ class VaultBackedSecretBackend:
                 status_code=404,
             )
 
-        normalized_new_key = str(new_key or "").strip() or None
-        target_key = normalized_new_key or existing.key
-        if target_key != existing.key:
-            target_existing = self._get_optional_secret_record(
-                key=target_key,
-                tenant_id=tenant_id,
-                action="update",
-                vault_client=vault_client,
-            )
-            if target_existing is not None:
-                self._audit_secret_event(
-                    action="update",
-                    status="failed",
-                    key=key,
-                    tenant_id=tenant_id,
-                    severity="warning",
-                    message="Vault secret update failed.",
-                    resource_id=existing.id,
-                    resource_name=target_key,
-                    details={
-                        "backend": "vault",
-                        "error_code": "update_secret_error",
-                        "reason": "target_key_exists",
-                        "status_code": 409,
-                        "renamed": True,
-                        "previous_key": existing.key,
-                    },
-                )
-                raise ApiError(
-                    error_code="update_secret_error",
-                    message=(
-                        f"Cannot update secret with key: {key}. "
-                        f"The target key '{target_key}' already exists in tenant '{tenant_id}'."
-                    ),
-                    status_code=409,
-                )
-
         actor = self._require_user(user_id) if user_id is not None else None
         now = round(time.time())
         updated_record = VaultSecretRecord(
             id=existing.id,
-            key=target_key,
+            key=existing.key,
             user_id=actor.id if actor is not None else existing.user_id,
             username=actor.username if actor is not None else existing.username,
             tenant_id=tenant_id,
@@ -655,24 +615,11 @@ class VaultBackedSecretBackend:
         )
 
         path = self._vault_path(tenant_id, existing.key)
-        target_path = self._vault_path(tenant_id, target_key)
-        renamed = target_path != path
 
         try:
-            vault_client.store_secret_document(target_path, updated_record.to_vault_document())
-            if renamed:
-                vault_client.delete_secret(path)
+            vault_client.store_secret_document(path, updated_record.to_vault_document())
         except VaultClientError as exc:
             api_error = self._vault_operation_error("update", key, exc)
-            if renamed:
-                try:
-                    vault_client.delete_secret(target_path)
-                except Exception as cleanup_exc:
-                    logger.error(
-                        "vault_secret_update_compensation_failed tenant_id=%s cleanup_error_type=%s",
-                        tenant_id,
-                        type(cleanup_exc).__name__,
-                    )
             self._audit_secret_event(
                 action="update",
                 status="failed",
@@ -681,12 +628,9 @@ class VaultBackedSecretBackend:
                 severity="error",
                 message="Vault secret update failed.",
                 resource_id=existing.id,
-                resource_name=target_key,
                 details=self._failure_details(
                     api_error,
                     error_type=type(exc).__name__,
-                    renamed=renamed,
-                    previous_key=existing.key if renamed else None,
                 ),
             )
             raise api_error from exc
@@ -699,12 +643,7 @@ class VaultBackedSecretBackend:
             severity="info",
             message="Vault secret update succeeded.",
             resource_id=updated_record.id,
-            resource_name=target_key,
-            details={
-                "backend": "vault",
-                "renamed": renamed,
-                "previous_key": existing.key if renamed else None,
-            },
+            details={"backend": "vault"},
         )
 
     def delete_secret(self, key: str, user_id: int) -> None:
@@ -1231,7 +1170,11 @@ class VaultBackedSecretBackend:
 
     @classmethod
     def _vault_secret_root(cls, tenant_id: str) -> str:
-        return cls._join_vault_path(cls._vault_tenants_root(), tenant_id, "secrets")
+        return cls._join_vault_path(
+            cls._vault_tenants_root(),
+            vault_safe_tenant_path_component(tenant_id),
+            "secrets",
+        )
 
     @classmethod
     def _vault_path(cls, tenant_id: str, secret_name: str) -> str:
