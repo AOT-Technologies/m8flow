@@ -90,3 +90,19 @@ def test_effective_secret_key_falls_back_to_derived_name():
         effective_secret_key("widget", {"id": "api_key", "label": "x", "type": "text", "required": True})
         == "widget_api_key"
     )
+
+
+def test_connectors_grouped_injects_nats_smtp_virtual_connector():
+    """Virtual connectors like nats_smtp must appear in the grouped list even with 0 operations."""
+    groups = _call_grouped([])
+    by_id = {g["id"]: g for g in groups}
+
+    assert "nats_smtp" in by_id
+    nats_smtp = by_id["nats_smtp"]
+    assert nats_smtp["name"] == "Notification Email (SMTP)"
+    assert nats_smtp["operationCount"] == 0
+    assert "configFields" in nats_smtp
+    secret_keys = {f["secretKey"] for f in nats_smtp["configFields"]}
+    assert "NATS_SMTP_HOST" in secret_keys
+    assert "NATS_SMTP_FROM_EMAIL" in secret_keys
+

@@ -5,6 +5,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
+  Alert,
+  AlertTitle,
   Box,
   Button,
   Dialog,
@@ -41,6 +43,13 @@ type SecretRow = {
   tenantId?: string;
 };
 
+interface SmtpStatus {
+  configured: boolean;
+  required_keys: string[];
+  optional_keys: string[];
+  keys_present: Record<string, boolean>;
+}
+
 function secretsListPath(page: number, perPage: number, tenantId?: string | null) {
   const qs = new URLSearchParams({
     per_page: String(perPage),
@@ -66,6 +75,8 @@ export default function SecretList() {
   const [rows, setRows] = useState<SecretRow[]>([]);
   const [pageMeta, setPageMeta] = useState<any>(null);
   const [pendingDelete, setPendingDelete] = useState<SecretRow | null>(null);
+  const [smtpStatus, setSmtpStatus] = useState<SmtpStatus | null>(null);
+  const [smtpLoading, setSmtpLoading] = useState(true);
 
   const { ability, permissionsLoaded } = usePermissionFetcher({
     [targetUris.authenticationListPath]: ['GET'],
@@ -105,6 +116,23 @@ export default function SecretList() {
     load,
   ]);
 
+  // Check notification SMTP configuration status
+  useEffect(() => {
+    if (!permissionsLoaded) return;
+    setSmtpLoading(true);
+    HttpService.makeCallToBackend({
+      path: '/m8flow/notification-smtp-status',
+      successCallback: (result: SmtpStatus) => {
+        setSmtpStatus(result);
+        setSmtpLoading(false);
+      },
+      failureCallback: () => {
+        // Endpoint may not be available (permissions, older backend); silently skip.
+        setSmtpLoading(false);
+      },
+    });
+  }, [permissionsLoaded, selectedTenantId]);
+
   const confirmDelete = (key: string) => {
     HttpService.makeCallToBackend({
       path: `/secrets/${key}`,
@@ -118,6 +146,28 @@ export default function SecretList() {
   }
 
   const { page, perPage } = getPageInfoFromSearchParams(searchParams);
+
+  const missingSmtpKeys =
+    smtpStatus && !smtpStatus.configured
+      ? Object.entries(smtpStatus.keys_present)
+          .filter(([, present]) => !present)
+          .map(([key]) => key)
+      : [];
+
+  const smtpBanner = !smtpLoading && smtpStatus ? (
+    smtpStatus.configured ? null : (
+      <Alert
+        severity="warning"
+        sx={{ mb: 2 }}
+        data-testid="smtp-notification-warning"
+      >
+        <AlertTitle>{t('smtp_notification_warning_title')}</AlertTitle>
+        {t('smtp_notification_warning_body', {
+          keys: missingSmtpKeys.join(', '),
+        })}
+      </Alert>
+    )
+  ) : null;
 
   const table = (
     <TableContainer component={Paper}>
@@ -181,6 +231,8 @@ export default function SecretList() {
           </Button>
         </Can>
       </Box>
+
+      {smtpBanner}
 
       {rows.length > 0 ? (
         <PaginationForTable

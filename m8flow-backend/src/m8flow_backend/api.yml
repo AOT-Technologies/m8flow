@@ -2281,6 +2281,39 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /notification-smtp-status:
+    get:
+      operationId: m8flow_backend.routes.notification_smtp_controller.notification_smtp_status
+      summary: Check SMTP configuration status for external form notifications
+      description: >
+        Returns which NATS_SMTP_* secret keys are configured for the current tenant.
+        Used by the frontend to surface warnings when SMTP is not set up.
+        Never returns secret values, only presence booleans.
+      tags:
+        - Notifications
+      responses:
+        "200":
+          description: SMTP configuration status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  configured:
+                    type: boolean
+                  required_keys:
+                    type: array
+                    items:
+                      type: string
+                  optional_keys:
+                    type: array
+                    items:
+                      type: string
+                  keys_present:
+                    type: object
+                    additionalProperties:
+                      type: boolean
+
   /connectors-grouped:
     get:
       operationId: m8flow_backend.routes.connectors_controller.connectors_grouped

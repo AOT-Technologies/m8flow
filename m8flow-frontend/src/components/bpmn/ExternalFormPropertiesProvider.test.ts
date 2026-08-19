@@ -64,6 +64,8 @@ describe('ExternalFormPropertiesProvider', () => {
     expect(urlEntry.moddle).toBe(moddle);
     expect(urlEntry.commandStack).toBe(commandStack);
     expect(typeof urlEntry.component).toBe('function');
+    expect(urlEntry.description).toContain('NATS_SMTP_HOST');
+    expect(urlEntry.description).toContain('NATS_SMTP_FROM_EMAIL');
   });
 
   it('does not add the group to non-user-task elements', () => {
@@ -110,5 +112,41 @@ describe('ExternalFormPropertiesProvider', () => {
     expect(groups[0]).toBe(existing);
     expect(groups[groups.length - 1].id).toBe(EXTERNAL_FORM_GROUP_ID);
     expect(groups).toHaveLength(2);
+  });
+
+  it('displays warning when SMTP status is unconfigured', async () => {
+    const { setCachedSmtpStatusForTesting } = await import(
+      './ExternalFormPropertiesProvider'
+    );
+    setCachedSmtpStatusForTesting({
+      configured: false,
+      required_keys: ['NATS_SMTP_HOST', 'NATS_SMTP_FROM_EMAIL'],
+      keys_present: { NATS_SMTP_HOST: false, NATS_SMTP_FROM_EMAIL: false },
+    });
+
+    const { provider } = instantiate();
+    const groups = provider.getGroups(makeElement('bpmn:UserTask'))([]);
+    const [urlEntry] = groups[0].entries;
+
+    expect(urlEntry.description).toContain('Warning: Notification SMTP is not configured');
+    expect(urlEntry.description).toContain('NATS_SMTP_HOST');
+    expect(urlEntry.description).toContain('NATS_SMTP_FROM_EMAIL');
+  });
+
+  it('displays configured indicator when SMTP is configured', async () => {
+    const { setCachedSmtpStatusForTesting } = await import(
+      './ExternalFormPropertiesProvider'
+    );
+    setCachedSmtpStatusForTesting({
+      configured: true,
+      required_keys: ['NATS_SMTP_HOST', 'NATS_SMTP_FROM_EMAIL'],
+      keys_present: { NATS_SMTP_HOST: true, NATS_SMTP_FROM_EMAIL: true },
+    });
+
+    const { provider } = instantiate();
+    const groups = provider.getGroups(makeElement('bpmn:UserTask'))([]);
+    const [urlEntry] = groups[0].entries;
+
+    expect(urlEntry.description).toContain('Notification SMTP is configured');
   });
 });

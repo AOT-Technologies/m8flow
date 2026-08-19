@@ -20,6 +20,7 @@ class ExternalFormRequestStatus(SpiffEnum):
     failed = "failed"
     expired = "expired"
     superseded = "superseded"
+    smtp_not_configured = "smtp_not_configured"
 
 
 # Statuses for which the secure link may still be used to submit the form.

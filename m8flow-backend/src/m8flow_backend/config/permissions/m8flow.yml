@@ -236,6 +236,10 @@ permissions:
     groups: ["everybody"]
     actions: [read]
     uri: /m8flow/mcp-connection
+  read-notification-smtp-status:
+    groups: ["everybody"]
+    actions: [read]
+    uri: /m8flow/notification-smtp-status
   read-data-stores:
     groups: ["viewer", "super-admin"]
     actions: [read]

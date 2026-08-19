@@ -366,19 +366,22 @@ class TestNotify:
     def test_unknown_reference(self, app):
         assert ExternalFormNotificationService.notify("no-such-ref") == "skipped:unknown_reference"
 
-    def test_unconfigured_smtp_leaves_row_pending(self, app, tenant, alice, fake_smtp, smtp_secrets):
+    def test_unconfigured_smtp_marks_smtp_not_configured(self, app, tenant, alice, fake_smtp, smtp_secrets):
         smtp_secrets.clear()  # tenant has no SMTP secrets
         row = _create_request(tenant, alice)
 
-        assert ExternalFormNotificationService.notify(row.reference_id) == "skipped:smtp_unconfigured"
-        assert _fresh(row.id).status == ExternalFormRequestStatus.pending.value
+        assert ExternalFormNotificationService.notify(row.reference_id) == "failed:smtp_not_configured"
+        row = _fresh(row.id)
+        assert row.status == ExternalFormRequestStatus.smtp_not_configured.value
+        assert row.attempts == 1
 
-    def test_missing_from_email_is_unconfigured(self, app, tenant, alice, fake_smtp, smtp_secrets):
+    def test_missing_from_email_is_smtp_not_configured(self, app, tenant, alice, fake_smtp, smtp_secrets):
         del smtp_secrets["NATS_SMTP_FROM_EMAIL"]  # host present but no sender address
         row = _create_request(tenant, alice)
 
-        assert ExternalFormNotificationService.notify(row.reference_id) == "skipped:smtp_unconfigured"
-        assert _fresh(row.id).status == ExternalFormRequestStatus.pending.value
+        assert ExternalFormNotificationService.notify(row.reference_id) == "failed:smtp_not_configured"
+        row = _fresh(row.id)
+        assert row.status == ExternalFormRequestStatus.smtp_not_configured.value
 
     def test_expired_row_is_not_emailed(self, app, tenant, alice, fake_smtp, smtp_secrets):
         row = _create_request(tenant, alice, expires_at_in_seconds=int(time.time()) - 10)
@@ -449,3 +452,43 @@ class TestRenderEmail:
 
         assert "<script>" not in html_body
         assert "&amp;" in html_body
+
+
+class TestSmtpNotConfiguredSweep:
+    def _sweep_now(self):
+        return int(time.time()) + 1000
+
+    def test_smtp_not_configured_not_swept(self, app, tenant, alice, smtp_secrets):
+        smtp_secrets.clear()
+        row = _create_request(tenant, alice)
+        ExternalFormNotificationService.notify(row.reference_id)
+
+        candidates = ExternalFormNotificationService.sweep_candidates(now=self._sweep_now())
+        assert candidates == []
+
+
+class TestCheckSmtpConfigured:
+    def test_returns_configured_true_when_required_keys_present(self, app, tenant, smtp_secrets):
+        result = ExternalFormNotificationService.check_smtp_configured()
+        assert result["configured"] is True
+        assert result["keys_present"]["NATS_SMTP_HOST"] is True
+        assert result["keys_present"]["NATS_SMTP_FROM_EMAIL"] is True
+
+    def test_returns_configured_false_when_host_missing(self, app, tenant, smtp_secrets):
+        del smtp_secrets["NATS_SMTP_HOST"]
+        result = ExternalFormNotificationService.check_smtp_configured()
+        assert result["configured"] is False
+        assert result["keys_present"]["NATS_SMTP_HOST"] is False
+
+    def test_returns_configured_false_when_all_missing(self, app, tenant, smtp_secrets):
+        smtp_secrets.clear()
+        result = ExternalFormNotificationService.check_smtp_configured()
+        assert result["configured"] is False
+        assert all(v is False for v in result["keys_present"].values())
+
+    def test_includes_required_and_optional_keys(self, app, tenant, smtp_secrets):
+        result = ExternalFormNotificationService.check_smtp_configured()
+        assert "NATS_SMTP_HOST" in result["required_keys"]
+        assert "NATS_SMTP_FROM_EMAIL" in result["required_keys"]
+        assert "NATS_SMTP_PORT" in result["optional_keys"]
+        assert "NATS_SMTP_USERNAME" in result["optional_keys"]

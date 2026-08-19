@@ -144,6 +144,20 @@ CONNECTOR_METADATA: dict[str, ConnectorMeta] = {
             {"id": "api_key", "secretKey": "STRIPE_KEY", "label": "API Key", "type": "password", "required": True},
         ],
     },
+    "nats_smtp": {
+        "name": "Notification Email (SMTP)",
+        "description": "SMTP settings for external form notification emails",
+        "icon": "email",
+        "configFields": [
+            {"id": "host", "secretKey": "NATS_SMTP_HOST", "label": "SMTP Host", "type": "text", "required": True},
+            {"id": "port", "secretKey": "NATS_SMTP_PORT", "label": "SMTP Port", "type": "text", "required": False, "format": "port"},
+            {"id": "username", "secretKey": "NATS_SMTP_USERNAME", "label": "Username", "type": "text", "required": False},
+            {"id": "password", "secretKey": "NATS_SMTP_PASSWORD", "label": "Password", "type": "password", "required": False},
+            {"id": "from_email", "secretKey": "NATS_SMTP_FROM_EMAIL", "label": "From Email", "type": "text", "required": True, "format": "email"},
+            {"id": "starttls", "secretKey": "NATS_SMTP_STARTTLS", "label": "Use STARTTLS", "type": "text", "required": False, "helpText": "true / false"},
+            {"id": "ssl", "secretKey": "NATS_SMTP_SSL", "label": "Use SSL", "type": "text", "required": False, "helpText": "true / false"},
+        ],
+    },
 }
 
 _UPPERCASE_ABBREVS = {"HTTP", "HTML", "SMTP", "API", "URL", "SQL", "SSH", "FTP", "AWS", "GCP"}
@@ -274,4 +288,33 @@ def connectors_grouped() -> flask.wrappers.Response:
         )
 
     result = sorted(groups.values(), key=lambda g: g["name"].lower())
+
+    # Inject virtual connectors that have configFields in CONNECTOR_METADATA but
+    # no runtime operations from the connector proxy (e.g. nats_smtp). They
+    # appear in the Connectors page so admins can configure their secrets.
+    seen_keys = {g["id"] for g in result}
+    for connector_key, meta in CONNECTOR_METADATA.items():
+        if connector_key in seen_keys:
+            continue
+        config_fields = _valid_config_fields(
+            connector_key, meta.get("configFields", [])
+        )
+        if not config_fields:
+            continue
+        virtual_entry: dict[str, Any] = {
+            "id": connector_key,
+            "name": meta.get("name", _humanize_connector_key(connector_key)),
+            "description": meta.get("description", ""),
+            "status": "available",
+            "icon": meta.get("icon", "extension"),
+            "operationCount": 0,
+            "operations": [],
+            "configFields": config_fields,
+        }
+        docs_url = meta.get("docsUrl")
+        if docs_url:
+            virtual_entry["docsUrl"] = docs_url
+        result.append(virtual_entry)
+
+    result.sort(key=lambda g: g["name"].lower())
     return make_response(jsonify(result), 200)

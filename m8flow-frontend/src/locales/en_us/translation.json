@@ -459,5 +459,9 @@
   "continuing_into_tenant": "Continuing into {{tenant}}...",
   "select_a_tenant": "Select a Tenant",
   "multi_tenant_choose_description": "Your account has access to more than one tenant. Choose the tenant you want to enter for this session.",
-  "owner": "Owner"
+  "owner": "Owner",
+  "smtp_notification_warning_title": "Notification SMTP Not Configured",
+  "smtp_notification_warning_body": "External form notification emails require SMTP secrets to be configured. Without them, notification emails will not be sent. Missing keys: {{keys}}",
+  "smtp_notification_configured": "Notification SMTP is configured",
+  "smtp_notification_status_loading": "Checking notification SMTP status…"
 }

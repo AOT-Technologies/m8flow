@@ -224,6 +224,27 @@ class ExternalFormNotificationService:
             "ssl": _is_truthy(cls._read_tenant_secret(SMTP_SECRET_KEYS["ssl"])),
         }
 
+    @classmethod
+    def check_smtp_configured(cls) -> dict[str, Any]:
+        """Check which NATS_SMTP_* secret keys are configured for the current tenant.
+
+        Returns a dict with an overall 'configured' boolean, the required/optional key
+        names, and per-key presence booleans. Never returns secret values."""
+        keys_present: dict[str, bool] = {}
+        for _friendly, secret_key in SMTP_SECRET_KEYS.items():
+            keys_present[secret_key] = cls._read_tenant_secret(secret_key) is not None
+
+        host_ok = keys_present.get(SMTP_SECRET_KEYS["host"], False)
+        from_ok = keys_present.get(SMTP_SECRET_KEYS["from_email"], False)
+        return {
+            "configured": host_ok and from_ok,
+            "required_keys": [SMTP_SECRET_KEYS["host"], SMTP_SECRET_KEYS["from_email"]],
+            "optional_keys": [
+                v for k, v in SMTP_SECRET_KEYS.items() if k not in ("host", "from_email")
+            ],
+            "keys_present": keys_present,
+        }
+
     @staticmethod
     def send_email(settings: dict[str, Any], to_email: str, subject: str, text_body: str, html_body: str) -> None:
         message = EmailMessage()
@@ -261,12 +282,31 @@ class ExternalFormNotificationService:
             return "skipped:unknown_reference"
         smtp_settings = cls.resolve_smtp_settings()
         if smtp_settings is None:
-            LOGGER.warning(
-                "external-form-notify: tenant %s has no SMTP secrets configured; leaving request id=%s pending",
+            now = int(time.time())
+            db.session.execute(
+                sa_update(ExternalFormRequestModel)
+                .where(
+                    ExternalFormRequestModel.id == row.id,
+                    ExternalFormRequestModel.status.in_(CLAIMABLE_STATUSES),
+                )
+                .values(
+                    status=ExternalFormRequestStatus.smtp_not_configured.value,
+                    attempts=ExternalFormRequestModel.attempts + 1,
+                    updated_at_in_seconds=now,
+                )
+                .execution_options(synchronize_session=False)
+            )
+            db.session.commit()
+            LOGGER.error(
+                "external-form-notify: tenant %s has no SMTP secrets configured; "
+                "request id=%s moved to terminal smtp_not_configured. "
+                "Required secrets: %s, %s",
                 row.m8f_tenant_id,
                 row.id,
+                SMTP_SECRET_KEYS["host"],
+                SMTP_SECRET_KEYS["from_email"],
             )
-            return "skipped:smtp_unconfigured"
+            return "failed:smtp_not_configured"
         now = int(time.time())
         if row.expires_at_in_seconds is not None and row.expires_at_in_seconds < now:
             return "skipped:expired"

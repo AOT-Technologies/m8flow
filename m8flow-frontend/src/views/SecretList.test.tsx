@@ -134,4 +134,70 @@ describe('SecretList', () => {
     );
     expect(screen.queryByTestId('secret-list-tenant-cell')).toBeNull();
   });
+
+  it('renders SMTP warning banner when notification SMTP is unconfigured', () => {
+    vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts: any) => {
+      if (opts.path === '/m8flow/notification-smtp-status') {
+        opts.successCallback({
+          configured: false,
+          required_keys: ['NATS_SMTP_HOST', 'NATS_SMTP_FROM_EMAIL'],
+          optional_keys: ['NATS_SMTP_PORT'],
+          keys_present: {
+            NATS_SMTP_HOST: false,
+            NATS_SMTP_FROM_EMAIL: false,
+          },
+        });
+      } else {
+        opts.successCallback({
+          results: [{ id: 1, key: 'api-key', username: 'editor' }],
+          pagination: { total: 1, pages: 1 },
+        });
+      }
+    });
+
+    renderList();
+    expect(screen.getByTestId('smtp-notification-warning')).toBeInTheDocument();
+    expect(screen.getByText('smtp_notification_warning_title')).toBeInTheDocument();
+  });
+
+  it('does not render SMTP warning banner when notification SMTP is configured', () => {
+    vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts: any) => {
+      if (opts.path === '/m8flow/notification-smtp-status') {
+        opts.successCallback({
+          configured: true,
+          required_keys: ['NATS_SMTP_HOST', 'NATS_SMTP_FROM_EMAIL'],
+          optional_keys: ['NATS_SMTP_PORT'],
+          keys_present: {
+            NATS_SMTP_HOST: true,
+            NATS_SMTP_FROM_EMAIL: true,
+          },
+        });
+      } else {
+        opts.successCallback({
+          results: [{ id: 1, key: 'api-key', username: 'editor' }],
+          pagination: { total: 1, pages: 1 },
+        });
+      }
+    });
+
+    renderList();
+    expect(screen.queryByTestId('smtp-notification-warning')).toBeNull();
+  });
+
+  it('gracefully handles failure to fetch SMTP status', () => {
+    vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts: any) => {
+      if (opts.path === '/m8flow/notification-smtp-status') {
+        opts.failureCallback?.();
+      } else {
+        opts.successCallback({
+          results: [{ id: 1, key: 'api-key', username: 'editor' }],
+          pagination: { total: 1, pages: 1 },
+        });
+      }
+    });
+
+    renderList();
+    expect(screen.queryByTestId('smtp-notification-warning')).toBeNull();
+    expect(screen.getByText('api-key')).toBeInTheDocument();
+  });
 });
