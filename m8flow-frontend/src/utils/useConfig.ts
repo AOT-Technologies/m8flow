@@ -56,8 +56,18 @@ export function getCeleryFlowerUrl(): string {
   return getRuntimeOrBuildConfig('M8FLOW_CELERY_FLOWER_URL') || '';
 }
 
-export function getNatsUiUrl(): string {
-  return getRuntimeOrBuildConfig('M8FLOW_NATS_UI_URL') || '';
+export function getNatsMonitoringEnabled(): boolean {
+  const raw = getRuntimeOrBuildConfig('M8FLOW_NATS_MONITORING_ENABLED') ?? '';
+  return String(raw).toLowerCase() === 'true';
+}
+
+export function getNatsMessageInspectionEnabled(): boolean {
+  const raw = getRuntimeOrBuildConfig('M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED') ?? '';
+  return String(raw).toLowerCase() === 'true';
+}
+
+export function getGrafanaUrl(): string {
+  return getRuntimeOrBuildConfig('M8FLOW_GRAFANA_URL') || '';
 }
 
 export function getMcpServerUrl(): string {
@@ -68,9 +78,15 @@ const ENABLE_MULTITENANT = getEnableMultitenant();
 const SHARED_REALM_IDENTIFIER = getSharedRealmIdentifier();
 const MASTER_REALM_IDENTIFIER = getMasterRealmIdentifier();
 const CELERY_FLOWER_URL = getCeleryFlowerUrl();
-const NATS_UI_URL = getNatsUiUrl();
-// NATS monitoring is optional/disabled by default; surface it only when a UI URL is configured.
-const NATS_MONITORING_ENABLED = Boolean(NATS_UI_URL);
+// NATS monitoring is optional and disabled by default; it is served by the built-in
+// dashboard, so it is gated on an explicit flag rather than on any external UI URL.
+const NATS_MONITORING_ENABLED = getNatsMonitoringEnabled();
+// Mirrors the backend flag: payload viewing is opt-in because m8flow's streams retain every
+// message indefinitely. The UI only hides the affordance -- the backend still enforces it.
+const NATS_MESSAGE_INSPECTION_ENABLED = getNatsMessageInspectionEnabled();
+// Optional deep link to Grafana for metric history. Grafana runs with anonymous auth
+// disabled, so it is linked out to rather than embedded.
+const GRAFANA_URL = getGrafanaUrl();
 const MCP_SERVER_URL = getMcpServerUrl();
 // The MCP connection page is optional; surface it only when a server URL is configured.
 const MCP_CONNECTION_ENABLED = Boolean(MCP_SERVER_URL);
@@ -92,11 +108,12 @@ export function useConfig() {
     DATE_TIME_FORMAT,
     DOCUMENTATION_URL,
     ENABLE_MULTITENANT,
+    GRAFANA_URL,
     MASTER_REALM_IDENTIFIER,
     MCP_CONNECTION_ENABLED,
     MCP_SERVER_URL,
+    NATS_MESSAGE_INSPECTION_ENABLED,
     NATS_MONITORING_ENABLED,
-    NATS_UI_URL,
     PROCESS_STATUSES,
     SHARED_REALM_IDENTIFIER,
     SPIFF_ENVIRONMENT,

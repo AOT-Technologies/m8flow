@@ -20,29 +20,9 @@ services:
       - default
       - m8flow_default
 
-  nats-ui:
-    image: ghcr.io/nats-nui/nui:latest
-    container_name: m8flow-nats-ui
-    ports:
-      - "${M8FLOW_NATS_UI_PORT:-6852}:31311"
-    environment:
-      - PORT=31311
-    volumes:
-      - nui-db:/db
-    tmpfs:
-      - /protoschemas
-    depends_on:
-      nats:
-        condition: service_healthy
-    restart: unless-stopped
-    networks:
-      - default
-
 volumes:
   nats_data:
     name: m8flow_nats_data
-  nui-db:
-    driver: local
 
 networks:
   m8flow_default:

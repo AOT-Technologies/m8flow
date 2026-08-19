@@ -22,6 +22,7 @@ from m8flow_backend.models.m8flow_tenant import M8flowTenantModel  # noqa: F401
 from m8flow_backend.models.template import TemplateModel  # noqa: F401
 from m8flow_backend.models.process_model_template import ProcessModelTemplateModel  # noqa: F401
 from m8flow_backend.models.nats_api_key import M8flowNatsApiKeyModel  # noqa: F401
+from m8flow_backend.models.nats_event_audit import NatsEventAuditModel  # noqa: F401
 from m8flow_backend.models.external_form_request import ExternalFormRequestModel  # noqa: F401
 from m8flow_backend.models.tenant_invitation import M8flowTenantInvitationModel  # noqa: F401
 

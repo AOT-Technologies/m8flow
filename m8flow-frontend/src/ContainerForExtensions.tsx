@@ -57,6 +57,7 @@ function buildShellPermissionChecks(
     [targetUris.m8flowTemplateListPath]: ['GET'],
     [targetUris.connectorsGroupedPath]: ['GET'],
     [targetUris.m8flowMcpConnectionPath]: ['GET'],
+    [targetUris.m8flowNatsEventsPath]: ['GET'],
   };
 }
 

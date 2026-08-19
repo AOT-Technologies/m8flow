@@ -17,6 +17,21 @@ def _get(key: str, default: str | None = None) -> str | None:
     return default
 
 
+# Spellings an operator may reasonably reach for in a .env, a compose file, or a query
+# string. Anything outside this set is false, so a typo fails closed rather than silently
+# enabling a feature. Exported (not underscore-private) because request handlers parse
+# boolean query args against the same vocabulary — see nats_monitoring_controller._bool_arg.
+TRUTHY = frozenset({"true", "1", "yes", "on"})
+
+
+def _get_bool(key: str, default: bool = False) -> bool:
+    """Read an environment flag, tolerating the usual truthy spellings."""
+    raw = _get(key)
+    if raw is None:
+        return default
+    return raw.strip().lower() in TRUTHY
+
+
 def keycloak_url() -> str:
     """Keycloak base URL (no trailing slash)."""
     url = _get("KEYCLOAK_URL") or _get("M8FLOW_KEYCLOAK_URL") or "http://localhost:6842"
@@ -187,7 +202,7 @@ def nats_url() -> str:
 
 def nats_enabled() -> bool:
     """Whether the NATS event-driven integration is switched on."""
-    return (_get("M8FLOW_NATS_ENABLED") or "false").lower() == "true"
+    return _get_bool("M8FLOW_NATS_ENABLED")
 
 
 def nats_events_stream_name() -> str:
@@ -215,6 +230,59 @@ def external_form_link_ttl_seconds() -> int:
 def notification_max_attempts() -> int:
     """Give up notifying a request after this many failed email attempts."""
     return int(_get("M8FLOW_NOTIFICATION_MAX_ATTEMPTS") or "5")
+
+
+def nats_monitoring_url() -> str:
+    """Base URL of the NATS server's monitoring endpoints (/varz, /jsz, /healthz).
+
+    Read by the backend over the internal network, so this port never needs to be
+    reachable from a browser.
+    """
+    return _get("M8FLOW_NATS_MONITORING_URL") or "http://nats:8222"
+
+
+def nats_monitoring_enabled() -> bool:
+    """Whether the NATS monitoring dashboard is switched on.
+
+    Follows M8FLOW_NATS_ENABLED unless overridden: monitoring a disabled subsystem is
+    never useful.
+    """
+    if _get("M8FLOW_NATS_MONITORING_ENABLED") is None:
+        return nats_enabled()
+    return _get_bool("M8FLOW_NATS_MONITORING_ENABLED")
+
+
+def nats_message_inspection_enabled() -> bool:
+    """Whether raw message payloads may be read through the monitoring API.
+
+    Off by default: payloads carry tenant business data and notification recipients, and
+    m8flow's streams retain them indefinitely.
+    """
+    return _get_bool("M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED")
+
+
+def nats_message_preview_max_bytes() -> int:
+    """Cap on how much of a message payload a preview returns."""
+    return int(_get("M8FLOW_NATS_MESSAGE_PREVIEW_MAX_BYTES") or "4096")
+
+
+def nats_audit_retention_days() -> int:
+    """How long terminal NATS event-audit rows are kept before the sweep prunes them.
+
+    0 (or negative) disables pruning entirely.
+    """
+    return int(_get("M8FLOW_NATS_AUDIT_RETENTION_DAYS") or "90")
+
+
+def nats_broker_metrics_interval_seconds() -> int:
+    """How often m8flow-nats-consumer polls the broker to emit stream/consumer OTel gauges.
+
+    Coupled to OTEL_METRIC_EXPORT_INTERVAL (default 60000ms): a gauge is last-value-wins per
+    export tick, so polling faster than roughly half that interval buys nothing -- the extra
+    samples get overwritten before they ever leave the process. Default here is 20s, well
+    under the usual 30s half-interval margin.
+    """
+    return int(_get("M8FLOW_NATS_BROKER_METRICS_INTERVAL_SECONDS") or "20")
 
 
 def notification_sweep_interval_seconds() -> int:
