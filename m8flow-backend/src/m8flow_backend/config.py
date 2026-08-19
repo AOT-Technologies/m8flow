@@ -22,6 +22,21 @@ def _get(key: str, default: str | None = None) -> str | None:
     return default
 
 
+# Spellings an operator may reasonably reach for in a .env, a compose file, or a query
+# string. Anything outside this set is false, so a typo fails closed rather than silently
+# enabling a feature. Exported (not underscore-private) because request handlers parse
+# boolean query args against the same vocabulary - see nats_monitoring_controller._bool_arg.
+TRUTHY = frozenset({"true", "1", "yes", "on"})
+
+
+def _get_bool(key: str, default: bool = False) -> bool:
+    """Read an environment flag, tolerating the usual truthy spellings."""
+    raw = _get(key)
+    if raw is None:
+        return default
+    return raw.strip().lower() in TRUTHY
+
+
 def _vault_demo_state_cipher() -> Fernet | None:
     state_key = (
         _get("M8FLOW_VAULT_DEMO_STATE_KEY")
@@ -83,7 +98,7 @@ def _get_secret_env_value(*keys: str) -> str | None:
 
 
 def _env_truthy(value: str | None) -> bool:
-    return bool(value and value.strip().lower() in {"1", "true", "yes", "on"})
+    return bool(value and value.strip().lower() in TRUTHY)
 
 
 def _get_non_negative_int(key: str, default: int) -> int:
@@ -215,6 +230,7 @@ def master_client_secret() -> str:
 def template_realm_name() -> str:
     """Realm name in the template (for substitution)."""
     return DEFAULT_SHARED_REALM_NAME
+
 
 def app_public_base_url() -> str | None:
     """Base URL of the app (frontend at /, backend at /api). Used for tenant realm redirect URI substitution.
@@ -391,7 +407,7 @@ def nats_url() -> str:
 
 def nats_enabled() -> bool:
     """Whether the NATS event-driven integration is switched on."""
-    return (_get("M8FLOW_NATS_ENABLED") or "false").lower() == "true"
+    return _get_bool("M8FLOW_NATS_ENABLED")
 
 
 def nats_events_stream_name() -> str:
@@ -401,7 +417,7 @@ def nats_events_stream_name() -> str:
 
 
 def nats_notifications_stream_name() -> str:
-    """JetStream stream for notification events — separate from the
+    """JetStream stream for notification events - separate from the
     trigger stream so the engine consumer never receives notification traffic."""
     return _get("M8FLOW_NATS_NOTIFICATIONS_STREAM_NAME") or "M8FLOW_NOTIFICATIONS"
 
@@ -419,6 +435,59 @@ def external_form_link_ttl_seconds() -> int:
 def notification_max_attempts() -> int:
     """Give up notifying a request after this many failed email attempts."""
     return int(_get("M8FLOW_NOTIFICATION_MAX_ATTEMPTS") or "5")
+
+
+def nats_monitoring_url() -> str:
+    """Base URL of the NATS server's monitoring endpoints (/varz, /jsz, /healthz).
+
+    Read by the backend over the internal network, so this port never needs to be
+    reachable from a browser.
+    """
+    return _get("M8FLOW_NATS_MONITORING_URL") or "http://nats:8222"
+
+
+def nats_monitoring_enabled() -> bool:
+    """Whether the NATS monitoring dashboard is switched on.
+
+    Follows M8FLOW_NATS_ENABLED unless overridden: monitoring a disabled subsystem is
+    never useful.
+    """
+    if _get("M8FLOW_NATS_MONITORING_ENABLED") is None:
+        return nats_enabled()
+    return _get_bool("M8FLOW_NATS_MONITORING_ENABLED")
+
+
+def nats_message_inspection_enabled() -> bool:
+    """Whether raw message payloads may be read through the monitoring API.
+
+    Off by default: payloads carry tenant business data and notification recipients, and
+    m8flow's streams retain them indefinitely.
+    """
+    return _get_bool("M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED")
+
+
+def nats_message_preview_max_bytes() -> int:
+    """Cap on how much of a message payload a preview returns."""
+    return int(_get("M8FLOW_NATS_MESSAGE_PREVIEW_MAX_BYTES") or "4096")
+
+
+def nats_audit_retention_days() -> int:
+    """How long terminal NATS event-audit rows are kept before the sweep prunes them.
+
+    0 (or negative) disables pruning entirely.
+    """
+    return int(_get("M8FLOW_NATS_AUDIT_RETENTION_DAYS") or "90")
+
+
+def nats_broker_metrics_interval_seconds() -> int:
+    """How often m8flow-nats-consumer polls the broker to emit stream/consumer OTel gauges.
+
+    Coupled to OTEL_METRIC_EXPORT_INTERVAL (default 60000ms): a gauge is last-value-wins per
+    export tick, so polling faster than roughly half that interval buys nothing -- the extra
+    samples get overwritten before they ever leave the process. Default here is 20s, well
+    under the usual 30s half-interval margin.
+    """
+    return int(_get("M8FLOW_NATS_BROKER_METRICS_INTERVAL_SECONDS") or "20")
 
 
 def notification_sweep_interval_seconds() -> int:

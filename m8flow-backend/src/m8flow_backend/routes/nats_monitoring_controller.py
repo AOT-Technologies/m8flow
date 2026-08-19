@@ -1,0 +1,245 @@
+"""Read-only NATS monitoring endpoints.
+
+Two audiences, and the split matters:
+
+- Broker-wide state (``/varz``, ``/jsz``) is **super-admin only**. JetStream reports it per
+  account, not per tenant, and there is no honest way to filter it — a tenant-admin shown
+  those numbers would be seeing every tenant's traffic.
+- Event history comes from ``m8flow_nats_event_audit``, which carries a tenant per row, so
+  a tenant-admin can safely be shown their own. Cross-tenant reads require super-admin and
+  are requested explicitly via ``all_tenants``; they are never the default.
+
+Message payload inspection is gated separately on
+``M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED`` (off by default) because m8flow's streams retain
+every payload indefinitely. Viewing one event's payload via ``GET /nats/events/{id}`` is open
+to tenant-admins for their own tenant's events, same as the event history itself -- the row
+is already tenant-scoped by the time the payload is fetched. Browsing a stream directly by
+sequence (``/nats/streams/{name}/messages``) has no such per-row tenant filter and stays
+super-admin only.
+"""
+
+from __future__ import annotations
+
+from flask import g, request
+
+from m8flow_backend.config import (
+    nats_events_stream_name,
+    nats_message_inspection_enabled,
+    nats_notifications_stream_name,
+)
+from m8flow_backend.models.nats_event_audit import NatsEventWorker
+from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
+from m8flow_backend.services.nats_event_audit_query_service import (
+    NatsEventAuditQueryService,
+)
+from m8flow_backend.services.nats_monitoring_service import NatsMonitoringService
+from m8flow_backend.config import TRUTHY as TRUTHY_ARG_VALUES
+from m8flow_backend.tenancy import get_tenant_id
+from spiffworkflow_backend.exceptions.api_error import ApiError
+
+
+def _require_authenticated_user():
+    user = getattr(g, "user", None)
+    if not user:
+        raise ApiError(
+            error_code="not_authenticated",
+            message="User not authenticated",
+            status_code=401,
+        )
+    return user
+
+
+def _is_super_admin() -> bool:
+    """Whether this request is acting as a platform super-admin.
+
+    Set by the tenant-resolution layer, the same signal tenant_scoping_patch uses to
+    decide on RLS bypass.
+    """
+    return bool(getattr(g, "_m8flow_super_admin_request", False))
+
+
+def _require_super_admin() -> None:
+    _require_authenticated_user()
+    if not _is_super_admin():
+        raise ApiError(
+            error_code="forbidden",
+            message="Broker-wide NATS monitoring is restricted to super-admins.",
+            status_code=403,
+        )
+
+
+def _active_tenant_id() -> str | None:
+    try:
+        return get_tenant_id()
+    except RuntimeError:
+        return None
+
+
+def _audit_scope() -> tuple[str | None, bool]:
+    """Resolve (tenant_id, all_tenants) for an event-history read.
+
+    A super-admin may opt into a cross-tenant view with ``?allTenants=true``, or filter to
+    one tenant with ``?tenantId=``. Everyone else is pinned to their active tenant, and
+    ``all_tenants`` is never inferred.
+    """
+    _require_authenticated_user()
+
+    if _is_super_admin():
+        if str(request.args.get("allTenants", "")).lower() == "true":
+            return None, True
+        requested = request.args.get("tenantId")
+        if requested:
+            return requested, False
+        return _active_tenant_id(), False
+
+    return _active_tenant_id(), False
+
+
+def _int_arg(name: str, default: int | None = None) -> int | None:
+    raw = request.args.get(name)
+    if raw is None or str(raw).strip() == "":
+        return default
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        raise ApiError(
+            error_code="invalid_parameter",
+            message=f"'{name}' must be an integer.",
+            status_code=400,
+        )
+
+
+def _bool_arg(name: str) -> bool:
+    """Read a query-string flag using the same vocabulary as the environment flags.
+
+    ``?allTenants=1`` and ``?allTenants=true`` mean the same thing; anything unrecognised
+    is false, so a typo scopes the request *down* rather than widening it.
+    """
+    return str(request.args.get(name, "")).strip().lower() in TRUTHY_ARG_VALUES
+
+
+@handle_api_errors
+def overview() -> tuple:
+    """Server health and throughput, plus JetStream totals."""
+    _require_super_admin()
+    return success_response(NatsMonitoringService.overview())
+
+
+@handle_api_errors
+def streams() -> tuple:
+    """Streams and consumers with derived pending / lag / delivery figures."""
+    _require_super_admin()
+    return success_response(NatsMonitoringService.streams())
+
+
+@handle_api_errors
+def tenants() -> tuple:
+    """Backlog and outcome counts per tenant."""
+    _require_super_admin()
+    return success_response({"results": NatsEventAuditQueryService.per_tenant()})
+
+
+@handle_api_errors
+def list_events() -> tuple:
+    """Paged event history, scoped to the caller's tenant unless super-admin says otherwise."""
+    tenant_id, all_tenants = _audit_scope()
+    return success_response(
+        NatsEventAuditQueryService.list_events(
+            tenant_id=tenant_id,
+            all_tenants=all_tenants,
+            outcome=request.args.get("outcome"),
+            process_identifier=request.args.get("processIdentifier"),
+            username=request.args.get("username"),
+            event_id=request.args.get("eventId"),
+            worker=request.args.get("worker"),
+            failures_only=_bool_arg("failuresOnly"),
+            since_in_seconds=_int_arg("since"),
+            until_in_seconds=_int_arg("until"),
+            page=_int_arg("page", 1),
+            per_page=_int_arg("perPage", 50),
+        )
+    )
+
+
+def _stream_for_worker(worker: str | None) -> str:
+    """Which stream holds the payload for an audit row.
+
+    Derived from the row's own ``worker``, never from the request. The row records a bare
+    sequence number, which is only meaningful within the stream the message was published
+    to -- so letting a caller name the stream would pair *their* row's sequence with
+    *another* stream and return whatever message sits at that position, quite possibly
+    another tenant's. The tenant filter on the row does not constrain that second lookup.
+    """
+    if worker == NatsEventWorker.notification_worker.value:
+        return nats_notifications_stream_name()
+    return nats_events_stream_name()
+
+
+@handle_api_errors
+def events_summary() -> tuple:
+    """Counts by outcome for the summary cards."""
+    tenant_id, all_tenants = _audit_scope()
+    return success_response(
+        NatsEventAuditQueryService.summary(tenant_id=tenant_id, all_tenants=all_tenants)
+    )
+
+
+@handle_api_errors
+def get_event(event_id: str) -> tuple:
+    """One event's history, optionally with the payload still held in JetStream."""
+    tenant_id, all_tenants = _audit_scope()
+    event = NatsEventAuditQueryService.get_event(
+        event_id, tenant_id=tenant_id, all_tenants=all_tenants
+    )
+
+    # The payload lives in NATS, not in the audit row: the row stores only a stream
+    # sequence pointing at the single copy JetStream already retains.
+    if _bool_arg("includePayload"):
+        if not nats_message_inspection_enabled():
+            raise ApiError(
+                error_code="nats_message_inspection_disabled",
+                message="Message payload inspection is disabled on this deployment.",
+                status_code=403,
+            )
+        # No extra admin check here: `event` above already passed through `_audit_scope()`
+        # and `_scoped_query`'s tenant filter, so a non-super-admin caller only ever gets
+        # here for a row already confirmed to belong to their own active tenant (a row
+        # outside it 404s indistinguishably, in NatsEventAuditQueryService.get_event).
+        # That is unlike /nats/streams/{name}/messages and the broker-wide endpoints, which
+        # read the stream/broker directly with no tenant filter and stay super-admin only.
+        # For the argument above to hold, BOTH halves of the JetStream pointer must come
+        # from the authorized row. The stream is therefore resolved from the row's worker
+        # rather than from a query parameter; see _stream_for_worker.
+        stream_seq = event.get("streamSeq")
+        if stream_seq:
+            messages = NatsMonitoringService.get_messages(
+                _stream_for_worker(event.get("worker")), start_seq=stream_seq, limit=1
+            )
+            event["payload"] = messages[0] if messages else None
+        else:
+            # No pointer recorded — e.g. the event never reached the stream.
+            event["payload"] = None
+
+    return success_response(event)
+
+
+@handle_api_errors
+def stream_messages(stream_name: str) -> tuple:
+    """Browse raw messages in a stream by sequence. Never acknowledges them."""
+    _require_super_admin()
+    if not nats_message_inspection_enabled():
+        raise ApiError(
+            error_code="nats_message_inspection_disabled",
+            message="Message payload inspection is disabled on this deployment.",
+            status_code=403,
+        )
+
+    return success_response(
+        {
+            "results": NatsMonitoringService.get_messages(
+                stream_name,
+                start_seq=_int_arg("startSeq", 1),
+                limit=_int_arg("limit", 10),
+            )
+        }
+    )
