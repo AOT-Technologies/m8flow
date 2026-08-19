@@ -397,3 +397,186 @@ class TestPrune:
 
         assert NatsEventAuditService.prune(retention_days=0) == 0
         assert len(_rows()) == 1
+
+
+class TestARecordedSuccessIsFinal:
+    """A late failure must not rewrite an outcome that already recorded success.
+
+    The consumer records ``instantiated`` and the publish path can still fail afterwards --
+    an ack that times out once the instance already exists -- arriving here as a second
+    ``record_outcome`` for the same event. Applied blindly it leaves a row claiming the
+    event failed while ``process_instance_id`` still names the instance it created, and the
+    run that really happened disappears from the audit trail.
+    """
+
+    def test_a_late_failure_does_not_clobber_the_success(self, app, tenant):
+        NatsEventAuditService.record_outcome(
+            tenant_id=tenant.id,
+            event_id="evt-1",
+            outcome=NatsEventOutcome.instantiated.value,
+            process_instance_id=99,
+        )
+
+        NatsEventAuditService.record_outcome(
+            tenant_id=tenant.id,
+            event_id="evt-1",
+            outcome=NatsEventOutcome.transient_error.value,
+            error_message="publish ack timed out",
+        )
+
+        rows = _rows()
+        assert len(rows) == 1
+        assert rows[0].outcome == NatsEventOutcome.instantiated.value
+        assert rows[0].process_instance_id == 99
+
+    def test_the_failure_message_is_not_written_onto_the_successful_row(self, app, tenant):
+        """A half-applied update would describe a successful row as failed."""
+        NatsEventAuditService.record_outcome(
+            tenant_id=tenant.id,
+            event_id="evt-1",
+            outcome=NatsEventOutcome.instantiated.value,
+            process_instance_id=99,
+        )
+
+        NatsEventAuditService.record_outcome(
+            tenant_id=tenant.id,
+            event_id="evt-1",
+            outcome=NatsEventOutcome.rejected_auth.value,
+            error_message="should not appear",
+        )
+
+        assert _rows()[0].error_message is None
+
+    def test_a_retried_failure_may_still_reach_success(self, app, tenant):
+        """The deliberate asymmetry: transient_error is the retryable class, so a
+        redelivery that finally works must not be remembered as a failure for ever."""
+        NatsEventAuditService.record_outcome(
+            tenant_id=tenant.id,
+            event_id="evt-1",
+            outcome=NatsEventOutcome.transient_error.value,
+            error_message="database was briefly unreachable",
+        )
+
+        NatsEventAuditService.record_outcome(
+            tenant_id=tenant.id,
+            event_id="evt-1",
+            outcome=NatsEventOutcome.instantiated.value,
+            process_instance_id=7,
+        )
+
+        rows = _rows()
+        assert rows[0].outcome == NatsEventOutcome.instantiated.value
+        assert rows[0].process_instance_id == 7
+
+    def test_one_failure_may_be_refined_into_another(self, app, tenant):
+        NatsEventAuditService.record_outcome(
+            tenant_id=tenant.id,
+            event_id="evt-1",
+            outcome=NatsEventOutcome.transient_error.value,
+        )
+        NatsEventAuditService.record_outcome(
+            tenant_id=tenant.id,
+            event_id="evt-1",
+            outcome=NatsEventOutcome.model_not_found.value,
+        )
+
+        assert _rows()[0].outcome == NatsEventOutcome.model_not_found.value
+
+    def test_a_terminal_row_cannot_be_pushed_back_to_queued(self, app, tenant):
+        NatsEventAuditService.record_outcome(
+            tenant_id=tenant.id,
+            event_id="evt-1",
+            outcome=NatsEventOutcome.rejected_scope.value,
+        )
+        NatsEventAuditService.record_outcome(
+            tenant_id=tenant.id,
+            event_id="evt-1",
+            outcome=NatsEventOutcome.queued.value,
+        )
+
+        assert _rows()[0].outcome == NatsEventOutcome.rejected_scope.value
+
+    def test_repeating_the_same_outcome_still_updates_metadata(self, app, tenant):
+        """Idempotent redelivery of the same result is not an overwrite to refuse."""
+        NatsEventAuditService.record_outcome(
+            tenant_id=tenant.id,
+            event_id="evt-1",
+            outcome=NatsEventOutcome.instantiated.value,
+        )
+        NatsEventAuditService.record_outcome(
+            tenant_id=tenant.id,
+            event_id="evt-1",
+            outcome=NatsEventOutcome.instantiated.value,
+            process_instance_id=1234,
+        )
+
+        assert _rows()[0].process_instance_id == 1234
+
+
+class TestDuplicateRowsForAnUnattributableEvent:
+    """An event id whose subject could not be parsed has a NULL tenant, and Postgres treats
+    NULLs as distinct in the (tenant, event, worker) unique constraint. Two concurrent
+    writers can therefore each insert a row, after which a lookup expecting at most one
+    raised MultipleResultsFound -- swallowed by the broad handlers into a log line, so the
+    outcome was silently never written.
+    """
+
+    @staticmethod
+    def _two_rows(event_id: str = "evt-x") -> None:
+        for _ in range(2):
+            db.session.add(
+                NatsEventAuditModel(
+                    tenant_id=None,
+                    event_id=event_id,
+                    worker=NatsEventWorker.consumer.value,
+                    outcome=NatsEventOutcome.queued.value,
+                )
+            )
+        db.session.commit()
+
+    def test_the_outcome_is_still_recorded(self, app):
+        self._two_rows()
+
+        NatsEventAuditService.record_outcome(
+            tenant_id=None,
+            event_id="evt-x",
+            outcome=NatsEventOutcome.instantiated.value,
+            process_instance_id=7,
+        )
+
+        outcomes = [row.outcome for row in _rows()]
+        assert NatsEventOutcome.instantiated.value in outcomes, (
+            "the write was dropped, which is how this failure hid: the rows stay queued "
+            "and only a log line records that anything went wrong"
+        )
+
+    def test_the_newest_row_is_the_one_updated(self, app):
+        """Ordering is explicit so the choice does not depend on database row order."""
+        self._two_rows()
+        newest_id = max(row.id for row in _rows())
+
+        NatsEventAuditService.record_outcome(
+            tenant_id=None,
+            event_id="evt-x",
+            outcome=NatsEventOutcome.instantiated.value,
+        )
+
+        updated = [row for row in _rows() if row.outcome == NatsEventOutcome.instantiated.value]
+        assert [row.id for row in updated] == [newest_id]
+
+    def test_no_extra_row_is_inserted(self, app):
+        self._two_rows()
+
+        NatsEventAuditService.record_outcome(
+            tenant_id=None, event_id="evt-x", outcome=NatsEventOutcome.instantiated.value
+        )
+
+        assert len(_rows()) == 2
+
+    def test_a_duplicate_delivery_is_also_counted_rather_than_lost(self, app):
+        self._two_rows()
+
+        NatsEventAuditService.record_duplicate(tenant_id=None, event_id="evt-x")
+
+        assert sum(row.duplicate_count or 0 for row in _rows()) == 1
+        assert len(_rows()) == 2, "a suppressed delivery must not add a third row"

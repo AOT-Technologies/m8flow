@@ -2367,8 +2367,10 @@ paths:
       description: >
         One event's audit record. With `includePayload=true` the raw message is also fetched
         from JetStream using the stream sequence stored on the row - the payload is never
-        copied into the database. That fetch additionally requires super-admin and
-        `M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED`, and never acknowledges the message.
+        copied into the database. That fetch requires `M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED`
+        and never acknowledges the message. Both halves of the pointer come from the
+        authorized row: the stream is derived server-side from the row's worker, so a
+        tenant-admin only ever reads the payload of an event in their own tenant.
         A record belonging to another tenant returns 404 rather than 403, so this cannot be
         used to probe for other tenants' event ids.
       operationId: m8flow_backend.routes.nats_monitoring_controller.get_event
@@ -2385,13 +2387,6 @@ paths:
           required: false
           schema:
             type: boolean
-        - name: streamName
-          in: query
-          required: false
-          schema:
-            type: string
-            default: M8FLOW_EVENTS
-          description: Stream to read the payload from when includePayload is set.
         - name: allTenants
           in: query
           required: false

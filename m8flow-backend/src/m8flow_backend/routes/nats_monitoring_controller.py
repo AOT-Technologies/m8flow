@@ -22,7 +22,12 @@ from __future__ import annotations
 
 from flask import g, request
 
-from m8flow_backend.config import nats_message_inspection_enabled
+from m8flow_backend.config import (
+    nats_events_stream_name,
+    nats_message_inspection_enabled,
+    nats_notifications_stream_name,
+)
+from m8flow_backend.models.nats_event_audit import NatsEventWorker
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
 from m8flow_backend.services.nats_event_audit_query_service import (
     NatsEventAuditQueryService,
@@ -156,6 +161,20 @@ def list_events() -> tuple:
     )
 
 
+def _stream_for_worker(worker: str | None) -> str:
+    """Which stream holds the payload for an audit row.
+
+    Derived from the row's own ``worker``, never from the request. The row records a bare
+    sequence number, which is only meaningful within the stream the message was published
+    to -- so letting a caller name the stream would pair *their* row's sequence with
+    *another* stream and return whatever message sits at that position, quite possibly
+    another tenant's. The tenant filter on the row does not constrain that second lookup.
+    """
+    if worker == NatsEventWorker.notification_worker.value:
+        return nats_notifications_stream_name()
+    return nats_events_stream_name()
+
+
 @handle_api_errors
 def events_summary() -> tuple:
     """Counts by outcome for the summary cards."""
@@ -188,11 +207,13 @@ def get_event(event_id: str) -> tuple:
         # outside it 404s indistinguishably, in NatsEventAuditQueryService.get_event).
         # That is unlike /nats/streams/{name}/messages and the broker-wide endpoints, which
         # read the stream/broker directly with no tenant filter and stay super-admin only.
+        # For the argument above to hold, BOTH halves of the JetStream pointer must come
+        # from the authorized row. The stream is therefore resolved from the row's worker
+        # rather than from a query parameter; see _stream_for_worker.
         stream_seq = event.get("streamSeq")
         if stream_seq:
-            stream_name = request.args.get("streamName") or "M8FLOW_EVENTS"
             messages = NatsMonitoringService.get_messages(
-                stream_name, start_seq=stream_seq, limit=1
+                _stream_for_worker(event.get("worker")), start_seq=stream_seq, limit=1
             )
             event["payload"] = messages[0] if messages else None
         else:

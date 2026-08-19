@@ -445,3 +445,86 @@ class TestBrokerErrorsPropagate:
             assert _status(controller.overview()) == 503
         finally:
             ctx.pop()
+
+
+class TestPayloadStreamIsNotCallerControlled:
+    """The stream a payload is read from must come from the row, not the request.
+
+    An audit row records a bare JetStream sequence, which identifies a message only *within
+    the stream it was published to*. Authorizing the row and then letting the caller name
+    the stream pairs an authorized sequence with an unauthorized stream: a tenant-admin
+    could ask for their own event at sequence N against the notifications stream and get
+    whatever message sits at position N there -- another tenant's. The tenant filter on the
+    row does not constrain that second lookup, so the stream is derived server-side.
+    """
+
+    @staticmethod
+    def _row(worker: str, monkeypatch, seq: int = 42):
+        class Audit:
+            @staticmethod
+            def get_event(event_id, **kwargs):
+                return {"eventId": event_id, "streamSeq": seq, "worker": worker}
+
+        monkeypatch.setattr(controller, "NatsEventAuditQueryService", Audit)
+        monkeypatch.setattr(controller, "nats_message_inspection_enabled", lambda: True)
+
+    def test_a_caller_supplied_stream_name_is_ignored(self, app, monkeypatch, stub_services):
+        """The regression guard: this is the cross-tenant read the parameter allowed."""
+        self._row("consumer", monkeypatch)
+        ctx = _as(app, "includePayload=true&streamName=M8FLOW_NOTIFICATIONS", super_admin=False)
+        try:
+            assert _status(controller.get_event("my-own-event")) == 200
+        finally:
+            ctx.pop()
+
+        assert stub_services["get_messages"]["stream_name"] == "M8FLOW_EVENTS", (
+            "payload was read from a stream named by the caller, pairing an authorized "
+            "sequence with an unauthorized stream"
+        )
+
+    def test_the_events_stream_is_used_for_a_consumer_row(self, app, monkeypatch, stub_services):
+        self._row("consumer", monkeypatch)
+        ctx = _as(app, "includePayload=true", super_admin=True)
+        try:
+            controller.get_event("evt-1")
+        finally:
+            ctx.pop()
+
+        assert stub_services["get_messages"]["stream_name"] == "M8FLOW_EVENTS"
+
+    def test_the_notifications_stream_is_used_for_a_notification_row(
+        self, app, monkeypatch, stub_services
+    ):
+        """Deriving from the worker must actually distinguish the streams, or the fix
+        would quietly read the wrong one for notification events."""
+        self._row("notification_worker", monkeypatch)
+        ctx = _as(app, "includePayload=true", super_admin=True)
+        try:
+            controller.get_event("evt-1")
+        finally:
+            ctx.pop()
+
+        assert stub_services["get_messages"]["stream_name"] == "M8FLOW_NOTIFICATIONS"
+
+    def test_the_sequence_still_comes_from_the_row(self, app, monkeypatch, stub_services):
+        """Guard the other half of the pointer while we are here."""
+        self._row("consumer", monkeypatch, seq=7)
+        ctx = _as(app, "includePayload=true&startSeq=999", super_admin=False)
+        try:
+            controller.get_event("evt-1")
+        finally:
+            ctx.pop()
+
+        assert stub_services["get_messages"]["start_seq"] == 7
+
+    def test_stream_names_follow_configuration(self, app, monkeypatch, stub_services):
+        """Deployments may rename their streams; the resolver must not hardcode defaults."""
+        monkeypatch.setattr(controller, "nats_events_stream_name", lambda: "RENAMED_EVENTS")
+        self._row("consumer", monkeypatch)
+        ctx = _as(app, "includePayload=true", super_admin=True)
+        try:
+            controller.get_event("evt-1")
+        finally:
+            ctx.pop()
+
+        assert stub_services["get_messages"]["stream_name"] == "RENAMED_EVENTS"

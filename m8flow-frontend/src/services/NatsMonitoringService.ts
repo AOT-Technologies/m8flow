@@ -251,7 +251,8 @@ const NatsMonitoringService = {
     eventId: string,
     options: {
       includePayload?: boolean;
-      streamName?: string;
+      // No streamName: the backend derives the stream from the audit row's worker, so both
+      // halves of the JetStream pointer come from the row the caller is authorized for.
       allTenants?: boolean;
       tenantId?: string;
     } = {},

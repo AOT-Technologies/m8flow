@@ -49,6 +49,29 @@ def _truncate(message: str | None) -> str | None:
     return text[: MAX_ERROR_MESSAGE_LENGTH - 3] + "..."
 
 
+def _may_overwrite(current: str | None, incoming: str) -> bool:
+    """Whether an outcome already on the row may be replaced by ``incoming``.
+
+    The consumer records success and the publisher can still fail afterwards (an ack that
+    times out after the instance was created, say), which arrives here as a second
+    ``record_outcome`` for the same event. Applied blindly that turns a true
+    ``instantiated`` into a failure while ``process_instance_id`` still names the instance
+    it created -- a row that contradicts itself and hides a run that really happened.
+
+    So a recorded success is final. Failures stay replaceable on purpose: ``transient_error``
+    is documented on the model as the one retryable class, and a redelivery that finally
+    works must be able to move the row to ``instantiated`` rather than being remembered as a
+    failure for ever.
+    """
+    if current == incoming:
+        return True
+    if current == NatsEventOutcome.instantiated.value:
+        return False
+    # Going back to `queued` would undo a terminal result. record_queued already declines
+    # this; enforced here too so the rule holds for any caller.
+    return incoming != NatsEventOutcome.queued.value
+
+
 class NatsEventAuditService:
     """Write-side of the NATS event audit trail."""
 
@@ -61,9 +84,20 @@ class NatsEventAuditService:
         """
         if not event_id:
             return None
-        return NatsEventAuditModel.query.filter_by(
-            tenant_id=tenant_id, event_id=event_id, worker=worker
-        ).one_or_none()
+        # `.first()` on an explicit ordering rather than `.one_or_none()`: the unique
+        # constraint is (tenant_id, event_id, worker), and Postgres treats NULLs as
+        # distinct, so un-attributable messages -- a valid event id whose subject could not
+        # be parsed into a tenant -- are not deduplicated by it and two concurrent writers
+        # can each insert one. `.one_or_none()` raises MultipleResultsFound there, which the
+        # broad handlers in the callers swallow into a log line, silently dropping the write.
+        # The newest row is the one an outcome belongs on.
+        return (
+            NatsEventAuditModel.query.filter_by(
+                tenant_id=tenant_id, event_id=event_id, worker=worker
+            )
+            .order_by(NatsEventAuditModel.id.desc())
+            .first()
+        )
 
     @classmethod
     def record_queued(
@@ -219,6 +253,19 @@ class NatsEventAuditService:
                 tenant_id=tenant_id, event_id=event_id, worker=worker, outcome=outcome
             )
             db.session.add(row)
+        elif not _may_overwrite(row.outcome, outcome):
+            # Leave the row untouched rather than half-updating it: writing this call's
+            # error_message onto a successful row would describe it as failed while
+            # process_instance_id still points at the instance it created.
+            logger.warning(
+                "nats audit: refusing to overwrite outcome=%s with outcome=%s for "
+                "event_id=%s tenant=%s",
+                row.outcome,
+                outcome,
+                event_id,
+                tenant_id,
+            )
+            return
 
         row.outcome = outcome
         row.error_message = _truncate(error_message)
