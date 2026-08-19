@@ -74,7 +74,19 @@ import HttpService from '../services/HttpService';
 
 function stubSecretsList() {
   vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts: any) => {
-    opts.successCallback({
+    if (opts.path === '/m8flow/notification-smtp-status') {
+      opts.successCallback?.({
+        configured: true,
+        required_keys: ['NATS_SMTP_HOST', 'NATS_SMTP_FROM_EMAIL'],
+        optional_keys: ['NATS_SMTP_PORT'],
+        keys_present: {
+          NATS_SMTP_HOST: true,
+          NATS_SMTP_FROM_EMAIL: true,
+        },
+      });
+      return;
+    }
+    opts.successCallback?.({
       results: [
         {
           id: 1,

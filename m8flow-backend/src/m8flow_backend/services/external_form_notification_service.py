@@ -298,13 +298,11 @@ class ExternalFormNotificationService:
             )
             db.session.commit()
             LOGGER.error(
-                "external-form-notify: tenant %s has no SMTP secrets configured; "
+                "external-form-notify: tenant %s has no SMTP configuration keys set; "
                 "request id=%s moved to terminal smtp_not_configured. "
-                "Required secrets: %s, %s",
+                "Required keys: NATS_SMTP_HOST, NATS_SMTP_FROM_EMAIL",
                 row.m8f_tenant_id,
                 row.id,
-                SMTP_SECRET_KEYS["host"],
-                SMTP_SECRET_KEYS["from_email"],
             )
             return "failed:smtp_not_configured"
         now = int(time.time())

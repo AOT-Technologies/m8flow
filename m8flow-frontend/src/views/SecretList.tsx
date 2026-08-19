@@ -148,14 +148,14 @@ export default function SecretList() {
   const { page, perPage } = getPageInfoFromSearchParams(searchParams);
 
   const missingSmtpKeys =
-    smtpStatus && !smtpStatus.configured
+    smtpStatus && !smtpStatus.configured && smtpStatus.keys_present
       ? Object.entries(smtpStatus.keys_present)
           .filter(([, present]) => !present)
           .map(([key]) => key)
       : [];
 
-  const smtpBanner = !smtpLoading && smtpStatus ? (
-    smtpStatus.configured ? null : (
+  const smtpBanner =
+    !smtpLoading && smtpStatus && smtpStatus.configured === false ? (
       <Alert
         severity="warning"
         sx={{ mb: 2 }}
@@ -163,11 +163,13 @@ export default function SecretList() {
       >
         <AlertTitle>{t('smtp_notification_warning_title')}</AlertTitle>
         {t('smtp_notification_warning_body', {
-          keys: missingSmtpKeys.join(', '),
+          keys:
+            missingSmtpKeys.length > 0
+              ? missingSmtpKeys.join(', ')
+              : 'NATS_SMTP_HOST, NATS_SMTP_FROM_EMAIL',
         })}
       </Alert>
-    )
-  ) : null;
+    ) : null;
 
   const table = (
     <TableContainer component={Paper}>
