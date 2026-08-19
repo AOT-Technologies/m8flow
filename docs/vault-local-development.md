@@ -50,6 +50,7 @@ When `M8FLOW_VAULT_ENABLED=true`, M8Flow now provisions Vault-side tenant identi
 - the create-tenant API creates a tenant-scoped ACL policy and AppRole after the Keycloak organization and local tenant row are created;
 - the shared-realm bootstrap provisions the default `m8flow` tenant's Vault identity after reconciling the canonical tenant UUID;
 - the generated tenant policy is limited to that tenant's secret subtree, following the logical path convention `kv/m8flow/tenants/{tenant_id}/secrets/{secret_name}`;
+- tenant AppRoles default to `secret_id_num_uses=1`, `secret_id_ttl=10m`, `token_ttl=10m`, and `token_max_ttl=30m` unless you override the `M8FLOW_VAULT_TENANT_*` settings;
 - repeated startup/bootstrap passes reconcile the role and policy without rotating the existing tenant AppRole `secret_id`.
 
 The configured runtime token or AppRole is now a broker/control-plane identity. M8Flow uses it to create, reconcile, and resolve tenant-specific AppRoles, then performs tenant secret CRUD through tenant-scoped Vault clients derived from those AppRoles. If that broker identity can still read tenant KV data directly, the local setup is misconfigured.
@@ -94,6 +95,7 @@ Use the printed `role_id` and, when explicitly revealed, the `secret_id` to sign
 Notes:
 
 - Each run mints a new tenant AppRole `secret_id`. Treat it like a credential.
+- The generated `secret_id` is single-use by default and expires after `10m` unless you override the tenant AppRole lifetime settings.
 - The real `secret_id` is hidden by default so it does not land in routine shell output or copied logs by accident.
 - When you reveal it with `-ShowSecretId` or `--show-secret-id`, the scripts print a warning to `stderr` before writing the secret to `stdout`.
 - If `M8FLOW_VAULT_OPERATOR_TOKEN` or `VAULT_TOKEN` is set in your host shell, the helpers use that operator token.

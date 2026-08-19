@@ -78,11 +78,49 @@ Examples:
 - `M8FLOW_VAULT_APPROLE_MOUNT_POINT` (optional): Vault auth mount used when M8Flow provisions per-tenant AppRoles. Default: `approle`.
 - `M8FLOW_VAULT_TENANT_POLICY_PREFIX` (optional): Prefix used for auto-created per-tenant Vault ACL policies. Effective policy names look like `{prefix}-{tenant_id}` after Vault-safe normalization. Default: `m8flow-tenant-policy`.
 - `M8FLOW_VAULT_TENANT_ROLE_PREFIX` (optional): Prefix used for auto-created per-tenant Vault AppRoles. Effective role names look like `{prefix}-{tenant_id}` after Vault-safe normalization. Default: `m8flow-tenant-role`.
+- `M8FLOW_VAULT_TENANT_SECRET_ID_NUM_USES` (optional): How many times a generated tenant AppRole `secret_id` may be used. Default: `1`.
+- `M8FLOW_VAULT_TENANT_SECRET_ID_TTL` (optional): TTL assigned to generated tenant AppRole `secret_id` values. Default: `10m`.
+- `M8FLOW_VAULT_TENANT_TOKEN_TTL` (optional): Initial TTL assigned to tenant AppRole login tokens. Default: `10m`.
+- `M8FLOW_VAULT_TENANT_TOKEN_MAX_TTL` (optional): Maximum TTL assigned to tenant AppRole login tokens. Default: `30m`.
 - `M8FLOW_VAULT_TIMEOUT_SECONDS` (optional): Request timeout for Vault API calls. Default: `5`.
 - `M8FLOW_VAULT_SKIP_VERIFY` / `VAULT_SKIP_VERIFY` (optional): Set to `true` only when TLS certificate verification must be disabled for a non-production environment.
 - `M8FLOW_VAULT_CACERT` / `VAULT_CACERT` (optional): CA bundle path used to verify Vault TLS certificates. When set, it takes precedence over `*_SKIP_VERIFY`.
 - `M8FLOW_VAULT_PORT` (optional, Docker Compose local dev): Host port that publishes the local Vault API and built-in UI. Default: `8200`.
 - `M8FLOW_VAULT_DEMO_OVERWRITE` (optional, Docker Compose local dev): When `true`, the `vault-demo` bootstrap overwrites secrets defined in your local `docker/vault/demo/secrets.yml` file. Start from `docker/vault/demo/secrets.yml.sample` when you want real demo secrets. If the file is absent, `vault-demo` still bootstraps Vault and tenant identities but does not seed any tenant secret. Default: `false`.
+
+Tenant AppRole lifetime settings:
+
+- These four `M8FLOW_VAULT_TENANT_*` variables apply to the per-tenant AppRoles that M8Flow creates automatically for tenant secret access.
+- They are passed through to Vault when M8Flow creates or updates the tenant AppRole role definition.
+- They do not configure the shared broker/control-plane AppRole used by the local `vault-demo` bootstrap.
+
+- `M8FLOW_VAULT_TENANT_SECRET_ID_NUM_USES`
+  Integer. Default `1`.
+  Controls how many AppRole logins a newly generated tenant `secret_id` may perform before Vault rejects it.
+  `1` means single-use. `0` means unlimited reuse.
+  In the current M8Flow flow, a fresh tenant `secret_id` is minted when the app builds a tenant-scoped Vault client, so `1` is the safer default.
+
+- `M8FLOW_VAULT_TENANT_SECRET_ID_TTL`
+  Vault duration string such as `10m`, `1h`, or `24h`. Default `10m`.
+  Controls how long a generated tenant `secret_id` stays valid if it is not used immediately.
+  This limits the exposure window of a leaked but unused `secret_id`.
+
+- `M8FLOW_VAULT_TENANT_TOKEN_TTL`
+  Vault duration string. Default `10m`.
+  Controls the initial lease duration of the Vault client token returned after a successful tenant AppRole login.
+  This is the token that actually performs the tenant secret read, write, delete, or list operation.
+
+- `M8FLOW_VAULT_TENANT_TOKEN_MAX_TTL`
+  Vault duration string. Default `30m`.
+  Controls the maximum lifetime Vault will allow for tokens issued from that tenant AppRole, including renewal limits when renewal is used.
+  This should normally be greater than or equal to `M8FLOW_VAULT_TENANT_TOKEN_TTL`.
+  Example: if `M8FLOW_VAULT_TENANT_TOKEN_TTL=10m` and `M8FLOW_VAULT_TENANT_TOKEN_MAX_TTL=30m`, Vault issues the tenant token with `10m` initially. If renewal is used, it can be extended, but never past `30m` total.
+
+Practical guidance:
+
+- Lower values reduce the useful lifetime of leaked credentials, but make slow or long-running flows less tolerant.
+- Higher values reduce re-authentication frequency, but increase the window in which a leaked `secret_id` or tenant token remains useful.
+- For request-driven secret access, the current defaults are intentionally short-lived: single-use `secret_id`, `10m` initial token TTL, and `30m` max token TTL.
 
 Per-tenant Vault identity notes:
 
@@ -92,6 +130,7 @@ Per-tenant Vault identity notes:
 - The configured runtime token or runtime AppRole is now a broker/control-plane identity. M8Flow uses it to manage tenant policies/AppRoles and to mint tenant-scoped Vault clients for tenant secret CRUD.
 - A healthy configuration does not let that broker identity read tenant secret values directly; only the derived tenant-scoped client should have data-plane access inside `tenants/{tenant_id}/secrets/...`.
 - On a brand-new tenant, M8Flow generates an initial AppRole `secret_id`. On later startup/bootstrap passes, the role and policy are reconciled idempotently without rotating that `secret_id`.
+- By default, tenant AppRoles are provisioned with `secret_id_num_uses=1`, `secret_id_ttl=10m`, `token_ttl=10m`, and `token_max_ttl=30m`. Override those with the `M8FLOW_VAULT_TENANT_*` settings when your environment needs different values.
 
 Local Docker Compose notes:
 

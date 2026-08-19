@@ -86,6 +86,17 @@ def _env_truthy(value: str | None) -> bool:
     return bool(value and value.strip().lower() in {"1", "true", "yes", "on"})
 
 
+def _get_non_negative_int(key: str, default: int) -> int:
+    raw_value = _get(key)
+    if raw_value is None:
+        return default
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        return default
+    return value if value >= 0 else default
+
+
 def keycloak_url() -> str:
     """Keycloak base URL (no trailing slash)."""
     url = _get("KEYCLOAK_URL") or _get("M8FLOW_KEYCLOAK_URL") or "http://localhost:6842"
@@ -308,6 +319,26 @@ def vault_tenant_policy_prefix() -> str:
 def vault_tenant_role_prefix() -> str:
     """AppRole name prefix for per-tenant Vault roles."""
     return _get("M8FLOW_VAULT_TENANT_ROLE_PREFIX") or "m8flow-tenant-role"
+
+
+def vault_tenant_secret_id_num_uses() -> int:
+    """How many times a tenant AppRole secret_id may be used before expiry."""
+    return _get_non_negative_int("M8FLOW_VAULT_TENANT_SECRET_ID_NUM_USES", 1)
+
+
+def vault_tenant_secret_id_ttl() -> str:
+    """TTL assigned to tenant AppRole secret_id values."""
+    return _get("M8FLOW_VAULT_TENANT_SECRET_ID_TTL") or "10m"
+
+
+def vault_tenant_token_ttl() -> str:
+    """Initial TTL assigned to tenant AppRole login tokens."""
+    return _get("M8FLOW_VAULT_TENANT_TOKEN_TTL") or "10m"
+
+
+def vault_tenant_token_max_ttl() -> str:
+    """Maximum TTL assigned to tenant AppRole login tokens."""
+    return _get("M8FLOW_VAULT_TENANT_TOKEN_MAX_TTL") or "30m"
 
 
 def vault_timeout_seconds() -> float:

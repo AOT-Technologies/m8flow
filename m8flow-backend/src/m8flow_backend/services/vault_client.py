@@ -275,6 +275,10 @@ class VaultClient:
         token_policies: list[str],
         mount_point: str = "approle",
         token_no_default_policy: bool = True,
+        secret_id_num_uses: int | None = None,
+        secret_id_ttl: str | int | None = None,
+        token_ttl: str | int | None = None,
+        token_max_ttl: str | int | None = None,
     ) -> dict[str, Any]:
         client = self._get_client()
         normalized_role_name = self._require_non_empty(role_name, "role_name")
@@ -283,14 +287,24 @@ class VaultClient:
         if not normalized_policies:
             raise ValueError("token_policies must contain at least one non-empty policy name.")
 
+        approle_payload: dict[str, Any] = {
+            "role_name": normalized_role_name,
+            "mount_point": normalized_mount_point,
+            "token_policies": normalized_policies,
+            "bind_secret_id": True,
+            "token_no_default_policy": token_no_default_policy,
+        }
+        if secret_id_num_uses is not None:
+            approle_payload["secret_id_num_uses"] = secret_id_num_uses
+        if secret_id_ttl is not None:
+            approle_payload["secret_id_ttl"] = secret_id_ttl
+        if token_ttl is not None:
+            approle_payload["token_ttl"] = token_ttl
+        if token_max_ttl is not None:
+            approle_payload["token_max_ttl"] = token_max_ttl
+
         try:
-            response = client.auth.approle.create_or_update_approle(
-                role_name=normalized_role_name,
-                mount_point=normalized_mount_point,
-                token_policies=normalized_policies,
-                bind_secret_id=True,
-                token_no_default_policy=token_no_default_policy,
-            )
+            response = client.auth.approle.create_or_update_approle(**approle_payload)
         except Exception as exc:
             raise self._resource_error("create or update", "AppRole", normalized_role_name, exc) from exc
 

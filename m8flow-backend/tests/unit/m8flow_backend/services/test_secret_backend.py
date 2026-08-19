@@ -340,46 +340,59 @@ def test_tenant_a_cannot_resolve_tenant_b_secret(app, tenants, user) -> None:
     assert exc_info.value.error_code == "missing_secret_error"
 
 
-def test_vault_path_uses_secret_name_and_moves_on_rename(app, tenants, user) -> None:
+def test_vault_update_keeps_existing_secret_key_and_path(monkeypatch) -> None:
     fake_vault = FakeVaultClient()
     backend = _backend(fake_vault)
+    app = Flask(__name__)
+    app.config["M8FLOW_VAULT_SECRET_PATH_PREFIX"] = "m8flow"
+    app.config["SPIFFWORKFLOW_BACKEND_ENCRYPTION_LIB"] = "cryptography"
+    app.config["CIPHER"] = FakeCipher()
 
-    with app.test_request_context("/"):
-        g.m8flow_tenant_id = tenants[0]
-        created = backend.add_secret("OLD_NAME", "initial", user)
-        original_path = f"m8flow/tenants/{tenants[0]}/secrets/OLD_NAME"
-        renamed_path = f"m8flow/tenants/{tenants[0]}/secrets/NEW_NAME"
+    monkeypatch.setattr(secret_backend_module, "current_tenant_id_or_none", lambda: "tenant-a")
+    monkeypatch.setattr(
+        backend,
+        "_require_user",
+        lambda user_id: SimpleNamespace(id=user_id, username="alice"),
+    )
 
-        backend.update_secret("OLD_NAME", "updated", user, new_key="NEW_NAME")
-        resolved = backend.get_secret("NEW_NAME")
-        with pytest.raises(ApiError):
-            backend.get_secret("OLD_NAME")
+    with app.app_context():
+        backend.add_secret("OLD_NAME", "initial", 7)
+        original_path = "m8flow/tenants/tenant-a/secrets/OLD_NAME"
+        backend.update_secret("OLD_NAME", "updated", 7)
 
     assert fake_vault.store_calls[0][0] == original_path
-    assert fake_vault.store_calls[-1][0] == renamed_path
-    assert fake_vault.delete_calls[-1] == original_path
-    assert fake_vault.storage[renamed_path]["value"] == "updated"
-    assert fake_vault.storage[renamed_path]["id"] == created.id
-    assert resolved.key == "NEW_NAME"
+    assert fake_vault.store_calls[0][1]["value"] == "initial"
+    assert fake_vault.store_calls[-1][0] == original_path
+    assert fake_vault.delete_calls == []
+    assert fake_vault.storage[original_path]["key"] == "OLD_NAME"
+    assert fake_vault.storage[original_path]["value"] == "updated"
 
 
-def test_rename_to_existing_secret_is_rejected_before_touching_vault(app, tenants, user) -> None:
+def test_vault_mode_encodes_unsafe_tenant_ids_in_paths(monkeypatch) -> None:
     fake_vault = FakeVaultClient()
     backend = _backend(fake_vault)
+    app = Flask(__name__)
+    app.config["M8FLOW_VAULT_SECRET_PATH_PREFIX"] = "m8flow"
+    app.config["SPIFFWORKFLOW_BACKEND_ENCRYPTION_LIB"] = "cryptography"
+    app.config["CIPHER"] = FakeCipher()
+    tenant_id = "tenant+/blue*west"
 
-    with app.test_request_context("/"):
-        g.m8flow_tenant_id = tenants[0]
-        backend.add_secret("OLD_NAME", "initial", user)
-        backend.add_secret("EXISTING_NAME", "existing", user)
-        store_calls_before = list(fake_vault.store_calls)
+    monkeypatch.setattr(secret_backend_module, "current_tenant_id_or_none", lambda: tenant_id)
+    monkeypatch.setattr(
+        backend,
+        "_require_user",
+        lambda user_id: SimpleNamespace(id=user_id, username="alice"),
+    )
 
-        with pytest.raises(ApiError) as exc_info:
-            backend.update_secret("OLD_NAME", "updated", user, new_key="EXISTING_NAME")
+    with app.app_context():
+        backend.add_secret("API_TOKEN", "vault-value", 7)
+        resolved = backend.get_secret_value("API_TOKEN")
 
-    assert exc_info.value.error_code == "update_secret_error"
-    assert fake_vault.store_calls == store_calls_before
-    assert fake_vault.storage[f"m8flow/tenants/{tenants[0]}/secrets/OLD_NAME"]["value"] == "initial"
-    assert fake_vault.storage[f"m8flow/tenants/{tenants[0]}/secrets/EXISTING_NAME"]["value"] == "existing"
+    expected_path = "m8flow/tenants/tenant%2B%2Fblue%2Awest/secrets/API_TOKEN"
+    assert expected_path in fake_vault.storage
+    assert "m8flow/tenants/tenant+/blue*west/secrets/API_TOKEN" not in fake_vault.storage
+    assert fake_vault.storage[expected_path]["tenant_id"] == tenant_id
+    assert resolved == "vault-value"
 
 
 def test_missing_vault_value_with_present_document_is_returned_as_not_found(app, tenants, user, caplog) -> None:

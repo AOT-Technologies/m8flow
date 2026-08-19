@@ -34,9 +34,8 @@ class SecretBackend(Protocol):
         value: str,
         user_id: int | None = None,
         create_if_not_exists: bool | None = False,
-        new_key: str | None = None,
     ) -> None:
-        """Update an existing secret, optionally creating or renaming it."""
+        """Update an existing secret value, optionally creating it."""
 
     def delete_secret(self, key: str, user_id: int) -> None:
         """Delete a stored secret."""

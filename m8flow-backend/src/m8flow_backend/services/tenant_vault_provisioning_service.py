@@ -8,6 +8,10 @@ from m8flow_backend.config import (
     vault_approle_mount_point,
     vault_mount_point,
     vault_secret_path_prefix,
+    vault_tenant_secret_id_num_uses,
+    vault_tenant_secret_id_ttl,
+    vault_tenant_token_max_ttl,
+    vault_tenant_token_ttl,
     vault_tenant_policy_prefix,
     vault_tenant_role_prefix,
 )
@@ -16,6 +20,7 @@ from m8flow_backend.services.vault_client import (
     VaultClient,
     get_vault_client,
 )
+from m8flow_backend.services.vault_path_utils import vault_safe_tenant_path_component
 
 _SAFE_NAME_PATTERN = re.compile(r"[^A-Za-z0-9._-]+")
 
@@ -64,6 +69,10 @@ class TenantVaultProvisioningService:
                 role_name,
                 mount_point=approle_mount,
                 token_policies=[policy_name],
+                secret_id_num_uses=vault_tenant_secret_id_num_uses(),
+                secret_id_ttl=vault_tenant_secret_id_ttl(),
+                token_ttl=vault_tenant_token_ttl(),
+                token_max_ttl=vault_tenant_token_max_ttl(),
             )
             role_id = self._vault_client.read_approle_role_id(
                 role_name,
@@ -119,7 +128,12 @@ class TenantVaultProvisioningService:
     @classmethod
     def _tenant_secret_root(cls, tenant_id: str) -> str:
         prefix = cls._require_non_empty(vault_secret_path_prefix(), "vault_secret_path_prefix")
-        return cls._join_vault_path(prefix, "tenants", tenant_id, "secrets")
+        return cls._join_vault_path(
+            prefix,
+            "tenants",
+            vault_safe_tenant_path_component(tenant_id),
+            "secrets",
+        )
 
     @classmethod
     def _identity_name(cls, prefix: str, tenant_id: str) -> str:

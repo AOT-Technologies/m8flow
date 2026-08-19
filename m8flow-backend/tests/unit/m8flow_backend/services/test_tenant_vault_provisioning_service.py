@@ -57,6 +57,10 @@ class FakeTenantProvisioningVaultClient:
         token_policies: list[str],
         mount_point: str,
         token_no_default_policy: bool = True,
+        secret_id_num_uses: int | None = None,
+        secret_id_ttl: str | int | None = None,
+        token_ttl: str | int | None = None,
+        token_max_ttl: str | int | None = None,
     ) -> dict[str, object]:
         self.approle_calls.append(
             {
@@ -64,6 +68,10 @@ class FakeTenantProvisioningVaultClient:
                 "token_policies": token_policies,
                 "mount_point": mount_point,
                 "token_no_default_policy": token_no_default_policy,
+                "secret_id_num_uses": secret_id_num_uses,
+                "secret_id_ttl": secret_id_ttl,
+                "token_ttl": token_ttl,
+                "token_max_ttl": token_max_ttl,
             }
         )
         self.roles[role_name] = {"token_policies": list(token_policies)}
@@ -87,6 +95,10 @@ def test_provision_tenant_identity_creates_policy_and_approle(monkeypatch) -> No
     monkeypatch.setenv("M8FLOW_VAULT_APPROLE_MOUNT_POINT", "approle")
     monkeypatch.setenv("M8FLOW_VAULT_TENANT_POLICY_PREFIX", "m8flow-tenant-policy")
     monkeypatch.setenv("M8FLOW_VAULT_TENANT_ROLE_PREFIX", "m8flow-tenant-role")
+    monkeypatch.setenv("M8FLOW_VAULT_TENANT_SECRET_ID_NUM_USES", "1")
+    monkeypatch.setenv("M8FLOW_VAULT_TENANT_SECRET_ID_TTL", "10m")
+    monkeypatch.setenv("M8FLOW_VAULT_TENANT_TOKEN_TTL", "10m")
+    monkeypatch.setenv("M8FLOW_VAULT_TENANT_TOKEN_MAX_TTL", "30m")
 
     fake_vault_client = FakeTenantProvisioningVaultClient()
     service = TenantVaultProvisioningService(vault_client=fake_vault_client)
@@ -124,6 +136,10 @@ def test_provision_tenant_identity_creates_policy_and_approle(monkeypatch) -> No
             "token_policies": ["m8flow-tenant-policy-org-uuid-123"],
             "mount_point": "approle",
             "token_no_default_policy": True,
+            "secret_id_num_uses": 1,
+            "secret_id_ttl": "10m",
+            "token_ttl": "10m",
+            "token_max_ttl": "30m",
         }
     ]
     assert fake_vault_client.secret_id_calls == [
@@ -155,6 +171,28 @@ def test_provision_tenant_identity_does_not_rotate_secret_for_existing_role(monk
     assert fake_vault_client.secret_id_calls == []
 
 
+def test_provision_tenant_identity_respects_custom_approle_lifetimes(monkeypatch) -> None:
+    monkeypatch.setenv("M8FLOW_VAULT_MOUNT_POINT", "kv")
+    monkeypatch.setenv("M8FLOW_VAULT_SECRET_PATH_PREFIX", "m8flow")
+    monkeypatch.setenv("M8FLOW_VAULT_APPROLE_MOUNT_POINT", "approle")
+    monkeypatch.setenv("M8FLOW_VAULT_TENANT_POLICY_PREFIX", "m8flow-tenant-policy")
+    monkeypatch.setenv("M8FLOW_VAULT_TENANT_ROLE_PREFIX", "m8flow-tenant-role")
+    monkeypatch.setenv("M8FLOW_VAULT_TENANT_SECRET_ID_NUM_USES", "2")
+    monkeypatch.setenv("M8FLOW_VAULT_TENANT_SECRET_ID_TTL", "15m")
+    monkeypatch.setenv("M8FLOW_VAULT_TENANT_TOKEN_TTL", "12m")
+    monkeypatch.setenv("M8FLOW_VAULT_TENANT_TOKEN_MAX_TTL", "45m")
+
+    fake_vault_client = FakeTenantProvisioningVaultClient()
+    service = TenantVaultProvisioningService(vault_client=fake_vault_client)
+
+    service.provision_tenant_identity("org-uuid-123")
+
+    assert fake_vault_client.approle_calls[0]["secret_id_num_uses"] == 2
+    assert fake_vault_client.approle_calls[0]["secret_id_ttl"] == "15m"
+    assert fake_vault_client.approle_calls[0]["token_ttl"] == "12m"
+    assert fake_vault_client.approle_calls[0]["token_max_ttl"] == "45m"
+
+
 def test_provision_tenant_identity_sanitizes_policy_and_role_names(monkeypatch) -> None:
     monkeypatch.setenv("M8FLOW_VAULT_MOUNT_POINT", "kv")
     monkeypatch.setenv("M8FLOW_VAULT_SECRET_PATH_PREFIX", "m8flow")
@@ -170,6 +208,36 @@ def test_provision_tenant_identity_sanitizes_policy_and_role_names(monkeypatch) 
     assert result.policy_name == "tenant-policy-tenant-blue"
     assert result.role_name == "tenant-role-tenant-blue"
     assert fake_vault_client.approle_calls[0]["mount_point"] == "approle-custom"
+
+
+def test_provision_tenant_identity_encodes_tenant_path_component_in_policy(monkeypatch) -> None:
+    monkeypatch.setenv("M8FLOW_VAULT_MOUNT_POINT", "kv")
+    monkeypatch.setenv("M8FLOW_VAULT_SECRET_PATH_PREFIX", "m8flow")
+    monkeypatch.setenv("M8FLOW_VAULT_APPROLE_MOUNT_POINT", "approle")
+    monkeypatch.setenv("M8FLOW_VAULT_TENANT_POLICY_PREFIX", "m8flow-tenant-policy")
+    monkeypatch.setenv("M8FLOW_VAULT_TENANT_ROLE_PREFIX", "m8flow-tenant-role")
+
+    fake_vault_client = FakeTenantProvisioningVaultClient()
+    service = TenantVaultProvisioningService(vault_client=fake_vault_client)
+
+    service.provision_tenant_identity("tenant+/blue*west")
+
+    assert fake_vault_client.policy_calls == [
+        {
+            "policy_name": "m8flow-tenant-policy-tenant-blue-west",
+            "policy": (
+                'path "kv/data/m8flow/tenants/tenant%2B%2Fblue%2Awest/secrets/*" {\n'
+                '  capabilities = ["create", "read", "update", "delete"]\n'
+                "}\n\n"
+                'path "kv/metadata/m8flow/tenants/tenant%2B%2Fblue%2Awest/secrets" {\n'
+                '  capabilities = ["list", "read"]\n'
+                "}\n\n"
+                'path "kv/metadata/m8flow/tenants/tenant%2B%2Fblue%2Awest/secrets/*" {\n'
+                '  capabilities = ["list", "read", "delete"]\n'
+                "}\n"
+            ),
+        }
+    ]
 
 
 def test_provision_tenant_identity_rejects_empty_tenant_id(monkeypatch) -> None:
