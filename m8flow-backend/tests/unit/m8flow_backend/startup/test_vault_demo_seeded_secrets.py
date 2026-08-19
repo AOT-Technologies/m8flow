@@ -121,6 +121,7 @@ def test_load_seeded_secrets_missing_file_skips_demo_identity_resolution(
 
 def test_verify_bootstrap_without_seeded_secrets_resolves_demo_tenant_identity(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     class FakeBrokerClient:
         def __init__(self, settings=None):
@@ -166,6 +167,7 @@ def test_verify_bootstrap_without_seeded_secrets_resolves_demo_tenant_identity(
     monkeypatch.setenv("M8FLOW_BACKEND_ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef")
     monkeypatch.setattr(bootstrap_vault_demo, "ROLE_ID_FILE", Path("/tmp/role-id"))
     monkeypatch.setattr(bootstrap_vault_demo, "SECRET_ID_FILE", Path("/tmp/secret-id"))
+    monkeypatch.setattr(bootstrap_vault_demo, "VERIFICATION_FILE", tmp_path / "verification.json")
 
     fake_provider_module = ModuleType("m8flow_backend.services.tenant_scoped_vault_client_provider")
     fake_provider_module.TenantScopedVaultClientProvider = FakeProvider
