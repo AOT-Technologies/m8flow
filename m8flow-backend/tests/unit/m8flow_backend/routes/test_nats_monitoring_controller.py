@@ -324,6 +324,62 @@ class TestPayloadInspectionGating:
         assert stub_services["get_messages"]["start_seq"] == 42
         assert stub_services["get_messages"]["limit"] == 1
 
+    def test_include_payload_cannot_reach_another_tenants_event(
+        self, app, monkeypatch, stub_services
+    ):
+        """`includePayload=true` must not become a way around the tenant filter.
+
+        A cross-tenant id 404s inside `NatsEventAuditQueryService.get_event` (verified against
+        a real database in test_nats_event_audit_query_service.py). What is asserted here is
+        the *ordering* the controller depends on: that lookup runs before the payload branch,
+        so the 404 propagates unchanged and NATS is never read. If the branches were ever
+        reordered — payload fetched from the requested streamSeq before the row was
+        authorized — this fails.
+        """
+        from spiffworkflow_backend.exceptions.api_error import ApiError
+
+        class Scoped:
+            @staticmethod
+            def get_event(event_id, **kwargs):
+                raise ApiError(
+                    error_code="nats_event_not_found",
+                    message=f"No NATS event history for id '{event_id}'.",
+                    status_code=404,
+                )
+
+        monkeypatch.setattr(controller, "NatsEventAuditQueryService", Scoped)
+        monkeypatch.setattr(controller, "nats_message_inspection_enabled", lambda: True)
+        ctx = _as(app, "includePayload=true", super_admin=False)
+        try:
+            assert _status(controller.get_event("globex-only")) == 404
+        finally:
+            ctx.pop()
+
+        assert "get_messages" not in stub_services, "payload was fetched for an unauthorized row"
+
+    def test_include_payload_404s_the_same_way_for_an_id_that_does_not_exist(
+        self, app, monkeypatch, stub_services
+    ):
+        """Same response either way, so the flag cannot be used to probe for foreign ids."""
+        from spiffworkflow_backend.exceptions.api_error import ApiError
+
+        class Missing:
+            @staticmethod
+            def get_event(event_id, **kwargs):
+                raise ApiError(
+                    error_code="nats_event_not_found",
+                    message=f"No NATS event history for id '{event_id}'.",
+                    status_code=404,
+                )
+
+        monkeypatch.setattr(controller, "NatsEventAuditQueryService", Missing)
+        monkeypatch.setattr(controller, "nats_message_inspection_enabled", lambda: True)
+        ctx = _as(app, "includePayload=true", super_admin=False)
+        try:
+            assert _status(controller.get_event("no-such-id")) == 404
+        finally:
+            ctx.pop()
+
 
 class TestParameterHandling:
     def test_non_integer_page_is_a_400(self, app):

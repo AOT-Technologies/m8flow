@@ -175,7 +175,15 @@ NATS Client: `nats://${M8FLOW_NATS_USER:-admin}:${M8FLOW_NATS_PASSWORD:-admin}@l
 NATS Monitoring: `http://localhost:${M8FLOW_NATS_MONITORING_PORT:-6851}`
 
 The third-party NUI dashboard has been removed. Set `M8FLOW_NATS_MONITORING_ENABLED=true` to
-surface the built-in **NATS** section in the m8flow UI (super-admin only).
+surface the built-in **NATS** section in the m8flow UI.
+
+Access is split by what the data can honestly be scoped to. Super-admins see every tab.
+Tenant-admins see **Event history** only, scoped to their own tenant: those rows carry a
+tenant each, whereas the Overview, Streams and Tenants tabs read broker-wide JetStream
+state that is reported per account and cannot be filtered per tenant. Both roles are
+read-only. Set `M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED=true` to additionally allow raw
+message payloads to be read; it is off by default because payloads carry tenant business
+data and the streams retain them indefinitely.
 
 **NATS Credentials**:
 The default username/password is `admin:admin`. You can customize these in your `.env` file via `M8FLOW_NATS_USER` and `M8FLOW_NATS_PASSWORD`.

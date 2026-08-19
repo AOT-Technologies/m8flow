@@ -14,9 +14,21 @@ tables on login.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
+import pytest
 import yaml
+
+# Spiff's real URI matcher, so the wildcard-overlap tests below assert the semantics the
+# runtime actually uses rather than a re-implementation of them.
+_backend_src = Path(__file__).resolve().parents[5] / "spiffworkflow-backend" / "src"
+if str(_backend_src) not in sys.path:
+    sys.path.insert(0, str(_backend_src))
+
+from spiffworkflow_backend.services.authorization_service import (  # noqa: E402
+    AuthorizationService,
+)
 
 PERMISSIONS_PATH = (
     Path(__file__).resolve().parents[4]
@@ -31,6 +43,21 @@ MONITORING_URI_PREFIX = "/m8flow/nats/"
 
 # Anyone who must never see another tenant's messaging traffic.
 NON_ADMIN_GROUPS = {"editor", "reviewer", "viewer", "submitter", "integrator"}
+
+# Endpoints backed by broker-wide JetStream state, which is reported per account and so
+# cannot be filtered per tenant. Super-admin only.
+BROKER_WIDE_URIS = [
+    "/m8flow/nats/overview",
+    "/m8flow/nats/streams",
+    "/m8flow/nats/tenants",
+    "/m8flow/nats/streams/M8FLOW_EVENTS/messages",
+]
+
+# Backed by m8flow_nats_event_audit, which carries a tenant per row.
+EVENT_HISTORY_URIS = [
+    "/m8flow/nats/events",
+    "/m8flow/nats/events/evt-1",
+]
 
 
 def _permissions() -> dict:
@@ -49,6 +76,26 @@ def _monitoring_permissions() -> dict:
 
 def _groups(name: str) -> set[str]:
     return set(_permissions()[name]["groups"])
+
+
+def _matches(target_uri: str, actual_uri: str) -> bool:
+    """Ask Spiff whether a configured target covers a concrete request URI.
+
+    The permission sync stores `*` as the SQL wildcard `%` (see
+    `AuthorizationService.permission_assignments_include`), so translate the same way here.
+    """
+    return AuthorizationService.target_uri_matches_actual_uri(
+        target_uri.replace("*", "%"), actual_uri
+    )
+
+
+def _targets_for_group(group: str) -> list[tuple[str, str]]:
+    """Every (permission name, target uri) a member of `group` is granted."""
+    return [
+        (name, perm["uri"])
+        for name, perm in _permissions().items()
+        if group in perm.get("groups", []) and perm.get("uri")
+    ]
 
 
 def test_broker_wide_monitoring_is_super_admin_only() -> None:
@@ -81,3 +128,62 @@ def test_every_monitoring_grant_is_read_only() -> None:
 def test_monitoring_grants_exist_at_all() -> None:
     """Guard against the grants being renamed away and the tests above passing vacuously."""
     assert len(_monitoring_permissions()) >= 3
+
+
+class TestWildcardOverlapIsHarmless:
+    """Pin the matcher semantics that make the ``/m8flow/nats/*`` grant safe.
+
+    ``read-nats-monitoring`` wildcards the whole subtree, so its target *does* overlap the
+    narrower ``read-nats-events`` targets. That overlap is deliberate and harmless, but only
+    because of two properties that are easy to break by accident:
+
+    1. Spiff resolves a request against **only the requesting user's own** assignments
+       (``AuthorizationService.has_permission`` filters by ``principal_id``), so a grant
+       aimed at super-admin can never appear in a tenant-admin's match set.
+    2. Multiple matching assignments are a union of permits, vetoed only by an explicit
+       ``DENY:`` (``has_permissions_and_all_permissions_permit``). There is no
+       most-specific-wins rule, so a broader grant can only ever add access.
+
+    If someone widens an events grant to a wildcard, or introduces a DENY into this file,
+    these tests fail rather than silently changing who can read broker-wide state.
+    """
+
+    def test_the_overlap_this_guards_actually_exists(self) -> None:
+        """Guard against the tests below passing vacuously if the wildcard is narrowed."""
+        assert _matches("/m8flow/nats/*", "/m8flow/nats/events")
+        assert _matches("/m8flow/nats/*", "/m8flow/nats/overview")
+
+    @pytest.mark.parametrize("uri", BROKER_WIDE_URIS)
+    def test_no_tenant_admin_grant_reaches_a_broker_wide_uri(self, uri: str) -> None:
+        """The property that matters, asserted through Spiff's real matcher.
+
+        Stated over every grant a tenant-admin holds — not just the NATS ones — so widening
+        an unrelated permission into this subtree is caught too.
+        """
+        reaching = [name for name, target in _targets_for_group("tenant-admin") if _matches(target, uri)]
+        assert not reaching, f"{uri} is reachable by tenant-admin via {sorted(reaching)}"
+
+    @pytest.mark.parametrize("uri", EVENT_HISTORY_URIS)
+    def test_tenant_admin_does_reach_event_history(self, uri: str) -> None:
+        reaching = [name for name, target in _targets_for_group("tenant-admin") if _matches(target, uri)]
+        assert reaching, f"no tenant-admin grant reaches {uri}"
+
+    @pytest.mark.parametrize("uri", BROKER_WIDE_URIS + EVENT_HISTORY_URIS)
+    def test_super_admin_reaches_everything_in_the_subtree(self, uri: str) -> None:
+        reaching = [name for name, target in _targets_for_group("super-admin") if _matches(target, uri)]
+        assert reaching, f"no super-admin grant reaches {uri}"
+
+    def test_no_deny_rules_exist_to_invert_the_union(self) -> None:
+        """A DENY anywhere in this file would turn the harmless overlap into a revocation.
+
+        ``has_permissions_and_all_permissions_permit`` fails the whole check if *any*
+        matching assignment denies, so a DENY on the wildcard would strip tenant-admins of
+        event history even though their own narrower grant permits it.
+        """
+        denied = [
+            name
+            for name, perm in _permissions().items()
+            if any(str(action).startswith("DENY:") for action in perm.get("actions", []))
+            or str(perm.get("uri", "")).startswith("DENY:")
+        ]
+        assert not denied, f"DENY rules change the overlap semantics asserted above: {denied}"

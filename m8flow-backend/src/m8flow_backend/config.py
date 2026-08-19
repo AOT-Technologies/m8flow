@@ -17,6 +17,20 @@ def _get(key: str, default: str | None = None) -> str | None:
     return default
 
 
+# Spellings an operator may reasonably reach for in a .env or a compose file. Anything
+# outside this set is false, so a typo fails closed rather than silently enabling a
+# feature. Kept in one place so every flag answers to the same vocabulary.
+_TRUTHY = frozenset({"true", "1", "yes", "on"})
+
+
+def _get_bool(key: str, default: bool = False) -> bool:
+    """Read an environment flag, tolerating the usual truthy spellings."""
+    raw = _get(key)
+    if raw is None:
+        return default
+    return raw.strip().lower() in _TRUTHY
+
+
 def keycloak_url() -> str:
     """Keycloak base URL (no trailing slash)."""
     url = _get("KEYCLOAK_URL") or _get("M8FLOW_KEYCLOAK_URL") or "http://localhost:6842"
@@ -187,7 +201,7 @@ def nats_url() -> str:
 
 def nats_enabled() -> bool:
     """Whether the NATS event-driven integration is switched on."""
-    return (_get("M8FLOW_NATS_ENABLED") or "false").lower() == "true"
+    return _get_bool("M8FLOW_NATS_ENABLED")
 
 
 def nats_events_stream_name() -> str:
@@ -232,10 +246,9 @@ def nats_monitoring_enabled() -> bool:
     Follows M8FLOW_NATS_ENABLED unless overridden: monitoring a disabled subsystem is
     never useful.
     """
-    raw = _get("M8FLOW_NATS_MONITORING_ENABLED")
-    if raw is None or str(raw).strip() == "":
+    if _get("M8FLOW_NATS_MONITORING_ENABLED") is None:
         return nats_enabled()
-    return str(raw).strip().lower() == "true"
+    return _get_bool("M8FLOW_NATS_MONITORING_ENABLED")
 
 
 def nats_message_inspection_enabled() -> bool:
@@ -244,7 +257,7 @@ def nats_message_inspection_enabled() -> bool:
     Off by default: payloads carry tenant business data and notification recipients, and
     m8flow's streams retain them indefinitely.
     """
-    return (_get("M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED") or "false").lower() == "true"
+    return _get_bool("M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED")
 
 
 def nats_message_preview_max_bytes() -> int:
