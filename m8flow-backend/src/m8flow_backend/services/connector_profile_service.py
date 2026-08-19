@@ -225,18 +225,23 @@ class ConnectorProfileService:
     @classmethod
     def delete_profile(cls, configuration_id: int) -> None:
         profile = cls.get_profile(configuration_id)
-        refs = list((profile.secret_refs or {}).values())
+        refs = dict(profile.secret_refs or {})
 
         db.session.delete(profile)
         db.session.commit()
 
-        for key in refs:
+        for field_name, key in refs.items():
             try:
                 secret_backend().delete(key)
             except Exception:
                 # The row is already gone, so the profile is deleted as far as
                 # the user is concerned. Log the leftover instead of failing.
-                logger.warning("Could not delete connector profile secret '%s'", key, exc_info=True)
+                logger.warning(
+                    "Could not delete stored secret for connector profile %s field '%s'",
+                    configuration_id,
+                    field_name,
+                    exc_info=True,
+                )
 
     @classmethod
     def set_default(cls, configuration_id: int) -> ConnectorConfigurationModel:
@@ -353,11 +358,16 @@ class ConnectorProfileService:
     @staticmethod
     def _discard(profile: ConnectorConfigurationModel, written: dict[str, str]) -> None:
         """Undo a partially created profile."""
-        for key in written.values():
+        for field_name, key in written.items():
             try:
                 secret_backend().delete(key)
             except Exception:
-                logger.warning("Could not clean up connector profile secret '%s'", key, exc_info=True)
+                logger.warning(
+                    "Could not clean up stored secret for connector profile %s field '%s'",
+                    profile.id,
+                    field_name,
+                    exc_info=True,
+                )
         try:
             db.session.delete(profile)
             db.session.commit()

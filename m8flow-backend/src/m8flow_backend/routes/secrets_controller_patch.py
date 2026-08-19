@@ -21,6 +21,8 @@ def apply() -> None:
     from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
     from m8flow_backend.tenancy import is_super_admin_request
 
+    original_secret_list = secrets_controller.secret_list
+
     # Connector profile secrets are owned by the Connectors screens: they are
     # created, rotated and deleted with their profile. Listing them here would
     # invite editing or deleting one out from under its profile.
@@ -30,17 +32,26 @@ def apply() -> None:
         tid = getattr(secret, "m8f_tenant_id", None)
         return tid if isinstance(tid, str) and tid else None
 
-    def patched_secret_list(page: int = 1, per_page: int = 100):
-        super_admin = is_super_admin_request()
+    def _without_profile_secrets(response):
+        payload = response.get_json()
+        results = [r for r in payload["results"] if not r["key"].startswith(profile_secret_prefix)]
+        removed = len(payload["results"]) - len(results)
+        payload["results"] = results
+        payload["pagination"]["count"] -= removed
+        return make_response(jsonify(payload), response.status_code)
 
+    def patched_secret_list(page: int = 1, per_page: int = 100):
+        # Non-super-admins get upstream's tenant-scoped listing, with connector
+        # profile secrets stripped out (tenant scoping itself is applied by the
+        # tenant scoping patch, not here).
+        if not is_super_admin_request():
+            return _without_profile_secrets(original_secret_list(page=page, per_page=per_page))
+
+        tenant_filter = flask_request.args.get("tenantId") or flask_request.args.get("tenant_id")
         query = SecretModel.query.order_by(SecretModel.key).join(UserModel).add_columns(UserModel.username)
-        # Tenant scoping for non-super-admins is applied by the tenant scoping
-        # patch; only the connector-profile keys need filtering out here.
         query = query.filter(~SecretModel.key.startswith(profile_secret_prefix))
-        if super_admin:
-            tenant_filter = flask_request.args.get("tenantId") or flask_request.args.get("tenant_id")
-            if tenant_filter:
-                query = query.filter(SecretModel.m8f_tenant_id == tenant_filter)
+        if tenant_filter:
+            query = query.filter(SecretModel.m8f_tenant_id == tenant_filter)
         page_result = query.paginate(page=page, per_page=per_page, error_out=False)
         rows = list(page_result.items)
 

@@ -52,8 +52,9 @@ def test_super_admin_views_models_and_actions_restricted(super_admin_page: Page)
     page = super_admin_page
     setup_super_admin_session(page, process_groups=_CROSS_TENANT_GROUPS)
     open_page(page, "/process-groups")
-    # Drill into the M8Flow group (click bubbles from the chip to the card).
-    page.get_by_test_id("process-group-tenant-chip-m8flow-group").click()
+    # Drill into the M8Flow group (the tenant chip is a visual overlay, not
+    # part of the card's clickable subtree -- click the group name instead).
+    page.get_by_text("M8Flow Operations", exact=True).first.click()
     # The model inside the group is now visible, with its tenant chip.
     expect(
         page.get_by_test_id("process-model-card-M8Flow Onboarding")

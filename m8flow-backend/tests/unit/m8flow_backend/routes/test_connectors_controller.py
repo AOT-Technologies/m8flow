@@ -10,7 +10,10 @@ from unittest.mock import patch
 
 from flask import Flask
 
+from m8flow_backend.routes import connectors_controller
 from m8flow_backend.routes.connectors_controller import (
+    CONNECTOR_METADATA,
+    _SECRET_KEY_RE,
     connectors_grouped,
     format_operation_name,
 )
@@ -54,6 +57,8 @@ def test_grouped_connectors_carry_profile_fields_from_the_registry():
     assert by_id["http"]["supportsProfiles"] is False
     assert by_id["http"]["profileFields"] == []
 
+    # HTTP declares no configFields, so the key must be absent entirely.
+    assert "configFields" not in by_id["http"]
 
 def test_connector_without_a_definition_still_lists_its_operations():
     groups = _call_grouped([{"id": "mystery_v2/DoThing", "parameters": []}])
@@ -64,6 +69,8 @@ def test_connector_without_a_definition_still_lists_its_operations():
     assert mystery["operationCount"] == 1
     assert mystery["operations"][0]["name"] == "Do Thing"
 
+    bad = next(g for g in groups if g["id"] == "bad")
+    assert "configFields" not in bad
 
 def test_profile_count_failure_does_not_break_the_listing():
     app = Flask(__name__)

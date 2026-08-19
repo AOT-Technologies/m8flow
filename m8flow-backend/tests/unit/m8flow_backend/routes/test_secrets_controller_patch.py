@@ -29,6 +29,65 @@ def _serialize(secret, username, tenant_names):
     }
 
 
+def test_non_super_admin_delegates_to_upstream_with_profile_secrets_stripped(monkeypatch):
+    """Non-super-admins get upstream's tenant-scoped listing (tenant scoping itself
+    is applied elsewhere, by the tenant-scoping patch), but connector-profile
+    secrets are still stripped out -- that filter applies to every caller."""
+    from flask import Flask, jsonify, make_response
+
+    calls: list[tuple[int, int]] = []
+
+    def _fake_original_secret_list(page=1, per_page=100):
+        calls.append((page, per_page))
+        payload = {
+            "results": [
+                {"key": "db_url", "username": "alice"},
+                {"key": "cnx/github/token", "username": "alice"},
+            ],
+            "pagination": {"count": 2, "total": 2, "pages": 1},
+        }
+        return make_response(jsonify(payload), 200)
+
+    secrets_controller = types.ModuleType(
+        "spiffworkflow_backend.routes.secrets_controller"
+    )
+    secrets_controller.secret_list = _fake_original_secret_list
+
+    import spiffworkflow_backend.routes as routes_pkg
+
+    monkeypatch.setattr(routes_pkg, "secrets_controller", secrets_controller, raising=False)
+    monkeypatch.setitem(
+        sys.modules,
+        "spiffworkflow_backend.routes.secrets_controller",
+        secrets_controller,
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "spiffworkflow_backend.models.secret_model",
+        types.SimpleNamespace(SecretModel=types.SimpleNamespace()),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "spiffworkflow_backend.models.user",
+        types.SimpleNamespace(UserModel=types.SimpleNamespace()),
+    )
+    monkeypatch.setattr("m8flow_backend.tenancy.is_super_admin_request", lambda: False)
+
+    import m8flow_backend.routes.secrets_controller_patch as patch_module
+
+    monkeypatch.setattr(patch_module, "_PATCHED", False)
+    patch_module.apply()
+
+    app = Flask(__name__)
+    with app.app_context():
+        response = secrets_controller.secret_list(page=2, per_page=10)
+
+    assert calls == [(2, 10)]
+    payload = response.get_json()
+    assert [r["key"] for r in payload["results"]] == ["db_url"]
+    assert payload["pagination"]["count"] == 1
+
+
 def test_serialize_shapes_tenant_details():
     """A secret carries username + tenantId/tenantName; a null tenant id yields null names."""
     tenant_names = {"tenant-a": "Tenant A"}
@@ -168,27 +227,6 @@ def _install_sa_secret_list(
     patch_module.apply()
     assert secrets_controller.secret_list.__name__ == "patched_secret_list"
     return secrets_controller, query
-
-
-def test_non_super_admin_secret_list_excludes_profile_secrets_only(monkeypatch):
-    """Non-super-admins get the profile-secret exclusion filter but never a tenant filter,
-    even when a tenant query param is present -- tenant scoping for them is applied by the
-    tenant-scoping patch, not here."""
-    from flask import Flask
-
-    secrets_controller, query = _install_sa_secret_list(
-        monkeypatch,
-        [(_Secret("db_url", "tenant-a"), "alice")],
-        is_super_admin=False,
-    )
-
-    app = Flask(__name__)
-    with app.app_context():
-        with app.test_request_context("/secrets?tenantId=tenant-a"):
-            response = secrets_controller.secret_list(page=2, per_page=10)
-
-    assert query.filters == [_PROFILE_SECRET_FILTER]
-    assert response.get_json()["results"][0]["tenantId"] == "tenant-a"
 
 
 def test_super_admin_secret_list_injects_tenant_fields_and_filters(monkeypatch):
