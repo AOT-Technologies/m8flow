@@ -596,7 +596,7 @@ def test_status_endpoint_does_not_include_vault_state(monkeypatch) -> None:
     assert response.get_json() == _expected_status_payload(True)
 
 
-def test_vault_status_payload_audits_transitions_only(monkeypatch) -> None:
+def test_vault_status_payload_uses_non_auditing_probe(monkeypatch) -> None:
     import m8flow_backend.config as config_module
     import m8flow_backend.services.vault_client as vault_client_module
 
@@ -636,7 +636,7 @@ def test_vault_status_payload_audits_transitions_only(monkeypatch) -> None:
     }
     assert calls == [
         {
-            "audit": True,
-            "transitions_only": True,
+            "audit": False,
+            "transitions_only": False,
         }
     ]

@@ -68,10 +68,9 @@ def _vault_status_payload() -> dict[str, Any]:
     if not settings.is_configured:
         return payload
 
-    payload["healthy"] = get_vault_client().check_availability(
-        audit=True,
-        transitions_only=True,
-    )
+    # Public health probes must stay lightweight and must not depend on audit-log
+    # persistence or tenant/request context initialization.
+    payload["healthy"] = get_vault_client().check_availability(audit=False)
     return payload
 
 

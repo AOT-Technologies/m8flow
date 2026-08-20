@@ -361,6 +361,7 @@ Current behavior:
 - returns `200` with `ok: true` when Vault is disabled;
 - returns `200` with `ok: true` when Vault is enabled, configured, and healthy;
 - returns `503` with `ok: false` when Vault is enabled and unhealthy.
+- this public endpoint uses a non-auditing availability probe, so anonymous health checks do not write `vault.health.check` rows.
 
 Current payload shape:
 
@@ -398,14 +399,14 @@ For the current Secrets UI, the frontend surfaces the backend `detail`/`message`
 
 ### Audit Behavior On Outage And Recovery
 
-Vault health checks are not written to `m8flow_audit_log` on every probe.
+The public `GET /v1.0/vault-status` route does not write health-audit rows.
 
-Instead, current audit behavior is transition-based:
+Instead, audited Vault health checks are transition-based when they are triggered from internal/audited execution paths:
 
 - first observed healthy state: logs `vault.health.check` with `status=success`;
 - healthy -> unhealthy: logs `vault.health.check` with `status=failed`;
 - unhealthy -> healthy: logs `vault.health.check` with `status=success`;
-- repeated probes that do not change the state do not emit another health transition row.
+- repeated audited probes that do not change the state do not emit another health transition row.
 
 The failing secret operation itself is still logged separately, for example as `vault.secret.list` with `status=failed` and `error_code=vault_unavailable`.
 
@@ -416,7 +417,7 @@ The failing secret operation itself is still logged separately, for example as `
 | `M8FLOW_VAULT_ENABLED=false` | Backend starts normally on legacy secret backend | `200` with `enabled=false`, `configured=false`, `healthy=null` | Secret routes use the legacy database backend | No Vault health or Vault secret events should be emitted for routine secret usage | This is a runtime mode switch, not a data migration. |
 | Vault mode enabled but broker config is incomplete | Backend startup fails fast | Not available because the backend did not start | Not available because the backend did not start | No request-time Vault audit rows because startup never completed | Fix `M8FLOW_VAULT_ADDR` plus token or AppRole broker credentials first. |
 | Vault mode enabled and Vault is healthy | Backend starts on Vault backend | `200` with `ok=true`, `healthy=true` | Secret CRUD/list requests succeed through tenant-scoped Vault clients | Secret operations are logged; health rows are logged only on state transition | The broker identity is control-plane only; tenant operations use a tenant-scoped client token. |
-| Vault becomes unavailable after startup | Backend keeps running | `503` with `ok=false`, `healthy=false` | Connection-related secret failures return `503`, `error_code=vault_unavailable`, `message=Vault is down.` | One `vault.health.check` failure row is written on the healthy -> unhealthy transition, plus failed secret-operation rows | Repeated failed probes without a state change do not keep appending duplicate health rows. |
+| Vault becomes unavailable after startup | Backend keeps running | `503` with `ok=false`, `healthy=false` | Connection-related secret failures return `503`, `error_code=vault_unavailable`, `message=Vault is down.` | A later audited internal path can write one `vault.health.check` failure row on the healthy -> unhealthy transition, plus failed secret-operation rows | Repeated audited probes without a state change do not keep appending duplicate health rows. |
 | Requested secret key does not exist | Backend keeps running | Unchanged from overall Vault health | Read/delete flows return `404` with a safe missing-secret error, not a generic connection error | The failed secret operation can still be audited without exposing secret content | This is different from `vault_unavailable`; missing data is not treated as a Vault outage. |
 | Secret-value endpoint is called directly | Backend keeps running | Unchanged from overall Vault health | `GET /secrets/{key}/value` returns `404` with `error_code=secret_value_retrieval_disabled` | No Vault read of the secret value should happen for that route | Hiding the button in the frontend was not the protection boundary; the backend route itself is disabled. |
 
