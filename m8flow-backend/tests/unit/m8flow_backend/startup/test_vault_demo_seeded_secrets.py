@@ -1,6 +1,7 @@
 from __future__ import annotations
 # ruff: noqa: E402
 
+import importlib.util
 import sys
 from pathlib import Path
 from io import BytesIO
@@ -23,6 +24,21 @@ from seeded_secrets import (
 )
 import bootstrap_vault_demo
 import verify_backend_vault_demo
+
+
+def _load_isolated_bootstrap_module(module_name: str) -> ModuleType:
+    module_path = demo_src / "bootstrap_vault_demo.py"
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    assert spec is not None
+    assert spec.loader is not None
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        sys.modules.pop(module_name, None)
 
 
 def test_missing_secrets_file_skips_demo_seeding(tmp_path: Path) -> None:
@@ -101,6 +117,24 @@ def test_bootstrap_main_failure_output_logs_safe_exception_text(
         "vault-demo: Bootstrap failed: RuntimeError: "
         "secret_id=[redacted] role_id=[redacted] root_token=[redacted] value=[redacted]"
     )
+
+
+@pytest.mark.parametrize(
+    ("env_name", "env_value"),
+    [
+        ("M8FLOW_VAULT_DEMO_HTTP_TIMEOUT_SECONDS", "not-a-number"),
+        ("M8FLOW_VAULT_DEMO_INIT_TIMEOUT_SECONDS", " "),
+    ],
+)
+def test_bootstrap_import_rejects_invalid_float_env_values(
+    monkeypatch: pytest.MonkeyPatch,
+    env_name: str,
+    env_value: str,
+) -> None:
+    monkeypatch.setenv(env_name, env_value)
+
+    with pytest.raises(RuntimeError, match=rf"{env_name} must be a finite number greater than 0;"):
+        _load_isolated_bootstrap_module(f"bootstrap_vault_demo_invalid_{env_name.lower()}")
 
 
 def test_load_seeded_secrets_missing_file_skips_demo_identity_resolution(

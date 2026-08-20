@@ -7,6 +7,7 @@ import os
 import sys
 import time
 import hashlib
+import math
 import re
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,45 @@ def _truthy(value: str | None) -> bool:
     return bool(value and value.strip().lower() in {"1", "true", "yes", "on"})
 
 
+def _invalid_float_env_error(name: str, raw_value: str | None, min_value: float | None) -> RuntimeError:
+    if min_value is None:
+        requirement = "a finite number"
+    else:
+        requirement = f"a finite number greater than {min_value:g}"
+
+    if raw_value is None:
+        value_description = "no value"
+    elif raw_value.strip():
+        value_description = repr(raw_value)
+    else:
+        value_description = "a blank value"
+
+    return RuntimeError(f"{name} must be {requirement}; got {value_description}.")
+
+
+def _float_env(name: str, default: float, *, min_value: float | None = None) -> float:
+    raw_value = os.getenv(name)
+    if raw_value is None or raw_value == "":
+        return default
+
+    normalized = raw_value.strip()
+    if not normalized:
+        raise _invalid_float_env_error(name, raw_value, min_value)
+
+    try:
+        parsed = float(normalized)
+    except ValueError as exc:
+        raise _invalid_float_env_error(name, raw_value, min_value) from exc
+
+    if not math.isfinite(parsed):
+        raise _invalid_float_env_error(name, raw_value, min_value)
+
+    if min_value is not None and parsed <= min_value:
+        raise _invalid_float_env_error(name, raw_value, min_value)
+
+    return parsed
+
+
 VAULT_ADDR = (os.getenv("M8FLOW_VAULT_INTERNAL_ADDR") or "http://vault:8200").rstrip("/")
 MOUNT_POINT = (os.getenv("M8FLOW_VAULT_MOUNT_POINT") or "kv").strip().strip("/")
 PATH_PREFIX = (os.getenv("M8FLOW_VAULT_SECRET_PATH_PREFIX") or "m8flow").strip().strip("/")
@@ -31,11 +71,13 @@ TENANT_ROLE_PREFIX = (os.getenv("M8FLOW_VAULT_TENANT_ROLE_PREFIX") or "m8flow-te
 BROKER_POLICY_NAME = (os.getenv("M8FLOW_VAULT_POLICY_NAME") or "m8flow").strip()
 BROKER_APPROLE_NAME = (os.getenv("M8FLOW_VAULT_APPROLE_NAME") or "m8flow").strip()
 DEMO_OVERWRITE = _truthy(os.getenv("M8FLOW_VAULT_DEMO_OVERWRITE"))
-WAIT_TIMEOUT_SECONDS = float(os.getenv("M8FLOW_VAULT_DEMO_WAIT_TIMEOUT_SECONDS") or "180")
-WAIT_INTERVAL_SECONDS = float(os.getenv("M8FLOW_VAULT_DEMO_WAIT_INTERVAL_SECONDS") or "2")
-VAULT_REQUEST_TIMEOUT_SECONDS = float(os.getenv("M8FLOW_VAULT_DEMO_HTTP_TIMEOUT_SECONDS") or "10")
-INIT_REQUEST_TIMEOUT_SECONDS = float(
-    os.getenv("M8FLOW_VAULT_DEMO_INIT_TIMEOUT_SECONDS") or str(max(VAULT_REQUEST_TIMEOUT_SECONDS, 30.0))
+WAIT_TIMEOUT_SECONDS = _float_env("M8FLOW_VAULT_DEMO_WAIT_TIMEOUT_SECONDS", 180.0, min_value=0.0)
+WAIT_INTERVAL_SECONDS = _float_env("M8FLOW_VAULT_DEMO_WAIT_INTERVAL_SECONDS", 2.0, min_value=0.0)
+VAULT_REQUEST_TIMEOUT_SECONDS = _float_env("M8FLOW_VAULT_DEMO_HTTP_TIMEOUT_SECONDS", 10.0, min_value=0.0)
+INIT_REQUEST_TIMEOUT_SECONDS = _float_env(
+    "M8FLOW_VAULT_DEMO_INIT_TIMEOUT_SECONDS",
+    max(VAULT_REQUEST_TIMEOUT_SECONDS, 30.0),
+    min_value=0.0,
 )
 STATE_DIR = Path(os.getenv("M8FLOW_VAULT_DEMO_STATE_DIR") or "/vault/demo")
 INIT_FILE = STATE_DIR / "init.json"
