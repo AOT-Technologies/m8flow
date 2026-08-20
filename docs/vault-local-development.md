@@ -616,7 +616,7 @@ In the current implementation:
 - Put stable resource identity in `resource_type`, `resource_id`, and `resource_name`.
 - Never put secret values, tokens, passwords, unseal keys, AppRole `secret_id` values, or raw authorization headers into `message` or `details`.
 - Prefer `details` keys such as `error_code`, `status_code`, `scope`, `backend`, `mount_point`, `read_mode`, `listed_count`, `renamed`, or `deleted`.
-- `AuditLogService` also redacts known sensitive fields such as `secret_id`, `role_id`, `root_token`, `client_token`, `password`, and `value` before persistence, but callers should still treat "do not log secret material" as a hard rule rather than relying on redaction as a fallback.
+- `AuditLogService` also redacts known sensitive fields such as `secret_id`, `role_id`, `root_token`, `client_token`, `password`, and `secret_value` before persistence, but callers should still treat "do not log secret material" as a hard rule rather than relying on redaction as a fallback.
 
 ## Migration And Rollback
 

@@ -54,7 +54,8 @@ def test_redact_audit_text_hides_assignment_json_and_bearer_values() -> None:
 def test_redact_audit_details_recursively_hides_sensitive_fields() -> None:
     payload = {
         "secret_name": "API_TOKEN",
-        "value": "raw-secret",
+        "value": "queue-depth=7",
+        "secret_value": "raw-secret",
         "headers": {"Authorization": "Bearer abc123"},
         "nested": [{"secret_id": "secret-123"}, "root_token=root-456"],
         "token_type": "Bearer",
@@ -64,7 +65,8 @@ def test_redact_audit_details_recursively_hides_sensitive_fields() -> None:
 
     assert redacted == {
         "secret_name": "API_TOKEN",
-        "value": REDACTED_AUDIT_VALUE,
+        "value": "queue-depth=7",
+        "secret_value": REDACTED_AUDIT_VALUE,
         "headers": {"Authorization": REDACTED_AUDIT_VALUE},
         "nested": [{"secret_id": REDACTED_AUDIT_VALUE}, "root_token=[redacted]"],
         "token_type": "Bearer",
@@ -97,7 +99,8 @@ def test_audit_log_service_records_context_defaults_and_redacted_details() -> No
                 resource_type="secret",
                 resource_name="API_TOKEN",
                 details={
-                    "value": "demo-secret",
+                    "value": "latency-ms=42",
+                    "secret_value": "demo-secret",
                     "headers": {"Authorization": "Bearer abc123"},
                     "secret_name": "API_TOKEN",
                 },
@@ -116,7 +119,8 @@ def test_audit_log_service_records_context_defaults_and_redacted_details() -> No
         assert reloaded.correlation_id == "corr-123"
         assert reloaded.message == "secret_id=[redacted] value=[redacted]"
         assert reloaded.details == {
-            "value": REDACTED_AUDIT_VALUE,
+            "value": "latency-ms=42",
+            "secret_value": REDACTED_AUDIT_VALUE,
             "headers": {"Authorization": REDACTED_AUDIT_VALUE},
             "secret_name": "API_TOKEN",
         }

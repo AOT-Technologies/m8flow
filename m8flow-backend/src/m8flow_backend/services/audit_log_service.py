@@ -31,7 +31,6 @@ _SENSITIVE_AUDIT_TEXT_FIELDS = (
 )
 _SENSITIVE_AUDIT_KEYS = frozenset(
     {
-        "value",
         "secret_value",
         "password",
         "authorization",
