@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 
 DEFAULT_CLIENT_ID = "m8flow-backend"
-DEFAULT_CLIENT_SECRET = "JXeQExm0JhQPLumgHtIIqf52bDalHz0q"
+DEFAULT_CLIENT_SECRET = "f041b49ae7f1a35daa10917459814bcd"
 UPSTREAM_REALM_URI = "http://localhost:6842/realms/spiffworkflow-local"
 
 _PATCHED = False
