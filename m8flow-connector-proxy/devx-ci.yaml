@@ -1,0 +1,42 @@
+# DevX CI Configuration — m8flow-connector-proxy
+# Language: Python 3.12 | FastAPI proxy service
+# Dockerfile: m8flow-connector-proxy/Dockerfile
+
+project:
+  language: python
+  version: "3.12"
+  working_directory: "m8flow-connector-proxy"
+
+build:
+  enabled: false
+  run_tests: false
+
+docker:
+  enabled: true
+  working_directory: "."
+  dockerfile: "m8flow-connector-proxy/Dockerfile"
+  image_name: "m8flow/m8flow-connector-proxy"
+  image_tag: ""
+  registry_type: generic
+  registry_url: "docker.io"
+  platforms: "linux/amd64"
+
+security:
+  sast:
+    enabled: false
+
+  iac:
+    enabled: false
+
+  trivy:
+    enabled: true
+    severity: CRITICAL,HIGH
+    fail_on_vuln: false
+    ignore_unfixed: true
+    scanners: vuln,secret
+
+  sbom:
+    enabled: false
+
+  sbom_scan:
+    enabled: false

@@ -1,0 +1,42 @@
+# DevX CI Configuration — m8flow-backend
+# Language: Python 3.12 | FastAPI / Django REST backend
+# Dockerfile: docker/m8flow.backend.Dockerfile (builds from repo root context)
+
+project:
+  language: python
+  version: "3.12"
+  working_directory: "."            # Build context is repo root (Dockerfile uses multi-dir COPY)
+
+build:
+  enabled: false                    # No Nexus artifact; Docker is the build artifact
+  run_tests: false                  # Tests handled by ci.yml (Ruff + PyTest)
+
+docker:
+  enabled: true
+  working_directory: "."            # Build context must be repo root
+  dockerfile: "docker/m8flow.backend.Dockerfile"
+  image_name: "m8flow/m8flow-backend"
+  image_tag: ""                     # Smart versioning: develop → dev-<sha>, tag → X.Y.Z-rc
+  registry_type: generic
+  registry_url: "docker.io"
+  platforms: "linux/amd64"
+
+security:
+  sast:
+    enabled: false                  # CodeQL runs in existing ci.yml
+
+  iac:
+    enabled: false
+
+  trivy:
+    enabled: true
+    severity: CRITICAL,HIGH
+    fail_on_vuln: false             # Non-blocking: base image vulns tracked separately
+    ignore_unfixed: true
+    scanners: vuln,secret
+
+  sbom:
+    enabled: false
+
+  sbom_scan:
+    enabled: false

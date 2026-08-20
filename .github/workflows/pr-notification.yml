@@ -2,43 +2,73 @@ name: Notify Google Chat on PR Activity
 
 on:
   pull_request_target:
-    branches: [ main ]
-    types: [ opened, synchronize ]
+    branches:
+      - develop
+      - main
+    types:
+      - opened
+      - reopened
+      - ready_for_review
+      - synchronize
 
 jobs:
   send-alert:
+    name: Send PR Chat Notification
     runs-on: ubuntu-latest
     if: github.event.pull_request.draft == false
     steps:
       - name: Send message to Google Chat
         env:
-          GOOGLE_CHAT_WEBHOOK: ${{ secrets.PR_NOTIFICATION }}
+          GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK || secrets.PR_NOTIFICATION }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_URL: ${{ github.event.pull_request.html_url }}
           PR_CREATOR: ${{ github.event.pull_request.user.login }}
           PR_ACTION: ${{ github.event.action }}
+          PR_BASE: ${{ github.event.pull_request.base.ref }}
+          PR_HEAD: ${{ github.event.pull_request.head.ref }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          set -e
           if [ -z "${GOOGLE_CHAT_WEBHOOK}" ]; then
-            echo "::error::PR_NOTIFICATION secret is not set. Add the Google Chat webhook URL as repository secret PR_NOTIFICATION."
-            exit 1
+            echo "::warning::Neither GOOGLE_CHAT_WEBHOOK nor PR_NOTIFICATION secret is set. Skipping notification."
+            exit 0
           fi
+
+          SHORT_SHA="${PR_HEAD_SHA:0:7}"
+
           if [ "$PR_ACTION" = "opened" ]; then
-            MESSAGE=$'📌 *New GitHub PR*\n\n*Title:* '"${PR_TITLE}"$'\n*Author:* '"${PR_CREATOR}"$'\n\n🔗 '"${PR_URL}"
+            HEADER="📌 *New Pull Request Raised*"
+          elif [ "$PR_ACTION" = "reopened" ]; then
+            HEADER="🔄 *Pull Request Reopened*"
+          elif [ "$PR_ACTION" = "ready_for_review" ]; then
+            HEADER="👀 *Pull Request Ready for Review*"
           else
-            SHORT_SHA="${PR_HEAD_SHA:0:7}"
-            MESSAGE=$'🔄 *GitHub PR Updated*\n\n*Title:* '"${PR_TITLE}"$'\n*Author:* '"${PR_CREATOR}"$'\n*Latest commit:* '"${SHORT_SHA}"$'\n\n🔗 '"${PR_URL}"
+            HEADER="⚡ *Pull Request Updated (${SHORT_SHA})*"
           fi
+
+          MESSAGE=$(cat <<EOF
+          ${HEADER}
+          *Repository:* ${GITHUB_REPOSITORY}
+          *PR:* #${PR_NUMBER} - ${PR_TITLE}
+          *Author:* ${PR_CREATOR}
+          *Target:* \`${PR_BASE}\` ← \`${PR_HEAD}\`
+
+          🔗 ${PR_URL}
+          EOF
+          )
+
           PAYLOAD=$(jq -n --arg text "$MESSAGE" '{text: $text}') || {
             echo "::error::Failed to build JSON payload"
             exit 1
           }
+
           HTTP_CODE=$(curl -sS -w '%{http_code}' -o /tmp/chat-response.txt -X POST -H 'Content-Type: application/json' \
                -d "$PAYLOAD" "$GOOGLE_CHAT_WEBHOOK")
+
           if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -gt 299 ]; then
             echo "::error::Google Chat webhook returned HTTP ${HTTP_CODE}"
             cat /tmp/chat-response.txt
             exit 1
           fi
+
           echo "Notification sent successfully (HTTP ${HTTP_CODE})"
