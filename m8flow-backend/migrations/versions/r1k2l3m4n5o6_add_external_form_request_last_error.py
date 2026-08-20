@@ -31,26 +31,53 @@ COLUMN_NAME = "last_error"
 COLUMN_LENGTH = 500
 
 
-def _table_exists() -> bool:
-    return TABLE_NAME in sa.inspect(op.get_bind()).get_table_names()
+def _inspector() -> sa.Inspector:
+    return sa.inspect(op.get_bind())
 
 
-def _column_exists() -> bool:
-    # Callers must check _table_exists() first: "no such column" and "no such table" are
-    # both false here, and only the former is safe to ALTER.
-    if not _table_exists():
+def _schema() -> str | None:
+    try:
+        return getattr(op.get_context(), "version_table_schema", None)
+    except Exception:
+        return None
+
+
+def _table_exists(inspector: sa.Inspector | None = None, schema: str | None | object = ...) -> bool:
+    insp = inspector if inspector is not None else _inspector()
+    sch = _schema() if schema is ... else schema  # type: ignore[assignment]
+    if insp.has_table(TABLE_NAME, schema=sch):
+        return True
+    return TABLE_NAME in insp.get_table_names(schema=sch)
+
+
+def _column_exists(inspector: sa.Inspector | None = None, schema: str | None | object = ...) -> bool:
+    insp = inspector if inspector is not None else _inspector()
+    sch = _schema() if schema is ... else schema  # type: ignore[assignment]
+    if not _table_exists(inspector=insp, schema=sch):
         return False
-    return any(column["name"] == COLUMN_NAME for column in sa.inspect(op.get_bind()).get_columns(TABLE_NAME))
+    try:
+        columns = insp.get_columns(TABLE_NAME, schema=sch)
+        return any(column["name"] == COLUMN_NAME for column in columns)
+    except Exception:
+        return False
 
 
 def upgrade():
     # Additive and nullable: existing rows keep their data and read back as NULL.
-    if _table_exists() and not _column_exists():
-        op.add_column(TABLE_NAME, sa.Column(COLUMN_NAME, sa.String(length=COLUMN_LENGTH), nullable=True))
+    insp = _inspector()
+    schema = _schema()
+    if _table_exists(inspector=insp, schema=schema) and not _column_exists(inspector=insp, schema=schema):
+        op.add_column(
+            TABLE_NAME,
+            sa.Column(COLUMN_NAME, sa.String(length=COLUMN_LENGTH), nullable=True),
+            schema=schema,
+        )
 
 
 def downgrade():
     # Drops diagnostic text only; no request state lives in this column.
-    if _column_exists():
-        with op.batch_alter_table(TABLE_NAME, schema=None) as batch_op:
+    insp = _inspector()
+    schema = _schema()
+    if _column_exists(inspector=insp, schema=schema):
+        with op.batch_alter_table(TABLE_NAME, schema=schema) as batch_op:
             batch_op.drop_column(COLUMN_NAME)

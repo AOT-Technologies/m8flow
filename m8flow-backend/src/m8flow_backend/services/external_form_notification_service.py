@@ -301,7 +301,7 @@ class ExternalFormNotificationService:
             "configured": readiness["ok"],
             "required_keys": list(REQUIRED_SMTP_SECRET_KEYS),
             "optional_keys": list(OPTIONAL_SMTP_SECRET_KEYS),
-            "missing_required_keys": readiness["unusable"],
+            "missing_required_keys": readiness["missing"],
             "unreadable_keys": readiness["unreadable"],
             "reason": readiness["reason"],
             "configured_keys": configured_keys,

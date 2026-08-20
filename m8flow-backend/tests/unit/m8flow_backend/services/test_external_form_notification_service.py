@@ -573,8 +573,31 @@ class TestSmtpReadiness:
         assert status["configured"] is True
         assert status["required_keys"] == ["NATS_SMTP_HOST", "NATS_SMTP_FROM_EMAIL"]
         assert "NATS_SMTP_PASSWORD" in status["optional_keys"]
+        assert status["missing_required_keys"] == []
+        assert status["unreadable_keys"] == []
         # No secret value may appear anywhere in the payload.
         assert "smtp.test" not in repr(status)
+
+    def test_configuration_status_distinguishes_missing_from_unreadable(self, app, tenant, monkeypatch):
+        # Present in DB (so key exists), but decrypt returns None (unreadable).
+        monkeypatch.setattr(
+            ExternalFormNotificationService,
+            "_present_smtp_secret_keys",
+            staticmethod(lambda tenant_id=None: {"NATS_SMTP_FROM_EMAIL"}),
+        )
+        monkeypatch.setattr(
+            ExternalFormNotificationService,
+            "_read_secret_for_tenant",
+            staticmethod(lambda key, tenant_id=None: None),
+        )
+
+        status = ExternalFormNotificationService.smtp_configuration_status()
+
+        assert status["configured"] is False
+        # NATS_SMTP_HOST is absent from DB -> missing
+        assert status["missing_required_keys"] == ["NATS_SMTP_HOST"]
+        # NATS_SMTP_FROM_EMAIL is present in DB but unreadable -> unreadable, not missing
+        assert status["unreadable_keys"] == ["NATS_SMTP_FROM_EMAIL"]
 
     def test_required_keys_match_resolve_smtp_settings(self, app, tenant, smtp_secrets):
         """Guards the single-source-of-truth invariant: if these drift, the API would

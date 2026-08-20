@@ -3883,7 +3883,7 @@ components:
           type: array
           items:
             type: string
-          description: Required keys that are absent, blank, or undecryptable.
+          description: Required keys that are absent.
         unreadable_keys:
           type: array
           items:
