@@ -1,7 +1,7 @@
 """Add generic m8flow_audit_log table for Vault and future application audit events.
 
 Revision ID: q1r2s3t4u5v6
-Revises: p9i0j1k2l3m4
+Revises: q0j1k2l3m4n5
 Create Date: 2026-08-14 11:00:00.000000
 """
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 revision = "q1r2s3t4u5v6"
-down_revision = "p9i0j1k2l3m4"
+down_revision = "q0j1k2l3m4n5"
 branch_labels = None
 depends_on = None
 
