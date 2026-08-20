@@ -170,7 +170,7 @@ FILE_GATES: dict[str, dict[str, float | int]] = {
     "m8flow-connector-proxy/pyproject.toml":
         {"ratio": 0.4314, "containment": 0.3929, "longest_block": 5},
     "m8flow-frontend/package.json":
-        {"ratio": 0.7407, "containment": 0.8333, "longest_block": 39},
+        {"ratio": 0.3386, "containment": 0.381, "longest_block": 5},
     "m8flow-frontend/public/keycloak.json":
         {"ratio": 0.8333, "containment": 0.8333, "longest_block": 4},
     "m8flow-frontend/public/manifest.json":
@@ -188,7 +188,7 @@ FILE_GATES: dict[str, dict[str, float | int]] = {
     "m8flow-frontend/src/test/vitest.setup.ts":
         {"ratio": 1.0, "containment": 0.0, "longest_block": 0},
     "m8flow-frontend/tsconfig.json":
-        {"ratio": 0.6875, "containment": 0.6111, "longest_block": 8},
+        {"ratio": 0.3125, "containment": 0.2778, "longest_block": 2},
     "m8flow-nats-consumer/pyproject.toml":
         {"ratio": 0.3478, "containment": 0.3077, "longest_block": 3},
 }
