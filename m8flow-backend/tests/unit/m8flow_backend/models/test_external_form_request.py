@@ -27,10 +27,14 @@ for path in (extension_src, backend_src):
 
 from m8flow_backend.models.external_form_request import (  # noqa: E402
     ACTIONABLE_STATUSES,
+    OPEN_STATUSES,
     ExternalFormRequestModel,
     ExternalFormRequestStatus,
 )
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel, TenantStatus  # noqa: E402
+from m8flow_backend.models.process_model_bpmn_version import (  # noqa: F401
+    ProcessModelBpmnVersionModel,
+)
 from spiffworkflow_backend.models.db import db  # noqa: E402
 from spiffworkflow_backend.models.db import add_listeners  # noqa: E402
 from spiffworkflow_backend.models.user import UserModel  # noqa: E402
@@ -133,6 +137,45 @@ class TestExternalFormRequestModel:
         assert ExternalFormRequestStatus.failed.value in ACTIONABLE_STATUSES
         assert ExternalFormRequestStatus.completed.value not in ACTIONABLE_STATUSES
         assert ExternalFormRequestStatus.superseded.value not in ACTIONABLE_STATUSES
+
+    def test_smtp_unconfigured_is_open_but_not_actionable(self, app, tenant, recipient):
+        """The three-tier split that makes the fix work.
+
+        Out of CLAIMABLE (checked in the service tests) the sweep stops re-picking the row.
+        Out of ACTIONABLE the never-delivered link cannot be submitted. Still in OPEN it
+        keeps suppressing duplicate rows, expiring on TTL, and being superseded.
+        """
+        parked = ExternalFormRequestStatus.smtp_unconfigured.value
+
+        assert parked not in ACTIONABLE_STATUSES
+        assert parked in OPEN_STATUSES
+        assert set(ACTIONABLE_STATUSES).issubset(set(OPEN_STATUSES))
+
+        row = _make_request_row(tenant, recipient)
+        row.status = parked
+        assert row.is_actionable() is False
+
+    def test_to_admin_dict_withholds_the_reference_id(self, app, tenant, recipient):
+        """reference_id is the bearer credential in the emailed secure link, so the admin
+        serializer must not carry it. Admin actions key on id instead."""
+        row = _make_request_row(tenant, recipient)
+        db.session.add(row)
+        db.session.commit()
+
+        payload = row.to_admin_dict()
+
+        assert "reference_id" not in payload
+        assert payload["id"] == row.id
+        # Diagnostic fields an admin needs to answer "did it fail, and why".
+        for field in ("status", "attempts", "last_error", "email", "notified_at_in_seconds"):
+            assert field in payload
+
+    def test_last_error_defaults_to_none(self, app, tenant, recipient):
+        row = _make_request_row(tenant, recipient)
+        db.session.add(row)
+        db.session.commit()
+
+        assert row.last_error is None
 
     def test_form_submission_data_json_roundtrip(self, app, tenant, recipient):
         row = _make_request_row(tenant, recipient)

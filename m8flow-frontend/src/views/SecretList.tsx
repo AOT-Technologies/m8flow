@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
+  Alert,
   Box,
   Button,
   Dialog,
@@ -31,6 +32,11 @@ import { useUriListForPermissions } from '../hooks/UriListForPermissions';
 import { useGlobalTenant } from '../contexts/GlobalTenantContext';
 import HttpService from '../services/HttpService';
 import UserService from '../services/UserService';
+import {
+  clearSmtpStatusCache,
+  getSmtpStatus,
+  type SmtpStatus,
+} from '../services/ExternalFormNotificationService';
 import type { PermissionsToCheck } from '../interfaces';
 
 type SecretRow = {
@@ -66,6 +72,9 @@ export default function SecretList() {
   const [rows, setRows] = useState<SecretRow[]>([]);
   const [pageMeta, setPageMeta] = useState<any>(null);
   const [pendingDelete, setPendingDelete] = useState<SecretRow | null>(null);
+  // Null until the SMTP status resolves; stays null if the call fails or the user lacks
+  // permission, in which case no banner is shown at all.
+  const [smtpStatus, setSmtpStatus] = useState<SmtpStatus | null>(null);
 
   const { ability, permissionsLoaded } = usePermissionFetcher({
     [targetUris.authenticationListPath]: ['GET'],
@@ -105,11 +114,38 @@ export default function SecretList() {
     load,
   ]);
 
+  // External form notification emails silently do nothing until the tenant's NATS_SMTP_*
+  // secrets exist, and nothing else on this page names those keys. Surface the gap here,
+  // where the fix lives. A failure leaves the banner hidden — that covers a 403 for a user
+  // who cannot read the status, and the 400 a super admin gets before choosing a tenant.
+  //
+  // Depends on selectedTenantId: the answer is per-tenant, and the table below already
+  // re-fetches on switch, so the banner must not keep the previous tenant's verdict.
+  // Force a fresh fetch each time SecretList mounts or the tenant changes so that newly
+  // added or updated SMTP secrets are reflected immediately without needing a browser reload.
+  useEffect(() => {
+    let cancelled = false;
+    const tenantId = sa ? selectedTenantId : null;
+    setSmtpStatus(null);
+    clearSmtpStatusCache(tenantId);
+    getSmtpStatus(tenantId, { force: true })
+      .then((result) => {
+        if (!cancelled) setSmtpStatus(result);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [sa, selectedTenantId]);
+
   const confirmDelete = (key: string) => {
     HttpService.makeCallToBackend({
       path: `/secrets/${key}`,
       httpMethod: 'DELETE',
-      successCallback: () => window.location.reload(),
+      successCallback: () => {
+        clearSmtpStatusCache(sa ? selectedTenantId : null);
+        window.location.reload();
+      },
     });
   };
 
@@ -118,6 +154,44 @@ export default function SecretList() {
   }
 
   const { page, perPage } = getPageInfoFromSearchParams(searchParams);
+
+  const externalFormEmailBanner = () => {
+    if (!smtpStatus) return null;
+    const keys = smtpStatus.configured
+      ? smtpStatus.required_keys
+      : smtpStatus.missing_required_keys;
+    // "These keys are missing" is wrong when the secret exists but cannot be decrypted —
+    // adding it again would not help. Show the backend's specific reason instead.
+    const unreadable = smtpStatus.unreadable_keys ?? [];
+    const headline =
+      unreadable.length > 0 && smtpStatus.reason
+        ? smtpStatus.reason
+        : smtpStatus.configured
+          ? t('external_form_smtp_configured_hint')
+          : t('external_form_smtp_missing_hint');
+    return (
+      <Alert
+        severity={smtpStatus.configured ? 'info' : 'warning'}
+        sx={{ mb: 2 }}
+        data-testid={
+          smtpStatus.configured
+            ? 'external-form-smtp-configured'
+            : 'external-form-smtp-not-configured'
+        }
+      >
+        {headline}{' '}
+        {keys.map((key) => (
+          <Box
+            key={key}
+            component="code"
+            sx={{ fontFamily: 'monospace', mr: 1, whiteSpace: 'nowrap' }}
+          >
+            {key}
+          </Box>
+        ))}
+      </Alert>
+    );
+  };
 
   const table = (
     <TableContainer component={Paper}>
@@ -181,6 +255,8 @@ export default function SecretList() {
           </Button>
         </Can>
       </Box>
+
+      {externalFormEmailBanner()}
 
       {rows.length > 0 ? (
         <PaginationForTable

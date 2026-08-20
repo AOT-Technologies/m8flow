@@ -38,6 +38,9 @@ from m8flow_backend.models.external_form_request import (  # noqa: E402
     ExternalFormRequestStatus,
 )
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel, TenantStatus  # noqa: E402
+from m8flow_backend.models.process_model_bpmn_version import (  # noqa: F401
+    ProcessModelBpmnVersionModel,
+)
 from m8flow_backend.services.external_form_service import ExternalFormService  # noqa: E402
 from m8flow_backend.tenancy import get_context_tenant_id  # noqa: E402
 
@@ -334,3 +337,83 @@ class TestSubmit:
 
         assert exc_info.value.error_code == "recipient_not_found"
         assert exc_info.value.status_code == 410
+
+
+class TestParkedRequests:
+    """Behaviour for rows parked as smtp_unconfigured.
+
+    Such a row is in OPEN_STATUSES but not ACTIONABLE_STATUSES: it is still the live
+    request for its (task, recipient) pair, yet its link was never delivered to anyone.
+    """
+
+    @staticmethod
+    def _park(row):
+        row = db.session.get(ExternalFormRequestModel, row.id)
+        row.status = ExternalFormRequestStatus.smtp_unconfigured.value
+        db.session.commit()
+        return row
+
+    def test_parked_row_suppresses_duplicate_creation(self, app, tenant, alice):
+        """OPEN, not ACTIONABLE: otherwise every processor.save() would add another row,
+        and configuring SMTP later would email the recipient all of them at once."""
+        (first,) = _create_requests(tenant, alice)
+        self._park(first)
+
+        rows = _create_requests(tenant, alice)
+
+        assert rows == []
+        assert ExternalFormRequestModel.query.count() == 1
+
+    def test_parked_row_still_expires_on_ttl(self, app, tenant, alice):
+        """Otherwise a parked request would sit outside every terminal check forever."""
+        (row,) = _create_requests(tenant, alice, expires_at_in_seconds=int(time.time()) - 10)
+        self._park(row)
+
+        with app.test_request_context():
+            context = ExternalFormService.get_form_context(row.reference_id)
+
+        assert context["actionable"] is False
+        assert db.session.get(ExternalFormRequestModel, row.id).status == (
+            ExternalFormRequestStatus.expired.value
+        )
+
+    def test_parked_row_is_not_actionable(self, app, tenant, alice):
+        (row,) = _create_requests(tenant, alice)
+        parked = self._park(row)
+
+        assert parked.is_actionable() is False
+
+    def test_submitting_a_parked_link_is_refused(self, app, tenant, alice, caplog):
+        """The link was never emailed, so presenting one means it was read out of the
+        database. Accepting it would let an operator submit as the recipient."""
+        (row,) = _create_requests(tenant, alice)
+        self._park(row)
+
+        with app.test_request_context():
+            with caplog.at_level(logging.WARNING):
+                with pytest.raises(ApiError) as exc_info:
+                    ExternalFormService.submit(row.reference_id, {"answer": 1})
+
+        assert exc_info.value.error_code == "reference_not_active"
+        assert exc_info.value.status_code == 409
+        # The message must not disclose the tenant mail configuration on a public endpoint.
+        assert "SMTP" not in exc_info.value.message
+        assert "smtp_unconfigured" in caplog.text
+        assert db.session.get(ExternalFormRequestModel, row.id).status == (
+            ExternalFormRequestStatus.smtp_unconfigured.value
+        )
+
+    def test_parked_sibling_is_superseded_by_a_submission(self, app, tenant, alice, bob, monkeypatch):
+        """Otherwise configuring SMTP later would email a link for an already-done task."""
+        alice_row, bob_row = _create_requests(tenant, alice, bob)
+        self._park(bob_row)
+        monkeypatch.setattr(
+            "spiffworkflow_backend.routes.process_api_blueprint._task_submit_shared", Mock(return_value={})
+        )
+
+        with app.test_request_context():
+            ExternalFormService.submit(alice_row.reference_id, {"answer": 1})
+
+        assert db.session.get(ExternalFormRequestModel, bob_row.id).status == (
+            ExternalFormRequestStatus.superseded.value
+        )
