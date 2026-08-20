@@ -45,6 +45,7 @@ data/*
 process_models/*
 extensions/m8flow-frontend/test/browser/test-results*
 m8flow-frontend/dist
+docker/vault/demo/secrets.yml
 
 # PMD/CPD download used to run bin/check-upstream-cpd.py locally (CI fetches its own
 # pinned copy). Never commit the binary.

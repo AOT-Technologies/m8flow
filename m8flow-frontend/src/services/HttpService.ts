@@ -1,5 +1,5 @@
 /**
- * Backend HTTP client — clean-room. Token auth, GET 401 retry, text fetch, PUT.
+ * Backend HTTP client. Token auth, GET 401 retry, text fetch, PUT.
  */
 import { BACKEND_BASE_URL } from '@spiffworkflow-frontend/config';
 import { objectIsEmpty } from '@spiffworkflow-frontend/helpers';
@@ -34,6 +34,7 @@ type CallArgs = {
 };
 
 type RawExchange = { response: Response; text: string };
+type NormalizedErrorResult = Record<string, unknown> & { message: string };
 
 export class UnauthenticatedError extends Error {
   constructor(message: string) {
@@ -52,7 +53,9 @@ export class UnexpectedResponseError extends Error {
 export const getBasicHeaders = (): Record<string, string> => {
   const out: Record<string, string> = {};
   const token = UserService.getAccessToken();
-  if (token) out.Authorization = `Bearer ${token}`;
+  if (token) {
+    out.Authorization = `Bearer ${token}`;
+  }
   return out;
 };
 
@@ -64,6 +67,37 @@ export const messageForHttpError = (code: number, phrase: string) => {
     bits.push(STATUS_PHRASE[code]);
   }
   return bits.length > 1 ? `${bits[0]}: ${bits[1]}` : bits[0];
+};
+
+const normalizeErrorResult = (
+  payload: unknown,
+  statusCode: number,
+  statusText: string,
+): NormalizedErrorResult => {
+  const fallbackMessage = messageForHttpError(statusCode, statusText);
+
+  if (payload && typeof payload === 'object') {
+    const normalized = { ...payload } as Record<string, unknown>;
+    const existingMessage =
+      typeof normalized.message === 'string' ? normalized.message.trim() : '';
+    if (existingMessage) {
+      return normalized as NormalizedErrorResult;
+    }
+
+    const detailMessage =
+      typeof normalized.detail === 'string' ? normalized.detail.trim() : '';
+    if (detailMessage) {
+      normalized.message = detailMessage;
+      return normalized as NormalizedErrorResult;
+    }
+
+    const titleMessage =
+      typeof normalized.title === 'string' ? normalized.title.trim() : '';
+    normalized.message = titleMessage || fallbackMessage;
+    return normalized as NormalizedErrorResult;
+  }
+
+  return { message: fallbackMessage };
 };
 
 const looksLikeHtmlDocument = (body: string) => {
@@ -79,7 +113,9 @@ const assembleFetchInit = ({
   postBody = {},
 }: Pick<CallArgs, 'httpMethod' | 'extraHeaders' | 'postBody'>): RequestInit => {
   const headers = getBasicHeaders();
-  if (!objectIsEmpty(extraHeaders)) Object.assign(headers, extraHeaders);
+  if (!objectIsEmpty(extraHeaders)) {
+    Object.assign(headers, extraHeaders);
+  }
 
   const init: RequestInit = {
     method: httpMethod,
@@ -122,7 +158,9 @@ const withGetAuthRetry = (
   alreadyRetried = false,
 ): Promise<RawExchange> =>
   run().then((exchange) => {
-    if (exchange.response.status !== 401) return exchange;
+    if (exchange.response.status !== 401) {
+      return exchange;
+    }
     if (mayRetryGetAfter401(method, alreadyRetried)) {
       return withGetAuthRetry(method, run, true);
     }
@@ -153,7 +191,9 @@ const parseJsonOrThrow = (exchange: RawExchange) => {
 };
 
 const redirectHomeIfUnauthenticated = (err: any) => {
-  if (err?.name !== 'UnauthenticatedError') return false;
+  if (err?.name !== 'UnauthenticatedError') {
+    return false;
+  }
   if (window.location.pathname !== '/login') {
     UserService.redirectToLogin();
   }
@@ -176,31 +216,42 @@ const makeCallToBackend = ({
       const payload = parseJsonOrThrow(exchange);
 
       if (exchange.response.status === 403) {
+        const normalizedError = normalizeErrorResult(
+          payload,
+          exchange.response.status,
+          exchange.response.statusText,
+        );
         if (onUnauthorized) {
-          onUnauthorized(payload);
+          onUnauthorized(normalizedError);
         } else if (UserService.isPublicUser()) {
           window.location.href = '/public/sign-out';
         } else {
-          alert(payload.message);
+          alert(normalizedError.message);
         }
         return;
       }
 
       if (!exchange.response.ok) {
+        const normalizedError = normalizeErrorResult(
+          payload,
+          exchange.response.status,
+          exchange.response.statusText,
+        );
         if (failureCallback) {
-          failureCallback(payload);
+          failureCallback(normalizedError);
           return;
         }
-        const msg = payload.message || 'A server error occurred.';
-        console.error(msg);
-        alert(msg);
+        console.error(normalizedError.message);
+        alert(normalizedError.message);
         return;
       }
 
       successCallback(payload);
     })
     .catch((err) => {
-      if (redirectHomeIfUnauthenticated(err)) return;
+      if (redirectHomeIfUnauthenticated(err)) {
+        return;
+      }
       if (failureCallback) {
         failureCallback(err);
       } else {
@@ -209,7 +260,9 @@ const makeCallToBackend = ({
     });
 };
 
-/** Same auth as JSON calls; returns raw response text (e.g. BPMN XML). */
+/**
+ * Same auth as JSON calls; returns raw response text (e.g. BPMN XML).
+ */
 const fetchTextFromBackend = (
   path: string,
   successCallback: (text: string) => void,
@@ -228,7 +281,9 @@ const fetchTextFromBackend = (
       );
     })
     .catch((err) => {
-      if (redirectHomeIfUnauthenticated(err)) return;
+      if (redirectHomeIfUnauthenticated(err)) {
+        return;
+      }
       failureCallback?.(err);
     });
 };

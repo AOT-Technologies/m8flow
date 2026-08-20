@@ -68,6 +68,96 @@ normalize_bpmn_spec_dir() {
   resolve_repo_relative_path "$path_value"
 }
 
+load_env_file_if_present() {
+  local file_path="$1"
+  local override_existing="${2:-false}"
+
+  [[ -f "$file_path" ]] || return 0
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -z "$line" || "${line:0:1}" == "#" ]] && continue
+    [[ "$line" == export\ * ]] && line="${line#export }"
+    [[ "$line" != *"="* ]] && continue
+    key="${line%%=*}"
+    value="${line#*=}"
+    key="${key%"${key##*[![:space:]]}"}"
+    value="${value#"${value%%[![:space:]]*}"}"
+    if [[ "$value" == \"*\" && "$value" == *\" ]]; then
+      value="${value:1:${#value}-2}"
+    elif [[ "$value" == \'*\' && "$value" == *\' ]]; then
+      value="${value:1:${#value}-2}"
+    else
+      value="${value%% \#*}"
+      value="${value%%$'\t'#*}"
+      value="${value%"${value##*[![:space:]]}"}"
+    fi
+
+    if [[ "$override_existing" == "true" || -z "${!key+x}" ]]; then
+      export "$key=$value"
+    fi
+  done < "$file_path"
+}
+
+env_truthy() {
+  local value="${1:-}"
+  [[ -n "$value" ]] || return 1
+  case "${value,,}" in
+    1|true|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+has_vault_auth_inputs() {
+  local token="${M8FLOW_VAULT_TOKEN:-${VAULT_TOKEN:-}}"
+  local token_file="${M8FLOW_VAULT_TOKEN_FILE:-${VAULT_TOKEN_FILE:-}}"
+  local role_id="${M8FLOW_VAULT_ROLE_ID:-${VAULT_ROLE_ID:-}}"
+  local role_id_file="${M8FLOW_VAULT_ROLE_ID_FILE:-${VAULT_ROLE_ID_FILE:-}}"
+  local secret_id="${M8FLOW_VAULT_SECRET_ID:-${VAULT_SECRET_ID:-}}"
+  local secret_id_file="${M8FLOW_VAULT_SECRET_ID_FILE:-${VAULT_SECRET_ID_FILE:-}}"
+
+  [[ -n "$token" || -n "$token_file" ]] && return 0
+  [[ ( -n "$role_id" || -n "$role_id_file" ) && ( -n "$secret_id" || -n "$secret_id_file" ) ]] && return 0
+  return 1
+}
+
+wait_for_vault_demo_runtime_env_if_needed() {
+  local file_path="$1"
+  local wait_seconds_raw="${M8FLOW_VAULT_DEMO_ENV_WAIT_SECONDS:-180}"
+  local wait_seconds=180
+  local interval_seconds=2
+  local elapsed_seconds=0
+
+  if [[ "$wait_seconds_raw" =~ ^[0-9]+$ ]]; then
+    wait_seconds="$wait_seconds_raw"
+  fi
+
+  if ! env_truthy "${M8FLOW_VAULT_ENABLED:-}"; then
+    return 0
+  fi
+
+  if has_vault_auth_inputs; then
+    return 0
+  fi
+
+  log_launcher_status "Vault mode is enabled. Waiting up to ${wait_seconds}s for Vault runtime credentials at ${file_path}."
+  while (( elapsed_seconds < wait_seconds )); do
+    load_env_file_if_present "$file_path" true
+    if has_vault_auth_inputs; then
+      log_launcher_status "Loaded Vault runtime credentials from ${file_path}."
+      return 0
+    fi
+    sleep "$interval_seconds"
+    elapsed_seconds=$((elapsed_seconds + interval_seconds))
+  done
+
+  load_env_file_if_present "$file_path" true
+  if ! has_vault_auth_inputs; then
+    log_launcher_status "Vault runtime credentials were not available after ${wait_seconds}s."
+  fi
+}
+
 uv_has_active_environment() {
   [[ -n "${VIRTUAL_ENV:-}" ]]
 }
@@ -99,11 +189,12 @@ sync_uv_environment() {
 }
 
 has_m8flow_backend_runtime_dependencies() {
-  run_uv_python -c "import nats" >/dev/null 2>&1
+  run_uv_python -c "import hvac; import nats" >/dev/null 2>&1
 }
 
 sync_m8flow_backend_runtime_dependencies() {
   local packages=(
+    "hvac"
     "nats-py>=2.6.0"
   )
 
@@ -218,30 +309,12 @@ export PYTHONPATH="$repo_root/m8flow-telemetry/src:$PYTHONPATH"
 
 env_file="$repo_root/.env"
 if [[ -f "$env_file" ]] && ! is_running_in_container; then
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    line="${line#"${line%%[![:space:]]*}"}"
-    line="${line%"${line##*[![:space:]]}"}"
-    [[ -z "$line" || "${line:0:1}" == "#" ]] && continue
-    [[ "$line" == export\ * ]] && line="${line#export }"
-    [[ "$line" != *"="* ]] && continue
-    key="${line%%=*}"
-    value="${line#*=}"
-    key="${key%"${key##*[![:space:]]}"}"
-    value="${value#"${value%%[![:space:]]*}"}"
-    if [[ "$value" == \"*\" && "$value" == *\" ]]; then
-      value="${value:1:${#value}-2}"
-    elif [[ "$value" == \'*\' && "$value" == *\' ]]; then
-      value="${value:1:${#value}-2}"
-    else
-      value="${value%% \#*}"
-      value="${value%%$'\t'#*}"
-      value="${value%"${value##*[![:space:]]}"}"
-    fi
-    if [[ -z "${!key+x}" ]]; then
-      export "$key=$value"
-    fi
-  done < "$env_file"
+  load_env_file_if_present "$env_file"
 fi
+
+demo_env_file="${M8FLOW_VAULT_DEMO_ENV_FILE:-/vault/demo/runtime.env}"
+load_env_file_if_present "$demo_env_file" true
+wait_for_vault_demo_runtime_env_if_needed "$demo_env_file"
 
 resolved_bpmn_spec_dir="$(normalize_bpmn_spec_dir "${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-}")"
 if [[ -n "$resolved_bpmn_spec_dir" ]]; then

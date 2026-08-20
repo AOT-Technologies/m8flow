@@ -140,9 +140,10 @@ def _auth_headers(page: Page) -> dict[str, str]:
 def api_get_secret_value(page: Page, key: str) -> tuple[int, Any]:
     """Fetch the decrypted value via ``GET /v1.0/secrets/show-value/{key}``.
 
-    Returns ``(status_code, value_or_None)``.  The m8flow UI does not surface
-    this endpoint, but it is the only way to verify a value actually persisted.
-    Returns ``value=None`` when the call is not 200 or the body has no value.
+    Returns ``(status_code, value_or_None)``.  M8Flow may intentionally disable
+    this endpoint; callers must treat any non-200 as "value unavailable" and
+    fall back to other assertions. Returns ``value=None`` when the call is not
+    200 or the body has no value.
     """
     resp = page.request.get(
         f"{API_PREFIX}/secrets/show-value/{key}",
