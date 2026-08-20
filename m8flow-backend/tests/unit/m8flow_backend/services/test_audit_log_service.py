@@ -22,6 +22,7 @@ from m8flow_backend.models.process_model_bpmn_version import ProcessModelBpmnVer
 from m8flow_backend.services.audit_log_service import (  # noqa: E402
     REDACTED_AUDIT_VALUE,
     AuditLogService,
+    is_sensitive_audit_key,
     redact_audit_details,
     redact_audit_text,
 )
@@ -59,6 +60,7 @@ def test_redact_audit_details_recursively_hides_sensitive_fields() -> None:
         "headers": {"Authorization": "Bearer abc123"},
         "nested": [{"secret_id": "secret-123"}, "root_token=root-456"],
         "token_type": "Bearer",
+        "page_token": "cursor-123",
     }
 
     redacted = redact_audit_details(payload)
@@ -70,7 +72,16 @@ def test_redact_audit_details_recursively_hides_sensitive_fields() -> None:
         "headers": {"Authorization": REDACTED_AUDIT_VALUE},
         "nested": [{"secret_id": REDACTED_AUDIT_VALUE}, "root_token=[redacted]"],
         "token_type": "Bearer",
+        "page_token": "cursor-123",
     }
+
+
+def test_is_sensitive_audit_key_narrows_token_matching() -> None:
+    assert is_sensitive_audit_key("access_token") is True
+    assert is_sensitive_audit_key("client_token") is True
+    assert is_sensitive_audit_key("token") is True
+    assert is_sensitive_audit_key("token_type") is False
+    assert is_sensitive_audit_key("page_token") is False
 
 
 def test_audit_log_service_records_context_defaults_and_redacted_details() -> None:

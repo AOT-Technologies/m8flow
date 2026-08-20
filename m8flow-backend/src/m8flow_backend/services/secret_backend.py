@@ -6,7 +6,7 @@ import time
 import uuid
 from typing import TYPE_CHECKING, Any, Callable
 
-from flask import current_app, has_app_context
+from flask import current_app, g, has_app_context, has_request_context
 
 from m8flow_backend.config import vault_enabled
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
@@ -42,6 +42,10 @@ _VAULT_SECRET_USERNAME_FIELD = "username"
 _VAULT_SECRET_VALUE_FIELD = "value"
 _VAULT_SECRET_CREATED_AT_FIELD = "created_at_in_seconds"
 _VAULT_SECRET_UPDATED_AT_FIELD = "updated_at_in_seconds"
+_VAULT_AVAILABILITY_CACHE_KEY = "m8flow_vault_availability_probe"
+_VAULT_AVAILABILITY_REQUEST_CACHE_KEY = "_m8flow_vault_availability_probe"
+_VAULT_AVAILABILITY_CACHE_TTL_SECONDS = 2.0
+_VAULT_AVAILABILITY_CACHE_UNSET = object()
 
 
 @dataclass(repr=False)
@@ -1078,8 +1082,13 @@ class VaultBackedSecretBackend:
         return _vault_runtime_error(action, key, exc, status_code=status_code)
 
     def _check_and_audit_vault_availability(self) -> bool | None:
+        cached_result = self._cached_vault_availability_result()
+        if cached_result is not _VAULT_AVAILABILITY_CACHE_UNSET:
+            return cached_result
+
         check_availability = getattr(self._broker_vault_client, "check_availability", None)
         if not callable(check_availability):
+            self._store_vault_availability_result(None)
             return None
         try:
             available = bool(check_availability(audit=False))
@@ -1088,7 +1097,13 @@ class VaultBackedSecretBackend:
                 "vault_availability_probe_failed error_type=%s",
                 type(exc).__name__,
             )
+            self._store_vault_availability_result(None)
             return None
+
+        if available:
+            self._clear_vault_availability_cache()
+        else:
+            self._store_vault_availability_result(False)
         if not available:
             try:
                 check_availability(audit=True, transitions_only=True)
@@ -1099,7 +1114,79 @@ class VaultBackedSecretBackend:
                 )
         return available
 
+    @classmethod
+    def _cached_vault_availability_result(cls) -> bool | None | object:
+        now = time.monotonic()
+
+        if has_request_context():
+            cached_result = cls._fresh_vault_availability_result(
+                getattr(g, _VAULT_AVAILABILITY_REQUEST_CACHE_KEY, None),
+                now=now,
+            )
+            if cached_result is not _VAULT_AVAILABILITY_CACHE_UNSET:
+                return cached_result
+
+        if has_app_context():
+            cached_result = cls._fresh_vault_availability_result(
+                current_app.extensions.get(_VAULT_AVAILABILITY_CACHE_KEY),
+                now=now,
+            )
+            if cached_result is not _VAULT_AVAILABILITY_CACHE_UNSET:
+                if has_request_context():
+                    setattr(
+                        g,
+                        _VAULT_AVAILABILITY_REQUEST_CACHE_KEY,
+                        {
+                            "available": cached_result,
+                            "checked_at": now,
+                        },
+                    )
+                return cached_result
+
+        return _VAULT_AVAILABILITY_CACHE_UNSET
+
+    @staticmethod
+    def _fresh_vault_availability_result(state: Any, *, now: float) -> bool | None | object:
+        if not isinstance(state, dict):
+            return _VAULT_AVAILABILITY_CACHE_UNSET
+
+        checked_at = state.get("checked_at")
+        if not isinstance(checked_at, (int, float)):
+            return _VAULT_AVAILABILITY_CACHE_UNSET
+
+        if (now - float(checked_at)) > _VAULT_AVAILABILITY_CACHE_TTL_SECONDS:
+            return _VAULT_AVAILABILITY_CACHE_UNSET
+
+        available = state.get("available")
+        if available is None or isinstance(available, bool):
+            return available
+
+        return _VAULT_AVAILABILITY_CACHE_UNSET
+
+    @staticmethod
+    def _store_vault_availability_result(available: bool | None) -> None:
+        cache_state = {
+            "available": available,
+            "checked_at": time.monotonic(),
+        }
+
+        if has_request_context():
+            setattr(g, _VAULT_AVAILABILITY_REQUEST_CACHE_KEY, cache_state)
+
+        if has_app_context():
+            current_app.extensions[_VAULT_AVAILABILITY_CACHE_KEY] = cache_state
+
+    @staticmethod
+    def _clear_vault_availability_cache() -> None:
+        if has_request_context() and hasattr(g, _VAULT_AVAILABILITY_REQUEST_CACHE_KEY):
+            delattr(g, _VAULT_AVAILABILITY_REQUEST_CACHE_KEY)
+
+        if has_app_context():
+            current_app.extensions.pop(_VAULT_AVAILABILITY_CACHE_KEY, None)
+
     def _audit_vault_recovery_if_needed(self) -> None:
+        self._clear_vault_availability_cache()
+
         latest_event = self._audit_log_service.try_latest_event(
             category="vault",
             event_type="vault.health.check",
