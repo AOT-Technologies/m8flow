@@ -74,6 +74,31 @@ def _tool_badge(tool: Any) -> str:
     return "read" if read_only_hint is True else "write"
 
 
+def _param_type(param_schema: dict[str, Any]) -> str:
+    """The JSON-Schema type used for the catalog's type column and the UI's coercion.
+
+    An optional annotation like ``process_instance_id: int | None`` compiles to
+    ``{"anyOf": [{"type": "integer"}, {"type": "null"}]}`` with NO top-level ``type``.
+    Reading ``type`` alone therefore reported "any", and the catalog page's
+    ``coerceArgumentValue`` falls through to its string branch for an unknown type --
+    so an integer parameter was sent as ``"123"`` and rejected by the tool's own schema
+    validation. Unwrapping to the first non-null variant fixes both the displayed type
+    and the value the page sends.
+
+    ``type`` may also legally be a list (``["integer", "null"]``); handled the same way.
+    """
+    declared = param_schema.get("type")
+    if isinstance(declared, str):
+        return declared
+    variants = param_schema.get("anyOf") or []
+    candidates = (
+        declared
+        if isinstance(declared, list)
+        else [v.get("type") for v in variants if isinstance(v, dict)]
+    )
+    return next((c for c in candidates if isinstance(c, str) and c != "null"), "any")
+
+
 def _tool_parameters(tool: Any) -> list[dict[str, Any]]:
     """Derive the catalog's parameter list from a tool's JSON-Schema inputSchema.
 
@@ -95,7 +120,7 @@ def _tool_parameters(tool: Any) -> list[dict[str, Any]]:
         parameters.append(
             {
                 "name": param_name,
-                "type": param_schema.get("type", "any"),
+                "type": _param_type(param_schema),
                 "required": param_name in required_names,
                 "description": param_schema.get("description", ""),
             }

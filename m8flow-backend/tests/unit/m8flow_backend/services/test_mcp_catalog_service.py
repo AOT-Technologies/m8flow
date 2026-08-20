@@ -560,3 +560,53 @@ def test_execute_tool_opens_exactly_one_connection_and_initializes_once(monkeypa
     assert session.initialize.await_count == 1
     assert session.list_tools.await_count == 1
     assert session.call_tool.await_count == 1
+
+
+def test_param_type_unwraps_an_optional_annotation_to_its_real_type():
+    """`x: int | None` compiles to anyOf with no top-level "type".
+
+    Reading "type" alone reported "any"; the catalog page has no coercion branch for
+    "any", so it fell through to its string branch and sent an integer parameter as
+    "123", which the tool's own schema validation then rejected.
+    """
+    assert mcp_catalog_service._param_type({"anyOf": [{"type": "integer"}, {"type": "null"}]}) == "integer"
+    assert mcp_catalog_service._param_type({"anyOf": [{"type": "string"}, {"type": "null"}]}) == "string"
+    # Order must not matter -- pydantic is free to emit the null variant first.
+    assert mcp_catalog_service._param_type({"anyOf": [{"type": "null"}, {"type": "boolean"}]}) == "boolean"
+
+
+def test_param_type_passes_through_a_plain_declared_type():
+    assert mcp_catalog_service._param_type({"type": "string"}) == "string"
+
+
+def test_param_type_handles_a_list_valued_type():
+    """JSON Schema allows `"type": ["integer", "null"]` for the same shape."""
+    assert mcp_catalog_service._param_type({"type": ["integer", "null"]}) == "integer"
+
+
+def test_param_type_falls_back_to_any_when_no_usable_type_is_present():
+    """Must degrade, not raise -- _tool_parameters runs outside get_catalog's try/except."""
+    for schema in ({}, {"anyOf": []}, {"anyOf": [{"no": "type"}]}, {"anyOf": ["not-a-dict"]}, {"type": ["null"]}):
+        assert mcp_catalog_service._param_type(schema) == "any"
+
+
+def test_tool_parameters_reports_the_unwrapped_type_for_an_optional_param():
+    """End-to-end through the catalog's parameter derivation, not just the helper."""
+    tool = SimpleNamespace(
+        inputSchema={
+            "properties": {
+                "process_instance_id": {
+                    "anyOf": [{"type": "integer"}, {"type": "null"}],
+                    "description": "Filter by workflow instance",
+                }
+            },
+            "required": [],
+        }
+    )
+    (param,) = mcp_catalog_service._tool_parameters(tool)
+    assert param == {
+        "name": "process_instance_id",
+        "type": "integer",
+        "required": False,
+        "description": "Filter by workflow instance",
+    }

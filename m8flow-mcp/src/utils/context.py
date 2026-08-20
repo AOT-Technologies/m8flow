@@ -39,14 +39,72 @@ def _oidc_session_token() -> str | None:
         return None
 
 
+def _forwarded_bearer_token() -> str | None:
+    """Return the bearer token sent on the *current HTTP request*, if there is one.
+
+    This is the token an MCP client puts in the request's ``Authorization`` header.
+    It is how the m8flow-backend catalog bridge authenticates: it opens a short-lived
+    MCP session per call and forwards the CALLING USER'S OWN token as
+    ``Authorization: Bearer <token>`` (see
+    ``m8flow_backend/services/mcp_catalog_service.py``), so tools run with exactly
+    that user's tenant + RBAC rather than a shared service identity.
+
+    Read via ``get_http_request()`` (the raw Starlette request, whose headers are
+    unfiltered) with ``get_http_headers(include={"authorization"})`` as a fallback --
+    FastMCP strips ``authorization`` from ``get_http_headers()`` by default, so it has
+    to be opted back in explicitly there. Two paths because ``pyproject.toml`` pins
+    only ``fastmcp>=0.3.0``: neither accessor is guaranteed across that whole range,
+    and a version that supports either one still works.
+
+    This is deliberately NOT an authentication bypass:
+
+    * When an auth provider is configured (OIDCProxy), FastMCP's auth middleware
+      verifies the request before any tool body runs, so a forged header never
+      reaches this code -- and :func:`_oidc_session_token` outranks it regardless.
+    * With no auth provider this server is a pass-through: the token is forwarded
+      verbatim to the m8flow backend, which verifies its signature/expiry and applies
+      its own RBAC and tenant scoping. A forged or expired token therefore earns a
+      backend 401, never elevated access. That is the same trust model the static
+      ``M8FLOW_BEARER_TOKEN`` strategy already relies on.
+
+    Returns:
+        The raw credential (no ``"Bearer "`` prefix), or None outside an HTTP request
+        (e.g. stdio mode) and for anything that is not a non-empty bearer credential.
+    """
+    header = ""
+    try:
+        from fastmcp.server.dependencies import get_http_request
+
+        header = get_http_request().headers.get("authorization") or ""
+    except Exception:
+        # No active HTTP request (stdio mode), or this fastmcp has no such accessor.
+        try:
+            from fastmcp.server.dependencies import get_http_headers
+
+            header = get_http_headers(include={"authorization"}).get("authorization", "")
+        except Exception:
+            return None
+
+    scheme, _, credentials = header.partition(" ")
+    if scheme.lower() != "bearer":
+        return None
+    return credentials.strip() or None
+
+
 def get_session_token() -> str | None:
     """Resolve the shared-realm session token identifying the authenticated user.
 
     Resolution order:
       1. OIDCProxy per-user session token (remote/browser login).
-      2. Explicit bearer token set at startup (env / settings).
-      3. ROPC token auto-fetched (and refreshed) from Keycloak using
+      2. The bearer token forwarded on the current HTTP request.
+      3. Explicit bearer token set at startup (env / settings).
+      4. ROPC token auto-fetched (and refreshed) from Keycloak using
          KEYCLOAK_USERNAME / KEYCLOAK_PASSWORD.
+
+    The per-request token (2) deliberately outranks the process-wide service
+    identities (3) and (4): when a caller presents their own token, serving their
+    request under a shared service account would hand them that account's tenant and
+    permissions instead of their own, breaking tenant isolation.
 
     This is the *identity* token (used to look up / refresh the tenant selection). Tools
     should call :func:`get_auth_token`, which prefers the finalized tenant-scoped token.
@@ -59,12 +117,17 @@ def get_session_token() -> str | None:
     if session_token:
         return session_token
 
-    # 2. Explicit bearer token captured at startup.
+    # 2. Per-request token forwarded by this caller (e.g. the backend catalog bridge).
+    forwarded_token = _forwarded_bearer_token()
+    if forwarded_token:
+        return forwarded_token
+
+    # 3. Explicit bearer token captured at startup.
     static_token = _auth_token_var.get()
     if static_token:
         return static_token
 
-    # 3. ROPC auto-login (lazy import avoids an import cycle at module load).
+    # 4. ROPC auto-login (lazy import avoids an import cycle at module load).
     from src.config import settings
 
     if settings.has_ropc_credentials:
