@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import socket
 import sys
 import time
 import hashlib
@@ -211,6 +212,22 @@ def remove_generated_files() -> None:
         path.unlink(missing_ok=True)
 
 
+def _is_timeout_url_error(exc: error.URLError) -> bool:
+    timeout_types = (TimeoutError, socket.timeout)
+    if isinstance(exc.reason, timeout_types):
+        return True
+
+    cause = exc.__cause__
+    if isinstance(cause, timeout_types):
+        return True
+
+    context = exc.__context__
+    if isinstance(context, timeout_types):
+        return True
+
+    return False
+
+
 def vault_request(
     method: str,
     api_path: str,
@@ -243,6 +260,8 @@ def vault_request(
         del exc
         fail(f"Vault API {method} /v1/{api_path.lstrip('/')} timed out after {timeout_seconds:g}s.")
     except error.URLError as exc:
+        if _is_timeout_url_error(exc):
+            fail(f"Vault API {method} /v1/{api_path.lstrip('/')} timed out after {timeout_seconds:g}s.")
         del exc
         fail(f"Could not reach Vault at {VAULT_ADDR}.")
 

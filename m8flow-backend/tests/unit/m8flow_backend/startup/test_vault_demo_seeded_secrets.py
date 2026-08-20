@@ -2,11 +2,12 @@ from __future__ import annotations
 # ruff: noqa: E402
 
 import importlib.util
+import socket
 import sys
 from pathlib import Path
 from io import BytesIO
 from types import ModuleType
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 
 import pytest
 
@@ -287,6 +288,17 @@ def test_vault_request_error_suppresses_response_body(monkeypatch: pytest.Monkey
     message = str(exc_info.value)
     assert "secret-123" not in message
     assert "Response body suppressed to avoid logging sensitive data." in message
+
+
+def test_vault_request_urlerror_timeout_uses_timeout_message(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_urlopen(req, timeout=10):
+        del req, timeout
+        raise URLError(socket.timeout("timed out"))
+
+    monkeypatch.setattr(bootstrap_vault_demo.request, "urlopen", fake_urlopen)
+
+    with pytest.raises(RuntimeError, match=r"Vault API GET /v1/sys/mounts timed out after 7s\."):
+        bootstrap_vault_demo.vault_request("GET", "sys/mounts", expected_statuses=(200,), timeout_seconds=7.0)
 
 
 def test_initialize_if_needed_uses_extended_init_timeout(
