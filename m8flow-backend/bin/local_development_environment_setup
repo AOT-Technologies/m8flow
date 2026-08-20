@@ -47,7 +47,7 @@ if [[ "$_use_builtin_openid" == "true" ]]; then
   export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__uri="${_base_url}/openid"
   export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__additional_valid_issuers__0="http://host.docker.internal:6840/openid"
   export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__client_id="m8flow-backend"
-  export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__client_secret="JXeQExm0JhQPLumgHtIIqf52bDalHz0q"
+  export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__client_secret="f041b49ae7f1a35daa10917459814bcd"
 fi
 
 export SPIFFWORKFLOW_BACKEND_ENV="${SPIFFWORKFLOW_BACKEND_ENV:-local_development}"

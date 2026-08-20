@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 
 from cryptography.fernet import Fernet, InvalidToken
 
-DEFAULT_KEYCLOAK_CLIENT_SECRET = "JXeQExm0JhQPLumgHtIIqf52bDalHz0q"
+DEFAULT_KEYCLOAK_CLIENT_SECRET = "f041b49ae7f1a35daa10917459814bcd"
 DEFAULT_SHARED_REALM_NAME = "m8flow"
 DEFAULT_MASTER_REALM_NAME = "master"
 _VAULT_DEMO_ENCRYPTED_STATE_PREFIX = "m8flow-vault-demo:enc:v1:"
