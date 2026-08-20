@@ -178,7 +178,7 @@ FILE_GATES: dict[str, dict[str, float | int]] = {
     "m8flow-frontend/public/new_bpmn_diagram.bpmn":
         {"ratio": 0.5333, "containment": 0.4706, "longest_block": 4},
     "m8flow-frontend/public/new_dmn_diagram.dmn":
-        {"ratio": 0.4375, "containment": 0.4118, "longest_block": 3},
+        {"ratio": 0.375, "containment": 0.3529, "longest_block": 3},
     "m8flow-frontend/src/components/DiagramEditorControls.tsx":
         {"ratio": 0.0178, "containment": 0.3125, "longest_block": 2},
     "m8flow-frontend/src/components/DiagramEditorToolbar.tsx":

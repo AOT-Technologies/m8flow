@@ -5,15 +5,43 @@
   other id here is fixed on purpose. `StartEvent_1` in particular is asserted
   on by test_process_model_create_default_bpmn.py, so don't rename it.
 -->
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" id="m8flow-new-process-definitions" targetNamespace="http://m8flow.aot-technologies.com/schema/bpmn">
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core" id="m8flow-new-process-definitions" targetNamespace="http://m8flow.aot-technologies.com/schema/bpmn">
   <bpmn:process id="{{PROCESS_ID}}" isExecutable="true">
-    <bpmn:startEvent id="StartEvent_1" />
+    <bpmn:startEvent id="StartEvent_1">
+      <bpmn:outgoing>m8flow-flow-to-task</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="m8flow-flow-to-task" sourceRef="StartEvent_1" targetRef="m8flow-example-task" />
+    <bpmn:manualTask id="m8flow-example-task" name="Example Task">
+      <bpmn:extensionElements>
+        <spiffworkflow:instructionsForEndUser>This placeholder task stands in for whatever your process needs first. Swap it for a Manual Task if a person completes work outside the system, a User Task if you need a form to collect input, or a Script Task if the step is a small piece of Python logic -- then wire up the rest of the flow from here.</spiffworkflow:instructionsForEndUser>
+      </bpmn:extensionElements>
+      <bpmn:incoming>m8flow-flow-to-task</bpmn:incoming>
+      <bpmn:outgoing>m8flow-flow-to-end</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:sequenceFlow id="m8flow-flow-to-end" sourceRef="m8flow-example-task" targetRef="EndEvent_1" />
+    <bpmn:endEvent id="EndEvent_1">
+      <bpmn:incoming>m8flow-flow-to-end</bpmn:incoming>
+    </bpmn:endEvent>
   </bpmn:process>
   <bpmndi:BPMNDiagram id="m8flow-new-process-diagram">
     <bpmndi:BPMNPlane id="m8flow-new-process-plane" bpmnElement="{{PROCESS_ID}}">
       <bpmndi:BPMNShape id="m8flow-start-event-shape" bpmnElement="StartEvent_1">
         <dc:Bounds x="180" y="160" width="36" height="36" />
       </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="m8flow-example-task-shape" bpmnElement="m8flow-example-task">
+        <dc:Bounds x="270" y="138" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="m8flow-end-event-shape" bpmnElement="EndEvent_1">
+        <dc:Bounds x="430" y="160" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="m8flow-flow-to-task-edge" bpmnElement="m8flow-flow-to-task">
+        <di:waypoint x="216" y="178" />
+        <di:waypoint x="270" y="178" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="m8flow-flow-to-end-edge" bpmnElement="m8flow-flow-to-end">
+        <di:waypoint x="370" y="178" />
+        <di:waypoint x="430" y="178" />
+      </bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>
 </bpmn:definitions>
