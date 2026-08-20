@@ -37,7 +37,7 @@ from m8flow_backend.models.external_form_request import (  # noqa: E402
     ExternalFormRequestStatus,
 )
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel, TenantStatus  # noqa: E402
-from m8flow_backend.models.process_model_bpmn_version import (  # noqa: F401
+from m8flow_backend.models.process_model_bpmn_version import (  # noqa: E402, F401
     ProcessModelBpmnVersionModel,
 )
 from m8flow_backend.routes import external_form_notifications_controller as controller  # noqa: E402
