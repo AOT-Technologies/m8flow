@@ -360,7 +360,8 @@ Current behavior:
 
 - returns `200` with `ok: true` when Vault is disabled;
 - returns `200` with `ok: true` when Vault is enabled, configured, and healthy;
-- returns `503` with `ok: false` when Vault is enabled and unhealthy.
+- returns `503` with `ok: false` when Vault is enabled, configured, and unhealthy;
+- can also return `503` with `configured=false`, `healthy=null` as a defensive fallback if the route is mounted outside the normal startup contract or the process environment becomes inconsistent after startup.
 - this public endpoint uses a non-auditing availability probe, so anonymous health checks do not write `vault.health.check` rows.
 
 Current payload shape:
@@ -415,7 +416,7 @@ The failing secret operation itself is still logged separately, for example as `
 | Condition | Startup behavior | `GET /v1.0/vault-status` | Secret API behavior | Audit behavior | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `M8FLOW_VAULT_ENABLED=false` | Backend starts normally on legacy secret backend | `200` with `enabled=false`, `configured=false`, `healthy=null` | Secret routes use the legacy database backend | No Vault health or Vault secret events should be emitted for routine secret usage | This is a runtime mode switch, not a data migration. |
-| Vault mode enabled but broker config is incomplete | Backend startup fails fast | Not available because the backend did not start | Not available because the backend did not start | No request-time Vault audit rows because startup never completed | Fix `M8FLOW_VAULT_ADDR` plus token or AppRole broker credentials first. |
+| Vault mode enabled but broker config is incomplete | Backend startup fails fast | Not available in the normal app boot path because the backend did not start | Not available because the backend did not start | No request-time Vault audit rows because startup never completed | Fix `M8FLOW_VAULT_ADDR` plus token or AppRole broker credentials first. If you ever see `configured=false` from `/v1.0/vault-status`, treat it as a defensive fallback for an atypical startup/runtime state, not as the expected steady-state behavior of a healthy booted backend. |
 | Vault mode enabled and Vault is healthy | Backend starts on Vault backend | `200` with `ok=true`, `healthy=true` | Secret CRUD/list requests succeed through tenant-scoped Vault clients | Secret operations are logged; health rows are logged only on state transition | The broker identity is control-plane only; tenant operations use a tenant-scoped client token. |
 | Vault becomes unavailable after startup | Backend keeps running | `503` with `ok=false`, `healthy=false` | Connection-related secret failures return `503`, `error_code=vault_unavailable`, `message=Vault is down.` | A later audited internal path can write one `vault.health.check` failure row on the healthy -> unhealthy transition, plus failed secret-operation rows | Repeated audited probes without a state change do not keep appending duplicate health rows. |
 | Requested secret key does not exist | Backend keeps running | Unchanged from overall Vault health | Read/delete flows return `404` with a safe missing-secret error, not a generic connection error | The failed secret operation can still be audited without exposing secret content | This is different from `vault_unavailable`; missing data is not treated as a Vault outage. |
