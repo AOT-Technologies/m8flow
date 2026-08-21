@@ -55,13 +55,13 @@ def _vault_status_payload() -> dict[str, Any]:
         return {
             "enabled": True,
             "configured": False,
-            "healthy": False,
+            "healthy": None,
         }
 
     payload = {
         "enabled": True,
         "configured": settings.is_configured,
-        "healthy": False,
+        "healthy": None,
         "mount_point": settings.mount_point,
         "auth_method": settings.auth_method,
     }

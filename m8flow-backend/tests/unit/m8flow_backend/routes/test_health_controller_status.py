@@ -640,3 +640,65 @@ def test_vault_status_payload_uses_non_auditing_probe(monkeypatch) -> None:
             "transitions_only": False,
         }
     ]
+
+
+def test_vault_status_payload_returns_unconfigured_state_when_settings_resolution_fails(monkeypatch) -> None:
+    import m8flow_backend.config as config_module
+    import m8flow_backend.services.vault_client as vault_client_module
+
+    class ExplodingVaultSettings:
+        @classmethod
+        def from_env(cls):
+            raise RuntimeError("bad vault env")
+
+    monkeypatch.setattr(config_module, "vault_enabled", lambda: True)
+    monkeypatch.setattr(vault_client_module, "VaultSettings", ExplodingVaultSettings)
+
+    payload = health_controller_patch._vault_status_payload()
+
+    assert payload == {
+        "enabled": True,
+        "configured": False,
+        "healthy": None,
+    }
+
+
+def test_vault_status_payload_returns_unconfigured_state_without_probe(monkeypatch) -> None:
+    import m8flow_backend.config as config_module
+    import m8flow_backend.services.vault_client as vault_client_module
+
+    calls: list[dict[str, object]] = []
+
+    class FakeVaultClient:
+        def check_availability(self, *, audit: bool = True, transitions_only: bool = False) -> bool:
+            calls.append(
+                {
+                    "audit": audit,
+                    "transitions_only": transitions_only,
+                }
+            )
+            return True
+
+    class FakeVaultSettings:
+        is_configured = False
+        mount_point = "kv"
+        auth_method = "approle"
+
+        @classmethod
+        def from_env(cls):
+            return cls()
+
+    monkeypatch.setattr(config_module, "vault_enabled", lambda: True)
+    monkeypatch.setattr(vault_client_module, "VaultSettings", FakeVaultSettings)
+    monkeypatch.setattr(vault_client_module, "get_vault_client", lambda: FakeVaultClient())
+
+    payload = health_controller_patch._vault_status_payload()
+
+    assert payload == {
+        "enabled": True,
+        "configured": False,
+        "healthy": None,
+        "mount_point": "kv",
+        "auth_method": "approle",
+    }
+    assert calls == []

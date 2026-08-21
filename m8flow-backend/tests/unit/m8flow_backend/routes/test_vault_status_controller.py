@@ -72,6 +72,30 @@ def test_vault_status_route_returns_503_when_vault_is_unhealthy(monkeypatch) -> 
     }
 
 
+def test_vault_status_route_returns_503_when_vault_is_enabled_but_unconfigured(monkeypatch) -> None:
+    app = _make_app()
+
+    monkeypatch.setattr(
+        vault_status_controller,
+        "_vault_status_payload",
+        lambda: {
+            "enabled": True,
+            "configured": False,
+            "healthy": None,
+        },
+    )
+
+    response = app.test_client().get("/v1.0/vault-status")
+
+    assert response.status_code == 503
+    assert response.get_json() == {
+        "ok": False,
+        "enabled": True,
+        "configured": False,
+        "healthy": None,
+    }
+
+
 def test_register_vault_status_route_honors_api_path_prefix(monkeypatch) -> None:
     app = _make_app(api_path_prefix="/v2.0")
 
