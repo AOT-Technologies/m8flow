@@ -84,12 +84,17 @@ Each template assigns tasks to the default Keycloak groups above. Make sure the 
 - Go to **Administration → Groups** and add users to the relevant groups.
 - Any member of a lane's group can claim and complete that lane's tasks — no individual user assignment is needed.
 
-**2. Configure all required secrets before starting the process**
+**2. Configure a connector profile before starting the process**
 
-Templates that integrate with external services (SMTP email, Salesforce, Slack, PostgreSQL) use `M8FLOW_SECRET` variables. If a required secret is missing, the service task will fail at runtime.
+Templates that integrate with external services (SMTP email, Salesforce, Slack, PostgreSQL) get their credentials from a **connector profile** named `default`. Each service task carries a `m8flow_profile` parameter instead of embedded credentials, so nothing sensitive lives in the BPMN. If the profile is missing, the service task fails at runtime with a message naming it.
 
-- Go to **Configuration → Secrets** in the M8Flow UI.
-- Add every secret listed in the template's guide below before you start the process.
+- Go to **Connectors** in the M8Flow UI, find the connector, and click **Configure**.
+- Create a profile named `default` and fill in the fields listed in the template's guide below.
+- One profile serves every template using that connector; you only create it once.
+
+If you already configured these connectors the older way (individual secrets under **Configuration → Secrets**), a `default` profile is created from those values automatically the first time you open Connectors — no re-entry needed.
+
+> Templates imported before this change (version `V1`) still reference `M8FLOW_SECRET` secrets directly and keep working. The `V2` copies listed below use profiles.
 
 **3. (Optional) Map lanes to different groups**
 
@@ -130,11 +135,11 @@ This is a two-step leave approval workflow. The employee submits a leave request
 
 **Prerequisites:**
 - Make sure the `Submitters` and `Approvers` groups have members in your tenant (**Administration → Groups**).
-- Add the following secrets under **Configuration → Secrets** before starting the process:
-  - `SMTP_USER` — your SMTP username / sender email
-  - `SMTP_PASSWORD` — your SMTP password or app-specific password
-  - `SMTP_HOST` — your SMTP host
-  - `SMTP_PORT` — your SMTP port
+- Create a `default` **SMTP** profile under **Connectors → SMTP → Configure** before starting the process:
+  - **Username** — your SMTP username / sender email
+  - **Password** — your SMTP password or app-specific password
+  - **SMTP Host** — your SMTP host
+  - **SMTP Port** — 25, 587 (STARTTLS) or 465 (SSL/TLS)
 
 ---
 
@@ -190,14 +195,16 @@ The data-preparation script tasks (Initialize Lead Data, Prepare Salesforce Payl
 
 **Prerequisites:**
 - Make sure the `Submitters` and `Administrators` groups have members in your tenant (**Administration → Groups**).
-- Add the following secrets under **Configuration → Secrets** before starting the process:
-  - `SF_ACCESS_TOKEN` — Salesforce OAuth access token
-  - `SF_INSTANCE_URL` — your Salesforce instance URL (e.g. `https://yourorg.salesforce.com`)
-  - `SF_REFRESH_TOKEN` — Salesforce OAuth refresh token
-  - `SF_CLIENT_ID` — Salesforce Connected App client ID
-  - `SF_CLIENT_SECRET` — Salesforce Connected App client secret
-  - `SLACK_TOKEN` — Slack Bot token (starts with `xoxb-`)
-  - `SLACK_CHANNEL_ID` — the ID of the Slack channel to post the notification to
+- This template uses two connectors, so create a `default` profile for each under **Connectors → … → Configure** before starting the process.
+- `default` **Salesforce** profile:
+  - **Access Token** — Salesforce OAuth access token
+  - **Instance URL** — your Salesforce instance URL (e.g. `https://yourorg.salesforce.com`)
+  - **Refresh Token** — Salesforce OAuth refresh token
+  - **Client ID** — Salesforce Connected App client ID
+  - **Client Secret** — Salesforce Connected App client secret
+- `default` **Slack** profile:
+  - **Bot Token** — Slack Bot token (starts with `xoxb-`)
+  - **Default Channel** — the ID of the Slack channel to post the notification to
 
 ---
 
@@ -214,8 +221,8 @@ The PostgreSQL database service tasks are unchanged.
 
 **Prerequisites:**
 - Make sure the `Administrators` group has members in your tenant (**Administration → Groups**).
-- Add the following secret under **Configuration → Secrets** before starting the process:
-  - `POSTGRES_CONNECTION_STRING` — full PostgreSQL connection string, e.g. `dbname=databasename user=username password=password host=hostname port=portnumber`
+- Create a `default` **PostgreSQL** profile under **Connectors → PostgreSQL → Configure** before starting the process:
+  - **Connection String** — full PostgreSQL connection string, e.g. `dbname=databasename user=username password=password host=hostname port=portnumber`
 
 ---
 
@@ -233,8 +240,8 @@ DMN routing (`amount <= 1000` → auto-approve) and the approval / rejection ema
 
 **Prerequisites:**
 - Make sure the `Submitters` and `Approvers` groups have members in your tenant (**Administration → Groups**).
-- Add the following secrets under **Configuration → Secrets** before starting the process:
-  - `SMTP_USER` — your SMTP username / sender email
-  - `SMTP_PASSWORD` — your SMTP password or app-specific password
-  - `SMTP_HOST` — your SMTP host
-  - `SMTP_PORT` — your SMTP port
+- Create a `default` **SMTP** profile under **Connectors → SMTP → Configure** before starting the process:
+  - **Username** — your SMTP username / sender email
+  - **Password** — your SMTP password or app-specific password
+  - **SMTP Host** — your SMTP host
+  - **SMTP Port** — 25, 587 (STARTTLS) or 465 (SSL/TLS)

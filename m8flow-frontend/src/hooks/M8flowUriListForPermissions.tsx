@@ -12,6 +12,9 @@ export const useM8flowUriListForPermissions = () => {
       m8flowTemplateListPath: "/m8flow/templates",
       serviceTaskListPath: "/service-tasks",
       connectorsGroupedPath: "/m8flow/connectors-grouped",
+      connectorTemplateListPath: "/m8flow/connector-templates",
+      // Reads gate the modeler dropdown; writes gate profile management.
+      connectorProfileListPath: "/m8flow/connector-profiles",
       m8flowMcpConnectionPath: "/m8flow/mcp-connection",
       m8flowNatsTokensPath: "/m8flow/nats-tokens",
       // Event history is the one NATS monitoring view a tenant-admin may read (rows carry a

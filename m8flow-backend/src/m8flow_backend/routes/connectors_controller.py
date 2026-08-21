@@ -3,6 +3,10 @@
 Calls the upstream ServiceTaskService to fetch the flat operation list from the
 connector proxy, then groups by connector prefix and enriches with display
 metadata.
+
+Credential field schemas are deliberately not here: connectors/definitions/ holds
+them, served via /m8flow/connector-templates. This module only reads the registry
+to report whether a connector supports profiles at all.
 """
 
 from __future__ import annotations
@@ -16,57 +20,30 @@ from typing import TypedDict
 import flask.wrappers
 from flask import jsonify, make_response
 
+from m8flow_backend.connectors.registry import get_connector
+
 logger = logging.getLogger(__name__)
 
 _CONNECTOR_DOCS_BASE = (
     "https://github.com/AOT-Technologies/m8flow/tree/main/m8flow-connector-proxy"
 )
 
-# A saved secret name must match the runtime resolver M8FLOW_SECRET:(?P<name>\w+),
-# so the effective key for every config field has to be all word characters.
-_SECRET_KEY_RE = re.compile(r"^\w+$")
-
-
-class ConnectorConfigField(TypedDict):
-    """A single credential field rendered in the Connectors "Configure" form."""
-
-    id: str
-    label: str
-    type: str  # "text" | "password"
-    required: bool
-    # Optional input-format hint the frontend validates against:
-    # "url" | "email" | "port" | "number". Omit for free-form text/secrets.
-    format: NotRequired[str]
-    # Optional length bounds the frontend enforces on the trimmed value.
-    minLength: NotRequired[int]
-    maxLength: NotRequired[int]
-    # Canonical Secret key (e.g. GITHUB_PAT_TOKEN). When omitted, the frontend
-    # falls back to "{connectorId}_{id}".
-    secretKey: NotRequired[str]
-    helpText: NotRequired[str]
-
 
 class ConnectorMeta(TypedDict):
-    """Display + configuration metadata for one connector."""
+    """Display metadata for one connector."""
 
     name: str
     description: str
     icon: str
     docsUrl: NotRequired[str]
-    configFields: NotRequired[list[ConnectorConfigField]]
 
-# Per-connector configuration fields surfaced to the Connectors "Configure" form.
-#
-# Each field becomes a Secret. The Secret key is the field's explicit "secretKey",
-# which matches the canonical name the shipped sample templates reference
-# (e.g. GITHUB_PAT_TOKEN, SLACK_TOKEN, SF_CLIENT_ID, POSTGRES_CONNECTION_STRING).
-# When a field omits "secretKey", the frontend falls back to "{connectorId}_{fieldId}".
-# Keys must match the runtime resolver M8FLOW_SECRET:(?P<name>\w+), so use only
-# word characters (uppercase letters + underscores, never hyphens). Field "type" is
-# "text" or "password"; "password" fields are masked in the UI. An optional "format"
-# ("url" | "email" | "port" | "number") and "minLength"/"maxLength" drive client-side
-# input validation. Connectors without a "configFields" entry fall back to redirecting
-# the user to the generic Configuration > Secrets page.
+
+# Display metadata for one connector: the name, blurb, icon and docs link the
+# Connectors tab renders. Credential fields are deliberately absent -- the
+# pydantic definitions in connectors/definitions/ are the single source of truth
+# for what a connector can be configured with, served via
+# /m8flow/connector-templates. A connector missing from this dict still lists;
+# it just falls back to a humanized key and a generic docs link.
 CONNECTOR_METADATA: dict[str, ConnectorMeta] = {
     "http": {
         "name": "HTTP",
@@ -79,70 +56,36 @@ CONNECTOR_METADATA: dict[str, ConnectorMeta] = {
         "description": "Execute PostgreSQL database operations",
         "icon": "database",
         "docsUrl": f"{_CONNECTOR_DOCS_BASE}#postgresql-connector-postgres_v2",
-        "configFields": [
-            {
-                "id": "connection_string",
-                "secretKey": "POSTGRES_CONNECTION_STRING",
-                "label": "Connection String",
-                "type": "password",
-                "required": True,
-                "helpText": "dbname=databasename user=username password=password host=hostname port=portnumber",
-            },
-        ],
     },
     "slack": {
         "name": "Slack",
         "description": "Send messages and notifications",
         "icon": "chat",
         "docsUrl": f"{_CONNECTOR_DOCS_BASE}#slack-connector",
-        "configFields": [
-            {"id": "bot_token", "secretKey": "SLACK_TOKEN", "label": "Bot Token", "type": "password", "required": True},
-            {"id": "channel_id", "secretKey": "SLACK_CHANNEL_ID", "label": "Channel ID", "type": "text", "required": True},
-        ],
     },
     "github": {
         "name": "GitHub",
         "description": "Work with GitHub repositories, branches, and pull requests",
         "icon": "code",
         "docsUrl": f"{_CONNECTOR_DOCS_BASE}#m8flow-connector-proxy",
-        "configFields": [
-            {"id": "pat_token", "secretKey": "GITHUB_PAT_TOKEN", "label": "Personal Access Token", "type": "password", "required": True},
-        ],
     },
     "salesforce": {
         "name": "Salesforce",
         "description": "Manage Salesforce leads and contacts",
         "icon": "cloud",
         "docsUrl": f"{_CONNECTOR_DOCS_BASE}#salesforce-connector",
-        "configFields": [
-            {"id": "client_id", "secretKey": "SF_CLIENT_ID", "label": "Client ID", "type": "text", "required": True},
-            {"id": "client_secret", "secretKey": "SF_CLIENT_SECRET", "label": "Client Secret", "type": "password", "required": True},
-            {"id": "access_token", "secretKey": "SF_ACCESS_TOKEN", "label": "Access Token", "type": "password", "required": True},
-            {"id": "refresh_token", "secretKey": "SF_REFRESH_TOKEN", "label": "Refresh Token", "type": "password", "required": True},
-            {"id": "instance_url", "secretKey": "SF_INSTANCE_URL", "label": "Instance URL", "type": "text", "required": True, "format": "url"},
-        ],
     },
     "smtp": {
         "name": "SMTP",
         "description": "Send emails through SMTP",
         "icon": "email",
         "docsUrl": f"{_CONNECTOR_DOCS_BASE}#smtp-connector",
-        "configFields": [
-            {"id": "host", "secretKey": "SMTP_HOST", "label": "Host", "type": "text", "required": True},
-            {"id": "port", "secretKey": "SMTP_PORT", "label": "Port", "type": "text", "required": True, "format": "port"},
-            {"id": "username", "secretKey": "SMTP_USER", "label": "Username", "type": "text", "required": True},
-            {"id": "password", "secretKey": "SMTP_PASSWORD", "label": "Password", "type": "password", "required": True},
-            {"id": "from_email", "secretKey": "SMTP_FROM_EMAIL", "label": "From Email", "type": "text", "required": False, "format": "email"},
-        ],
     },
     "stripe": {
         "name": "Stripe",
         "description": "Create payments, subscriptions, charges, and refunds",
         "icon": "payment",
         "docsUrl": f"{_CONNECTOR_DOCS_BASE}#stripe-connector",
-        "configFields": [
-            {"id": "api_key", "secretKey": "STRIPE_KEY", "label": "API Key", "type": "password", "required": True},
-        ],
     },
 }
 
@@ -186,37 +129,6 @@ def _humanize_connector_key(key: str) -> str:
     return " ".join(w.capitalize() for w in words if w)
 
 
-def effective_secret_key(connector_key: str, field: ConnectorConfigField) -> str:
-    """The Secret key a config field resolves to (explicit, else derived)."""
-    return field.get("secretKey") or f"{connector_key}_{field['id']}"
-
-
-def _valid_config_fields(
-    connector_key: str, fields: list[ConnectorConfigField]
-) -> list[ConnectorConfigField]:
-    """Drop fields whose effective Secret key can't be resolved at runtime.
-
-    The runtime resolver only matches ``M8FLOW_SECRET:(?P<name>\\w+)``; a field
-    whose key contains non-word characters would save a secret that no Service
-    Task could ever reference, so it is rejected here (with a warning) rather
-    than surfaced in the UI.
-    """
-    valid: list[ConnectorConfigField] = []
-    for field in fields:
-        key = effective_secret_key(connector_key, field)
-        if _SECRET_KEY_RE.match(key):
-            valid.append(field)
-        else:
-            logger.warning(
-                "Connector '%s' config field '%s' has invalid secret key '%s' "
-                "(must match ^\\w+$); skipping it.",
-                connector_key,
-                field.get("id"),
-                key,
-            )
-    return valid
-
-
 def connectors_grouped() -> flask.wrappers.Response:
     """Return service-task operations grouped by connector with metadata."""
     from spiffworkflow_backend.services.service_task_service import ServiceTaskService
@@ -254,11 +166,13 @@ def connectors_grouped() -> flask.wrappers.Response:
                 group_entry["docsUrl"] = docs_url
             else:
                 group_entry["docsUrl"] = _CONNECTOR_DOCS_BASE
-            config_fields = _valid_config_fields(
-                connector_key, meta.get("configFields", [])
+            # Whether this connector has anything a profile could hold. Drives
+            # the Configure action: profile-capable connectors go to the profile
+            # list, the rest fall back to the generic Secrets page.
+            definition = get_connector(connector_key)
+            group_entry["supportsProfiles"] = (
+                definition is not None and definition.has_profile_support()
             )
-            if config_fields:
-                group_entry["configFields"] = config_fields
             groups[connector_key] = group_entry
 
         group = groups[connector_key]

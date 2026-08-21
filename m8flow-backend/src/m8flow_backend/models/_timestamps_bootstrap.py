@@ -25,6 +25,7 @@ from m8flow_backend.models.nats_api_key import M8flowNatsApiKeyModel  # noqa: F4
 from m8flow_backend.models.nats_event_audit import NatsEventAuditModel  # noqa: F401
 from m8flow_backend.models.external_form_request import ExternalFormRequestModel  # noqa: F401
 from m8flow_backend.models.tenant_invitation import M8flowTenantInvitationModel  # noqa: F401
+from m8flow_backend.models.connector_configuration import ConnectorConfigurationModel  # noqa: F401
 
 # Previously registered as a side effect of m8flow's copied process_instance.py,
 # which imported it for the bpmn_version_id foreign key. That copy is now a shim,

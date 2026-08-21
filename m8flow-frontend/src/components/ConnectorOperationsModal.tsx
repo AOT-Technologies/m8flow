@@ -32,13 +32,15 @@ export interface ConnectorOperation {
   parameters: ConnectorOperationParam[];
 }
 
+/**
+ * The shape a single credential input validates against.
+ *
+ * Field schemas come from the connector definitions via
+ * /m8flow/connector-templates; this is just the local view of one field that
+ * `validateConnectorField` needs.
+ */
 export interface ConnectorConfigField {
   id: string;
-  /**
-   * Canonical Secret key (e.g. GITHUB_PAT_TOKEN). Matches the names the sample
-   * templates reference. When absent, the key falls back to `{connectorId}_{id}`.
-   */
-  secretKey?: string;
   label: string;
   type: 'text' | 'password';
   required: boolean;
@@ -59,7 +61,8 @@ export interface ConnectorGroup {
   operationCount: number;
   operations: ConnectorOperation[];
   docsUrl?: string;
-  configFields?: ConnectorConfigField[];
+  /** Whether this connector has anything a profile could hold. */
+  supportsProfiles?: boolean;
 }
 
 interface ConnectorOperationsModalProps {

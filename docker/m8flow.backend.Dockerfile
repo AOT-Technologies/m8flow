@@ -55,6 +55,9 @@ COPY uvicorn-log.yaml /app/uvicorn-log.yaml
 
 # Create venv and install backend into it (prod). Use editable install so
 # non-code assets like api.yml remain available from the source tree.
+# pydantic backs the m8flow connector definitions (m8flow_backend/connectors).
+# It is installed here rather than declared in spiffworkflow-backend's pyproject
+# because that tree is vendored upstream and must not be modified.
 # Pin flask>=3.1.3 to fix CVE-2026-27205 (info disclosure via improper session cache)
 # Pre-install lxml: upstream SpiffWorkflow imports it during build but doesn't
 # declare it as a build dependency (needed for setuptools attr: version resolution).
@@ -62,7 +65,8 @@ RUN uv venv /opt/venv \
   && uv pip install --python /opt/venv/bin/python setuptools wheel lxml \
   && uv pip install --python /opt/venv/bin/python --no-build-isolation-package spiffworkflow -e /app/spiffworkflow-backend \
   && uv pip install --python /opt/venv/bin/python "/app/m8flow-telemetry[flask,asgi]" \
-  && uv pip install --python /opt/venv/bin/python flower hvac "flask>=3.1.3"
+  && uv pip install --python /opt/venv/bin/python flower hvac "flask>=3.1.3" \
+  && uv pip install --python /opt/venv/bin/python "pydantic>=2.9,<3"
 
 # -----------------------------------------------------------------------------
 # Stage: prod - minimal runtime image for Linux / production (non-root)
@@ -132,6 +136,7 @@ COPY --from=fetch-upstream /upstream/spiff-arena-common /app/spiff-arena-common
 RUN uv pip install --system --break-system-packages setuptools wheel lxml \
   && cd /app/spiffworkflow-backend && uv pip install --system --break-system-packages --no-build-isolation-package spiffworkflow -e . --group dev \
   && uv pip install --system --break-system-packages flower hvac nats-py httpx python-dotenv "flask>=3.1.3" \
+  && uv pip install --system --break-system-packages "pydantic>=2.9,<3" \
   && uv pip install --system --break-system-packages "/app/m8flow-telemetry[flask,asgi]" \
   && uv cache clean \
   && apt-get purge -y build-essential python3-dev default-libmysqlclient-dev patch python3-pip-whl \
