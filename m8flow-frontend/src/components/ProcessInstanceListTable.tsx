@@ -59,35 +59,45 @@ export default function ProcessInstanceListTable(props: Record<string, any>) {
   const [chartStatus, setChartStatus] = useState('');
 
   // Last match wins, which is how upstream itself reads a status filter back into
-  // its MultiSelect. Malformed metadata (a saved report carrying more than one
-  // process_status entry) then resolves the same way here as it does there, and
-  // the same way as the replacement below, which drops every status entry.
-  const statusFilters = (reportMetadata?.filter_by || []).filter(
-    (f: Filter) => f.field_name === 'process_status',
+  // its MultiSelect, so malformed metadata resolves the same way here, there, and
+  // in the replacement below (which drops every status entry). field_value is
+  // typed `any` upstream and does hold non-strings, hence the coercion.
+  const statusFilters = ((reportMetadata?.filter_by || []) as Filter[]).filter(
+    (f) => f.field_name === 'process_status',
   );
-  const widgetStatus = statusFilters[statusFilters.length - 1]?.field_value || '';
+  const widgetStatusValue = statusFilters[statusFilters.length - 1]?.field_value;
+  const widgetStatus = widgetStatusValue ? String(widgetStatusValue) : '';
 
-  // The page's own status filter wins. Drop a stale chart selection so it
-  // cannot silently resurface once that filter is cleared again.
+  // The donut may own the status filter only when the page carries none of its own
+  // AND upstream's metadata is settled. While `columns` is empty upstream adopts
+  // the server's echo of whatever was posted, so injecting then would bake the
+  // donut's filter into upstream's own state — where the MultiSelect still reads
+  // empty and the user has no control that clears it.
+  const chartMayOwnStatus =
+    !widgetStatus && (reportMetadata?.columns?.length || 0) > 0;
+
+  // Any upstream metadata change — a filter edit, Clear, a report load, a
+  // For Me/All switch — retires the donut's selection. Keyed on the object rather
+  // than on the status value alone: a selection made while the page's own status
+  // filter was active would otherwise survive unseen and then take effect the
+  // moment that filter was cleared.
   useEffect(() => {
-    if (widgetStatus) {
-      setChartStatus('');
-    }
-  }, [widgetStatus]);
+    setChartStatus('');
+  }, [reportMetadata, variant]);
 
   const showTenantColumn =
     UserService.isSuperAdmin() && (variant || 'for-me') === 'all';
 
   const metadataForUpstream = useMemo(() => {
     const withChartStatus =
-      !reportMetadata || !chartStatus || widgetStatus
+      !reportMetadata || !chartStatus || !chartMayOwnStatus
         ? // Same object identity as the prop, so no extra fetch is provoked.
           reportMetadata
         : {
             ...reportMetadata,
             filter_by: [
-              ...(reportMetadata.filter_by || []).filter(
-                (f: Filter) => f.field_name !== 'process_status',
+              ...((reportMetadata.filter_by || []) as Filter[]).filter(
+                (f) => f.field_name !== 'process_status',
               ),
               {
                 field_name: 'process_status',
@@ -102,7 +112,7 @@ export default function ProcessInstanceListTable(props: Record<string, any>) {
     return showTenantColumn
       ? withTenantColumn(withChartStatus, t('tenant'))
       : withChartStatus;
-  }, [reportMetadata, chartStatus, widgetStatus, showTenantColumn, t]);
+  }, [reportMetadata, chartStatus, chartMayOwnStatus, showTenantColumn, t]);
 
   if (!filterComponent) {
     return <Upstream {...props} reportMetadata={metadataForUpstream} />;
@@ -110,20 +120,26 @@ export default function ProcessInstanceListTable(props: Record<string, any>) {
 
   const activeStatus = widgetStatus || chartStatus;
 
-  // ponytail: a chart-driven status is not mirrored back into upstream's status
+  // ponytail: a donut-driven status is not mirrored back into upstream's status
   // MultiSelect (upstream only reads it from report metadata on load). The donut
   // shows the selection instead. Give upstream a settable-filter seam if the two
   // need to stay visually in sync.
-  const filterComponentWithChart = () => (
+
+  // Variadic only to stay a faithful proxy. Upstream's sole call site is zero-arity,
+  // but a decorator has no business narrowing the signature it wraps.
+  const filterComponentWithChart = (...args: any[]) => (
     <>
-      {filterComponent()}
+      {filterComponent(...args)}
       <ProcessInstanceStatusPieChart
         variant={variant}
         reportMetadata={reportMetadata || null}
         selectedStatuses={activeStatus ? activeStatus.split(',') : []}
-        onStatusClick={(status: string) =>
-          setChartStatus((current) => (current === status ? '' : status))
-        }
+        onStatusClick={(status: string) => {
+          if (!chartMayOwnStatus) {
+            return;
+          }
+          setChartStatus((current) => (current === status ? '' : status));
+        }}
       />
     </>
   );

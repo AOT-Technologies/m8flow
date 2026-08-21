@@ -11,24 +11,35 @@ vi.mock('../services/UserService', () => ({
   },
 }));
 
+const h = vi.hoisted(() => ({ fetches: 0 }));
+
 const upstreamSpy = vi.fn();
 
-// Upstream stand-in: records the props it was handed, renders the (possibly
-// wrapped) filterComponent, and exposes the report metadata that drives its own
-// re-query.
-vi.mock('@spiff-core/components/ProcessInstanceListTable', () => ({
-  default: (props: Record<string, any>) => {
-    upstreamSpy(props);
-    return (
-      <div
-        data-testid="upstream-pi-table"
-        data-metadata={JSON.stringify(props.reportMetadata ?? null)}
-      >
-        {props.filterComponent ? props.filterComponent() : null}
-      </div>
-    );
-  },
-}));
+// Upstream stand-in. It models the two behaviours of the real component that this
+// override depends on: it invokes the (possibly wrapped) filterComponent on every
+// render, and it re-queries when the reportMetadata object IDENTITY changes — see
+// the useEffect deps in spiffworkflow-frontend/src/components/ProcessInstanceListTable.tsx.
+// Modelling identity rather than value is what lets these tests catch a wrapper that
+// hands upstream a fresh object on every render.
+vi.mock('@spiff-core/components/ProcessInstanceListTable', async () => {
+  const React = await import('react');
+  return {
+    default: function MockUpstream(props: Record<string, any>) {
+      upstreamSpy(props);
+      React.useEffect(() => {
+        h.fetches += 1;
+      }, [props.reportMetadata]);
+      return (
+        <div
+          data-testid="upstream-pi-table"
+          data-metadata={JSON.stringify(props.reportMetadata ?? null)}
+        >
+          {props.filterComponent ? props.filterComponent() : null}
+        </div>
+      );
+    },
+  };
+});
 
 vi.mock('./ProcessInstanceStatusPieChart', () => ({
   default: (props: Record<string, any>) => (
@@ -50,17 +61,24 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-const metadata = (filterBy: any[] = []) => ({
-  columns: [],
+// Real metadata arrives from the server with columns populated; the override treats
+// an empty columns array as "not settled yet" because upstream adopts the server's
+// echo in that state.
+const metadata = (filterBy: any[] = [], columns: any[] = [{ accessor: 'id' }]) => ({
+  columns,
   filter_by: filterBy,
   order_by: [],
 });
 
-const forwardedMetadata = () =>
+const filters = () => <div data-testid="filters" />;
+const forwarded = () =>
   JSON.parse(screen.getByTestId('upstream-pi-table').dataset.metadata!);
+const selected = () =>
+  JSON.parse(screen.getByTestId('donut').dataset.selected!);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  h.fetches = 0;
   // clearAllMocks keeps implementations, so pin the default explicitly rather
   // than inheriting whatever the previous test set.
   vi.mocked(UserService.isSuperAdmin).mockReturnValue(false);
@@ -72,19 +90,41 @@ describe('ProcessInstanceListTable status donut', () => {
     expect(screen.queryByTestId('donut')).not.toBeInTheDocument();
   });
 
-  it('renders the donut below the filter bar when one is present', () => {
+  it('renders the donut below the filter bar and forwards metadata untouched', () => {
+    const md = metadata();
     render(
       <ProcessInstanceListTable
         variant="all"
-        reportMetadata={metadata()}
-        filterComponent={() => <div data-testid="filters" />}
+        reportMetadata={md}
+        filterComponent={filters}
       />,
     );
     expect(screen.getByTestId('filters')).toBeInTheDocument();
-    const donut = screen.getByTestId('donut');
-    expect(donut.dataset.variant).toBe('all');
-    // untouched metadata keeps the same identity upstream already saw
-    expect(forwardedMetadata()).toEqual(metadata());
+    expect(screen.getByTestId('donut').dataset.variant).toBe('all');
+    expect(forwarded()).toEqual(md);
+    expect(h.fetches).toBe(1);
+  });
+
+  it('does not provoke a re-query when re-rendered with unchanged metadata', () => {
+    // Pins the object-identity invariant: returning `{...reportMetadata}` from the
+    // memo instead of the prop itself would make upstream refetch on every render.
+    const md = metadata();
+    const { rerender } = render(
+      <ProcessInstanceListTable
+        variant="all"
+        reportMetadata={md}
+        filterComponent={filters}
+      />,
+    );
+    expect(h.fetches).toBe(1);
+    rerender(
+      <ProcessInstanceListTable
+        variant="all"
+        reportMetadata={md}
+        filterComponent={filters}
+      />,
+    );
+    expect(h.fetches).toBe(1);
   });
 
   it('injects the clicked status as a filter and clears it on a second click', () => {
@@ -94,23 +134,93 @@ describe('ProcessInstanceListTable status donut', () => {
         reportMetadata={metadata([
           { field_name: 'process_model_identifier', field_value: 'm1' },
         ])}
-        filterComponent={() => <div data-testid="filters" />}
+        filterComponent={filters}
       />,
     );
 
     fireEvent.click(screen.getByTestId('donut'));
-    expect(forwardedMetadata().filter_by).toEqual([
+    expect(forwarded().filter_by).toEqual([
       { field_name: 'process_model_identifier', field_value: 'm1' },
       { field_name: 'process_status', field_value: 'error', operator: 'equals' },
     ]);
-    expect(JSON.parse(screen.getByTestId('donut').dataset.selected!)).toEqual([
-      'error',
-    ]);
+    expect(selected()).toEqual(['error']);
+    expect(h.fetches).toBe(2);
 
     fireEvent.click(screen.getByTestId('donut'));
-    expect(forwardedMetadata().filter_by).toEqual([
+    expect(forwarded().filter_by).toEqual([
       { field_name: 'process_model_identifier', field_value: 'm1' },
     ]);
+  });
+
+  it('ignores a click while the page has its own status filter, and it cannot resurface after that filter is cleared', () => {
+    // Regression: the clearing effect used to fire only on a transition INTO a
+    // widget status, so a click made while one was already active lurked in state
+    // and silently filtered the table the moment the user cleared the filter bar.
+    const { rerender } = render(
+      <ProcessInstanceListTable
+        variant="all"
+        reportMetadata={metadata([
+          { field_name: 'process_status', field_value: 'complete', operator: 'equals' },
+        ])}
+        filterComponent={filters}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('donut'));
+    expect(selected()).toEqual(['complete']);
+    expect(forwarded().filter_by).toEqual([
+      { field_name: 'process_status', field_value: 'complete', operator: 'equals' },
+    ]);
+
+    // user clears the status in upstream's MultiSelect -> new metadata object
+    rerender(
+      <ProcessInstanceListTable
+        variant="all"
+        reportMetadata={metadata()}
+        filterComponent={filters}
+      />,
+    );
+    expect(forwarded().filter_by).toEqual([]);
+    expect(selected()).toEqual([]);
+  });
+
+  it('retires the donut selection when upstream replaces its metadata (Clear, report load, tab switch)', () => {
+    const md = metadata([{ field_name: 'process_model_identifier', field_value: 'm1' }]);
+    const { rerender } = render(
+      <ProcessInstanceListTable
+        variant="all"
+        reportMetadata={md}
+        filterComponent={filters}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('donut'));
+    expect(selected()).toEqual(['error']);
+
+    // upstream's Clear button hands down a fresh object with the filters emptied
+    rerender(
+      <ProcessInstanceListTable
+        variant="all"
+        reportMetadata={metadata()}
+        filterComponent={filters}
+      />,
+    );
+    expect(selected()).toEqual([]);
+    expect(forwarded().filter_by).toEqual([]);
+  });
+
+  it('does not inject while upstream metadata is unsettled (empty columns)', () => {
+    // With columns empty upstream adopts the server's echo of whatever is posted,
+    // which would bake the donut's filter into upstream state irreversibly.
+    render(
+      <ProcessInstanceListTable
+        variant="all"
+        reportMetadata={metadata([], [])}
+        filterComponent={filters}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('donut'));
+    expect(forwarded().filter_by).toEqual([]);
+    expect(selected()).toEqual([]);
   });
 
   it('resolves duplicate status filters the same way upstream does (last wins)', () => {
@@ -121,67 +231,50 @@ describe('ProcessInstanceListTable status donut', () => {
           { field_name: 'process_status', field_value: 'waiting', operator: 'equals' },
           { field_name: 'process_status', field_value: 'complete', operator: 'equals' },
         ])}
-        filterComponent={() => <div data-testid="filters" />}
+        filterComponent={filters}
       />,
     );
-    // upstream reads its MultiSelect off the last match, so the donut must agree
-    expect(JSON.parse(screen.getByTestId('donut').dataset.selected!)).toEqual([
-      'complete',
-    ]);
-
-    // an existing status filter owns the selection, so a click cannot rewrite it
+    expect(selected()).toEqual(['complete']);
     fireEvent.click(screen.getByTestId('donut'));
-    expect(forwardedMetadata().filter_by).toHaveLength(2);
+    expect(forwarded().filter_by).toHaveLength(2);
+  });
+
+  it('highlights every status when the filter bar has several selected', () => {
+    // Upstream stores a multi-select as a comma-joined value.
+    render(
+      <ProcessInstanceListTable
+        variant="all"
+        reportMetadata={metadata([
+          { field_name: 'process_status', field_value: 'error,waiting', operator: 'equals' },
+        ])}
+        filterComponent={filters}
+      />,
+    );
+    expect(selected()).toEqual(['error', 'waiting']);
+  });
+
+  it('survives a non-string status field_value', () => {
+    // ReportFilter.field_value is `any` upstream and really does hold booleans.
+    render(
+      <ProcessInstanceListTable
+        variant="all"
+        reportMetadata={metadata([
+          { field_name: 'process_status', field_value: true },
+        ])}
+        filterComponent={filters}
+      />,
+    );
+    expect(screen.getByTestId('donut')).toBeInTheDocument();
+    expect(selected()).toEqual(['true']);
   });
 
   it('renders and toggles safely with no reportMetadata at all', () => {
     render(
-      <ProcessInstanceListTable
-        variant="all"
-        filterComponent={() => <div data-testid="filters" />}
-      />,
+      <ProcessInstanceListTable variant="all" filterComponent={filters} />,
     );
     expect(screen.getByTestId('donut')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('donut'));
-    expect(forwardedMetadata()).toBeNull();
-  });
-
-  it("defers to the page's own status filter and drops a stale chart status", () => {
-    const { rerender } = render(
-      <ProcessInstanceListTable
-        variant="all"
-        reportMetadata={metadata()}
-        filterComponent={() => <div data-testid="filters" />}
-      />,
-    );
-    fireEvent.click(screen.getByTestId('donut'));
-    expect(forwardedMetadata().filter_by).toHaveLength(1);
-
-    const widgetFiltered = metadata([
-      { field_name: 'process_status', field_value: 'complete', operator: 'equals' },
-    ]);
-    rerender(
-      <ProcessInstanceListTable
-        variant="all"
-        reportMetadata={widgetFiltered}
-        filterComponent={() => <div data-testid="filters" />}
-      />,
-    );
-    // the widget's status is forwarded verbatim, not replaced by the chart's
-    expect(forwardedMetadata()).toEqual(widgetFiltered);
-    expect(JSON.parse(screen.getByTestId('donut').dataset.selected!)).toEqual([
-      'complete',
-    ]);
-
-    // clearing the widget must not resurrect the earlier chart selection
-    rerender(
-      <ProcessInstanceListTable
-        variant="all"
-        reportMetadata={metadata()}
-        filterComponent={() => <div data-testid="filters" />}
-      />,
-    );
-    expect(forwardedMetadata().filter_by).toEqual([]);
+    expect(forwarded()).toBeNull();
   });
 });
 
