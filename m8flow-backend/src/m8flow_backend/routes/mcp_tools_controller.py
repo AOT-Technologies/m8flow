@@ -29,21 +29,29 @@ logger = logging.getLogger(__name__)
 def _run_coroutine(coro: Any) -> Any:
     """Run an async coroutine to completion from this synchronous Flask view.
 
-    Mirrors ``NatsService._run_coroutine`` exactly: reuse the running loop via a
-    worker thread if one is somehow already running (a normal Flask WSGI worker
-    never has one, but this stays correct if that ever changes), else fall back
-    to a fresh ``asyncio.run``.
+    Sync-only by contract. Connexion runs these operation functions under
+    Flask's WSGI stack, where this thread has no running event loop, so
+    ``asyncio.run`` owns a fresh loop for the call's duration.
+
+    If a loop *is* already running on this thread we refuse loudly instead of
+    offloading to a worker thread and blocking on its future: that blocks the
+    running loop for a full MCP network round-trip, starving every other task
+    on it. Whoever makes this thread async must make these views ``async def``
+    and await ``mcp_catalog_service``'s coroutines directly rather than
+    bridging through here.
     """
     try:
-        loop = asyncio.get_running_loop()
+        asyncio.get_running_loop()
     except RuntimeError:
         return asyncio.run(coro)
-    if loop.is_running():
-        from concurrent.futures import ThreadPoolExecutor
-
-        with ThreadPoolExecutor() as executor:
-            return executor.submit(asyncio.run, coro).result()
-    return loop.run_until_complete(coro)
+    # Reached only from a thread that already drives a loop. Close the
+    # coroutine first so refusing does not also emit "never awaited".
+    coro.close()
+    raise RuntimeError(
+        "mcp_tools_controller._run_coroutine was called from a thread with a "
+        "running event loop. These views are sync-only; await "
+        "mcp_catalog_service's coroutines directly instead."
+    )
 
 
 def _bearer_token() -> str:
@@ -69,7 +77,21 @@ def list_mcp_tools_catalog() -> flask.wrappers.Response:
 
 
 def check_mcp_connection() -> flask.wrappers.Response:
-    """GET /m8flow/mcp-tools/ping -- a bare connectivity/auth check, as this caller."""
+    """GET /m8flow/mcp-tools/ping -- a bare connectivity/auth check, as this caller.
+
+    Always 200, deliberately -- unlike ``list_mcp_tools_catalog`` and
+    ``execute_mcp_tool``, which surface 502/503 for the same underlying MCP
+    failures. This endpoint's job is to *report* reachability, so "unreachable"
+    is its expected answer rather than a failed request; ``ping`` never returns
+    an "error" key, only ``{ok, latency_ms, protocol_version, authorized}``.
+
+    Do not "fix" this to 502/503 without changing the caller in lockstep:
+    m8flow-frontend's McpToolsCatalog renders the failure state (the "ping
+    failed" line and the unauthorized chip) from that body, and HttpService
+    routes any non-2xx to failureCallback, which nulls the ping state and hides
+    that UI entirely -- so returning a failure status erases the very
+    diagnostic this endpoint exists to show.
+    """
     result = _run_coroutine(mcp_catalog_service.ping(_bearer_token()))
     return make_response(jsonify(result), 200)
 

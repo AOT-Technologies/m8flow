@@ -11,8 +11,12 @@ own _run_coroutine bridge exactly as a real request would.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import time
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from flask import Flask
 
@@ -279,3 +283,41 @@ def test_execute_mcp_tool_returns_400_when_tool_name_is_not_a_string():
         body = json.loads(response.get_data(as_text=True))
         assert body["error_code"] == "invalid_request_body"
         mock_execute.assert_not_awaited()
+
+
+def test_run_coroutine_runs_the_coroutine_when_no_loop_is_running():
+    """The normal Flask WSGI path: no running loop, so asyncio.run drives it."""
+
+    async def _answer():
+        return 42
+
+    assert mcp_tools_controller._run_coroutine(_answer()) == 42
+
+
+def test_run_coroutine_refuses_promptly_inside_a_running_loop():
+    """Sync-only contract: refuse rather than block the caller's event loop.
+
+    The old implementation offloaded to a ThreadPoolExecutor and blocked on
+    ``.result()``, stalling the running loop for a whole MCP round-trip. Called
+    directly on the loop thread it would therefore sit here for the coroutine's
+    full duration; the elapsed-time bound is the "does not block indefinitely"
+    half of the guard and the ``RuntimeError`` is the "fails loudly" half.
+    """
+    slept = False
+
+    async def _slow():
+        nonlocal slept
+        await asyncio.sleep(30)
+        slept = True
+
+    async def _drive():
+        # A plain sync call from the loop thread -- exactly how a Connexion
+        # view would reach _run_coroutine if the stack ever went async.
+        started_at = time.monotonic()
+        with pytest.raises(RuntimeError, match="sync-only"):
+            mcp_tools_controller._run_coroutine(_slow())
+        return time.monotonic() - started_at
+
+    elapsed = asyncio.run(_drive())
+    assert elapsed < 5, f"_run_coroutine blocked the running loop for {elapsed:.1f}s"
+    assert slept is False

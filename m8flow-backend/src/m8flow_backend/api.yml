@@ -3040,11 +3040,25 @@ paths:
         Times a bare MCP initialize() round-trip against the configured
         m8flow-mcp server using the caller's own bearer token. Restricted to
         tenant-admin and super-admin.
+
+
+        Deliberately always answers 200 -- unlike its siblings /mcp-tools and
+        /mcp-tools/execute, which return 502/503 when the MCP server is
+        unreachable or unconfigured. This is a diagnostic that *reports* MCP
+        reachability, so a reachability failure is its expected result, not a
+        failure of the request: 200 means "the check ran", and the body says
+        what it found. Read `ok` (round-trip succeeded) and `authorized`
+        (false only on an explicit auth rejection; true when authorization was
+        never disproven, e.g. DNS/timeout) -- never the HTTP status. A non-200
+        here means the check itself could not run: 401/403 for the caller's own
+        RBAC, or 5xx for an unhandled backend error.
       tags:
         - MCP Tools
       responses:
         "200":
-          description: Connection check result
+          description: >
+            Connection check result. Returned for reachable AND unreachable
+            MCP servers alike -- inspect `ok`/`authorized` in the body.
           content:
             application/json:
               schema:
