@@ -58,9 +58,14 @@ export default function ProcessInstanceListTable(props: Record<string, any>) {
   // identity changes.
   const [chartStatus, setChartStatus] = useState('');
 
-  const filterBy: Filter[] = reportMetadata?.filter_by || [];
-  const widgetStatus =
-    filterBy.find((f) => f.field_name === 'process_status')?.field_value || '';
+  // Last match wins, which is how upstream itself reads a status filter back into
+  // its MultiSelect. Malformed metadata (a saved report carrying more than one
+  // process_status entry) then resolves the same way here as it does there, and
+  // the same way as the replacement below, which drops every status entry.
+  const statusFilters = (reportMetadata?.filter_by || []).filter(
+    (f: Filter) => f.field_name === 'process_status',
+  );
+  const widgetStatus = statusFilters[statusFilters.length - 1]?.field_value || '';
 
   // The page's own status filter wins. Drop a stale chart selection so it
   // cannot silently resurface once that filter is cleared again.

@@ -113,6 +113,39 @@ describe('ProcessInstanceListTable status donut', () => {
     ]);
   });
 
+  it('resolves duplicate status filters the same way upstream does (last wins)', () => {
+    render(
+      <ProcessInstanceListTable
+        variant="all"
+        reportMetadata={metadata([
+          { field_name: 'process_status', field_value: 'waiting', operator: 'equals' },
+          { field_name: 'process_status', field_value: 'complete', operator: 'equals' },
+        ])}
+        filterComponent={() => <div data-testid="filters" />}
+      />,
+    );
+    // upstream reads its MultiSelect off the last match, so the donut must agree
+    expect(JSON.parse(screen.getByTestId('donut').dataset.selected!)).toEqual([
+      'complete',
+    ]);
+
+    // an existing status filter owns the selection, so a click cannot rewrite it
+    fireEvent.click(screen.getByTestId('donut'));
+    expect(forwardedMetadata().filter_by).toHaveLength(2);
+  });
+
+  it('renders and toggles safely with no reportMetadata at all', () => {
+    render(
+      <ProcessInstanceListTable
+        variant="all"
+        filterComponent={() => <div data-testid="filters" />}
+      />,
+    );
+    expect(screen.getByTestId('donut')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('donut'));
+    expect(forwardedMetadata()).toBeNull();
+  });
+
   it("defers to the page's own status filter and drops a stale chart status", () => {
     const { rerender } = render(
       <ProcessInstanceListTable
