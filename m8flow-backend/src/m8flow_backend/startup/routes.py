@@ -39,6 +39,26 @@ def register_root_route(app) -> None:
             continue
         app.add_url_rule(rule, endpoint, root, methods=["GET"])
 
+
+def register_vault_status_route(app) -> None:
+    from m8flow_backend.routes.vault_status_controller import vault_status
+
+    base_path = app.config.get("SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX", "/v1.0")
+    rule = f"{base_path}/vault-status"
+    endpoint = "m8flow_vault_status"
+
+    if endpoint in app.view_functions:
+        logger.debug("Vault status route %s (endpoint %s) already registered; skipping.", rule, endpoint)
+        return
+
+    existing_rule_paths = {url_rule.rule for url_rule in app.url_map.iter_rules()}
+    if rule in existing_rule_paths:
+        logger.info("Vault status path %s already registered by another endpoint; leaving it untouched.", rule)
+        return
+
+    app.add_url_rule(rule, endpoint, vault_status, methods=["GET"])
+
+
 def register_template_file_fallback_routes(app) -> None:
     from m8flow_backend.routes.templates_controller import template_put_file, template_delete_file
 
