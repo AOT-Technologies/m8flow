@@ -10,6 +10,3 @@ def vault_status():
     ok = not (payload.get("enabled") is True and payload.get("healthy") is False)
     status_code = 200 if ok else 503
     return make_response({"ok": ok, **payload}, status_code)
-
-
-vault_status._m8flow_sets_tenant_context = True  # type: ignore[attr-defined]

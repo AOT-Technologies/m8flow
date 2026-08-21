@@ -622,6 +622,69 @@ def test_vault_mode_debounces_repeated_outage_availability_probes(app, tenants) 
     ]
 
 
+def test_vault_mode_records_single_recovery_transition_after_debounced_outage(app, tenants, user) -> None:
+    fake_vault = FakeVaultClient()
+    fake_vault.availability_result = False
+    provider = FakeTenantScopedVaultClientProvider(fake_vault)
+    tenant_error = TenantScopedVaultClientError("could not resolve tenant-scoped client")
+    tenant_error.__cause__ = VaultConnectionError("vault unavailable")
+    provider.errors_by_tenant[tenants[0]] = tenant_error
+    fake_audit = FakeAuditLogService()
+    backend = _backend(fake_vault, provider=provider, audit_log_service=fake_audit)
+
+    original_ttl = secret_backend_module._VAULT_AVAILABILITY_CACHE_TTL_SECONDS
+    secret_backend_module._VAULT_AVAILABILITY_CACHE_TTL_SECONDS = 60.0
+    try:
+        for _ in range(2):
+            with app.test_request_context("/"):
+                g.m8flow_tenant_id = tenants[0]
+                with pytest.raises(ApiError) as exc_info:
+                    backend.serialize_secret_list_result()
+                assert exc_info.value.error_code == "vault_unavailable"
+
+        provider.errors_by_tenant.pop(tenants[0], None)
+        fake_vault.storage[f"m8flow/tenants/{tenants[0]}/secrets/API_TOKEN"] = {
+            "value": "vault-value",
+            "tenant_id": tenants[0],
+            "key": "API_TOKEN",
+            "id": "secret-1",
+            "user_id": user,
+            "username": "alice",
+            "created_at_in_seconds": 1,
+            "updated_at_in_seconds": 1,
+        }
+        fake_vault.availability_result = True
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = tenants[0]
+            first_payload = backend.serialize_secret_list_result()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = tenants[0]
+            second_payload = backend.serialize_secret_list_result()
+    finally:
+        secret_backend_module._VAULT_AVAILABILITY_CACHE_TTL_SECONDS = original_ttl
+
+    assert first_payload["results"][0]["key"] == "API_TOKEN"
+    assert second_payload["results"][0]["key"] == "API_TOKEN"
+    assert [call["event_type"] for call in fake_audit.calls] == [
+        "vault.health.check",
+        "vault.secret.list",
+        "vault.secret.list",
+        "vault.health.check",
+        "vault.secret.list",
+        "vault.secret.list",
+    ]
+    assert [call["status"] for call in fake_audit.calls] == [
+        "failed",
+        "failed",
+        "failed",
+        "success",
+        "success",
+        "success",
+    ]
+
+
 def test_vault_mode_does_not_fallback_to_legacy_secret_table(app, tenants, user) -> None:
     fake_vault = FakeVaultClient()
     backend = _backend(fake_vault)

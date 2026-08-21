@@ -138,6 +138,47 @@ def test_bootstrap_import_rejects_invalid_float_env_values(
         _load_isolated_bootstrap_module(f"bootstrap_vault_demo_invalid_{env_name.lower()}")
 
 
+def test_float_env_returns_default_for_unset_and_empty_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("M8FLOW_TEST_FLOAT_ENV", raising=False)
+    assert bootstrap_vault_demo._float_env("M8FLOW_TEST_FLOAT_ENV", 12.5, min_value=0.0) == 12.5
+
+    monkeypatch.setenv("M8FLOW_TEST_FLOAT_ENV", "")
+    assert bootstrap_vault_demo._float_env("M8FLOW_TEST_FLOAT_ENV", 12.5, min_value=0.0) == 12.5
+
+
+def test_float_env_rejects_whitespace_only_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("M8FLOW_TEST_FLOAT_ENV", "   ")
+
+    with pytest.raises(RuntimeError, match=r"M8FLOW_TEST_FLOAT_ENV must be a finite number greater than 0;"):
+        bootstrap_vault_demo._float_env("M8FLOW_TEST_FLOAT_ENV", 12.5, min_value=0.0)
+
+
+@pytest.mark.parametrize("env_value", ["nan", "inf", "-inf"])
+def test_float_env_rejects_non_finite_values(
+    monkeypatch: pytest.MonkeyPatch,
+    env_value: str,
+) -> None:
+    monkeypatch.setenv("M8FLOW_TEST_FLOAT_ENV", env_value)
+
+    with pytest.raises(RuntimeError, match=r"M8FLOW_TEST_FLOAT_ENV must be a finite number greater than 0;"):
+        bootstrap_vault_demo._float_env("M8FLOW_TEST_FLOAT_ENV", 12.5, min_value=0.0)
+
+
+@pytest.mark.parametrize("env_value", ["0", "-1", "-0.01"])
+def test_float_env_rejects_zero_and_negative_values_when_minimum_is_zero(
+    monkeypatch: pytest.MonkeyPatch,
+    env_value: str,
+) -> None:
+    monkeypatch.setenv("M8FLOW_TEST_FLOAT_ENV", env_value)
+
+    with pytest.raises(RuntimeError, match=r"M8FLOW_TEST_FLOAT_ENV must be a finite number greater than 0;"):
+        bootstrap_vault_demo._float_env("M8FLOW_TEST_FLOAT_ENV", 12.5, min_value=0.0)
+
+
 def test_load_seeded_secrets_missing_file_skips_demo_identity_resolution(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

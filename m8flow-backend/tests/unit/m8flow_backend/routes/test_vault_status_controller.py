@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from flask import Flask
 
+import m8flow_backend.services.tenant_context_middleware as tenant_context_middleware
 from m8flow_backend.routes import vault_status_controller
 from m8flow_backend.startup.routes import register_vault_status_route
+from m8flow_backend.startup.tenant_resolution import register_tenant_resolution_after_auth
 
 
 def _make_app(*, api_path_prefix: str = "/v1.0") -> Flask:
@@ -94,8 +96,36 @@ def test_register_vault_status_route_honors_api_path_prefix(monkeypatch) -> None
     }
 
 
-def test_vault_status_route_is_public_and_manages_its_own_tenant_context() -> None:
+def test_vault_status_route_is_public_without_controller_managed_tenant_context() -> None:
     from m8flow_backend.services.authorization_service_patch import M8FLOW_AUTH_EXCLUSION_ADDITIONS
 
-    assert getattr(vault_status_controller.vault_status, "_m8flow_sets_tenant_context", False) is True
+    assert getattr(vault_status_controller.vault_status, "_m8flow_sets_tenant_context", False) is False
     assert "m8flow_backend.routes.vault_status_controller.vault_status" in M8FLOW_AUTH_EXCLUSION_ADDITIONS
+
+
+def test_tenant_resolution_still_runs_for_vault_status(monkeypatch) -> None:
+    app = _make_app()
+    resolver_calls: list[str] = []
+
+    monkeypatch.setattr(
+        vault_status_controller,
+        "_vault_status_payload",
+        lambda: {
+            "enabled": True,
+            "configured": True,
+            "healthy": True,
+        },
+    )
+
+    def fake_resolve_request_tenant() -> None:
+        from flask import request
+
+        resolver_calls.append(request.path)
+
+    monkeypatch.setattr(tenant_context_middleware, "resolve_request_tenant", fake_resolve_request_tenant)
+    register_tenant_resolution_after_auth(app)
+
+    response = app.test_client().get("/v1.0/vault-status")
+
+    assert response.status_code == 200
+    assert resolver_calls == ["/v1.0/vault-status"]
