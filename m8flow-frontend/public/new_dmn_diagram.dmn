@@ -4,7 +4,7 @@
   The `{{DECISION_ID}}` token is replaced with a generated id at load time.
 -->
 <definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" xmlns:dmndi="https://www.omg.org/spec/DMN/20191111/DMNDI/" xmlns:dc="http://www.omg.org/spec/DMN/20180521/DC/" id="m8flow-new-decision-definitions" name="DRD" namespace="http://m8flow.aot-technologies.com/schema/dmn">
-  <decision id="{{DECISION_ID}}" name="Decision">
+  <decision id="{{DECISION_ID}}" name="New Decision">
     <decisionTable id="m8flow-decision-table">
       <input id="m8flow-decision-input">
         <inputExpression id="m8flow-decision-input-expression" typeRef="string">

@@ -1,0 +1,18 @@
+{
+  "connections": 0,
+  "cpu": 0,
+  "in_bytes": 1684,
+  "in_msgs": 18,
+  "mem": 18649088,
+  "now": "2026-08-03T10:29:43.131072999Z",
+  "out_bytes": 4404,
+  "out_msgs": 19,
+  "server_id": "NBKB5HWCDI5YZVETGTP5RUYVC2LN2VXB5FTVCIPMYMQVAQNZZLTANRWS",
+  "server_name": "NBKB5HWCDI5YZVETGTP5RUYVC2LN2VXB5FTVCIPMYMQVAQNZZLTANRWS",
+  "slow_consumers": 0,
+  "start": "2026-08-03T10:28:40.072861335Z",
+  "subscriptions": 73,
+  "total_connections": 1,
+  "uptime": "1m3s",
+  "version": "2.10.29"
+}

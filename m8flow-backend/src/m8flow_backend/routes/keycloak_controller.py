@@ -7,6 +7,10 @@ import requests
 from m8flow_backend.config import shared_realm_name
 from m8flow_backend.services.tenant_management_authorization import ensure_request_can_access_tenant
 from m8flow_backend.services.tenant_management_authorization import require_authorized_user
+from m8flow_backend.services.tenant_vault_provisioning_service import (
+    TenantVaultProvisioningError,
+    provision_tenant_vault_identity_if_enabled,
+)
 
 from m8flow_backend.services.keycloak_service import (
     create_organization,
@@ -60,6 +64,36 @@ def _tenant_provisioning_response(
     }
 
 
+def _cleanup_failed_tenant_creation(organization_id: str) -> bool:
+    """Best-effort cleanup when post-create provisioning fails."""
+    cleanup_ok = True
+
+    tenant = db.session.get(M8flowTenantModel, organization_id)
+    if tenant is not None:
+        try:
+            db.session.delete(tenant)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            cleanup_ok = False
+            logger.exception(
+                "Failed to remove tenant row during rollback of organization_id=%s",
+                organization_id,
+            )
+
+    try:
+        admin_token = get_master_admin_token()
+        delete_organization(organization_id, admin_token=admin_token)
+    except Exception:
+        cleanup_ok = False
+        logger.exception(
+            "Failed to remove Keycloak organization during rollback of organization_id=%s",
+            organization_id,
+        )
+
+    return cleanup_ok
+
+
 def create_realm(body: dict) -> tuple[dict, int]:
     """Create a tenant organization in the shared realm. Returns (response_dict, status_code)."""
 
@@ -87,6 +121,7 @@ def create_realm(body: dict) -> tuple[dict, int]:
             return {
                 "detail": "A tenant with this name already exists. Please choose a different name.",
             }, 409
+    organization_id: str | None = None
     try:
         organization = create_organization(
             alias=str(organization_alias).strip(),
@@ -100,11 +135,26 @@ def create_realm(body: dict) -> tuple[dict, int]:
             name=name,
             slug=alias,
         )
+        provision_tenant_vault_identity_if_enabled(organization_id)
         return _tenant_provisioning_response(
             organization_id=organization_id,
             alias=alias,
             name=name,
         ), 201
+    except TenantVaultProvisioningError as e:
+        cleanup_ok = _cleanup_failed_tenant_creation(organization_id) if organization_id else False
+        logger.exception(
+            "Tenant creation failed during Vault provisioning for organization_id=%s cleanup_ok=%s",
+            organization_id,
+            cleanup_ok,
+        )
+        detail = (
+            "Tenant creation failed because Vault provisioning could not be completed."
+            if cleanup_ok
+            else "Tenant creation failed because Vault provisioning could not be completed. Manual cleanup may be required."
+        )
+        logger.warning("Vault provisioning detail for organization_id=%s: %s", organization_id, e)
+        return {"detail": detail}, 502
     except requests.exceptions.HTTPError as e:
         status = e.response.status_code if e.response is not None else 500
         detail = (e.response.text or str(e))[:500] if e.response is not None else str(e)

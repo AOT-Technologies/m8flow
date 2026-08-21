@@ -23,7 +23,7 @@ interface OwnProps {
 const DEFAULT_LOAD_TIMEOUT_MS = 12_000;
 
 /**
- * Renders an external operations dashboard (e.g. Celery Flower, NATS NUI) embedded
+ * Renders an external operations dashboard (e.g. Celery Flower) embedded
  * in an iframe inside the m8flow app shell, with a consistent page header.
  *
  * These dashboards live on external, cross-origin URLs. When an embed is refused via

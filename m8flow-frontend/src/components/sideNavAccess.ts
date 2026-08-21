@@ -68,6 +68,7 @@ export function buildSideNavPermissionPlan(
     [targetUris.m8flowMcpConnectionPath]: ['GET'],
     // POST gates manage-nats-tokens (tenant-admin); a bare GET hid the item for all.
     [targetUris.m8flowNatsTokensPath]: ['POST'],
+    [targetUris.m8flowNatsEventsPath]: ['GET'],
     '/tasks/*': ['GET', 'PUT'],
     [targetUris.m8flowTenantManagementPath]: ['GET'],
     '/m8flow/tenants': ['GET'],

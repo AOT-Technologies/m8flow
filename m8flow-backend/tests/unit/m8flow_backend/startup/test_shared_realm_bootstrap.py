@@ -303,6 +303,12 @@ def test_reconcile_default_shared_realm_tenant_rekeys_legacy_alias_rows_and_grou
             ),
         ),
     )
+    provision_calls: list[str] = []
+    monkeypatch.setattr(
+        shared_realm_bootstrap,
+        "provision_tenant_vault_identity_if_enabled",
+        lambda tenant_id: provision_calls.append(tenant_id),
+    )
 
     shared_realm_bootstrap.reconcile_default_shared_realm_tenant(fake_app)
 
@@ -318,6 +324,7 @@ def test_reconcile_default_shared_realm_tenant_rekeys_legacy_alias_rows_and_grou
     ]
 
     assert tenant_scoped_rows["m8flow_templates"][0].m8f_tenant_id == organization_id
+    assert provision_calls == [organization_id]
 
     shared_realm_bootstrap.reconcile_default_shared_realm_tenant(fake_app)
     assert [group.identifier for group in group_rows] == [
@@ -325,6 +332,7 @@ def test_reconcile_default_shared_realm_tenant_rekeys_legacy_alias_rows_and_grou
         f"{organization_id}:editor",
     ]
     assert tenant_scoped_rows["m8flow_templates"][0].m8f_tenant_id == organization_id
+    assert provision_calls == [organization_id, organization_id]
 
 
 def test_reconcile_default_shared_realm_tenant_creates_canonical_row_when_missing(monkeypatch) -> None:
@@ -373,6 +381,12 @@ def test_reconcile_default_shared_realm_tenant_creates_canonical_row_when_missin
             get_columns=lambda _table_name: [],
         ),
     )
+    provision_calls: list[str] = []
+    monkeypatch.setattr(
+        shared_realm_bootstrap,
+        "provision_tenant_vault_identity_if_enabled",
+        lambda tenant_id: provision_calls.append(tenant_id),
+    )
 
     shared_realm_bootstrap.reconcile_default_shared_realm_tenant(fake_app)
 
@@ -380,6 +394,7 @@ def test_reconcile_default_shared_realm_tenant_creates_canonical_row_when_missin
     assert organization_id in tenant_rows_by_id
     assert tenant_rows_by_id[organization_id].slug == alias
     assert tenant_rows_by_id[organization_id].name == organization_name
+    assert provision_calls == [organization_id]
 
 
 def test_reconcile_default_shared_realm_tenant_skips_when_table_missing(monkeypatch) -> None:

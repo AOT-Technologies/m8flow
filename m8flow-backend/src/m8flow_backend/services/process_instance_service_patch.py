@@ -60,6 +60,61 @@ def _raise_lane_assignment_api_error(
     ) from exc
 
 
+def _extract_api_error_from_exception_tree(exc: BaseException | None) -> Exception | None:
+    """Return the first nested ApiError reachable through wrapped workflow exceptions."""
+    from spiffworkflow_backend.exceptions.api_error import ApiError
+
+    if exc is None:
+        return None
+
+    seen_ids: set[int] = set()
+    pending: list[BaseException] = [exc]
+    while pending:
+        current = pending.pop()
+        current_id = id(current)
+        if current_id in seen_ids:
+            continue
+        seen_ids.add(current_id)
+
+        if isinstance(current, ApiError):
+            return current
+
+        nested_exception = getattr(current, "exception", None)
+        if isinstance(nested_exception, BaseException):
+            pending.append(nested_exception)
+
+        cause = getattr(current, "__cause__", None)
+        if isinstance(cause, BaseException):
+            pending.append(cause)
+
+        context = getattr(current, "__context__", None)
+        if isinstance(context, BaseException):
+            pending.append(context)
+
+        nested_exceptions = getattr(current, "exceptions", None)
+        if isinstance(nested_exceptions, tuple | list):
+            pending.extend(item for item in nested_exceptions if isinstance(item, BaseException))
+
+    return None
+
+
+def _raise_nested_api_error(
+    process_instance: object,
+    wrapped_exc: Exception,
+    api_error: Exception,
+    *,
+    handle_error: bool,
+) -> None:
+    """Rollback queued work and re-raise the underlying API error for user-facing task submit failures."""
+    from spiffworkflow_backend.models.db import db
+    from spiffworkflow_backend.services.error_handling_service import ErrorHandlingService
+
+    db.session.rollback()
+    if handle_error:
+        ErrorHandlingService.handle_error(process_instance, wrapped_exc)
+    raise api_error from wrapped_exc
+
+
 def _validate_queued_follow_up_work(processor: object, *, handle_error: bool = False) -> None:
     """Run immediate engine work during queued submission so assignment failures surface to the submitter."""
     from spiffworkflow_backend.services.process_instance_processor import NoPotentialOwnersForTaskError
@@ -75,6 +130,16 @@ def _validate_queued_follow_up_work(processor: object, *, handle_error: bool = F
             processor.process_instance_model,  # type: ignore[attr-defined]
             exc,
             message_prefix="Task submission could not continue.",
+            handle_error=handle_error,
+        )
+    except Exception as exc:
+        api_error = _extract_api_error_from_exception_tree(exc)
+        if api_error is None:
+            raise
+        _raise_nested_api_error(
+            processor.process_instance_model,  # type: ignore[attr-defined]
+            exc,
+            api_error,
             handle_error=handle_error,
         )
 

@@ -172,4 +172,43 @@ describe('HttpService.makeCallToBackend', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it('normalizes RFC 7807 error payloads so failure callbacks always receive a message', async () => {
+    getAccessToken.mockReturnValue('access-token');
+    const fetchMock = vi.fn().mockResolvedValue(
+      makeResponse({
+        body: JSON.stringify({
+          type: 'about:blank',
+          title: 'vault_secret_value_missing',
+          detail: 'Unable to locate the Vault secret value for key: SMTP_USER.',
+          status: 404,
+          error_code: 'vault_secret_value_missing',
+        }),
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const failureCallback = vi.fn();
+
+    HttpService.makeCallToBackend({
+      path: '/tasks/123/task-1',
+      httpMethod: 'PUT',
+      postBody: { approved: true },
+      successCallback: vi.fn(),
+      failureCallback,
+    });
+
+    await waitFor(() => {
+      expect(failureCallback).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'vault_secret_value_missing',
+          detail: 'Unable to locate the Vault secret value for key: SMTP_USER.',
+          message: 'Unable to locate the Vault secret value for key: SMTP_USER.',
+        }),
+      );
+    });
+  });
 });

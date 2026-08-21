@@ -41,6 +41,7 @@ type AppRouteFlags = {
 type AppRouteAbility = RootGateSharedProps['ability'];
 type AppRouteUris = RootGateSharedProps['targetUris'] & {
   processInstanceListForMePath: string;
+  m8flowNatsEventsPath: string;
 };
 
 export type M8flowAppRoutesProps = {
@@ -194,7 +195,11 @@ export function M8flowAppRoutes({
             path="monitoring/nats"
             element={gatedPage(
               permissionsLoaded,
-              UserService.isSuperAdmin(),
+              // Tenant-admins get the event-history tab, so this is gated on the
+              // read-nats-events grant rather than super-admin alone. The page itself
+              // then hides the broker-wide tabs from non-super-admins.
+              UserService.isSuperAdmin() ||
+                ability.can('GET', targetUris.m8flowNatsEventsPath),
               <MonitoringNatsPage />,
             )}
           />

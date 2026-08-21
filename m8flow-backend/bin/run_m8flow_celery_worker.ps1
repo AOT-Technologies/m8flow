@@ -52,6 +52,20 @@ function Invoke-UvPython {
   }
 }
 
+function Test-HasM8FlowBackendRuntimeDependencies {
+  $oldPreference = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    Invoke-UvPython @("-c", "import hvac; import nats") 2>&1 > $null
+    if ($LASTEXITCODE -ne 0) {
+      return $false
+    }
+    return $true
+  } finally {
+    $ErrorActionPreference = $oldPreference
+  }
+}
+
 $extraPaths = @(
   (Join-Path $repoRoot "spiffworkflow-backend"),
   (Join-Path $repoRoot "spiffworkflow-backend\src"),
@@ -128,7 +142,14 @@ if ($Mode -eq "worker") {
 
 Push-Location (Join-Path $repoRoot "spiffworkflow-backend")
 try {
-  uv sync --all-groups
+  $uvSyncArgs = @("sync", "--all-groups")
+  if ($env:VIRTUAL_ENV) { $uvSyncArgs += "--active" }
+  & uv @uvSyncArgs
+
+  if (-not (Test-HasM8FlowBackendRuntimeDependencies)) {
+    $uvPipArgs = @("pip", "install", "hvac", "nats-py>=2.6.0")
+    & uv @uvPipArgs
+  }
 } finally {
   Pop-Location
 }
