@@ -26,11 +26,9 @@ export default function ProcessInstanceListTableWithFilters(props: Record<string
     ];
   }, [props.additionalReportFilters, sa, selectedTenantId]);
 
-  const { showStatusChart: _ignored, ...rest } = props;
-
   return (
     <Upstream
-      {...rest}
+      {...props}
       key={sa ? `t:${selectedTenantId || '*'}` : 'std'}
       additionalReportFilters={filters}
     />
