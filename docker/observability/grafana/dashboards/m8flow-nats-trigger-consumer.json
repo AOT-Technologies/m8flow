@@ -14,7 +14,51 @@
     "to": "now"
   },
   "templating": {
-    "list": []
+    "list": [
+      {
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "hide": 0,
+        "includeAll": true,
+        "label": "Environment / Namespace",
+        "multi": true,
+        "name": "namespace",
+        "options": [
+          {
+            "selected": true,
+            "text": "All",
+            "value": "$__all"
+          },
+          {
+            "selected": false,
+            "text": "qa",
+            "value": "qa"
+          },
+          {
+            "selected": false,
+            "text": "dev",
+            "value": "dev"
+          },
+          {
+            "selected": false,
+            "text": "demo",
+            "value": "demo"
+          },
+          {
+            "selected": false,
+            "text": "monitoring",
+            "value": "monitoring"
+          }
+        ],
+        "query": "qa,dev,demo,monitoring",
+        "queryValue": "",
+        "skipUrlSync": false,
+        "type": "custom"
+      }
+    ]
   },
   "panels": [
     {
@@ -44,6 +88,114 @@
         "overrides": []
       },
       "description": "Queue-wide \u2014 no m8flow_tenant_id. Scoped to the trigger-event consumer (trigger_event_consumer.py); the notification worker has its own dashboard. Summed across instance -- a redeploy briefly leaves the old process's series alive under a different service.instance.id for up to ~5m, and without sum() a stat panel renders one box per series."
+    },
+    {
+      "id": 101,
+      "title": "NATS Consumer CPU Usage",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\", pod=~\".*m8flow-nats-consumer.*\", container!=\"\"}[1m])) by (pod, namespace)",
+          "legendFormat": "{{namespace}} / {{pod}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 102,
+      "title": "NATS Consumer Memory Usage",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(container_memory_working_set_bytes{namespace=~\"$namespace\", pod=~\".*m8flow-nats-consumer.*\", container!=\"\"}) by (pod, namespace)",
+          "legendFormat": "{{namespace}} / {{pod}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 103,
+      "title": "Pod Restarts",
+      "type": "stat",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=~\"$namespace\", pod=~\".*m8flow-nats-consumer.*\"}[1h])) by (pod, namespace)",
+          "legendFormat": "{{namespace}} / {{pod}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
     },
     {
       "id": 2,
@@ -214,7 +366,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{service_name=\"m8flow-nats-consumer\"}",
+          "expr": "{namespace=~\"$namespace\", app=~\"m8flow-nats-consumer\"}",
           "queryType": "range"
         }
       ],

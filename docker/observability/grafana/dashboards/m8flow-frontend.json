@@ -16,6 +16,49 @@
   "templating": {
     "list": [
       {
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "hide": 0,
+        "includeAll": true,
+        "label": "Environment / Namespace",
+        "multi": true,
+        "name": "namespace",
+        "options": [
+          {
+            "selected": true,
+            "text": "All",
+            "value": "$__all"
+          },
+          {
+            "selected": false,
+            "text": "qa",
+            "value": "qa"
+          },
+          {
+            "selected": false,
+            "text": "dev",
+            "value": "dev"
+          },
+          {
+            "selected": false,
+            "text": "demo",
+            "value": "demo"
+          },
+          {
+            "selected": false,
+            "text": "monitoring",
+            "value": "monitoring"
+          }
+        ],
+        "query": "qa,dev,demo,monitoring",
+        "queryValue": "",
+        "skipUrlSync": false,
+        "type": "custom"
+      },
+      {
         "name": "m8flow_tenant_id",
         "type": "textbox",
         "label": "m8flow_tenant_id",
@@ -45,6 +88,114 @@
       }
     },
     {
+      "id": 101,
+      "title": "Frontend Pod CPU Usage",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\", pod=~\".*m8flow-frontend.*\", container!=\"\"}[1m])) by (pod, namespace)",
+          "legendFormat": "{{namespace}} / {{pod}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 102,
+      "title": "Frontend Pod Memory Usage",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(container_memory_working_set_bytes{namespace=~\"$namespace\", pod=~\".*m8flow-frontend.*\", container!=\"\"}) by (pod, namespace)",
+          "legendFormat": "{{namespace}} / {{pod}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 103,
+      "title": "Pod Restarts",
+      "type": "stat",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=~\"$namespace\", pod=~\".*m8flow-frontend.*\"}[1h])) by (pod, namespace)",
+          "legendFormat": "{{namespace}} / {{pod}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
       "id": 1,
       "type": "stat",
       "title": "Error rate",
@@ -62,7 +213,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate({telemetry_source=\"faro\"} | json | kind=\"exception\" [$__rate_interval])) or vector(0)",
+          "expr": "sum(rate({namespace=~\"$namespace\", telemetry_source=\"faro\"} | json | kind=\"exception\" [$__rate_interval])) or vector(0)",
           "legendFormat": "errors/s"
         }
       ],
@@ -90,7 +241,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "count(count by (session_id) (count_over_time({telemetry_source=\"faro\"} | json [$__range]))) or vector(0)",
+          "expr": "count(count by (session_id) (count_over_time({namespace=~\"$namespace\", telemetry_source=\"faro\"} | json [$__range]))) or vector(0)",
           "legendFormat": "sessions"
         }
       ],
@@ -118,7 +269,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "quantile_over_time(0.75, {telemetry_source=\"faro\"} | json | kind=\"measurement\" | unwrap value_LCP [$__range]) or vector(0)",
+          "expr": "quantile_over_time(0.75, {namespace=~\"$namespace\", telemetry_source=\"faro\"} | json | kind=\"measurement\" | unwrap value_LCP [$__range]) or vector(0)",
           "legendFormat": "p75"
         }
       ],
@@ -148,7 +299,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{telemetry_source=\"faro\"} | json | __error__=\"\" | user_attr_m8flow_tenant_id=~`$m8flow_tenant_id|.*`",
+          "expr": "{namespace=~\"$namespace\", telemetry_source=\"faro\"} | json | __error__=\"\" | user_attr_m8flow_tenant_id=~`$m8flow_tenant_id|.*`",
           "queryType": "range"
         }
       ],
@@ -176,7 +327,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{service_name=\"m8flow-frontend\", telemetry_source!=\"faro\"}",
+          "expr": "{namespace=~\"$namespace\", app=~\"m8flow-frontend\", telemetry_source!=\"faro\"}",
           "queryType": "range"
         }
       ],

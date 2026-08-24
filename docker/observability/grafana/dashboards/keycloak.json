@@ -14,7 +14,51 @@
     "to": "now"
   },
   "templating": {
-    "list": []
+    "list": [
+      {
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "hide": 0,
+        "includeAll": true,
+        "label": "Environment / Namespace",
+        "multi": true,
+        "name": "namespace",
+        "options": [
+          {
+            "selected": true,
+            "text": "All",
+            "value": "$__all"
+          },
+          {
+            "selected": false,
+            "text": "qa",
+            "value": "qa"
+          },
+          {
+            "selected": false,
+            "text": "dev",
+            "value": "dev"
+          },
+          {
+            "selected": false,
+            "text": "demo",
+            "value": "demo"
+          },
+          {
+            "selected": false,
+            "text": "monitoring",
+            "value": "monitoring"
+          }
+        ],
+        "query": "qa,dev,demo,monitoring",
+        "queryValue": "",
+        "skipUrlSync": false,
+        "type": "custom"
+      }
+    ]
   },
   "panels": [
     {
@@ -30,6 +74,114 @@
       "options": {
         "mode": "markdown",
         "content": "**Realm-wide** Keycloak metrics \u2014 not tenant/organization-scoped. **HTTP error rate** counts 4xx/5xx from Keycloak's `/metrics` (Micrometer). **Log ERROR** lines (startup, DB, duplicate user, etc.) are separate and appear in the log panel below."
+      }
+    },
+    {
+      "id": 101,
+      "title": "Keycloak Pod CPU Usage",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\", pod=~\".*m8flow-iam.*\", container!=\"\"}[1m])) by (pod, namespace)",
+          "legendFormat": "{{namespace}} / {{pod}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 102,
+      "title": "Keycloak Pod Memory Usage",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(container_memory_working_set_bytes{namespace=~\"$namespace\", pod=~\".*m8flow-iam.*\", container!=\"\"}) by (pod, namespace)",
+          "legendFormat": "{{namespace}} / {{pod}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 103,
+      "title": "Pod Restarts",
+      "type": "stat",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=~\"$namespace\", pod=~\".*m8flow-iam.*\"}[1h])) by (pod, namespace)",
+          "legendFormat": "{{namespace}} / {{pod}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
       }
     },
     {
@@ -49,7 +201,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(http_server_requests_seconds_count{service_name=\"keycloak\"}[$__rate_interval]))",
+          "expr": "sum(rate(http_server_requests_seconds_count{namespace=~\"$namespace\", app=~\"keycloak\"}[$__rate_interval]))",
           "legendFormat": "req/s"
         }
       ],
@@ -77,7 +229,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "100 * sum(rate(http_server_requests_seconds_count{service_name=\"keycloak\", outcome=~\"CLIENT_ERROR|SERVER_ERROR\"}[$__rate_interval])) / clamp_min(sum(rate(http_server_requests_seconds_count{service_name=\"keycloak\"}[$__rate_interval])), 1e-9)",
+          "expr": "100 * sum(rate(http_server_requests_seconds_count{namespace=~\"$namespace\", app=~\"keycloak\", outcome=~\"CLIENT_ERROR|SERVER_ERROR\"}[$__rate_interval])) / clamp_min(sum(rate(http_server_requests_seconds_count{namespace=~\"$namespace\", app=~\"keycloak\"}[$__rate_interval])), 1e-9)",
           "legendFormat": "HTTP errors"
         }
       ],
@@ -107,7 +259,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "max(up{service_name=\"keycloak\"})",
+          "expr": "max(up{namespace=~\"$namespace\", app=~\"keycloak\"})",
           "legendFormat": "scrape up"
         }
       ],
@@ -148,7 +300,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (outcome) (rate(http_server_requests_seconds_count{service_name=\"keycloak\"}[$__rate_interval]))",
+          "expr": "sum by (outcome) (rate(http_server_requests_seconds_count{namespace=~\"$namespace\", app=~\"keycloak\"}[$__rate_interval]))",
           "legendFormat": "{{outcome}}"
         }
       ],
@@ -176,7 +328,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(count_over_time({service_name=\"keycloak\"} |~ \"(?i)(error|exception|failed)\" [$__interval]))",
+          "expr": "sum(count_over_time({namespace=~\"$namespace\", app=~\"keycloak\"} |~ \"(?i)(error|exception|failed)\" [$__interval]))",
           "legendFormat": "error-ish lines",
           "queryType": "range"
         }
@@ -204,7 +356,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{service_name=\"keycloak\"}",
+          "expr": "{namespace=~\"$namespace\", app=~\"keycloak\"}",
           "queryType": "range"
         }
       ],
