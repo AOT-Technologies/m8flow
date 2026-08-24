@@ -1,4 +1,4 @@
-name: m8flow-mcp-server-service CI/CD
+name: m8flow-mcp-server CI/CD
 
 on:
   push:
@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: "Environment to deploy to"
+        description: "Environment to promote/deploy to"
         required: true
         default: "demo"
         type: choice
@@ -26,18 +26,12 @@ on:
           - demo
           - qa
       image_uri:
-        description: "Image URI to deploy (e.g. m8flow/m8flow-mcp-server-service:1.0.6-rc). Leave empty to trigger a fresh build."
-        required: false
+        description: "Pre-built Image URI to promote (e.g. m8flow/m8flow-mcp-server-service:dev-a1b2c3d or release tag)"
+        required: true
         type: string
 
 permissions:
   contents: read
-  security-events: write
-  actions: write
-  id-token: write
-  packages: write
-  pull-requests: write
-  deployments: write
 
 concurrency:
   group: mcp-server-cicd-${{ github.ref }}
@@ -46,16 +40,12 @@ concurrency:
 jobs:
   ci:
     name: MCP Server CI Pipeline
-    if: github.event_name != 'workflow_dispatch' || github.event.inputs.image_uri == ''
-    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@v1
+    if: github.event_name != 'workflow_dispatch'
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@d74dfcd7c92886f2b74dbaf98536e6bde6d0be99
     with:
       config_path: m8flow-mcp/devx-ci.yaml
       auto_merge: false
-      push: >-
-        ${{
-          (github.event_name == 'push' && github.ref == 'refs/heads/develop') ||
-          github.event_name == 'workflow_dispatch'
-        }}
+      push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/develop' }}
     secrets:
       registry_username: ${{ secrets.DOCKERHUB_USERNAME }}
       registry_password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -64,43 +54,30 @@ jobs:
   cd-dev:
     name: Deploy MCP Server → DEV
     needs: ci
-    if: |
-      always() &&
-      (needs.ci.result == 'success' || needs.ci.result == 'skipped') &&
-      github.event_name == 'push' && github.ref == 'refs/heads/develop'
-    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/cd-orchestrator.yaml@v1
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/cd-orchestrator.yaml@d74dfcd7c92886f2b74dbaf98536e6bde6d0be99
     with:
       environment: dev
-      image_uri: ${{ github.event.inputs.image_uri || needs.ci.outputs.image_uri }}
+      image_uri: ${{ needs.ci.outputs.image_uri }}
       config_path: m8flow-mcp/devx-config.yaml
     secrets: inherit
 
   cd-demo:
     name: Deploy MCP Server → DEMO
-    needs: ci
-    if: |
-      always() &&
-      (needs.ci.result == 'success' || needs.ci.result == 'skipped') &&
-      github.event_name == 'workflow_dispatch' &&
-      github.event.inputs.environment == 'demo'
-    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/cd-orchestrator.yaml@v1
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'demo'
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/cd-orchestrator.yaml@d74dfcd7c92886f2b74dbaf98536e6bde6d0be99
     with:
       environment: demo
-      image_uri: ${{ github.event.inputs.image_uri || needs.ci.outputs.image_uri }}
+      image_uri: ${{ github.event.inputs.image_uri }}
       config_path: m8flow-mcp/devx-config.yaml
     secrets: inherit
 
   cd-qa:
     name: Deploy MCP Server → QA
-    needs: ci
-    if: |
-      always() &&
-      (needs.ci.result == 'success' || needs.ci.result == 'skipped') &&
-      github.event_name == 'workflow_dispatch' &&
-      github.event.inputs.environment == 'qa'
-    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/cd-orchestrator.yaml@v1
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'qa'
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/cd-orchestrator.yaml@d74dfcd7c92886f2b74dbaf98536e6bde6d0be99
     with:
       environment: qa
-      image_uri: ${{ github.event.inputs.image_uri || needs.ci.outputs.image_uri }}
+      image_uri: ${{ github.event.inputs.image_uri }}
       config_path: m8flow-mcp/devx-config.yaml
     secrets: inherit

@@ -5,10 +5,10 @@
 deployment:
   enabled: true
   target: eks
-  method: patch
+  method: patch                      # Use patch rollout for existing EKS deployments (matching formsflow pattern)
 
   environments:
-    dev:
+    dev: &env_defaults
       enabled: true
       region: ca-central-1
       cluster_name: m8flow-eks
@@ -28,42 +28,12 @@ deployment:
         enabled: true
 
     demo:
-      enabled: true
-      region: ca-central-1
-      cluster_name: m8flow-eks
+      <<: *env_defaults
       namespace: demo
-      deployment_name: m8flow-mcp-server-service
-      container_name: m8flow-mcp-server-service
-      helm:
-        release_name: m8flow-mcp-server-service
-        chart_path: m8flow-charts/charts/m8flow-mcp-server-service
-        values_file: ""
-      health_check:
-        enabled: false
-        type: k8s
-      auto_rollback: false
-      atomic: true
-      notifications:
-        enabled: true
 
     qa:
-      enabled: true
-      region: ca-central-1
-      cluster_name: m8flow-eks
+      <<: *env_defaults
       namespace: qa
-      deployment_name: m8flow-mcp-server-service
-      container_name: m8flow-mcp-server-service
-      helm:
-        release_name: m8flow-mcp-server-service
-        chart_path: m8flow-charts/charts/m8flow-mcp-server-service
-        values_file: ""
-      health_check:
-        enabled: false
-        type: k8s
-      auto_rollback: false
-      atomic: true
-      notifications:
-        enabled: true
 
 aws:
   default_region: ca-central-1
