@@ -16,16 +16,15 @@
   "templating": {
     "list": [
       {
+        "name": "namespace",
+        "label": "Environment / Namespace",
+        "type": "custom",
+        "query": "qa,dev,demo,monitoring",
         "current": {
           "selected": true,
           "text": "All",
           "value": "$__all"
         },
-        "hide": 0,
-        "includeAll": true,
-        "label": "Environment / Namespace",
-        "multi": true,
-        "name": "namespace",
         "options": [
           {
             "selected": true,
@@ -53,10 +52,10 @@
             "value": "monitoring"
           }
         ],
-        "query": "qa,dev,demo,monitoring",
-        "queryValue": "",
-        "skipUrlSync": false,
-        "type": "custom"
+        "includeAll": true,
+        "multi": true,
+        "hide": 0,
+        "skipUrlSync": false
       }
     ]
   },
@@ -78,7 +77,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-nats-consumer.*\"}",
+          "expr": "sum(nats_consumer_lag{job=\"m8flow-nats-consumer\"}) or vector(0)",
           "legendFormat": "{{job}}"
         }
       ],
@@ -87,11 +86,190 @@
         "defaults": {},
         "overrides": []
       },
-      "description": "Queue-wide \u2014 no m8flow_tenant_id. Scoped to the trigger-event consumer (trigger_event_consumer.py); the notification worker has its own dashboard. Summed across instance -- a redeploy briefly leaves the old process's series alive under a different service.instance.id for up to ~5m, and without sum() a stat panel renders one box per series."
+      "description": "Queue-wide \u00e2\u20ac\u201d no m8flow_tenant_id. Scoped to the trigger-event consumer (trigger_event_consumer.py); the notification worker has its own dashboard. Summed across instance -- a redeploy briefly leaves the old process's series alive under a different service.instance.id for up to ~5m, and without sum() a stat panel renders one box per series."
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Processing rate",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(nats_consumer_processing_duration_milliseconds_count{job=\"m8flow-nats-consumer\"}[$__rate_interval])) or vector(0)",
+          "legendFormat": "{{job}}"
+        }
+      ],
+      "options": {},
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Failure rate %",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * (sum(rate(nats_consumer_processing_failures_total{job=\"m8flow-nats-consumer\"}[$__rate_interval])) or vector(0)) / clamp_min(sum(rate(nats_consumer_processing_duration_milliseconds_count{job=\"m8flow-nats-consumer\"}[$__rate_interval])) or vector(1), 1)",
+          "legendFormat": "{{job}}"
+        }
+      ],
+      "options": {},
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Pending + redelivered",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(nats_consumer_lag{job=\"m8flow-nats-consumer\"}) or vector(0)",
+          "legendFormat": "pending {{job}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(nats_consumer_redelivered{job=\"m8flow-nats-consumer\"}) or vector(0)",
+          "legendFormat": "redelivered {{job}}"
+        }
+      ],
+      "options": {},
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Broker-side stream & consumer detail (M8FLOW_EVENTS)",
+      "description": "This consumer's own stream, from the periodic broker poll (broker_metrics_loop) rather than the live-pushed app metrics above -- can lag by up to the poll interval.",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (stream, consumer) (nats_broker_consumer_pending{stream=\"M8FLOW_EVENTS\"})",
+          "legendFormat": "pending {{consumer}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (stream, consumer) (nats_broker_consumer_unacked{stream=\"M8FLOW_EVENTS\"})",
+          "legendFormat": "unacked {{consumer}}"
+        },
+        {
+          "refId": "C",
+          "expr": "sum by (stream, consumer) (nats_broker_consumer_redelivered{stream=\"M8FLOW_EVENTS\"})",
+          "legendFormat": "redelivered {{consumer}}"
+        }
+      ],
+      "options": {},
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Failures by outcome",
+      "description": "Requires the outcome label on nats_consumer_processing_failures_total -- values match m8flow_nats_event_audit's outcome column (instantiated/rejected_auth/invalid_payload/etc.), so a spike here can be cross-referenced against the audit trail's error_message for the specific reason.",
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(nats_consumer_processing_failures_total{job=\"m8flow-nats-consumer\"}[$__rate_interval]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ],
+      "options": {},
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "type": "logs",
+      "title": "Trigger consumer logs",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-nats-consumer.*\"}",
+          "queryType": "range"
+        }
+      ],
+      "options": {},
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
     },
     {
       "id": 101,
-      "title": "NATS Consumer CPU Usage",
+      "title": "NATS Consumer Pod CPU Usage",
       "type": "timeseries",
       "gridPos": {
         "h": 6,
@@ -127,7 +305,7 @@
     },
     {
       "id": 102,
-      "title": "NATS Consumer Memory Usage",
+      "title": "NATS Consumer Pod Memory Usage",
       "type": "timeseries",
       "gridPos": {
         "h": 6,
@@ -208,189 +386,6 @@
         },
         "overrides": []
       }
-    },
-    {
-      "id": 2,
-      "type": "stat",
-      "title": "Processing rate",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 4,
-        "y": 0
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-nats-consumer.*\"}",
-          "legendFormat": "{{job}}"
-        }
-      ],
-      "options": {},
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      }
-    },
-    {
-      "id": 3,
-      "type": "stat",
-      "title": "Failure rate %",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 8,
-        "y": 0
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-nats-consumer.*\"}",
-          "legendFormat": "{{job}}"
-        }
-      ],
-      "options": {},
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      }
-    },
-    {
-      "id": 4,
-      "type": "timeseries",
-      "title": "Pending + redelivered",
-      "gridPos": {
-        "h": 7,
-        "w": 12,
-        "x": 0,
-        "y": 4
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-nats-consumer.*\"}",
-          "legendFormat": "pending {{job}}"
-        },
-        {
-          "refId": "B",
-          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-nats-consumer.*\"}",
-          "legendFormat": "redelivered {{job}}"
-        }
-      ],
-      "options": {},
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      }
-    },
-    {
-      "id": 5,
-      "type": "timeseries",
-      "title": "Broker-side stream & consumer detail (M8FLOW_EVENTS)",
-      "description": "This consumer's own stream, from the periodic broker poll (broker_metrics_loop) rather than the live-pushed app metrics above -- can lag by up to the poll interval.",
-      "gridPos": {
-        "h": 7,
-        "w": 12,
-        "x": 12,
-        "y": 4
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-nats-consumer.*\"}",
-          "legendFormat": "pending {{consumer}}"
-        },
-        {
-          "refId": "B",
-          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-nats-consumer.*\"}",
-          "legendFormat": "unacked {{consumer}}"
-        },
-        {
-          "refId": "C",
-          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-nats-consumer.*\"}",
-          "legendFormat": "redelivered {{consumer}}"
-        }
-      ],
-      "options": {},
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      }
-    },
-    {
-      "id": 6,
-      "type": "timeseries",
-      "title": "Failures by outcome",
-      "description": "Requires the outcome label on nats_consumer_processing_failures_total -- values match m8flow_nats_event_audit's outcome column (instantiated/rejected_auth/invalid_payload/etc.), so a spike here can be cross-referenced against the audit trail's error_message for the specific reason.",
-      "gridPos": {
-        "h": 7,
-        "w": 24,
-        "x": 0,
-        "y": 11
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-nats-consumer.*\"}",
-          "legendFormat": "{{outcome}}"
-        }
-      ],
-      "options": {},
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      }
-    },
-    {
-      "id": 7,
-      "type": "logs",
-      "title": "Trigger consumer logs",
-      "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 18
-      },
-      "datasource": {
-        "type": "loki",
-        "uid": "${DS_LOKI}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-nats-consumer.*\"}",
-          "queryType": "range",
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          }
-        }
-      ],
-      "options": {},
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      }
     }
   ],
   "annotations": {
@@ -409,7 +404,7 @@
     {
       "name": "DS_PROMETHEUS",
       "label": "Prometheus",
-      "description": "Prometheus metrics datasource",
+      "description": "Select the Prometheus data source",
       "type": "datasource",
       "pluginId": "prometheus",
       "pluginName": "Prometheus"
@@ -417,7 +412,7 @@
     {
       "name": "DS_LOKI",
       "label": "Loki",
-      "description": "Loki logs datasource",
+      "description": "Select the Loki data source for logs",
       "type": "datasource",
       "pluginId": "loki",
       "pluginName": "Loki"
