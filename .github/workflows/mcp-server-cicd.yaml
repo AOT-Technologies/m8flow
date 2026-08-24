@@ -59,6 +59,7 @@ jobs:
     secrets:
       registry_username: ${{ secrets.DOCKERHUB_USERNAME }}
       registry_password: ${{ secrets.DOCKERHUB_TOKEN }}
+      sonar_token: ${{ secrets.SONAR_TOKEN }}
 
   cd-dev:
     name: Deploy MCP Server → DEV

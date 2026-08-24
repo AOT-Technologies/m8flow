@@ -23,7 +23,13 @@ docker:
 
 security:
   sast:
-    enabled: false                  # CodeQL runs in existing ci.yml
+    enabled: true
+    tool: sonarqube
+    scan_path: "m8flow-backend"
+    sonar_host_url: "https://sonarcloud.io"
+    sonar_organization: "aot-technologies"
+    sonar_project_key: "AOT-Technologies_m8flow-backend"
+    fail_on_quality_gate: false
 
   iac:
     enabled: false
@@ -31,12 +37,14 @@ security:
   trivy:
     enabled: true
     severity: CRITICAL,HIGH
-    fail_on_vuln: false             # Non-blocking: base image vulns tracked separately
+    fail_on_vuln: false
     ignore_unfixed: true
     scanners: vuln,secret
 
   sbom:
-    enabled: false
+    enabled: true
+    format: cyclonedx-json
 
   sbom_scan:
-    enabled: false
+    enabled: true
+    severity: medium
