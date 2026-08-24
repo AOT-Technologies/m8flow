@@ -89,6 +89,18 @@ class TemplateService:
         return "V1"
 
     @classmethod
+    def _prefer_template_rows_for_tenant(
+        cls,
+        rows: list[TemplateModel],
+        tenant_id: str | None,
+    ) -> list[TemplateModel]:
+        if not tenant_id:
+            return rows
+
+        same_tenant_rows = [row for row in rows if row.m8f_tenant_id == tenant_id]
+        return same_tenant_rows or rows
+
+    @classmethod
     def _validate_template_name(cls, name: str) -> None:
         """Reject template names that are too long or contain disallowed characters.
 
@@ -362,13 +374,18 @@ class TemplateService:
         tenant_id: str | None = None,
         include_deleted: bool = False,
     ) -> TemplateModel | None:
-        """Get template by key, scoped to tenant."""
+        """Get template by key with PUBLIC visibility fallback across tenants."""
         query = TemplateModel.query.filter_by(template_key=template_key)
-        
-        # Filter by tenant to ensure tenant isolation
+
+        is_super_admin = TemplateAuthorizationService._is_super_admin_request(user=user)
         tenant = tenant_id or getattr(g, "m8flow_tenant_id", None)
-        if tenant:
-            query = query.filter(TemplateModel.m8f_tenant_id == tenant)
+        if tenant and not is_super_admin:
+            query = query.filter(
+                or_(
+                    TemplateModel.m8f_tenant_id == tenant,
+                    TemplateModel.visibility == TemplateVisibility.public.value,
+                )
+            )
 
         if not include_deleted:
             # Exclude soft-deleted templates by default
@@ -378,12 +395,22 @@ class TemplateService:
             query = TemplateAuthorizationService.filter_query_by_visibility(query, user=user)
 
         if version:
-            return query.filter_by(version=version).first()
+            rows = query.filter_by(version=version).all()
+            rows = cls._prefer_template_rows_for_tenant(rows, tenant)
+            if not rows:
+                return None
+            return max(
+                rows,
+                key=lambda row: (
+                    getattr(row, "created_at_in_seconds", 0) or 0,
+                    getattr(row, "id", 0) or 0,
+                ),
+            )
 
-        # latest - already filtered by tenant above
         rows = query.all()
         if not rows:
             return None
+        rows = cls._prefer_template_rows_for_tenant(rows, tenant)
         return max(rows, key=lambda r: cls._version_key(r.version))
 
     @classmethod
@@ -671,10 +698,11 @@ class TemplateService:
             raise ApiError("not_found", "Template not found", status_code=404)
 
         is_template_admin = TemplateAuthorizationService.has_admin_permission(user, "delete")
+        same_tenant = TemplateAuthorizationService._is_current_tenant_template(template)
         username = user.username if user and hasattr(user, "username") else None
 
         if template.is_published:
-            if not is_template_admin:
+            if not (same_tenant and is_template_admin):
                 raise ApiError("forbidden", "Insufficient permissions to delete published templates", status_code=403)
 
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
@@ -687,7 +715,8 @@ class TemplateService:
             return
 
         can_hard_delete_draft = bool(
-            (username is not None and template.created_by == username) or is_template_admin
+            (same_tenant and username is not None and template.created_by == username)
+            or (same_tenant and is_template_admin)
         )
         if not can_hard_delete_draft:
             raise ApiError("forbidden", "You cannot delete this template", status_code=403)
@@ -733,7 +762,10 @@ class TemplateService:
         if not template.is_deleted:
             raise ApiError("invalid_state", "Template is not deleted", status_code=400)
 
-        if not TemplateAuthorizationService.has_admin_permission(user, "update"):
+        if not (
+            TemplateAuthorizationService._is_current_tenant_template(template)
+            and TemplateAuthorizationService.has_admin_permission(user, "update")
+        ):
             raise ApiError("forbidden", "Insufficient permissions to restore templates", status_code=403)
 
         # Expected soft-delete format: <name>_deleted_YYYYMMDDHHMMSS

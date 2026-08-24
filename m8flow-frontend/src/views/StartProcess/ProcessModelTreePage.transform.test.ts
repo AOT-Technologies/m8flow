@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { processGroupToLite } from './ProcessModelTreePage';
+import { processGroupToLite } from './processGroupToLite';
 
 /**
  * Regression test for the tenant chip bug: processGroupToLite used to drop the

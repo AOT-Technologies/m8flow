@@ -147,6 +147,9 @@ class ProcessInstancesPage:
         """All cells for a given column accessor (one per row)."""
         return self.page.get_by_test_id(f"process-instance-show-link-{accessor}")
 
+    def tenant_cells(self) -> Locator:
+        return self.cell("tenantName")
+
     def first_instance_id(self) -> str:
         return (self.rows().first.inner_text() or "").strip()
 

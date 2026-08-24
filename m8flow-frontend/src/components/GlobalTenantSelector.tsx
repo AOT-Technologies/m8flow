@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Box,
   FormControl,
@@ -29,6 +29,16 @@ export default function GlobalTenantSelector({ isCollapsed }: Props) {
   const { data: tenants = [] } = useTenants(isSuperAdmin);
   const { selectedTenantId, setSelectedTenantId } = useGlobalTenant();
   const [anchorEl, setAnchorEl] = useState<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (!isSuperAdmin || !selectedTenantId || tenants.length === 0) {
+      return;
+    }
+    const selectedTenantExists = tenants.some((tenant) => tenant.id === selectedTenantId);
+    if (!selectedTenantExists) {
+      setSelectedTenantId('');
+    }
+  }, [isSuperAdmin, selectedTenantId, setSelectedTenantId, tenants]);
 
   if (!isSuperAdmin || tenants.length === 0) {
     return null;

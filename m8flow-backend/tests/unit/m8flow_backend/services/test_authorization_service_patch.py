@@ -7,6 +7,8 @@ from types import SimpleNamespace
 
 from flask import Flask
 
+from m8flow_backend.models.m8flow_tenant import M8flowTenantModel  # noqa: F401
+from m8flow_backend.models.process_model_bpmn_version import ProcessModelBpmnVersionModel  # noqa: F401
 from m8flow_backend.services import model_override_patch
 from m8flow_backend.services import authorization_service_patch
 from m8flow_backend.services.authorization_service_patch import _keycloak_realm_roles_as_groups
@@ -1021,6 +1023,33 @@ def test_parse_permissions_yaml_into_group_info_preserves_command_metadata(monke
     assert not {command for _, command in compatibility_commands}.intersection(commands_by_uri.values())
 
 
+def test_parse_permissions_yaml_gives_super_admin_process_start_command(monkeypatch) -> None:
+    app = Flask(__name__)  # NOSONAR - unit test
+    permissions_path = (
+        Path(__file__).resolve().parents[4] / "src" / "m8flow_backend" / "config" / "permissions" / "m8flow.yml"
+    )
+    app.config["SPIFFWORKFLOW_BACKEND_PERMISSIONS_FILE_ABSOLUTE_PATH"] = str(permissions_path)
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP"] = "spiff_public"
+
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_id_or_none", lambda: "tenant-a")
+
+    with app.app_context():
+        authorization_service_patch.apply()
+        from spiffworkflow_backend.services.authorization_service import AuthorizationService
+
+        group_permissions = AuthorizationService.parse_permissions_yaml_into_group_info()
+
+    super_admin_group = {group["name"]: group for group in group_permissions}["super-admin"]
+    super_admin_commands = {
+        (permission["uri"], permission.get("command"), tuple(permission["actions"]))
+        for permission in super_admin_group["permissions"]
+        if "command" in permission
+    }
+
+    assert ("PM:ALL", "process.start", ("start",)) in super_admin_commands
+
+
 def test_add_permissions_from_group_permissions_keeps_config_unqualified(monkeypatch) -> None:
     app = Flask(__name__)  # NOSONAR - unit test
     app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
@@ -1913,6 +1942,66 @@ def test_master_realm_create_user_from_sign_in_assigns_global_super_admin_group(
     assert tenant_realm_create_allowed is True
     assert everybody_active_users_allowed is True
     assert everybody_extensions_allowed is True
+
+
+def test_master_realm_super_admin_can_start_process_instance_for_specific_model(monkeypatch) -> None:
+    permissions_path = (
+        Path(__file__).resolve().parents[4] / "src" / "m8flow_backend" / "config" / "permissions" / "m8flow.yml"
+    )
+    app = Flask(__name__)  # NOSONAR - unit test
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SQLALCHEMY_EXPIRE_ON_COMMIT"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"] = "/v1.0"
+    app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_IS_AUTHORITY_FOR_USER_GROUPS"] = True
+    app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_TENANT_SPECIFIC_FIELDS"] = []
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP"] = "spiff_public"
+    app.config["SPIFFWORKFLOW_BACKEND_PERMISSIONS_FILE_ABSOLUTE_PATH"] = str(permissions_path)
+
+    from spiffworkflow_backend.models.db import db
+
+    db.init_app(app)
+
+    monkeypatch.setattr(authorization_service_patch, "_master_realm_identifier", lambda: "master")
+
+    with app.app_context():
+        model_override_patch.apply()
+        from spiffworkflow_backend.models.group import GroupModel
+        from spiffworkflow_backend.models.permission_assignment import PermissionAssignmentModel
+        from spiffworkflow_backend.models.permission_target import PermissionTargetModel
+        from spiffworkflow_backend.models.principal import PrincipalModel
+        from spiffworkflow_backend.models.user import UserModel
+        from spiffworkflow_backend.models.user_group_assignment import UserGroupAssignmentModel
+        from spiffworkflow_backend.services.authorization_service import AuthorizationService
+
+        _ = (
+            GroupModel,
+            PermissionAssignmentModel,
+            PermissionTargetModel,
+            PrincipalModel,
+            UserModel,
+            UserGroupAssignmentModel,
+        )
+
+        db.create_all()
+        authorization_service_patch.apply()
+
+        user_info = {
+            "iss": "http://localhost:7002/realms/master",
+            "sub": "subject-123",
+            "preferred_username": "super-admin",
+            "groups": ["super-admin"],
+        }
+
+        user = AuthorizationService.create_user_from_sign_in(user_info)
+        start_allowed = AuthorizationService.user_has_permission(
+            user,
+            "create",
+            "/v1.0/process-instances/process-group-test:approval-with-conditional-escalation",
+        )
+
+    assert start_allowed is True
 
 
 def test_master_realm_create_user_from_sign_in_tolerates_default_group_assignment_race(monkeypatch) -> None:

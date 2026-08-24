@@ -25,6 +25,10 @@ _PATCHED = False
 _TENANT_ENTITIES: list[type] | None = None
 
 
+def _should_automatically_tenant_scope(entity: type) -> bool:
+    return not bool(getattr(entity, "__m8flow_skip_automatic_tenant_scope__", False))
+
+
 def _tenant_scoped_entities() -> list[type]:
     """Every mapped class carrying m8f_tenant_id, regardless of its base classes.
 
@@ -48,6 +52,7 @@ def _tenant_scoped_entities() -> list[type]:
             mapper.class_
             for mapper in db.Model.registry.mappers
             if "m8f_tenant_id" in mapper.columns
+            and _should_automatically_tenant_scope(mapper.class_)
         ]
     except Exception:  # mappers not configured yet - retry on the next query
         LOGGER.debug("tenant scoping: mappers not ready, deferring entity resolution")

@@ -131,3 +131,28 @@ def test_concrete_tenant_from_background_context_overrides_global() -> None:
             assert root == os.path.join(os.path.abspath("/tmp/process_models"), "tenant-y")
         finally:
             reset_context_tenant_id(token)
+
+
+def test_explicit_bpmn_root_override_beats_canonical_tenant_id() -> None:
+    app = Flask(__name__)  # NOSONAR
+    with app.test_request_context("/"):
+        g.m8flow_tenant_id = "tenant-canonical-id"
+        g._m8flow_bpmn_root_tenant = "tenant-slug"
+        root = patch._tenant_bpmn_root("/tmp/process_models")
+        assert root == os.path.join(os.path.abspath("/tmp/process_models"), "tenant-slug")
+
+
+def test_canonical_tenant_falls_back_to_slug_directory(tmp_path, monkeypatch) -> None:
+    app = Flask(__name__)  # NOSONAR
+    base_dir = tmp_path / "process_models"
+    slug_dir = base_dir / "tenant-slug"
+    slug_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(
+        "m8flow_backend.services.tenant_identity_helpers.tenant_slug_for_identifier",
+        lambda tenant_id: "tenant-slug" if tenant_id == "tenant-canonical-id" else None,
+    )
+
+    with app.test_request_context("/"):
+        g.m8flow_tenant_id = "tenant-canonical-id"
+        root = patch._tenant_bpmn_root(str(base_dir))
+        assert root == str(slug_dir)
