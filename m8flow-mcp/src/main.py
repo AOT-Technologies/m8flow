@@ -78,6 +78,31 @@ def _build_oidc_proxy() -> object | None:
         return None
 
 
+def _refuse_to_run_unauthenticated(reason: str) -> None:
+    """Abort startup rather than serve an unauthenticated port.
+
+    Only ``remote`` mode listens on a socket, so only there is unenforceable
+    inbound auth a vulnerability: ``tools/list`` and ``tools/call`` would be open
+    to anyone who can reach the port, and ``utils/context._forwarded_bearer_token``
+    would let a caller's own self-supplied token become the session identity with
+    nothing verifying it first. In ``stdio`` mode the client IS the local process
+    that spawned this one, there is no port, and the same setting is merely
+    inapplicable -- so it is logged, not fatal.
+
+    Deliberately no override flag: an env var that re-opens the port would be the
+    thing every rushed deployment sets. Fix the configuration instead.
+    """
+    if not settings.is_remote:
+        logger.warning("%s -- not applicable in stdio mode (no inbound port), continuing", reason)
+        return
+    raise RuntimeError(
+        f"Refusing to start the m8flow MCP server in remote mode: {reason}. Serving would "
+        "leave tools/list and tools/call reachable without any inbound authentication. "
+        "Install a fastmcp providing the missing component, fix the realm/JWKS settings, "
+        "or configure browser login (Keycloak OIDC client) as the auth provider."
+    )
+
+
 def _build_realm_token_verifiers() -> list[object]:
     """Verifiers accepting access tokens minted directly by the m8flow Keycloak realm(s).
 
@@ -106,7 +131,10 @@ def _build_realm_token_verifiers() -> list[object]:
     try:
         from fastmcp.server.auth.providers.jwt import JWTVerifier
     except Exception as exc:  # pragma: no cover - depends on fastmcp version
-        logger.warning("JWTVerifier unavailable (%s); realm tokens will not be accepted", exc)
+        _refuse_to_run_unauthenticated(
+            f"realm access-token verification is enabled (ACCEPT_REALM_TOKENS) for {realms!r} "
+            f"but this fastmcp provides no JWTVerifier ({exc}), so no inbound token can be verified"
+        )
         return []
 
     by_issuer: dict[str, object] = {}
@@ -120,6 +148,13 @@ def _build_realm_token_verifiers() -> list[object]:
             continue
         logger.info("Accepting access tokens from realm %r (issuer=%s)", realm, issuer)
 
+    if not by_issuer:
+        # Every configured realm raised above. Returning [] here would read as
+        # "realm tokens were never requested" and silently drop inbound auth.
+        _refuse_to_run_unauthenticated(
+            f"realm access-token verification is enabled for {realms!r} but a verifier could "
+            "not be built for any of them (see the errors above)"
+        )
     return list(by_issuer.values())
 
 
@@ -141,16 +176,37 @@ def _compose_auth(proxy: object | None, verifiers: list[object]) -> object | Non
     defaults to none; see ``Settings.transport_required_scopes``.
     """
     if proxy is None and not verifiers:
+        # Nothing was ever requested. That is an explicit operator choice (and the
+        # normal stdio case), not a component silently going missing, so it is left
+        # to _configure_static_token's existing warning rather than treated as a
+        # failure to enforce something that was asked for.
         return None
     if not verifiers:
         return proxy
     try:
         from fastmcp.server.auth import MultiAuth
     except Exception as exc:  # pragma: no cover - depends on fastmcp version
-        logger.warning(
-            "MultiAuth unavailable (%s); falling back to %s",
+        if proxy is None:
+            if len(verifiers) == 1:
+                # Nothing to combine: a lone verifier IS an auth provider, so auth is
+                # still fully enforced. This is the default single-realm deployment.
+                logger.warning(
+                    "MultiAuth unavailable (%s); using the single realm verifier directly", exc
+                )
+                return verifiers[0]
+            _refuse_to_run_unauthenticated(
+                f"{len(verifiers)} realm verifiers must be combined but MultiAuth is "
+                f"unavailable ({exc}), and there is no browser-login provider to fall back to"
+            )
+            return None
+        # Browser login still authenticates every request, so the port is not open --
+        # but realm tokens are now REJECTED, which breaks the backend catalog bridge.
+        # Loud, and safe: the failure mode is 401, not unauthenticated access.
+        logger.error(
+            "MultiAuth unavailable (%s); serving browser login ONLY. Realm access tokens "
+            "will be rejected with 401, so the backend MCP Tools page will not work until "
+            "fastmcp is upgraded.",
             exc,
-            "browser login only" if proxy is not None else "no inbound authentication",
         )
         return proxy
     return MultiAuth(

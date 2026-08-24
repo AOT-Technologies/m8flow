@@ -65,15 +65,51 @@ def test_compose_combines_proxy_and_verifiers():
 
 
 def test_compose_falls_back_to_the_proxy_when_multi_auth_is_unavailable():
-    """An older fastmcp must degrade to browser login, not crash the server."""
+    """Degrade to browser login rather than crash: the port stays authenticated.
+
+    Realm tokens are rejected (401) in this state, which breaks the backend catalog
+    bridge -- a functional regression, not a security one -- so it stays non-fatal.
+    """
     proxy = FakeProxy()
     with patch.dict("sys.modules", {"fastmcp.server.auth": None}):
         assert main._compose_auth(proxy, [FakeVerifier()]) is proxy
 
 
-def test_compose_falls_back_to_none_when_multi_auth_is_unavailable_and_no_proxy():
+def test_compose_uses_a_lone_verifier_directly_when_multi_auth_is_unavailable():
+    """One verifier needs no combining, so auth is still fully enforced.
+
+    This is the default single-realm deployment; returning None here (the old
+    behaviour) silently served tools/list and tools/call to anyone on the port.
+    """
+    verifier = FakeVerifier()
     with patch.dict("sys.modules", {"fastmcp.server.auth": None}):
-        assert main._compose_auth(None, [FakeVerifier()]) is None
+        assert main._compose_auth(None, [verifier]) is verifier
+
+
+def test_compose_refuses_to_start_remote_when_verifiers_cannot_be_combined(monkeypatch):
+    """Requested auth that cannot be enforced must abort startup, not open the port."""
+    monkeypatch.setattr(settings, "server_type", "remote")
+    with patch.dict("sys.modules", {"fastmcp.server.auth": None}), pytest.raises(
+        RuntimeError, match="Refusing to start"
+    ):
+        main._compose_auth(None, [FakeVerifier(), FakeVerifier()])
+
+
+def test_compose_tolerates_uncombinable_verifiers_in_stdio_mode(monkeypatch):
+    """stdio has no inbound port, so the same condition is inapplicable, not fatal."""
+    monkeypatch.setattr(settings, "server_type", "stdio")
+    with patch.dict("sys.modules", {"fastmcp.server.auth": None}):
+        assert main._compose_auth(None, [FakeVerifier(), FakeVerifier()]) is None
+
+
+def test_compose_returns_none_in_remote_mode_when_nothing_was_ever_requested(monkeypatch):
+    """No auth configured at all is an explicit operator choice, not a missing component.
+
+    Failing closed here would break deployments that terminate auth at a gateway, so
+    the fail-closed rule covers only auth that was asked for and could not be enforced.
+    """
+    monkeypatch.setattr(settings, "server_type", "remote")
+    assert main._compose_auth(None, []) is None
 
 
 # --------------------------------------------------------------------------- #
@@ -124,6 +160,50 @@ def test_realm_verifiers_survive_one_bad_realm(monkeypatch):
     monkeypatch.setattr(jwt_module, "JWTVerifier", flaky)
     verifiers = main._build_realm_token_verifiers()
     assert len(verifiers) == 1
+
+
+def test_realm_verifiers_refuse_to_start_remote_when_jwt_verifier_is_missing(monkeypatch):
+    """ACCEPT_REALM_TOKENS=true with no JWTVerifier used to silently accept everything."""
+    monkeypatch.setattr(settings, "server_type", "remote")
+    monkeypatch.setattr(settings, "accept_realm_tokens", True)
+    monkeypatch.setattr(settings, "accepted_token_realms", "m8flow")
+
+    with patch.dict("sys.modules", {"fastmcp.server.auth.providers.jwt": None}), pytest.raises(
+        RuntimeError, match="Refusing to start"
+    ):
+        main._build_realm_token_verifiers()
+
+
+def test_realm_verifiers_tolerate_a_missing_jwt_verifier_in_stdio_mode(monkeypatch):
+    monkeypatch.setattr(settings, "server_type", "stdio")
+    monkeypatch.setattr(settings, "accept_realm_tokens", True)
+    monkeypatch.setattr(settings, "accepted_token_realms", "m8flow")
+
+    with patch.dict("sys.modules", {"fastmcp.server.auth.providers.jwt": None}):
+        assert main._build_realm_token_verifiers() == []
+
+
+def test_realm_verifiers_refuse_to_start_remote_when_every_realm_fails(monkeypatch):
+    """One bad realm degrades; ALL of them failing means nothing verifies inbound tokens."""
+    monkeypatch.setattr(settings, "server_type", "remote")
+    monkeypatch.setattr(settings, "accept_realm_tokens", True)
+    monkeypatch.setattr(settings, "accepted_token_realms", "bad, worse")
+
+    import fastmcp.server.auth.providers.jwt as jwt_module
+
+    def always_fails(*args, **kwargs):
+        raise RuntimeError("unreachable jwks")
+
+    monkeypatch.setattr(jwt_module, "JWTVerifier", always_fails)
+    with pytest.raises(RuntimeError, match="Refusing to start"):
+        main._build_realm_token_verifiers()
+
+
+def test_realm_verifiers_disabled_never_trips_the_fail_closed_guard(monkeypatch):
+    """The opt-out is a choice, not an enforcement failure -- must not abort startup."""
+    monkeypatch.setattr(settings, "server_type", "remote")
+    monkeypatch.setattr(settings, "accept_realm_tokens", False)
+    assert main._build_realm_token_verifiers() == []
 
 
 # --------------------------------------------------------------------------- #
