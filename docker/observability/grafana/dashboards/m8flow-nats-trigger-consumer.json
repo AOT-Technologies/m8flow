@@ -22,8 +22,12 @@
         "query": "qa,dev,demo,monitoring",
         "current": {
           "selected": true,
-          "text": "All",
-          "value": "$__all"
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
         },
         "options": [
           {
@@ -55,7 +59,8 @@
         "includeAll": true,
         "multi": true,
         "hide": 0,
-        "skipUrlSync": false
+        "skipUrlSync": false,
+        "allValue": ".*"
       }
     ]
   },
@@ -257,7 +262,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-nats-consumer.*\"}",
+          "expr": "{namespace=~\"$namespace\", app=\"m8flow-nats-consumer\"}",
           "queryType": "range"
         }
       ],
