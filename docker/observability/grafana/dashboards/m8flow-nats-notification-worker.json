@@ -29,7 +29,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "targets": [
         {
@@ -57,7 +57,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "targets": [
         {
@@ -84,7 +84,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "targets": [
         {
@@ -111,7 +111,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "targets": [
         {
@@ -144,7 +144,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "targets": [
         {
@@ -182,7 +182,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "targets": [
         {
@@ -210,7 +210,7 @@
       },
       "datasource": {
         "type": "loki",
-        "uid": "loki"
+        "uid": "${DS_LOKI}"
       },
       "targets": [
         {
@@ -236,6 +236,24 @@
       "title": "Tempo Service Graph",
       "url": "/a/grafana-explore-app/explore?schemaVersion=1&panes=%7B%22tempo%22:%7B%22datasource%22:%22tempo%22%7D%7D",
       "type": "link"
+    }
+  ],
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "Prometheus metrics datasource",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    },
+    {
+      "name": "DS_LOKI",
+      "label": "Loki",
+      "description": "Loki logs datasource",
+      "type": "datasource",
+      "pluginId": "loki",
+      "pluginName": "Loki"
     }
   ]
 }

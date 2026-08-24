@@ -1,12 +1,18 @@
 {
   "uid": "m8flow-backend",
   "title": "M8Flow Backend Overview",
-  "tags": ["m8flow", "backend"],
+  "tags": [
+    "m8flow",
+    "backend"
+  ],
   "timezone": "browser",
   "schemaVersion": 39,
   "version": 3,
   "refresh": "30s",
-  "time": { "from": "now-1h", "to": "now" },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
   "templating": {
     "list": [
       {
@@ -14,7 +20,10 @@
         "type": "textbox",
         "label": "m8flow_tenant_id",
         "query": "",
-        "current": { "text": "", "value": "" },
+        "current": {
+          "text": "",
+          "value": ""
+        },
         "options": []
       }
     ]
@@ -24,7 +33,12 @@
       "id": 10,
       "type": "text",
       "title": "Metrics vs logs",
-      "gridPos": { "h": 2, "w": 24, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 2,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "options": {
         "mode": "markdown",
         "content": "HTTP panels use OTel ASGI metrics (`http_server_duration_milliseconds_*`, label `job=m8flow-backend`). Requires `OTEL_SDK_DISABLED=false`, observability stack running, and a backend image with `[flask,asgi]` telemetry deps. Process/task panels need real workflow activity."
@@ -34,8 +48,16 @@
       "id": 1,
       "type": "stat",
       "title": "HTTP request rate",
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 2 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 2
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "targets": [
         {
           "refId": "A",
@@ -44,14 +66,25 @@
         }
       ],
       "options": {},
-      "fieldConfig": { "defaults": {}, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
     },
     {
       "id": 2,
       "type": "stat",
       "title": "HTTP 5xx rate %",
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 2 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 2
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "targets": [
         {
           "refId": "A",
@@ -59,15 +92,28 @@
           "legendFormat": "5xx"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "percent" }, "overrides": [] },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
       "options": {}
     },
     {
       "id": 3,
       "type": "stat",
       "title": "HTTP p99 latency",
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 2 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 2
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "targets": [
         {
           "refId": "A",
@@ -75,15 +121,28 @@
           "legendFormat": "p99"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
       "options": {}
     },
     {
       "id": 4,
       "type": "timeseries",
       "title": "Process instances created",
-      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 6 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "targets": [
         {
           "refId": "A",
@@ -92,14 +151,25 @@
         }
       ],
       "options": {},
-      "fieldConfig": { "defaults": {}, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
     },
     {
       "id": 5,
       "type": "timeseries",
       "title": "Task completed",
-      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 6 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "targets": [
         {
           "refId": "A",
@@ -108,14 +178,25 @@
         }
       ],
       "options": {},
-      "fieldConfig": { "defaults": {}, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
     },
     {
       "id": 7,
       "type": "timeseries",
       "title": "Log error lines (backend API)",
-      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 6 },
-      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 6
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
       "targets": [
         {
           "refId": "A",
@@ -125,14 +206,25 @@
         }
       ],
       "options": {},
-      "fieldConfig": { "defaults": {}, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
     },
     {
       "id": 6,
       "type": "logs",
       "title": "Backend API logs",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 13 },
-      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 13
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
       "targets": [
         {
           "refId": "A",
@@ -141,14 +233,25 @@
         }
       ],
       "options": {},
-      "fieldConfig": { "defaults": {}, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
     },
     {
       "id": 8,
       "type": "logs",
       "title": "Celery worker logs",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 21 },
-      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 21
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
       "targets": [
         {
           "refId": "A",
@@ -157,10 +260,15 @@
         }
       ],
       "options": {},
-      "fieldConfig": { "defaults": {}, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
     }
   ],
-  "annotations": { "list": [] },
+  "annotations": {
+    "list": []
+  },
   "editable": true,
   "graphTooltip": 1,
   "links": [
@@ -168,6 +276,24 @@
       "title": "Tempo Service Graph",
       "url": "/a/grafana-explore-app/explore?schemaVersion=1&panes=%7B%22tempo%22:%7B%22datasource%22:%22tempo%22%7D%7D",
       "type": "link"
+    }
+  ],
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "Prometheus metrics datasource",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    },
+    {
+      "name": "DS_LOKI",
+      "label": "Loki",
+      "description": "Loki logs datasource",
+      "type": "datasource",
+      "pluginId": "loki",
+      "pluginName": "Loki"
     }
   ]
 }

@@ -1,12 +1,18 @@
 {
   "uid": "m8flow-connector-proxy",
   "title": "M8Flow Connector Proxy Overview",
-  "tags": ["m8flow", "connector"],
+  "tags": [
+    "m8flow",
+    "connector"
+  ],
   "timezone": "browser",
   "schemaVersion": 39,
   "version": 2,
   "refresh": "30s",
-  "time": { "from": "now-1h", "to": "now" },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
   "templating": {
     "list": [
       {
@@ -14,7 +20,10 @@
         "type": "textbox",
         "label": "m8flow_tenant_id",
         "query": "",
-        "current": { "text": "", "value": "" },
+        "current": {
+          "text": "",
+          "value": ""
+        },
         "options": []
       }
     ]
@@ -24,7 +33,12 @@
       "id": 10,
       "type": "text",
       "title": "Metrics vs logs",
-      "gridPos": { "h": 2, "w": 24, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 2,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "options": {
         "mode": "markdown",
         "content": "**Connector error rate** = failed connector *calls* (domain metric), not HTTP 5xx. **HTTP RED** panels use OTel when exported. Use log panels for stack traces and SMTP/Slack failures."
@@ -34,8 +48,16 @@
       "id": 1,
       "type": "stat",
       "title": "HTTP request rate",
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 2 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 2
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "targets": [
         {
           "refId": "A",
@@ -44,15 +66,26 @@
         }
       ],
       "options": {},
-      "fieldConfig": { "defaults": {}, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
     },
     {
       "id": 2,
       "type": "stat",
       "title": "Connector call failure %",
       "description": "Failed connector_call_failures_total / connector_calls_total. Stays 0 if no connector traffic or metrics not exported yet.",
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 2 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 2
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "targets": [
         {
           "refId": "A",
@@ -60,7 +93,12 @@
           "legendFormat": "failures"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "percent" }, "overrides": [] },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
       "options": {}
     },
     {
@@ -68,8 +106,16 @@
       "type": "stat",
       "title": "HTTP 5xx rate %",
       "description": "OTel HTTP server 5xx only.",
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 2 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 2
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "targets": [
         {
           "refId": "A",
@@ -77,15 +123,28 @@
           "legendFormat": "5xx"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "percent" }, "overrides": [] },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
       "options": {}
     },
     {
       "id": 3,
       "type": "stat",
       "title": "p99 connector duration",
-      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 2 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 2
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "targets": [
         {
           "refId": "A",
@@ -93,15 +152,28 @@
           "legendFormat": "p99 ms"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
       "options": {}
     },
     {
       "id": 4,
       "type": "timeseries",
       "title": "Calls by connector",
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 6 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "targets": [
         {
           "refId": "A",
@@ -110,14 +182,25 @@
         }
       ],
       "options": {},
-      "fieldConfig": { "defaults": {}, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
     },
     {
       "id": 6,
       "type": "timeseries",
       "title": "Log error lines",
-      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 6 },
-      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
       "targets": [
         {
           "refId": "A",
@@ -127,14 +210,25 @@
         }
       ],
       "options": {},
-      "fieldConfig": { "defaults": {}, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
     },
     {
       "id": 5,
       "type": "logs",
       "title": "Connector logs",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 13 },
-      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 13
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
       "targets": [
         {
           "refId": "A",
@@ -143,10 +237,15 @@
         }
       ],
       "options": {},
-      "fieldConfig": { "defaults": {}, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
     }
   ],
-  "annotations": { "list": [] },
+  "annotations": {
+    "list": []
+  },
   "editable": true,
   "graphTooltip": 1,
   "links": [
@@ -154,6 +253,24 @@
       "title": "Tempo Service Graph",
       "url": "/a/grafana-explore-app/explore?schemaVersion=1&panes=%7B%22tempo%22:%7B%22datasource%22:%22tempo%22%7D%7D",
       "type": "link"
+    }
+  ],
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "Prometheus metrics datasource",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    },
+    {
+      "name": "DS_LOKI",
+      "label": "Loki",
+      "description": "Loki logs datasource",
+      "type": "datasource",
+      "pluginId": "loki",
+      "pluginName": "Loki"
     }
   ]
 }
