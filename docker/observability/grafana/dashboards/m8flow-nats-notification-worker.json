@@ -78,7 +78,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(nats_consumer_lag{job=\"m8flow-nats-notification-worker\"}) or vector(0)",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-notification-worker.*\"}",
           "legendFormat": "{{job}}"
         }
       ],
@@ -106,7 +106,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\", pod=~\".*m8flow-notification-worker.*\", container!=\"\"}[1m])) by (pod, namespace)",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-notification-worker.*\"}",
           "legendFormat": "{{namespace}} / {{pod}}"
         }
       ],
@@ -138,7 +138,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(container_memory_working_set_bytes{namespace=~\"$namespace\", pod=~\".*m8flow-notification-worker.*\", container!=\"\"}) by (pod, namespace)",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-notification-worker.*\"}",
           "legendFormat": "{{namespace}} / {{pod}}"
         }
       ],
@@ -170,7 +170,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=~\"$namespace\", pod=~\".*m8flow-notification-worker.*\"}[1h])) by (pod, namespace)",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-notification-worker.*\"}",
           "legendFormat": "{{namespace}} / {{pod}}"
         }
       ],
@@ -214,7 +214,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(nats_consumer_processing_duration_milliseconds_count{job=\"m8flow-nats-notification-worker\"}[$__rate_interval])) or vector(0)",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-notification-worker.*\"}",
           "legendFormat": "{{job}}"
         }
       ],
@@ -241,7 +241,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "100 * (sum(rate(nats_consumer_processing_failures_total{job=\"m8flow-nats-notification-worker\"}[$__rate_interval])) or vector(0)) / clamp_min(sum(rate(nats_consumer_processing_duration_milliseconds_count{job=\"m8flow-nats-notification-worker\"}[$__rate_interval])) or vector(1), 1)",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-notification-worker.*\"}",
           "legendFormat": "{{job}}"
         }
       ],
@@ -268,12 +268,12 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(nats_consumer_lag{job=\"m8flow-nats-notification-worker\"}) or vector(0)",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-notification-worker.*\"}",
           "legendFormat": "pending {{job}}"
         },
         {
           "refId": "B",
-          "expr": "sum(nats_consumer_redelivered{job=\"m8flow-nats-notification-worker\"}) or vector(0)",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-notification-worker.*\"}",
           "legendFormat": "redelivered {{job}}"
         }
       ],
@@ -301,17 +301,17 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (stream, consumer) (nats_broker_consumer_pending{stream=\"M8FLOW_NOTIFICATIONS\"})",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-notification-worker.*\"}",
           "legendFormat": "pending {{consumer}}"
         },
         {
           "refId": "B",
-          "expr": "sum by (stream, consumer) (nats_broker_consumer_unacked{stream=\"M8FLOW_NOTIFICATIONS\"})",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-notification-worker.*\"}",
           "legendFormat": "unacked {{consumer}}"
         },
         {
           "refId": "C",
-          "expr": "sum by (stream, consumer) (nats_broker_consumer_redelivered{stream=\"M8FLOW_NOTIFICATIONS\"})",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-notification-worker.*\"}",
           "legendFormat": "redelivered {{consumer}}"
         }
       ],
@@ -339,7 +339,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (outcome) (rate(nats_consumer_processing_failures_total{job=\"m8flow-nats-notification-worker\"}[$__rate_interval]))",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-notification-worker.*\"}",
           "legendFormat": "{{outcome}}"
         }
       ],
@@ -367,7 +367,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{namespace=~\"$namespace\", service_name=~\"m8flow-notification-worker|m8flow-nats-notification-worker\"}",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-notification-worker.*\"}",
           "queryType": "range"
         }
       ],

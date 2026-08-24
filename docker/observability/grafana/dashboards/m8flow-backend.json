@@ -104,7 +104,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\", pod=~\".*m8flow-backend.*\", container!=\"\"}[1m])) by (pod, namespace)",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-backend.*\"}",
           "legendFormat": "{{namespace}} / {{pod}}"
         }
       ],
@@ -136,7 +136,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(container_memory_working_set_bytes{namespace=~\"$namespace\", pod=~\".*m8flow-backend.*\", container!=\"\"}) by (pod, namespace)",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-backend.*\"}",
           "legendFormat": "{{namespace}} / {{pod}}"
         }
       ],
@@ -168,7 +168,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=~\"$namespace\", pod=~\".*m8flow-backend.*\"}[1h])) by (pod, namespace)",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-backend.*\"}",
           "legendFormat": "{{namespace}} / {{pod}}"
         }
       ],
@@ -212,7 +212,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(http_server_duration_milliseconds_count{namespace=~\"$namespace\", job=\"m8flow-backend\"}[$__rate_interval]))",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-backend.*\"}",
           "legendFormat": "req/s"
         }
       ],
@@ -239,7 +239,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "100 * sum(rate(http_server_duration_milliseconds_count{namespace=~\"$namespace\", job=\"m8flow-backend\", http_status_code=~\"5..\"}[$__rate_interval])) / clamp_min(sum(rate(http_server_duration_milliseconds_count{namespace=~\"$namespace\", job=\"m8flow-backend\"}[$__rate_interval])), 1e-9)",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-backend.*\"}",
           "legendFormat": "5xx"
         }
       ],
@@ -268,7 +268,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.99, sum(rate(http_server_duration_milliseconds_bucket{namespace=~\"$namespace\", job=\"m8flow-backend\"}[$__rate_interval])) by (le))",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-backend.*\"}",
           "legendFormat": "p99"
         }
       ],
@@ -297,7 +297,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(process_instance_created_total{job=\"m8flow-backend\", m8flow_tenant_id=~\"$m8flow_tenant_id|.*\"}[$__rate_interval])) or sum(rate(process_instance_created{job=\"m8flow-backend\", m8flow_tenant_id=~\"$m8flow_tenant_id|.*\"}[$__rate_interval]))",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-backend.*\"}",
           "legendFormat": "created/s"
         }
       ],
@@ -324,7 +324,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (task_type) (rate(task_completed_total{job=\"m8flow-backend\", m8flow_tenant_id=~\"$m8flow_tenant_id|.*\"}[$__rate_interval])) or sum by (task_type) (rate(task_completed{job=\"m8flow-backend\", m8flow_tenant_id=~\"$m8flow_tenant_id|.*\"}[$__rate_interval]))",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-backend.*\"}",
           "legendFormat": "{{task_type}}"
         }
       ],
@@ -351,7 +351,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(count_over_time({namespace=~\"$namespace\", app=~\"m8flow-backend\"} |~ \"(?i)(error|exception|traceback)\" [$__interval]))",
+          "expr": "sum(count_over_time({namespace=~\"$namespace\", app=~\".*m8flow-backend.*\"} |~ \"(?i)(error|exception|traceback|fatal)\" [$__interval]))",
           "legendFormat": "error-ish lines",
           "queryType": "range"
         }
@@ -379,7 +379,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{namespace=~\"$namespace\", app=~\"m8flow-backend\"}",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-backend.*\"}",
           "queryType": "range"
         }
       ],
@@ -406,7 +406,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{namespace=~\"$namespace\", app=~\"m8flow-celery-worker\"}",
+          "expr": "{namespace=~\"$namespace\", app=~\".*celery.*\"}",
           "queryType": "range"
         }
       ],

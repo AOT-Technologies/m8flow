@@ -116,7 +116,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\", pod=~\".*m8flow-mcp-server-service.*\", container!=\"\"}[1m])) by (pod, namespace)",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-mcp-server-service.*\"}",
           "legendFormat": "{{namespace}} / {{pod}}"
         }
       ],
@@ -148,7 +148,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(container_memory_working_set_bytes{namespace=~\"$namespace\", pod=~\".*m8flow-mcp-server-service.*\", container!=\"\"}) by (pod, namespace)",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-mcp-server-service.*\"}",
           "legendFormat": "{{namespace}} / {{pod}}"
         }
       ],
@@ -180,7 +180,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=~\"$namespace\", pod=~\".*m8flow-mcp-server-service.*\"}[1h])) by (pod, namespace)",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-mcp-server-service.*\"}",
           "legendFormat": "{{namespace}} / {{pod}}"
         }
       ],
@@ -278,7 +278,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (tool_name) (rate(mcp_tool_calls_total{m8flow_tenant_id=~\"$m8flow_tenant_id|.*\"}[$__rate_interval]))",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-mcp-server-service.*\"}",
           "legendFormat": "{{tool_name}}"
         }
       ],
@@ -332,7 +332,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{namespace=~\"$namespace\", app=~\"m8flow-mcp\"}",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-mcp-server-service.*\"}",
           "queryType": "range"
         }
       ],

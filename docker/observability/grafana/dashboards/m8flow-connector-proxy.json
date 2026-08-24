@@ -104,7 +104,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\", pod=~\".*m8flow-connector-proxy.*\", container!=\"\"}[1m])) by (pod, namespace)",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-connector-proxy.*\"}",
           "legendFormat": "{{namespace}} / {{pod}}"
         }
       ],
@@ -136,7 +136,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(container_memory_working_set_bytes{namespace=~\"$namespace\", pod=~\".*m8flow-connector-proxy.*\", container!=\"\"}) by (pod, namespace)",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-connector-proxy.*\"}",
           "legendFormat": "{{namespace}} / {{pod}}"
         }
       ],
@@ -168,7 +168,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=~\"$namespace\", pod=~\".*m8flow-connector-proxy.*\"}[1h])) by (pod, namespace)",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-connector-proxy.*\"}",
           "legendFormat": "{{namespace}} / {{pod}}"
         }
       ],
@@ -212,7 +212,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(http_server_duration_milliseconds_count{namespace=~\"$namespace\", job=\"m8flow-connector-proxy\"}[$__rate_interval]))",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-connector-proxy.*\"}",
           "legendFormat": "req/s"
         }
       ],
@@ -270,7 +270,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "100 * sum(rate(http_server_duration_milliseconds_count{namespace=~\"$namespace\", job=\"m8flow-connector-proxy\", http_status_code=~\"5..\"}[$__rate_interval])) / clamp_min(sum(rate(http_server_duration_milliseconds_count{namespace=~\"$namespace\", job=\"m8flow-connector-proxy\"}[$__rate_interval])), 1e-9)",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-connector-proxy.*\"}",
           "legendFormat": "5xx"
         }
       ],
@@ -328,7 +328,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (connector) (rate(connector_calls_total{m8flow_tenant_id=~\"$m8flow_tenant_id|.*\"}[$__rate_interval]))",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-connector-proxy.*\"}",
           "legendFormat": "{{connector}}"
         }
       ],
@@ -355,7 +355,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(count_over_time({namespace=~\"$namespace\", app=~\"m8flow-connector-proxy\"} |~ \"(?i)(error|exception|traceback)\" [$__interval]))",
+          "expr": "sum(count_over_time({namespace=~\"$namespace\", app=~\".*m8flow-connector-proxy.*\"} |~ \"(?i)(error|exception|traceback|fatal)\" [$__interval]))",
           "legendFormat": "error-ish lines",
           "queryType": "range"
         }
@@ -383,7 +383,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{namespace=~\"$namespace\", app=~\"m8flow-connector-proxy\"}",
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-connector-proxy.*\"}",
           "queryType": "range"
         }
       ],
