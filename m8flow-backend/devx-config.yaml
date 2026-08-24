@@ -19,6 +19,8 @@ deployment:
         release_name: m8flow-backend
         chart_path: m8flow-charts/charts/m8flow-backend
         values_file: ""
+      aws:
+        role_to_assume: arn:aws:iam::653405621825:role/m8flow-dev-cicd-deploy-role
       health_check:
         enabled: false
         type: k8s
@@ -30,10 +32,14 @@ deployment:
     demo:
       <<: *env_defaults
       namespace: demo
+      aws:
+        role_to_assume: arn:aws:iam::653405621825:role/m8flow-demo-cicd-deploy-role
 
     qa:
       <<: *env_defaults
       namespace: qa
+      aws:
+        role_to_assume: arn:aws:iam::653405621825:role/m8flow-qa-cicd-deploy-role
 
 aws:
   default_region: ca-central-1
