@@ -89,8 +89,9 @@ def test_compose_uses_a_lone_verifier_directly_when_multi_auth_is_unavailable():
 def test_compose_refuses_to_start_remote_when_verifiers_cannot_be_combined(monkeypatch):
     """Requested auth that cannot be enforced must abort startup, not open the port."""
     monkeypatch.setattr(settings, "server_type", "remote")
-    with patch.dict("sys.modules", {"fastmcp.server.auth": None}), pytest.raises(
-        RuntimeError, match="Refusing to start"
+    with (
+        patch.dict("sys.modules", {"fastmcp.server.auth": None}),
+        pytest.raises(RuntimeError, match="Refusing to start"),
     ):
         main._compose_auth(None, [FakeVerifier(), FakeVerifier()])
 
@@ -168,8 +169,9 @@ def test_realm_verifiers_refuse_to_start_remote_when_jwt_verifier_is_missing(mon
     monkeypatch.setattr(settings, "accept_realm_tokens", True)
     monkeypatch.setattr(settings, "accepted_token_realms", "m8flow")
 
-    with patch.dict("sys.modules", {"fastmcp.server.auth.providers.jwt": None}), pytest.raises(
-        RuntimeError, match="Refusing to start"
+    with (
+        patch.dict("sys.modules", {"fastmcp.server.auth.providers.jwt": None}),
+        pytest.raises(RuntimeError, match="Refusing to start"),
     ):
         main._build_realm_token_verifiers()
 

@@ -190,9 +190,7 @@ def _compose_auth(proxy: object | None, verifiers: list[object]) -> object | Non
             if len(verifiers) == 1:
                 # Nothing to combine: a lone verifier IS an auth provider, so auth is
                 # still fully enforced. This is the default single-realm deployment.
-                logger.warning(
-                    "MultiAuth unavailable (%s); using the single realm verifier directly", exc
-                )
+                logger.warning("MultiAuth unavailable (%s); using the single realm verifier directly", exc)
                 return verifiers[0]
             _refuse_to_run_unauthenticated(
                 f"{len(verifiers)} realm verifiers must be combined but MultiAuth is "
