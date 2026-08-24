@@ -85,6 +85,10 @@
       "options": {
         "mode": "markdown",
         "content": "**Faro events** use label `telemetry_source=faro` (JSON lines from the browser SDK). **Nginx access logs** for the frontend container are plain text \u2014 do not run `| json` on them (that causes `JSONParserErr`). Enable `M8FLOW_FRONTEND_FARO_COLLECTOR_URL=http://localhost:6865/collect` and rebuild/restart the frontend for Faro data."
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
       }
     },
     {
@@ -104,8 +108,12 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-frontend.*\"}",
-          "legendFormat": "{{namespace}} / {{pod}}"
+          "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\", pod=~\".*m8flow-frontend.*\", container!=\"\"}[1m])) by (pod, namespace)",
+          "legendFormat": "{{namespace}} / {{pod}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
       "fieldConfig": {
@@ -136,8 +144,12 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-frontend.*\"}",
-          "legendFormat": "{{namespace}} / {{pod}}"
+          "expr": "sum(container_memory_working_set_bytes{namespace=~\"$namespace\", pod=~\".*m8flow-frontend.*\", container!=\"\"}) by (pod, namespace)",
+          "legendFormat": "{{namespace}} / {{pod}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
       "fieldConfig": {
@@ -168,8 +180,12 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-frontend.*\"}",
-          "legendFormat": "{{namespace}} / {{pod}}"
+          "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=~\"$namespace\", pod=~\".*m8flow-frontend.*\"}[1h])) by (pod, namespace)",
+          "legendFormat": "{{namespace}} / {{pod}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
       "fieldConfig": {
@@ -299,8 +315,12 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{namespace=~\"$namespace\", app=\"m8flow-frontend\"}",
-          "queryType": "range"
+          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-frontend.*\"}",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          }
         }
       ],
       "options": {},
@@ -328,7 +348,11 @@
         {
           "refId": "A",
           "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-frontend.*\"}",
-          "queryType": "range"
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          }
         }
       ],
       "options": {},

@@ -85,6 +85,10 @@
       "options": {
         "mode": "markdown",
         "content": "**Connector error rate** = failed connector *calls* (domain metric), not HTTP 5xx. **HTTP RED** panels use OTel when exported. Use log panels for stack traces and SMTP/Slack failures."
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
       }
     },
     {
@@ -104,8 +108,12 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-connector-proxy.*\"}",
-          "legendFormat": "{{namespace}} / {{pod}}"
+          "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\", pod=~\".*m8flow-connector-proxy.*\", container!=\"\"}[1m])) by (pod, namespace)",
+          "legendFormat": "{{namespace}} / {{pod}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
       "fieldConfig": {
@@ -136,8 +144,12 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-connector-proxy.*\"}",
-          "legendFormat": "{{namespace}} / {{pod}}"
+          "expr": "sum(container_memory_working_set_bytes{namespace=~\"$namespace\", pod=~\".*m8flow-connector-proxy.*\", container!=\"\"}) by (pod, namespace)",
+          "legendFormat": "{{namespace}} / {{pod}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
       "fieldConfig": {
@@ -168,8 +180,12 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-connector-proxy.*\"}",
-          "legendFormat": "{{namespace}} / {{pod}}"
+          "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=~\"$namespace\", pod=~\".*m8flow-connector-proxy.*\"}[1h])) by (pod, namespace)",
+          "legendFormat": "{{namespace}} / {{pod}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
       "fieldConfig": {
@@ -357,7 +373,11 @@
           "refId": "A",
           "expr": "sum(count_over_time({namespace=~\"$namespace\", app=~\".*m8flow-connector-proxy.*\"} |~ \"(?i)(error|exception|traceback|fatal)\" [$__interval]))",
           "legendFormat": "error-ish lines",
-          "queryType": "range"
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          }
         }
       ],
       "options": {},
@@ -384,7 +404,11 @@
         {
           "refId": "A",
           "expr": "{namespace=~\"$namespace\", app=~\".*m8flow-connector-proxy.*\"}",
-          "queryType": "range"
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          }
         }
       ],
       "options": {},
