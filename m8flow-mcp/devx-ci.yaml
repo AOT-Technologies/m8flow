@@ -8,8 +8,10 @@ project:
   working_directory: "m8flow-mcp"
 
 build:
-  enabled: false
-  run_tests: false
+  enabled: true
+  install_command: "pip install uv ruff==0.15.20"
+  run_tests: true
+  test_script: "ruff check ."
 
 docker:
   enabled: true

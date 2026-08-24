@@ -8,8 +8,10 @@ project:
   working_directory: "."            # Build context is repo root (Dockerfile uses multi-dir COPY)
 
 build:
-  enabled: false                    # No Nexus artifact; Docker is the build artifact
-  run_tests: false                  # Tests handled by ci.yml (Ruff + PyTest)
+  enabled: true
+  install_command: "pip install ruff==0.12.1 uv"
+  run_tests: true
+  test_script: "python -m ruff check m8flow-backend --config m8flow-backend/ruff.toml"
 
 docker:
   enabled: true

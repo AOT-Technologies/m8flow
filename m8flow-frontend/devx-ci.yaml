@@ -5,11 +5,14 @@
 project:
   language: node
   version: "20"
-  working_directory: "."            # Build context is repo root
+  working_directory: "m8flow-frontend"
 
 build:
-  enabled: false                    # No Nexus artifact; Docker is the build artifact
-  run_tests: false                  # Tests handled by ci.yml
+  enabled: true
+  install_command: "npm ci"
+  run_tests: true
+  test_script: "npm run lint && npm run test:ci"
+  build_script: "npm run build"
 
 docker:
   enabled: true

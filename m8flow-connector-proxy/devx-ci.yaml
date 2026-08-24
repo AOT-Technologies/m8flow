@@ -8,8 +8,10 @@ project:
   working_directory: "m8flow-connector-proxy"
 
 build:
-  enabled: false
-  run_tests: false
+  enabled: true
+  install_command: "pip install poetry==2.2.1"
+  run_tests: true
+  test_script: "poetry check --lock"
 
 docker:
   enabled: true
