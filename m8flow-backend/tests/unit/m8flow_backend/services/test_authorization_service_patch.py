@@ -965,6 +965,8 @@ def test_allow_super_admin_task_completion_bypasses_owner_check(monkeypatch) -> 
         raise UserDoesNotHaveAccessToTaskError("blocked")
 
     monkeypatch.setattr(authorization_service_patch, "is_super_admin_request", lambda: True)
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_id_or_none", lambda: None)
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_identifiers", lambda tenant_id: {tenant_id})
     user = SimpleNamespace(username="super-admin")
     monkeypatch.setattr(
         human_task_module,
@@ -973,6 +975,7 @@ def test_allow_super_admin_task_completion_bypasses_owner_check(monkeypatch) -> 
             query=_StaticQuery(
                 SimpleNamespace(
                     completed=False,
+                    m8f_tenant_id="tenant-a",
                     potential_owners=[SimpleNamespace(username="tenant-admin")],
                 )
             )
@@ -981,7 +984,9 @@ def test_allow_super_admin_task_completion_bypasses_owner_check(monkeypatch) -> 
     monkeypatch.setattr(
         process_instance_module,
         "ProcessInstanceModel",
-        SimpleNamespace(query=_StaticQuery(SimpleNamespace(can_submit_task=lambda: True))),
+        SimpleNamespace(
+            query=_StaticQuery(SimpleNamespace(m8f_tenant_id="tenant-a", can_submit_task=lambda: True))
+        ),
     )
 
     assert (
@@ -1015,6 +1020,8 @@ def test_allow_super_admin_task_completion_preserves_non_owner_denial_for_super_
 
     user = SimpleNamespace(username="super-admin")
     monkeypatch.setattr(authorization_service_patch, "is_super_admin_request", lambda: True)
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_id_or_none", lambda: None)
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_identifiers", lambda tenant_id: {tenant_id})
     monkeypatch.setattr(
         human_task_module,
         "HumanTaskModel",
@@ -1022,6 +1029,7 @@ def test_allow_super_admin_task_completion_preserves_non_owner_denial_for_super_
             query=_StaticQuery(
                 SimpleNamespace(
                     completed=False,
+                    m8f_tenant_id="tenant-a",
                     potential_owners=[user],
                 )
             )
@@ -1030,7 +1038,9 @@ def test_allow_super_admin_task_completion_preserves_non_owner_denial_for_super_
     monkeypatch.setattr(
         process_instance_module,
         "ProcessInstanceModel",
-        SimpleNamespace(query=_StaticQuery(SimpleNamespace(can_submit_task=lambda: True))),
+        SimpleNamespace(
+            query=_StaticQuery(SimpleNamespace(m8f_tenant_id="tenant-a", can_submit_task=lambda: True))
+        ),
     )
 
     with pytest.raises(UserDoesNotHaveAccessToTaskError):
@@ -1062,6 +1072,8 @@ def test_allow_super_admin_task_completion_preserves_completed_task_error(monkey
         raise UserDoesNotHaveAccessToTaskError("blocked")
 
     monkeypatch.setattr(authorization_service_patch, "is_super_admin_request", lambda: True)
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_id_or_none", lambda: None)
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_identifiers", lambda tenant_id: {tenant_id})
     monkeypatch.setattr(
         human_task_module,
         "HumanTaskModel",
@@ -1069,6 +1081,7 @@ def test_allow_super_admin_task_completion_preserves_completed_task_error(monkey
             query=_StaticQuery(
                 SimpleNamespace(
                     completed=True,
+                    m8f_tenant_id="tenant-a",
                     potential_owners=[],
                 )
             )
@@ -1077,7 +1090,9 @@ def test_allow_super_admin_task_completion_preserves_completed_task_error(monkey
     monkeypatch.setattr(
         process_instance_module,
         "ProcessInstanceModel",
-        SimpleNamespace(query=_StaticQuery(SimpleNamespace(can_submit_task=lambda: True))),
+        SimpleNamespace(
+            query=_StaticQuery(SimpleNamespace(m8f_tenant_id="tenant-a", can_submit_task=lambda: True))
+        ),
     )
 
     with pytest.raises(HumanTaskAlreadyCompletedError):
@@ -1108,6 +1123,8 @@ def test_allow_super_admin_task_completion_preserves_non_actionable_process_inst
         raise UserDoesNotHaveAccessToTaskError("blocked")
 
     monkeypatch.setattr(authorization_service_patch, "is_super_admin_request", lambda: True)
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_id_or_none", lambda: None)
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_identifiers", lambda tenant_id: {tenant_id})
     monkeypatch.setattr(
         human_task_module,
         "HumanTaskModel",
@@ -1115,6 +1132,7 @@ def test_allow_super_admin_task_completion_preserves_non_actionable_process_inst
             query=_StaticQuery(
                 SimpleNamespace(
                     completed=False,
+                    m8f_tenant_id="tenant-a",
                     potential_owners=[],
                 )
             )
@@ -1123,7 +1141,111 @@ def test_allow_super_admin_task_completion_preserves_non_actionable_process_inst
     monkeypatch.setattr(
         process_instance_module,
         "ProcessInstanceModel",
-        SimpleNamespace(query=_StaticQuery(SimpleNamespace(can_submit_task=lambda: False))),
+        SimpleNamespace(
+            query=_StaticQuery(SimpleNamespace(m8f_tenant_id="tenant-a", can_submit_task=lambda: False))
+        ),
+    )
+
+    with pytest.raises(UserDoesNotHaveAccessToTaskError):
+        _allow_super_admin_task_completion(
+            original_assert_user_can_complete_task,
+            1,
+            "task-guid",
+            SimpleNamespace(username="super-admin"),
+        )
+
+
+def test_allow_super_admin_task_completion_preserves_mismatched_request_tenant_denial(monkeypatch) -> None:
+    from spiffworkflow_backend.exceptions.error import UserDoesNotHaveAccessToTaskError
+    from spiffworkflow_backend.models import human_task as human_task_module
+    from spiffworkflow_backend.models import process_instance as process_instance_module
+
+    class _StaticQuery:
+        def __init__(self, result: object) -> None:
+            self._result = result
+
+        def filter_by(self, **kwargs):  # noqa: ANN003
+            return self
+
+        def first(self) -> object:
+            return self._result
+
+    def original_assert_user_can_complete_task(process_instance_id: int, task_guid: str, user: object) -> bool:
+        raise UserDoesNotHaveAccessToTaskError("blocked")
+
+    monkeypatch.setattr(authorization_service_patch, "is_super_admin_request", lambda: True)
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_id_or_none", lambda: "tenant-b")
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_identifiers", lambda tenant_id: {tenant_id})
+    monkeypatch.setattr(
+        human_task_module,
+        "HumanTaskModel",
+        SimpleNamespace(
+            query=_StaticQuery(
+                SimpleNamespace(
+                    completed=False,
+                    m8f_tenant_id="tenant-a",
+                    potential_owners=[],
+                )
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        process_instance_module,
+        "ProcessInstanceModel",
+        SimpleNamespace(
+            query=_StaticQuery(SimpleNamespace(m8f_tenant_id="tenant-a", can_submit_task=lambda: True))
+        ),
+    )
+
+    with pytest.raises(UserDoesNotHaveAccessToTaskError):
+        _allow_super_admin_task_completion(
+            original_assert_user_can_complete_task,
+            1,
+            "task-guid",
+            SimpleNamespace(username="super-admin"),
+        )
+
+
+def test_allow_super_admin_task_completion_preserves_inconsistent_record_tenant_denial(monkeypatch) -> None:
+    from spiffworkflow_backend.exceptions.error import UserDoesNotHaveAccessToTaskError
+    from spiffworkflow_backend.models import human_task as human_task_module
+    from spiffworkflow_backend.models import process_instance as process_instance_module
+
+    class _StaticQuery:
+        def __init__(self, result: object) -> None:
+            self._result = result
+
+        def filter_by(self, **kwargs):  # noqa: ANN003
+            return self
+
+        def first(self) -> object:
+            return self._result
+
+    def original_assert_user_can_complete_task(process_instance_id: int, task_guid: str, user: object) -> bool:
+        raise UserDoesNotHaveAccessToTaskError("blocked")
+
+    monkeypatch.setattr(authorization_service_patch, "is_super_admin_request", lambda: True)
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_id_or_none", lambda: None)
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_identifiers", lambda tenant_id: {tenant_id})
+    monkeypatch.setattr(
+        human_task_module,
+        "HumanTaskModel",
+        SimpleNamespace(
+            query=_StaticQuery(
+                SimpleNamespace(
+                    completed=False,
+                    m8f_tenant_id="tenant-b",
+                    potential_owners=[],
+                )
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        process_instance_module,
+        "ProcessInstanceModel",
+        SimpleNamespace(
+            query=_StaticQuery(SimpleNamespace(m8f_tenant_id="tenant-a", can_submit_task=lambda: True))
+        ),
     )
 
     with pytest.raises(UserDoesNotHaveAccessToTaskError):

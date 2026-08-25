@@ -66,6 +66,20 @@ class TemplateService:
         return skip_automatic_tenant_scope(TemplateModel.query)
 
     @staticmethod
+    def _require_active_tenant_context() -> str:
+        """Return the active tenant id for tenant-admin template mutations.
+
+        Delete/restore are tenant-scoped write operations. They must run with an
+        explicit active tenant in request context rather than silently falling
+        back to template ownership, which would turn a missing-boundary problem
+        into an authorization decision.
+        """
+        tenant_id = getattr(g, "m8flow_tenant_id", None)
+        if not isinstance(tenant_id, str) or not tenant_id.strip():
+            raise ApiError("tenant_required", TENANT_REQUIRED_MESSAGE, status_code=400)
+        return tenant_id.strip()
+
+    @staticmethod
     def _version_key(version: str) -> tuple:
         """Return a sortable key for V-prefixed versions like 'V1', 'V2'."""
         v = (version or "").strip()
@@ -715,6 +729,7 @@ class TemplateService:
         """
         if is_super_admin_request():
             raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
+        cls._require_active_tenant_context()
         template = cls.get_template_by_id(template_id, user=user, include_deleted=True)
         if template is None:
             raise ApiError("not_found", "Template not found", status_code=404)
@@ -780,6 +795,7 @@ class TemplateService:
         user: UserModel | None,
     ) -> TemplateModel:
         """Restore a previously soft-deleted template (tenant-admin only)."""
+        cls._require_active_tenant_context()
         template = cls.get_template_by_id(template_id, user=user, include_deleted=True)
         if template is None:
             raise ApiError("not_found", "Template not found", status_code=404)

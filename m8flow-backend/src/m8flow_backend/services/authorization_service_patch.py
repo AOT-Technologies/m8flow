@@ -190,6 +190,33 @@ def _permission_scoped_groups_for_user(user: Any, tenant_id: str | None = None) 
     return [group for group in groups if _group_applies_to_active_permission_scope(group, tenant_id=tenant_id)]
 
 
+def _super_admin_task_completion_scope_matches_records(human_task: Any, process_instance: Any) -> bool:
+    """
+    Allow fallback completion only when the task and process instance agree on tenant scope.
+
+    Super-admins may act from the global "All Tenants" view, so an active request tenant
+    is optional here. When a request tenant is present, it must still match the tenant
+    implied by the records to avoid widening the bypass when request scoping is stale.
+    """
+    process_tenant_id = getattr(process_instance, "m8f_tenant_id", None)
+    if not is_concrete_tenant_id(process_tenant_id):
+        return False
+
+    tenant_identifiers = current_tenant_identifiers(process_tenant_id)
+    if not tenant_identifiers:
+        tenant_identifiers = {process_tenant_id.strip()}
+
+    task_tenant_id = getattr(human_task, "m8f_tenant_id", None)
+    if not isinstance(task_tenant_id, str) or task_tenant_id.strip() not in tenant_identifiers:
+        return False
+
+    request_tenant_id = current_tenant_id_or_none()
+    if request_tenant_id is None:
+        return True
+
+    return request_tenant_id in tenant_identifiers
+
+
 def _allow_super_admin_task_completion(
     original_assert_user_can_complete_task: Callable[[int, str, Any], bool],
     process_instance_id: int,
@@ -235,7 +262,12 @@ def _allow_super_admin_task_completion(
 
         process_instance = ProcessInstanceModel.query.filter_by(id=process_instance_id).first()
         can_submit_task = getattr(process_instance, "can_submit_task", None)
-        if callable(can_submit_task) and can_submit_task():
+        if (
+            process_instance is not None
+            and _super_admin_task_completion_scope_matches_records(human_task, process_instance)
+            and callable(can_submit_task)
+            and can_submit_task()
+        ):
             return True
         raise
 

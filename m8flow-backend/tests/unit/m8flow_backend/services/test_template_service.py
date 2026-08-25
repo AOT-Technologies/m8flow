@@ -2698,6 +2698,57 @@ def test_delete_draft_template_allows_tenant_admin() -> None:
             assert TemplateModel.query.filter_by(id=template_id).first() is None
 
 
+def test_delete_template_requires_active_tenant_context() -> None:
+    """Delete should fail clearly when the request has no active tenant context."""
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(
+            M8flowTenantModel(
+                id="tenant-a",
+                name="Tenant A",
+                slug="tenant-a",
+                created_by="test",
+                modified_by="test",
+                created_at_in_seconds=1,
+                updated_at_in_seconds=1,
+            )
+        )
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        template = TemplateModel(
+            template_key="delete-needs-tenant",
+            version="V1",
+            name="Delete Needs Tenant",
+            m8f_tenant_id="tenant-a",
+            visibility=TemplateVisibility.public.value,
+            files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
+            is_published=False,
+            created_by="tester",
+            modified_by="tester",
+            created_at_in_seconds=1,
+            updated_at_in_seconds=1,
+        )
+        db.session.add(template)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.user = user
+            try:
+                TemplateService.delete_template_by_id(template.id, user=user)
+                assert False, "Should have raised ApiError"
+            except ApiError as e:
+                assert e.error_code == "tenant_required"
+                assert e.status_code == 400
+
+
 def test_restore_template_by_id_tenant_admin() -> None:
     """Tenant-admin can restore a soft-deleted template and recover base name."""
     app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
@@ -2736,6 +2787,58 @@ def test_restore_template_by_id_tenant_admin() -> None:
 
             assert restored.is_deleted is False
             assert restored.name == "Restore Name"
+
+
+def test_restore_template_requires_active_tenant_context() -> None:
+    """Restore should fail clearly when the request has no active tenant context."""
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(
+            M8flowTenantModel(
+                id="tenant-a",
+                name="Tenant A",
+                slug="tenant-a",
+                created_by="test",
+                modified_by="test",
+                created_at_in_seconds=1,
+                updated_at_in_seconds=1,
+            )
+        )
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        deleted_template = TemplateModel(
+            template_key="restore-needs-tenant",
+            version="V1",
+            name="Restore Needs Tenant_deleted_20260224123456",
+            m8f_tenant_id="tenant-a",
+            visibility=TemplateVisibility.public.value,
+            files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
+            is_published=True,
+            is_deleted=True,
+            created_by="tester",
+            modified_by="tester",
+            created_at_in_seconds=1,
+            updated_at_in_seconds=1,
+        )
+        db.session.add(deleted_template)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.user = user
+            try:
+                TemplateService.restore_template_by_id(deleted_template.id, user=user)
+                assert False, "Should have raised ApiError"
+            except ApiError as e:
+                assert e.error_code == "tenant_required"
+                assert e.status_code == 400
 
 
 def test_restore_template_requires_tenant_admin() -> None:
