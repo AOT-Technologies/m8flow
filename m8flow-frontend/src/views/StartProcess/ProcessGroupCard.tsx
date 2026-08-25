@@ -2,12 +2,13 @@
 import { Box, Chip } from '@mui/material';
 import UpstreamCard from '@spiff-core/views/StartProcess/ProcessGroupCard';
 import UserService from '../../services/UserService';
+import { getProcessTenantLabel } from './processTenantLabelRegistry';
 
 export default function ProcessGroupCard(props: {
   group: { id: string; tenantName?: string; [k: string]: unknown };
   [k: string]: unknown;
 }) {
-  const label = props.group.tenantName;
+  const label = props.group.tenantName || getProcessTenantLabel(props.group.id);
   if (!(UserService.isSuperAdmin() && label)) {
     return <UpstreamCard {...(props as any)} />;
   }

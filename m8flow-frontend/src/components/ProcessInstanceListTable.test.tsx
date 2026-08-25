@@ -1,60 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import type React from 'react';
 import ProcessInstanceListTable from './ProcessInstanceListTable';
+import type { ReportMetadata } from '../interfaces';
 
 vi.mock('../services/UserService', () => ({
   default: {
     isSuperAdmin: vi.fn(),
-    getPreferredUsername: vi.fn(() => 'admin'),
-    getUserEmail: vi.fn(() => 'admin@example.com'),
   },
 }));
 
-vi.mock('../services/HttpService', () => ({
-  default: {
-    makeCallToBackend: vi.fn(),
-  },
-}));
+const upstreamSpy = vi.fn((props: Record<string, unknown>) => (
+  <div data-testid="upstream-process-instance-list-table">
+    {JSON.stringify(props.reportMetadata ?? null)}
+  </div>
+));
 
-vi.mock('../services/DateAndTimeService', () => ({
-  default: {
-    REFRESH_INTERVAL_SECONDS: 30,
-    REFRESH_TIMEOUT_SECONDS: 60,
-    convertSecondsToFormattedDateTime: vi.fn((value: number) => `${value}`),
-    formatDurationForDisplay: vi.fn((value: string) => value),
-    formatDateTime: vi.fn((value: string) => value),
-  },
-}));
-
-vi.mock('../helpers', () => ({
-  getLastMilestoneFromProcessInstance: vi.fn((_row, value) => [value, value]),
-  getPageInfoFromSearchParams: vi.fn(() => ({ page: 1, perPage: 10 })),
-  getProcessStatus: vi.fn((value: string) => value),
-  modifyProcessIdentifierForPathParam: vi.fn((value: string) => value),
-  refreshAtInterval: vi.fn(() => vi.fn()),
-}));
-
-vi.mock('./PaginationForTable', () => ({
-  default: ({ tableToDisplay }: { tableToDisplay: React.ReactNode }) => (
-    <div data-testid="pagination-mock">{tableToDisplay}</div>
-  ),
-}));
-
-vi.mock('./TableCellWithTimeAgoInWords', () => ({
-  default: ({ timeInSeconds }: { timeInSeconds: number }) => (
-    <td data-testid={`timeago-${timeInSeconds}`}>{timeInSeconds}</td>
-  ),
-}));
-
-vi.mock('./ErrorDisplay', () => ({
-  childrenForErrorObject: (error: string) => <div>{error}</div>,
-  errorForDisplayFromString: (error: string) => error,
-}));
-
-vi.mock('./SpiffTooltip', () => ({
-  default: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+vi.mock('@spiff-core/components/ProcessInstanceListTable', () => ({
+  default: (props: Record<string, unknown>) => upstreamSpy(props),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -64,49 +27,28 @@ vi.mock('react-i18next', () => ({
 }));
 
 import UserService from '../services/UserService';
-import HttpService from '../services/HttpService';
 
-function stubProcessInstancesList() {
-  vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts: any) => {
-    if (opts.path.startsWith('/process-instances/report-metadata')) {
-      return;
-    }
-    opts.successCallback({
-      results: [
-        {
-          id: 42,
-          process_model_identifier: 'hr/onboarding',
-          process_model_display_name: 'Onboarding',
-          start_in_seconds: 100,
-          end_in_seconds: 0,
-          process_initiator_username: 'admin',
-          last_milestone_bpmn_name: 'Started',
-          status: 'complete',
-          updated_at_in_seconds: 120,
-          task_updated_at_in_seconds: 120,
-          tenantId: 'tenant-a',
-          tenantName: 'Acme Corp',
-        },
-      ],
-      pagination: { total: 1, pages: 1 },
-      report_hash: 'hash-1',
-      report_metadata: {
-        columns: [
-          { Header: 'Id', accessor: 'id' },
-          { Header: 'Process', accessor: 'process_model_display_name' },
-          { Header: 'Status', accessor: 'status' },
-        ],
-        filter_by: [],
-        order_by: [],
-      },
-    });
-  });
-}
+const baseReportMetadata: ReportMetadata = {
+  columns: [
+    { Header: 'Id', accessor: 'id', filterable: false },
+    {
+      Header: 'Process',
+      accessor: 'process_model_display_name',
+      filterable: false,
+    },
+    { Header: 'Status', accessor: 'status', filterable: false },
+  ],
+  filter_by: [],
+  order_by: [],
+};
 
 function renderTable() {
   return render(
     <MemoryRouter>
-      <ProcessInstanceListTable variant="all" />
+      <ProcessInstanceListTable
+        variant="all"
+        reportMetadata={baseReportMetadata}
+      />
     </MemoryRouter>,
   );
 }
@@ -114,36 +56,80 @@ function renderTable() {
 describe('ProcessInstanceListTable', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    stubProcessInstancesList();
   });
 
-  it('shows a tenant column for super-admin on the all-instances table', async () => {
+  it('injects a tenant column for super-admin on the all-instances table', () => {
     vi.mocked(UserService.isSuperAdmin).mockReturnValue(true);
 
     renderTable();
 
-    expect(
-      await screen.findByTestId('process-instance-show-link-tenantName'),
-    ).toHaveTextContent('Acme Corp');
-    expect(screen.getByText('tenant')).toBeInTheDocument();
-    expect(HttpService.makeCallToBackend).toHaveBeenCalledWith(
+    expect(screen.getByTestId('upstream-process-instance-list-table')).toBeInTheDocument();
+    expect(upstreamSpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        path: '/process-instances?per_page=10&page=1',
+        reportMetadata: expect.objectContaining({
+          columns: [
+            expect.objectContaining({ Header: 'Id', accessor: 'id' }),
+            expect.objectContaining({ Header: 'tenant', accessor: 'tenantName' }),
+            expect.objectContaining({
+              Header: 'Process',
+              accessor: 'process_model_display_name',
+            }),
+            expect.objectContaining({ Header: 'Status', accessor: 'status' }),
+          ],
+        }),
       }),
     );
   });
 
-  it('does not show a tenant column for non-super-admin', async () => {
+  it('passes report metadata through for non-super-admin', () => {
     vi.mocked(UserService.isSuperAdmin).mockReturnValue(false);
 
     renderTable();
 
-    expect(
-      await screen.findByTestId('process-instance-show-link-id'),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByTestId('process-instance-show-link-tenantName'),
-    ).toBeNull();
-    expect(screen.queryByText('tenant')).toBeNull();
+    expect(screen.getByTestId('upstream-process-instance-list-table')).toBeInTheDocument();
+    expect(upstreamSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reportMetadata: baseReportMetadata,
+      }),
+    );
+  });
+
+  it('does not inject a duplicate tenant column when one already exists', () => {
+    vi.mocked(UserService.isSuperAdmin).mockReturnValue(true);
+
+    render(
+      <MemoryRouter>
+        <ProcessInstanceListTable
+          variant="all"
+          reportMetadata={{
+            ...baseReportMetadata,
+            columns: [
+              { Header: 'Id', accessor: 'id', filterable: false },
+              { Header: 'Tenant', accessor: 'tenantName', filterable: false },
+              {
+                Header: 'Process',
+                accessor: 'process_model_display_name',
+                filterable: false,
+              },
+            ],
+          }}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(upstreamSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reportMetadata: expect.objectContaining({
+          columns: [
+            expect.objectContaining({ Header: 'Id', accessor: 'id' }),
+            expect.objectContaining({ Header: 'Tenant', accessor: 'tenantName' }),
+            expect.objectContaining({
+              Header: 'Process',
+              accessor: 'process_model_display_name',
+            }),
+          ],
+        }),
+      }),
+    );
   });
 });
