@@ -132,4 +132,29 @@ describe('ProcessInstanceListTable', () => {
       }),
     );
   });
+
+  it('does not inject tenant as the only requested column before report metadata is initialized', () => {
+    vi.mocked(UserService.isSuperAdmin).mockReturnValue(true);
+
+    render(
+      <MemoryRouter>
+        <ProcessInstanceListTable
+          variant="all"
+          reportMetadata={{
+            columns: [],
+            filter_by: [],
+            order_by: [],
+          }}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(upstreamSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reportMetadata: expect.objectContaining({
+          columns: [],
+        }),
+      }),
+    );
+  });
 });

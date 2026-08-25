@@ -159,39 +159,15 @@ def _join_tenant_subdir(base_dir: str, tenant_subdir: str) -> str:
     return os.path.join(normalized_base_dir, tenant_subdir)
 
 
-def _tenant_path_with_slug_fallback(base_dir: str, tenant_id: str) -> str:
-    candidate = _join_tenant_subdir(base_dir, tenant_id)
-    if os.path.isdir(candidate):
-        return candidate
-
-    try:
-        from m8flow_backend.services.tenant_identity_helpers import tenant_slug_for_identifier
-
-        tenant_slug = tenant_slug_for_identifier(tenant_id)
-    except Exception:
-        tenant_slug = None
-
-    if isinstance(tenant_slug, str):
-        normalized_tenant_slug = tenant_slug.strip()
-        if normalized_tenant_slug:
-            slug_candidate = _join_tenant_subdir(base_dir, normalized_tenant_slug)
-            if os.path.isdir(slug_candidate):
-                return slug_candidate
-
-    return candidate
-
-
 def _tenant_bpmn_root(base_dir: str) -> str:
     """Get tenant-specific BPMN root directory.
 
     Precedence:
       1. An explicit BPMN filesystem-root override set on the request.
       2. A concrete tenant id explicitly set on the request/context.
-         When the canonical tenant-id directory does not exist, fall back to
-         the matching tenant slug directory if present.
-      2. Otherwise, intentionally tenant-less requests go to the reserved
+      3. Otherwise, intentionally tenant-less requests go to the reserved
          empty global subdirectory.
-      3. Otherwise, resolve the tenant id from the current request/context.
+      4. Otherwise, resolve the tenant id from the current request/context.
     """
     normalized = os.path.abspath(os.path.normpath(base_dir))
 
@@ -201,7 +177,7 @@ def _tenant_bpmn_root(base_dir: str) -> str:
 
     concrete_tenant_id = _explicit_concrete_tenant_id()
     if concrete_tenant_id:
-        return _tenant_path_with_slug_fallback(normalized, concrete_tenant_id)
+        return _join_tenant_subdir(normalized, concrete_tenant_id)
 
     if _is_global_request():
         return os.path.join(normalized, _GLOBAL_BPMN_SUBDIR)
@@ -210,7 +186,7 @@ def _tenant_bpmn_root(base_dir: str) -> str:
     if not tenant_id:
         tenant_id = _get_tenant_id()
 
-    return _tenant_path_with_slug_fallback(normalized, tenant_id)
+    return _join_tenant_subdir(normalized, tenant_id)
 
 
 def apply() -> None:

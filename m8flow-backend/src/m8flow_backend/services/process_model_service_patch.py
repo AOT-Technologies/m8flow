@@ -43,17 +43,6 @@ def _tenant_roots(base_dir: str) -> list[str]:
     return roots
 
 
-def _tenant_root_candidates(tenant_id: str, tenant_slug: str | None) -> list[str]:
-    candidates: list[str] = []
-    for candidate in (tenant_id, tenant_slug):
-        if not isinstance(candidate, str):
-            continue
-        normalized = candidate.strip()
-        if normalized and normalized not in candidates:
-            candidates.append(normalized)
-    return candidates
-
-
 def _live_tenant_root_bindings(base_dir: str) -> list[tuple[str, str]]:
     """Return live-tenant bindings as ``(canonical_tenant_id, filesystem_root)``."""
     if not os.path.isdir(base_dir):
@@ -81,17 +70,17 @@ def _live_tenant_root_bindings(base_dir: str) -> list[tuple[str, str]]:
         if not normalized_tenant_id:
             continue
 
-        tenant_slug = getattr(tenant, "slug", None)
-        normalized_tenant_slug = tenant_slug.strip() if isinstance(tenant_slug, str) else None
-        for candidate_root in _tenant_root_candidates(normalized_tenant_id, normalized_tenant_slug):
-            candidate_path = os.path.join(base_dir, candidate_root)
-            if not os.path.isdir(candidate_path):
-                continue
-            binding = (normalized_tenant_id, candidate_root)
-            if binding in seen:
-                continue
-            seen.add(binding)
-            bindings.append(binding)
+        # BPMN roots are enforced to use the canonical tenant id only. Slug-
+        # named directories are intentionally ignored so every lookup path is
+        # anchored to the same tenant key the database and request context use.
+        candidate_path = os.path.join(base_dir, normalized_tenant_id)
+        if not os.path.isdir(candidate_path):
+            continue
+        binding = (normalized_tenant_id, normalized_tenant_id)
+        if binding in seen:
+            continue
+        seen.add(binding)
+        bindings.append(binding)
 
     return bindings
 

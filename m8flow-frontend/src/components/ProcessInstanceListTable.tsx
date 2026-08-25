@@ -14,7 +14,7 @@ function withTenantColumn(
   reportMetadata: ReportMetadata | null | undefined,
   tenantHeader: string,
 ): ReportMetadata | null | undefined {
-  if (!reportMetadata) {
+  if (!reportMetadata || reportMetadata.columns.length === 0) {
     return reportMetadata;
   }
 

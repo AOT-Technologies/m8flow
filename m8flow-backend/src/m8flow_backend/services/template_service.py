@@ -94,10 +94,24 @@ class TemplateService:
         rows: list[TemplateModel],
         tenant_id: str | None,
     ) -> list[TemplateModel]:
+        """Prefer tenant-owned rows over shared/public rows for the same lookup.
+
+        Template queries can intentionally return a mixed set:
+        - tenant-local rows for the active tenant, and
+        - public/shared rows visible across tenants.
+
+        When both exist for the same template key/version, the tenant-local row
+        should win because it is the tenant's explicit override. If no row is
+        owned by the active tenant, we keep the original result set so callers
+        can still fall back to the public/shared template.
+        """
         if not tenant_id:
             return rows
 
+        # Keep only rows owned by the active tenant when an override exists.
         same_tenant_rows = [row for row in rows if row.m8f_tenant_id == tenant_id]
+        # Otherwise preserve the broader result set so public/shared templates
+        # remain available to tenants that do not have a local copy.
         return same_tenant_rows or rows
 
     @classmethod

@@ -63,14 +63,14 @@ def app() -> Flask:
 
 @pytest.fixture()
 def tenant_bpmn_tree(tmp_path):
-    """<base>/abil/abil/ + model test, and <base>/other/foo/ group only."""
+    """<base>/<tenant_id>/<group_path>/... tree with one stale non-live tenant root."""
     base = tmp_path / "bpmn_specs"
     base.mkdir(parents=True, exist_ok=True)
-    abil_root = base / "abil"
+    abil_root = base / "tenant-abil-id"
     abil_root.mkdir()
     _write_minimal_process_group(str(abil_root / "abil"))
     _write_minimal_process_model(str(abil_root / "abil" / "test"))
-    other_root = base / "other"
+    other_root = base / "tenant-other-id"
     other_root.mkdir()
     _write_minimal_process_group(str(other_root / "foo"))
     stale_root = base / "stale-tenant"
@@ -130,7 +130,7 @@ def test_super_admin_get_process_model_resolves_tenant_and_locks_context(
         pm = ProcessModelService.get_process_model("abil/test")
         assert pm.id == "abil/test"
         assert getattr(g, "m8flow_tenant_id", None) == "tenant-abil-id"
-        assert getattr(g, "_m8flow_bpmn_root_tenant", None) == "abil"
+        assert getattr(g, "_m8flow_bpmn_root_tenant", None) == "tenant-abil-id"
         assert get_context_tenant_id() == "tenant-abil-id"
 
 
@@ -143,7 +143,7 @@ def test_super_admin_is_process_model_identifier_locks_tenant(
 
         assert ProcessModelService.is_process_model_identifier("abil/test") is True
         assert g.m8flow_tenant_id == "tenant-abil-id"
-        assert getattr(g, "_m8flow_bpmn_root_tenant", None) == "abil"
+        assert getattr(g, "_m8flow_bpmn_root_tenant", None) == "tenant-abil-id"
 
 
 def test_super_admin_is_process_group_identifier_locks_tenant(
@@ -155,7 +155,7 @@ def test_super_admin_is_process_group_identifier_locks_tenant(
 
         assert ProcessModelService.is_process_group_identifier("abil") is True
         assert g.m8flow_tenant_id == "tenant-abil-id"
-        assert getattr(g, "_m8flow_bpmn_root_tenant", None) == "abil"
+        assert getattr(g, "_m8flow_bpmn_root_tenant", None) == "tenant-abil-id"
 
 
 def test_super_admin_get_process_group_locks_tenant(
@@ -168,7 +168,7 @@ def test_super_admin_get_process_group_locks_tenant(
         group = ProcessModelService.get_process_group("abil")
         assert group.id == "abil"
         assert g.m8flow_tenant_id == "tenant-abil-id"
-        assert getattr(g, "_m8flow_bpmn_root_tenant", None) == "abil"
+        assert getattr(g, "_m8flow_bpmn_root_tenant", None) == "tenant-abil-id"
 
 
 def test_super_admin_unknown_model_no_tenant_lock(
@@ -267,7 +267,7 @@ def stub_upstream_services(app: Flask, tenant_bpmn_tree: str, live_tenants, monk
     pmp.reset()
 
     groups_by_root = {
-        "abil": [
+        "tenant-abil-id": [
             _FakeGroup(
                 "abil",
                 process_groups=[
@@ -279,11 +279,11 @@ def stub_upstream_services(app: Flask, tenant_bpmn_tree: str, live_tenants, monk
                 process_models=[_FakeModel("abil/test")],
             )
         ],
-        "other": [_FakeGroup("other")],
+        "tenant-other-id": [_FakeGroup("other")],
     }
     models_by_root = {
-        "abil": [_FakeModel("abil/test")],
-        "other": [],
+        "tenant-abil-id": [_FakeModel("abil/test")],
+        "tenant-other-id": [],
     }
 
     def fake_groups(cls, process_group_id=None, user=None):
@@ -369,7 +369,7 @@ def test_non_super_admin_get_process_groups_stamps_current_tenant(
 ) -> None:
     with app.test_request_context("/"):
         g.m8flow_tenant_id = "tenant-abil-id"
-        g._m8flow_bpmn_root_tenant = "abil"
+        g._m8flow_bpmn_root_tenant = "tenant-abil-id"
         groups = ProcessModelService.get_process_groups_for_api()
         for group in groups:
             assert getattr(group, "tenant_id", None) == "tenant-abil-id"
