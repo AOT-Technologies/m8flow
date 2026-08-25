@@ -2338,6 +2338,10 @@ def test_shared_realm_create_user_from_sign_in_reuses_existing_same_realm_user(m
         def import_permissions_from_yaml_file(cls, user_model):
             return None
 
+        @staticmethod
+        def assert_user_can_complete_task(process_instance_id, task_guid, user):
+            return True
+
     fake_auth_service_module = ModuleType("spiffworkflow_backend.services.authorization_service")
     fake_auth_service_module.AuthorizationService = FakeAuthorizationService
 
