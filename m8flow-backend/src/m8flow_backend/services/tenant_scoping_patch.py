@@ -23,10 +23,24 @@ _ORIGINALS: dict[str, Any] = {}
 _PATCHED = False
 
 _TENANT_ENTITIES: list[type] | None = None
+_SKIP_AUTOMATIC_TENANT_SCOPE_OPTION = "m8flow_skip_automatic_tenant_scope"
 
 
 def _should_automatically_tenant_scope(entity: type) -> bool:
     return not bool(getattr(entity, "__m8flow_skip_automatic_tenant_scope__", False))
+
+
+def skip_automatic_tenant_scope(query: Any) -> Any:
+    """Opt a specific ORM query out of the default tenant filter.
+
+    This is the narrow escape hatch for queries that must intentionally inspect
+    more than the active tenant, such as template PUBLIC fallback reads. The
+    default posture remains tenant-scoped unless a call site opts out.
+    """
+    execution_options = getattr(query, "execution_options", None)
+    if not callable(execution_options):
+        return query
+    return execution_options(**{_SKIP_AUTOMATIC_TENANT_SCOPE_OPTION: True})
 
 
 def _tenant_scoped_entities() -> list[type]:
@@ -437,6 +451,8 @@ def _tenant_scope_queries(execute_state: Any) -> None:
     if is_tenant_context_exempt_request():
         return
     if not execute_state.is_select:
+        return
+    if execute_state.execution_options.get(_SKIP_AUTOMATIC_TENANT_SCOPE_OPTION):
         return
 
     # Don't scope queries that are reading the tenant table itself

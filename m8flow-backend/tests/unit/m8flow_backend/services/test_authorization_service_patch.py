@@ -948,21 +948,191 @@ def test_parse_permissions_yaml_into_group_info_preserves_global_super_admin_gro
 
 def test_allow_super_admin_task_completion_bypasses_owner_check(monkeypatch) -> None:
     from spiffworkflow_backend.exceptions.error import UserDoesNotHaveAccessToTaskError
+    from spiffworkflow_backend.models import human_task as human_task_module
+    from spiffworkflow_backend.models import process_instance as process_instance_module
+
+    class _StaticQuery:
+        def __init__(self, result: object) -> None:
+            self._result = result
+
+        def filter_by(self, **kwargs):  # noqa: ANN003
+            return self
+
+        def first(self) -> object:
+            return self._result
 
     def original_assert_user_can_complete_task(process_instance_id: int, task_guid: str, user: object) -> bool:
         raise UserDoesNotHaveAccessToTaskError("blocked")
 
     monkeypatch.setattr(authorization_service_patch, "is_super_admin_request", lambda: True)
+    user = SimpleNamespace(username="super-admin")
+    monkeypatch.setattr(
+        human_task_module,
+        "HumanTaskModel",
+        SimpleNamespace(
+            query=_StaticQuery(
+                SimpleNamespace(
+                    completed=False,
+                    potential_owners=[SimpleNamespace(username="tenant-admin")],
+                )
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        process_instance_module,
+        "ProcessInstanceModel",
+        SimpleNamespace(query=_StaticQuery(SimpleNamespace(can_submit_task=lambda: True))),
+    )
 
     assert (
         _allow_super_admin_task_completion(
             original_assert_user_can_complete_task,
             1,
             "task-guid",
-            SimpleNamespace(username="super-admin"),
+            user,
         )
         is True
     )
+
+
+def test_allow_super_admin_task_completion_preserves_non_owner_denial_for_super_admin(monkeypatch) -> None:
+    from spiffworkflow_backend.exceptions.error import UserDoesNotHaveAccessToTaskError
+    from spiffworkflow_backend.models import human_task as human_task_module
+    from spiffworkflow_backend.models import process_instance as process_instance_module
+
+    class _StaticQuery:
+        def __init__(self, result: object) -> None:
+            self._result = result
+
+        def filter_by(self, **kwargs):  # noqa: ANN003
+            return self
+
+        def first(self) -> object:
+            return self._result
+
+    def original_assert_user_can_complete_task(process_instance_id: int, task_guid: str, user: object) -> bool:
+        raise UserDoesNotHaveAccessToTaskError("blocked")
+
+    user = SimpleNamespace(username="super-admin")
+    monkeypatch.setattr(authorization_service_patch, "is_super_admin_request", lambda: True)
+    monkeypatch.setattr(
+        human_task_module,
+        "HumanTaskModel",
+        SimpleNamespace(
+            query=_StaticQuery(
+                SimpleNamespace(
+                    completed=False,
+                    potential_owners=[user],
+                )
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        process_instance_module,
+        "ProcessInstanceModel",
+        SimpleNamespace(query=_StaticQuery(SimpleNamespace(can_submit_task=lambda: True))),
+    )
+
+    with pytest.raises(UserDoesNotHaveAccessToTaskError):
+        _allow_super_admin_task_completion(
+            original_assert_user_can_complete_task,
+            1,
+            "task-guid",
+            user,
+        )
+
+
+def test_allow_super_admin_task_completion_preserves_completed_task_error(monkeypatch) -> None:
+    from spiffworkflow_backend.exceptions.error import HumanTaskAlreadyCompletedError
+    from spiffworkflow_backend.exceptions.error import UserDoesNotHaveAccessToTaskError
+    from spiffworkflow_backend.models import human_task as human_task_module
+    from spiffworkflow_backend.models import process_instance as process_instance_module
+
+    class _StaticQuery:
+        def __init__(self, result: object) -> None:
+            self._result = result
+
+        def filter_by(self, **kwargs):  # noqa: ANN003
+            return self
+
+        def first(self) -> object:
+            return self._result
+
+    def original_assert_user_can_complete_task(process_instance_id: int, task_guid: str, user: object) -> bool:
+        raise UserDoesNotHaveAccessToTaskError("blocked")
+
+    monkeypatch.setattr(authorization_service_patch, "is_super_admin_request", lambda: True)
+    monkeypatch.setattr(
+        human_task_module,
+        "HumanTaskModel",
+        SimpleNamespace(
+            query=_StaticQuery(
+                SimpleNamespace(
+                    completed=True,
+                    potential_owners=[],
+                )
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        process_instance_module,
+        "ProcessInstanceModel",
+        SimpleNamespace(query=_StaticQuery(SimpleNamespace(can_submit_task=lambda: True))),
+    )
+
+    with pytest.raises(HumanTaskAlreadyCompletedError):
+        _allow_super_admin_task_completion(
+            original_assert_user_can_complete_task,
+            1,
+            "task-guid",
+            SimpleNamespace(username="super-admin"),
+        )
+
+
+def test_allow_super_admin_task_completion_preserves_non_actionable_process_instance(monkeypatch) -> None:
+    from spiffworkflow_backend.exceptions.error import UserDoesNotHaveAccessToTaskError
+    from spiffworkflow_backend.models import human_task as human_task_module
+    from spiffworkflow_backend.models import process_instance as process_instance_module
+
+    class _StaticQuery:
+        def __init__(self, result: object) -> None:
+            self._result = result
+
+        def filter_by(self, **kwargs):  # noqa: ANN003
+            return self
+
+        def first(self) -> object:
+            return self._result
+
+    def original_assert_user_can_complete_task(process_instance_id: int, task_guid: str, user: object) -> bool:
+        raise UserDoesNotHaveAccessToTaskError("blocked")
+
+    monkeypatch.setattr(authorization_service_patch, "is_super_admin_request", lambda: True)
+    monkeypatch.setattr(
+        human_task_module,
+        "HumanTaskModel",
+        SimpleNamespace(
+            query=_StaticQuery(
+                SimpleNamespace(
+                    completed=False,
+                    potential_owners=[],
+                )
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        process_instance_module,
+        "ProcessInstanceModel",
+        SimpleNamespace(query=_StaticQuery(SimpleNamespace(can_submit_task=lambda: False))),
+    )
+
+    with pytest.raises(UserDoesNotHaveAccessToTaskError):
+        _allow_super_admin_task_completion(
+            original_assert_user_can_complete_task,
+            1,
+            "task-guid",
+            SimpleNamespace(username="super-admin"),
+        )
 
 
 def test_allow_super_admin_task_completion_preserves_non_super_admin_denial(monkeypatch) -> None:

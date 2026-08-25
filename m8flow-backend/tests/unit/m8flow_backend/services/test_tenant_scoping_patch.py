@@ -45,6 +45,8 @@ def test_tenant_scopes_process_instances() -> None:
                 slug="tenant-a",
                 created_by="test",
                 modified_by="test",
+                created_at_in_seconds=1,
+                updated_at_in_seconds=1,
             )
         )
         spiff_db.session.add(
@@ -54,6 +56,8 @@ def test_tenant_scopes_process_instances() -> None:
                 slug="tenant-b",
                 created_by="test",
                 modified_by="test",
+                created_at_in_seconds=1,
+                updated_at_in_seconds=1,
             )
         )
 
@@ -151,6 +155,8 @@ def test_tenant_scopes_configuration_pkce_refresh_token_and_typeahead() -> None:
                 slug="tenant-a",
                 created_by="test",
                 modified_by="test",
+                created_at_in_seconds=1,
+                updated_at_in_seconds=1,
             )
         )
         spiff_db.session.add(
@@ -160,6 +166,8 @@ def test_tenant_scopes_configuration_pkce_refresh_token_and_typeahead() -> None:
                 slug="tenant-b",
                 created_by="test",
                 modified_by="test",
+                created_at_in_seconds=1,
+                updated_at_in_seconds=1,
             )
         )
 
@@ -372,8 +380,9 @@ def test_template_model_skips_automatic_tenant_scoping_for_public_visibility() -
 
         with app.test_request_context("/"):
             g.m8flow_tenant_id = "tenant-a"
-            assert {template.template_key for template in TemplateModel.query.all()} == {
-                "global-public",
-                "other-public",
-            }
+            assert {template.template_key for template in TemplateModel.query.all()} == {"global-public"}
+            assert {
+                template.template_key
+                for template in tenant_scoping_patch.skip_automatic_tenant_scope(TemplateModel.query).all()
+            } == {"global-public", "other-public"}
             assert {row.process_model_identifier for row in ProcessInstanceModel.query.all()} == {"process-a"}

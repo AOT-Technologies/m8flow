@@ -25,6 +25,7 @@ from spiffworkflow_backend.services.spec_file_service import SpecFileService
 from m8flow_backend.models.process_model_template import ProcessModelTemplateModel
 from m8flow_backend.models.template import TemplateModel, TemplateVisibility
 from m8flow_backend.services.template_authorization_service import TemplateAuthorizationService
+from m8flow_backend.services.tenant_scoping_patch import skip_automatic_tenant_scope
 from m8flow_backend.tenancy import is_super_admin_request
 from m8flow_backend.services.template_storage_service import (
     FilesystemTemplateStorageService,
@@ -53,6 +54,16 @@ class TemplateService:
     """Service for CRUD, versioning, and visibility enforcement for templates."""
 
     storage: TemplateStorageService = FilesystemTemplateStorageService()
+
+    @staticmethod
+    def _query_with_cross_tenant_visibility() -> Any:
+        """Return a template query that may intentionally inspect cross-tenant rows.
+
+        Only template reads that need PUBLIC fallback or super-admin overview
+        should opt out of the default ORM tenant scope. All other template query
+        sites stay protected by the global tenant filter.
+        """
+        return skip_automatic_tenant_scope(TemplateModel.query)
 
     @staticmethod
     def _version_key(version: str) -> tuple:
@@ -277,7 +288,7 @@ class TemplateService:
         page: int = 1,
         per_page: int = 10,
     ) -> tuple[list[TemplateModel], dict]:
-        query = TemplateModel.query
+        query = cls._query_with_cross_tenant_visibility()
         query = TemplateAuthorizationService.filter_query_by_visibility(query, user=user)
         if deleted_only:
             query = query.filter(TemplateModel.is_deleted.is_(True))
@@ -389,7 +400,7 @@ class TemplateService:
         include_deleted: bool = False,
     ) -> TemplateModel | None:
         """Get template by key with PUBLIC visibility fallback across tenants."""
-        query = TemplateModel.query.filter_by(template_key=template_key)
+        query = cls._query_with_cross_tenant_visibility().filter_by(template_key=template_key)
 
         is_super_admin = TemplateAuthorizationService._is_super_admin_request(user=user)
         tenant = tenant_id or getattr(g, "m8flow_tenant_id", None)
@@ -435,7 +446,7 @@ class TemplateService:
         include_deleted: bool = False,
     ) -> TemplateModel | None:
         """Get template by database ID with visibility checks."""
-        query = TemplateModel.query.filter_by(id=template_id)
+        query = cls._query_with_cross_tenant_visibility().filter_by(id=template_id)
         if not include_deleted:
             query = query.filter(TemplateModel.is_deleted.is_(False))
         template = query.first()

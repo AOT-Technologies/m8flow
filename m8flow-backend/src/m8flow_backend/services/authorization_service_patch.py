@@ -203,12 +203,39 @@ def _allow_super_admin_task_completion(
     correct for tenant-scoped users, but super-admins in the master realm need to be
     able to save drafts and submit forms for cross-tenant support/admin flows.
     """
+    from spiffworkflow_backend.exceptions.error import HumanTaskAlreadyCompletedError
+    from spiffworkflow_backend.exceptions.error import HumanTaskNotFoundError
     from spiffworkflow_backend.exceptions.error import UserDoesNotHaveAccessToTaskError
+    from spiffworkflow_backend.models.human_task import HumanTaskModel
+    from spiffworkflow_backend.models.process_instance import ProcessInstanceModel
 
     try:
         return original_assert_user_can_complete_task(process_instance_id, task_guid, user)
     except UserDoesNotHaveAccessToTaskError:
-        if is_super_admin_request():
+        if not is_super_admin_request():
+            raise
+
+        human_task = HumanTaskModel.query.filter_by(
+            task_id=task_guid,
+            process_instance_id=process_instance_id,
+        ).first()
+        if human_task is None:
+            raise HumanTaskNotFoundError(
+                f"Could find an human task with task guid '{task_guid}' for process instance '{process_instance_id}'"
+            )
+
+        if human_task.completed:
+            raise HumanTaskAlreadyCompletedError(
+                f"Human task with task guid '{task_guid}' for process instance '{process_instance_id}' has already been completed"
+            )
+
+        potential_owners = getattr(human_task, "potential_owners", ())
+        if user in potential_owners:
+            raise
+
+        process_instance = ProcessInstanceModel.query.filter_by(id=process_instance_id).first()
+        can_submit_task = getattr(process_instance, "can_submit_task", None)
+        if callable(can_submit_task) and can_submit_task():
             return True
         raise
 

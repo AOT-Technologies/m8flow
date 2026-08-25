@@ -1370,9 +1370,33 @@ def test_list_templates_super_admin_without_filter_sees_all_tenants() -> None:
     with app.app_context():
         db.create_all()
         db.session.add_all([
-            M8flowTenantModel(id="m8flow", name="M8Flow", slug="m8flow", created_by="test", modified_by="test"),
-            M8flowTenantModel(id="tenant1", name="Tenant 1", slug="tenant1", created_by="test", modified_by="test"),
-            M8flowTenantModel(id="tenant2", name="Tenant 2", slug="tenant2", created_by="test", modified_by="test"),
+            M8flowTenantModel(
+                id="m8flow",
+                name="M8Flow",
+                slug="m8flow",
+                created_by="test",
+                modified_by="test",
+                created_at_in_seconds=1,
+                updated_at_in_seconds=1,
+            ),
+            M8flowTenantModel(
+                id="tenant1",
+                name="Tenant 1",
+                slug="tenant1",
+                created_by="test",
+                modified_by="test",
+                created_at_in_seconds=1,
+                updated_at_in_seconds=1,
+            ),
+            M8flowTenantModel(
+                id="tenant2",
+                name="Tenant 2",
+                slug="tenant2",
+                created_by="test",
+                modified_by="test",
+                created_at_in_seconds=1,
+                updated_at_in_seconds=1,
+            ),
         ])
         user = UserModel(username="super-admin", email="super@example.com", service="local", service_id="super-admin")
         db.session.add(user)
@@ -1386,6 +1410,8 @@ def test_list_templates_super_admin_without_filter_sees_all_tenants() -> None:
                 files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 created_by="system",
                 modified_by="system",
+                created_at_in_seconds=1,
+                updated_at_in_seconds=1,
             ),
             TemplateModel(
                 template_key="tenant2-private",
@@ -1396,6 +1422,8 @@ def test_list_templates_super_admin_without_filter_sees_all_tenants() -> None:
                 files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 created_by="owner2",
                 modified_by="owner2",
+                created_at_in_seconds=1,
+                updated_at_in_seconds=1,
             ),
             TemplateModel(
                 template_key="tenant1-tenant",
@@ -1406,6 +1434,8 @@ def test_list_templates_super_admin_without_filter_sees_all_tenants() -> None:
                 files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 created_by="owner1",
                 modified_by="owner1",
+                created_at_in_seconds=1,
+                updated_at_in_seconds=1,
             ),
         ])
         db.session.commit()

@@ -23,10 +23,6 @@ class TemplateModel(SpiffworkflowBaseDBModel, AuditDateTimeMixin):
     """Template metadata and version rows (one row per version)."""
 
     __tablename__ = "m8flow_templates"
-    # PUBLIC templates are visibility-scoped in TemplateService rather than by the
-    # blanket ORM tenant filter, otherwise cross-tenant reads never reach the
-    # authorization layer.
-    __m8flow_skip_automatic_tenant_scope__ = True
     __table_args__ = (
         UniqueConstraint("m8f_tenant_id", "template_key", "version", name="uq_template_key_version_tenant"),
         Index("ix_template_template_key", "template_key"),
