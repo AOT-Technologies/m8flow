@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Callable
 from collections.abc import Iterable
 from collections.abc import Mapping
 from contextlib import contextmanager
@@ -28,6 +29,7 @@ from m8flow_backend.services.tenant_identity_helpers import realm_from_service
 from m8flow_backend.services.tenant_identity_helpers import tenant_id_from_payload
 from m8flow_backend.services.tenant_group_mapping import tenant_roles_for_organization_group
 from m8flow_backend.tenancy import is_concrete_tenant_id
+from m8flow_backend.tenancy import is_super_admin_request
 
 _PATCHED = False
 logger = logging.getLogger(__name__)
@@ -186,6 +188,29 @@ def _permission_scoped_groups_for_user(user: Any, tenant_id: str | None = None) 
     if not isinstance(groups, Iterable) or isinstance(groups, str | bytes):
         return []
     return [group for group in groups if _group_applies_to_active_permission_scope(group, tenant_id=tenant_id)]
+
+
+def _allow_super_admin_task_completion(
+    original_assert_user_can_complete_task: Callable[[int, str, Any], bool],
+    process_instance_id: int,
+    task_guid: str,
+    user: Any,
+) -> bool:
+    """
+    Preserve upstream human-task validation, but let super-admins act cross-tenant.
+
+    Upstream uses potential-owner membership as the final task-action gate. That is
+    correct for tenant-scoped users, but super-admins in the master realm need to be
+    able to save drafts and submit forms for cross-tenant support/admin flows.
+    """
+    from spiffworkflow_backend.exceptions.error import UserDoesNotHaveAccessToTaskError
+
+    try:
+        return original_assert_user_can_complete_task(process_instance_id, task_guid, user)
+    except UserDoesNotHaveAccessToTaskError:
+        if is_super_admin_request():
+            return True
+        raise
 
 
 def _username_from_user_info(user_info: dict[str, Any]) -> str:
@@ -1263,6 +1288,21 @@ def apply() -> None:
 
     AuthorizationService.create_user_from_sign_in = patched_create_user_from_sign_in
 
+    original_assert_user_can_complete_task = AuthorizationService.assert_user_can_complete_task
+
+    def patched_assert_user_can_complete_task(
+        process_instance_id: int,
+        task_guid: str,
+        user: Any,
+    ) -> bool:
+        return _allow_super_admin_task_completion(
+            original_assert_user_can_complete_task,
+            process_instance_id,
+            task_guid,
+            user,
+        )
+
+    AuthorizationService.assert_user_can_complete_task = staticmethod(patched_assert_user_can_complete_task)
 
     @classmethod
     def patched_parse_permissions_yaml_into_group_info(cls):

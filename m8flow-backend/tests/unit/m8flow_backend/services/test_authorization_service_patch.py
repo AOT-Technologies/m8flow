@@ -5,6 +5,7 @@ import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from flask import Flask
 
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel  # noqa: F401
@@ -14,6 +15,7 @@ from m8flow_backend.services import authorization_service_patch
 from m8flow_backend.services.authorization_service_patch import _keycloak_realm_roles_as_groups
 from m8flow_backend.services.authorization_service_patch import _find_existing_user_for_sign_in
 from m8flow_backend.services.authorization_service_patch import _find_existing_user_in_same_realm
+from m8flow_backend.services.authorization_service_patch import _allow_super_admin_task_completion
 from m8flow_backend.services.authorization_service_patch import _display_name_from_user_info
 from m8flow_backend.services.authorization_service_patch import _group_identifier_applies_to_active_permission_scope
 from m8flow_backend.services.authorization_service_patch import _normalize_keycloak_groups
@@ -939,7 +941,45 @@ def test_parse_permissions_yaml_into_group_info_preserves_global_super_admin_gro
 
     assert "create" in super_admin_actions_by_uri["/process-instances/for-me"]
     assert "create" in super_admin_actions_by_uri["/process-instances"]
-    assert "update" not in super_admin_actions_by_uri["/tasks/*"]
+    assert "create" in super_admin_actions_by_uri["/tasks/*"]
+    assert "update" in super_admin_actions_by_uri["/tasks/*"]
+    assert "delete" not in super_admin_actions_by_uri["/tasks/*"]
+
+
+def test_allow_super_admin_task_completion_bypasses_owner_check(monkeypatch) -> None:
+    from spiffworkflow_backend.exceptions.error import UserDoesNotHaveAccessToTaskError
+
+    def original_assert_user_can_complete_task(process_instance_id: int, task_guid: str, user: object) -> bool:
+        raise UserDoesNotHaveAccessToTaskError("blocked")
+
+    monkeypatch.setattr(authorization_service_patch, "is_super_admin_request", lambda: True)
+
+    assert (
+        _allow_super_admin_task_completion(
+            original_assert_user_can_complete_task,
+            1,
+            "task-guid",
+            SimpleNamespace(username="super-admin"),
+        )
+        is True
+    )
+
+
+def test_allow_super_admin_task_completion_preserves_non_super_admin_denial(monkeypatch) -> None:
+    from spiffworkflow_backend.exceptions.error import UserDoesNotHaveAccessToTaskError
+
+    def original_assert_user_can_complete_task(process_instance_id: int, task_guid: str, user: object) -> bool:
+        raise UserDoesNotHaveAccessToTaskError("blocked")
+
+    monkeypatch.setattr(authorization_service_patch, "is_super_admin_request", lambda: False)
+
+    with pytest.raises(UserDoesNotHaveAccessToTaskError):
+        _allow_super_admin_task_completion(
+            original_assert_user_can_complete_task,
+            1,
+            "task-guid",
+            SimpleNamespace(username="editor"),
+        )
 
 
 def test_parse_permissions_yaml_submitter_includes_process_model_read_dependencies(monkeypatch) -> None:
@@ -1457,6 +1497,82 @@ def test_reviewer_permissions_from_yaml_include_onboarding_tasks_and_process_ite
     assert tasks_collection_allowed is True
     assert task_item_allowed is True
     assert process_item_allowed is True
+
+
+def test_super_admin_permissions_from_yaml_allow_task_form_save_and_submit(monkeypatch) -> None:
+    app = Flask(__name__)  # NOSONAR - unit test
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SQLALCHEMY_EXPIRE_ON_COMMIT"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"] = "/v1.0"
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP"] = "spiff_public"
+    app.config["SPIFFWORKFLOW_BACKEND_PERMISSIONS_FILE_ABSOLUTE_PATH"] = str(
+        Path(__file__).resolve().parents[4] / "src" / "m8flow_backend" / "config" / "permissions" / "m8flow.yml"
+    )
+
+    from spiffworkflow_backend.models.db import db
+
+    db.init_app(app)
+
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_id_or_none", lambda: "tenant-a")
+    monkeypatch.setattr(
+        authorization_service_patch,
+        "current_tenant_identifiers",
+        lambda tenant_id=None: {"tenant-a", "tenant-a-slug"},
+    )
+
+    with app.app_context():
+        model_override_patch.apply()
+        from spiffworkflow_backend.models.group import GroupModel
+        from spiffworkflow_backend.models.permission_assignment import PermissionAssignmentModel
+        from spiffworkflow_backend.models.permission_target import PermissionTargetModel
+        from spiffworkflow_backend.models.principal import PrincipalModel
+        from spiffworkflow_backend.models.user import UserModel
+        from spiffworkflow_backend.models.user_group_assignment import UserGroupAssignmentModel
+        from spiffworkflow_backend.services.authorization_service import AuthorizationService
+        from spiffworkflow_backend.services.user_service import UserService
+
+        _ = (
+            GroupModel,
+            PermissionAssignmentModel,
+            PermissionTargetModel,
+            PrincipalModel,
+            UserModel,
+            UserGroupAssignmentModel,
+        )
+
+        db.create_all()
+
+        authorization_service_patch.apply()
+
+        user = UserService.create_user(username="super-admin", service="service", service_id="service-id")
+        super_admin_group = UserService.find_or_create_group("super-admin")
+        everybody_group = UserService.find_or_create_group("everybody")
+
+        UserService.add_user_to_group(user, super_admin_group)
+        UserService.add_user_to_group(user, everybody_group)
+        AuthorizationService.import_permissions_from_yaml_file(user)
+
+        save_draft_allowed = AuthorizationService.user_has_permission(
+            user,
+            "create",
+            "/v1.0/tasks/1/task-guid/save-draft",
+        )
+        submit_allowed = AuthorizationService.user_has_permission(
+            user,
+            "update",
+            "/v1.0/tasks/1/task-guid",
+        )
+        delete_allowed = AuthorizationService.user_has_permission(
+            user,
+            "delete",
+            "/v1.0/tasks/1/task-guid",
+        )
+
+    assert save_draft_allowed is True
+    assert submit_allowed is True
+    assert delete_allowed is False
 
 
 def test_tenant_admin_permissions_from_yaml_only_grant_page_access_and_tenant_updates(monkeypatch) -> None:
