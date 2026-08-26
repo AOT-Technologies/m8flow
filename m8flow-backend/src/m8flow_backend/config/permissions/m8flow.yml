@@ -150,6 +150,8 @@ permissions:
     actions: [read]
     uri: /processes/*
   run-all-process-models:
+    # "start" is the process-model macro permission. The actual POST
+    # /process-instances/{model_id} route is authorized as HTTP "create".
     groups: ["tenant-admin", "editor", "submitter", "super-admin"]
     actions: [start]
     uri: PM:ALL

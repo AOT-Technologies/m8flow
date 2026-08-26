@@ -1824,6 +1824,119 @@ def test_get_template_by_id_allows_cross_tenant_public_template() -> None:
         assert result.id == template_id
 
 
+def test_get_template_by_id_denies_cross_tenant_private_template() -> None:
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add_all(
+            [
+                M8flowTenantModel(
+                    id="tenant-a",
+                    name="Tenant A",
+                    slug="tenant-a",
+                    created_by="test",
+                    modified_by="test",
+                    created_at_in_seconds=1,
+                    updated_at_in_seconds=1,
+                ),
+                M8flowTenantModel(
+                    id="tenant-b",
+                    name="Tenant B",
+                    slug="tenant-b",
+                    created_by="test",
+                    modified_by="test",
+                    created_at_in_seconds=1,
+                    updated_at_in_seconds=1,
+                ),
+            ]
+        )
+        # Same username as the creator on purpose: cross-tenant ownership alone must not grant access.
+        user = UserModel(username="owner-b", email="owner-b@example.com", service="local", service_id="owner-b")
+        db.session.add(user)
+        template = TemplateModel(
+            template_key="by-id-cross-tenant-private",
+            version="V1",
+            name="Cross Tenant Private",
+            visibility=TemplateVisibility.private.value,
+            m8f_tenant_id="tenant-b",
+            files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
+            created_by="owner-b",
+            modified_by="owner-b",
+            created_at_in_seconds=1,
+            updated_at_in_seconds=1,
+        )
+        db.session.add(template)
+        db.session.commit()
+        template_id = template.id
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            result = TemplateService.get_template_by_id(template_id, user=user)
+
+        assert result is None
+
+
+def test_get_template_by_id_denies_cross_tenant_tenant_visible_template() -> None:
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add_all(
+            [
+                M8flowTenantModel(
+                    id="tenant-a",
+                    name="Tenant A",
+                    slug="tenant-a",
+                    created_by="test",
+                    modified_by="test",
+                    created_at_in_seconds=1,
+                    updated_at_in_seconds=1,
+                ),
+                M8flowTenantModel(
+                    id="tenant-b",
+                    name="Tenant B",
+                    slug="tenant-b",
+                    created_by="test",
+                    modified_by="test",
+                    created_at_in_seconds=1,
+                    updated_at_in_seconds=1,
+                ),
+            ]
+        )
+        user = UserModel(username="tenant-a-user", email="tenant-a@example.com", service="local", service_id="tenant-a")
+        db.session.add(user)
+        template = TemplateModel(
+            template_key="by-id-cross-tenant-tenant",
+            version="V1",
+            name="Cross Tenant Tenant Visible",
+            visibility=TemplateVisibility.tenant.value,
+            m8f_tenant_id="tenant-b",
+            files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
+            created_by="owner-b",
+            modified_by="owner-b",
+            created_at_in_seconds=1,
+            updated_at_in_seconds=1,
+        )
+        db.session.add(template)
+        db.session.commit()
+        template_id = template.id
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            result = TemplateService.get_template_by_id(template_id, user=user)
+
+        assert result is None
+
+
 def test_get_template_by_id() -> None:
     """Get template by database ID."""
     app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved

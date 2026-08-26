@@ -2352,7 +2352,7 @@ def test_master_realm_create_user_from_sign_in_assigns_global_super_admin_group(
     assert everybody_extensions_allowed is True
 
 
-def test_master_realm_super_admin_can_start_process_instance_for_specific_model(monkeypatch) -> None:
+def test_master_realm_super_admin_start_route_uses_create_permission_for_specific_model(monkeypatch) -> None:
     permissions_path = (
         Path(__file__).resolve().parents[4] / "src" / "m8flow_backend" / "config" / "permissions" / "m8flow.yml"
     )
@@ -2403,13 +2403,21 @@ def test_master_realm_super_admin_can_start_process_instance_for_specific_model(
         }
 
         user = AuthorizationService.create_user_from_sign_in(user_info)
+        route_permission = AuthorizationService.get_permission_from_http_method("POST")
         start_allowed = AuthorizationService.user_has_permission(
             user,
-            "create",
+            route_permission,
             "/v1.0/process-instances/process-group-test:approval-with-conditional-escalation",
         )
+        command_assignments = {
+            (assignment.permission, assignment.permission_target.uri, assignment.permission_target.command)
+            for assignment in AuthorizationService.all_permission_assignments_for_user(user)
+            if assignment.permission_target.command is not None
+        }
 
+    assert route_permission == "create"
     assert start_allowed is True
+    assert ("create", "/process-models/%", "process.start") in command_assignments
 
 
 def test_master_realm_create_user_from_sign_in_tolerates_default_group_assignment_race(monkeypatch) -> None:
