@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import ProcessModelCard from './ProcessModelCard';
@@ -14,12 +14,14 @@ vi.mock('../../services/UserService', () => ({
   },
 }));
 
-vi.mock('@spiff-core/views/StartProcess/ProcessModelCard', () => ({
-  default: ({ model }: { model: { id: string; display_name?: string } }) => (
-    <div data-testid={`upstream-process-model-card-${model.id}`}>
-      {model.display_name || model.id}
-    </div>
-  ),
+const navigate = vi.fn();
+
+vi.mock('react-router-dom', () => ({
+  useNavigate: () => navigate,
+}));
+
+vi.mock('../../services/LocalStorageService', () => ({
+  getStorageValue: vi.fn(() => '[]'),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -104,5 +106,21 @@ describe('ProcessModelCard', () => {
     expect(screen.getByTestId('process-model-tenant-chip-hr/onboarding')).toHaveTextContent(
       'Acme Co.',
     );
+  });
+
+  it('disables process start when the page requires a concrete tenant selection', () => {
+    vi.mocked(UserService.isSuperAdmin).mockReturnValue(true);
+    renderCard({
+      id: 'hr/onboarding',
+      display_name: 'Onboarding',
+      description: '',
+      tenantName: 'Acme Co.',
+    } as any);
+
+    const button = screen.getByRole('button', { name: 'start_process' });
+    expect(button).toBeEnabled();
+
+    fireEvent.click(button);
+    expect(navigate).toHaveBeenCalledWith('/hr:onboarding/start');
   });
 });

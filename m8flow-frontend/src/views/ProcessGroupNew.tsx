@@ -1,0 +1,45 @@
+import { useEffect, useState } from 'react';
+import { Typography } from '@mui/material';
+import { useTranslation } from 'react-i18next';
+import ProcessBreadcrumb from '../components/ProcessBreadcrumb';
+import ProcessGroupForm from '../components/ProcessGroupForm';
+import { setPageTitle } from '../helpers';
+import { HotCrumbItem, ProcessGroup } from '../interfaces';
+
+export default function ProcessGroupNew() {
+  const searchParams = new URLSearchParams(document.location.search);
+  const parentGroupId = searchParams.get('parentGroupId');
+  const [processGroup, setProcessGroup] = useState<ProcessGroup>({
+    id: '',
+    display_name: '',
+    description: '',
+  });
+  const { t } = useTranslation();
+
+  useEffect(() => {
+    setPageTitle([t('new_process_group')]);
+  }, [t]);
+
+  const hotCrumbs: HotCrumbItem[] = [[t('process_groups'), '/process-groups']];
+  if (parentGroupId) {
+    hotCrumbs.push({
+      entityToExplode: parentGroupId,
+      entityType: 'process-group-id',
+      linkLastItem: true,
+    });
+  }
+
+  return (
+    <>
+      <ProcessBreadcrumb hotCrumbs={hotCrumbs} />
+      <Typography variant="h1" gutterBottom>
+        {t('new_process_group')}
+      </Typography>
+      <ProcessGroupForm
+        mode="new"
+        processGroup={processGroup}
+        setProcessGroup={setProcessGroup}
+      />
+    </>
+  );
+}

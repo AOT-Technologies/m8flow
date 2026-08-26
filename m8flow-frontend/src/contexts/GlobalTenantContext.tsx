@@ -41,6 +41,10 @@ const GlobalTenantContext = createContext<GlobalTenantContextType>({
   setSelectedTenantId: () => {},
 });
 
+export function getStoredGlobalTenantId(): string {
+  return safeGet(GLOBAL_TENANT_STORAGE_KEY);
+}
+
 export function GlobalTenantProvider({ children }: { children: React.ReactNode }) {
   const [selectedTenantId, setSelectedTenantIdState] = useState<string>(() =>
     safeGet(GLOBAL_TENANT_STORAGE_KEY),

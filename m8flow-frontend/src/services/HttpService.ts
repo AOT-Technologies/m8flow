@@ -3,6 +3,7 @@
  */
 import { BACKEND_BASE_URL } from '@spiffworkflow-frontend/config';
 import { objectIsEmpty } from '@spiffworkflow-frontend/helpers';
+import { getStoredGlobalTenantId } from '../contexts/GlobalTenantContext';
 import UserService from './UserService';
 
 export const HttpMethods = {
@@ -107,12 +108,28 @@ const looksLikeHtmlDocument = (body: string) => {
 
 const stripVersionPrefix = (path: string) => path.replace(/^\/v1\.0/, '');
 
+const getSuperAdminTenantHeaders = (httpMethod: string): Record<string, string> => {
+  if (httpMethod === HttpMethods.GET || !UserService.isSuperAdmin()) {
+    return {};
+  }
+
+  const selectedTenantId = getStoredGlobalTenantId().trim();
+  if (!selectedTenantId) {
+    return {};
+  }
+
+  return {
+    'X-M8Flow-Tenant-Id': selectedTenantId,
+  };
+};
+
 const assembleFetchInit = ({
   httpMethod = 'GET',
   extraHeaders = {},
   postBody = {},
 }: Pick<CallArgs, 'httpMethod' | 'extraHeaders' | 'postBody'>): RequestInit => {
   const headers = getBasicHeaders();
+  Object.assign(headers, getSuperAdminTenantHeaders(httpMethod));
   if (!objectIsEmpty(extraHeaders)) {
     Object.assign(headers, extraHeaders);
   }

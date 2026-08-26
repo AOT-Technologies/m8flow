@@ -29,6 +29,7 @@
   "tenant": "Tenant",
   "select_tenant_placeholder": "Select a tenant",
   "tenant_required_for_super_admin": "Please select a tenant before creating this process model.",
+  "select_tenant_before_workflow_management": "Select a concrete tenant in the global tenant selector before creating workflow definitions or starting a process.",
   "tenants": "Tenants",
   "try_adjusting_filters_templates": "Try adjusting your filters to see more templates.",
   "version": "Version",

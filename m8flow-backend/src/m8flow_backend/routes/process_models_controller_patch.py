@@ -11,8 +11,6 @@ from flask import make_response
 from flask import request as flask_request
 
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
-from m8flow_backend.tenancy import is_super_admin_request
-from spiffworkflow_backend.exceptions.api_error import ApiError
 from spiffworkflow_backend.models.db import db  # noqa: F401
 
 _PATCHED = False
@@ -26,20 +24,11 @@ def prepare_process_model_create_body_for_upstream(
 ) -> dict[str, str | bool | int | None | list]:
     """Copy body for upstream handler; strips ``m8f_tenant_id`` from the payload.
 
-    Super-admin is read-only across tenants and cannot create process models.
+    The concrete tenant selection, when needed, is resolved by the route wrapper
+    before the upstream controller is invoked.
     """
     body_for_upstream = dict(body)
-    raw_tid = body_for_upstream.pop("m8f_tenant_id", None)
-    if is_super_admin_request():
-        raise ApiError(
-            error_code="forbidden",
-            message="Super-admin is read-only across tenants.",
-            status_code=403,
-        )
-    # Non-super-admin calls may still include m8f_tenant_id from older clients;
-    # ignore it and rely on normal tenant scoping instead.
-    _ = raw_tid
-
+    body_for_upstream.pop("m8f_tenant_id", None)
     return body_for_upstream
 
 
@@ -169,8 +158,17 @@ def apply() -> None:
         modified_process_group_id: str,
         body: dict[str, str | bool | int | None | list],
     ) -> Any:
+        explicit_tenant_id = body.get("m8f_tenant_id")
         body_for_upstream = prepare_process_model_create_body_for_upstream(body)
-        return upstream_create(modified_process_group_id, body_for_upstream)
+        from m8flow_backend.services.process_model_service_patch import (
+            super_admin_workflow_write_context,
+        )
+
+        with super_admin_workflow_write_context(
+            explicit_tenant_id=explicit_tenant_id if isinstance(explicit_tenant_id, str) else None,
+            process_group_id=modified_process_group_id,
+        ):
+            return upstream_create(modified_process_group_id, body_for_upstream)
 
     def _patched_process_model_list(
         process_group_identifier: str | None = None,

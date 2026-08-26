@@ -7,22 +7,17 @@
 import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
-import { useQuery } from '@tanstack/react-query';
 import {
+  Alert,
   Button,
   TextField,
-  Select,
-  MenuItem,
-  Typography,
-  FormControl,
-  InputLabel,
   Stack,
   Box,
 } from '@mui/material';
 
+import { useGlobalTenant } from '../contexts/GlobalTenantContext';
 import { modifyProcessIdentifierForPathParam, slugifyString } from '../helpers';
 import HttpService from '../services/HttpService';
-import TenantService from '../services/TenantService';
 import UserService from '../services/UserService';
 import { ProcessModel } from '../interfaces';
 
@@ -47,16 +42,11 @@ export default function ProcessModelForm({
   const [badId, setBadId] = useState(false);
   const [idEdited, setIdEdited] = useState(false);
   const [badName, setBadName] = useState(false);
-  const [chosenTenant, setChosenTenant] = useState('');
-  const [badTenant, setBadTenant] = useState(false);
 
   const isCreate = mode === 'new';
-  const requireTenant = isCreate && UserService.isSuperAdmin();
-  const { data: tenantOptions = [], isLoading: loadingTenants } = useQuery({
-    queryKey: ['tenants'],
-    queryFn: () => TenantService.getAllTenants(),
-    enabled: requireTenant,
-  });
+  const { selectedTenantId } = useGlobalTenant();
+  const requireTenantSelection = isCreate && UserService.isSuperAdmin();
+  const missingTenantSelection = requireTenantSelection && !selectedTenantId;
 
   const merge = (patch: Partial<ProcessModel>) => setModel({ ...model, ...patch });
 
@@ -84,8 +74,7 @@ export default function ProcessModelForm({
       setBadName(true);
       failed = true;
     }
-    if (requireTenant && !chosenTenant.trim()) {
-      setBadTenant(true);
+    if (missingTenantSelection) {
       failed = true;
     }
     if (failed) return;
@@ -103,9 +92,6 @@ export default function ProcessModelForm({
       exception_notification_addresses: model.exception_notification_addresses,
     };
     if (isCreate) payload.id = `${groupId}/${model.id}`;
-    if (requireTenant && chosenTenant.trim()) {
-      payload.m8f_tenant_id = chosenTenant.trim();
-    }
 
     HttpService.makeCallToBackend({
       path: endpoint,
@@ -122,6 +108,15 @@ export default function ProcessModelForm({
       onSubmit={handleSubmit}
     >
       <Stack spacing={2}>
+        {missingTenantSelection ? (
+          <Alert
+            severity="warning"
+            data-testid="super-admin-tenant-alert"
+          >
+            {t('select_tenant_before_workflow_management')}
+          </Alert>
+        ) : null}
+
         <TextField
           id="m8-model-display-name"
           name="display_name"
@@ -133,38 +128,6 @@ export default function ProcessModelForm({
           onChange={(e) => handleDisplayName(e.target.value)}
           fullWidth
         />
-
-        {requireTenant ? (
-          <FormControl fullWidth error={badTenant} disabled={loadingTenants}>
-            <InputLabel id="m8-tenant-label">{t('tenant')}</InputLabel>
-            <Select
-              labelId="m8-tenant-label"
-              id="m8-tenant-id"
-              data-testid="super-admin-tenant-select"
-              value={chosenTenant}
-              label={t('tenant')}
-              onChange={(e) => {
-                const next = String(e.target.value);
-                setChosenTenant(next);
-                if (badTenant && next.trim()) setBadTenant(false);
-              }}
-            >
-              <MenuItem value="">
-                <em>{t('select_tenant_placeholder')}</em>
-              </MenuItem>
-              {tenantOptions.map((tenant) => (
-                <MenuItem key={tenant.id} value={tenant.id}>
-                  {tenant.name} ({tenant.slug})
-                </MenuItem>
-              ))}
-            </Select>
-            {badTenant ? (
-              <Typography variant="caption" color="error" sx={{ mt: 0.5, ml: 1.5 }}>
-                {t('tenant_required_for_super_admin')}
-              </Typography>
-            ) : null}
-          </FormControl>
-        ) : null}
 
         {isCreate ? (
           <TextField
@@ -201,6 +164,7 @@ export default function ProcessModelForm({
             data-testid="process-model-submit-button"
             variant="contained"
             type="submit"
+            disabled={missingTenantSelection}
           >
             {t('submit')}
           </Button>

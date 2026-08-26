@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import sys
 from flask import Flask
+from flask import g
 from types import ModuleType
 from types import SimpleNamespace
 
 from m8flow_backend.services import process_instance_service_patch
+from m8flow_backend.tenancy import get_context_tenant_id
 
 
 def test_apply_forces_completed_task_data_when_rehydrating_process_instance(monkeypatch) -> None:
@@ -720,6 +722,7 @@ def test_apply_preflights_queued_form_submissions_before_returning(monkeypatch) 
 
     class FakeProcessInstanceService:
         original_update_form_task_data_calls: list[dict[str, object]] = []
+        tenant_ids_seen_during_completion: list[str | None] = []
 
         @staticmethod
         def create_process_instance(*_args, **_kwargs):
@@ -747,6 +750,7 @@ def test_apply_preflights_queued_form_submissions_before_returning(monkeypatch) 
         @classmethod
         def complete_form_task(cls, processor, spiff_task, data, user, human_task, execution_mode=None):
             # Upstream-shaped: looks up should_queue_process_instance on this module.
+            cls.tenant_ids_seen_during_completion.append(get_context_tenant_id())
             cls.update_form_task_data(processor.process_instance_model, spiff_task, data, user)
             processor.complete_task(spiff_task, human_task, user=user)
             if fake_service_module.should_queue_process_instance(execution_mode):
@@ -841,7 +845,7 @@ def test_apply_preflights_queued_form_submissions_before_returning(monkeypatch) 
     complete_task_calls: list[dict[str, object]] = []
 
     processor = SimpleNamespace(
-        process_instance_model=SimpleNamespace(id=17),
+        process_instance_model=SimpleNamespace(id=17, m8f_tenant_id="tenant-a"),
         complete_task=lambda spiff_task, human_task, user: complete_task_calls.append(
             {
                 "spiff_task": spiff_task,
@@ -860,7 +864,9 @@ def test_apply_preflights_queued_form_submissions_before_returning(monkeypatch) 
     data = {"decision": "Approved"}
 
     app = Flask(__name__)
-    with app.app_context():
+    with app.test_request_context("/v1.0/tasks/17/task-1"):
+        g._m8flow_super_admin_request = True
+        g._m8flow_global_request = True
         FakeProcessInstanceService.complete_form_task(processor, spiff_task, data, user, human_task, execution_mode="queued")
 
     assert FakeProcessInstanceService.original_update_form_task_data_calls == [
@@ -872,6 +878,8 @@ def test_apply_preflights_queued_form_submissions_before_returning(monkeypatch) 
         }
     ]
     assert complete_task_calls == [{"spiff_task": spiff_task, "human_task": human_task, "user": user}]
+    assert FakeProcessInstanceService.tenant_ids_seen_during_completion == ["tenant-a"]
+    assert get_context_tenant_id() is None
     assert validate_calls == [processor]
     assert refresh_calls == [None]
     assert get_tasks_calls == [FakeTaskState.WAITING | FakeTaskState.READY]
