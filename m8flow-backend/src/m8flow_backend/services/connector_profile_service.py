@@ -308,10 +308,12 @@ class ConnectorProfileService:
         db.session.commit()
 
         backend = secret_backend()
+        failed = 0
         for key in refs:
             try:
                 backend.delete(key)
             except Exception:
+                failed += 1
                 # codeql[py/clear-text-logging-sensitive-data]: logs
                 # configuration_id (an int). The loop variable `key` is a
                 # secret-store reference name, not a credential, and is not
@@ -321,6 +323,17 @@ class ConnectorProfileService:
                     configuration_id,
                     exc_info=True,
                 )
+        if failed:
+            # A count, so ops can size the orphan cleanup without correlating
+            # the per-key warnings above. Still no key names: see the CodeQL
+            # note above, which this message is bound by too.
+            logger.warning(
+                "Removed profile %s left %s of %s secret(s) undeleted; "
+                "they are unreachable but still stored.",
+                configuration_id,
+                failed,
+                len(refs),
+            )
         db.session.commit()
 
     # --------------------------------------------------------------- runtime

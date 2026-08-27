@@ -34,6 +34,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "m8flow-backend" / "src"))
 
+# Deliberately not SPIFFWORKFLOW_BACKEND_CONNECTOR_PROXY_URL (port 7004): this
+# script talks to the proxy directly rather than through the backend, so it
+# points at the proxy's own address.
 DEFAULT_PROXY_URL = os.environ.get(
     "M8FLOW_BACKEND_CONNECTOR_PROXY_URL", "http://localhost:6844"
 )
@@ -43,7 +46,7 @@ def fetch_commands(proxy_url: str) -> list[dict]:
     url = f"{proxy_url.rstrip('/')}/v1/commands"
     try:
         with urllib.request.urlopen(url, timeout=15) as response:  # noqa: S310
-            return json.loads(response.read())
+            payload = json.loads(response.read())
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
         print(f"error: could not read {url}: {error}", file=sys.stderr)
         print(
@@ -52,6 +55,22 @@ def fetch_commands(proxy_url: str) -> list[dict]:
             file=sys.stderr,
         )
         raise SystemExit(2) from error
+
+    # A proxy that errors returns an object, not the expected list. Say so here,
+    # where the payload is in hand, rather than failing later on a .get() call
+    # against something that was never a command.
+    if not isinstance(payload, list) or not all(
+        isinstance(item, dict) for item in payload
+    ):
+        print(
+            f"error: {url} returned {type(payload).__name__}, expected a list of "
+            f"command objects.",
+            file=sys.stderr,
+        )
+        print(f"hint: the proxy replied: {str(payload)[:200]}", file=sys.stderr)
+        raise SystemExit(2)
+
+    return payload
 
 
 def parameters_by_connector(commands: list[dict]) -> dict[str, set[str]]:
