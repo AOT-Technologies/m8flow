@@ -62,6 +62,10 @@ vi.mock('react-i18next', () => {
   const t = (key: string, opts?: { name?: string }) =>
     opts?.name ? `${key}:${opts.name}` : key;
   return {
+    initReactI18next: {
+      type: '3rdParty',
+      init: () => undefined,
+    },
     useTranslation: () => ({ t }),
   };
 });

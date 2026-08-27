@@ -460,5 +460,7 @@
   "continuing_into_tenant": "Continuing into {{tenant}}...",
   "select_a_tenant": "Select a Tenant",
   "multi_tenant_choose_description": "Your account has access to more than one tenant. Choose the tenant you want to enter for this session.",
-  "owner": "Owner"
+  "owner": "Owner",
+  "external_form_smtp_missing_hint": "External form notification emails cannot be sent: this tenant is missing the following secrets. Add them here to start delivering secure links.",
+  "external_form_smtp_configured_hint": "External form notification emails are configured. They use these secrets:"
 }

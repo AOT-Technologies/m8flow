@@ -33,6 +33,7 @@ import { PermissionsToCheck } from '@spiffworkflow-frontend/interfaces';
 import { usePermissionFetcher } from '@spiffworkflow-frontend/hooks/PermissionService';
 import { ConnectorNameAvatar } from '../utils/connectorCardDisplay';
 import { Notification } from '../components/Notification';
+import { clearSmtpStatusCache } from '../services/ExternalFormNotificationService';
 import {
   type ConnectorConfigField,
   type ConnectorGroup,
@@ -311,6 +312,7 @@ export default function ConnectorConfigure() {
     setSaveError(null);
     Promise.all(tasks)
       .then(() => {
+        clearSmtpStatusCache();
         // Everything entered is now persisted; reflect that in the form state.
         setFieldStates((prev) => {
           const next = { ...prev };

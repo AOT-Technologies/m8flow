@@ -12,7 +12,7 @@ from spiffworkflow_backend.models.db import db
 from spiffworkflow_backend.models.user import UserModel
 
 from m8flow_backend.config import external_form_link_ttl_seconds
-from m8flow_backend.models.external_form_request import ACTIONABLE_STATUSES
+from m8flow_backend.models.external_form_request import OPEN_STATUSES
 from m8flow_backend.models.external_form_request import ExternalFormRequestModel
 from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
 from m8flow_backend.tenancy import get_context_tenant_id, set_context_tenant_id
@@ -55,7 +55,10 @@ class ExternalFormService:
             for row in ExternalFormRequestModel.query.filter(
                 ExternalFormRequestModel.process_instance_id == process_instance_id,
                 ExternalFormRequestModel.task_guid == task_guid,
-                ExternalFormRequestModel.status.in_(ACTIONABLE_STATUSES),
+                # OPEN, not ACTIONABLE: a request parked for missing SMTP is still this
+                # recipient's live request. Issuing a second one per processor.save()
+                # would pile up rows that all get emailed once SMTP is configured.
+                ExternalFormRequestModel.status.in_(OPEN_STATUSES),
             ).all()
         }
 
@@ -115,7 +118,9 @@ class ExternalFormService:
     @classmethod
     def _expire_if_needed(cls, row: ExternalFormRequestModel) -> None:
         if (
-            row.status in ACTIONABLE_STATUSES
+            # OPEN, not ACTIONABLE: a parked request must still expire on TTL, otherwise
+            # it would sit outside every terminal check forever.
+            row.status in OPEN_STATUSES
             and row.expires_at_in_seconds is not None
             and row.expires_at_in_seconds < int(time.time())
         ):
@@ -173,6 +178,24 @@ class ExternalFormService:
                 error_code="reference_expired",
                 message="This link has expired.",
                 status_code=410,
+            )
+        if row.status == ExternalFormRequestStatus.smtp_unconfigured.value:
+            # This request was never emailed, so no recipient can legitimately hold its
+            # link — presenting one means it was read out of the database. Refuse it
+            # rather than let an operator submit the form as the recipient. The message
+            # stays generic: this endpoint is unauthenticated and must not disclose the
+            # tenant's mail configuration.
+            LOGGER.warning(
+                "external-form: refused a request parked as smtp_unconfigured"
+                " (id=%s instance=%s task=%s); it was never delivered to its recipient.",
+                row.id,
+                row.process_instance_id,
+                row.task_guid,
+            )
+            raise ApiError(
+                error_code="reference_not_active",
+                message="This link is not active.",
+                status_code=409,
             )
 
     @classmethod
@@ -260,7 +283,9 @@ class ExternalFormService:
             ExternalFormRequestModel.process_instance_id == row.process_instance_id,
             ExternalFormRequestModel.task_guid == row.task_guid,
             ExternalFormRequestModel.id != row.id,
-            ExternalFormRequestModel.status.in_(ACTIONABLE_STATUSES),
+            # OPEN, not ACTIONABLE: a sibling parked for missing SMTP must be superseded
+            # too, or configuring SMTP later would email a link for an already-done task.
+            ExternalFormRequestModel.status.in_(OPEN_STATUSES),
         ).all()
         for sibling in siblings:
             sibling.status = ExternalFormRequestStatus.superseded.value

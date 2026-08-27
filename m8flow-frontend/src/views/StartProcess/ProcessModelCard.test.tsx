@@ -84,4 +84,22 @@ describe('ProcessModelCard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'start_process' }));
     expect(onStartProcess).not.toHaveBeenCalled();
   });
+
+  it('falls back to the registered tenant label when the model props are slim', () => {
+    vi.mocked(UserService.isSuperAdmin).mockReturnValue(true);
+    registerProcessTenantLabels([
+      {
+        id: 'hr/onboarding',
+        tenantName: 'Acme Co.',
+      },
+    ]);
+    renderCard({
+      id: 'hr/onboarding',
+      display_name: 'Onboarding',
+      description: '',
+    });
+    expect(screen.getByTestId('process-model-tenant-chip-hr/onboarding')).toHaveTextContent(
+      'Acme Co.',
+    );
+  });
 });

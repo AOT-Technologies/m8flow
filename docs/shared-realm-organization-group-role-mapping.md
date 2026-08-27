@@ -71,6 +71,59 @@ but you do **not** see:
 
 inside the token payload.
 
+### This Is Not A Temporary Omission
+
+It is a recurring assumption that the roles could simply be added to the token so
+the backend can skip the Keycloak lookup. They cannot, for two independent
+reasons.
+
+**1. No protocol mapper can carry group attributes into a token.**
+
+Keycloak's organization mappers emit membership only:
+
+- `oidc-organization-membership-mapper` — organization alias/id, with options for
+  organization-level attributes, not group-level ones
+- `oidc-organization-group-membership-mapper` — group names/paths only
+
+The same is true of the custom mappers in `keycloak-extensions/`
+(`NormalizedGroupMembershipMapper`, `NormalizedOrganizationMembershipMapper`,
+`RealmInfoMapper`): they emit or post-process group paths and realm identity
+claims, and none of them read group attributes.
+
+**2. The realm-role route that would populate `roles` is blocked upstream.**
+
+There *is* a `roles` claim mapper on the backend client
+(`oidc-usermodel-realm-role-mapper`), and the six tenant roles do exist as realm
+roles in the tenant realm template. If organization groups could be granted realm
+roles, group membership would produce `roles: ["reviewer", ...]` in the token
+automatically, with no new mapper.
+
+Keycloak 26 does not allow it. The standard
+`/groups/{id}/role-mappings/realm` endpoint rejects organization-owned groups
+("Cannot manage organization related group via non Organization API"), and there
+is no organization-scoped equivalent. Upstream tracks this at
+[keycloak#30180](https://github.com/keycloak/keycloak/issues/30180).
+
+This is why `ensure_organization_group_role_mappings()` is a documented no-op in
+the provisioning scripts:
+
+- [docker/keycloak-init-realms.sh](../docker/keycloak-init-realms.sh)
+- [docker/keycloak-entrypoint.sh](../docker/keycloak-entrypoint.sh)
+
+Storing the mapping in group attributes and resolving it server-side is the
+supported workaround, not an interim shortcut. Until keycloak#30180 ships, a
+token-side role claim would require a new custom Java mapper that reads the group
+attributes inside Keycloak — which performs the same attribute read, just on the
+other side of the wire.
+
+Note that the backend *does* honour a top-level `roles` claim when one is present:
+`_normalize_keycloak_roles()` in
+[authorization_service_patch.py](../m8flow-backend/src/m8flow_backend/services/authorization_service_patch.py)
+treats it as authoritative, filtered against the known M8Flow role names. Nothing
+in the current provisioning path populates it with tenant roles, so in practice it
+carries only `default-roles-m8flow` (see
+[Why The Top-Level `roles` Claim Still Looks Small](#why-the-top-level-roles-claim-still-looks-small)).
+
 ## Important Distinction: This Token Is An M8Flow Token
 
 The payload you pasted has:
@@ -302,8 +355,8 @@ Given:
 
 - `mary` is in `Approvers`, `Finance`, and `HR`
 - `Approvers` explicitly maps to `editor`, `integrator`, `reviewer`
-- `Finance` maps to `reviewer`
-- `HR` maps to `reviewer`
+- `Finance` explicitly maps to `reviewer`
+- `HR` explicitly maps to `reviewer`
 
 then the important outcome is not that those roles appear in the token
 attributes. The important outcome is that, after sign-in and tenant
@@ -312,11 +365,41 @@ tenant-scoped groups.
 
 That is what permission checks use.
 
+Note that `Finance` and `HR` grant `reviewer` here **only** because they carry
+explicit attributes. Neither name appears in
+`DEFAULT_ORGANIZATION_GROUP_TO_TENANT_ROLE`, so without
+`m8flow_role_mapping_configured = true` and `m8flow_role_names = reviewer` they
+would resolve to no roles at all and contribute only their own swimlane groups
+(`<tenant_id>:Finance`, `<tenant_id>:HR`). Only the six built-in names listed
+under [Built-in fallback mapping](#2-built-in-fallback-mapping) resolve without
+attributes.
+
+## When The Sync Runs
+
+Group-to-role resolution is not a login-only step. It runs from several entry
+points, all of which converge on `patched_create_user_from_sign_in()`:
+
+- **OIDC login return** —
+  `patched_login_return()` in
+  [authentication_controller_patch.py](../m8flow-backend/src/m8flow_backend/routes/authentication_controller_patch.py)
+- **Tenant finalization** — `_finalize_tenant_from_existing_shared_realm_session()`,
+  used by the shared-realm tenant picker without a second OIDC hop
+- **Every authenticated request** — `patched_get_user_model_from_token()` re-runs
+  the sync for tokens carrying authoritative membership claims, and enriches thin
+  tokens first via `_enrich_shared_realm_token_for_active_tenant()`
+- **`GET /v1.0/status`** — the frontend access gate in
+  [health_controller_patch.py](../m8flow-backend/src/m8flow_backend/routes/health_controller_patch.py)
+  syncs, and syncs a second time as a retry if the `/frontend-access` read is denied
+
+The practical consequence: a Keycloak role-attribute change generally takes effect
+on the user's **next request**, not on their next login.
+
 ## Operational Notes
 
-- If you change organization-group role attributes in Keycloak, the user usually
-  needs a fresh login or tenant-finalization pass so M8Flow can resynchronize
-  the local mirrored groups.
+- If you change organization-group role attributes in Keycloak, the change is
+  normally picked up on the user's next authenticated request, because the
+  request-time sync above re-resolves the mapping. A fresh login or
+  tenant-finalization pass forces it immediately.
 - If a custom group does not grant the expected permissions, verify the group
   has:
   - `m8flow_role_mapping_configured = true`
