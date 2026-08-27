@@ -105,6 +105,13 @@ function chunkFiles(files, size) {
 }
 
 function getBatchSizeForGroup(groupName) {
+  // The catch-all shard is the largest one and can exceed the GitHub Actions
+  // Node heap limit when Vitest runs it as a single process. Keep it batched
+  // on every platform so the CI job stays below the 4 GB heap cap.
+  if (groupName === 'remaining') {
+    return 8;
+  }
+
   if (!isWindows) {
     return null;
   }

@@ -73,7 +73,7 @@ Examples:
 
 ## Vault
 
-- `M8FLOW_VAULT_ENABLED` (optional): When `true`, the backend switches completely to Vault-backed secrets. Legacy database secrets are not read or written in this mode.
+- `M8FLOW_VAULT_ENABLED` (optional): When `true`, the backend switches completely to Vault-backed secrets. Legacy database secrets are not read or written in this mode. This is a runtime cutover flag, not a data migration; enabling it does not copy database secrets into Vault, and disabling it does not copy Vault secrets back into the database. See [vault-local-development.md](./vault-local-development.md) for the current runtime auth flow, failure behavior, audit log usage, and migration/rollback notes.
 - `M8FLOW_VAULT_ADDR` / `VAULT_ADDR` (optional): Base URL of the Vault API, for example `https://vault.example.com`.
 - `M8FLOW_VAULT_TOKEN` / `VAULT_TOKEN` (optional): Broker/control-plane token used by backend Vault operations. Use this for manual token-based runtime auth.
 - `M8FLOW_VAULT_TOKEN_FILE` / `VAULT_TOKEN_FILE` (optional): File containing a Vault token. Useful when the runtime token is mounted into the container instead of injected directly as an env var.

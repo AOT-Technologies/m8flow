@@ -70,6 +70,13 @@ def test_auth_exclusion_additions_include_current_user_organization_memberships(
     )
 
 
+def test_auth_exclusion_additions_include_vault_status() -> None:
+    assert (
+        "m8flow_backend.routes.vault_status_controller.vault_status"
+        in authorization_service_patch.M8FLOW_AUTH_EXCLUSION_ADDITIONS
+    )
+
+
 def test_permission_check_exclusion_additions_include_update_tenant_name() -> None:
     assert (
         "m8flow_backend.routes.keycloak_controller.update_tenant_name"

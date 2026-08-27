@@ -1,11 +1,13 @@
 from __future__ import annotations
 # ruff: noqa: E402
 
+import importlib.util
+import socket
 import sys
 from pathlib import Path
 from io import BytesIO
 from types import ModuleType
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 
 import pytest
 
@@ -23,6 +25,21 @@ from seeded_secrets import (
 )
 import bootstrap_vault_demo
 import verify_backend_vault_demo
+
+
+def _load_isolated_bootstrap_module(module_name: str) -> ModuleType:
+    module_path = demo_src / "bootstrap_vault_demo.py"
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    assert spec is not None
+    assert spec.loader is not None
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        sys.modules.pop(module_name, None)
 
 
 def test_missing_secrets_file_skips_demo_seeding(tmp_path: Path) -> None:
@@ -101,6 +118,65 @@ def test_bootstrap_main_failure_output_logs_safe_exception_text(
         "vault-demo: Bootstrap failed: RuntimeError: "
         "secret_id=[redacted] role_id=[redacted] root_token=[redacted] value=[redacted]"
     )
+
+
+@pytest.mark.parametrize(
+    ("env_name", "env_value"),
+    [
+        ("M8FLOW_VAULT_DEMO_HTTP_TIMEOUT_SECONDS", "not-a-number"),
+        ("M8FLOW_VAULT_DEMO_INIT_TIMEOUT_SECONDS", " "),
+    ],
+)
+def test_bootstrap_import_rejects_invalid_float_env_values(
+    monkeypatch: pytest.MonkeyPatch,
+    env_name: str,
+    env_value: str,
+) -> None:
+    monkeypatch.setenv(env_name, env_value)
+
+    with pytest.raises(RuntimeError, match=rf"{env_name} must be a finite number greater than 0;"):
+        _load_isolated_bootstrap_module(f"bootstrap_vault_demo_invalid_{env_name.lower()}")
+
+
+def test_float_env_returns_default_for_unset_and_empty_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("M8FLOW_TEST_FLOAT_ENV", raising=False)
+    assert bootstrap_vault_demo._float_env("M8FLOW_TEST_FLOAT_ENV", 12.5, min_value=0.0) == 12.5
+
+    monkeypatch.setenv("M8FLOW_TEST_FLOAT_ENV", "")
+    assert bootstrap_vault_demo._float_env("M8FLOW_TEST_FLOAT_ENV", 12.5, min_value=0.0) == 12.5
+
+
+def test_float_env_rejects_whitespace_only_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("M8FLOW_TEST_FLOAT_ENV", "   ")
+
+    with pytest.raises(RuntimeError, match=r"M8FLOW_TEST_FLOAT_ENV must be a finite number greater than 0;"):
+        bootstrap_vault_demo._float_env("M8FLOW_TEST_FLOAT_ENV", 12.5, min_value=0.0)
+
+
+@pytest.mark.parametrize("env_value", ["nan", "inf", "-inf"])
+def test_float_env_rejects_non_finite_values(
+    monkeypatch: pytest.MonkeyPatch,
+    env_value: str,
+) -> None:
+    monkeypatch.setenv("M8FLOW_TEST_FLOAT_ENV", env_value)
+
+    with pytest.raises(RuntimeError, match=r"M8FLOW_TEST_FLOAT_ENV must be a finite number greater than 0;"):
+        bootstrap_vault_demo._float_env("M8FLOW_TEST_FLOAT_ENV", 12.5, min_value=0.0)
+
+
+@pytest.mark.parametrize("env_value", ["0", "-1", "-0.01"])
+def test_float_env_rejects_zero_and_negative_values_when_minimum_is_zero(
+    monkeypatch: pytest.MonkeyPatch,
+    env_value: str,
+) -> None:
+    monkeypatch.setenv("M8FLOW_TEST_FLOAT_ENV", env_value)
+
+    with pytest.raises(RuntimeError, match=r"M8FLOW_TEST_FLOAT_ENV must be a finite number greater than 0;"):
+        bootstrap_vault_demo._float_env("M8FLOW_TEST_FLOAT_ENV", 12.5, min_value=0.0)
 
 
 def test_load_seeded_secrets_missing_file_skips_demo_identity_resolution(
@@ -253,6 +329,64 @@ def test_vault_request_error_suppresses_response_body(monkeypatch: pytest.Monkey
     message = str(exc_info.value)
     assert "secret-123" not in message
     assert "Response body suppressed to avoid logging sensitive data." in message
+
+
+def test_vault_request_urlerror_timeout_uses_timeout_message(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_urlopen(req, timeout=10):
+        del req, timeout
+        raise URLError(socket.timeout("timed out"))
+
+    monkeypatch.setattr(bootstrap_vault_demo.request, "urlopen", fake_urlopen)
+
+    with pytest.raises(RuntimeError, match=r"Vault API GET /v1/sys/mounts timed out after 7s\."):
+        bootstrap_vault_demo.vault_request("GET", "sys/mounts", expected_statuses=(200,), timeout_seconds=7.0)
+
+
+def test_initialize_if_needed_uses_extended_init_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    observed_timeout: float | None = None
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            del exc_type, exc, tb
+            return False
+
+        def getcode(self):
+            return 200
+
+        def read(self):
+            return b'{"root_token":"root-123","keys_base64":["unseal-456"]}'
+
+    def fake_urlopen(req, timeout=10):
+        del req
+        nonlocal observed_timeout
+        observed_timeout = timeout
+        return FakeResponse()
+
+    monkeypatch.setenv("M8FLOW_BACKEND_ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef")
+    monkeypatch.setattr(bootstrap_vault_demo, "STATE_DIR", tmp_path / "vault-demo-state")
+    monkeypatch.setattr(bootstrap_vault_demo, "INIT_FILE", (tmp_path / "vault-demo-state") / "init.json")
+    monkeypatch.setattr(bootstrap_vault_demo, "ROLE_ID_FILE", (tmp_path / "vault-demo-state") / "m8flow-role-id")
+    monkeypatch.setattr(bootstrap_vault_demo, "SECRET_ID_FILE", (tmp_path / "vault-demo-state") / "m8flow-secret-id")
+    monkeypatch.setattr(bootstrap_vault_demo, "RUNTIME_ENV_FILE", (tmp_path / "vault-demo-state") / "runtime.env")
+    monkeypatch.setattr(bootstrap_vault_demo, "VERIFICATION_FILE", (tmp_path / "vault-demo-state") / "verification.json")
+    monkeypatch.setattr(bootstrap_vault_demo, "INIT_REQUEST_TIMEOUT_SECONDS", 60.0)
+    monkeypatch.setattr(bootstrap_vault_demo.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(bootstrap_vault_demo, "wait_for_vault_status", lambda: {"initialized": True, "sealed": False})
+
+    status = bootstrap_vault_demo.initialize_if_needed({"initialized": False, "sealed": False})
+
+    assert observed_timeout == 60.0
+    assert status == {"initialized": True, "sealed": False}
+    assert bootstrap_vault_demo.load_encrypted_json_file(bootstrap_vault_demo.INIT_FILE) == {
+        "root_token": "root-123",
+        "keys_base64": ["unseal-456"],
+    }
 
 
 def test_bootstrap_encrypted_state_files_do_not_store_plaintext(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

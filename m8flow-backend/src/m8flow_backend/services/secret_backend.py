@@ -6,10 +6,11 @@ import time
 import uuid
 from typing import TYPE_CHECKING, Any, Callable
 
-from flask import current_app
+from flask import current_app, g, has_app_context, has_request_context
 
 from m8flow_backend.config import vault_enabled
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
+from m8flow_backend.services.audit_log_service import get_audit_log_service
 from m8flow_backend.services.secret_backend_contract import SecretBackend
 from m8flow_backend.services.tenant_identity_helpers import current_tenant_id_or_none
 from m8flow_backend.services.tenant_scoped_vault_client_provider import (
@@ -29,6 +30,7 @@ from spiffworkflow_backend.models.user import UserModel
 
 if TYPE_CHECKING:
     from spiffworkflow_backend.models.secret_model import SecretModel
+    from m8flow_backend.services.audit_log_service import AuditLogService
 
 
 logger = logging.getLogger("m8flow.secret_backend")
@@ -40,6 +42,10 @@ _VAULT_SECRET_USERNAME_FIELD = "username"
 _VAULT_SECRET_VALUE_FIELD = "value"
 _VAULT_SECRET_CREATED_AT_FIELD = "created_at_in_seconds"
 _VAULT_SECRET_UPDATED_AT_FIELD = "updated_at_in_seconds"
+_VAULT_AVAILABILITY_CACHE_KEY = "m8flow_vault_availability_probe"
+_VAULT_AVAILABILITY_REQUEST_CACHE_KEY = "_m8flow_vault_availability_probe"
+_VAULT_AVAILABILITY_CACHE_TTL_SECONDS = 2.0
+_VAULT_AVAILABILITY_CACHE_UNSET = object()
 
 
 @dataclass(repr=False)
@@ -134,6 +140,12 @@ def _vault_runtime_error(action: str, key: str, exc: Exception, status_code: int
         status_code,
         type(exc).__name__,
     )
+    if action == "list":
+        return ApiError(
+            error_code="vault_list_error",
+            message="Could not list secrets.",
+            status_code=status_code,
+        )
     return ApiError(
         error_code=f"vault_{action}_error",
         message=f"Could not {action} secret with key: {key}.",
@@ -281,24 +293,64 @@ class VaultBackedSecretBackend:
         vault_client: VaultClient | None = None,
         tenant_vault_client_provider: TenantScopedVaultClientProvider | None = None,
         user_lookup: Callable[[int], UserModel | None] | None = None,
+        audit_log_service: "AuditLogService | None" = None,
     ) -> None:
         self._broker_vault_client = vault_client or get_vault_client()
         self._tenant_vault_client_provider = tenant_vault_client_provider or TenantScopedVaultClientProvider(
             broker_vault_client=self._broker_vault_client
         )
         self._user_lookup = user_lookup or (lambda user_id: UserModel.query.filter_by(id=user_id).first())
+        self._audit_log_service = audit_log_service or get_audit_log_service()
 
     def add_secret(self, key: str, value: str, user_id: int) -> ResolvedSecret:
         user = self._require_user(user_id)
         tenant_id = self._require_current_tenant_id()
-        vault_client = self._require_tenant_vault_client(tenant_id=tenant_id, action="create", key=key)
-        existing = self._get_optional_secret_record(
-            key=key,
-            tenant_id=tenant_id,
-            action="create",
-            vault_client=vault_client,
-        )
+        try:
+            vault_client = self._require_tenant_vault_client(tenant_id=tenant_id, action="create", key=key)
+        except ApiError as exc:
+            self._audit_secret_event(
+                action="create",
+                status="failed",
+                key=key,
+                tenant_id=tenant_id,
+                severity="error",
+                message="Vault secret create failed.",
+                details=self._failure_details(exc, error_type="TenantScopedVaultClientError"),
+            )
+            raise
+        try:
+            existing = self._get_optional_secret_record(
+                key=key,
+                tenant_id=tenant_id,
+                action="create",
+                vault_client=vault_client,
+            )
+        except ApiError as exc:
+            self._audit_secret_event(
+                action="create",
+                status="failed",
+                key=key,
+                tenant_id=tenant_id,
+                severity="error",
+                message="Vault secret create failed.",
+                details=self._failure_details(exc),
+            )
+            raise
         if existing is not None:
+            self._audit_secret_event(
+                action="create",
+                status="failed",
+                key=key,
+                tenant_id=tenant_id,
+                severity="warning",
+                message="Vault secret create failed.",
+                details={
+                    "backend": "vault",
+                    "error_code": "create_secret_error",
+                    "reason": "already_exists",
+                    "status_code": 409,
+                },
+            )
             raise ApiError(
                 error_code="create_secret_error",
                 message=f"There was an error creating a secret with key: {key}. A secret with that key already exists.",
@@ -321,32 +373,153 @@ class VaultBackedSecretBackend:
         try:
             vault_client.store_secret_document(path, record.to_vault_document())
         except VaultClientError as exc:
-            raise _vault_runtime_error("create", key, exc) from exc
+            api_error = self._vault_operation_error("create", key, exc)
+            self._audit_secret_event(
+                action="create",
+                status="failed",
+                key=key,
+                tenant_id=tenant_id,
+                severity="error",
+                message="Vault secret create failed.",
+                details=self._failure_details(api_error, error_type=type(exc).__name__),
+            )
+            raise api_error from exc
 
+        self._audit_vault_recovery_if_needed()
+        self._audit_secret_event(
+            action="create",
+            status="success",
+            key=key,
+            tenant_id=tenant_id,
+            severity="info",
+            message="Vault secret create succeeded.",
+            resource_id=record.id,
+            details={"backend": "vault"},
+        )
         return self._resolved_secret(record)
 
     def get_secret(self, key: str) -> ResolvedSecret:
         tenant_id = self._require_current_tenant_id()
-        vault_client = self._require_tenant_vault_client(tenant_id=tenant_id, action="read", key=key)
-        record = self._require_secret_record(
+        try:
+            vault_client = self._require_tenant_vault_client(tenant_id=tenant_id, action="read", key=key)
+        except ApiError as exc:
+            self._audit_secret_event(
+                action="read",
+                status="failed",
+                key=key,
+                tenant_id=tenant_id,
+                severity="error",
+                message="Vault secret read failed.",
+                details=self._failure_details(exc, error_type="TenantScopedVaultClientError"),
+            )
+            raise
+        try:
+            record = self._require_secret_record(
+                key=key,
+                tenant_id=tenant_id,
+                vault_client=vault_client,
+            )
+        except ApiError as exc:
+            self._audit_secret_event(
+                action="read",
+                status="failed",
+                key=key,
+                tenant_id=tenant_id,
+                severity="warning",
+                message="Vault secret read failed.",
+                details=self._failure_details(exc),
+            )
+            raise
+        if record.value is None:
+            self._audit_secret_event(
+                action="read",
+                status="failed",
+                key=key,
+                tenant_id=tenant_id,
+                severity="warning",
+                message="Vault secret read failed.",
+                resource_id=record.id,
+                details={
+                    "backend": "vault",
+                    "error_code": "vault_secret_value_missing",
+                    "status_code": 404,
+                    "read_mode": "record",
+                },
+            )
+            raise _vault_secret_missing_value(key, tenant_id, record.id, self._vault_path(tenant_id, key))
+        self._audit_vault_recovery_if_needed()
+        self._audit_secret_event(
+            action="read",
+            status="success",
             key=key,
             tenant_id=tenant_id,
-            vault_client=vault_client,
+            severity="info",
+            message="Vault secret read succeeded.",
+            resource_id=record.id,
+            details={"backend": "vault", "read_mode": "record"},
         )
-        if record.value is None:
-            raise _vault_secret_missing_value(key, tenant_id, record.id, self._vault_path(tenant_id, key))
         return self._resolved_secret(record)
 
     def get_secret_value(self, key: str) -> str:
         tenant_id = self._require_current_tenant_id()
-        vault_client = self._require_tenant_vault_client(tenant_id=tenant_id, action="read", key=key)
-        record = self._require_secret_record(
+        try:
+            vault_client = self._require_tenant_vault_client(tenant_id=tenant_id, action="read", key=key)
+        except ApiError as exc:
+            self._audit_secret_event(
+                action="read",
+                status="failed",
+                key=key,
+                tenant_id=tenant_id,
+                severity="error",
+                message="Vault secret read failed.",
+                details=self._failure_details(exc, error_type="TenantScopedVaultClientError", read_mode="value"),
+            )
+            raise
+        try:
+            record = self._require_secret_record(
+                key=key,
+                tenant_id=tenant_id,
+                vault_client=vault_client,
+            )
+        except ApiError as exc:
+            self._audit_secret_event(
+                action="read",
+                status="failed",
+                key=key,
+                tenant_id=tenant_id,
+                severity="warning",
+                message="Vault secret read failed.",
+                details=self._failure_details(exc, read_mode="value"),
+            )
+            raise
+        if record.value is None:
+            self._audit_secret_event(
+                action="read",
+                status="failed",
+                key=key,
+                tenant_id=tenant_id,
+                severity="warning",
+                message="Vault secret read failed.",
+                resource_id=record.id,
+                details={
+                    "backend": "vault",
+                    "error_code": "vault_secret_value_missing",
+                    "status_code": 404,
+                    "read_mode": "value",
+                },
+            )
+            raise _vault_secret_missing_value(key, tenant_id, record.id, self._vault_path(tenant_id, key))
+        self._audit_vault_recovery_if_needed()
+        self._audit_secret_event(
+            action="read",
+            status="success",
             key=key,
             tenant_id=tenant_id,
-            vault_client=vault_client,
+            severity="info",
+            message="Vault secret read succeeded.",
+            resource_id=record.id,
+            details={"backend": "vault", "read_mode": "value"},
         )
-        if record.value is None:
-            raise _vault_secret_missing_value(key, tenant_id, record.id, self._vault_path(tenant_id, key))
         return record.value
 
     def update_secret(
@@ -357,16 +530,54 @@ class VaultBackedSecretBackend:
         create_if_not_exists: bool | None = False,
     ) -> None:
         tenant_id = self._require_current_tenant_id()
-        vault_client = self._require_tenant_vault_client(tenant_id=tenant_id, action="update", key=key)
-        existing = self._get_optional_secret_record(
-            key=key,
-            tenant_id=tenant_id,
-            action="update",
-            vault_client=vault_client,
-        )
+        try:
+            vault_client = self._require_tenant_vault_client(tenant_id=tenant_id, action="update", key=key)
+        except ApiError as exc:
+            self._audit_secret_event(
+                action="update",
+                status="failed",
+                key=key,
+                tenant_id=tenant_id,
+                severity="error",
+                message="Vault secret update failed.",
+                details=self._failure_details(exc, error_type="TenantScopedVaultClientError"),
+            )
+            raise
+        try:
+            existing = self._get_optional_secret_record(
+                key=key,
+                tenant_id=tenant_id,
+                action="update",
+                vault_client=vault_client,
+            )
+        except ApiError as exc:
+            self._audit_secret_event(
+                action="update",
+                status="failed",
+                key=key,
+                tenant_id=tenant_id,
+                severity="error",
+                message="Vault secret update failed.",
+                details=self._failure_details(exc),
+            )
+            raise
         if existing is None:
             if create_if_not_exists:
                 if user_id is None:
+                    self._audit_secret_event(
+                        action="update",
+                        status="failed",
+                        key=key,
+                        tenant_id=tenant_id,
+                        severity="warning",
+                        message="Vault secret update failed.",
+                        details={
+                            "backend": "vault",
+                            "error_code": "update_secret_error_no_user_id",
+                            "reason": "missing_user_id",
+                            "status_code": 404,
+                        },
+                    )
                     raise ApiError(
                         error_code="update_secret_error_no_user_id",
                         message=f"Cannot update secret with key: {key}. Missing user id.",
@@ -374,6 +585,20 @@ class VaultBackedSecretBackend:
                     )
                 self.add_secret(key=key, value=value, user_id=user_id)
                 return
+            self._audit_secret_event(
+                action="update",
+                status="failed",
+                key=key,
+                tenant_id=tenant_id,
+                severity="warning",
+                message="Vault secret update failed.",
+                details={
+                    "backend": "vault",
+                    "error_code": "update_secret_error",
+                    "reason": "missing_secret",
+                    "status_code": 404,
+                },
+            )
             raise ApiError(
                 error_code="update_secret_error",
                 message=f"Cannot update secret with key: {key}. Resource does not exist.",
@@ -398,19 +623,82 @@ class VaultBackedSecretBackend:
         try:
             vault_client.store_secret_document(path, updated_record.to_vault_document())
         except VaultClientError as exc:
-            raise _vault_runtime_error("update", key, exc) from exc
+            api_error = self._vault_operation_error("update", key, exc)
+            self._audit_secret_event(
+                action="update",
+                status="failed",
+                key=key,
+                tenant_id=tenant_id,
+                severity="error",
+                message="Vault secret update failed.",
+                resource_id=existing.id,
+                details=self._failure_details(
+                    api_error,
+                    error_type=type(exc).__name__,
+                ),
+            )
+            raise api_error from exc
+        self._audit_vault_recovery_if_needed()
+        self._audit_secret_event(
+            action="update",
+            status="success",
+            key=key,
+            tenant_id=tenant_id,
+            severity="info",
+            message="Vault secret update succeeded.",
+            resource_id=updated_record.id,
+            details={"backend": "vault"},
+        )
 
     def delete_secret(self, key: str, user_id: int) -> None:
         del user_id
         tenant_id = self._require_current_tenant_id()
-        vault_client = self._require_tenant_vault_client(tenant_id=tenant_id, action="delete", key=key)
-        existing = self._get_optional_secret_record(
-            key=key,
-            tenant_id=tenant_id,
-            action="delete",
-            vault_client=vault_client,
-        )
+        try:
+            vault_client = self._require_tenant_vault_client(tenant_id=tenant_id, action="delete", key=key)
+        except ApiError as exc:
+            self._audit_secret_event(
+                action="delete",
+                status="failed",
+                key=key,
+                tenant_id=tenant_id,
+                severity="error",
+                message="Vault secret delete failed.",
+                details=self._failure_details(exc, error_type="TenantScopedVaultClientError"),
+            )
+            raise
+        try:
+            existing = self._get_optional_secret_record(
+                key=key,
+                tenant_id=tenant_id,
+                action="delete",
+                vault_client=vault_client,
+            )
+        except ApiError as exc:
+            self._audit_secret_event(
+                action="delete",
+                status="failed",
+                key=key,
+                tenant_id=tenant_id,
+                severity="error",
+                message="Vault secret delete failed.",
+                details=self._failure_details(exc),
+            )
+            raise
         if existing is None:
+            self._audit_secret_event(
+                action="delete",
+                status="failed",
+                key=key,
+                tenant_id=tenant_id,
+                severity="warning",
+                message="Vault secret delete failed.",
+                details={
+                    "backend": "vault",
+                    "error_code": "delete_secret_error",
+                    "reason": "missing_secret",
+                    "status_code": 404,
+                },
+            )
             raise ApiError(
                 error_code="delete_secret_error",
                 message=f"Cannot delete secret with key: {key}. Resource does not exist.",
@@ -422,21 +710,87 @@ class VaultBackedSecretBackend:
         try:
             deleted = vault_client.delete_secret(path)
         except VaultConnectionError as exc:
-            raise _vault_runtime_error("delete", key, exc) from exc
+            api_error = self._vault_operation_error("delete", key, exc)
+            self._audit_secret_event(
+                action="delete",
+                status="failed",
+                key=key,
+                tenant_id=tenant_id,
+                severity="error",
+                message="Vault secret delete failed.",
+                resource_id=existing.id,
+                details=self._failure_details(api_error, error_type=type(exc).__name__),
+            )
+            raise api_error from exc
         except VaultClientError as exc:
-            raise _vault_runtime_error("delete", key, exc, status_code=500) from exc
+            api_error = self._vault_operation_error("delete", key, exc, status_code=500)
+            self._audit_secret_event(
+                action="delete",
+                status="failed",
+                key=key,
+                tenant_id=tenant_id,
+                severity="error",
+                message="Vault secret delete failed.",
+                resource_id=existing.id,
+                details=self._failure_details(api_error, error_type=type(exc).__name__),
+            )
+            raise api_error from exc
 
         if not deleted:
             logger.warning(
                 "vault_secret_delete_missing_value tenant_id=%s",
                 tenant_id,
             )
+        self._audit_vault_recovery_if_needed()
+        self._audit_secret_event(
+            action="delete",
+            status="success",
+            key=key,
+            tenant_id=tenant_id,
+            severity="info",
+            message="Vault secret delete succeeded.",
+            resource_id=existing.id,
+            details={"backend": "vault", "deleted": deleted},
+        )
 
     def list_secrets(self, page: int = 1, per_page: int = 100, tenant_id: str | None = None) -> list[VaultSecretRecord]:
         del page
         del per_page
         effective_tenant_id = tenant_id or current_tenant_id_or_none()
-        return self._list_secret_records(effective_tenant_id)
+        try:
+            records = self._list_secret_records(effective_tenant_id)
+        except ApiError as exc:
+            self._audit_secret_event(
+                action="list",
+                status="failed",
+                key="*",
+                tenant_id=effective_tenant_id,
+                severity="error",
+                message="Vault secret list failed.",
+                resource_name="*",
+                details=self._failure_details(
+                    exc,
+                    scope="tenant" if effective_tenant_id else "all_tenants",
+                ),
+            )
+            raise
+
+        self._audit_vault_recovery_if_needed()
+        self._audit_secret_event(
+            action="list",
+            status="success",
+            key="*",
+            tenant_id=effective_tenant_id,
+            severity="info",
+            message="Vault secret list succeeded.",
+            resource_name="*",
+            details={
+                "backend": "vault",
+                "listed_count": len(records),
+                "scope": "tenant" if effective_tenant_id else "all_tenants",
+            },
+        )
+        return records
 
     def serialize_secret_list_result(
         self,
@@ -527,7 +881,7 @@ class VaultBackedSecretBackend:
         try:
             entries = vault_client.list_secret_names(root_path)
         except VaultClientError as exc:
-            raise _vault_runtime_error("list", error_key, exc) from exc
+            raise self._vault_operation_error("list", error_key, exc) from exc
 
         secret_paths: list[str] = []
         for entry in entries:
@@ -584,7 +938,7 @@ class VaultBackedSecretBackend:
         try:
             document = vault_client.retrieve_secret_document(path)
         except VaultClientError as exc:
-            raise _vault_runtime_error(action, secret_name, exc) from exc
+            raise self._vault_operation_error(action, secret_name, exc) from exc
 
         if document is None:
             return None
@@ -663,11 +1017,225 @@ class VaultBackedSecretBackend:
             return value.strip()
         return None
 
+    def _audit_secret_event(
+        self,
+        *,
+        action: str,
+        status: str,
+        key: str,
+        tenant_id: str | None,
+        severity: str,
+        message: str,
+        details: dict[str, Any],
+        resource_id: str | None = None,
+        resource_name: str | None = None,
+    ) -> None:
+        if not has_app_context():
+            return
+
+        self._audit_log_service.try_record_event(
+            category="vault",
+            event_type=f"vault.secret.{action}",
+            source="secret_backend",
+            status=status,
+            severity=severity,
+            message=message,
+            tenant_id=tenant_id,
+            resource_type="secret",
+            resource_id=resource_id,
+            resource_name=resource_name or key,
+            details=details,
+        )
+
+    @staticmethod
+    def _failure_details(exc: ApiError, **extra: Any) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "backend": "vault",
+            "error_code": exc.error_code,
+            "status_code": exc.status_code,
+        }
+        payload.update(extra)
+        return payload
+
+    def _vault_operation_error(
+        self,
+        action: str,
+        key: str,
+        exc: Exception,
+        *,
+        status_code: int = 503,
+    ) -> ApiError:
+        if self._is_connection_related_error(exc):
+            available = self._check_and_audit_vault_availability()
+            if available is False:
+                logger.warning(
+                    "vault_secret_operation_failed action=%s status_code=%s error_type=%s vault_available=false",
+                    action,
+                    503,
+                    type(exc).__name__,
+                )
+                return ApiError(
+                    error_code="vault_unavailable",
+                    message="Vault is down.",
+                    status_code=503,
+                )
+        return _vault_runtime_error(action, key, exc, status_code=status_code)
+
+    def _check_and_audit_vault_availability(self) -> bool | None:
+        cached_result = self._cached_vault_availability_result()
+        if cached_result is not _VAULT_AVAILABILITY_CACHE_UNSET:
+            return cached_result
+
+        check_availability = getattr(self._broker_vault_client, "check_availability", None)
+        if not callable(check_availability):
+            self._store_vault_availability_result(None)
+            return None
+        try:
+            available = bool(check_availability(audit=False))
+        except Exception as exc:
+            logger.warning(
+                "vault_availability_probe_failed error_type=%s",
+                type(exc).__name__,
+            )
+            self._store_vault_availability_result(None)
+            return None
+
+        if available:
+            self._clear_vault_availability_cache()
+        else:
+            self._store_vault_availability_result(False)
+        if not available:
+            try:
+                check_availability(audit=True, transitions_only=True)
+            except Exception as exc:
+                logger.warning(
+                    "vault_availability_probe_failed error_type=%s",
+                    type(exc).__name__,
+                )
+        return available
+
+    @classmethod
+    def _cached_vault_availability_result(cls) -> bool | None | object:
+        now = time.monotonic()
+
+        if has_request_context():
+            cached_result = cls._fresh_vault_availability_result(
+                getattr(g, _VAULT_AVAILABILITY_REQUEST_CACHE_KEY, None),
+                now=now,
+            )
+            if cached_result is not _VAULT_AVAILABILITY_CACHE_UNSET:
+                return cached_result
+
+        if has_app_context():
+            cached_result = cls._fresh_vault_availability_result(
+                current_app.extensions.get(_VAULT_AVAILABILITY_CACHE_KEY),
+                now=now,
+            )
+            if cached_result is not _VAULT_AVAILABILITY_CACHE_UNSET:
+                if has_request_context():
+                    setattr(
+                        g,
+                        _VAULT_AVAILABILITY_REQUEST_CACHE_KEY,
+                        {
+                            "available": cached_result,
+                            "checked_at": now,
+                        },
+                    )
+                return cached_result
+
+        return _VAULT_AVAILABILITY_CACHE_UNSET
+
+    @staticmethod
+    def _fresh_vault_availability_result(state: Any, *, now: float) -> bool | None | object:
+        if not isinstance(state, dict):
+            return _VAULT_AVAILABILITY_CACHE_UNSET
+
+        checked_at = state.get("checked_at")
+        if not isinstance(checked_at, (int, float)):
+            return _VAULT_AVAILABILITY_CACHE_UNSET
+
+        if (now - float(checked_at)) > _VAULT_AVAILABILITY_CACHE_TTL_SECONDS:
+            return _VAULT_AVAILABILITY_CACHE_UNSET
+
+        available = state.get("available")
+        if available is None or isinstance(available, bool):
+            return available
+
+        return _VAULT_AVAILABILITY_CACHE_UNSET
+
+    @staticmethod
+    def _store_vault_availability_result(available: bool | None) -> None:
+        cache_state = {
+            "available": available,
+            "checked_at": time.monotonic(),
+        }
+
+        if has_request_context():
+            setattr(g, _VAULT_AVAILABILITY_REQUEST_CACHE_KEY, cache_state)
+
+        if has_app_context():
+            current_app.extensions[_VAULT_AVAILABILITY_CACHE_KEY] = cache_state
+
+    @staticmethod
+    def _clear_vault_availability_cache() -> None:
+        if has_request_context() and hasattr(g, _VAULT_AVAILABILITY_REQUEST_CACHE_KEY):
+            delattr(g, _VAULT_AVAILABILITY_REQUEST_CACHE_KEY)
+
+        if has_app_context():
+            current_app.extensions.pop(_VAULT_AVAILABILITY_CACHE_KEY, None)
+
+    def _audit_vault_recovery_if_needed(self) -> None:
+        self._clear_vault_availability_cache()
+
+        latest_event = self._audit_log_service.try_latest_event(
+            category="vault",
+            event_type="vault.health.check",
+            source="vault_client",
+        )
+        if latest_event is None:
+            return
+
+        latest_status = str(getattr(latest_event, "status", "") or "").strip()
+        if latest_status == "success":
+            return
+
+        check_availability = getattr(self._broker_vault_client, "check_availability", None)
+        if not callable(check_availability):
+            return
+
+        try:
+            check_availability(audit=True, transitions_only=True)
+        except Exception as exc:
+            logger.warning(
+                "vault_recovery_probe_failed error_type=%s",
+                type(exc).__name__,
+            )
+
+    @staticmethod
+    def _is_connection_related_error(exc: Exception) -> bool:
+        pending = [exc]
+        seen: set[int] = set()
+        while pending:
+            current = pending.pop()
+            marker = id(current)
+            if marker in seen:
+                continue
+            seen.add(marker)
+            if isinstance(current, VaultConnectionError):
+                return True
+            cause = getattr(current, "__cause__", None)
+            if isinstance(cause, Exception):
+                pending.append(cause)
+            context = getattr(current, "__context__", None)
+            if isinstance(context, Exception):
+                pending.append(context)
+        return False
+
     def _require_tenant_vault_client(self, tenant_id: str, action: str, key: str) -> VaultClient:
         try:
             scoped_client = self._tenant_vault_client_provider.for_tenant(tenant_id)
         except TenantScopedVaultClientError as exc:
-            raise _vault_runtime_error(action, key, exc) from exc
+            raise self._vault_operation_error(action, key, exc) from exc
         return scoped_client.vault_client
 
     @staticmethod

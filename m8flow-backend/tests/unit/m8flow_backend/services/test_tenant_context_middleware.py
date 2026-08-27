@@ -156,6 +156,19 @@ def test_missing_tenant_keeps_exempt_request_public() -> None:
             assert getattr(g, "_m8flow_public_request", False) is True
 
 
+def test_vault_status_path_keeps_exempt_request_public() -> None:
+    app = _make_app()
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+
+        with app.test_request_context("/v1.0/vault-status"):
+            resolve_request_tenant()
+            assert getattr(g, "m8flow_tenant_id", None) is None
+            assert getattr(g, "_m8flow_tenant_context_exempt_request", False) is True
+            assert getattr(g, "_m8flow_public_request", False) is True
+
+
 def test_invalid_tenant_raises() -> None:
     from spiffworkflow_backend.models.user import UserModel
 
