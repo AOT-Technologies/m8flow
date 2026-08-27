@@ -10,6 +10,9 @@ from spiffworkflow_backend.exceptions.api_error import ApiError
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
 from m8flow_backend.models.template import TemplateModel
 from m8flow_backend.services.template_service import TemplateService
+from m8flow_backend.services.process_model_service_patch import (
+    super_admin_workflow_write_context,
+)
 
 
 def _safe_content_disposition(filename: str) -> dict[str, str]:
@@ -410,15 +413,18 @@ def template_create_process_model(id: int):
     if not display_name:
         raise ApiError("missing_fields", "display_name is required", status_code=400)
 
-    result = TemplateService.create_process_model_from_template(
-        template_id=id,
-        process_group_id=process_group_id,
-        process_model_id=process_model_id,
-        display_name=display_name,
-        description=description,
-        user=user,
-        tenant_id=tenant_id,
-    )
+    # Super-admin workflow writes are permitted only after the selected tenant
+    # has been resolved and pinned by the shared tenant-binding guard.
+    with super_admin_workflow_write_context(explicit_tenant_id=tenant_id):
+        result = TemplateService.create_process_model_from_template(
+            template_id=id,
+            process_group_id=process_group_id,
+            process_model_id=process_model_id,
+            display_name=display_name,
+            description=description,
+            user=user,
+            tenant_id=tenant_id,
+        )
 
     return jsonify(result), 201
 

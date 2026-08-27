@@ -94,4 +94,18 @@ describe('CreateProcessModelFromTemplateModal', () => {
       within(screen.getByTestId('create-from-template-group-select')).getByRole('combobox'),
     ).toBeDisabled();
   });
+
+  it('allows super-admin create-from-template after a tenant is selected', () => {
+    vi.mocked(useGlobalTenant).mockReturnValue({
+      selectedTenantId: 'tenant-a',
+      setSelectedTenantId: vi.fn(),
+    });
+
+    renderModal();
+
+    expect(screen.queryByTestId('create-from-template-tenant-alert')).not.toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('create-from-template-group-select')).getByRole('combobox'),
+    ).toBeEnabled();
+  });
 });

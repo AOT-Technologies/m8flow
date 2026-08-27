@@ -350,6 +350,14 @@ permissions:
     groups: ["viewer", "super-admin"]
     actions: [read]
     uri: /m8flow/templates/*
+  create-process-model-from-template:
+    # A super-admin may copy a published template only into the selected
+    # tenant. Permission targets support only trailing wildcards, so the
+    # service enforces that this create action is used only for the dedicated
+    # create-process-model route.
+    groups: ["super-admin"]
+    actions: [create]
+    uri: /m8flow/templates/*
   # Admin-only template operations (delete published, restore soft-deleted).
   # Editors can manage templates but only tenant-admin can perform these privileged operations.
   admin-templates:
