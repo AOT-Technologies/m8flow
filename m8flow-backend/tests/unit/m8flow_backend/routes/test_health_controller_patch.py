@@ -14,6 +14,17 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 
+def _expected_status_payload(
+    can_access_frontend: bool,
+    *,
+    ok: bool = True,
+) -> dict[str, object]:
+    return {
+        "ok": ok,
+        "can_access_frontend": can_access_frontend,
+    }
+
+
 def test_health_controller_patch_resolves_tenant_before_status(monkeypatch) -> None:
     call_state: dict[str, object] = {}
 
@@ -145,7 +156,7 @@ def test_health_controller_patch_resolves_tenant_before_status(monkeypatch) -> N
     response = app.test_client().get("/v1.0/status", headers={"Authorization": "Bearer verified-token"})
 
     assert response.status_code == 200
-    assert response.get_json() == {"ok": True, "can_access_frontend": True}
+    assert response.get_json() == _expected_status_payload(True)
     assert call_state["resolve_request_tenant_called"] is True
     assert call_state["process_instance_query_called"] is True
     assert call_state["verify_token_called"] is True
@@ -305,6 +316,113 @@ def test_health_controller_patch_synchronizes_selected_org_when_multi_org_token_
     response = client.get("/v1.0/status")
 
     assert response.status_code == 200
-    assert response.get_json() == {"ok": True, "can_access_frontend": True}
+    assert response.get_json() == _expected_status_payload(True)
     assert call_state["permission_user"] == "synced-admin"
     assert call_state["permission_tenant"] == "tenant-it"
+
+
+def test_health_controller_patch_keeps_status_payload_independent_from_vault_health(monkeypatch) -> None:
+    call_state: dict[str, object] = {}
+
+    fake_tenant_context_module = ModuleType("m8flow_backend.services.tenant_context_middleware")
+    fake_tenant_context_module.resolve_request_tenant = lambda: None
+
+    fake_authentication_controller_module = ModuleType("spiffworkflow_backend.routes.authentication_controller")
+    fake_authentication_controller_module.verify_token = lambda *_args, **_kwargs: None
+
+    fake_authorization_service_module = ModuleType("spiffworkflow_backend.services.authorization_service")
+
+    class FakeAuthorizationService:
+        @classmethod
+        def user_has_permission(cls, user, permission, target_uri):
+            del user
+            del permission
+            del target_uri
+            call_state["permission_check_called"] = True
+            return True
+
+    fake_authorization_service_module.AuthorizationService = FakeAuthorizationService
+
+    fake_process_instance_module = ModuleType("spiffworkflow_backend.models.process_instance")
+
+    class _FakeQuery:
+        def filter(self, *_args, **_kwargs):
+            return self
+
+        def first(self):
+            return None
+
+    class FakeProcessInstanceModel:
+        query = _FakeQuery()
+
+    fake_process_instance_module.ProcessInstanceModel = FakeProcessInstanceModel
+
+    fake_health_controller_module = ModuleType("spiffworkflow_backend.routes.health_controller")
+
+    def fake_status():
+        return {"ok": True}, 200
+
+    fake_status.__module__ = fake_health_controller_module.__name__
+    fake_status.__name__ = "status"
+    fake_health_controller_module.status = fake_status
+
+    fake_spiffworkflow_backend_module = ModuleType("spiffworkflow_backend")
+    fake_spiffworkflow_backend_module.__path__ = []
+    fake_spiffworkflow_backend_routes_module = ModuleType("spiffworkflow_backend.routes")
+    fake_spiffworkflow_backend_routes_module.__path__ = []
+    fake_spiffworkflow_backend_services_module = ModuleType("spiffworkflow_backend.services")
+    fake_spiffworkflow_backend_services_module.__path__ = []
+    fake_spiffworkflow_backend_models_module = ModuleType("spiffworkflow_backend.models")
+    fake_spiffworkflow_backend_models_module.__path__ = []
+    fake_m8flow_services_module = ModuleType("m8flow_backend.services")
+    fake_m8flow_services_module.__path__ = []
+
+    monkeypatch.setitem(sys.modules, "m8flow_backend.services", fake_m8flow_services_module)
+    monkeypatch.setitem(sys.modules, "m8flow_backend.services.tenant_context_middleware", fake_tenant_context_module)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend", fake_spiffworkflow_backend_module)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.routes", fake_spiffworkflow_backend_routes_module)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.services", fake_spiffworkflow_backend_services_module)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.models", fake_spiffworkflow_backend_models_module)
+    monkeypatch.setitem(
+        sys.modules,
+        "spiffworkflow_backend.routes.authentication_controller",
+        fake_authentication_controller_module,
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "spiffworkflow_backend.routes.health_controller",
+        fake_health_controller_module,
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "spiffworkflow_backend.services.authorization_service",
+        fake_authorization_service_module,
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "spiffworkflow_backend.models.process_instance",
+        fake_process_instance_module,
+    )
+
+    sys.modules.pop("m8flow_backend.routes.health_controller_patch", None)
+    health_controller_patch = importlib.import_module("m8flow_backend.routes.health_controller_patch")
+    monkeypatch.setattr(health_controller_patch, "_PATCHED", False)
+    monkeypatch.setattr(health_controller_patch, "_vault_status_payload", lambda: (_ for _ in ()).throw(
+        AssertionError("_vault_status_payload should not be called by /v1.0/status")
+    ))
+
+    app = Flask(__name__)
+    app.config["TESTING"] = True
+    app.add_url_rule(
+        "/v1.0/status",
+        endpoint="spiffworkflow_backend.routes.health_controller.status",
+        view_func=fake_status,
+        methods=["GET"],
+    )
+
+    health_controller_patch.apply(app)
+
+    response = app.test_client().get("/v1.0/status")
+
+    assert response.status_code == 200
+    assert response.get_json() == _expected_status_payload(True)

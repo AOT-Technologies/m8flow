@@ -5,6 +5,10 @@ import logging
 from typing import Any, Callable, Mapping
 from urllib.parse import quote
 
+from flask import has_app_context
+
+from m8flow_backend.services.audit_log_service import get_audit_log_service
+
 try:
     import hvac
     from hvac import exceptions as hvac_exceptions
@@ -239,10 +243,12 @@ class VaultClient:
         self,
         settings: VaultSettings | None = None,
         client_factory: ClientFactory | None = None,
+        audit_log_service=None,
     ) -> None:
         self._settings = settings or VaultSettings.from_env()
         self._client_factory = client_factory or _default_client_factory
         self._client: Any | None = None
+        self._audit_log_service = audit_log_service or get_audit_log_service()
 
     @classmethod
     def from_env(cls) -> "VaultClient":
@@ -473,19 +479,64 @@ class VaultClient:
 
         return True
 
-    def check_availability(self) -> bool:
+    def check_availability(self, *, audit: bool = True, transitions_only: bool = False) -> bool:
         try:
             client = self._get_client()
             _read_health_status(client)
             is_authenticated = getattr(client, "is_authenticated", None)
+            authenticated = True
             if callable(is_authenticated):
-                return bool(is_authenticated())
-            return True
+                authenticated = bool(is_authenticated())
+            available = authenticated
+            if audit:
+                self._audit_availability_check(
+                    status="success" if available else "failed",
+                    severity="info" if available else "warning",
+                    message=(
+                        "Vault availability check succeeded."
+                        if available
+                        else "Vault availability check failed."
+                    ),
+                    details={
+                        "configured": self._settings.is_configured,
+                        "authenticated": authenticated,
+                        "mount_point": self._settings.mount_point,
+                        "auth_method": self._settings.auth_method,
+                    },
+                    transitions_only=transitions_only,
+                )
+            return available
         except (VaultConfigurationError, VaultDependencyError) as exc:
-            logger.info("vault_client: availability check skipped: %s", exc)
+            logger.info("vault_client: availability check skipped error_type=%s", type(exc).__name__)
+            if audit:
+                self._audit_availability_check(
+                    status="skipped",
+                    severity="warning",
+                    message="Vault availability check skipped.",
+                    details={
+                        "configured": self._settings.is_configured,
+                        "mount_point": self._settings.mount_point,
+                        "auth_method": self._settings.auth_method,
+                        "error_type": type(exc).__name__,
+                    },
+                    transitions_only=transitions_only,
+                )
             return False
         except Exception as exc:
-            logger.warning("vault_client: availability check failed: %s", exc)
+            logger.warning("vault_client: availability check failed error_type=%s", type(exc).__name__)
+            if audit:
+                self._audit_availability_check(
+                    status="failed",
+                    severity="error",
+                    message="Vault availability check failed.",
+                    details={
+                        "configured": self._settings.is_configured,
+                        "mount_point": self._settings.mount_point,
+                        "auth_method": self._settings.auth_method,
+                        "error_type": type(exc).__name__,
+                    },
+                    transitions_only=transitions_only,
+                )
             return False
 
     def assert_startup_ready(self) -> None:
@@ -561,6 +612,43 @@ class VaultClient:
 
     def _operation_error(self, action: str, secret_name: str, exc: Exception) -> VaultClientError:
         return self._resource_error(action, "secret", secret_name, exc)
+
+    def _audit_availability_check(
+        self,
+        *,
+        status: str,
+        severity: str,
+        message: str,
+        details: dict[str, Any],
+        transitions_only: bool = False,
+    ) -> None:
+        if not has_app_context():
+            return
+
+        if transitions_only and not self._should_record_availability_audit_transition(status):
+            return
+
+        self._audit_log_service.try_record_event(
+            category="vault",
+            event_type="vault.health.check",
+            source="vault_client",
+            status=status,
+            severity=severity,
+            message=message,
+            details=details,
+        )
+
+    def _should_record_availability_audit_transition(self, status: str) -> bool:
+        latest_event = self._audit_log_service.try_latest_event(
+            category="vault",
+            event_type="vault.health.check",
+            source="vault_client",
+        )
+        if latest_event is None:
+            return True
+
+        latest_status = str(getattr(latest_event, "status", "") or "").strip()
+        return latest_status != status
 
     def _resource_error(
         self,
