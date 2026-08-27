@@ -4,12 +4,13 @@
 import { Box, Chip } from '@mui/material';
 import UpstreamCard from '@spiff-core/views/StartProcess/ProcessModelCard';
 import UserService from '../../services/UserService';
+import { getProcessTenantLabel } from './processTenantLabelRegistry';
 
 export default function ProcessModelCard(props: {
   model: { id: string; tenantName?: string; [k: string]: unknown };
   [k: string]: unknown;
 }) {
-  const label = props.model.tenantName;
+  const label = props.model.tenantName || getProcessTenantLabel(props.model.id);
   if (!(UserService.isSuperAdmin() && label)) {
     return <UpstreamCard {...(props as any)} />;
   }

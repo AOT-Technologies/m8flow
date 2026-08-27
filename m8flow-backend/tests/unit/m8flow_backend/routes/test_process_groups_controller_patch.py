@@ -77,6 +77,48 @@ def test_enrich_results_uses_g_tenant_map(app, monkeypatch) -> None:
         assert "tenantId" not in by_id["no-tenant"]
 
 
+def test_enrich_results_recurses_into_nested_groups_and_models(app, monkeypatch) -> None:
+    from m8flow_backend.routes import process_groups_controller_patch as patch
+
+    _install_tenant_name_lookup(monkeypatch)
+
+    payload = {
+        "results": [
+            {
+                "id": "abil",
+                "process_groups": [
+                    {
+                        "id": "abil/hr",
+                        "process_groups": [],
+                        "process_models": [{"id": "abil/hr/onboarding"}],
+                    }
+                ],
+                "process_models": [{"id": "abil/test"}],
+            }
+        ],
+        "pagination": {"count": 1, "total": 1, "pages": 1},
+    }
+
+    with app.test_request_context("/process-groups"):
+        response = make_response(jsonify(payload), 200)
+        g._m8flow_process_group_tenant_map = {"abil": "abil", "abil/hr": "abil"}
+        g._m8flow_process_model_tenant_map = {
+            "abil/test": "abil",
+            "abil/hr/onboarding": "abil",
+        }
+        enriched = patch._enrich_results_with_tenant_info(response)
+        data = enriched.get_json()
+        root = data["results"][0]
+        nested_group = root["process_groups"][0]
+        nested_model = root["process_models"][0]
+        nested_group_model = nested_group["process_models"][0]
+
+        assert root["tenantName"] == "Abil Co."
+        assert nested_group["tenantName"] == "Abil Co."
+        assert nested_model["tenantName"] == "Abil Co."
+        assert nested_group_model["tenantName"] == "Abil Co."
+
+
 def test_enrich_passthrough_when_no_tenant_map(app) -> None:
     from m8flow_backend.routes import process_groups_controller_patch as patch
 

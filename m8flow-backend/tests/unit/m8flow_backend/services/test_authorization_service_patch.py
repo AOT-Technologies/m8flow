@@ -5,13 +5,17 @@ import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from flask import Flask
 
+from m8flow_backend.models.m8flow_tenant import M8flowTenantModel  # noqa: F401
+from m8flow_backend.models.process_model_bpmn_version import ProcessModelBpmnVersionModel  # noqa: F401
 from m8flow_backend.services import model_override_patch
 from m8flow_backend.services import authorization_service_patch
 from m8flow_backend.services.authorization_service_patch import _keycloak_realm_roles_as_groups
 from m8flow_backend.services.authorization_service_patch import _find_existing_user_for_sign_in
 from m8flow_backend.services.authorization_service_patch import _find_existing_user_in_same_realm
+from m8flow_backend.services.authorization_service_patch import _allow_super_admin_task_completion
 from m8flow_backend.services.authorization_service_patch import _display_name_from_user_info
 from m8flow_backend.services.authorization_service_patch import _group_identifier_applies_to_active_permission_scope
 from m8flow_backend.services.authorization_service_patch import _normalize_keycloak_groups
@@ -937,7 +941,337 @@ def test_parse_permissions_yaml_into_group_info_preserves_global_super_admin_gro
 
     assert "create" in super_admin_actions_by_uri["/process-instances/for-me"]
     assert "create" in super_admin_actions_by_uri["/process-instances"]
-    assert "update" not in super_admin_actions_by_uri["/tasks/*"]
+    assert "create" in super_admin_actions_by_uri["/tasks/*"]
+    assert "update" in super_admin_actions_by_uri["/tasks/*"]
+    assert "delete" not in super_admin_actions_by_uri["/tasks/*"]
+
+
+def test_allow_super_admin_task_completion_bypasses_owner_check(monkeypatch) -> None:
+    from spiffworkflow_backend.exceptions.error import UserDoesNotHaveAccessToTaskError
+    from spiffworkflow_backend.models import human_task as human_task_module
+    from spiffworkflow_backend.models import process_instance as process_instance_module
+
+    class _StaticQuery:
+        def __init__(self, result: object) -> None:
+            self._result = result
+
+        def filter_by(self, **kwargs):  # noqa: ANN003
+            return self
+
+        def first(self) -> object:
+            return self._result
+
+    def original_assert_user_can_complete_task(process_instance_id: int, task_guid: str, user: object) -> bool:
+        raise UserDoesNotHaveAccessToTaskError("blocked")
+
+    monkeypatch.setattr(authorization_service_patch, "is_super_admin_request", lambda: True)
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_id_or_none", lambda: None)
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_identifiers", lambda tenant_id: {tenant_id})
+    user = SimpleNamespace(username="super-admin")
+    monkeypatch.setattr(
+        human_task_module,
+        "HumanTaskModel",
+        SimpleNamespace(
+            query=_StaticQuery(
+                SimpleNamespace(
+                    completed=False,
+                    m8f_tenant_id="tenant-a",
+                    potential_owners=[SimpleNamespace(username="tenant-admin")],
+                )
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        process_instance_module,
+        "ProcessInstanceModel",
+        SimpleNamespace(
+            query=_StaticQuery(SimpleNamespace(m8f_tenant_id="tenant-a", can_submit_task=lambda: True))
+        ),
+    )
+
+    assert (
+        _allow_super_admin_task_completion(
+            original_assert_user_can_complete_task,
+            1,
+            "task-guid",
+            user,
+        )
+        is True
+    )
+
+
+def test_allow_super_admin_task_completion_preserves_non_owner_denial_for_super_admin(monkeypatch) -> None:
+    from spiffworkflow_backend.exceptions.error import UserDoesNotHaveAccessToTaskError
+    from spiffworkflow_backend.models import human_task as human_task_module
+    from spiffworkflow_backend.models import process_instance as process_instance_module
+
+    class _StaticQuery:
+        def __init__(self, result: object) -> None:
+            self._result = result
+
+        def filter_by(self, **kwargs):  # noqa: ANN003
+            return self
+
+        def first(self) -> object:
+            return self._result
+
+    def original_assert_user_can_complete_task(process_instance_id: int, task_guid: str, user: object) -> bool:
+        raise UserDoesNotHaveAccessToTaskError("blocked")
+
+    user = SimpleNamespace(username="super-admin")
+    monkeypatch.setattr(authorization_service_patch, "is_super_admin_request", lambda: True)
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_id_or_none", lambda: None)
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_identifiers", lambda tenant_id: {tenant_id})
+    monkeypatch.setattr(
+        human_task_module,
+        "HumanTaskModel",
+        SimpleNamespace(
+            query=_StaticQuery(
+                SimpleNamespace(
+                    completed=False,
+                    m8f_tenant_id="tenant-a",
+                    potential_owners=[user],
+                )
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        process_instance_module,
+        "ProcessInstanceModel",
+        SimpleNamespace(
+            query=_StaticQuery(SimpleNamespace(m8f_tenant_id="tenant-a", can_submit_task=lambda: True))
+        ),
+    )
+
+    with pytest.raises(UserDoesNotHaveAccessToTaskError):
+        _allow_super_admin_task_completion(
+            original_assert_user_can_complete_task,
+            1,
+            "task-guid",
+            user,
+        )
+
+
+def test_allow_super_admin_task_completion_preserves_completed_task_error(monkeypatch) -> None:
+    from spiffworkflow_backend.exceptions.error import HumanTaskAlreadyCompletedError
+    from spiffworkflow_backend.exceptions.error import UserDoesNotHaveAccessToTaskError
+    from spiffworkflow_backend.models import human_task as human_task_module
+    from spiffworkflow_backend.models import process_instance as process_instance_module
+
+    class _StaticQuery:
+        def __init__(self, result: object) -> None:
+            self._result = result
+
+        def filter_by(self, **kwargs):  # noqa: ANN003
+            return self
+
+        def first(self) -> object:
+            return self._result
+
+    def original_assert_user_can_complete_task(process_instance_id: int, task_guid: str, user: object) -> bool:
+        raise UserDoesNotHaveAccessToTaskError("blocked")
+
+    monkeypatch.setattr(authorization_service_patch, "is_super_admin_request", lambda: True)
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_id_or_none", lambda: None)
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_identifiers", lambda tenant_id: {tenant_id})
+    monkeypatch.setattr(
+        human_task_module,
+        "HumanTaskModel",
+        SimpleNamespace(
+            query=_StaticQuery(
+                SimpleNamespace(
+                    completed=True,
+                    m8f_tenant_id="tenant-a",
+                    potential_owners=[],
+                )
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        process_instance_module,
+        "ProcessInstanceModel",
+        SimpleNamespace(
+            query=_StaticQuery(SimpleNamespace(m8f_tenant_id="tenant-a", can_submit_task=lambda: True))
+        ),
+    )
+
+    with pytest.raises(HumanTaskAlreadyCompletedError):
+        _allow_super_admin_task_completion(
+            original_assert_user_can_complete_task,
+            1,
+            "task-guid",
+            SimpleNamespace(username="super-admin"),
+        )
+
+
+def test_allow_super_admin_task_completion_preserves_non_actionable_process_instance(monkeypatch) -> None:
+    from spiffworkflow_backend.exceptions.error import UserDoesNotHaveAccessToTaskError
+    from spiffworkflow_backend.models import human_task as human_task_module
+    from spiffworkflow_backend.models import process_instance as process_instance_module
+
+    class _StaticQuery:
+        def __init__(self, result: object) -> None:
+            self._result = result
+
+        def filter_by(self, **kwargs):  # noqa: ANN003
+            return self
+
+        def first(self) -> object:
+            return self._result
+
+    def original_assert_user_can_complete_task(process_instance_id: int, task_guid: str, user: object) -> bool:
+        raise UserDoesNotHaveAccessToTaskError("blocked")
+
+    monkeypatch.setattr(authorization_service_patch, "is_super_admin_request", lambda: True)
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_id_or_none", lambda: None)
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_identifiers", lambda tenant_id: {tenant_id})
+    monkeypatch.setattr(
+        human_task_module,
+        "HumanTaskModel",
+        SimpleNamespace(
+            query=_StaticQuery(
+                SimpleNamespace(
+                    completed=False,
+                    m8f_tenant_id="tenant-a",
+                    potential_owners=[],
+                )
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        process_instance_module,
+        "ProcessInstanceModel",
+        SimpleNamespace(
+            query=_StaticQuery(SimpleNamespace(m8f_tenant_id="tenant-a", can_submit_task=lambda: False))
+        ),
+    )
+
+    with pytest.raises(UserDoesNotHaveAccessToTaskError):
+        _allow_super_admin_task_completion(
+            original_assert_user_can_complete_task,
+            1,
+            "task-guid",
+            SimpleNamespace(username="super-admin"),
+        )
+
+
+def test_allow_super_admin_task_completion_preserves_mismatched_request_tenant_denial(monkeypatch) -> None:
+    from spiffworkflow_backend.exceptions.error import UserDoesNotHaveAccessToTaskError
+    from spiffworkflow_backend.models import human_task as human_task_module
+    from spiffworkflow_backend.models import process_instance as process_instance_module
+
+    class _StaticQuery:
+        def __init__(self, result: object) -> None:
+            self._result = result
+
+        def filter_by(self, **kwargs):  # noqa: ANN003
+            return self
+
+        def first(self) -> object:
+            return self._result
+
+    def original_assert_user_can_complete_task(process_instance_id: int, task_guid: str, user: object) -> bool:
+        raise UserDoesNotHaveAccessToTaskError("blocked")
+
+    monkeypatch.setattr(authorization_service_patch, "is_super_admin_request", lambda: True)
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_id_or_none", lambda: "tenant-b")
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_identifiers", lambda tenant_id: {tenant_id})
+    monkeypatch.setattr(
+        human_task_module,
+        "HumanTaskModel",
+        SimpleNamespace(
+            query=_StaticQuery(
+                SimpleNamespace(
+                    completed=False,
+                    m8f_tenant_id="tenant-a",
+                    potential_owners=[],
+                )
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        process_instance_module,
+        "ProcessInstanceModel",
+        SimpleNamespace(
+            query=_StaticQuery(SimpleNamespace(m8f_tenant_id="tenant-a", can_submit_task=lambda: True))
+        ),
+    )
+
+    with pytest.raises(UserDoesNotHaveAccessToTaskError):
+        _allow_super_admin_task_completion(
+            original_assert_user_can_complete_task,
+            1,
+            "task-guid",
+            SimpleNamespace(username="super-admin"),
+        )
+
+
+def test_allow_super_admin_task_completion_preserves_inconsistent_record_tenant_denial(monkeypatch) -> None:
+    from spiffworkflow_backend.exceptions.error import UserDoesNotHaveAccessToTaskError
+    from spiffworkflow_backend.models import human_task as human_task_module
+    from spiffworkflow_backend.models import process_instance as process_instance_module
+
+    class _StaticQuery:
+        def __init__(self, result: object) -> None:
+            self._result = result
+
+        def filter_by(self, **kwargs):  # noqa: ANN003
+            return self
+
+        def first(self) -> object:
+            return self._result
+
+    def original_assert_user_can_complete_task(process_instance_id: int, task_guid: str, user: object) -> bool:
+        raise UserDoesNotHaveAccessToTaskError("blocked")
+
+    monkeypatch.setattr(authorization_service_patch, "is_super_admin_request", lambda: True)
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_id_or_none", lambda: None)
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_identifiers", lambda tenant_id: {tenant_id})
+    monkeypatch.setattr(
+        human_task_module,
+        "HumanTaskModel",
+        SimpleNamespace(
+            query=_StaticQuery(
+                SimpleNamespace(
+                    completed=False,
+                    m8f_tenant_id="tenant-b",
+                    potential_owners=[],
+                )
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        process_instance_module,
+        "ProcessInstanceModel",
+        SimpleNamespace(
+            query=_StaticQuery(SimpleNamespace(m8f_tenant_id="tenant-a", can_submit_task=lambda: True))
+        ),
+    )
+
+    with pytest.raises(UserDoesNotHaveAccessToTaskError):
+        _allow_super_admin_task_completion(
+            original_assert_user_can_complete_task,
+            1,
+            "task-guid",
+            SimpleNamespace(username="super-admin"),
+        )
+
+
+def test_allow_super_admin_task_completion_preserves_non_super_admin_denial(monkeypatch) -> None:
+    from spiffworkflow_backend.exceptions.error import UserDoesNotHaveAccessToTaskError
+
+    def original_assert_user_can_complete_task(process_instance_id: int, task_guid: str, user: object) -> bool:
+        raise UserDoesNotHaveAccessToTaskError("blocked")
+
+    monkeypatch.setattr(authorization_service_patch, "is_super_admin_request", lambda: False)
+
+    with pytest.raises(UserDoesNotHaveAccessToTaskError):
+        _allow_super_admin_task_completion(
+            original_assert_user_can_complete_task,
+            1,
+            "task-guid",
+            SimpleNamespace(username="editor"),
+        )
 
 
 def test_parse_permissions_yaml_submitter_includes_process_model_read_dependencies(monkeypatch) -> None:
@@ -1019,6 +1353,33 @@ def test_parse_permissions_yaml_into_group_info_preserves_command_metadata(monke
     assert compatibility_commands <= tenant_admin_commands
     assert compatibility_commands <= editor_commands
     assert not {command for _, command in compatibility_commands}.intersection(commands_by_uri.values())
+
+
+def test_parse_permissions_yaml_gives_super_admin_process_start_command(monkeypatch) -> None:
+    app = Flask(__name__)  # NOSONAR - unit test
+    permissions_path = (
+        Path(__file__).resolve().parents[4] / "src" / "m8flow_backend" / "config" / "permissions" / "m8flow.yml"
+    )
+    app.config["SPIFFWORKFLOW_BACKEND_PERMISSIONS_FILE_ABSOLUTE_PATH"] = str(permissions_path)
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP"] = "spiff_public"
+
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_id_or_none", lambda: "tenant-a")
+
+    with app.app_context():
+        authorization_service_patch.apply()
+        from spiffworkflow_backend.services.authorization_service import AuthorizationService
+
+        group_permissions = AuthorizationService.parse_permissions_yaml_into_group_info()
+
+    super_admin_group = {group["name"]: group for group in group_permissions}["super-admin"]
+    super_admin_commands = {
+        (permission["uri"], permission.get("command"), tuple(permission["actions"]))
+        for permission in super_admin_group["permissions"]
+        if "command" in permission
+    }
+
+    assert ("PM:ALL", "process.start", ("start",)) in super_admin_commands
 
 
 def test_add_permissions_from_group_permissions_keeps_config_unqualified(monkeypatch) -> None:
@@ -1428,6 +1789,82 @@ def test_reviewer_permissions_from_yaml_include_onboarding_tasks_and_process_ite
     assert tasks_collection_allowed is True
     assert task_item_allowed is True
     assert process_item_allowed is True
+
+
+def test_super_admin_permissions_from_yaml_allow_task_form_save_and_submit(monkeypatch) -> None:
+    app = Flask(__name__)  # NOSONAR - unit test
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SQLALCHEMY_EXPIRE_ON_COMMIT"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"] = "/v1.0"
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP"] = "spiff_public"
+    app.config["SPIFFWORKFLOW_BACKEND_PERMISSIONS_FILE_ABSOLUTE_PATH"] = str(
+        Path(__file__).resolve().parents[4] / "src" / "m8flow_backend" / "config" / "permissions" / "m8flow.yml"
+    )
+
+    from spiffworkflow_backend.models.db import db
+
+    db.init_app(app)
+
+    monkeypatch.setattr(authorization_service_patch, "current_tenant_id_or_none", lambda: "tenant-a")
+    monkeypatch.setattr(
+        authorization_service_patch,
+        "current_tenant_identifiers",
+        lambda tenant_id=None: {"tenant-a", "tenant-a-slug"},
+    )
+
+    with app.app_context():
+        model_override_patch.apply()
+        from spiffworkflow_backend.models.group import GroupModel
+        from spiffworkflow_backend.models.permission_assignment import PermissionAssignmentModel
+        from spiffworkflow_backend.models.permission_target import PermissionTargetModel
+        from spiffworkflow_backend.models.principal import PrincipalModel
+        from spiffworkflow_backend.models.user import UserModel
+        from spiffworkflow_backend.models.user_group_assignment import UserGroupAssignmentModel
+        from spiffworkflow_backend.services.authorization_service import AuthorizationService
+        from spiffworkflow_backend.services.user_service import UserService
+
+        _ = (
+            GroupModel,
+            PermissionAssignmentModel,
+            PermissionTargetModel,
+            PrincipalModel,
+            UserModel,
+            UserGroupAssignmentModel,
+        )
+
+        db.create_all()
+
+        authorization_service_patch.apply()
+
+        user = UserService.create_user(username="super-admin", service="service", service_id="service-id")
+        super_admin_group = UserService.find_or_create_group("super-admin")
+        everybody_group = UserService.find_or_create_group("everybody")
+
+        UserService.add_user_to_group(user, super_admin_group)
+        UserService.add_user_to_group(user, everybody_group)
+        AuthorizationService.import_permissions_from_yaml_file(user)
+
+        save_draft_allowed = AuthorizationService.user_has_permission(
+            user,
+            "create",
+            "/v1.0/tasks/1/task-guid/save-draft",
+        )
+        submit_allowed = AuthorizationService.user_has_permission(
+            user,
+            "update",
+            "/v1.0/tasks/1/task-guid",
+        )
+        delete_allowed = AuthorizationService.user_has_permission(
+            user,
+            "delete",
+            "/v1.0/tasks/1/task-guid",
+        )
+
+    assert save_draft_allowed is True
+    assert submit_allowed is True
+    assert delete_allowed is False
 
 
 def test_tenant_admin_permissions_from_yaml_only_grant_page_access_and_tenant_updates(monkeypatch) -> None:
@@ -1915,6 +2352,74 @@ def test_master_realm_create_user_from_sign_in_assigns_global_super_admin_group(
     assert everybody_extensions_allowed is True
 
 
+def test_master_realm_super_admin_start_route_uses_create_permission_for_specific_model(monkeypatch) -> None:
+    permissions_path = (
+        Path(__file__).resolve().parents[4] / "src" / "m8flow_backend" / "config" / "permissions" / "m8flow.yml"
+    )
+    app = Flask(__name__)  # NOSONAR - unit test
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SQLALCHEMY_EXPIRE_ON_COMMIT"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"] = "/v1.0"
+    app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_IS_AUTHORITY_FOR_USER_GROUPS"] = True
+    app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_TENANT_SPECIFIC_FIELDS"] = []
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP"] = "spiff_public"
+    app.config["SPIFFWORKFLOW_BACKEND_PERMISSIONS_FILE_ABSOLUTE_PATH"] = str(permissions_path)
+
+    from spiffworkflow_backend.models.db import db
+
+    db.init_app(app)
+
+    monkeypatch.setattr(authorization_service_patch, "_master_realm_identifier", lambda: "master")
+
+    with app.app_context():
+        model_override_patch.apply()
+        from spiffworkflow_backend.models.group import GroupModel
+        from spiffworkflow_backend.models.permission_assignment import PermissionAssignmentModel
+        from spiffworkflow_backend.models.permission_target import PermissionTargetModel
+        from spiffworkflow_backend.models.principal import PrincipalModel
+        from spiffworkflow_backend.models.user import UserModel
+        from spiffworkflow_backend.models.user_group_assignment import UserGroupAssignmentModel
+        from spiffworkflow_backend.services.authorization_service import AuthorizationService
+
+        _ = (
+            GroupModel,
+            PermissionAssignmentModel,
+            PermissionTargetModel,
+            PrincipalModel,
+            UserModel,
+            UserGroupAssignmentModel,
+        )
+
+        db.create_all()
+        authorization_service_patch.apply()
+
+        user_info = {
+            "iss": "http://localhost:7002/realms/master",
+            "sub": "subject-123",
+            "preferred_username": "super-admin",
+            "groups": ["super-admin"],
+        }
+
+        user = AuthorizationService.create_user_from_sign_in(user_info)
+        route_permission = AuthorizationService.get_permission_from_http_method("POST")
+        start_allowed = AuthorizationService.user_has_permission(
+            user,
+            route_permission,
+            "/v1.0/process-instances/process-group-test:approval-with-conditional-escalation",
+        )
+        command_assignments = {
+            (assignment.permission, assignment.permission_target.uri, assignment.permission_target.command)
+            for assignment in AuthorizationService.all_permission_assignments_for_user(user)
+            if assignment.permission_target.command is not None
+        }
+
+    assert route_permission == "create"
+    assert start_allowed is True
+    assert ("create", "/process-models/%", "process.start") in command_assignments
+
+
 def test_master_realm_create_user_from_sign_in_tolerates_default_group_assignment_race(monkeypatch) -> None:
     from sqlalchemy.exc import IntegrityError
 
@@ -2132,6 +2637,10 @@ def test_shared_realm_create_user_from_sign_in_reuses_existing_same_realm_user(m
         @classmethod
         def import_permissions_from_yaml_file(cls, user_model):
             return None
+
+        @staticmethod
+        def assert_user_can_complete_task(process_instance_id, task_guid, user):
+            return True
 
     fake_auth_service_module = ModuleType("spiffworkflow_backend.services.authorization_service")
     fake_auth_service_module.AuthorizationService = FakeAuthorizationService

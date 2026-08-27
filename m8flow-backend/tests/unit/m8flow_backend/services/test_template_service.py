@@ -21,6 +21,7 @@ from m8flow_backend.services import model_override_patch
 model_override_patch.apply()
 
 from m8flow_backend.models.process_model_template import ProcessModelTemplateModel  # noqa: E402
+from m8flow_backend.models.process_model_bpmn_version import ProcessModelBpmnVersionModel  # noqa: F401,E402
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel  # noqa: E402
 from m8flow_backend.models.template import TemplateModel, TemplateVisibility  # noqa: E402
 from m8flow_backend.services.template_service import TemplateService  # noqa: E402
@@ -1199,44 +1200,74 @@ def test_list_templates_super_admin_filter_includes_cross_tenant_public() -> Non
     with app.app_context():
         db.create_all()
         db.session.add_all([
-            M8flowTenantModel(id="m8flow", name="M8Flow", slug="m8flow", created_by="test", modified_by="test"),
-            M8flowTenantModel(id="tenant1", name="Tenant 1", slug="tenant1", created_by="test", modified_by="test"),
-            M8flowTenantModel(id="tenant2", name="Tenant 2", slug="tenant2", created_by="test", modified_by="test"),
+            M8flowTenantModel(
+                id="m8flow",
+                name="M8Flow",
+                slug="m8flow",
+                created_by="test",
+                modified_by="test",
+                created_at_in_seconds=1,
+                updated_at_in_seconds=1,
+            ),
+            M8flowTenantModel(
+                id="tenant1",
+                name="Tenant 1",
+                slug="tenant1",
+                created_by="test",
+                modified_by="test",
+                created_at_in_seconds=1,
+                updated_at_in_seconds=1,
+            ),
+            M8flowTenantModel(
+                id="tenant2",
+                name="Tenant 2",
+                slug="tenant2",
+                created_by="test",
+                modified_by="test",
+                created_at_in_seconds=1,
+                updated_at_in_seconds=1,
+            ),
         ])
         user = UserModel(username="super-admin", email="super@example.com", service="local", service_id="super-admin")
         db.session.add(user)
         db.session.add_all([
-            TemplateModel(
-                template_key="default-sample",
-                version="V1",
-                name="Default Sample",
-                m8f_tenant_id="m8flow",
-                visibility=TemplateVisibility.public.value,
-                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
-                created_by="system",
-                modified_by="system",
-            ),
-            TemplateModel(
-                template_key="tenant2-private",
+                TemplateModel(
+                    template_key="default-sample",
+                    version="V1",
+                    name="Default Sample",
+                    m8f_tenant_id="m8flow",
+                    visibility=TemplateVisibility.public.value,
+                    files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
+                    created_by="system",
+                    modified_by="system",
+                    created_at_in_seconds=1,
+                    updated_at_in_seconds=1,
+                ),
+                TemplateModel(
+                    template_key="tenant2-private",
                 version="V1",
                 name="Tenant 2 Private",
                 m8f_tenant_id="tenant2",
-                visibility=TemplateVisibility.private.value,
-                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
-                created_by="owner2",
-                modified_by="owner2",
-            ),
-            TemplateModel(
-                template_key="tenant1-tenant",
+                    visibility=TemplateVisibility.private.value,
+                    files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
+                    created_by="owner2",
+                    modified_by="owner2",
+                    created_at_in_seconds=1,
+                    updated_at_in_seconds=1,
+                ),
+                TemplateModel(
+                    template_key="tenant1-tenant",
                 version="V1",
                 name="Tenant 1 Scoped",
                 m8f_tenant_id="tenant1",
-                visibility=TemplateVisibility.tenant.value,
-                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
-                created_by="owner1",
-                modified_by="owner1",
-            ),
-        ])
+                    visibility=TemplateVisibility.tenant.value,
+                    files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
+                    created_by="owner1",
+                    modified_by="owner1",
+                    created_at_in_seconds=1,
+                    updated_at_in_seconds=1,
+                ),
+            ])
         db.session.commit()
 
         with app.test_request_context("/"):
@@ -1249,6 +1280,79 @@ def test_list_templates_super_admin_filter_includes_cross_tenant_public() -> Non
         keys = {t.template_key for t in results}
         assert keys == {"default-sample", "tenant2-private"}
         assert "tenant1-tenant" not in keys
+
+
+def test_list_templates_includes_cross_tenant_public_for_regular_tenant_users() -> None:
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add_all(
+            [
+                M8flowTenantModel(
+                    id="tenant-a",
+                    name="Tenant A",
+                    slug="tenant-a",
+                    created_by="test",
+                    modified_by="test",
+                    created_at_in_seconds=1,
+                    updated_at_in_seconds=1,
+                ),
+                M8flowTenantModel(
+                    id="tenant-b",
+                    name="Tenant B",
+                    slug="tenant-b",
+                    created_by="test",
+                    modified_by="test",
+                    created_at_in_seconds=1,
+                    updated_at_in_seconds=1,
+                ),
+            ]
+        )
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.add_all(
+            [
+                TemplateModel(
+                    template_key="tenant-a-private",
+                    version="V1",
+                    name="Tenant A Private",
+                    m8f_tenant_id="tenant-a",
+                    visibility=TemplateVisibility.private.value,
+                    files=[{"file_type": "bpmn", "file_name": "tenant-a.bpmn"}],
+                    created_by="tester",
+                    modified_by="tester",
+                    created_at_in_seconds=1,
+                    updated_at_in_seconds=1,
+                ),
+                TemplateModel(
+                    template_key="tenant-b-public",
+                    version="V1",
+                    name="Tenant B Public",
+                    m8f_tenant_id="tenant-b",
+                    visibility=TemplateVisibility.public.value,
+                    files=[{"file_type": "bpmn", "file_name": "tenant-b.bpmn"}],
+                    created_by="other",
+                    modified_by="other",
+                    created_at_in_seconds=1,
+                    updated_at_in_seconds=1,
+                ),
+            ]
+        )
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            results, _ = TemplateService.list_templates(user=user, tenant_id="tenant-a")
+
+        assert {template.template_key for template in results} == {
+            "tenant-a-private",
+            "tenant-b-public",
+        }
 
 
 def test_list_templates_super_admin_without_filter_sees_all_tenants() -> None:
@@ -1266,9 +1370,33 @@ def test_list_templates_super_admin_without_filter_sees_all_tenants() -> None:
     with app.app_context():
         db.create_all()
         db.session.add_all([
-            M8flowTenantModel(id="m8flow", name="M8Flow", slug="m8flow", created_by="test", modified_by="test"),
-            M8flowTenantModel(id="tenant1", name="Tenant 1", slug="tenant1", created_by="test", modified_by="test"),
-            M8flowTenantModel(id="tenant2", name="Tenant 2", slug="tenant2", created_by="test", modified_by="test"),
+            M8flowTenantModel(
+                id="m8flow",
+                name="M8Flow",
+                slug="m8flow",
+                created_by="test",
+                modified_by="test",
+                created_at_in_seconds=1,
+                updated_at_in_seconds=1,
+            ),
+            M8flowTenantModel(
+                id="tenant1",
+                name="Tenant 1",
+                slug="tenant1",
+                created_by="test",
+                modified_by="test",
+                created_at_in_seconds=1,
+                updated_at_in_seconds=1,
+            ),
+            M8flowTenantModel(
+                id="tenant2",
+                name="Tenant 2",
+                slug="tenant2",
+                created_by="test",
+                modified_by="test",
+                created_at_in_seconds=1,
+                updated_at_in_seconds=1,
+            ),
         ])
         user = UserModel(username="super-admin", email="super@example.com", service="local", service_id="super-admin")
         db.session.add(user)
@@ -1282,6 +1410,8 @@ def test_list_templates_super_admin_without_filter_sees_all_tenants() -> None:
                 files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 created_by="system",
                 modified_by="system",
+                created_at_in_seconds=1,
+                updated_at_in_seconds=1,
             ),
             TemplateModel(
                 template_key="tenant2-private",
@@ -1292,6 +1422,8 @@ def test_list_templates_super_admin_without_filter_sees_all_tenants() -> None:
                 files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 created_by="owner2",
                 modified_by="owner2",
+                created_at_in_seconds=1,
+                updated_at_in_seconds=1,
             ),
             TemplateModel(
                 template_key="tenant1-tenant",
@@ -1302,6 +1434,8 @@ def test_list_templates_super_admin_without_filter_sees_all_tenants() -> None:
                 files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
                 created_by="owner1",
                 modified_by="owner1",
+                created_at_in_seconds=1,
+                updated_at_in_seconds=1,
             ),
         ])
         db.session.commit()
@@ -1492,6 +1626,315 @@ def test_get_template_tenant_isolation() -> None:
             result = TemplateService.get_template(template_key="shared", user=user, tenant_id="tenant-b")
             assert result is not None
             assert result.m8f_tenant_id == "tenant-b"
+
+
+def test_get_template_falls_back_to_cross_tenant_public_when_missing_locally() -> None:
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add_all(
+            [
+                M8flowTenantModel(
+                    id="tenant-a",
+                    name="Tenant A",
+                    slug="tenant-a",
+                    created_by="test",
+                    modified_by="test",
+                    created_at_in_seconds=1,
+                    updated_at_in_seconds=1,
+                ),
+                M8flowTenantModel(
+                    id="tenant-b",
+                    name="Tenant B",
+                    slug="tenant-b",
+                    created_by="test",
+                    modified_by="test",
+                    created_at_in_seconds=1,
+                    updated_at_in_seconds=1,
+                ),
+            ]
+        )
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.add(
+            TemplateModel(
+                template_key="shared-public",
+                version="V2",
+                name="Shared Public",
+                visibility=TemplateVisibility.public.value,
+                m8f_tenant_id="tenant-b",
+                files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
+                created_by="owner-b",
+                modified_by="owner-b",
+                created_at_in_seconds=1,
+                updated_at_in_seconds=1,
+            )
+        )
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            result = TemplateService.get_template(
+                template_key="shared-public",
+                user=user,
+                tenant_id="tenant-a",
+            )
+
+        assert result is not None
+        assert result.m8f_tenant_id == "tenant-b"
+        assert result.visibility == TemplateVisibility.public.value
+
+
+def test_get_template_prefers_same_tenant_template_over_cross_tenant_public() -> None:
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add_all(
+            [
+                M8flowTenantModel(
+                    id="tenant-a",
+                    name="Tenant A",
+                    slug="tenant-a",
+                    created_by="test",
+                    modified_by="test",
+                    created_at_in_seconds=1,
+                    updated_at_in_seconds=1,
+                ),
+                M8flowTenantModel(
+                    id="tenant-b",
+                    name="Tenant B",
+                    slug="tenant-b",
+                    created_by="test",
+                    modified_by="test",
+                    created_at_in_seconds=1,
+                    updated_at_in_seconds=1,
+                ),
+            ]
+        )
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.add_all(
+            [
+                TemplateModel(
+                    template_key="shared-key",
+                    version="V1",
+                    name="Tenant B Public",
+                    visibility=TemplateVisibility.public.value,
+                    m8f_tenant_id="tenant-b",
+                    files=[{"file_type": "bpmn", "file_name": "public.bpmn"}],
+                    created_by="owner-b",
+                    modified_by="owner-b",
+                    created_at_in_seconds=1,
+                    updated_at_in_seconds=1,
+                ),
+                TemplateModel(
+                    template_key="shared-key",
+                    version="V1",
+                    name="Tenant A Local",
+                    visibility=TemplateVisibility.private.value,
+                    m8f_tenant_id="tenant-a",
+                    files=[{"file_type": "bpmn", "file_name": "local.bpmn"}],
+                    created_by="tester",
+                    modified_by="tester",
+                    created_at_in_seconds=1,
+                    updated_at_in_seconds=1,
+                ),
+            ]
+        )
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            result = TemplateService.get_template(
+                template_key="shared-key",
+                version="V1",
+                user=user,
+                tenant_id="tenant-a",
+            )
+
+        assert result is not None
+        assert result.m8f_tenant_id == "tenant-a"
+        assert result.name == "Tenant A Local"
+
+
+def test_get_template_by_id_allows_cross_tenant_public_template() -> None:
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add_all(
+            [
+                M8flowTenantModel(
+                    id="tenant-a",
+                    name="Tenant A",
+                    slug="tenant-a",
+                    created_by="test",
+                    modified_by="test",
+                    created_at_in_seconds=1,
+                    updated_at_in_seconds=1,
+                ),
+                M8flowTenantModel(
+                    id="tenant-b",
+                    name="Tenant B",
+                    slug="tenant-b",
+                    created_by="test",
+                    modified_by="test",
+                    created_at_in_seconds=1,
+                    updated_at_in_seconds=1,
+                ),
+            ]
+        )
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        template = TemplateModel(
+            template_key="by-id-cross-tenant",
+            version="V1",
+            name="Cross Tenant Public",
+            visibility=TemplateVisibility.public.value,
+            m8f_tenant_id="tenant-b",
+            files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
+            created_by="owner-b",
+            modified_by="owner-b",
+            created_at_in_seconds=1,
+            updated_at_in_seconds=1,
+        )
+        db.session.add(template)
+        db.session.commit()
+        template_id = template.id
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            result = TemplateService.get_template_by_id(template_id, user=user)
+
+        assert result is not None
+        assert result.id == template_id
+
+
+def test_get_template_by_id_denies_cross_tenant_private_template() -> None:
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add_all(
+            [
+                M8flowTenantModel(
+                    id="tenant-a",
+                    name="Tenant A",
+                    slug="tenant-a",
+                    created_by="test",
+                    modified_by="test",
+                    created_at_in_seconds=1,
+                    updated_at_in_seconds=1,
+                ),
+                M8flowTenantModel(
+                    id="tenant-b",
+                    name="Tenant B",
+                    slug="tenant-b",
+                    created_by="test",
+                    modified_by="test",
+                    created_at_in_seconds=1,
+                    updated_at_in_seconds=1,
+                ),
+            ]
+        )
+        # Same username as the creator on purpose: cross-tenant ownership alone must not grant access.
+        user = UserModel(username="owner-b", email="owner-b@example.com", service="local", service_id="owner-b")
+        db.session.add(user)
+        template = TemplateModel(
+            template_key="by-id-cross-tenant-private",
+            version="V1",
+            name="Cross Tenant Private",
+            visibility=TemplateVisibility.private.value,
+            m8f_tenant_id="tenant-b",
+            files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
+            created_by="owner-b",
+            modified_by="owner-b",
+            created_at_in_seconds=1,
+            updated_at_in_seconds=1,
+        )
+        db.session.add(template)
+        db.session.commit()
+        template_id = template.id
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            result = TemplateService.get_template_by_id(template_id, user=user)
+
+        assert result is None
+
+
+def test_get_template_by_id_denies_cross_tenant_tenant_visible_template() -> None:
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add_all(
+            [
+                M8flowTenantModel(
+                    id="tenant-a",
+                    name="Tenant A",
+                    slug="tenant-a",
+                    created_by="test",
+                    modified_by="test",
+                    created_at_in_seconds=1,
+                    updated_at_in_seconds=1,
+                ),
+                M8flowTenantModel(
+                    id="tenant-b",
+                    name="Tenant B",
+                    slug="tenant-b",
+                    created_by="test",
+                    modified_by="test",
+                    created_at_in_seconds=1,
+                    updated_at_in_seconds=1,
+                ),
+            ]
+        )
+        user = UserModel(username="tenant-a-user", email="tenant-a@example.com", service="local", service_id="tenant-a")
+        db.session.add(user)
+        template = TemplateModel(
+            template_key="by-id-cross-tenant-tenant",
+            version="V1",
+            name="Cross Tenant Tenant Visible",
+            visibility=TemplateVisibility.tenant.value,
+            m8f_tenant_id="tenant-b",
+            files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
+            created_by="owner-b",
+            modified_by="owner-b",
+            created_at_in_seconds=1,
+            updated_at_in_seconds=1,
+        )
+        db.session.add(template)
+        db.session.commit()
+        template_id = template.id
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            result = TemplateService.get_template_by_id(template_id, user=user)
+
+        assert result is None
 
 
 def test_get_template_by_id() -> None:
@@ -2368,6 +2811,57 @@ def test_delete_draft_template_allows_tenant_admin() -> None:
             assert TemplateModel.query.filter_by(id=template_id).first() is None
 
 
+def test_delete_template_requires_active_tenant_context() -> None:
+    """Delete should fail clearly when the request has no active tenant context."""
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(
+            M8flowTenantModel(
+                id="tenant-a",
+                name="Tenant A",
+                slug="tenant-a",
+                created_by="test",
+                modified_by="test",
+                created_at_in_seconds=1,
+                updated_at_in_seconds=1,
+            )
+        )
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        template = TemplateModel(
+            template_key="delete-needs-tenant",
+            version="V1",
+            name="Delete Needs Tenant",
+            m8f_tenant_id="tenant-a",
+            visibility=TemplateVisibility.public.value,
+            files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
+            is_published=False,
+            created_by="tester",
+            modified_by="tester",
+            created_at_in_seconds=1,
+            updated_at_in_seconds=1,
+        )
+        db.session.add(template)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.user = user
+            try:
+                TemplateService.delete_template_by_id(template.id, user=user)
+                assert False, "Should have raised ApiError"
+            except ApiError as e:
+                assert e.error_code == "tenant_required"
+                assert e.status_code == 400
+
+
 def test_restore_template_by_id_tenant_admin() -> None:
     """Tenant-admin can restore a soft-deleted template and recover base name."""
     app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
@@ -2406,6 +2900,58 @@ def test_restore_template_by_id_tenant_admin() -> None:
 
             assert restored.is_deleted is False
             assert restored.name == "Restore Name"
+
+
+def test_restore_template_requires_active_tenant_context() -> None:
+    """Restore should fail clearly when the request has no active tenant context."""
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        db.session.add(
+            M8flowTenantModel(
+                id="tenant-a",
+                name="Tenant A",
+                slug="tenant-a",
+                created_by="test",
+                modified_by="test",
+                created_at_in_seconds=1,
+                updated_at_in_seconds=1,
+            )
+        )
+        user = UserModel(username="tester", email="tester@example.com", service="local", service_id="tester")
+        db.session.add(user)
+        db.session.commit()
+
+        deleted_template = TemplateModel(
+            template_key="restore-needs-tenant",
+            version="V1",
+            name="Restore Needs Tenant_deleted_20260224123456",
+            m8f_tenant_id="tenant-a",
+            visibility=TemplateVisibility.public.value,
+            files=[{"file_type": "bpmn", "file_name": "test.bpmn"}],
+            is_published=True,
+            is_deleted=True,
+            created_by="tester",
+            modified_by="tester",
+            created_at_in_seconds=1,
+            updated_at_in_seconds=1,
+        )
+        db.session.add(deleted_template)
+        db.session.commit()
+
+        with app.test_request_context("/"):
+            g.user = user
+            try:
+                TemplateService.restore_template_by_id(deleted_template.id, user=user)
+                assert False, "Should have raised ApiError"
+            except ApiError as e:
+                assert e.error_code == "tenant_required"
+                assert e.status_code == 400
 
 
 def test_restore_template_requires_tenant_admin() -> None:

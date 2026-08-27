@@ -144,13 +144,19 @@ def _enrich_task_list_results_with_tenant_fields(response: flask.wrappers.Respon
             process_instance_ids.add(raw_id)
 
     tenant_id_by_pi: dict[int, str | None] = {}
+    last_milestone_by_pi: dict[int, str | None] = {}
     if process_instance_ids:
         rows = (
             ProcessInstanceModel.query.filter(ProcessInstanceModel.id.in_(process_instance_ids))
-            .with_entities(ProcessInstanceModel.id, ProcessInstanceModel.m8f_tenant_id)
+            .with_entities(
+                ProcessInstanceModel.id,
+                ProcessInstanceModel.m8f_tenant_id,
+                ProcessInstanceModel.last_milestone_bpmn_name,
+            )
             .all()
         )
         tenant_id_by_pi = {row[0]: row[1] for row in rows}
+        last_milestone_by_pi = {row[0]: row[2] for row in rows}
 
     tenant_ids = {tid for tid in tenant_id_by_pi.values() if isinstance(tid, str) and tid}
     tenant_name_by_id: dict[str, str] = {}
@@ -169,6 +175,8 @@ def _enrich_task_list_results_with_tenant_fields(response: flask.wrappers.Respon
         item["tenantId"] = tid
         item["tenant_id"] = tid
         item["tenantName"] = tenant_name_by_id.get(tid) if isinstance(tid, str) else None
+        if isinstance(pi_id, int):
+            item["last_milestone_bpmn_name"] = last_milestone_by_pi.get(pi_id)
         enriched.append(item)
 
     payload["results"] = enriched

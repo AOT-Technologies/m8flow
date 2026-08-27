@@ -150,7 +150,9 @@ permissions:
     actions: [read]
     uri: /processes/*
   run-all-process-models:
-    groups: ["tenant-admin", "editor","submitter"]
+    # "start" is the process-model macro permission. The actual POST
+    # /process-instances/{model_id} route is authorized as HTTP "create".
+    groups: ["tenant-admin", "editor", "submitter", "super-admin"]
     actions: [start]
     uri: PM:ALL
     command: process.start
@@ -368,6 +370,12 @@ permissions:
     actions: [read]
     uri: /tasks/*
     command: task.read
+  # Super-admin task form actions hit POST /tasks/* save-draft and PUT /tasks/* submit.
+  # Grant create+update for those task-form flows, but do not grant delete.
+  manage-task-forms:
+    groups: ["super-admin"]
+    actions: [create, update]
+    uri: /tasks/*
   # Task data (form values) shown on the Process Instance page when a task is clicked.
   # Mirrors read-tasks' audience so super-admins/viewers can inspect task data across tenants.
   # READ ONLY by design -- do NOT add update/PUT: super-admin RLS bypass is SELECT-only, and

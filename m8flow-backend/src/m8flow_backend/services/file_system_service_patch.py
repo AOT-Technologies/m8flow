@@ -125,6 +125,21 @@ def _explicit_concrete_tenant_id() -> str | None:
     return None
 
 
+def _explicit_bpmn_root_tenant() -> str | None:
+    """Return an explicit filesystem-root override for BPMN content, if set."""
+    if not has_request_context():
+        return None
+
+    request_root_tenant = getattr(g, "_m8flow_bpmn_root_tenant", None)
+    if not isinstance(request_root_tenant, str):
+        return None
+
+    normalized = request_root_tenant.strip()
+    if is_concrete_tenant_id(normalized):
+        return normalized
+    return None
+
+
 def _unsafe_tenant_id(tenant_id: str) -> bool:
     return (
         not tenant_id
@@ -134,24 +149,35 @@ def _unsafe_tenant_id(tenant_id: str) -> bool:
     )
 
 
+def _join_tenant_subdir(base_dir: str, tenant_subdir: str) -> str:
+    if _unsafe_tenant_id(tenant_subdir):
+        raise RuntimeError("Unsafe tenant id")
+
+    normalized_base_dir = os.path.abspath(os.path.normpath(base_dir))
+    if os.path.basename(normalized_base_dir) == tenant_subdir:
+        return normalized_base_dir
+    return os.path.join(normalized_base_dir, tenant_subdir)
+
+
 def _tenant_bpmn_root(base_dir: str) -> str:
     """Get tenant-specific BPMN root directory.
 
     Precedence:
-      1. A concrete tenant id explicitly set on the request/context.
-      2. Otherwise, intentionally tenant-less requests go to the reserved
+      1. An explicit BPMN filesystem-root override set on the request.
+      2. A concrete tenant id explicitly set on the request/context.
+      3. Otherwise, intentionally tenant-less requests go to the reserved
          empty global subdirectory.
-      3. Otherwise, resolve the tenant id from the current request/context.
+      4. Otherwise, resolve the tenant id from the current request/context.
     """
     normalized = os.path.abspath(os.path.normpath(base_dir))
 
+    explicit_bpmn_root_tenant = _explicit_bpmn_root_tenant()
+    if explicit_bpmn_root_tenant:
+        return _join_tenant_subdir(normalized, explicit_bpmn_root_tenant)
+
     concrete_tenant_id = _explicit_concrete_tenant_id()
     if concrete_tenant_id:
-        if _unsafe_tenant_id(concrete_tenant_id):
-            raise RuntimeError("Unsafe tenant id")
-        if os.path.basename(normalized) == concrete_tenant_id:
-            return normalized
-        return os.path.join(normalized, concrete_tenant_id)
+        return _join_tenant_subdir(normalized, concrete_tenant_id)
 
     if _is_global_request():
         return os.path.join(normalized, _GLOBAL_BPMN_SUBDIR)
@@ -160,12 +186,7 @@ def _tenant_bpmn_root(base_dir: str) -> str:
     if not tenant_id:
         tenant_id = _get_tenant_id()
 
-    if _unsafe_tenant_id(tenant_id):
-        raise RuntimeError("Unsafe tenant id")
-
-    if os.path.basename(normalized) == tenant_id:
-        return normalized
-    return os.path.join(normalized, tenant_id)
+    return _join_tenant_subdir(normalized, tenant_id)
 
 
 def apply() -> None:

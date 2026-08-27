@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Callable
 from collections.abc import Iterable
 from collections.abc import Mapping
 from contextlib import contextmanager
@@ -28,6 +29,7 @@ from m8flow_backend.services.tenant_identity_helpers import realm_from_service
 from m8flow_backend.services.tenant_identity_helpers import tenant_id_from_payload
 from m8flow_backend.services.tenant_group_mapping import tenant_roles_for_organization_group
 from m8flow_backend.tenancy import is_concrete_tenant_id
+from m8flow_backend.tenancy import is_super_admin_request
 
 _PATCHED = False
 logger = logging.getLogger(__name__)
@@ -186,6 +188,88 @@ def _permission_scoped_groups_for_user(user: Any, tenant_id: str | None = None) 
     if not isinstance(groups, Iterable) or isinstance(groups, str | bytes):
         return []
     return [group for group in groups if _group_applies_to_active_permission_scope(group, tenant_id=tenant_id)]
+
+
+def _super_admin_task_completion_scope_matches_records(human_task: Any, process_instance: Any) -> bool:
+    """
+    Allow fallback completion only when the task and process instance agree on tenant scope.
+
+    Super-admins may act from the global "All Tenants" view, so an active request tenant
+    is optional here. When a request tenant is present, it must still match the tenant
+    implied by the records to avoid widening the bypass when request scoping is stale.
+    """
+    process_tenant_id = getattr(process_instance, "m8f_tenant_id", None)
+    if not is_concrete_tenant_id(process_tenant_id):
+        return False
+
+    tenant_identifiers = current_tenant_identifiers(process_tenant_id)
+    if not tenant_identifiers:
+        tenant_identifiers = {process_tenant_id.strip()}
+
+    task_tenant_id = getattr(human_task, "m8f_tenant_id", None)
+    if not isinstance(task_tenant_id, str) or task_tenant_id.strip() not in tenant_identifiers:
+        return False
+
+    request_tenant_id = current_tenant_id_or_none()
+    if request_tenant_id is None:
+        return True
+
+    return request_tenant_id in tenant_identifiers
+
+
+def _allow_super_admin_task_completion(
+    original_assert_user_can_complete_task: Callable[[int, str, Any], bool],
+    process_instance_id: int,
+    task_guid: str,
+    user: Any,
+) -> bool:
+    """
+    Preserve upstream human-task validation, but let super-admins act cross-tenant.
+
+    Upstream uses potential-owner membership as the final task-action gate. That is
+    correct for tenant-scoped users, but super-admins in the master realm need to be
+    able to save drafts and submit forms for cross-tenant support/admin flows.
+    """
+    from spiffworkflow_backend.exceptions.error import HumanTaskAlreadyCompletedError
+    from spiffworkflow_backend.exceptions.error import HumanTaskNotFoundError
+    from spiffworkflow_backend.exceptions.error import UserDoesNotHaveAccessToTaskError
+    from spiffworkflow_backend.models.human_task import HumanTaskModel
+    from spiffworkflow_backend.models.process_instance import ProcessInstanceModel
+
+    try:
+        return original_assert_user_can_complete_task(process_instance_id, task_guid, user)
+    except UserDoesNotHaveAccessToTaskError:
+        if not is_super_admin_request():
+            raise
+
+        human_task = HumanTaskModel.query.filter_by(
+            task_id=task_guid,
+            process_instance_id=process_instance_id,
+        ).first()
+        if human_task is None:
+            raise HumanTaskNotFoundError(
+                f"Could find an human task with task guid '{task_guid}' for process instance '{process_instance_id}'"
+            )
+
+        if human_task.completed:
+            raise HumanTaskAlreadyCompletedError(
+                f"Human task with task guid '{task_guid}' for process instance '{process_instance_id}' has already been completed"
+            )
+
+        potential_owners = getattr(human_task, "potential_owners", ())
+        if user in potential_owners:
+            raise
+
+        process_instance = ProcessInstanceModel.query.filter_by(id=process_instance_id).first()
+        can_submit_task = getattr(process_instance, "can_submit_task", None)
+        if (
+            process_instance is not None
+            and _super_admin_task_completion_scope_matches_records(human_task, process_instance)
+            and callable(can_submit_task)
+            and can_submit_task()
+        ):
+            return True
+        raise
 
 
 def _username_from_user_info(user_info: dict[str, Any]) -> str:
@@ -1263,6 +1347,21 @@ def apply() -> None:
 
     AuthorizationService.create_user_from_sign_in = patched_create_user_from_sign_in
 
+    original_assert_user_can_complete_task = AuthorizationService.assert_user_can_complete_task
+
+    def patched_assert_user_can_complete_task(
+        process_instance_id: int,
+        task_guid: str,
+        user: Any,
+    ) -> bool:
+        return _allow_super_admin_task_completion(
+            original_assert_user_can_complete_task,
+            process_instance_id,
+            task_guid,
+            user,
+        )
+
+    AuthorizationService.assert_user_can_complete_task = staticmethod(patched_assert_user_can_complete_task)
 
     @classmethod
     def patched_parse_permissions_yaml_into_group_info(cls):
