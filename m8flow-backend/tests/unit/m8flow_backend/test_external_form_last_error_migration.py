@@ -151,6 +151,5 @@ def test_revision_chains_onto_the_previous_head(connection):
     module = _load_migration_module()
 
     assert module.revision == "r1k2l3m4n5o6"
-    # Chains after the nats_event_audit revision, which also branches off p9i0j1k2l3m4;
-    # sharing that parent would leave Alembic with two heads.
-    assert module.down_revision == "q0j1k2l3m4n5"
+    # Chains after the audit-log migration so this branch remains linear.
+    assert module.down_revision == "q1r2s3t4u5v6"
