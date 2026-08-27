@@ -9,8 +9,8 @@ generic SMTP rejection is equally opaque.
 The column is bounded (500 chars, truncated on write) and only ever receives text that is
 already being logged — never a secret value.
 
-Revision ID: r1k2l3m4n5o6
-Revises: q0j1k2l3m4n5
+Revision ID: s2l3m4n5o6p7
+Revises: r1k2l3m4n5o6
 Create Date: 2026-08-19
 
 """
@@ -21,8 +21,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "r1k2l3m4n5o6"
-down_revision = "q0j1k2l3m4n5"
+revision = "s2l3m4n5o6p7"
+down_revision = "r1k2l3m4n5o6"
 branch_labels = None
 depends_on = None
 

@@ -9,7 +9,7 @@ since i2b3c4d5e6f7: tenant-only for all statements, plus a SELECT-only
 super-admin bypass driven by the app.bypass_rls session setting.
 
 Revision ID: r1k2l3m4n5o6
-Revises: q0j1k2l3m4n5
+Revises: q1r2s3t4u5v6
 Create Date: 2026-08-20
 
 """

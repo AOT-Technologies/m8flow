@@ -262,7 +262,25 @@ def test_invalid_value_raises_before_any_secret_is_written(stored, smtp, backend
 # ------------------------------------------------------- deactivate and delete
 
 
-def test_deactivate_clears_the_default_flag(monkeypatch, backend):
+@pytest.fixture
+def no_commit(monkeypatch):
+    """Neutralize the session writes so these stay pure-unit tests.
+
+    ``deactivate_profile`` and ``delete_profile`` both end in
+    ``db.session.commit()``, which raises "Working outside of application
+    context" before the assertions are reached. This module deliberately runs
+    with no database, so standing up a real session would be the wrong fix --
+    what is under test is which flags the service sets and the order it
+    removes things in.
+    """
+    from unittest.mock import MagicMock
+    from spiffworkflow_backend.models.db import db
+
+    mock_session = MagicMock()
+    monkeypatch.setattr(db, "session", mock_session)
+
+
+def test_deactivate_clears_the_default_flag(monkeypatch, backend, no_commit):
     """A deactivated profile must not stay the default.
 
     Otherwise the tenant is left with a default that cannot be used, and the
@@ -279,7 +297,7 @@ def test_deactivate_clears_the_default_flag(monkeypatch, backend):
     assert profile.is_default is False
 
 
-def test_delete_removes_the_row_before_the_secrets(monkeypatch, backend):
+def test_delete_removes_the_row_before_the_secrets(monkeypatch, backend, no_commit):
     """Row first, so a failure orphans unreachable secrets rather than the reverse."""
     order: list[str] = []
     profile = _StubProfile(
@@ -309,7 +327,7 @@ def test_delete_removes_the_row_before_the_secrets(monkeypatch, backend):
     assert backend.deleted == [secret_ref(42, "smtp_password")]
 
 
-def test_delete_survives_a_failing_secret_removal(monkeypatch, backend):
+def test_delete_survives_a_failing_secret_removal(monkeypatch, backend, no_commit):
     """Secret cleanup is best effort: the row is already gone."""
     profile = _StubProfile(
         secret_refs={
@@ -325,7 +343,7 @@ def test_delete_survives_a_failing_secret_removal(monkeypatch, backend):
     ConnectorProfileService.delete_profile(profile.id)  # must not raise
 
 
-def test_delete_reports_how_many_secrets_were_left_behind(monkeypatch, backend, caplog):
+def test_delete_reports_how_many_secrets_were_left_behind(monkeypatch, backend, caplog, no_commit):
     """Ops need the orphan count to size a cleanup; key names stay out of the log."""
     ref = secret_ref(42, "smtp_password")
     profile = _StubProfile(secret_refs={"smtp_password": ref})
@@ -343,7 +361,7 @@ def test_delete_reports_how_many_secrets_were_left_behind(monkeypatch, backend, 
     assert ref not in summary[0].getMessage()
 
 
-def test_delete_logs_no_summary_when_every_secret_goes(monkeypatch, backend, caplog):
+def test_delete_logs_no_summary_when_every_secret_goes(monkeypatch, backend, caplog, no_commit):
     profile = _StubProfile(secret_refs={"smtp_password": secret_ref(42, "smtp_password")})
     monkeypatch.setattr(
         ConnectorProfileService, "get_profile", classmethod(lambda cls, _id: profile)
