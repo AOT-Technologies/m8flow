@@ -263,6 +263,24 @@ permissions:
     groups: ["tenant-admin", "integrator"]
     actions: [create, update, delete]
     uri: /m8flow/connector-profiles/*
+  # Editors need this one to see the missing-SMTP warning in the BPMN modeler's External
+  # Form group. It returns secret key names and configuration flags only, never values.
+  read-external-form-smtp-status:
+    groups: ["tenant-admin", "editor", "super-admin"]
+    actions: [read]
+    uri: /m8flow/external-form-notifications/smtp-status
+  read-external-form-notifications:
+    groups: ["tenant-admin", "super-admin"]
+    actions: [read]
+    uri: /m8flow/external-form-notifications
+  read-external-form-notification-items:
+    groups: ["tenant-admin", "super-admin"]
+    actions: [read]
+    uri: /m8flow/external-form-notifications/*
+  resend-external-form-notifications:
+    groups: ["tenant-admin", "super-admin"]
+    actions: [create]
+    uri: /m8flow/external-form-notifications/*
   read-mcp-connection-page:
     groups: ["everybody"]
     actions: [read]
