@@ -18,6 +18,9 @@ export const useM8flowUriListForPermissions = () => {
       // tenant; /varz and /jsz do not), so this is what gates the page and nav item rather
       // than a super-admin flag.
       m8flowNatsEventsPath: "/m8flow/nats/events",
+      m8flowExternalFormNotificationsPath: "/m8flow/external-form-notifications",
+      m8flowExternalFormSmtpStatusPath:
+        "/m8flow/external-form-notifications/smtp-status",
     };
   }, [spiffTargetUris]);
 
