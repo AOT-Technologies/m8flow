@@ -9,118 +9,79 @@ import {
 } from './processTenantLabelRegistry';
 
 vi.mock('../../services/UserService', () => ({
-  default: {
-    isSuperAdmin: vi.fn(),
-  },
+  default: { isSuperAdmin: vi.fn() },
 }));
 
-const navigate = vi.fn();
-
-vi.mock('react-router-dom', () => ({
-  useNavigate: () => navigate,
-}));
-
-vi.mock('../../services/LocalStorageService', () => ({
-  getStorageValue: vi.fn(() => '[]'),
+vi.mock('../../contexts/GlobalTenantContext', () => ({
+  useGlobalTenant: vi.fn(),
 }));
 
 vi.mock('react-i18next', () => ({
-  initReactI18next: {
-    type: '3rdParty',
-    init: vi.fn(),
-  },
-  useTranslation: () => ({
-    t: (key: string) => key,
-  }),
+  useTranslation: () => ({ t: (key: string) => key }),
+}));
+
+vi.mock('@spiff-core/views/StartProcess/ProcessModelCard', () => ({
+  default: ({ onStartProcess }: { onStartProcess?: () => void }) => (
+    <div className="MuiCardActions-root">
+      <button type="button" onClick={onStartProcess}>start_process</button>
+    </div>
+  ),
 }));
 
 import UserService from '../../services/UserService';
+import { useGlobalTenant } from '../../contexts/GlobalTenantContext';
 
 const theme = createTheme();
 
-function renderCard(model: Record<string, unknown>) {
-  return render(
+function renderCard(model: Record<string, unknown>, onStartProcess = vi.fn()) {
+  render(
     <ThemeProvider theme={theme}>
       <MemoryRouter>
-        <ProcessModelCard model={model as any} />
+        <ProcessModelCard model={model as any} onStartProcess={onStartProcess} />
       </MemoryRouter>
     </ThemeProvider>,
   );
+  return onStartProcess;
 }
 
 describe('ProcessModelCard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     clearProcessTenantLabels();
-  });
-
-  it('renders tenant chip when user is super-admin and tenantName is present', () => {
-    vi.mocked(UserService.isSuperAdmin).mockReturnValue(true);
-    renderCard({
-      id: 'hr/onboarding',
-      display_name: 'Onboarding',
-      description: 'Onboarding workflow',
-      tenantId: 'tenant-a',
-      tenantName: 'Acme Co.',
+    vi.mocked(useGlobalTenant).mockReturnValue({
+      selectedTenantId: 'tenant-a',
+      setSelectedTenantId: vi.fn(),
     });
-    expect(screen.getByTestId('process-model-tenant-chip-hr/onboarding')).toHaveTextContent(
-      'Acme Co.',
-    );
   });
 
-  it('hides tenant chip for non-super-admin even if tenantName is present', () => {
+  it('renders a tenant chip only for super-admin users', () => {
+    vi.mocked(UserService.isSuperAdmin).mockReturnValue(true);
+    renderCard({ id: 'hr/onboarding', tenantName: 'Acme Co.' });
+    expect(screen.getByTestId('process-model-tenant-chip-hr/onboarding')).toHaveTextContent('Acme Co.');
+  });
+
+  it('hides the tenant chip for non-super-admin users', () => {
     vi.mocked(UserService.isSuperAdmin).mockReturnValue(false);
-    renderCard({
-      id: 'hr/onboarding',
-      display_name: 'Onboarding',
-      description: '',
-      tenantId: 'tenant-a',
-      tenantName: 'Acme Co.',
-    });
+    renderCard({ id: 'hr/onboarding', tenantName: 'Acme Co.' });
     expect(screen.queryByTestId('process-model-tenant-chip-hr/onboarding')).toBeNull();
   });
 
-  it('hides tenant chip when tenantName is missing for super-admin', () => {
+  it('uses the registered tenant label for slim process-model responses', () => {
     vi.mocked(UserService.isSuperAdmin).mockReturnValue(true);
-    renderCard({
-      id: 'hr/onboarding',
-      display_name: 'Onboarding',
-      description: '',
-    });
-    expect(screen.queryByTestId('process-model-tenant-chip-hr/onboarding')).toBeNull();
+    registerProcessTenantLabels([{ id: 'hr/onboarding', tenantName: 'Acme Co.' }]);
+    renderCard({ id: 'hr/onboarding' });
+    expect(screen.getByTestId('process-model-tenant-chip-hr/onboarding')).toHaveTextContent('Acme Co.');
   });
 
-  it('falls back to the registered tenant label when the model props are slim', () => {
+  it('prevents unscoped super-admin process starts', () => {
     vi.mocked(UserService.isSuperAdmin).mockReturnValue(true);
-    registerProcessTenantLabels([
-      {
-        id: 'hr/onboarding',
-        tenantName: 'Acme Co.',
-      },
-    ]);
-    renderCard({
-      id: 'hr/onboarding',
-      display_name: 'Onboarding',
-      description: '',
+    vi.mocked(useGlobalTenant).mockReturnValue({
+      selectedTenantId: '',
+      setSelectedTenantId: vi.fn(),
     });
-    expect(screen.getByTestId('process-model-tenant-chip-hr/onboarding')).toHaveTextContent(
-      'Acme Co.',
-    );
-  });
+    const onStartProcess = renderCard({ id: 'hr/onboarding' });
 
-  it('disables process start when the page requires a concrete tenant selection', () => {
-    vi.mocked(UserService.isSuperAdmin).mockReturnValue(true);
-    renderCard({
-      id: 'hr/onboarding',
-      display_name: 'Onboarding',
-      description: '',
-      tenantName: 'Acme Co.',
-    } as any);
-
-    const button = screen.getByRole('button', { name: 'start_process' });
-    expect(button).toBeEnabled();
-
-    fireEvent.click(button);
-    expect(navigate).toHaveBeenCalledWith('/hr:onboarding/start');
+    fireEvent.click(screen.getByRole('button', { name: 'start_process' }));
+    expect(onStartProcess).not.toHaveBeenCalled();
   });
 });

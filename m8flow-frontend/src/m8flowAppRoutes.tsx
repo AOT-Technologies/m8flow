@@ -19,10 +19,10 @@ const TemplateGalleryPage = lazy(() => import('./views/TemplateGalleryPage'));
 const TemplateModelerPage = lazy(() => import('./views/TemplateModelerPage'));
 const TemplateFileDiagramPage = lazy(() => import('./views/TemplateFileDiagramPage'));
 const TemplateFileFormPage = lazy(() => import('./views/TemplateFileFormPage'));
-const ProcessGroupEdit = lazy(() => import('./views/ProcessGroupEdit'));
-const ProcessGroupNew = lazy(() => import('./views/ProcessGroupNew'));
-const ProcessModelEdit = lazy(() => import('./views/ProcessModelEdit'));
-const ProcessModelNew = lazy(() => import('./views/ProcessModelNew'));
+const ProcessGroupEdit = lazy(() => import('@spiff-core/views/ProcessGroupEdit'));
+const ProcessGroupNew = lazy(() => import('@spiff-core/views/ProcessGroupNew'));
+const ProcessModelEdit = lazy(() => import('@spiff-core/views/ProcessModelEdit'));
+const ProcessModelNew = lazy(() => import('@spiff-core/views/ProcessModelNew'));
 const ProcessModelShowWithSaveAsTemplate = lazy(
   () => import('./views/ProcessModelShowWithSaveAsTemplate'),
 );

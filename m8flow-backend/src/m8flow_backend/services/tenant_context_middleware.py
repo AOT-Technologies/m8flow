@@ -140,12 +140,16 @@ def resolve_request_tenant() -> None:
 
     tenant_context_exempt_request = _is_tenant_context_exempt_request()
 
-    # Master realm super-admin is global by design and must bypass tenant scoping.
+    # Master realm super-admin is global by design unless it explicitly selects
+    # a tenant for a tenant-scoped write. Keep the global read view when no
+    # selection header is present, but let the normal validation path resolve
+    # the selected tenant before workflow write guards run.
     if _is_master_super_admin_request():
-        g._m8flow_tenant_context_exempt_request = True
         g._m8flow_public_request = False
         g._m8flow_super_admin_request = True
-        return
+        if not _tenant_from_request_header():
+            g._m8flow_tenant_context_exempt_request = True
+            return
 
     # NOTE: We do NOT return early when auth is disabled.
     # Auth-disabled should only mean "skip authorization checks",
@@ -344,24 +348,13 @@ def _resolve_tenant_details() -> dict[str, Optional[str]]:
             "header_tenant_id": _tenant_from_request_header(),
         }
 
-    decoded_token = getattr(g, "_m8flow_decoded_token", None)
-    if isinstance(decoded_token, dict):
-        authentication_identifier = authentication_identifier_from_payload(decoded_token)
-        issuer_realm = extract_realm_from_issuer(decoded_token.get("iss"))
-        if authentication_identifier == _master_realm_identifier() or issuer_realm == _master_realm_identifier():
-            return {
-                "tenant_id": None,
-                "source": "master_realm",
-                "reason": "Authenticated master-realm request does not use tenant context.",
-                "jwt_tenant_id": None,
-                "header_tenant_id": _tenant_from_request_header(),
-            }
-
     header_tenant_id = _tenant_from_request_header()
     if header_tenant_id:
         user = getattr(g, "user", None)
         user_id = getattr(user, "id", None) if user is not None else None
-        if user is None or not user_belongs_to_current_tenant(user, tenant_id=header_tenant_id):
+        if not _is_master_super_admin_request() and (
+            user is None or not user_belongs_to_current_tenant(user, tenant_id=header_tenant_id)
+        ):
             raise ApiError(
                 error_code="tenant_override_forbidden",
                 message=(
@@ -377,6 +370,19 @@ def _resolve_tenant_details() -> dict[str, Optional[str]]:
             "jwt_tenant_id": None,
             "header_tenant_id": header_tenant_id,
         }
+
+    decoded_token = getattr(g, "_m8flow_decoded_token", None)
+    if isinstance(decoded_token, dict):
+        authentication_identifier = authentication_identifier_from_payload(decoded_token)
+        issuer_realm = extract_realm_from_issuer(decoded_token.get("iss"))
+        if authentication_identifier == _master_realm_identifier() or issuer_realm == _master_realm_identifier():
+            return {
+                "tenant_id": None,
+                "source": "master_realm",
+                "reason": "Authenticated master-realm request does not use tenant context.",
+                "jwt_tenant_id": None,
+                "header_tenant_id": _tenant_from_request_header(),
+            }
 
     tenant_from_ctx = _tenant_from_context_var()
     if tenant_from_ctx:

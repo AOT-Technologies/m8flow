@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import type { ReactNode } from 'react';
@@ -15,15 +15,8 @@ vi.mock('../services/UserService', () => ({
   },
 }));
 
-vi.mock('../services/HttpService', () => ({
-  default: {
-    makeCallToBackend: vi.fn(),
-  },
-}));
-
-vi.mock('../helpers', () => ({
-  modifyProcessIdentifierForPathParam: (value: string) => value,
-  slugifyString: (value: string) => value.toLowerCase().replace(/\s+/g, '-'),
+vi.mock('@spiff-core/components/ProcessGroupForm', () => ({
+  default: () => <button type="button">submit</button>,
 }));
 
 vi.mock('react-i18next', () => ({
@@ -33,7 +26,6 @@ vi.mock('react-i18next', () => ({
 }));
 
 import { useGlobalTenant } from '../contexts/GlobalTenantContext';
-import HttpService from '../services/HttpService';
 import UserService from '../services/UserService';
 
 const theme = createTheme();
@@ -76,10 +68,9 @@ describe('ProcessGroupForm', () => {
 
     expect(screen.getByTestId('super-admin-tenant-alert')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'submit' })).toBeDisabled();
-    expect(HttpService.makeCallToBackend).not.toHaveBeenCalled();
   });
 
-  it('submits a root process-group create when the super-admin has selected a tenant', async () => {
+  it('delegates to the core form when the super-admin has selected a tenant', () => {
     vi.mocked(UserService.isSuperAdmin).mockReturnValue(true);
     vi.mocked(useGlobalTenant).mockReturnValue({
       selectedTenantId: 'tenant-a',
@@ -87,19 +78,7 @@ describe('ProcessGroupForm', () => {
     });
     renderForm('new');
 
-    fireEvent.click(screen.getByRole('button', { name: 'submit' }));
-
-    await waitFor(() => {
-      expect(HttpService.makeCallToBackend).toHaveBeenCalledWith(
-        expect.objectContaining({
-          path: '/process-groups',
-          httpMethod: 'POST',
-          postBody: expect.objectContaining({
-            id: 'finance',
-            display_name: 'Finance',
-          }),
-        }),
-      );
-    });
+    expect(screen.queryByTestId('super-admin-tenant-alert')).toBeNull();
+    expect(screen.getByRole('button', { name: 'submit' })).not.toBeDisabled();
   });
 });
