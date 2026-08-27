@@ -21,6 +21,11 @@ def seeded(monkeypatch):
         "_existing_secret_values",
         lambda keys: {k: v for k, v in state["secrets"].items() if k in keys},
     )
+    monkeypatch.setattr(
+        migration,
+        "_existing_secret_keys",
+        lambda keys: [k for k in state["secrets"] if k in keys],
+    )
 
     from m8flow_backend.services import connector_profile_service as service
 
@@ -161,6 +166,38 @@ def test_seed_all_reports_what_it_created(seeded):
     created = migration.seed_all_default_profiles()
 
     assert set(created) == {"smtp", "slack"}
+
+
+def test_unseedable_secrets_are_reported_by_name(seeded):
+    """A stored GITHUB_PAT_TOKEN must be surfaced, not silently dropped."""
+    seeded["secrets"] = {"GITHUB_PAT_TOKEN": "ghp_x", "SLACK_TOKEN": "xoxb-1"}
+
+    assert migration.report_unseedable_secrets() == ["GITHUB_PAT_TOKEN"]
+
+
+def test_nothing_is_reported_when_no_unmapped_secrets_exist(seeded):
+    seeded["secrets"] = {"SLACK_TOKEN": "xoxb-1"}
+
+    assert migration.report_unseedable_secrets() == []
+
+
+def test_reporting_never_reads_secret_values(monkeypatch):
+    """The report path must not decrypt.
+
+    It only needs to know *which* keys exist, so it queries the key column
+    alone. Decrypting here would put plaintext credentials one careless edit
+    away from the log line built right below it.
+    """
+    monkeypatch.setattr(
+        migration,
+        "_existing_secret_values",
+        lambda keys: pytest.fail("report_unseedable_secrets must not decrypt"),
+    )
+    monkeypatch.setattr(
+        migration, "_existing_secret_keys", lambda keys: ["GITHUB_PAT_TOKEN"]
+    )
+
+    assert migration.report_unseedable_secrets() == ["GITHUB_PAT_TOKEN"]
 
 
 def test_every_mapped_field_exists_on_its_definition():

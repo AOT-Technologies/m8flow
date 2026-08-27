@@ -88,11 +88,29 @@ def _existing_secret_values(keys: list[str]) -> dict[str, str]:
         except Exception:
             # A secret we cannot decrypt is not worth failing the whole seed for;
             # the tenant can re-enter that one field in the profile form.
+            # codeql[py/clear-text-logging-sensitive-data]: row.key is the
+            # Secret's key column (e.g. "SMTP_PASSWORD"), a fixed canonical
+            # name. The value is row.value and is never logged.
             logger.warning("Could not decrypt secret '%s' while seeding", row.key)
             continue
         if decrypted not in (None, ""):
             values[row.key] = decrypted
     return values
+
+
+def _existing_secret_keys(keys: list[str]) -> list[str]:
+    """Which of the given Secret keys the current tenant has, names only.
+
+    Deliberately never decrypts: a caller that only needs to know *whether* a
+    secret exists must not hold its plaintext, so a log line built from this
+    cannot leak a credential even by accident. The query selects the key column
+    alone, so the encrypted value is never even loaded.
+    """
+    from spiffworkflow_backend.models.db import db
+    from spiffworkflow_backend.models.secret_model import SecretModel
+
+    rows = db.session.query(SecretModel.key).filter(SecretModel.key.in_(keys)).all()
+    return [row.key for row in rows]
 
 
 def seed_default_profile(connector_type: str, user_id: int | None = None) -> Any | None:
@@ -146,10 +164,12 @@ def seed_default_profile(connector_type: str, user_id: int | None = None) -> Any
         )
         return None
 
+    # codeql[py/clear-text-logging-sensitive-data]: sorted(config.keys()) yields
+    # the dict's field names (smtp_host, smtp_password), never its values.
     logger.info(
         "Seeded default %s profile from existing secrets: %s",
         connector_type,
-        ", ".join(sorted(config)),
+        ", ".join(sorted(config.keys())),
     )
     return profile
 
@@ -161,7 +181,7 @@ def report_unseedable_secrets() -> list[str]:
     GITHUB_PAT_TOKEN would get no profile, no error and no explanation. Logging
     the names (never the values) makes the gap findable.
     """
-    present = list(_existing_secret_values(list(UNMAPPED_SECRET_KEYS)))
+    present = _existing_secret_keys(list(UNMAPPED_SECRET_KEYS))
     for key in present:
         logger.info(
             "Secret '%s' cannot be carried into a connector profile: %s. "

@@ -312,6 +312,10 @@ class ConnectorProfileService:
             try:
                 backend.delete(key)
             except Exception:
+                # codeql[py/clear-text-logging-sensitive-data]: logs
+                # configuration_id (an int). The loop variable `key` is a
+                # secret-store reference name, not a credential, and is not
+                # part of the message.
                 logger.warning(
                     "Could not delete secret for removed profile %s",
                     configuration_id,
