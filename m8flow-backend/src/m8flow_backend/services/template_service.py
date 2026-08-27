@@ -1095,67 +1095,81 @@ class TemplateService:
             else:
                 other_entries.append(file_entry)
 
-        for file_entry in dmn_entries + other_entries:
-            file_name = file_entry.get("file_name")
-            file_type = file_entry.get("file_type")
+        try:
+            for file_entry in dmn_entries + other_entries:
+                file_name = file_entry.get("file_name")
+                file_type = file_entry.get("file_type")
 
-            if not file_name:
-                logger.warning(f"Skipping file entry with no file_name: {file_entry}")
-                continue
+                if not file_name:
+                    logger.warning(f"Skipping file entry with no file_name: {file_entry}")
+                    continue
 
-            logger.debug(f"Copying file: {file_name} (type: {file_type})")
+                logger.debug(f"Copying file: {file_name} (type: {file_type})")
 
-            try:
-                content = cls.get_file_content(template, file_name)
-                logger.debug(f"Retrieved {len(content)} bytes for {file_name}")
-            except ApiError as e:
-                logger.error(f"Failed to get file content for {file_name} from template {template_id}: {e.message}")
+                try:
+                    content = cls.get_file_content(template, file_name)
+                    logger.debug(f"Retrieved {len(content)} bytes for {file_name}")
+                except ApiError as e:
+                    logger.error(f"Failed to get file content for {file_name} from template {template_id}: {e.message}")
+                    raise ApiError(
+                        "file_copy_failed",
+                        f"Failed to copy file '{file_name}' from template: {e.message}",
+                        status_code=500,
+                    )
+                except Exception as e:
+                    logger.error(f"Unexpected error getting file {file_name}: {str(e)}")
+                    raise ApiError(
+                        "file_copy_failed",
+                        f"Failed to copy file '{file_name}' from template: {str(e)}",
+                        status_code=500,
+                    )
+
+                if file_type == "dmn":
+                    content, file_decision_map = cls._transform_dmn_content(
+                        content, process_model_id
+                    )
+                    decision_id_map.update(file_decision_map)
+                elif file_type == "bpmn":
+                    content, new_process_id = cls._transform_bpmn_content(
+                        content, process_model_id, decision_id_map=decision_id_map or None
+                    )
+                    if primary_file_name is None:
+                        primary_file_name = file_name
+                        primary_process_id = new_process_id
+
+                # Write the file to the process model
+                try:
+                    SpecFileService.update_file(process_model_info, file_name, content)
+                    files_copied += 1
+                    logger.debug(f"Successfully wrote file {file_name} to process model")
+                except Exception as e:
+                    logger.error(f"Failed to write file {file_name} to process model: {str(e)}")
+                    raise ApiError(
+                        "file_write_failed",
+                        f"Failed to write file '{file_name}' to process model: {str(e)}",
+                        status_code=500,
+                    )
+
+            # Ensure at least one file was copied
+            if files_copied == 0:
                 raise ApiError(
-                    "file_copy_failed",
-                    f"Failed to copy file '{file_name}' from template: {e.message}",
+                    "no_files_copied",
+                    "No files could be copied from the template",
                     status_code=500,
                 )
-            except Exception as e:
-                logger.error(f"Unexpected error getting file {file_name}: {str(e)}")
-                raise ApiError(
-                    "file_copy_failed",
-                    f"Failed to copy file '{file_name}' from template: {str(e)}",
-                    status_code=500,
-                )
-
-            if file_type == "dmn":
-                content, file_decision_map = cls._transform_dmn_content(
-                    content, process_model_id
-                )
-                decision_id_map.update(file_decision_map)
-            elif file_type == "bpmn":
-                content, new_process_id = cls._transform_bpmn_content(
-                    content, process_model_id, decision_id_map=decision_id_map or None
-                )
-                if primary_file_name is None:
-                    primary_file_name = file_name
-                    primary_process_id = new_process_id
-
-            # Write the file to the process model
-            try:
-                SpecFileService.update_file(process_model_info, file_name, content)
-                files_copied += 1
-                logger.debug(f"Successfully wrote file {file_name} to process model")
-            except Exception as e:
-                logger.error(f"Failed to write file {file_name} to process model: {str(e)}")
-                raise ApiError(
-                    "file_write_failed",
-                    f"Failed to write file '{file_name}' to process model: {str(e)}",
-                    status_code=500,
-                )
-
-        # Ensure at least one file was copied
-        if files_copied == 0:
-            raise ApiError(
-                "no_files_copied",
-                "No files could be copied from the template",
-                status_code=500,
+        except Exception:
+            # Undo the process model registration created above so a failed copy
+            # doesn't leave a permanent, file-less process model behind that later
+            # attempts (or this same template retry) would otherwise trip over.
+            logger.exception(
+                f"Rolling back process model {full_process_model_id} after failed "
+                f"file copy from template {template_id}"
             )
+            try:
+                ProcessModelService.process_model_delete(full_process_model_id)
+            except Exception:
+                logger.exception(f"Failed to roll back partially created process model {full_process_model_id}")
+            raise
 
         logger.info(f"Successfully copied {files_copied} files to process model {full_process_model_id}")
 

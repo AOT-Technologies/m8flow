@@ -209,6 +209,33 @@ class TestFilesystemStorageService:
                 svc.get_file("tenant-a", "tpl", "V1", "temp.bpmn")
             assert exc_info.value.status_code == 404
 
+    def test_file_exists_true_for_stored_file(self, storage_app: tuple) -> None:
+        """file_exists returns True once the file has been stored."""
+        app, _ = storage_app
+        svc = FilesystemTemplateStorageService()
+
+        with app.app_context():
+            svc.store_file("tenant-a", "tpl", "V1", "diagram.bpmn", "bpmn", b"bpmn data")
+            assert svc.file_exists("tenant-a", "tpl", "V1", "diagram.bpmn") is True
+
+    def test_file_exists_false_for_missing_file(self, storage_app: tuple) -> None:
+        """file_exists returns False when the file was never stored."""
+        app, _ = storage_app
+        svc = FilesystemTemplateStorageService()
+
+        with app.app_context():
+            assert svc.file_exists("tenant-a", "tpl", "V1", "missing.bpmn") is False
+
+    def test_file_exists_false_after_delete(self, storage_app: tuple) -> None:
+        """file_exists returns False after the file is deleted."""
+        app, _ = storage_app
+        svc = FilesystemTemplateStorageService()
+
+        with app.app_context():
+            svc.store_file("tenant-a", "tpl", "V1", "diagram.bpmn", "bpmn", b"bpmn data")
+            svc.delete_file("tenant-a", "tpl", "V1", "diagram.bpmn")
+            assert svc.file_exists("tenant-a", "tpl", "V1", "diagram.bpmn") is False
+
     def test_delete_file_nonexistent_is_silent(self, storage_app: tuple) -> None:
         """delete_file for nonexistent file does not raise."""
         app, _ = storage_app
@@ -313,6 +340,11 @@ class TestNoopStorageService:
         svc = NoopTemplateStorageService()
         with pytest.raises(NotImplementedError):
             svc.get_file("t", "k", "v", "f")
+
+    def test_file_exists_raises(self) -> None:
+        svc = NoopTemplateStorageService()
+        with pytest.raises(NotImplementedError):
+            svc.file_exists("t", "k", "v", "f")
 
     def test_list_files_raises(self) -> None:
         svc = NoopTemplateStorageService()

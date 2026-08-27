@@ -16,6 +16,7 @@ from helpers.config import (
     SHORT_TIMEOUT,
     VIEWPORT,
 )
+from helpers.login import _handle_keycloak_verify_profile
 
 logger = logging.getLogger(__name__)
 
@@ -35,34 +36,47 @@ def _login_via_shared_realm(page: Page, username: str, password: str) -> None:
     page.locator("#username").fill(username)
     page.locator("#password").fill(password)
     page.locator("#kc-login").click()
-    _wait_for_selector_or_app(page, password=password)
+    _wait_for_selector_or_app(page, username=username, password=password)
 
 
-def _complete_required_action_if_needed(page: Page, password: str) -> bool:
+def _complete_required_action_if_needed(page: Page, username: str, password: str) -> bool:
     try:
         page.locator("#password-new").wait_for(state="visible", timeout=SHORT_TIMEOUT)
     except PlaywrightTimeout:
+        pass
+    else:
+        page.locator("#password-new").fill(password)
+        page.locator("#password-confirm").fill(password)
+        page.locator('input[type="submit"], button[type="submit"]').click()
+        return True
+
+    try:
+        page.locator("#kc-update-profile-form").wait_for(
+            state="visible", timeout=SHORT_TIMEOUT
+        )
+    except PlaywrightTimeout:
         return False
 
-    page.locator("#password-new").fill(password)
-    page.locator("#password-confirm").fill(password)
-    page.locator('input[type="submit"], button[type="submit"]').click()
+    _handle_keycloak_verify_profile(page, username)
     return True
 
 
-def _wait_for_selector_or_app(page: Page, password: str | None = None) -> None:
+def _wait_for_selector_or_app(
+    page: Page, username: str | None = None, password: str | None = None
+) -> None:
     for _ in range(2):
         page.wait_for_function(
             """
             () => Boolean(
               document.querySelector('#password-new')
+              || document.querySelector('#kc-update-profile-form')
               || document.querySelector('[data-testid^="organization-option-"]')
               || document.querySelector('[data-testid="nav-user-actions-button"]')
             )
             """,
             timeout=NAV_TIMEOUT,
         )
-        if password and _complete_required_action_if_needed(page, password):
+        if password and _complete_required_action_if_needed(page, username, password):
             continue
         return
 
