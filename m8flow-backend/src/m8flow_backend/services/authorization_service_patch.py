@@ -47,6 +47,7 @@ M8FLOW_AUTH_EXCLUSION_ADDITIONS = [
     "m8flow_backend.routes.keycloak_controller.get_tenant_login_url",
     "m8flow_backend.routes.keycloak_controller.get_current_user_organization_memberships",
     "m8flow_backend.tenancy.health_check",
+    "m8flow_backend.routes.vault_status_controller.vault_status",
     "m8flow_backend.routes.events_controller.m8flow_trigger",
     "m8flow_backend.routes.external_forms_controller.external_form_show",
     "m8flow_backend.routes.external_forms_controller.external_form_submit",

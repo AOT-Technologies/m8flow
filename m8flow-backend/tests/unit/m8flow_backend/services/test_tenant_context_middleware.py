@@ -156,6 +156,19 @@ def test_missing_tenant_keeps_exempt_request_public() -> None:
             assert getattr(g, "_m8flow_public_request", False) is True
 
 
+def test_vault_status_path_keeps_exempt_request_public() -> None:
+    app = _make_app()
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+
+        with app.test_request_context("/v1.0/vault-status"):
+            resolve_request_tenant()
+            assert getattr(g, "m8flow_tenant_id", None) is None
+            assert getattr(g, "_m8flow_tenant_context_exempt_request", False) is True
+            assert getattr(g, "_m8flow_public_request", False) is True
+
+
 def test_invalid_tenant_raises() -> None:
     from spiffworkflow_backend.models.user import UserModel
 
@@ -618,6 +631,40 @@ def test_selected_tenant_cookie_overrides_explicit_token_tenant_for_shared_realm
             assert current_tenant_id_or_none() == "tenant-it-id"
             assert g.m8flow_tenant_id == "tenant-it-id"
             assert "tenant-it-id" in current_tenant_identifiers("tenant-it-id")
+
+
+def test_stale_selected_tenant_cookie_is_ignored_for_shared_realm_single_org_token() -> None:
+    import jwt
+
+    app = _make_app()
+
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+
+        token = jwt.encode(
+            {
+                "iss": "http://localhost:7002/realms/m8flow",
+                "m8flow_authentication_identifier": "m8flow",
+                "organization": {
+                    "it": {"id": "tenant-it-id"},
+                },
+            },
+            "test-secret",
+            algorithm="HS256",
+        )
+
+        with app.test_request_context(
+            "/test",
+            headers={"Authorization": f"Bearer {token}"},
+            environ_base={
+                "HTTP_COOKIE": "authentication_identifier=m8flow; m8flow_selected_tenant=stale-tenant-id"
+            },
+        ):
+            resolve_request_tenant()
+
+            assert g.m8flow_tenant_id == "tenant-it-id"
+            assert current_tenant_id_or_none() == "tenant-it-id"
 
 
 def test_resolves_tenant_from_request_header_when_user_belongs(monkeypatch) -> None:

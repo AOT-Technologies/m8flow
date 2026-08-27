@@ -10,6 +10,7 @@ import jwt
 
 from m8flow_backend.canonical_db import set_canonical_db
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
+from m8flow_backend.models.process_model_bpmn_version import ProcessModelBpmnVersionModel  # noqa: F401
 from m8flow_backend.routes import authentication_controller_patch as m8_auth_controller_patch
 from m8flow_backend.services import authorization_service_patch
 from m8flow_backend.routes import health_controller_patch
@@ -32,6 +33,17 @@ BACKEND_URL = "http://localhost"
 PERMISSIONS_PATH = (
     Path(__file__).resolve().parents[4] / "src" / "m8flow_backend" / "config" / "permissions" / "m8flow.yml"
 )
+
+
+def _expected_status_payload(
+    can_access_frontend: bool,
+    *,
+    ok: bool = True,
+) -> dict[str, object]:
+    return {
+        "ok": ok,
+        "can_access_frontend": can_access_frontend,
+    }
 
 
 def _make_status_app(
@@ -126,7 +138,7 @@ def test_status_endpoint_allows_frontend_access_for_active_tenant_everybody() ->
     response = app.test_client().get("/v1.0/status", headers={"Authorization": f"Bearer {token}"})
 
     assert response.status_code == 200
-    assert response.get_json() == {"ok": True, "can_access_frontend": True}
+    assert response.get_json() == _expected_status_payload(True)
 
 
 def test_status_endpoint_prefers_jwt_tenant_over_default(monkeypatch) -> None:
@@ -162,7 +174,7 @@ def test_status_endpoint_prefers_jwt_tenant_over_default(monkeypatch) -> None:
     response = app.test_client().get("/v1.0/status", headers={"Authorization": f"Bearer {token}"})
 
     assert response.status_code == 200
-    assert response.get_json() == {"ok": True, "can_access_frontend": True}
+    assert response.get_json() == _expected_status_payload(True)
     assert seen["tenant_id"] == ORG_TENANT_ID
 
 
@@ -206,7 +218,7 @@ def test_status_endpoint_keeps_jwt_tenant_for_frontend_access_regression(monkeyp
     response = app.test_client().get("/v1.0/status", headers={"Authorization": f"Bearer {token}"})
 
     assert response.status_code == 200
-    assert response.get_json() == {"ok": True, "can_access_frontend": True}
+    assert response.get_json() == _expected_status_payload(True)
     assert seen["tenant_id"] == ORG_TENANT_ID
     assert f"{ORG_TENANT_ID}:everybody" in seen["principal_group_identifiers"]
     assert "/frontend-access" in seen["permission_uris"]
@@ -252,7 +264,7 @@ def test_status_endpoint_repairs_stale_same_realm_user_and_returns_frontend_acce
     response = app.test_client().get("/v1.0/status", headers={"Authorization": f"Bearer {raw_token}"})
 
     assert response.status_code == 200
-    assert response.get_json() == {"ok": True, "can_access_frontend": True}
+    assert response.get_json() == _expected_status_payload(True)
 
     with app.app_context():
         refreshed_user = UserService.get_user_by_service_and_service_id(
@@ -322,7 +334,7 @@ def test_status_endpoint_uses_selected_org_for_multi_org_external_token(monkeypa
     response = client.get("/v1.0/status", headers={"Authorization": f"Bearer {raw_token}"})
 
     assert response.status_code == 200
-    assert response.get_json() == {"ok": True, "can_access_frontend": True}
+    assert response.get_json() == _expected_status_payload(True)
     assert seen["tenant_id"] == ORG_TENANT_ID
     assert f"{ORG_TENANT_ID}:everybody" in seen["principal_group_identifiers"]
     assert f"{OTHER_TENANT_ID}:everybody" not in seen["principal_group_identifiers"]
@@ -386,7 +398,7 @@ def test_status_endpoint_does_not_clear_auth_cookies_when_verified_external_toke
     response = client.get("/v1.0/status", headers={"Authorization": f"Bearer {raw_token}"})
 
     assert response.status_code == 200
-    assert response.get_json() == {"ok": True, "can_access_frontend": True}
+    assert response.get_json() == _expected_status_payload(True)
     assert verify_called["value"] is True
     set_cookie_headers = response.headers.getlist("Set-Cookie")
     assert not any(header.startswith("access_token=;") for header in set_cookie_headers)
@@ -474,7 +486,7 @@ def test_status_endpoint_enrichs_multi_org_shared_realm_token_without_active_org
     response = client.get("/v1.0/status", headers={"Authorization": f"Bearer {raw_token}"})
 
     assert response.status_code == 200
-    assert response.get_json() == {"ok": True, "can_access_frontend": True}
+    assert response.get_json() == _expected_status_payload(True)
 
     with app.app_context():
         refreshed_user = UserService.get_user_by_service_and_service_id(
@@ -518,7 +530,7 @@ def test_status_endpoint_does_not_sync_or_grant_access_from_unverified_external_
     response = app.test_client().get("/v1.0/status", headers={"Authorization": f"Bearer {raw_token}"})
 
     assert response.status_code == 200
-    assert response.get_json() == {"ok": True, "can_access_frontend": False}
+    assert response.get_json() == _expected_status_payload(False)
 
     with app.app_context():
         assert UserService.get_user_by_service_and_service_id(
@@ -545,7 +557,7 @@ def test_status_endpoint_denies_frontend_access_for_other_tenant_group() -> None
     response = app.test_client().get("/v1.0/status", headers={"Authorization": f"Bearer {token}"})
 
     assert response.status_code == 200
-    assert response.get_json() == {"ok": True, "can_access_frontend": False}
+    assert response.get_json() == _expected_status_payload(False)
 
 
 def test_status_endpoint_anonymous_behavior_remains_unchanged() -> None:
@@ -560,4 +572,133 @@ def test_status_endpoint_anonymous_behavior_remains_unchanged() -> None:
     response = app.test_client().get("/v1.0/status")
 
     assert response.status_code == 200
-    assert response.get_json() == {"ok": True, "can_access_frontend": True}
+    assert response.get_json() == _expected_status_payload(True)
+
+
+def test_status_endpoint_does_not_include_vault_state(monkeypatch) -> None:
+    app = _make_status_app()
+
+    monkeypatch.setattr(
+        health_controller_patch,
+        "_vault_status_payload",
+        lambda: (_ for _ in ()).throw(AssertionError("_vault_status_payload should not be called by /v1.0/status")),
+    )
+
+    with app.app_context():
+        db.create_all()
+        _seed_tenants()
+        authorization_service_patch.apply()
+        health_controller_patch.apply(app)
+
+    response = app.test_client().get("/v1.0/status")
+
+    assert response.status_code == 200
+    assert response.get_json() == _expected_status_payload(True)
+
+
+def test_vault_status_payload_uses_non_auditing_probe(monkeypatch) -> None:
+    import m8flow_backend.config as config_module
+    import m8flow_backend.services.vault_client as vault_client_module
+
+    calls: list[dict[str, object]] = []
+
+    class FakeVaultClient:
+        def check_availability(self, *, audit: bool = True, transitions_only: bool = False) -> bool:
+            calls.append(
+                {
+                    "audit": audit,
+                    "transitions_only": transitions_only,
+                }
+            )
+            return True
+
+    class FakeVaultSettings:
+        is_configured = True
+        mount_point = "kv"
+        auth_method = "approle"
+
+        @classmethod
+        def from_env(cls):
+            return cls()
+
+    monkeypatch.setattr(config_module, "vault_enabled", lambda: True)
+    monkeypatch.setattr(vault_client_module, "VaultSettings", FakeVaultSettings)
+    monkeypatch.setattr(vault_client_module, "get_vault_client", lambda: FakeVaultClient())
+
+    payload = health_controller_patch._vault_status_payload()
+
+    assert payload == {
+        "enabled": True,
+        "configured": True,
+        "healthy": True,
+        "mount_point": "kv",
+        "auth_method": "approle",
+    }
+    assert calls == [
+        {
+            "audit": False,
+            "transitions_only": False,
+        }
+    ]
+
+
+def test_vault_status_payload_returns_unconfigured_state_when_settings_resolution_fails(monkeypatch) -> None:
+    import m8flow_backend.config as config_module
+    import m8flow_backend.services.vault_client as vault_client_module
+
+    class ExplodingVaultSettings:
+        @classmethod
+        def from_env(cls):
+            raise RuntimeError("bad vault env")
+
+    monkeypatch.setattr(config_module, "vault_enabled", lambda: True)
+    monkeypatch.setattr(vault_client_module, "VaultSettings", ExplodingVaultSettings)
+
+    payload = health_controller_patch._vault_status_payload()
+
+    assert payload == {
+        "enabled": True,
+        "configured": False,
+        "healthy": None,
+    }
+
+
+def test_vault_status_payload_returns_unconfigured_state_without_probe(monkeypatch) -> None:
+    import m8flow_backend.config as config_module
+    import m8flow_backend.services.vault_client as vault_client_module
+
+    calls: list[dict[str, object]] = []
+
+    class FakeVaultClient:
+        def check_availability(self, *, audit: bool = True, transitions_only: bool = False) -> bool:
+            calls.append(
+                {
+                    "audit": audit,
+                    "transitions_only": transitions_only,
+                }
+            )
+            return True
+
+    class FakeVaultSettings:
+        is_configured = False
+        mount_point = "kv"
+        auth_method = "approle"
+
+        @classmethod
+        def from_env(cls):
+            return cls()
+
+    monkeypatch.setattr(config_module, "vault_enabled", lambda: True)
+    monkeypatch.setattr(vault_client_module, "VaultSettings", FakeVaultSettings)
+    monkeypatch.setattr(vault_client_module, "get_vault_client", lambda: FakeVaultClient())
+
+    payload = health_controller_patch._vault_status_payload()
+
+    assert payload == {
+        "enabled": True,
+        "configured": False,
+        "healthy": None,
+        "mount_point": "kv",
+        "auth_method": "approle",
+    }
+    assert calls == []

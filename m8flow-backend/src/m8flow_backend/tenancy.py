@@ -31,6 +31,7 @@ _BASE_TENANT_CONTEXT_EXEMPT_PATH_PREFIXES: tuple[str, ...] = (
     "/v1.0/ping",
     "/v1.0/healthy",
     "/v1.0/status",
+    "/v1.0/vault-status",
     "/v1.0/openapi.json",
     "/v1.0/openapi.yaml",
     "/openapi.yaml",

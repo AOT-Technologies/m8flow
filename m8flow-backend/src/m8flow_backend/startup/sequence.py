@@ -13,8 +13,13 @@ from m8flow_backend.startup.config import (
     configure_sql_echo,
     configure_templates_dir,
     configure_permissions_yml,
+    configure_vault,
 )
-from m8flow_backend.startup.routes import register_root_route, register_template_file_fallback_routes
+from m8flow_backend.startup.routes import (
+    register_root_route,
+    register_template_file_fallback_routes,
+    register_vault_status_route,
+)
 from m8flow_backend.startup.flask_hooks import (
     register_request_active_hooks,
     register_request_tenant_context_hooks,
@@ -83,6 +88,7 @@ def _configure_created_app(cnx_app: Any, db: Any, upgrade_m8flow_db: Callable[[]
 
     # Register fallback routes (defensive).
     register_template_file_fallback_routes(flask_app)
+    register_vault_status_route(flask_app)
 
     # Public backend root landing page (M8F-409).
     register_root_route(flask_app)
@@ -94,15 +100,16 @@ def _configure_created_app(cnx_app: Any, db: Any, upgrade_m8flow_db: Callable[[]
     # Run migrations at startup (after db bound).
     run_migrations_if_enabled(flask_app, upgrade_m8flow_db)
 
-    # Reconcile the canonical shared-realm tenant row before any permission or sample-data import runs.
-    from m8flow_backend.startup.shared_realm_bootstrap import reconcile_default_shared_realm_tenant
-
-    reconcile_default_shared_realm_tenant(flask_app)
-
     # Permissions + templates configuration.
     configure_permissions_yml(flask_app)
     configure_templates_dir(flask_app)
     configure_sql_echo(flask_app, db)
+    configure_vault(flask_app)
+
+    # Reconcile the canonical shared-realm tenant row before any sample-data import runs.
+    from m8flow_backend.startup.shared_realm_bootstrap import reconcile_default_shared_realm_tenant
+
+    reconcile_default_shared_realm_tenant(flask_app)
 
     # Tenant resolution ordering (after omni_auth when present).
     register_tenant_resolution_after_auth(flask_app)

@@ -26,6 +26,7 @@ from m8flow_backend.services.tenant_identity_helpers import TENANT_NAME_CLAIM
 from m8flow_backend.services.tenant_identity_helpers import tenant_id_from_payload
 from m8flow_backend.services.tenant_identity_helpers import tenant_slug_for_identifier
 from spiffworkflow_backend.routes import authentication_controller
+from spiffworkflow_backend.exceptions.api_error import ApiError
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +144,24 @@ def apply_internal_token_subject_patch() -> None:
         username = preferred_username if isinstance(preferred_username, str) and preferred_username.strip() else service_id
         email = decoded_token.get("email")
         email_value = email if isinstance(email, str) and email.strip() else None
-        return UserService.create_user(username, service, service_id, email=email_value)
+        try:
+            return UserService.create_user(username, service, service_id, email=email_value)
+        except ApiError:
+            # Shared-realm login can issue parallel requests that race to mirror the
+            # same user row locally. If another request created it first, reuse it.
+            user = (
+                UserModel.query.filter(UserModel.service == service)
+                .filter(UserModel.service_id == service_id)
+                .first()
+            )
+            if user is not None:
+                logger.info(
+                    "Reused concurrently-created local user for service=%s service_id=%s",
+                    service,
+                    service_id,
+                )
+                return user
+            raise
 
     authentication_controller._get_user_from_decoded_internal_token = patched_get_user_from_decoded_internal_token
     _INTERNAL_TOKEN_SUBJECT_PATCHED = True
@@ -343,7 +361,13 @@ def _selected_tenant_from_request(authentication_identifier: str | None = None) 
         return None
     selected_tenant = request.cookies.get(SELECTED_TENANT_COOKIE_NAME)
     if isinstance(selected_tenant, str) and selected_tenant.strip():
-        return selected_tenant.strip()
+        normalized_selected_tenant = _canonical_tenant_id_from_identifiers(selected_tenant.strip())
+        if normalized_selected_tenant:
+            return normalized_selected_tenant
+        logger.info(
+            "Ignoring stale selected-tenant cookie for shared-realm auth flow: %s",
+            selected_tenant.strip(),
+        )
     return None
 
 

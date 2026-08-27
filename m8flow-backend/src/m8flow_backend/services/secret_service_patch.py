@@ -20,6 +20,34 @@ def apply() -> None:
 
     from spiffworkflow_backend.services.secret_service import SecretService
     import sentry_sdk
+    from m8flow_backend.services.secret_backend import get_secret_backend
+
+    @classmethod  # type: ignore[misc]
+    def _patched_add_secret(cls, key: str, value: str, user_id: int):  # type: ignore[override]
+        return get_secret_backend().add_secret(key, value, user_id)
+
+    @staticmethod
+    def _patched_get_secret(key: str):  # type: ignore[override]
+        return get_secret_backend().get_secret(key)
+
+    @classmethod  # type: ignore[misc]
+    def _patched_update_secret(
+        cls,
+        key: str,
+        value: str,
+        user_id: int | None = None,
+        create_if_not_exists: bool | None = False,
+    ) -> None:  # type: ignore[override]
+        get_secret_backend().update_secret(
+            key=key,
+            value=value,
+            user_id=user_id,
+            create_if_not_exists=create_if_not_exists,
+        )
+
+    @staticmethod
+    def _patched_delete_secret(key: str, user_id: int) -> None:  # type: ignore[override]
+        get_secret_backend().delete_secret(key, user_id)
 
     @classmethod  # type: ignore[misc]
     def _patched_resolve(cls, value: str) -> str:  # type: ignore[override]
@@ -35,5 +63,9 @@ def apply() -> None:
 
         return value
 
+    SecretService.add_secret = _patched_add_secret  # type: ignore[assignment]
+    SecretService.get_secret = _patched_get_secret  # type: ignore[assignment]
+    SecretService.update_secret = _patched_update_secret  # type: ignore[assignment]
+    SecretService.delete_secret = _patched_delete_secret  # type: ignore[assignment]
     SecretService.resolve_possibly_secret_value = _patched_resolve  # type: ignore[assignment]
     _PATCHED = True

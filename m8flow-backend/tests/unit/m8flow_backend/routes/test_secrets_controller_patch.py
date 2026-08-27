@@ -1,247 +1,212 @@
 from __future__ import annotations
 
+import importlib
 import sys
-import types
+from types import ModuleType
+from types import SimpleNamespace
+
+from flask import Flask, g
 
 
-class _Secret:
-    def __init__(self, key, tenant_id):
+class FakeSecret:
+    def __init__(self, key: str, user_id: int, value: str = "enc:vault-value") -> None:
         self.key = key
-        self.m8f_tenant_id = tenant_id
+        self.user_id = user_id
+        self.value = value
 
-    def to_dict(self):
-        return {"key": self.key}
-
-
-def _serialize(secret, username, tenant_names):
-    """Mirror of patched_secret_list's serialize closure, for a direct parity check on
-    the tenant-detail shaping (the closure itself is not importable)."""
-    tid = (
-        secret.m8f_tenant_id
-        if isinstance(secret.m8f_tenant_id, str) and secret.m8f_tenant_id
-        else None
-    )
-    return {
-        **secret.to_dict(),
-        "username": username,
-        "tenantId": secret.m8f_tenant_id,
-        "tenantName": tenant_names.get(tid) if tid else None,
-    }
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "id": "secret-1",
+            "key": self.key,
+            "user_id": self.user_id,
+            "created_at_in_seconds": 1,
+            "updated_at_in_seconds": 2,
+        }
 
 
-def test_non_super_admin_delegates_to_upstream(monkeypatch):
-    """Non-super-admin callers get upstream's tenant-scoped listing unchanged."""
-    secrets_controller = types.ModuleType(
-        "spiffworkflow_backend.routes.secrets_controller"
-    )
-    secrets_controller.secret_list = lambda page=1, per_page=100: (
-        "ORIGINAL",
-        page,
-        per_page,
-    )
+class FakeSecretBackend:
+    def __init__(self) -> None:
+        self.calls: list[tuple] = []
 
-    import spiffworkflow_backend.routes as routes_pkg
+    def get_secret(self, key: str) -> FakeSecret:
+        self.calls.append(("get_secret", key))
+        return FakeSecret(key=key, user_id=7)
 
-    monkeypatch.setattr(routes_pkg, "secrets_controller", secrets_controller, raising=False)
-    monkeypatch.setitem(
-        sys.modules,
-        "spiffworkflow_backend.routes.secrets_controller",
-        secrets_controller,
-    )
-    monkeypatch.setitem(
-        sys.modules,
-        "spiffworkflow_backend.models.secret_model",
-        types.SimpleNamespace(SecretModel=types.SimpleNamespace()),
-    )
-    monkeypatch.setitem(
-        sys.modules,
-        "spiffworkflow_backend.models.user",
-        types.SimpleNamespace(UserModel=types.SimpleNamespace()),
-    )
-    monkeypatch.setattr("m8flow_backend.tenancy.is_super_admin_request", lambda: False)
+    def add_secret(self, key: str, value: str, user_id: int) -> FakeSecret:
+        self.calls.append(("add_secret", key, value, user_id))
+        return FakeSecret(key=key, user_id=user_id)
 
-    import m8flow_backend.routes.secrets_controller_patch as patch_module
+    def update_secret(
+        self,
+        key: str,
+        value: str,
+        user_id: int | None = None,
+        create_if_not_exists: bool | None = False,
+    ) -> None:
+        self.calls.append(("update_secret", key, value, user_id, create_if_not_exists))
 
+    def delete_secret(self, key: str, user_id: int) -> None:
+        self.calls.append(("delete_secret", key, user_id))
+
+    def serialize_secret_list_result(
+        self,
+        page: int = 1,
+        per_page: int = 100,
+        tenant_id: str | None = None,
+    ) -> dict[str, object]:
+        self.calls.append(("serialize_secret_list_result", page, per_page, tenant_id))
+        effective_tenant_id = tenant_id or "tenant-from-context"
+        return {
+            "results": [
+                {
+                    "key": "API_TOKEN",
+                    "tenantId": effective_tenant_id,
+                    "tenantName": f"Tenant {effective_tenant_id}",
+                    "username": "vault-user",
+                }
+            ],
+            "pagination": {"count": 1, "total": 1, "pages": 1},
+        }
+
+
+def _load_patch(monkeypatch, backend: FakeSecretBackend, state: dict[str, bool]):
+    fake_secrets_controller = ModuleType("spiffworkflow_backend.routes.secrets_controller")
+    fake_secrets_controller.secret_show = lambda key: None
+    fake_secrets_controller.secret_show_value = lambda key: None
+    fake_secrets_controller.secret_create = lambda body: None
+    fake_secrets_controller.secret_update = lambda key, body: None
+    fake_secrets_controller.secret_delete = lambda key: None
+    fake_secrets_controller.secret_list = lambda page=1, per_page=100: None
+
+    fake_routes = ModuleType("spiffworkflow_backend.routes")
+    fake_routes.__path__ = []
+    fake_routes.secrets_controller = fake_secrets_controller
+
+    fake_user_service_module = ModuleType("spiffworkflow_backend.services.user_service")
+
+    class FakeUserService:
+        @staticmethod
+        def current_user():
+            return SimpleNamespace(id=99)
+
+    fake_user_service_module.UserService = FakeUserService
+
+    fake_services = ModuleType("spiffworkflow_backend.services")
+    fake_services.__path__ = []
+
+    fake_secret_backend_module = ModuleType("m8flow_backend.services.secret_backend")
+    fake_secret_backend_module.get_secret_backend = lambda: backend
+
+    fake_tenancy_module = ModuleType("m8flow_backend.tenancy")
+    fake_tenancy_module.is_super_admin_request = lambda: state["is_super_admin"]
+
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.routes", fake_routes)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.routes.secrets_controller", fake_secrets_controller)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.services", fake_services)
+    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.services.user_service", fake_user_service_module)
+    monkeypatch.setitem(sys.modules, "m8flow_backend.services.secret_backend", fake_secret_backend_module)
+    monkeypatch.setitem(sys.modules, "m8flow_backend.tenancy", fake_tenancy_module)
+
+    sys.modules.pop("m8flow_backend.routes.secrets_controller_patch", None)
+    patch_module = importlib.import_module("m8flow_backend.routes.secrets_controller_patch")
     monkeypatch.setattr(patch_module, "_PATCHED", False)
     patch_module.apply()
-
-    assert secrets_controller.secret_list(page=2, per_page=10) == ("ORIGINAL", 2, 10)
-
-
-def test_serialize_shapes_tenant_details():
-    """A secret carries username + tenantId/tenantName; a null tenant id yields null names."""
-    tenant_names = {"tenant-a": "Tenant A"}
-    with_tenant = _serialize(_Secret("db_url", "tenant-a"), "alice", tenant_names)
-    assert with_tenant == {
-        "key": "db_url",
-        "username": "alice",
-        "tenantId": "tenant-a",
-        "tenantName": "Tenant A",
-    }
-
-    without_tenant = _serialize(_Secret("api_key", None), "bob", tenant_names)
-    assert without_tenant == {
-        "key": "api_key",
-        "username": "bob",
-        "tenantId": None,
-        "tenantName": None,
-    }
+    return fake_secrets_controller
 
 
-class _FakeColumn:
-    def __init__(self, name: str) -> None:
-        self.name = name
-
-    def __eq__(self, other):
-        return (self.name, other)
-
-
-class _FakeSecretQuery:
-    def __init__(self, items: list[tuple]) -> None:
-        self.items = items
-        self.filters: list[object] = []
-
-    def order_by(self, *_args, **_kwargs):
-        return self
-
-    def join(self, *_args, **_kwargs):
-        return self
-
-    def add_columns(self, *_args, **_kwargs):
-        return self
-
-    def filter(self, expr):
-        self.filters.append(expr)
-        return self
-
-    def paginate(self, page: int = 1, per_page: int = 100, error_out: bool = False):
-        return types.SimpleNamespace(items=self.items, total=len(self.items), pages=1)
-
-
-def _install_sa_secret_list(
-    monkeypatch,
-    items: list[tuple],
-    *,
-    is_super_admin: bool = True,
-    tenants: list | None = None,
-):
-    query = _FakeSecretQuery(items)
-    fake_secret_model = types.SimpleNamespace(
-        SecretModel=types.SimpleNamespace(
-            key=_FakeColumn("key"),
-            m8f_tenant_id=_FakeColumn("m8f_tenant_id"),
-            query=query,
-        )
-    )
-    secrets_controller = types.ModuleType(
-        "spiffworkflow_backend.routes.secrets_controller"
-    )
-    secrets_controller.secret_list = lambda page=1, per_page=100: (
-        "ORIGINAL",
-        page,
-        per_page,
-    )
-
-    import spiffworkflow_backend.routes as routes_pkg
-
-    monkeypatch.setattr(routes_pkg, "secrets_controller", secrets_controller, raising=False)
-    monkeypatch.setitem(
-        sys.modules,
-        "spiffworkflow_backend.routes.secrets_controller",
-        secrets_controller,
-    )
-    monkeypatch.setitem(
-        sys.modules, "spiffworkflow_backend.models.secret_model", fake_secret_model
-    )
-    monkeypatch.setitem(
-        sys.modules,
-        "spiffworkflow_backend.models.user",
-        types.SimpleNamespace(UserModel=types.SimpleNamespace(username="username")),
-    )
-    monkeypatch.setattr(
-        "m8flow_backend.tenancy.is_super_admin_request", lambda: is_super_admin
-    )
-
-    class FakeTenantQuery:
-        def filter(self, *_args, **_kwargs):
-            return self
-
-        def all(self):
-            return tenants or []
-
-    monkeypatch.setattr(
-        "m8flow_backend.models.m8flow_tenant.M8flowTenantModel",
-        types.SimpleNamespace(
-            query=FakeTenantQuery(),
-            id=types.SimpleNamespace(in_=lambda values: ("in", values)),
-        ),
-    )
-
-    import m8flow_backend.routes.secrets_controller_patch as patch_module
-
-    monkeypatch.setattr(patch_module, "_PATCHED", False)
-    patch_module.apply()
-    assert secrets_controller.secret_list.__name__ == "patched_secret_list"
-    return secrets_controller, query
-
-
-def test_super_admin_secret_list_injects_tenant_fields_and_filters(monkeypatch):
-    from flask import Flask
-
-    tenant_a = _Secret("db_url", "tenant-a")
-    tenant_none = _Secret("orphan", None)
-    secrets_controller, query = _install_sa_secret_list(
-        monkeypatch,
-        [(tenant_a, "alice"), (tenant_none, "bob")],
-        tenants=[types.SimpleNamespace(id="tenant-a", name="Acme")],
-    )
-
+def test_secret_crud_routes_delegate_to_common_backend(monkeypatch) -> None:
+    backend = FakeSecretBackend()
+    state = {"is_super_admin": False}
+    secrets_controller = _load_patch(monkeypatch, backend, state)
     app = Flask(__name__)
-    with app.app_context():
-        with app.test_request_context("/secrets?tenantId=tenant-a"):
-            response = secrets_controller.secret_list(page=1, per_page=50)
 
-    assert query.filters == [("m8f_tenant_id", "tenant-a")]
-    assert response.status_code == 200
-    payload = response.get_json()
-    assert payload["pagination"] == {"count": 2, "total": 2, "pages": 1}
-    assert payload["results"] == [
-        {
-            "key": "db_url",
-            "username": "alice",
-            "tenantId": "tenant-a",
-            "tenantName": "Acme",
-        },
-        {"key": "orphan", "username": "bob", "tenantId": None, "tenantName": None},
+    with app.app_context():
+        with app.test_request_context("/"):
+            g.user = SimpleNamespace(id=7)
+
+            show_response = secrets_controller.secret_show("API_TOKEN")
+            show_value_response = secrets_controller.secret_show_value("API_TOKEN")
+            create_response = secrets_controller.secret_create({"key": "API_TOKEN", "value": "vault-value"})
+            update_response = secrets_controller.secret_update(
+                "API_TOKEN",
+                {"key": "API_TOKEN_NEW", "value": "rotated-value"},
+            )
+            delete_response = secrets_controller.secret_delete("API_TOKEN")
+
+    assert show_response.status_code == 200
+    assert show_response.get_json()["key"] == "API_TOKEN"
+
+    assert show_value_response.status_code == 404
+    assert show_value_response.get_json() == {
+        "error_code": "secret_value_retrieval_disabled",
+        "message": "Retrieving secret values through this endpoint is disabled in M8Flow.",
+    }
+
+    assert create_response.status_code == 201
+    assert create_response.get_json()["user_id"] == 7
+
+    assert update_response.status_code == 200
+    assert update_response.get_json() == {"ok": True}
+
+    assert delete_response.status_code == 200
+    assert delete_response.get_json() == {"ok": True}
+
+    assert backend.calls == [
+        ("get_secret", "API_TOKEN"),
+        ("add_secret", "API_TOKEN", "vault-value", 7),
+        ("update_secret", "API_TOKEN", "rotated-value", 7, False),
+        ("delete_secret", "API_TOKEN", 99),
     ]
 
 
-def test_super_admin_secret_list_without_tenant_query_does_not_filter(monkeypatch):
-    from flask import Flask
-
-    secrets_controller, query = _install_sa_secret_list(
-        monkeypatch,
-        [(_Secret("db_url", "tenant-a"), "alice")],
-    )
-
+def test_secret_list_delegates_to_common_backend_with_super_admin_filter(monkeypatch) -> None:
+    backend = FakeSecretBackend()
+    state = {"is_super_admin": True}
+    secrets_controller = _load_patch(monkeypatch, backend, state)
     app = Flask(__name__)
+
     with app.app_context():
-        with app.test_request_context("/secrets"):
+        with app.test_request_context("/?tenantId=tenant-b"):
+            response = secrets_controller.secret_list(page=2, per_page=25)
+
+        state["is_super_admin"] = False
+        with app.test_request_context("/?tenantId=tenant-c"):
+            default_response = secrets_controller.secret_list(page=3, per_page=10)
+
+    assert response.status_code == 200
+    assert response.get_json()["results"][0] == {
+        "key": "API_TOKEN",
+        "tenantId": "tenant-b",
+        "tenantName": "Tenant tenant-b",
+        "username": "vault-user",
+    }
+
+    assert default_response.status_code == 200
+    assert default_response.get_json()["results"][0] == {
+        "key": "API_TOKEN",
+        "tenantId": "tenant-from-context",
+        "tenantName": "Tenant tenant-from-context",
+        "username": "vault-user",
+    }
+
+    assert backend.calls == [
+        ("serialize_secret_list_result", 2, 25, "tenant-b"),
+        ("serialize_secret_list_result", 3, 10, None),
+    ]
+
+
+def test_secret_list_accepts_tenant_id_query_alias_for_super_admin(monkeypatch) -> None:
+    backend = FakeSecretBackend()
+    state = {"is_super_admin": True}
+    secrets_controller = _load_patch(monkeypatch, backend, state)
+    app = Flask(__name__)
+
+    with app.app_context():
+        with app.test_request_context("/?tenant_id=tenant-b"):
             response = secrets_controller.secret_list()
 
-    assert query.filters == []
-    assert response.get_json()["results"][0]["tenantId"] == "tenant-a"
-    assert response.get_json()["results"][0]["tenantName"] is None
-
-
-def test_super_admin_secret_list_accepts_tenant_id_query_alias(monkeypatch):
-    from flask import Flask
-
-    secrets_controller, query = _install_sa_secret_list(monkeypatch, [])
-
-    app = Flask(__name__)
-    with app.app_context():
-        with app.test_request_context("/secrets?tenant_id=tenant-b"):
-            secrets_controller.secret_list()
-
-    assert query.filters == [("m8f_tenant_id", "tenant-b")]
+    assert response.status_code == 200
+    assert response.get_json()["results"][0]["tenantId"] == "tenant-b"
+    assert backend.calls == [
+        ("serialize_secret_list_result", 1, 100, "tenant-b"),
+    ]

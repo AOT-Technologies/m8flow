@@ -190,6 +190,58 @@ def test_parse_internal_token_subject_preserves_url_issuer() -> None:
     )
 
 
+def test_internal_token_subject_patch_reuses_concurrently_created_user(monkeypatch) -> None:
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SQLALCHEMY_EXPIRE_ON_COMMIT"] = False
+
+    db.init_app(app)
+    set_canonical_db(db)
+
+    original = authentication_controller._get_user_from_decoded_internal_token
+    monkeypatch.setattr(auth_patch_module, "_INTERNAL_TOKEN_SUBJECT_PATCHED", False)
+
+    from spiffworkflow_backend.models.user import UserModel
+    from spiffworkflow_backend.services.user_service import UserService
+
+    with app.app_context():
+        db.create_all()
+
+        def fake_create_user(username: str, service: str, service_id: str, email: str | None = None):
+            user = UserModel(
+                username=username,
+                service=service,
+                service_id=service_id,
+                email=email or "",
+            )
+            db.session.add(user)
+            db.session.commit()
+            raise ApiError(
+                error_code="create_user_error",
+                message="duplicate create race",
+                status_code=409,
+            )
+
+        monkeypatch.setattr(UserService, "create_user", fake_create_user)
+
+        auth_patch_module.apply_internal_token_subject_patch()
+        user = authentication_controller._get_user_from_decoded_internal_token(
+            {
+                "sub": "service:http://localhost:6842/realms/m8flow::service_id:reviewer-subject",
+                "preferred_username": "reviewer",
+                "email": "reviewer@example.com",
+            }
+        )
+
+        assert user.username == "reviewer"
+        assert user.service == "http://localhost:6842/realms/m8flow"
+        assert user.service_id == "reviewer-subject"
+
+    monkeypatch.setattr(authentication_controller, "_get_user_from_decoded_internal_token", original)
+    monkeypatch.setattr(auth_patch_module, "_INTERNAL_TOKEN_SUBJECT_PATCHED", False)
+
+
 def test_handle_tenant_login_request_redirects_to_master_when_realm_hint_present(
     monkeypatch,
 ) -> None:

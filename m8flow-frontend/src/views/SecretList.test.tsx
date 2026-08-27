@@ -267,4 +267,17 @@ describe('SecretList external form email banner', () => {
     expect(clearSmtpStatusCache).toHaveBeenCalledWith(null);
     expect(getSmtpStatus).toHaveBeenCalledWith(null, { force: true });
   });
+
+  it('shows an inline vault-down error when the secrets list request fails', async () => {
+    vi.mocked(UserService.isSuperAdmin).mockReturnValue(false);
+    vi.mocked(HttpService.makeCallToBackend).mockImplementation((opts: any) => {
+      opts.failureCallback?.({ message: 'Vault is down.' });
+    });
+
+    renderList();
+
+    expect(await screen.findByTestId('secret-list-error')).toHaveTextContent(
+      'Vault is down.',
+    );
+  });
 });
