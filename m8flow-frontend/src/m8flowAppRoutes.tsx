@@ -23,7 +23,10 @@ const ProcessModelShowWithSaveAsTemplate = lazy(
   () => import('./views/ProcessModelShowWithSaveAsTemplate'),
 );
 const ConnectorsPage = lazy(() => import('./views/Connectors'));
-const ConnectorConfigurePage = lazy(() => import('./views/ConnectorConfigure'));
+const ConnectorProfilesPage = lazy(() => import('./views/ConnectorProfiles'));
+const ConnectorProfileEditPage = lazy(
+  () => import('./views/ConnectorProfileEdit'),
+);
 const McpConnectionPage = lazy(() => import('./views/McpConnection'));
 const ManageTokenPage = lazy(() => import('./views/ManageToken'));
 const MonitoringCeleryPage = lazy(() => import('./views/MonitoringCeleryPage'));
@@ -107,9 +110,18 @@ export function M8flowAppRoutes({
     },
     { path: 'templates/:templateId', element: <TemplateModelerPage /> },
     { path: 'templates', element: <TemplateGalleryPage /> },
+    // More specific routes first: 'new' must not be read as a :profileId.
     {
-      path: 'connectors/:connectorId/configure',
-      element: <ConnectorConfigurePage />,
+      path: 'connectors/:connectorId/profiles/new',
+      element: <ConnectorProfileEditPage />,
+    },
+    {
+      path: 'connectors/:connectorId/profiles/:profileId/edit',
+      element: <ConnectorProfileEditPage />,
+    },
+    {
+      path: 'connectors/:connectorId/profiles',
+      element: <ConnectorProfilesPage />,
     },
     { path: 'connectors', element: <ConnectorsPage /> },
     {

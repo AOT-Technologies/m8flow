@@ -2814,6 +2814,181 @@ paths:
                 items:
                   type: object
 
+  /connector-templates:
+    get:
+      operationId: m8flow_backend.routes.connector_profiles_controller.connector_template_list
+      summary: Connector schemas, one descriptor per registered connector
+      tags:
+        - Connectors
+      responses:
+        "200":
+          description: Connector descriptors
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /connector-templates/{connector_type}:
+    parameters:
+      - name: connector_type
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: m8flow_backend.routes.connector_profiles_controller.connector_template_show
+      summary: One connector schema
+      tags:
+        - Connectors
+      responses:
+        "200":
+          description: Connector descriptor
+          content:
+            application/json:
+              schema:
+                type: object
+        "404":
+          description: Unknown connector type
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /connector-profiles:
+    get:
+      operationId: m8flow_backend.routes.connector_profiles_controller.connector_profile_list
+      summary: Connector profiles for the active tenant
+      tags:
+        - Connectors
+      parameters:
+        - name: connector_type
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: include_inactive
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: true
+      responses:
+        "200":
+          description: Profiles. Secret values are never included.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+    post:
+      operationId: m8flow_backend.routes.connector_profiles_controller.connector_profile_create
+      summary: Create a connector profile
+      tags:
+        - Connectors
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "201":
+          description: The created profile, references only
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: A profile of that name already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /connector-profiles/{profile_id}:
+    parameters:
+      - name: profile_id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      operationId: m8flow_backend.routes.connector_profiles_controller.connector_profile_show
+      summary: One connector profile
+      tags:
+        - Connectors
+      responses:
+        "200":
+          description: The profile, references only
+          content:
+            application/json:
+              schema:
+                type: object
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: m8flow_backend.routes.connector_profiles_controller.connector_profile_update
+      summary: Update a connector profile
+      tags:
+        - Connectors
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: The updated profile
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: m8flow_backend.routes.connector_profiles_controller.connector_profile_delete
+      summary: Deactivate a connector profile, or remove it with hard=true
+      tags:
+        - Connectors
+      parameters:
+        - name: hard
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Deactivated, or removed
+          content:
+            application/json:
+              schema:
+                type: object
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthResponse:

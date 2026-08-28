@@ -22,7 +22,7 @@ from helpers.mocks import (
     mock_connectors_api,
     mock_connectors_denied_permissions_api,
     mock_permissions_api,
-    mock_secrets_denied_permissions_api,
+    mock_connector_profiles_denied_permissions_api,
 )
 from helpers.waiters import wait_for_app_ready
 
@@ -130,10 +130,10 @@ def mocked_connectors_error_page(authenticated_page_module: Page) -> Page:
 
 @pytest.fixture
 def mocked_connectors_configure_denied_page(authenticated_page_module: Page) -> Page:
-    """Authorized for connectors but denied secrets POST (Configure hidden)."""
+    """Authorized for connectors but denied connector-profiles GET (Configure hidden)."""
     page = authenticated_page_module
     _reset(page)
-    mock_secrets_denied_permissions_api(page)
+    mock_connector_profiles_denied_permissions_api(page)
     mock_connectors_api(page, connectors=ALL_MOCK_CONNECTORS)
     page.goto(BASE_URL)
     wait_for_app_ready(page)

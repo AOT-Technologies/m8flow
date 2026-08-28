@@ -6,6 +6,7 @@ import Connectors from './Connectors';
 
 const h = vi.hoisted(() => ({
   connectorsResponse: [] as any[],
+  profilesResponse: [] as any[],
   navigate: (() => {}) as (...args: any[]) => void,
 }));
 
@@ -16,13 +17,22 @@ vi.mock('../services/HttpService', () => ({
       if (opts.path === '/m8flow/connectors-grouped') {
         opts.successCallback(h.connectorsResponse);
       }
+      if (opts.path?.startsWith('/m8flow/connector-profiles')) {
+        opts.successCallback(h.profilesResponse);
+      }
     }),
   },
 }));
 
+// One shared ability object, as the real hook does: it reads a stable instance
+// out of AbilityContext and mutates it in place. Returning a new object literal
+// per call would make every `ability`-dependent effect re-run on each render --
+// an endless fetch/setState/render loop, not a component bug.
+const mockAbility = { can: () => true };
+
 vi.mock('@spiffworkflow-frontend/hooks/PermissionService', () => ({
   usePermissionFetcher: vi.fn(() => ({
-    ability: { can: () => true },
+    ability: mockAbility,
     permissionsLoaded: true,
   })),
 }));
@@ -31,7 +41,7 @@ vi.mock('../hooks/M8flowUriListForPermissions', () => ({
   useM8flowUriListForPermissions: vi.fn(() => ({
     targetUris: {
       connectorsGroupedPath: '/m8flow/connectors-grouped',
-      secretListPath: '/secrets',
+      connectorProfileListPath: '/m8flow/connector-profiles',
     },
   })),
 }));
@@ -96,35 +106,53 @@ const renderPage = () =>
 
 beforeEach(() => {
   h.navigate = vi.fn();
+  h.profilesResponse = [];
   h.connectorsResponse = [
-    {
-      ...base,
-      id: 'github',
-      name: 'GitHub',
-      configFields: [
-        { id: 'pat_token', secretKey: 'GITHUB_PAT_TOKEN', label: 'PAT', type: 'password', required: true },
-      ],
-    },
-    { ...base, id: 'http', name: 'HTTP' },
+    { ...base, id: 'github', name: 'GitHub', supportsProfiles: true },
+    { ...base, id: 'http', name: 'HTTP', supportsProfiles: false },
   ];
 });
 
 describe('Connectors configure navigation', () => {
-  it('routes connectors with configFields to the configure form', async () => {
+  it('routes a profile-capable connector to its profile list', async () => {
     renderPage();
     const btn = await screen.findByTestId('connector-configure-github');
     fireEvent.click(btn);
     await waitFor(() =>
-      expect(h.navigate).toHaveBeenCalledWith('/connectors/github/configure'),
+      expect(h.navigate).toHaveBeenCalledWith('/connectors/github/profiles'),
     );
   });
 
-  it('routes connectors without configFields to the generic secrets page', async () => {
+  it('routes a connector with no profile fields to the generic secrets page', async () => {
     renderPage();
     const btn = await screen.findByTestId('connector-configure-http');
     fireEvent.click(btn);
     await waitFor(() =>
       expect(h.navigate).toHaveBeenCalledWith('/configuration/secrets'),
     );
+  });
+
+  it('offers only one configuration action per connector', async () => {
+    renderPage();
+    await screen.findByTestId('connector-configure-github');
+    // The separate "Profiles" button is gone: Configure is the single entry
+    // point, so a user is never asked to choose between two config methods.
+    expect(screen.queryByTestId('connector-profiles-github')).toBeNull();
+  });
+
+  it('shows the profile count on the Configure button when profiles exist', async () => {
+    h.profilesResponse = [
+      { connector_type: 'github', profile_name: 'default' },
+      { connector_type: 'github', profile_name: 'staging' },
+    ];
+    renderPage();
+    const btn = await screen.findByTestId('connector-configure-github');
+    await waitFor(() =>
+      expect(btn.textContent).toBe('connector_configure_count'),
+    );
+    // A connector with no profiles keeps the plain label.
+    expect(
+      (await screen.findByTestId('connector-configure-http')).textContent,
+    ).toBe('configure');
   });
 });

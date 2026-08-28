@@ -130,7 +130,11 @@ def test_connector_description_fallback(mocked_connectors_page: Page) -> None:
 
 
 def test_configure_button_navigates(mocked_connectors_page: Page) -> None:
-    """The Configure button routes to the secrets configuration page."""
+    """Configure routes a connector with no profile fields to the secrets page.
+
+    HTTP declares no profile fields, so it keeps the generic-secrets fallback;
+    profile-capable connectors go to /connectors/<id>/profiles instead.
+    """
     page = mocked_connectors_page
     navigate_to_connectors(page)
     configure = page.get_by_test_id(
@@ -141,10 +145,29 @@ def test_configure_button_navigates(mocked_connectors_page: Page) -> None:
     expect(page).to_have_url(re.compile(r"/configuration/secrets"))
 
 
+def test_configure_button_opens_profiles_for_profile_capable_connector(
+    mocked_connectors_page: Page,
+) -> None:
+    """Configure is the single entry point, and it opens the profile list.
+
+    A separate "Profiles" button used to sit next to Configure; both methods on
+    one card left the user to guess which one applied.
+    """
+    page = mocked_connectors_page
+    navigate_to_connectors(page)
+    cid = MOCK_CONNECTOR_SMTP["id"]
+    configure = page.get_by_test_id(f"connector-configure-{cid}")
+    expect(configure).to_be_visible()
+    # The old second button must be gone.
+    expect(page.get_by_test_id(f"connector-profiles-{cid}")).to_have_count(0)
+    configure.click()
+    expect(page).to_have_url(re.compile(rf"/connectors/{cid}/profiles"))
+
+
 def test_configure_button_hidden_without_secret_permission(
     mocked_connectors_configure_denied_page: Page,
 ) -> None:
-    """Without secrets POST permission, Configure is hidden but View Operations stays."""
+    """Without connector-profiles GET, Configure is hidden but View Operations stays."""
     page = mocked_connectors_configure_denied_page
     navigate_to_connectors(page)
     cid = MOCK_CONNECTOR_HTTP["id"]
