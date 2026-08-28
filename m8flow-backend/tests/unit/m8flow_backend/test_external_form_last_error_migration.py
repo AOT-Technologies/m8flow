@@ -1,4 +1,4 @@
-"""Unit tests for the add-last_error migration (r1k2l3m4n5o6).
+"""Unit tests for the add-last_error migration (s2l3m4n5o6p7).
 
 Tests cover:
 - upgrade adds a nullable last_error column and preserves existing rows
@@ -20,7 +20,7 @@ MIGRATION_PATH = (
     Path(__file__).resolve().parents[3]
     / "migrations"
     / "versions"
-    / "r1k2l3m4n5o6_add_external_form_request_last_error.py"
+    / "s2l3m4n5o6p7_add_external_form_request_last_error.py"
 )
 
 TABLE_NAME = "m8flow_external_form_requests"
@@ -150,6 +150,8 @@ def test_downgrade_is_idempotent(connection):
 def test_revision_chains_onto_the_previous_head(connection):
     module = _load_migration_module()
 
-    assert module.revision == "r1k2l3m4n5o6"
-    # Chains after the audit-log migration so this branch remains linear.
-    assert module.down_revision == "q1r2s3t4u5v6"
+    assert module.revision == "s2l3m4n5o6p7"
+    # Chains after the connector_configuration revision. Both migrations landed in the
+    # same merge and originally shared parent q0j1k2l3m4n5 under one duplicated revision
+    # id; keeping this assertion pinned to the real parent is what catches a recurrence.
+    assert module.down_revision == "r1k2l3m4n5o6"

@@ -1754,6 +1754,9 @@ def mock_tasks_api(
 
 MOCK_CONNECTOR_HTTP: dict[str, Any] = {
     "id": "http",
+    # Matches the real /connectors-grouped payload: the HTTP connector declares
+    # no profile fields, so Configure falls back to Configuration > Secrets.
+    "supportsProfiles": False,
     "name": "HTTP",
     "description": "Make REST API calls from workflows.",
     "status": "available",
@@ -1797,6 +1800,7 @@ MOCK_CONNECTOR_HTTP: dict[str, Any] = {
 # Empty description -> exercises the use_via_service_task fallback text.
 MOCK_CONNECTOR_SLACK: dict[str, Any] = {
     "id": "slack",
+    "supportsProfiles": True,
     "name": "Slack",
     "description": "",
     "status": "available",
@@ -1818,6 +1822,7 @@ MOCK_CONNECTOR_SLACK: dict[str, Any] = {
 
 MOCK_CONNECTOR_SMTP: dict[str, Any] = {
     "id": "smtp",
+    "supportsProfiles": True,
     "name": "SMTP Email",
     "description": "Send emails over SMTP.",
     "status": "available",
@@ -1904,20 +1909,21 @@ def mock_connectors_api(
 def mock_permissions_api_custom(
     page: Page,
     deny_connectors: bool = False,
-    deny_secrets: bool = False,
+    deny_connector_profiles: bool = False,
 ) -> None:
     """Like ``mock_permissions_api`` but can selectively deny permissions.
 
     - ``deny_connectors`` -> GET on the connectors-grouped URI is denied, so the
       Connectors page redirects to "/" and the nav item is hidden.
-    - ``deny_secrets`` -> POST on the secrets URI is denied, so the per-card
-      "Configure" button is not rendered.
+    - ``deny_connector_profiles`` -> GET on the connector-profiles URI is denied,
+      so the per-card "Configure" button is not rendered. Configure is gated on
+      profile read (not secrets write) since it opens the profile list.
     """
 
     def _allowed(url: str, method: str) -> bool:
         if deny_connectors and "connectors-grouped" in url and method == "GET":
             return False
-        if deny_secrets and "secret" in url and method == "POST":
+        if deny_connector_profiles and "connector-profiles" in url and method == "GET":
             return False
         return True
 
@@ -1944,6 +1950,9 @@ def mock_connectors_denied_permissions_api(page: Page) -> None:
     mock_permissions_api_custom(page, deny_connectors=True)
 
 
-def mock_secrets_denied_permissions_api(page: Page) -> None:
-    """Grant connectors access but deny secrets POST (Configure-hidden test)."""
-    mock_permissions_api_custom(page, deny_secrets=True)
+def mock_connector_profiles_denied_permissions_api(page: Page) -> None:
+    """Grant connectors access but deny connector-profiles GET.
+
+    Configure opens the profile list, so profile read is what gates it.
+    """
+    mock_permissions_api_custom(page, deny_connector_profiles=True)

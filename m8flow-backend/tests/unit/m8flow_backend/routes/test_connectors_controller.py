@@ -1,8 +1,9 @@
 """Unit tests for the grouped-connectors controller.
 
-Covers the secret-key contract that ties the Connectors "Configure" form to the
-runtime resolver (M8FLOW_SECRET:(?P<name>\\w+)) and the metadata-driven shaping
-of the /m8flow/connectors-grouped response.
+Covers the metadata-driven shaping of the /m8flow/connectors-grouped response
+and the ``supportsProfiles`` flag that decides where the Configure action goes.
+Credential field schemas are NOT tested here -- they live in the pydantic
+definitions and are covered by tests/unit/m8flow_backend/connectors/.
 """
 
 import json
@@ -13,9 +14,7 @@ from flask import Flask
 from m8flow_backend.routes import connectors_controller
 from m8flow_backend.routes.connectors_controller import (
     CONNECTOR_METADATA,
-    _SECRET_KEY_RE,
     connectors_grouped,
-    effective_secret_key,
 )
 
 
@@ -31,62 +30,58 @@ def _call_grouped(flat_operations):
     return json.loads(response.get_data(as_text=True))
 
 
-def test_all_shipped_secret_keys_are_resolvable():
-    """Every config field's effective key must satisfy ^\\w+$.
+def test_metadata_carries_no_credential_schema():
+    """The controller must not reintroduce a second field schema.
 
-    Otherwise the secret it creates could never be referenced via M8FLOW_SECRET.
+    connectors/definitions/ is the single source of truth; a "configFields" key
+    creeping back in here means the two can drift again.
     """
     for connector_key, meta in CONNECTOR_METADATA.items():
-        for field in meta.get("configFields", []):
-            key = effective_secret_key(connector_key, field)
-            assert _SECRET_KEY_RE.match(key), (
-                f"{connector_key}.{field['id']} -> invalid secret key {key!r}"
-            )
+        assert "configFields" not in meta, (
+            f"{connector_key} declares configFields; field schemas belong in "
+            f"connectors/definitions/, served via /m8flow/connector-templates."
+        )
 
 
-def test_connectors_grouped_includes_config_fields_only_when_defined():
+def test_profile_capable_connector_is_flagged():
+    groups = _call_grouped([{"id": "smtp/SendHTMLEmail", "parameters": []}])
+    smtp = next(g for g in groups if g["id"] == "smtp")
+    assert smtp["supportsProfiles"] is True
+
+
+def test_connector_with_no_definition_is_not_profile_capable():
+    """An operator the registry knows nothing about must not offer profiles."""
+    groups = _call_grouped([{"id": "mystery/DoThing", "parameters": []}])
+    mystery = next(g for g in groups if g["id"] == "mystery")
+    assert mystery["supportsProfiles"] is False
+
+
+def test_grouping_still_counts_operations_and_uses_metadata():
     groups = _call_grouped(
         [
-            {"id": "github/CreatePullRequest", "parameters": []},
+            {"id": "smtp/SendHTMLEmail", "parameters": []},
+            {"id": "smtp/SendPlainEmail", "parameters": []},
             {"id": "http/GetRequestV2", "parameters": []},
         ]
     )
     by_id = {g["id"]: g for g in groups}
 
-    assert "configFields" in by_id["github"]
-    keys = {f["secretKey"] for f in by_id["github"]["configFields"]}
-    assert "GITHUB_PAT_TOKEN" in keys
-
-    # HTTP declares no configFields, so the key must be absent entirely.
-    assert "configFields" not in by_id["http"]
-
-
-def test_connectors_grouped_drops_field_with_invalid_secret_key():
-    bad_meta = {
-        "name": "Bad",
-        "description": "",
-        "icon": "extension",
-        "configFields": [
-            {
-                "id": "thing",
-                "secretKey": "BAD-KEY",  # hyphen -> unresolvable
-                "label": "Thing",
-                "type": "text",
-                "required": True,
-            }
-        ],
-    }
-    with patch.dict(
-        connectors_controller.CONNECTOR_METADATA, {"bad": bad_meta}, clear=False
-    ):
-        groups = _call_grouped([{"id": "bad/DoThing", "parameters": []}])
-
-    bad = next(g for g in groups if g["id"] == "bad")
-    assert "configFields" not in bad
+    assert by_id["smtp"]["operationCount"] == 2
+    assert by_id["smtp"]["name"] == CONNECTOR_METADATA["smtp"]["name"]
+    assert by_id["http"]["operationCount"] == 1
+    # Every group carries the flag, so the frontend never has to treat it as
+    # optional.
+    assert set(by_id) == {"smtp", "http"}
+    assert all("supportsProfiles" in g for g in groups)
 
 
-def test_effective_secret_key_falls_back_to_derived_name():
-    assert (
-        effective_secret_key("widget", {"id": "api_key", "label": "x", "type": "text", "required": True})
-        == "widget_api_key"
-    )
+def test_unknown_connector_falls_back_to_humanized_name():
+    groups = _call_grouped([{"id": "postgres_v2/ExecuteSQL", "parameters": []}])
+    pg = next(g for g in groups if g["id"] == "postgres_v2")
+    # postgres_v2 IS in metadata, so the display name comes from there.
+    assert pg["name"] == "PostgreSQL"
+
+    with patch.dict(connectors_controller.CONNECTOR_METADATA, {}, clear=True):
+        groups = _call_grouped([{"id": "widget_v3/DoThing", "parameters": []}])
+    widget = next(g for g in groups if g["id"] == "widget_v3")
+    assert widget["name"] == "Widget"
