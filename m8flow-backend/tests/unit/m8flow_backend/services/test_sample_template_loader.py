@@ -95,7 +95,9 @@ class TestSampleTemplateLoader:
             ).all()
             assert len(rows) == 1
 
-        file_path = os.path.join(self.storage_dir, "tenant-a", "sample-one", "V1", "diagram.bpmn")
+        file_path = os.path.join(
+            self.storage_dir, "tenant-a", "sample-one", sample_template_loader.VERSION, "diagram.bpmn"
+        )
         assert os.path.isfile(file_path)
 
     def test_skips_when_already_loaded_and_files_intact(self, monkeypatch) -> None:
@@ -122,7 +124,7 @@ class TestSampleTemplateLoader:
             self._run_loader(app, monkeypatch)
 
             file_path = os.path.join(
-                self.storage_dir, "tenant-a", "sample-one", "V1", "diagram.bpmn"
+                self.storage_dir, "tenant-a", "sample-one", sample_template_loader.VERSION, "diagram.bpmn"
             )
             assert os.path.isfile(file_path)
             os.remove(file_path)
