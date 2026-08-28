@@ -26,6 +26,15 @@ def test_editor_can_access_process_instances(editor_page: Page) -> None:
     logger.info("Editor can access the Process Instances list.")
 
 
+def test_editor_process_instances_have_no_tenant_column(editor_page: Page) -> None:
+    """The per-tenant editor view must not gain the super-admin tenant column."""
+    pip = ProcessInstancesPage(editor_page).open("all")
+    pip.wait_for_rows()
+    assert "Tenant" not in pip.header_labels()
+    expect(pip.tenant_cells()).to_have_count(0)
+    logger.info("Editor process-instances table has no tenant column.")
+
+
 def test_reviewer_cannot_see_process_instances_nav(reviewer_page: Page) -> None:
     """A reviewer does not see the Process Instances nav entry."""
     expect(

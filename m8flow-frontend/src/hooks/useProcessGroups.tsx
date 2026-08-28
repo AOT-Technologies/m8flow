@@ -10,6 +10,7 @@ import type { ProcessGroup, ProcessGroupLite } from '../interfaces';
 import { useGlobalTenant } from '../contexts/GlobalTenantContext';
 import HttpService from '../services/HttpService';
 import UserService from '../services/UserService';
+import { registerProcessTenantLabels } from '../views/StartProcess/processTenantLabelRegistry';
 
 type Result = {
   processGroups: ProcessGroup[] | ProcessGroupLite[] | null;
@@ -59,8 +60,10 @@ export default function useProcessGroups({
           'X-m8-Extension': 'true',
           'X-m8-Request-Source': 'useProcessGroups-override',
         },
-        successCallback: (payload: any) =>
-          setResult({ processGroups: payload.results, loading: false }),
+        successCallback: (payload: any) => {
+          registerProcessTenantLabels(payload.results);
+          setResult({ processGroups: payload.results, loading: false });
+        },
         failureCallback: (err: any) => {
           console.error('[m8 Extension] Process Groups API Error:', err);
           setResult((prev) => ({ ...prev, loading: false }));

@@ -4,6 +4,10 @@ import { MemoryRouter } from 'react-router';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import type React from 'react';
 import ProcessGroupCard from './ProcessGroupCard';
+import {
+  clearProcessTenantLabels,
+  registerProcessTenantLabels,
+} from './processTenantLabelRegistry';
 
 vi.mock('../../services/UserService', () => ({
   default: {
@@ -34,6 +38,7 @@ function renderCard(group: Record<string, unknown>) {
 describe('ProcessGroupCard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearProcessTenantLabels();
   });
 
   it('renders tenant chip when user is super-admin and tenantName is present', () => {
@@ -76,5 +81,25 @@ describe('ProcessGroupCard', () => {
       process_models: [],
     });
     expect(screen.queryByTestId('process-group-tenant-chip-hr')).toBeNull();
+  });
+
+  it('falls back to the registered tenant label when the card props are lite', () => {
+    vi.mocked(UserService.isSuperAdmin).mockReturnValue(true);
+    registerProcessTenantLabels([
+      {
+        id: 'hr',
+        tenantName: 'Acme Co.',
+      },
+    ]);
+    renderCard({
+      id: 'hr',
+      display_name: 'HR',
+      description: '',
+      process_groups: [],
+      process_models: [],
+    });
+    expect(screen.getByTestId('process-group-tenant-chip-hr')).toHaveTextContent(
+      'Acme Co.',
+    );
   });
 });

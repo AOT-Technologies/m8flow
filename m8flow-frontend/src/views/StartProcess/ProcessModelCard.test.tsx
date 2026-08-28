@@ -3,6 +3,10 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import ProcessModelCard from './ProcessModelCard';
+import {
+  clearProcessTenantLabels,
+  registerProcessTenantLabels,
+} from './processTenantLabelRegistry';
 
 vi.mock('../../services/UserService', () => ({
   default: {
@@ -45,6 +49,7 @@ function renderCard(model: Record<string, unknown>) {
 describe('ProcessModelCard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearProcessTenantLabels();
   });
 
   it('renders tenant chip when user is super-admin and tenantName is present', () => {
@@ -81,5 +86,23 @@ describe('ProcessModelCard', () => {
       description: '',
     });
     expect(screen.queryByTestId('process-model-tenant-chip-hr/onboarding')).toBeNull();
+  });
+
+  it('falls back to the registered tenant label when the model props are slim', () => {
+    vi.mocked(UserService.isSuperAdmin).mockReturnValue(true);
+    registerProcessTenantLabels([
+      {
+        id: 'hr/onboarding',
+        tenantName: 'Acme Co.',
+      },
+    ]);
+    renderCard({
+      id: 'hr/onboarding',
+      display_name: 'Onboarding',
+      description: '',
+    });
+    expect(screen.getByTestId('process-model-tenant-chip-hr/onboarding')).toHaveTextContent(
+      'Acme Co.',
+    );
   });
 });

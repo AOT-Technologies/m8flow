@@ -158,6 +158,71 @@ def test_apply_rewrites_assigned_group_identifier_for_task_list_responses(monkey
     assert payload["results"][2]["potential_owner_usernames"] == "alex"
 
 
+def test_enrich_task_list_results_with_tenant_fields_adds_tenant_and_last_milestone(monkeypatch) -> None:
+    class _FakeColumn:
+        def in_(self, values):
+            return values
+
+    class _ProcessInstanceQuery:
+        def filter(self, *args, **kwargs):
+            return self
+
+        def with_entities(self, *args, **kwargs):
+            return self
+
+        def all(self):
+            return [
+                (101, "tenant-a-id", "Started"),
+                (102, "tenant-b-id", "Manager Approval"),
+            ]
+
+    class _TenantQuery:
+        def filter(self, *args, **kwargs):
+            return self
+
+        def all(self):
+            return [
+                type("Tenant", (), {"id": "tenant-a-id", "name": "Tenant A"})(),
+                type("Tenant", (), {"id": "tenant-b-id", "name": "Tenant B"})(),
+            ]
+
+    class _ProcessInstanceModel:
+        id = _FakeColumn()
+        m8f_tenant_id = _FakeColumn()
+        last_milestone_bpmn_name = _FakeColumn()
+        query = _ProcessInstanceQuery()
+
+    class _TenantModel:
+        id = _FakeColumn()
+        query = _TenantQuery()
+
+    monkeypatch.setattr(
+        "spiffworkflow_backend.models.process_instance.ProcessInstanceModel",
+        _ProcessInstanceModel,
+    )
+    monkeypatch.setattr(tasks_controller_patch, "M8flowTenantModel", _TenantModel)
+
+    app = Flask(__name__)
+    with app.app_context():
+        response = jsonify(
+            {
+                "results": [
+                    {"id": 1, "process_instance_id": 101},
+                    {"id": 2, "process_instance_id": 102},
+                ],
+                "pagination": {"count": 2, "total": 2, "pages": 1},
+            }
+        )
+        payload = tasks_controller_patch._enrich_task_list_results_with_tenant_fields(response).get_json()
+
+    assert payload["results"][0]["tenantId"] == "tenant-a-id"
+    assert payload["results"][0]["tenantName"] == "Tenant A"
+    assert payload["results"][0]["last_milestone_bpmn_name"] == "Started"
+    assert payload["results"][1]["tenantId"] == "tenant-b-id"
+    assert payload["results"][1]["tenantName"] == "Tenant B"
+    assert payload["results"][1]["last_milestone_bpmn_name"] == "Manager Approval"
+
+
 @dataclass
 class _FakeTaskModel:
     task_data: dict

@@ -11,8 +11,9 @@ controller patch only:
    flask.g so the service patch can short-circuit to the matching tenant only.
 2. After the upstream controller serializes the response (which drops dynamic
    attributes because ``ProcessGroup.serialized()`` uses ``dataclasses.asdict``),
-   walks the tenant map the service patch built on flask.g and re-injects
-   ``tenantId`` / ``tenantName`` per item.
+   walks the tenant maps the service patch built on flask.g and re-injects
+   ``tenantId`` / ``tenantName`` through the full group tree, including nested
+   process models.
 """
 from __future__ import annotations
 
@@ -59,22 +60,38 @@ def _enrich_results_with_tenant_info(response: flask.wrappers.Response) -> flask
         return response
 
     group_tenant_map: dict[str, str] = getattr(g, "_m8flow_process_group_tenant_map", {}) or {}
-    if not group_tenant_map:
+    model_tenant_map: dict[str, str] = getattr(g, "_m8flow_process_model_tenant_map", {}) or {}
+    if not group_tenant_map and not model_tenant_map:
         return response
 
-    tenant_name_by_id = _tenant_name_map(set(group_tenant_map.values()))
+    tenant_name_by_id = _tenant_name_map(
+        set(group_tenant_map.values()) | set(model_tenant_map.values())
+    )
 
-    for item in results:
+    def _inject_tenant_info(item: Any) -> None:
         if not isinstance(item, dict):
-            continue
-        group_id = item.get("id")
-        if not isinstance(group_id, str):
-            continue
-        tenant_id = group_tenant_map.get(group_id)
+            return
+        item_id = item.get("id")
+        if not isinstance(item_id, str):
+            return
+        tenant_id = group_tenant_map.get(item_id) or model_tenant_map.get(item_id)
         if tenant_id is None:
-            continue
+            return
         item["tenantId"] = tenant_id
         item["tenantName"] = tenant_name_by_id.get(tenant_id)
+
+        nested_groups = item.get("process_groups")
+        if isinstance(nested_groups, list):
+            for nested_group in nested_groups:
+                _inject_tenant_info(nested_group)
+
+        nested_models = item.get("process_models")
+        if isinstance(nested_models, list):
+            for nested_model in nested_models:
+                _inject_tenant_info(nested_model)
+
+    for item in results:
+        _inject_tenant_info(item)
 
     return make_response(jsonify(payload), response.status_code)
 
