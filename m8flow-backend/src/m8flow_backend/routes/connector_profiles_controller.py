@@ -185,11 +185,3 @@ def connector_profile_delete(profile_id: int, hard: bool = False) -> flask.wrapp
     except ConnectorProfileError as error:
         raise _as_api_error(error) from error
     return make_response(jsonify(profile.to_dict()), 200)
-
-
-def connector_profile_set_default(profile_id: int) -> flask.wrappers.Response:
-    try:
-        profile = ConnectorProfileService.set_default(profile_id)
-    except ConnectorProfileError as error:
-        raise _as_api_error(error) from error
-    return make_response(jsonify(profile.to_dict()), 200)

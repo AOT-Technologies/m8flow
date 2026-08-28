@@ -49,7 +49,6 @@ export interface ConnectorProfile {
   config: Record<string, unknown>;
   configured_secrets: string[];
   is_active: boolean;
-  is_default: boolean;
 }
 
 type Listener = () => void;

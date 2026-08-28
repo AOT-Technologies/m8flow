@@ -19,7 +19,6 @@ export interface ConnectorProfilePayload {
   display_name?: string;
   description?: string | null;
   config?: Record<string, unknown>;
-  is_default?: boolean;
   is_active?: boolean;
 }
 
@@ -99,14 +98,6 @@ export const deleteConnectorProfile = (
   call({
     path: `/m8flow/connector-profiles/${profileId}${hard ? '?hard=true' : ''}`,
     httpMethod: 'DELETE',
-  });
-
-export const setConnectorProfileDefault = (
-  profileId: number,
-): Promise<ConnectorProfile> =>
-  call({
-    path: `/m8flow/connector-profiles/${profileId}/default`,
-    httpMethod: 'POST',
   });
 
 export const reactivateConnectorProfile = (

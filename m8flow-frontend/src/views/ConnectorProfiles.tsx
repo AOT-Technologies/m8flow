@@ -34,7 +34,6 @@ import {
   Add as AddIcon,
   Delete as DeleteIcon,
   Edit as EditIcon,
-  StarBorder as StarBorderIcon,
   ToggleOff as ToggleOffIcon,
   ToggleOn as ToggleOnIcon,
 } from '@mui/icons-material';
@@ -50,7 +49,6 @@ import {
   fetchConnectorTemplate,
   profileErrorMessage,
   reactivateConnectorProfile,
-  setConnectorProfileDefault,
   type ConnectorProfile,
   type ConnectorTemplate,
 } from '../services/ConnectorProfileService';
@@ -269,13 +267,6 @@ export default function ConnectorProfiles() {
                         <Typography variant="body2">
                           {profile.display_name}
                         </Typography>
-                        {profile.is_default ? (
-                          <Chip
-                            size="small"
-                            color="primary"
-                            label={t('default', { defaultValue: 'Default' })}
-                          />
-                        ) : null}
                         {!profile.is_active ? (
                           <Chip
                             size="small"
@@ -319,27 +310,6 @@ export default function ConnectorProfiles() {
                               <EditIcon fontSize="small" />
                             </IconButton>
                           </Tooltip>
-                          {profile.is_active && !profile.is_default ? (
-                            <Tooltip
-                              title={t('connector_profile_set_default', {
-                                defaultValue: 'Set as default',
-                              })}
-                            >
-                              <IconButton
-                                size="small"
-                                onClick={() =>
-                                  runAction(
-                                    () => setConnectorProfileDefault(profile.id),
-                                    t('connector_profile_default_set', {
-                                      defaultValue: 'Default profile updated.',
-                                    }),
-                                  )
-                                }
-                              >
-                                <StarBorderIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                          ) : null}
                           {profile.is_active ? (
                             <Tooltip
                               title={t('connector_profile_deactivate', {

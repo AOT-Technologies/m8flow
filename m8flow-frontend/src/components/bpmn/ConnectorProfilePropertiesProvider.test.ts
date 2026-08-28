@@ -107,7 +107,6 @@ const profile = (over: Partial<ConnectorProfile>): ConnectorProfile => ({
   config: {},
   configured_secrets: [],
   is_active: true,
-  is_default: false,
   ...over,
 });
 
@@ -412,16 +411,6 @@ describe('ConnectorProfileSelect options', () => {
 
     const options = optionsFor(makeServiceTask('smtp/SendHTMLEmail'));
     expect(options.map((o: any) => o.value)).toEqual(['', 'live']);
-  });
-
-  it('marks the default profile', () => {
-    primeConnectorProfiles(
-      [smtpTemplate()],
-      [profile({ display_name: 'Production', is_default: true })],
-    );
-
-    const options = optionsFor(makeServiceTask('smtp/SendHTMLEmail'));
-    expect(options[1].label).toBe('Production (default)');
   });
 
   it('offers only the None option when nothing is saved yet', () => {

@@ -58,7 +58,6 @@ class _StubProfile:
         self.config_json = kwargs.get("config_json", {})
         self.secret_refs = kwargs.get("secret_refs", {})
         self.is_active = kwargs.get("is_active", True)
-        self.is_default = kwargs.get("is_default", False)
 
 
 @pytest.fixture
@@ -280,13 +279,10 @@ def no_commit(monkeypatch):
     monkeypatch.setattr(db, "session", mock_session)
 
 
-def test_deactivate_clears_the_default_flag(monkeypatch, backend, no_commit):
-    """A deactivated profile must not stay the default.
-
-    Otherwise the tenant is left with a default that cannot be used, and the
-    modeler dropdown offers a profile every run will reject.
-    """
-    profile = _StubProfile(is_active=True, is_default=True)
+def test_deactivate_is_a_soft_delete(monkeypatch, backend, no_commit):
+    """Deactivating clears is_active but leaves the row and its secrets in
+    place, so the profile stays recoverable."""
+    profile = _StubProfile(is_active=True)
     monkeypatch.setattr(
         ConnectorProfileService, "get_profile", classmethod(lambda cls, _id: profile)
     )
@@ -294,7 +290,6 @@ def test_deactivate_clears_the_default_flag(monkeypatch, backend, no_commit):
     ConnectorProfileService.deactivate_profile(profile.id)
 
     assert profile.is_active is False
-    assert profile.is_default is False
 
 
 def test_delete_removes_the_row_before_the_secrets(monkeypatch, backend, no_commit):

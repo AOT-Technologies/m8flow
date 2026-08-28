@@ -14,7 +14,22 @@ from m8flow_backend.services import connector_profile_migration as migration
 @pytest.fixture
 def seeded(monkeypatch):
     """Fake the secret reads and the profile writes."""
-    state: dict = {"secrets": {}, "profiles": [], "created": []}
+    state: dict = {"secrets": {}, "profiles": [], "created": [], "audits": []}
+
+    # Capture audit events instead of writing them: these tests run with no app
+    # context, and the point is to assert on what gets recorded.
+    monkeypatch.setattr(
+        migration,
+        "_audit",
+        lambda event_type, status, message, **kwargs: state["audits"].append(
+            {
+                "event_type": event_type,
+                "status": status,
+                "message": message,
+                **kwargs,
+            }
+        ),
+    )
 
     monkeypatch.setattr(
         migration,
@@ -48,7 +63,6 @@ def seeded(monkeypatch):
                     "connector_type": body["connector_type"],
                     "profile_name": body["profile_name"],
                     "config": body["config"],
-                    "is_default": body.get("is_default"),
                 },
             )()
             state["created"].append(body)
@@ -79,7 +93,6 @@ def test_seeds_a_default_profile_from_stored_secrets(seeded):
     assert result is not None
     body = seeded["created"][0]
     assert body["profile_name"] == "default"
-    assert body["is_default"] is True
     # Old display-oriented keys become the proxy's keyword arguments.
     assert body["config"] == {
         "smtp_host": "smtp.example.com",
@@ -244,3 +257,109 @@ def test_mapped_values_pass_phase_one_validation():
     for connector_type, values in sample.items():
         _, errors = validate_profile(get_connector(connector_type), values)
         assert errors == [], f"{connector_type}: {errors}"
+
+
+# ------------------------------------------------------------------- auditing
+
+
+def test_a_successful_seed_is_audited_with_field_names_only(seeded):
+    """The audit row records which fields were seeded, never their values."""
+    seeded["secrets"] = {"SMTP_HOST": "smtp.example.com", "SMTP_PASSWORD": "hunter2"}
+
+    migration.seed_default_profile("smtp")
+
+    event = seeded["audits"][0]
+    assert event["event_type"] == "connector_profile.seed.succeeded"
+    assert event["status"] == "success"
+    assert event["connector_type"] == "smtp"
+    assert event["seeded_fields"] == ["smtp_host", "smtp_password"]
+
+    # The credentials themselves must not appear anywhere in the event.
+    assert "hunter2" not in repr(event)
+    assert "smtp.example.com" not in repr(event)
+
+
+def test_a_validation_failure_is_audited(seeded, monkeypatch):
+    """A best-effort skip still has to leave a record behind."""
+    from m8flow_backend.services import connector_profile_service as service
+
+    seeded["secrets"] = {"SMTP_HOST": "h"}
+
+    def boom(body, user_id):
+        raise service.ConnectorProfileError("missing password", status_code=400)
+
+    monkeypatch.setattr(service.ConnectorProfileService, "create_profile", boom)
+
+    assert migration.seed_default_profile("smtp") is None
+
+    event = seeded["audits"][0]
+    assert event["event_type"] == "connector_profile.seed.failed"
+    assert event["status"] == "failed"
+    assert event["severity"] == "warning"
+    assert "missing password" in event["message"]
+
+
+def test_an_unseedable_secret_is_audited_as_skipped(seeded):
+    seeded["secrets"] = {"GITHUB_PAT_TOKEN": "ghp_x"}
+
+    migration.report_unseedable_secrets()
+
+    event = seeded["audits"][0]
+    assert event["event_type"] == "connector_profile.seed.skipped"
+    assert event["status"] == "skipped"
+    assert event["secret_key"] == "GITHUB_PAT_TOKEN"
+    assert "ghp_x" not in repr(event)
+
+
+def test_audit_helper_actually_persists_a_row() -> None:
+    """The tests above stub ``_audit``; this one exercises the real thing.
+
+    Without it a mistake in the helper -- a bad column, a missing context guard
+    -- would be invisible, because ``try_record_event`` swallows its own errors.
+
+    A tenant-scoped request context is required because m8flow_audit_log carries
+    m8f_tenant_id: the flush listener stamps it and refuses to write without one.
+    That is exactly the context the only caller (the profile listing route) runs
+    in.
+    """
+    from flask import Flask, g
+
+    from m8flow_backend.models.audit_log import AuditLogModel
+    from m8flow_backend.models.m8flow_tenant import M8flowTenantModel  # noqa: F401
+    from m8flow_backend.models.process_model_bpmn_version import (  # noqa: F401
+        ProcessModelBpmnVersionModel,
+    )
+    from spiffworkflow_backend.models.db import add_listeners, db
+
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+    db.init_app(app)
+
+    with app.test_request_context("/"):
+        db.create_all()
+        add_listeners()
+        g.m8flow_tenant_id = "tenant-a"
+
+        migration._audit(
+            "connector_profile.seed.succeeded",
+            "success",
+            "Seeded the default smtp profile from existing secrets.",
+            resource_id=7,
+            connector_type="smtp",
+            seeded_fields=["smtp_host", "smtp_password"],
+        )
+
+        row = AuditLogModel.query.one()
+        assert row.category == migration.AUDIT_CATEGORY
+        assert row.source == migration.AUDIT_SOURCE
+        assert row.event_type == "connector_profile.seed.succeeded"
+        assert row.status == "success"
+        assert row.resource_id == "7"
+        assert row.m8f_tenant_id == "tenant-a"
+        assert row.details["seeded_fields"] == ["smtp_host", "smtp_password"]
+
+
+def test_audit_outside_an_app_context_is_a_no_op() -> None:
+    """Seeding must never fail because auditing could not run."""
+    migration._audit("connector_profile.seed.failed", "failed", "offline")

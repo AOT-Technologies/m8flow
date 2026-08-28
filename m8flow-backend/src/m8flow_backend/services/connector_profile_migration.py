@@ -23,6 +23,50 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# Audit conventions, matching the vault events already in m8flow_audit_log.
+AUDIT_CATEGORY = "connector_profile"
+AUDIT_SOURCE = "connector_profile_migration"
+
+
+def _audit(
+    event_type: str,
+    status: str,
+    message: str,
+    *,
+    severity: str = "info",
+    resource_id: Any = None,
+    **details: Any,
+) -> None:
+    """Record a seeding event, best effort.
+
+    Seeding copies a tenant's credentials, so each outcome belongs in
+    m8flow_audit_log and not only in the application log. ``try_record_event``
+    fills in tenant, actor and request ids from the request context, redacts the
+    payload and swallows its own errors, so this can never break a seed.
+
+    Only field *names* are ever passed as details -- never a config value, which
+    would be a live credential.
+    """
+    from flask import has_app_context
+
+    if not has_app_context():
+        return
+
+    from m8flow_backend.services.audit_log_service import get_audit_log_service
+
+    get_audit_log_service().try_record_event(
+        category=AUDIT_CATEGORY,
+        event_type=event_type,
+        source=AUDIT_SOURCE,
+        status=status,
+        severity=severity,
+        message=message,
+        resource_type="connector_profile",
+        resource_id=resource_id,
+        details=details,
+    )
+
+
 # Old canonical Secret key -> the field name in the new pydantic definition.
 #
 # The two differ on purpose: the old keys are display-oriented and global
@@ -85,13 +129,21 @@ def _existing_secret_values(keys: list[str]) -> dict[str, str]:
     for row in rows:
         try:
             decrypted = SecretService._decrypt(row.value)
-        except Exception:
+        except Exception as exc:
             # A secret we cannot decrypt is not worth failing the whole seed for;
             # the tenant can re-enter that one field in the profile form.
             # codeql[py/clear-text-logging-sensitive-data]: row.key is the
             # Secret's key column (e.g. "SMTP_PASSWORD"), a fixed canonical
             # name. The value is row.value and is never logged.
             logger.warning("Could not decrypt secret '%s' while seeding", row.key)
+            _audit(
+                "connector_profile.seed.secret_unreadable",
+                "failed",
+                "A stored secret could not be decrypted while seeding.",
+                severity="warning",
+                secret_key=row.key,
+                error_type=type(exc).__name__,
+            )
             continue
         if decrypted not in (None, ""):
             values[row.key] = decrypted
@@ -151,7 +203,6 @@ def seed_default_profile(connector_type: str, user_id: int | None = None) -> Any
                     "process models keep working."
                 ),
                 "config": config,
-                "is_default": True,
             },
             user_id,
         )
@@ -162,6 +213,15 @@ def seed_default_profile(connector_type: str, user_id: int | None = None) -> Any
         logger.warning(
             "Could not seed a default %s profile: %s", connector_type, error.message
         )
+        _audit(
+            "connector_profile.seed.failed",
+            "failed",
+            f"Could not seed a default {connector_type} profile: {error.message}",
+            severity="warning",
+            connector_type=connector_type,
+            profile_name=DEFAULT_PROFILE_NAME,
+            validation_errors=error.errors,
+        )
         return None
 
     # codeql[py/clear-text-logging-sensitive-data]: sorted(config.keys()) yields
@@ -170,6 +230,16 @@ def seed_default_profile(connector_type: str, user_id: int | None = None) -> Any
         "Seeded default %s profile from existing secrets: %s",
         connector_type,
         ", ".join(sorted(config.keys())),
+    )
+    _audit(
+        "connector_profile.seed.succeeded",
+        "success",
+        f"Seeded the default {connector_type} profile from existing secrets.",
+        connector_type=connector_type,
+        profile_name=DEFAULT_PROFILE_NAME,
+        resource_id=getattr(profile, "id", None),
+        # Field names only. The values are the credentials themselves.
+        seeded_fields=sorted(config.keys()),
     )
     return profile
 
@@ -188,6 +258,13 @@ def report_unseedable_secrets() -> list[str]:
             "Configure that connector's profile by hand.",
             key,
             UNMAPPED_SECRET_KEYS[key],
+        )
+        _audit(
+            "connector_profile.seed.skipped",
+            "skipped",
+            f"Secret '{key}' cannot be carried into a connector profile.",
+            secret_key=key,
+            reason=UNMAPPED_SECRET_KEYS[key],
         )
     return present
 

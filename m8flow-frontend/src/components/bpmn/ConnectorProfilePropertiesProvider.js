@@ -162,9 +162,7 @@ export function ConnectorProfileSelect(props) {
   const getOptions = () => [
     { label: translate('None - set parameters manually'), value: '' },
     ...profilesFor(connectorType).map((profile) => ({
-      label: profile.is_default
-        ? `${profile.display_name} (${translate('default')})`
-        : profile.display_name,
+      label: profile.display_name,
       value: profile.profile_name,
     })),
   ];

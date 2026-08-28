@@ -167,7 +167,6 @@ class ConnectorProfileService:
             config_json=config_values,
             secret_refs={},
             is_active=True,
-            is_default=False,
             user_id=user_id,
         )
         db.session.add(profile)
@@ -177,7 +176,6 @@ class ConnectorProfileService:
 
         profile.secret_refs = cls._write_secrets(profile.id, secret_values, user_id)
 
-        cls._apply_default_flag(profile, bool(body.get("is_default")))
         db.session.commit()
         logger.info(
             "Created connector profile '%s' for connector '%s' (id=%s)",
@@ -203,9 +201,6 @@ class ConnectorProfileService:
 
         if "config" in body:
             cls._update_config(profile, definition, dict(body["config"] or {}), user_id)
-
-        if "is_default" in body:
-            cls._apply_default_flag(profile, bool(body["is_default"]))
 
         db.session.commit()
         return profile
@@ -268,17 +263,6 @@ class ConnectorProfileService:
         profile.secret_refs = refs
 
     @classmethod
-    def set_default(cls, configuration_id: int) -> ConnectorConfigurationModel:
-        profile = cls.get_profile(configuration_id)
-        if not profile.is_active:
-            raise ConnectorProfileError(
-                "An inactive profile cannot be made the default.", status_code=400
-            )
-        cls._apply_default_flag(profile, True)
-        db.session.commit()
-        return profile
-
-    @classmethod
     def deactivate_profile(cls, configuration_id: int) -> ConnectorConfigurationModel:
         """Soft delete.
 
@@ -288,9 +272,6 @@ class ConnectorProfileService:
         """
         profile = cls.get_profile(configuration_id)
         profile.is_active = False
-        # A deactivated profile must not stay the default, or the tenant is left
-        # with a default that cannot be used.
-        profile.is_default = False
         db.session.commit()
         return profile
 
@@ -476,30 +457,3 @@ class ConnectorProfileService:
             ) from exc
         return refs
 
-    @classmethod
-    def _apply_default_flag(
-        cls, profile: ConnectorConfigurationModel, make_default: bool
-    ) -> None:
-        """At most one default per (tenant, connector type).
-
-        Enforced here as well as by the partial unique index, because that index
-        is Postgres-only.
-        """
-        if not make_default:
-            profile.is_default = False
-            return
-
-        for sibling in (
-            cls._tenant_query()
-            .filter(
-                ConnectorConfigurationModel.connector_type == profile.connector_type
-            )
-            .filter(ConnectorConfigurationModel.is_default.is_(True))
-            .all()
-        ):
-            if sibling.id != profile.id:
-                sibling.is_default = False
-        # Clear the losers before claiming the flag, or the partial unique index
-        # sees two defaults mid-statement.
-        db.session.flush()
-        profile.is_default = True

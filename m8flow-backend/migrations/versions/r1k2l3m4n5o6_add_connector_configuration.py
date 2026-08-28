@@ -44,7 +44,6 @@ def upgrade():
         sa.Column("config_json", sa.JSON(), nullable=False),
         sa.Column("secret_refs", sa.JSON(), nullable=False),
         sa.Column("is_active", sa.Boolean(), nullable=False),
-        sa.Column("is_default", sa.Boolean(), nullable=False),
         sa.Column("user_id", sa.Integer(), nullable=True),
         sa.Column("created_at_in_seconds", sa.Integer(), nullable=False),
         sa.Column("updated_at_in_seconds", sa.Integer(), nullable=False),
@@ -78,15 +77,6 @@ def upgrade():
     if not _is_postgres():
         return
 
-    # At most one default profile per (tenant, connector type). Partial indexes
-    # are Postgres-only; the app layer enforces the same rule regardless.
-    op.execute(
-        sa.text(
-            "CREATE UNIQUE INDEX uq_m8flow_connector_configuration_default "
-            f"ON {TABLE} (m8f_tenant_id, connector_type) WHERE is_default"
-        )
-    )
-
     op.execute(sa.text(f"ALTER TABLE {TABLE} ENABLE ROW LEVEL SECURITY"))
     op.execute(sa.text(f"DROP POLICY IF EXISTS {TABLE}_tenant_isolation ON {TABLE}"))
     op.execute(
@@ -108,7 +98,6 @@ def downgrade():
     if _is_postgres():
         op.execute(sa.text(f"DROP POLICY IF EXISTS {TABLE}_super_admin_select ON {TABLE}"))
         op.execute(sa.text(f"DROP POLICY IF EXISTS {TABLE}_tenant_isolation ON {TABLE}"))
-        op.execute(sa.text("DROP INDEX IF EXISTS uq_m8flow_connector_configuration_default"))
 
     with op.batch_alter_table(TABLE, schema=None) as batch_op:
         batch_op.drop_index("ix_m8flow_connector_configuration_tenant_active")

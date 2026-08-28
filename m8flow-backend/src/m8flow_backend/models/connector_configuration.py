@@ -66,7 +66,6 @@ class ConnectorConfigurationModel(SpiffworkflowBaseDBModel, AuditDateTimeMixin):
     # Soft delete. An inactive profile leaves the modeler dropdown, and a run
     # still naming it fails loudly rather than silently sending no credentials.
     is_active = db.Column(db.Boolean, nullable=False, default=True)
-    is_default = db.Column(db.Boolean, nullable=False, default=False)
 
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
 
@@ -81,7 +80,6 @@ class ConnectorConfigurationModel(SpiffworkflowBaseDBModel, AuditDateTimeMixin):
             "config": dict(self.config_json or {}),
             "configured_secrets": sorted((self.secret_refs or {}).keys()),
             "is_active": self.is_active,
-            "is_default": self.is_default,
             "created_at_in_seconds": self.created_at_in_seconds,
             "updated_at_in_seconds": self.updated_at_in_seconds,
         }

@@ -2989,26 +2989,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /connector-profiles/{profile_id}/default:
-    parameters:
-      - name: profile_id
-        in: path
-        required: true
-        schema:
-          type: integer
-    post:
-      operationId: m8flow_backend.routes.connector_profiles_controller.connector_profile_set_default
-      summary: Make this the default profile for its connector
-      tags:
-        - Connectors
-      responses:
-        "200":
-          description: The profile, now default
-          content:
-            application/json:
-              schema:
-                type: object
-
 components:
   schemas:
     HealthResponse:

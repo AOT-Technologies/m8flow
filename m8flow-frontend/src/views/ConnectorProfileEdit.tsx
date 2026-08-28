@@ -11,10 +11,8 @@ import {
   Box,
   Breadcrumbs,
   Button,
-  Checkbox,
   CircularProgress,
   Divider,
-  FormControlLabel,
   IconButton,
   InputAdornment,
   Link,
@@ -101,7 +99,6 @@ export default function ConnectorProfileEdit() {
   const [profileName, setProfileName] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [description, setDescription] = useState('');
-  const [isDefault, setIsDefault] = useState(false);
   const [values, setValues] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [visible, setVisible] = useState<Record<string, boolean>>({});
@@ -129,7 +126,6 @@ export default function ConnectorProfileEdit() {
         setProfileName(profile.profile_name);
         setDisplayName(profile.display_name);
         setDescription(profile.description ?? '');
-        setIsDefault(profile.is_default);
         // Config values round-trip; secrets never come back, so their inputs
         // start empty and mean "leave unchanged".
         const initial: Record<string, string> = {};
@@ -246,7 +242,6 @@ export default function ConnectorProfileEdit() {
           display_name: displayName.trim() || profileName,
           description: description.trim() || null,
           config,
-          is_default: isDefault,
         });
       } else {
         await createConnectorProfile({
@@ -255,7 +250,6 @@ export default function ConnectorProfileEdit() {
           display_name: displayName.trim() || profileName.trim(),
           description: description.trim() || null,
           config,
-          is_default: isDefault,
         });
       }
       navigate(`/connectors/${connectorId}/profiles`);
@@ -358,18 +352,6 @@ export default function ConnectorProfileEdit() {
               minRows={2}
               fullWidth
             />
-            <FormControlLabel
-              control={
-                <Checkbox
-                  checked={isDefault}
-                  onChange={(event) => setIsDefault(event.target.checked)}
-                />
-              }
-              label={t('connector_profile_is_default', {
-                defaultValue: 'Use as the default profile for this connector',
-              })}
-            />
-
             {grouped.map(({ group, fields: groupFields }) => (
               <Box key={group.id || 'default'}>
                 <Divider sx={{ my: 1 }} />
