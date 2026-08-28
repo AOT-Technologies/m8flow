@@ -150,7 +150,9 @@ permissions:
     actions: [read]
     uri: /processes/*
   run-all-process-models:
-    groups: ["tenant-admin", "editor","submitter"]
+    # "start" is the process-model macro permission. The actual POST
+    # /process-instances/{model_id} route is authorized as HTTP "create".
+    groups: ["tenant-admin", "editor", "submitter", "super-admin"]
     actions: [start]
     uri: PM:ALL
     command: process.start
@@ -232,6 +234,55 @@ permissions:
     groups: ["tenant-admin", "editor", "integrator", "super-admin"]
     actions: [read]
     uri: /m8flow/connectors-grouped
+  # Connector schemas are code, not tenant data: anyone who can open the modeler
+  # needs them for the profile dropdown to render.
+  read-connector-templates:
+    groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter", "integrator", "super-admin"]
+    actions: [read]
+    uri: /m8flow/connector-templates
+  read-connector-template-items:
+    groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter", "integrator", "super-admin"]
+    actions: [read]
+    uri: /m8flow/connector-templates/*
+  # Profile reads are open to modeler users so the dropdown can populate. No
+  # response carries a secret value -- only the names of fields that have one --
+  # so a read grant leaks no credential.
+  read-connector-profiles:
+    groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter", "integrator", "super-admin"]
+    actions: [read]
+    uri: /m8flow/connector-profiles
+  read-connector-profile-items:
+    groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter", "integrator", "super-admin"]
+    actions: [read]
+    uri: /m8flow/connector-profiles/*
+  # Writes enter and overwrite credentials, so they match the gate on the
+  # existing Connectors > Configure page: secret-write-capable roles only.
+  manage-connector-profiles:
+    groups: ["tenant-admin", "integrator"]
+    actions: [create, update, delete]
+    uri: /m8flow/connector-profiles
+  manage-connector-profile-items:
+    groups: ["tenant-admin", "integrator"]
+    actions: [create, update, delete]
+    uri: /m8flow/connector-profiles/*
+  # Editors need this one to see the missing-SMTP warning in the BPMN modeler's External
+  # Form group. It returns secret key names and configuration flags only, never values.
+  read-external-form-smtp-status:
+    groups: ["tenant-admin", "editor", "super-admin"]
+    actions: [read]
+    uri: /m8flow/external-form-notifications/smtp-status
+  read-external-form-notifications:
+    groups: ["tenant-admin", "super-admin"]
+    actions: [read]
+    uri: /m8flow/external-form-notifications
+  read-external-form-notification-items:
+    groups: ["tenant-admin", "super-admin"]
+    actions: [read]
+    uri: /m8flow/external-form-notifications/*
+  resend-external-form-notifications:
+    groups: ["tenant-admin", "super-admin"]
+    actions: [create]
+    uri: /m8flow/external-form-notifications/*
   read-mcp-connection-page:
     groups: ["everybody"]
     actions: [read]
@@ -350,6 +401,12 @@ permissions:
     actions: [read]
     uri: /tasks/*
     command: task.read
+  # Super-admin task form actions hit POST /tasks/* save-draft and PUT /tasks/* submit.
+  # Grant create+update for those task-form flows, but do not grant delete.
+  manage-task-forms:
+    groups: ["super-admin"]
+    actions: [create, update]
+    uri: /tasks/*
   # Task data (form values) shown on the Process Instance page when a task is clicked.
   # Mirrors read-tasks' audience so super-admins/viewers can inspect task data across tenants.
   # READ ONLY by design -- do NOT add update/PUT: super-admin RLS bypass is SELECT-only, and

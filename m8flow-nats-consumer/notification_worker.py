@@ -12,6 +12,7 @@ always ACKed — failures are recorded on the row and retried by the sweep inste
 of through NATS redelivery.
 """
 import asyncio
+import functools
 import json
 import logging
 import os
@@ -81,13 +82,68 @@ def _notify_one(tenant_id: str, reference_id: str) -> str:
             reset_context_tenant_id(token)
 
 
+def _in_tenant_context(tenant_id: str, work):
+    """Run `work()` inside an app context with `tenant_id` active, rolling back on error.
+
+    Same contract as _notify_one but for whole-tenant operations, so a tenant's SMTP
+    secrets are resolved once per sweep instead of once per request."""
+    from spiffworkflow_backend.models.db import db
+    from m8flow_backend.tenancy import set_context_tenant_id, reset_context_tenant_id
+
+    with flask_app.app_context():
+        token = set_context_tenant_id(tenant_id)
+        try:
+            return work()
+        except Exception:
+            db.session.rollback()
+            raise
+        finally:
+            reset_context_tenant_id(token)
+
+
+def _revive_reconfigured_tenants() -> None:
+    """Bring parked requests back once a tenant has configured its SMTP secrets.
+
+    Requests parked as smtp_unconfigured are invisible to sweep_candidates by design, so
+    without this pass they would stay stuck even after an admin fixes the configuration."""
+    from m8flow_backend.services.external_form_notification_service import ExternalFormNotificationService
+
+    with flask_app.app_context():
+        tenant_ids = ExternalFormNotificationService.tenants_with_parked_requests()
+
+    for tenant_id in tenant_ids:
+        try:
+
+            def revive_if_configured() -> int:
+                if not ExternalFormNotificationService.smtp_readiness()["ok"]:
+                    return 0
+                # UPDATEs bypass the SELECT tenant listener — pin tenant_id explicitly.
+                return ExternalFormNotificationService.revive_smtp_unconfigured(tenant_id=tenant_id)
+
+            revived = _in_tenant_context(tenant_id, revive_if_configured)
+            if revived:
+                logger.info(
+                    "Sweep revived %s parked request(s) for tenant=%s now that SMTP is configured.",
+                    revived,
+                    tenant_id,
+                )
+        except Exception:
+            logger.exception("Sweep revive check failed for tenant=%s", tenant_id)
+
+
 def _run_sweep() -> None:
     """One sweep pass: find requests still owed an email and send them.
 
     sweep_candidates runs cross-tenant (the tracking table is not tenant-row-locked);
     each send then runs under the owning row's tenant context. The atomic claim makes
-    racing the event fast-path harmless."""
+    racing the event fast-path harmless.
+
+    Candidates are grouped by tenant so SMTP configuration is checked once per tenant.
+    An unconfigured tenant parks all of its candidates in one statement and logs once,
+    instead of decrypting secrets and warning per row on every interval forever."""
     from m8flow_backend.services.external_form_notification_service import ExternalFormNotificationService
+
+    _revive_reconfigured_tenants()
 
     with flask_app.app_context():
         candidates = ExternalFormNotificationService.sweep_candidates()
@@ -95,13 +151,48 @@ def _run_sweep() -> None:
     if not candidates:
         return
 
-    logger.info("Sweep found %s request(s) owed an email.", len(candidates))
-    for _request_id, reference_id, tenant_id in candidates:
+    by_tenant: dict[str, list[tuple[int, str]]] = {}
+    for request_id, reference_id, tenant_id in candidates:
+        by_tenant.setdefault(tenant_id, []).append((request_id, reference_id))
+
+    logger.info("Sweep found %s request(s) owed an email across %s tenant(s).", len(candidates), len(by_tenant))
+    for tenant_id, rows in by_tenant.items():
         try:
-            result = _notify_one(tenant_id, reference_id)
-            logger.info("Sweep notify reference=%s…: %s", reference_id[:8], result)
+            readiness = _in_tenant_context(tenant_id, ExternalFormNotificationService.smtp_readiness)
         except Exception:
-            logger.exception("Sweep notify failed for reference=%s… (tenant=%s)", reference_id[:8], tenant_id)
+            logger.exception("Sweep could not read SMTP configuration for tenant=%s", tenant_id)
+            continue
+
+        if not readiness["ok"]:
+            try:
+                request_ids = [request_id for request_id, _ in rows]
+                parked = _in_tenant_context(
+                    tenant_id,
+                    functools.partial(
+                        ExternalFormNotificationService.mark_smtp_unconfigured,
+                        request_ids,
+                        readiness["reason"],
+                    ),
+                )
+            except Exception:
+                logger.exception("Sweep could not park requests for tenant=%s", tenant_id)
+                continue
+            logger.error(
+                "Sweep: tenant=%s cannot send external form emails; parked %s request(s) as"
+                " smtp_unconfigured and stopped retrying them. %s"
+                " Fix this under Configuration > Secrets to resume delivery.",
+                tenant_id,
+                parked,
+                readiness["reason"],
+            )
+            continue
+
+        for _request_id, reference_id in rows:
+            try:
+                result = _notify_one(tenant_id, reference_id)
+                logger.info("Sweep notify reference=%s…: %s", reference_id[:8], result)
+            except Exception:
+                logger.exception("Sweep notify failed for reference=%s… (tenant=%s)", reference_id[:8], tenant_id)
 
 
 async def sweep_loop() -> None:

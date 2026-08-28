@@ -26,7 +26,15 @@ from m8flow_backend.startup.shared_realm_bootstrap import resolve_default_shared
 logger = logging.getLogger(__name__)
 
 SYSTEM_USER = "system"
-VERSION = "V1"
+
+# Bumped to V2 when the shipped templates moved from hardcoded
+# "M8FLOW_SECRET:..." parameters to a connector profile (m8flow_profile).
+#
+# The version is part of the skip check below, so an existing install that
+# already holds the V1 rows still receives V2. Nothing is overwritten: a tenant
+# keeps any edits made to its V1 copy, and the gallery lists only the newest
+# version per template key (TemplateService.list_templates, latest_only).
+VERSION = "V2"
 UNIQUE_TEMPLATE_CONSTRAINT = "uq_template_key_version_tenant"
 
 _SAMPLE_TEMPLATES_DIR = os.path.join(
@@ -136,9 +144,17 @@ def load_sample_templates(flask_app) -> None:  # noqa: ANN001
                     skipped += 1
                     continue
 
+                # Keyed on the version too, matching uq_template_key_version_tenant.
+                # Without the version this skips on template_key alone, so a
+                # tenant that already has V1 would never receive a newer
+                # revision of a shipped template.
                 existing = (
                     TemplateModel.query
-                    .filter_by(template_key=template_key, m8f_tenant_id=tenant_id)
+                    .filter_by(
+                        template_key=template_key,
+                        version=VERSION,
+                        m8f_tenant_id=tenant_id,
+                    )
                     .first()
                 )
                 if existing is not None:
@@ -151,7 +167,11 @@ def load_sample_templates(flask_app) -> None:  # noqa: ANN001
                         )
                     ]
                     if not missing_files:
-                        logger.info("Sample template '%s' already exists; skipping", template_key)
+                        logger.info(
+                        "Sample template '%s' %s already exists; skipping",
+                        template_key,
+                        VERSION,
+                    )
                         skipped += 1
                         continue
 

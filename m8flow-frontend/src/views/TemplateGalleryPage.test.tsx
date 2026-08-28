@@ -91,12 +91,18 @@ vi.mock("@spiffworkflow-frontend/components/PaginationForTable", () => ({
 vi.mock("../components/TemplateCard", () => ({
   default: ({
     template,
+    showTenantContext,
     onDeleteTemplate,
     onRestoreTemplate,
     deleteDisabled,
     restoreDisabled,
   }: any) => (
     <div data-testid={`template-card-${template.id}`}>
+      {showTenantContext ? (
+        <span data-testid={`template-card-tenant-${template.id}`}>
+          {template.tenant?.name || template.tenant?.slug || template.tenantId || "--"}
+        </span>
+      ) : null}
       {onDeleteTemplate ? (
         <button
           data-testid={`template-card-delete-${template.id}`}
@@ -233,6 +239,58 @@ describe("TemplateGalleryPage", () => {
       expect(TemplateService.deleteTemplate).toHaveBeenCalledWith(1);
     });
     expect(fetchTemplatesMock).toHaveBeenCalled();
+  });
+
+  it("shows tenant context in card view for super admin", () => {
+    vi.mocked(UserService.isSuperAdmin).mockReturnValue(true);
+    vi.mocked(useTemplates).mockReturnValue({
+      templates: [
+        makeTemplate({
+          tenantId: "tenant-a",
+          tenant: { id: "tenant-a", name: "Acme Corp", slug: "acme" },
+        }),
+      ],
+      pagination: { count: 1, total: 1, pages: 1 },
+      templatesLoading: false,
+      loadedTenantId: undefined,
+      templateByIdLoading: false,
+      templateByKeyLoading: false,
+      error: null,
+      fetchTemplates: fetchTemplatesMock,
+      fetchTemplateById: vi.fn(),
+      fetchTemplateByKey: vi.fn(),
+    } as any);
+
+    renderPage();
+
+    expect(screen.getByTestId("template-card-tenant-1")).toHaveTextContent("Acme Corp");
+  });
+
+  it("shows tenant column in table view for super admin", () => {
+    vi.mocked(UserService.isSuperAdmin).mockReturnValue(true);
+    vi.mocked(useTemplates).mockReturnValue({
+      templates: [
+        makeTemplate({
+          tenantId: "tenant-a",
+          tenant: { id: "tenant-a", name: "Acme Corp", slug: "acme" },
+        }),
+      ],
+      pagination: { count: 1, total: 1, pages: 1 },
+      templatesLoading: false,
+      loadedTenantId: undefined,
+      templateByIdLoading: false,
+      templateByKeyLoading: false,
+      error: null,
+      fetchTemplates: fetchTemplatesMock,
+      fetchTemplateById: vi.fn(),
+      fetchTemplateByKey: vi.fn(),
+    } as any);
+
+    renderPage();
+    fireEvent.click(screen.getByTestId("template-gallery-view-table"));
+
+    expect(screen.getByText("tenant")).toBeInTheDocument();
+    expect(screen.getByText("Acme Corp")).toBeInTheDocument();
   });
 
   it("disables published delete for users without admin permission in table view", async () => {

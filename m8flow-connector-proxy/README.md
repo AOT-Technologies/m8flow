@@ -44,6 +44,12 @@ When you cut a new m8flow release tag, add a new row for it here (and update the
 3. Regenerate `poetry.lock` (do **not** rebuild from a floating branch).
 4. Update the **m8flow → m8flow-connectors** mapping table above.
 5. Ship those changes together with your m8flow release PR so the release is reproducible later.
+6. Verify the connector profile definitions still match: with the proxy running,
+   `python bin/check-connector-fields.py`. The proxy builds each command as
+   `command(**params)`, so a renamed parameter would make the matching profile
+   field silently stop being sent. The offline guard is
+   `test_field_names_are_real_proxy_parameters` in
+   `m8flow-backend/tests/unit/m8flow_backend/connectors/test_definitions.py`.
 
 ## How to Access Connectors
 

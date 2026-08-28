@@ -276,6 +276,7 @@
   "operation": "operation",
   "operations": "operations",
   "configure": "Configure",
+  "connector_configure_count": "Configure ({{count}})",
   "view_operations": "View Operations",
   "connector_operations": "{{name}} Operations",
   "available": "Available",
@@ -286,15 +287,6 @@
   "no_connectors_available": "No connectors are available at this time.",
   "no_matching_connectors": "No connectors match your search.",
   "connectors_load_failed": "Could not load connectors. Check that the connector proxy is running and configured.",
-  "connector_configure_title": "Configure {{name}}",
-  "connector_config_subtitle": "Enter the credentials this connector needs. Values are saved as secrets and can be referenced from Service Tasks.",
-  "connector_config_save": "Save configuration",
-  "connector_config_saved": "Connector configuration saved.",
-  "connector_config_save_failed": "Could not save the connector configuration. Please try again.",
-  "connector_config_load_failed": "Could not load the connector configuration.",
-  "connector_config_field_set": "Configured",
-  "connector_config_leave_blank_hint": "Leave blank to keep the current value",
-  "connector_config_reference_hint": "Reference in a Service Task as",
   "connector_config_required_field": "This field is required.",
   "connector_config_whitespace_only": "This field cannot be only spaces.",
   "connector_config_invalid_url": "Enter a valid URL, including http:// or https://.",
@@ -459,5 +451,7 @@
   "continuing_into_tenant": "Continuing into {{tenant}}...",
   "select_a_tenant": "Select a Tenant",
   "multi_tenant_choose_description": "Your account has access to more than one tenant. Choose the tenant you want to enter for this session.",
-  "owner": "Owner"
+  "owner": "Owner",
+  "external_form_smtp_missing_hint": "External form notification emails cannot be sent: this tenant is missing the following secrets. Add them here to start delivering secure links.",
+  "external_form_smtp_configured_hint": "External form notification emails are configured. They use these secrets:"
 }

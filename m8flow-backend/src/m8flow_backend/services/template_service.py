@@ -25,6 +25,7 @@ from spiffworkflow_backend.services.spec_file_service import SpecFileService
 from m8flow_backend.models.process_model_template import ProcessModelTemplateModel
 from m8flow_backend.models.template import TemplateModel, TemplateVisibility
 from m8flow_backend.services.template_authorization_service import TemplateAuthorizationService
+from m8flow_backend.services.tenant_scoping_patch import skip_automatic_tenant_scope
 from m8flow_backend.tenancy import is_super_admin_request
 from m8flow_backend.services.template_storage_service import (
     FilesystemTemplateStorageService,
@@ -53,6 +54,30 @@ class TemplateService:
     """Service for CRUD, versioning, and visibility enforcement for templates."""
 
     storage: TemplateStorageService = FilesystemTemplateStorageService()
+
+    @staticmethod
+    def _query_with_cross_tenant_visibility() -> Any:
+        """Return a template query that may intentionally inspect cross-tenant rows.
+
+        Only template reads that need PUBLIC fallback or super-admin overview
+        should opt out of the default ORM tenant scope. All other template query
+        sites stay protected by the global tenant filter.
+        """
+        return skip_automatic_tenant_scope(TemplateModel.query)
+
+    @staticmethod
+    def _require_active_tenant_context() -> str:
+        """Return the active tenant id for tenant-admin template mutations.
+
+        Delete/restore are tenant-scoped write operations. They must run with an
+        explicit active tenant in request context rather than silently falling
+        back to template ownership, which would turn a missing-boundary problem
+        into an authorization decision.
+        """
+        tenant_id = getattr(g, "m8flow_tenant_id", None)
+        if not isinstance(tenant_id, str) or not tenant_id.strip():
+            raise ApiError("tenant_required", TENANT_REQUIRED_MESSAGE, status_code=400)
+        return tenant_id.strip()
 
     @staticmethod
     def _version_key(version: str) -> tuple:
@@ -87,6 +112,32 @@ class TemplateService:
 
         # If the latest version is in some unexpected/legacy format, start the V-series at V1
         return "V1"
+
+    @classmethod
+    def _prefer_template_rows_for_tenant(
+        cls,
+        rows: list[TemplateModel],
+        tenant_id: str | None,
+    ) -> list[TemplateModel]:
+        """Prefer tenant-owned rows over shared/public rows for the same lookup.
+
+        Template queries can intentionally return a mixed set:
+        - tenant-local rows for the active tenant, and
+        - public/shared rows visible across tenants.
+
+        When both exist for the same template key/version, the tenant-local row
+        should win because it is the tenant's explicit override. If no row is
+        owned by the active tenant, we keep the original result set so callers
+        can still fall back to the public/shared template.
+        """
+        if not tenant_id:
+            return rows
+
+        # Keep only rows owned by the active tenant when an override exists.
+        same_tenant_rows = [row for row in rows if row.m8f_tenant_id == tenant_id]
+        # Otherwise preserve the broader result set so public/shared templates
+        # remain available to tenants that do not have a local copy.
+        return same_tenant_rows or rows
 
     @classmethod
     def _validate_template_name(cls, name: str) -> None:
@@ -251,7 +302,7 @@ class TemplateService:
         page: int = 1,
         per_page: int = 10,
     ) -> tuple[list[TemplateModel], dict]:
-        query = TemplateModel.query
+        query = cls._query_with_cross_tenant_visibility()
         query = TemplateAuthorizationService.filter_query_by_visibility(query, user=user)
         if deleted_only:
             query = query.filter(TemplateModel.is_deleted.is_(True))
@@ -362,13 +413,18 @@ class TemplateService:
         tenant_id: str | None = None,
         include_deleted: bool = False,
     ) -> TemplateModel | None:
-        """Get template by key, scoped to tenant."""
-        query = TemplateModel.query.filter_by(template_key=template_key)
-        
-        # Filter by tenant to ensure tenant isolation
+        """Get template by key with PUBLIC visibility fallback across tenants."""
+        query = cls._query_with_cross_tenant_visibility().filter_by(template_key=template_key)
+
+        is_super_admin = TemplateAuthorizationService._is_super_admin_request(user=user)
         tenant = tenant_id or getattr(g, "m8flow_tenant_id", None)
-        if tenant:
-            query = query.filter(TemplateModel.m8f_tenant_id == tenant)
+        if tenant and not is_super_admin:
+            query = query.filter(
+                or_(
+                    TemplateModel.m8f_tenant_id == tenant,
+                    TemplateModel.visibility == TemplateVisibility.public.value,
+                )
+            )
 
         if not include_deleted:
             # Exclude soft-deleted templates by default
@@ -378,12 +434,22 @@ class TemplateService:
             query = TemplateAuthorizationService.filter_query_by_visibility(query, user=user)
 
         if version:
-            return query.filter_by(version=version).first()
+            rows = query.filter_by(version=version).all()
+            rows = cls._prefer_template_rows_for_tenant(rows, tenant)
+            if not rows:
+                return None
+            return max(
+                rows,
+                key=lambda row: (
+                    getattr(row, "created_at_in_seconds", 0) or 0,
+                    getattr(row, "id", 0) or 0,
+                ),
+            )
 
-        # latest - already filtered by tenant above
         rows = query.all()
         if not rows:
             return None
+        rows = cls._prefer_template_rows_for_tenant(rows, tenant)
         return max(rows, key=lambda r: cls._version_key(r.version))
 
     @classmethod
@@ -394,7 +460,7 @@ class TemplateService:
         include_deleted: bool = False,
     ) -> TemplateModel | None:
         """Get template by database ID with visibility checks."""
-        query = TemplateModel.query.filter_by(id=template_id)
+        query = cls._query_with_cross_tenant_visibility().filter_by(id=template_id)
         if not include_deleted:
             query = query.filter(TemplateModel.is_deleted.is_(False))
         template = query.first()
@@ -663,6 +729,7 @@ class TemplateService:
         """
         if is_super_admin_request():
             raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
+        cls._require_active_tenant_context()
         template = cls.get_template_by_id(template_id, user=user, include_deleted=True)
         if template is None:
             raise ApiError("not_found", "Template not found", status_code=404)
@@ -671,10 +738,11 @@ class TemplateService:
             raise ApiError("not_found", "Template not found", status_code=404)
 
         is_template_admin = TemplateAuthorizationService.has_admin_permission(user, "delete")
+        same_tenant = TemplateAuthorizationService._is_current_tenant_template(template)
         username = user.username if user and hasattr(user, "username") else None
 
         if template.is_published:
-            if not is_template_admin:
+            if not (same_tenant and is_template_admin):
                 raise ApiError("forbidden", "Insufficient permissions to delete published templates", status_code=403)
 
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
@@ -687,7 +755,8 @@ class TemplateService:
             return
 
         can_hard_delete_draft = bool(
-            (username is not None and template.created_by == username) or is_template_admin
+            (same_tenant and username is not None and template.created_by == username)
+            or (same_tenant and is_template_admin)
         )
         if not can_hard_delete_draft:
             raise ApiError("forbidden", "You cannot delete this template", status_code=403)
@@ -726,6 +795,7 @@ class TemplateService:
         user: UserModel | None,
     ) -> TemplateModel:
         """Restore a previously soft-deleted template (tenant-admin only)."""
+        cls._require_active_tenant_context()
         template = cls.get_template_by_id(template_id, user=user, include_deleted=True)
         if template is None:
             raise ApiError("not_found", "Template not found", status_code=404)
@@ -733,7 +803,10 @@ class TemplateService:
         if not template.is_deleted:
             raise ApiError("invalid_state", "Template is not deleted", status_code=400)
 
-        if not TemplateAuthorizationService.has_admin_permission(user, "update"):
+        if not (
+            TemplateAuthorizationService._is_current_tenant_template(template)
+            and TemplateAuthorizationService.has_admin_permission(user, "update")
+        ):
             raise ApiError("forbidden", "Insufficient permissions to restore templates", status_code=403)
 
         # Expected soft-delete format: <name>_deleted_YYYYMMDDHHMMSS

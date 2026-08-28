@@ -80,6 +80,33 @@ Do not copy upstream source into the Apache-2.0-tracked trees.
 - If you intentionally and reviewably change an already-flagged file, regenerate
   the relevant baseline (`--write-baseline`) and have the diff reviewed.
 
+### Practical Rules To Avoid Copy-Gate Failures
+
+- Default to composition over copying:
+  - Frontend: wrap upstream components/pages via `@spiff-core` or the override
+    resolver and keep only the M8Flow-specific delta in the repo-owned file.
+  - Backend: patch or wrap the upstream service/controller behavior instead of
+    restating the upstream function body in a repo-owned file.
+- Do not copy upstream prop/type boilerplate just to preserve compatibility.
+  Prefer deriving contracts from the wrapped upstream export when possible
+  (for example `ComponentProps<typeof UpstreamComponent>` in frontend wrappers).
+- If an override needs extra UI data such as tenant labels, move that logic into
+  small repo-owned helpers/hooks/components rather than cloning the full upstream
+  page or table.
+- For shell entrypoints and startup scripts, do not keep the same step order,
+  helper names, comments, and final command layout as the upstream script.
+  Re-express the script in an M8Flow-native structure even when the runtime
+  behavior is similar.
+- Do not assume that renaming identifiers, reformatting, or deleting a few lines
+  is enough. The CPD gate is token-based and the raw-line gate also checks
+  contiguous copied blocks and containment.
+- Before finalizing any change that touches a repo-owned wrapper/override or a
+  script resembling an upstream script, run the local copy checks when feasible:
+  - `python bin/check-upstream-copying.py --diff origin/main`
+  - `python bin/check-upstream-cpd.py`
+- Treat baseline updates as a last resort, not a routine fix. First try to
+  shrink the override/script until the new finding disappears.
+
 ## Keycloak Login UX
 
 - Do not change the Keycloak login experience to a two-step username-then-password flow.

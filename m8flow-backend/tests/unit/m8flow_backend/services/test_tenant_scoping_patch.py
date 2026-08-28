@@ -4,8 +4,10 @@ from flask import Flask, g
 
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
 from m8flow_backend.models.message_model import MessageModel
+from m8flow_backend.models.process_model_bpmn_version import ProcessModelBpmnVersionModel  # noqa: F401
 from m8flow_backend.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
 from m8flow_backend.models.reference_cache import ReferenceCacheModel
+from m8flow_backend.models.template import TemplateModel, TemplateVisibility
 from m8flow_backend.services import tenant_scoping_patch
 from spiffworkflow_backend.models.configuration import ConfigurationModel
 from spiffworkflow_backend.models.db import SpiffworkflowBaseDBModel
@@ -43,6 +45,8 @@ def test_tenant_scopes_process_instances() -> None:
                 slug="tenant-a",
                 created_by="test",
                 modified_by="test",
+                created_at_in_seconds=1,
+                updated_at_in_seconds=1,
             )
         )
         spiff_db.session.add(
@@ -52,6 +56,8 @@ def test_tenant_scopes_process_instances() -> None:
                 slug="tenant-b",
                 created_by="test",
                 modified_by="test",
+                created_at_in_seconds=1,
+                updated_at_in_seconds=1,
             )
         )
 
@@ -149,6 +155,8 @@ def test_tenant_scopes_configuration_pkce_refresh_token_and_typeahead() -> None:
                 slug="tenant-a",
                 created_by="test",
                 modified_by="test",
+                created_at_in_seconds=1,
+                updated_at_in_seconds=1,
             )
         )
         spiff_db.session.add(
@@ -158,6 +166,8 @@ def test_tenant_scopes_configuration_pkce_refresh_token_and_typeahead() -> None:
                 slug="tenant-b",
                 created_by="test",
                 modified_by="test",
+                created_at_in_seconds=1,
+                updated_at_in_seconds=1,
             )
         )
 
@@ -272,3 +282,107 @@ def test_reference_cache_basic_query_works_for_exempt_requests() -> None:
             g._m8flow_tenant_context_exempt_request = True
             query = ReferenceCacheModel.basic_query()
             assert query is not None
+
+
+def test_template_model_skips_automatic_tenant_scoping_for_public_visibility() -> None:
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
+
+    spiff_db.init_app(app)
+    tenant_scoping_patch.apply()
+
+    with app.app_context():
+        spiff_db.create_all()
+        spiff_db.session.add_all(
+            [
+                M8flowTenantModel(
+                    id="tenant-a",
+                    name="Tenant A",
+                    slug="tenant-a",
+                    created_by="test",
+                    modified_by="test",
+                    created_at_in_seconds=1,
+                    updated_at_in_seconds=1,
+                ),
+                M8flowTenantModel(
+                    id="tenant-b",
+                    name="Tenant B",
+                    slug="tenant-b",
+                    created_by="test",
+                    modified_by="test",
+                    created_at_in_seconds=1,
+                    updated_at_in_seconds=1,
+                ),
+            ]
+        )
+        user = UserModel(
+            username="tester",
+            email="tester@example.com",
+            service="local",
+            service_id="tester",
+        )
+        spiff_db.session.add(user)
+        spiff_db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            spiff_db.session.add(
+                TemplateModel(
+                    template_key="global-public",
+                    version="V1",
+                    name="Tenant A Public",
+                    m8f_tenant_id="tenant-a",
+                    visibility=TemplateVisibility.public.value,
+                    files=[{"file_type": "bpmn", "file_name": "a.bpmn"}],
+                    created_by="owner-a",
+                    modified_by="owner-a",
+                    created_at_in_seconds=1,
+                    updated_at_in_seconds=1,
+                )
+            )
+            spiff_db.session.add(
+                ProcessInstanceModel(
+                    process_model_identifier="process-a",
+                    process_model_display_name="Process A",
+                    process_initiator_id=user.id,
+                    status=ProcessInstanceStatus.running.value,
+                )
+            )
+            spiff_db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-b"
+            spiff_db.session.add(
+                TemplateModel(
+                    template_key="other-public",
+                    version="V1",
+                    name="Tenant B Public",
+                    m8f_tenant_id="tenant-b",
+                    visibility=TemplateVisibility.public.value,
+                    files=[{"file_type": "bpmn", "file_name": "b.bpmn"}],
+                    created_by="owner-b",
+                    modified_by="owner-b",
+                    created_at_in_seconds=1,
+                    updated_at_in_seconds=1,
+                )
+            )
+            spiff_db.session.add(
+                ProcessInstanceModel(
+                    process_model_identifier="process-b",
+                    process_model_display_name="Process B",
+                    process_initiator_id=user.id,
+                    status=ProcessInstanceStatus.running.value,
+                )
+            )
+            spiff_db.session.commit()
+
+        with app.test_request_context("/"):
+            g.m8flow_tenant_id = "tenant-a"
+            assert {template.template_key for template in TemplateModel.query.all()} == {"global-public"}
+            assert {
+                template.template_key
+                for template in tenant_scoping_patch.skip_automatic_tenant_scope(TemplateModel.query).all()
+            } == {"global-public", "other-public"}
+            assert {row.process_model_identifier for row in ProcessInstanceModel.query.all()} == {"process-a"}
