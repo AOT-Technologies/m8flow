@@ -26,13 +26,6 @@ m8flow-telemetry = { path = "../m8flow-telemetry" }
 allow-direct-references = true
 
 [project.optional-dependencies]
-# Local sibling package installed via uv (relative-path deps are a uv feature;
-# plain `pip install` cannot resolve a bare relative path, so this is opt-in and
-# not part of the default/dev install used by CI). Telemetry is imported behind
-# try/except ImportError, so the server runs with no-op fallbacks when it is absent.
-telemetry = [
-    "m8flow-telemetry[asgi] @ ../m8flow-telemetry",
-]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
