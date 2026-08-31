@@ -13,7 +13,10 @@ import re
 
 from playwright.sync_api import Page, expect
 
-from helpers.mocks import ALL_MOCK_PROCESS_INSTANCES
+from helpers.mocks import (
+    ALL_MOCK_CROSS_TENANT_PROCESS_INSTANCES,
+    ALL_MOCK_PROCESS_INSTANCES,
+)
 from roles._super_admin_utils import open_page, setup_super_admin_session
 
 logger = logging.getLogger(__name__)
@@ -41,7 +44,11 @@ def test_super_admin_process_instances_list_opens(super_admin_page: Page) -> Non
 
 def test_super_admin_process_instances_show_tenant_column(super_admin_page: Page) -> None:
     page = super_admin_page
-    setup_super_admin_session(page, process_instances=ALL_MOCK_PROCESS_INSTANCES)
+    # Cross-tenant rows carry named tenants so the super-admin-only Tenant
+    # column has values to render (M8Flow / Acme Corp).
+    setup_super_admin_session(
+        page, process_instances=ALL_MOCK_CROSS_TENANT_PROCESS_INSTANCES
+    )
     open_page(page, "/process-instances/all")
     expect(page.get_by_test_id("process-instance-list-all")).to_be_visible(timeout=15_000)
     # Wait for the mocked cross-tenant rows before asserting the header, so the

@@ -1603,6 +1603,7 @@ def mock_process_instances_api(
         if tid:
             items = [i for i in items if i.get("tenantId") == tid]
         incoming_filters: list[Any] = []
+        incoming_columns: list[Any] = []
         raw = route.request.post_data
         if raw:
             try:
@@ -1613,14 +1614,26 @@ def mock_process_instances_api(
                 meta = body.get("report_metadata") or {}
                 if isinstance(meta, dict):
                     incoming_filters = list(meta.get("filter_by") or [])
+                    incoming_columns = list(meta.get("columns") or [])
         page_slice, pagination = _paginate_template_results(items, url)
-        # Echo filter_by so WithFilters does not replace an empty-columns first
+        # Echo the POSTED report_metadata columns (falling back to the default
+        # perspective when none were posted), mirroring the real backend's
+        # run_process_instance_report. The super-admin table injects a
+        # ``tenantName`` column into its POST body client-side; echoing it back
+        # is what makes that column render (the upstream table draws its columns
+        # from the response metadata, not from the request prop). Also echo
+        # filter_by so WithFilters does not replace an empty-columns first
         # payload with a blank filter list and refetch unscoped.
+        response_columns = (
+            copy.deepcopy(incoming_columns)
+            if incoming_columns
+            else copy.deepcopy(PROCESS_INSTANCE_DEFAULT_COLUMNS)
+        )
         _json_response(route, {
             "results": page_slice,
             "pagination": pagination,
             "report_metadata": {
-                "columns": copy.deepcopy(PROCESS_INSTANCE_DEFAULT_COLUMNS),
+                "columns": response_columns,
                 "filter_by": incoming_filters,
                 "order_by": [],
             },
