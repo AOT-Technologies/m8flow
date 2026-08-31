@@ -431,15 +431,34 @@ def test_seed_users_carry_only_the_realm_default_role(template: dict, username: 
 
 @pytest.mark.parametrize("username", ["editor", "integrator", "reviewer", "submitter", "viewer"])
 def test_non_admin_seed_users_bypass_verify_profile(template: dict, username: str) -> None:
-    """Empty email + emailVerified=true is what keeps VERIFY_PROFILE off the login path.
+    """The seed users are intentionally minimal (empty email, no last name).
 
-    Giving these users real addresses, or flipping emailVerified to false, makes Keycloak
-    interrupt first login with the profile-completion form.
+    On Keycloak 26 an incomplete profile alone is NOT enough to avoid the
+    profile-completion form on first login: the realm must also disable the
+    VERIFY_PROFILE required action (see
+    ``test_verify_profile_required_action_is_disabled``). These assertions just
+    pin the minimal shape of the seed users.
     """
     user = _user(template, username)
     assert user["email"] == ""
     assert user["emailVerified"] is True
     assert user["firstName"] == username.capitalize()
+
+
+def test_verify_profile_required_action_is_disabled(template: dict) -> None:
+    """VERIFY_PROFILE must be disabled realm-wide so it never interrupts login.
+
+    Keycloak 26 raises VERIFY_PROFILE whenever a required profile attribute is
+    missing (the seed users have empty email / no last name). Leaving the action
+    enabled makes every first login stop on the profile-completion form, which is
+    what stalls the browser E2E login fixtures.
+    """
+    verify_profile = next(
+        action
+        for action in template["requiredActions"]
+        if action["alias"] == "VERIFY_PROFILE"
+    )
+    assert verify_profile["enabled"] is False
 
 
 def test_admin_seed_user_holds_realm_management_roles(template: dict) -> None:

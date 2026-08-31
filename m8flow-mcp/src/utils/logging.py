@@ -10,11 +10,14 @@ from src.config import settings
 
 try:
     from m8flow_telemetry.bootstrap import is_telemetry_enabled, setup
+
     from src.utils.context import get_tenant_id
 except ImportError:  # pragma: no cover
     setup = None
     is_telemetry_enabled = None
-    get_tenant_id = lambda: None  # type: ignore[assignment,misc]
+
+    def get_tenant_id() -> None:  # type: ignore[assignment,misc]
+        return None
 
 
 def setup_logging() -> None:

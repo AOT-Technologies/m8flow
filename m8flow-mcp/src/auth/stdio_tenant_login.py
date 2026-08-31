@@ -71,11 +71,7 @@ def run_stdio_tenant_selection() -> None:
 
 def _initial_token() -> str | None:
     """Return the raw shared-realm token for the configured stdio identity."""
-    raw = (
-        os.getenv("M8FLOW_BEARER_TOKEN")
-        or os.getenv("FORMSFLOW_BEARER_TOKEN")
-        or settings.m8flow_bearer_token
-    )
+    raw = os.getenv("M8FLOW_BEARER_TOKEN") or os.getenv("FORMSFLOW_BEARER_TOKEN") or settings.m8flow_bearer_token
     if raw:
         return raw[7:] if raw.startswith("Bearer ") else raw
 
