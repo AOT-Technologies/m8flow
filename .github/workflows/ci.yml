@@ -92,6 +92,16 @@ jobs:
       - name: Install dependencies
         working-directory: spiffworkflow-backend
         run: uv sync --group dev
+      - name: Install M8Flow backend runtime-only dependencies
+        # m8flow-backend has no pyproject.toml of its own -- it runs on PYTHONPATH
+        # inside spiffworkflow-backend's venv, so extra runtime deps its own code
+        # needs (but spiffworkflow-backend's pyproject.toml doesn't declare) are
+        # installed here on top of the synced venv, mirroring bin/run_m8flow_backend.sh.
+        # mcp: MCP client SDK used by services/mcp_catalog_service.py (M8F-404 tools
+        # catalog) to talk to the separately-deployed m8flow-mcp server. Upper-bounded:
+        # mcp 2.0.0 renamed McpError -> MCPError, which breaks that import.
+        working-directory: spiffworkflow-backend
+        run: uv pip install "mcp>=1.9.0,<2.0.0"
       - name: Test M8Flow backend
         working-directory: spiffworkflow-backend
         run: |
@@ -589,14 +599,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12.1'
+      - name: Install uv
+        run: pip install uv
       - name: Install M8Flow MCP dependencies
+        # Plain pip can't resolve m8flow-telemetry[asgi]: it's a local sibling
+        # package pinned via [tool.uv.sources] in pyproject.toml, a uv-only
+        # mechanism. `uv sync` reads that override (and uv.lock) correctly.
         working-directory: m8flow-mcp
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+        run: uv sync --extra dev
       - name: Test M8Flow MCP
         working-directory: m8flow-mcp
-        run: pytest tests/ --cov=src --cov-report=term-missing
+        run: uv run pytest tests/ --cov=src --cov-report=term-missing
 
   # -------------------------
   # Required Merge Gate

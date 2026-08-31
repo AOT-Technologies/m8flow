@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from mcp.types import ToolAnnotations
+
 from src.api_client import M8flowAPIClient
 from src.utils.context import get_auth_token
 from src.utils.instances import resolve_instance
@@ -57,7 +59,12 @@ def register_task_tools(mcp: FastMCP) -> None:
         mcp: FastMCP server instance
     """
 
-    @mcp.tool(name="list_tasks", description="List workflow user tasks")
+    @mcp.tool(
+        name="list_tasks",
+        description="List workflow user tasks",
+        tags={"tasks"},
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
+    )
     async def list_tasks(
         page: int = 1,
         per_page: int = 10,
@@ -117,7 +124,12 @@ def register_task_tools(mcp: FastMCP) -> None:
             logger.error(f"Failed to list tasks: {e}")
             return {"error": str(e)}
 
-    @mcp.tool(name="get_task", description="Get details of a specific task")
+    @mcp.tool(
+        name="get_task",
+        description="Get details of a specific task",
+        tags={"tasks"},
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
+    )
     async def get_task(
         process_instance_id: int,
         task_id: str,
@@ -145,7 +157,12 @@ def register_task_tools(mcp: FastMCP) -> None:
             logger.error(f"Failed to get task {task_id}: {e}")
             return {"error": str(e)}
 
-    @mcp.tool(name="complete_task", description="Complete a user task")
+    @mcp.tool(
+        name="complete_task",
+        description="Complete a user task",
+        tags={"tasks"},
+        annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False),
+    )
     async def complete_task(
         process_instance_id: int,
         task_id: str,
@@ -179,7 +196,12 @@ def register_task_tools(mcp: FastMCP) -> None:
             logger.error(f"Failed to complete task {task_id}: {e}")
             return {"error": str(e)}
 
-    @mcp.tool(name="claim_task", description="Verify a task is ready to be completed (claiming is implicit)")
+    @mcp.tool(
+        name="claim_task",
+        description="Verify a task is ready to be completed (claiming is implicit)",
+        tags={"tasks"},
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
+    )
     async def claim_task(
         process_instance_id: int,
         task_id: str,

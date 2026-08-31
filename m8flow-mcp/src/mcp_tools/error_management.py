@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from mcp.types import ToolAnnotations
+
 from src.api_client import M8flowAPIClient
 from src.utils.context import get_auth_token
 from src.utils.instances import resolve_instance
@@ -80,7 +82,12 @@ def register_error_tools(mcp: FastMCP) -> None:
         mcp: FastMCP server instance
     """
 
-    @mcp.tool(name="list_process_errors", description="List workflow execution errors for troubleshooting")
+    @mcp.tool(
+        name="list_process_errors",
+        description="List workflow execution errors for troubleshooting",
+        tags={"error-management"},
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
+    )
     async def list_process_errors(
         process_instance_id: int | None = None,
         severity: str | None = None,
@@ -144,7 +151,12 @@ def register_error_tools(mcp: FastMCP) -> None:
             logger.error(f"Failed to list process errors: {e}")
             return {"error": str(e)}
 
-    @mcp.tool(name="get_error_details", description="Get detailed error information for troubleshooting")
+    @mcp.tool(
+        name="get_error_details",
+        description="Get detailed error information for troubleshooting",
+        tags={"error-management"},
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
+    )
     async def get_error_details(
         process_instance_id: int,
     ) -> dict[str, Any]:
@@ -211,7 +223,12 @@ def register_error_tools(mcp: FastMCP) -> None:
             logger.error(f"Failed to get error details: {e}")
             return {"error": str(e)}
 
-    @mcp.tool(name="diagnose_workflow", description="Diagnose why a workflow is stuck or failed")
+    @mcp.tool(
+        name="diagnose_workflow",
+        description="Diagnose why a workflow is stuck or failed",
+        tags={"error-management"},
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
+    )
     async def diagnose_workflow(
         process_instance_id: int,
     ) -> str:

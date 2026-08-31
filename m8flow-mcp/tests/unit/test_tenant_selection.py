@@ -370,9 +370,7 @@ def test_proxy_state_expires_after_ttl(monkeypatch):
     from src.auth.oidc_tenant_proxy import TenantSelectingOIDCProxy
 
     stub = _StubSigner()
-    encoded = TenantSelectingOIDCProxy._encode_state(
-        stub, client_code="code-1", client_redirect="https://client/cb"
-    )
+    encoded = TenantSelectingOIDCProxy._encode_state(stub, client_code="code-1", client_redirect="https://client/cb")
     # Fast-forward past the TTL: a still-validly-signed state must be rejected as stale.
     real_time = otp.time.time()
     monkeypatch.setattr(otp.time, "time", lambda: real_time + otp._STATE_TTL_SECONDS + 1)

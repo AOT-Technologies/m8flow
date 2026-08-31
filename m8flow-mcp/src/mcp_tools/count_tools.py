@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from mcp.types import ToolAnnotations
+
 from src.api_client import M8flowAPIClient
 from src.mcp_tools.tasks import _instance_ready_tasks
 from src.utils.context import get_auth_token
@@ -33,6 +35,8 @@ def register_count_tools(mcp: FastMCP) -> None:
     @mcp.tool(
         name="count_process_instances",
         description="Count workflow instances without fetching data (95% faster than list_process_instances)",
+        tags={"count"},
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
     )
     async def count_process_instances(
         process_model_id: str | None = None,
@@ -99,6 +103,8 @@ def register_count_tools(mcp: FastMCP) -> None:
     @mcp.tool(
         name="count_tasks",
         description="Count ready/waiting user tasks without fetching data (faster than list_tasks)",
+        tags={"count"},
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
     )
     async def count_tasks(
         process_instance_id: str | None = None,
@@ -142,7 +148,12 @@ def register_count_tools(mcp: FastMCP) -> None:
             logger.error(f"Failed to count tasks: {e}")
             return {"error": str(e)}
 
-    @mcp.tool(name="count_process_models", description="Count workflow templates without fetching data")
+    @mcp.tool(
+        name="count_process_models",
+        description="Count workflow templates without fetching data",
+        tags={"count"},
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
+    )
     async def count_process_models(
         process_group_id: str | None = None,
         filter_runnable: bool = False,
@@ -180,7 +191,12 @@ def register_count_tools(mcp: FastMCP) -> None:
             logger.error(f"Failed to count process models: {e}")
             return {"error": str(e)}
 
-    @mcp.tool(name="count_process_groups", description="Count workflow categories")
+    @mcp.tool(
+        name="count_process_groups",
+        description="Count workflow categories",
+        tags={"count"},
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
+    )
     async def count_process_groups() -> dict[str, Any]:
         """Count workflow categories.
 

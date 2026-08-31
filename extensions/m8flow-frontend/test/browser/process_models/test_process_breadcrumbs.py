@@ -26,7 +26,10 @@ def test_process_tab_breadcrumbs_from_process_group(mocked_creation_page: Page) 
     page = mocked_creation_page
     navigate_into_process_group(page)
 
-    expect(page.get_by_test_id("breadcrumb-root-button")).to_be_visible(timeout=PAGE_DATA_TIMEOUT)
+    # The root crumb (Home icon + "Root") has no data-testid of its own in the
+    # upstream ProcessModelTreePage.tsx, unlike the sibling group crumb next to
+    # it -- match it by role/name instead of a test-id that has never existed.
+    expect(page.get_by_role("button", name="Root")).to_be_visible(timeout=PAGE_DATA_TIMEOUT)
     expect(
         page.get_by_test_id(f"process-group-breadcrumb-{TEST_PROCESS_GROUP_DISPLAY_NAME}"),
     ).to_be_visible(timeout=PAGE_DATA_TIMEOUT)

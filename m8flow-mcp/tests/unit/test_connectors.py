@@ -97,7 +97,7 @@ async def test_list_connectors_success(mock_connectors_data):
             def __init__(self):
                 self.tools = {}
 
-            def tool(self, name, description):
+            def tool(self, name, description, **kwargs):
                 def decorator(func):
                     self.tools[name] = func
                     return func
@@ -134,7 +134,7 @@ async def test_get_connector_success(mock_connectors_data):
             def __init__(self):
                 self.tools = {}
 
-            def tool(self, name, description):
+            def tool(self, name, description, **kwargs):
                 def decorator(func):
                     self.tools[name] = func
                     return func
@@ -170,7 +170,7 @@ async def test_get_connector_not_found(mock_connectors_data):
             def __init__(self):
                 self.tools = {}
 
-            def tool(self, name, description):
+            def tool(self, name, description, **kwargs):
                 def decorator(func):
                     self.tools[name] = func
                     return func
@@ -201,7 +201,7 @@ async def test_get_connector_operation_success(mock_connectors_data):
             def __init__(self):
                 self.tools = {}
 
-            def tool(self, name, description):
+            def tool(self, name, description, **kwargs):
                 def decorator(func):
                     self.tools[name] = func
                     return func
@@ -240,7 +240,7 @@ async def test_get_connector_operation_not_found(mock_connectors_data):
             def __init__(self):
                 self.tools = {}
 
-            def tool(self, name, description):
+            def tool(self, name, description, **kwargs):
                 def decorator(func):
                     self.tools[name] = func
                     return func
@@ -271,7 +271,7 @@ async def test_search_connectors_by_name(mock_connectors_data):
             def __init__(self):
                 self.tools = {}
 
-            def tool(self, name, description):
+            def tool(self, name, description, **kwargs):
                 def decorator(func):
                     self.tools[name] = func
                     return func
@@ -305,7 +305,7 @@ async def test_search_connectors_by_operation(mock_connectors_data):
             def __init__(self):
                 self.tools = {}
 
-            def tool(self, name, description):
+            def tool(self, name, description, **kwargs):
                 def decorator(func):
                     self.tools[name] = func
                     return func
@@ -338,7 +338,7 @@ async def test_search_connectors_no_results(mock_connectors_data):
             def __init__(self):
                 self.tools = {}
 
-            def tool(self, name, description):
+            def tool(self, name, description, **kwargs):
                 def decorator(func):
                     self.tools[name] = func
                     return func
@@ -369,7 +369,7 @@ async def test_list_connectors_empty_response():
             def __init__(self):
                 self.tools = {}
 
-            def tool(self, name, description):
+            def tool(self, name, description, **kwargs):
                 def decorator(func):
                     self.tools[name] = func
                     return func
@@ -400,7 +400,7 @@ async def test_list_connectors_api_error():
             def __init__(self):
                 self.tools = {}
 
-            def tool(self, name, description):
+            def tool(self, name, description, **kwargs):
                 def decorator(func):
                     self.tools[name] = func
                     return func
@@ -441,7 +441,7 @@ async def test_get_connector_operation_reads_id_keyed_param_names():
             def __init__(self):
                 self.tools = {}
 
-            def tool(self, name, description):
+            def tool(self, name, description, **kwargs):
                 def decorator(func):
                     self.tools[name] = func
                     return func

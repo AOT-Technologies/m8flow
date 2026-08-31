@@ -169,9 +169,7 @@ async def finalize_tenant(shared_realm_token: str, alias: str) -> FinalizedSessi
     if not enriched_token or not tenant_id:
         # The finalization branch did not run (e.g. token not parseable as shared-realm);
         # without the tenant-scoped token we cannot fix RBAC, so treat as failure.
-        logger.warning(
-            "Tenant finalization for alias=%s did not return a tenant-scoped token/cookie", alias
-        )
+        logger.warning("Tenant finalization for alias=%s did not return a tenant-scoped token/cookie", alias)
         return None
 
     exp = decode_jwt_claims(enriched_token).get("exp")

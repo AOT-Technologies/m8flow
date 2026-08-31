@@ -27,7 +27,7 @@ setup_logging()
 logger = get_logger(__name__)
 
 
-def _build_auth() -> object | None:
+def _build_oidc_proxy() -> object | None:
     """Build an OIDCProxy for browser-based Keycloak login (remote mode only).
 
     Returns None when browser login is not applicable (stdio mode, or no
@@ -78,8 +78,146 @@ def _build_auth() -> object | None:
         return None
 
 
-# Create FastMCP server (with browser login when configured for remote mode)
-_auth = _build_auth()
+def _refuse_to_run_unauthenticated(reason: str) -> None:
+    """Abort startup rather than serve an unauthenticated port.
+
+    Only ``remote`` mode listens on a socket, so only there is unenforceable
+    inbound auth a vulnerability: ``tools/list`` and ``tools/call`` would be open
+    to anyone who can reach the port, and ``utils/context._forwarded_bearer_token``
+    would let a caller's own self-supplied token become the session identity with
+    nothing verifying it first. In ``stdio`` mode the client IS the local process
+    that spawned this one, there is no port, and the same setting is merely
+    inapplicable -- so it is logged, not fatal.
+
+    Deliberately no override flag: an env var that re-opens the port would be the
+    thing every rushed deployment sets. Fix the configuration instead.
+    """
+    if not settings.is_remote:
+        logger.warning("%s -- not applicable in stdio mode (no inbound port), continuing", reason)
+        return
+    raise RuntimeError(
+        f"Refusing to start the m8flow MCP server in remote mode: {reason}. Serving would "
+        "leave tools/list and tools/call reachable without any inbound authentication. "
+        "Install a fastmcp providing the missing component, fix the realm/JWKS settings, "
+        "or configure browser login (Keycloak OIDC client) as the auth provider."
+    )
+
+
+def _build_realm_token_verifiers() -> list[object]:
+    """Verifiers accepting access tokens minted directly by the m8flow Keycloak realm(s).
+
+    This is what the m8flow-backend MCP bridge needs. That bridge forwards the CALLING
+    USER'S OWN realm token (see ``m8flow_backend/services/mcp_catalog_service.py``), and
+    an OIDCProxy alone rejects it with 401 — a proxy only recognizes tokens it issued
+    itself through its own authorization-code flow. Verifying against the realm's JWKS
+    accepts such a token on its own merits: correct signature, correct issuer.
+
+    It also means remote mode can authenticate inbound requests even with browser login
+    switched off. Without any verifier FastMCP does not check inbound requests at all,
+    so ``tools/list`` and ``tools/call`` are open to anyone who can reach the port.
+
+    Signature and issuer are checked; audience and scopes deliberately are not. The
+    token is forwarded to the m8flow backend, which re-validates it and applies the real
+    RBAC and tenant scoping, so a narrow audience/scope filter here would reject valid
+    callers without adding an authorization decision this server is entitled to make.
+
+    Returns an empty list when disabled or when no realm is configured, leaving the
+    caller to decide what that means.
+    """
+    realms = settings.accepted_token_realms_list
+    if not realms:
+        logger.info("Realm access-token verification disabled (ACCEPT_REALM_TOKENS=false)")
+        return []
+    try:
+        from fastmcp.server.auth.providers.jwt import JWTVerifier
+    except Exception as exc:  # pragma: no cover - depends on fastmcp version
+        _refuse_to_run_unauthenticated(
+            f"realm access-token verification is enabled (ACCEPT_REALM_TOKENS) for {realms!r} "
+            f"but this fastmcp provides no JWTVerifier ({exc}), so no inbound token can be verified"
+        )
+        return []
+
+    by_issuer: dict[str, object] = {}
+    for realm in realms:
+        issuer = settings.realm_issuer(realm)
+        jwks_uri = settings.realm_jwks_uri(realm)
+        try:
+            by_issuer[issuer] = JWTVerifier(jwks_uri=jwks_uri, issuer=issuer)
+        except Exception as exc:
+            logger.error("Could not build a token verifier for realm %r (%s)", realm, exc)
+            continue
+        logger.info("Accepting access tokens from realm %r (issuer=%s)", realm, issuer)
+
+    if not by_issuer:
+        # Every configured realm raised above. Returning [] here would read as
+        # "realm tokens were never requested" and silently drop inbound auth.
+        _refuse_to_run_unauthenticated(
+            f"realm access-token verification is enabled for {realms!r} but a verifier could "
+            "not be built for any of them (see the errors above)"
+        )
+    return list(by_issuer.values())
+
+
+def _compose_auth(proxy: object | None, verifiers: list[object]) -> object | None:
+    """Combine browser login and realm-token verification into one auth provider.
+
+    ``MultiAuth`` tries the OAuth server first, then each verifier in order, so an
+    interactive client that logged in through the browser and the backend bridge
+    forwarding a raw realm token both authenticate against the same server. OAuth routes
+    and discovery metadata come only from the proxy, which is why the discovery documents
+    stay gated on the proxy rather than on the composed provider.
+
+    ``required_scopes`` is passed explicitly rather than inherited from the proxy. The
+    proxy's own list has to include ``organization:*`` because OIDCProxy reuses
+    required_scopes as the scopes REQUESTED at sign-in (``update_default_scopes``), which
+    is what enables multi-tenant selection -- but enforcing that same list at
+    verification 403s every real token, since an issued token carries the granted scope
+    rather than the requested pattern. Enforcement is therefore configured separately and
+    defaults to none; see ``Settings.transport_required_scopes``.
+    """
+    if proxy is None and not verifiers:
+        # Nothing was ever requested. That is an explicit operator choice (and the
+        # normal stdio case), not a component silently going missing, so it is left
+        # to _configure_static_token's existing warning rather than treated as a
+        # failure to enforce something that was asked for.
+        return None
+    if not verifiers:
+        return proxy
+    try:
+        from fastmcp.server.auth import MultiAuth
+    except Exception as exc:  # pragma: no cover - depends on fastmcp version
+        if proxy is None:
+            if len(verifiers) == 1:
+                # Nothing to combine: a lone verifier IS an auth provider, so auth is
+                # still fully enforced. This is the default single-realm deployment.
+                logger.warning("MultiAuth unavailable (%s); using the single realm verifier directly", exc)
+                return verifiers[0]
+            _refuse_to_run_unauthenticated(
+                f"{len(verifiers)} realm verifiers must be combined but MultiAuth is "
+                f"unavailable ({exc}), and there is no browser-login provider to fall back to"
+            )
+            return None
+        # Browser login still authenticates every request, so the port is not open --
+        # but realm tokens are now REJECTED, which breaks the backend catalog bridge.
+        # Loud, and safe: the failure mode is 401, not unauthenticated access.
+        logger.error(
+            "MultiAuth unavailable (%s); serving browser login ONLY. Realm access tokens "
+            "will be rejected with 401, so the backend MCP Tools page will not work until "
+            "fastmcp is upgraded.",
+            exc,
+        )
+        return proxy
+    return MultiAuth(
+        server=proxy,
+        verifiers=verifiers,
+        required_scopes=settings.transport_required_scopes_list,
+    )
+
+
+# Create FastMCP server. Browser login (when configured) and realm access tokens are
+# composed so interactive clients and the backend bridge can both authenticate.
+_oidc_proxy = _build_oidc_proxy()
+_auth = _compose_auth(_oidc_proxy, _build_realm_token_verifiers())
 mcp = FastMCP("m8flow", auth=_auth) if _auth is not None else FastMCP("m8flow")
 
 # Add middleware (order matters: observability wraps everything)
@@ -160,19 +298,38 @@ def _oauth_authorization_server_document() -> dict:
 
 
 def _register_http_routes(server: object) -> None:
-    """Add health-check and OAuth discovery routes to the streamable-HTTP app."""
+    """Add health-check routes, plus OAuth discovery when browser login is actually on.
+
+    Health is unconditional. The RFC 9728 discovery documents are registered ONLY
+    when ``_build_oidc_proxy()`` returned a proxy, because the endpoints they advertise
+    (``/authorize``, ``/token``, ``/register``) are served by that provider and by
+    nothing else. Advertising them with no provider is worse than advertising
+    nothing: a spec-compliant client (Claude Desktop, Cursor) reads
+    ``/.well-known/oauth-authorization-server``, POSTs dynamic client registration to
+    the ``registration_endpoint`` it names, gets a 404, and fails there -- instead of
+    falling back to the bearer-token path, which does work (see
+    ``utils.context.get_session_token``).
+    """
 
     async def health_check(request):  # noqa: ANN001, ARG001
         return JSONResponse({"status": "healthy", "server": "m8flow-mcp", "version": "1.0.0"})
+
+    server.add_route("/health", health_check, methods=["GET"])
+    server.add_route("/mcp/health", health_check, methods=["GET"])
+
+    if _oidc_proxy is None:
+        logger.info(
+            "Health endpoints registered; OAuth discovery omitted — browser login is not "
+            "configured, so there is no authorization server to advertise. Clients should "
+            "send their own Authorization: Bearer <token> header."
+        )
+        return
 
     async def protected_resource(request):  # noqa: ANN001, ARG001
         return JSONResponse(_oauth_protected_resource_document())
 
     async def authorization_server(request):  # noqa: ANN001, ARG001
         return JSONResponse(_oauth_authorization_server_document())
-
-    server.add_route("/health", health_check, methods=["GET"])
-    server.add_route("/mcp/health", health_check, methods=["GET"])
 
     # RFC 9728 discovery documents (root + /mcp-protocol aliases for Cursor/Claude).
     server.add_route("/.well-known/oauth-protected-resource", protected_resource, methods=["GET"])
@@ -183,6 +340,7 @@ def _register_http_routes(server: object) -> None:
         authorization_server,
         methods=["GET"],
     )
+    logger.info("Health + OAuth discovery endpoints registered")
 
 
 def _install_shutdown_hook(server: object) -> None:
@@ -219,7 +377,6 @@ def main() -> int:
             server = mcp.http_app(transport="streamable-http")
             _register_http_routes(server)
             _install_shutdown_hook(server)
-            logger.info("Health + OAuth discovery endpoints registered")
 
             import uvicorn
 

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import time
 from typing import Any
-import contextlib
 
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 
