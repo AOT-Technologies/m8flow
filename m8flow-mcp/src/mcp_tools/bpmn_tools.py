@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from mcp.types import ToolAnnotations
+
 from src.api_client import M8flowAPIClient
 from src.errors.exceptions import NotFoundError
 from src.utils.context import get_auth_token
@@ -38,6 +40,8 @@ def register_bpmn_tools(mcp: FastMCP) -> None:
     @mcp.tool(
         name="create_template",
         description="Create a new process template from a process model",
+        tags={"bpmn"},
+        annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False),
     )
     async def create_template(
         process_group_id: str,
@@ -123,6 +127,8 @@ Check the group/model IDs with `list_process_models`, or create the model first.
     @mcp.tool(
         name="upload_bpmn_file",
         description="Upload/write BPMN content to a process model",
+        tags={"bpmn"},
+        annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False),
     )
     async def upload_bpmn_file(
         process_group_id: str,
@@ -243,6 +249,8 @@ Use a different process_model_id that doesn't exist yet.
     @mcp.tool(
         name="create_process_model_with_bpmn",
         description="Create a new process model and upload BPMN content in one call",
+        tags={"bpmn"},
+        annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False),
     )
     async def create_process_model_with_bpmn(
         process_group_id: str,
@@ -368,6 +376,8 @@ Use a different process_model_id that doesn't exist yet.
     @mcp.tool(
         name="update_bpmn_file",
         description="Update a BPMN file in an existing process model (in-place, non-destructive)",
+        tags={"bpmn"},
+        annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False),
     )
     async def update_bpmn_file(
         process_group_id: str,
@@ -484,6 +494,8 @@ Use the `upload_process_model_file` tool instead.
             "Add or update ANY file in a process model (JSON form schemas, DMN, markdown, BPMN). "
             "Creates the file if missing, updates it in place if it exists."
         ),
+        tags={"bpmn"},
+        annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False),
     )
     async def upload_process_model_file(
         process_group_id: str,
@@ -561,6 +573,8 @@ Create it first with `create_process_model` or `create_process_model_with_bpmn`.
     @mcp.tool(
         name="get_bpmn_file",
         description="Get BPMN file content from a process model",
+        tags={"bpmn"},
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
     )
     async def get_bpmn_file(
         process_group_id: str,

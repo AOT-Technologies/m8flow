@@ -189,13 +189,18 @@ sync_uv_environment() {
 }
 
 has_m8flow_backend_runtime_dependencies() {
-  run_uv_python -c "import hvac; import nats" >/dev/null 2>&1
+  run_uv_python -c "import hvac; import nats; import mcp" >/dev/null 2>&1
 }
 
 sync_m8flow_backend_runtime_dependencies() {
   local packages=(
     "hvac"
     "nats-py>=2.6.0"
+    # MCP client SDK: m8flow_backend/services/mcp_catalog_service.py uses it to
+    # talk to the separately-deployed m8flow-mcp server (M8F-404 tools catalog).
+    # Upper-bounded: mcp 2.0.0 renamed McpError -> MCPError, which breaks the
+    # `from mcp import McpError` import this service relies on.
+    "mcp>=1.9.0,<2.0.0"
   )
 
   if has_m8flow_backend_runtime_dependencies; then

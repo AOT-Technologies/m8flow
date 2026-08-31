@@ -533,3 +533,14 @@ def smtp_settings() -> dict:
         "from_address": _get("M8FLOW_SMTP_FROM") or "no-reply@m8flow.local",
         "use_tls": use_tls_raw in ("1", "true", "yes", "on"),
     }
+
+
+def mcp_server_url() -> str:
+    """Base URL of the independently-deployed m8flow-mcp server.
+
+    Same env var name the frontend reads via getRuntimeOrBuildConfig in
+    useConfig.ts (M8FLOW_MCP_SERVER_URL), so a single value configures both
+    sides. Empty string when unset -- callers should treat that as "not
+    configured" rather than guessing a default host."""
+    url = _get("M8FLOW_MCP_SERVER_URL")
+    return url.rstrip("/") if url else ""

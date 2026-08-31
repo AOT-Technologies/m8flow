@@ -16,7 +16,7 @@ except ImportError:  # pragma: no cover
     setup = None
     is_telemetry_enabled = None
 
-    def get_tenant_id() -> None:  # type: ignore[assignment,misc]
+    def get_tenant_id() -> str | None:
         return None
 
 
