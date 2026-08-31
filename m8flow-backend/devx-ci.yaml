@@ -18,7 +18,7 @@ docker:
   working_directory: "."            # Build context must be repo root
   dockerfile: "docker/m8flow.backend.Dockerfile"
   image_name: "m8flow/m8flow-backend"
-  image_tag: ""                     # Smart versioning: develop → dev-<sha>, tag → X.Y.Z-rc
+  image_tag: ""                     # Smart versioning: main → <sha>, tag → X.Y.Z-rc
   registry_type: generic
   registry_url: "docker.io"
   platforms: "linux/amd64"

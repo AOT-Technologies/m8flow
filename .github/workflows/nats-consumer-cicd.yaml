@@ -3,14 +3,14 @@ name: m8flow-nats-consumer CI/CD
 on:
   push:
     branches:
-      - develop
+      - main
     paths:
       - "m8flow-nats-consumer/**"
       - ".github/workflows/nats-consumer-cicd.yaml"
 
   pull_request:
     branches:
-      - develop
+      - main
     paths:
       - "m8flow-nats-consumer/**"
       - ".github/workflows/nats-consumer-cicd.yaml"
@@ -45,7 +45,7 @@ jobs:
     with:
       config_path: m8flow-nats-consumer/devx-ci.yaml
       auto_merge: false
-      push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/develop' }}
+      push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     secrets:
       registry_username: ${{ secrets.DOCKERHUB_USERNAME }}
       registry_password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -54,7 +54,7 @@ jobs:
   cd-dev:
     name: Deploy NATS Consumer → DEV
     needs: ci
-    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/cd-orchestrator.yaml@d74dfcd7c92886f2b74dbaf98536e6bde6d0be99
     with:
       environment: dev
