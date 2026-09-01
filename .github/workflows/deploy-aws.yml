@@ -36,7 +36,9 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  IMAGE_BASE: docker.io/m8flow/m8flow
+  AWS_REGION: us-east-2
+  ECR_REGISTRY: 653405621825.dkr.ecr.us-east-2.amazonaws.com
+  IMAGE_BASE: 653405621825.dkr.ecr.us-east-2.amazonaws.com/m8flow
 
 jobs:
   validate:
@@ -72,17 +74,21 @@ jobs:
           echo "| Image Tag   | \`${{ inputs.image_tag }}\` |" >> $GITHUB_STEP_SUMMARY
 
   verify-images:
-    name: Verify Docker Images Exist
+    name: Verify ECR Images Exist
     needs: validate
     runs-on: ubuntu-latest
     steps:
-      - name: Check Docker images exist on Docker Hub
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Check images exist in ECR
         run: |
           TAG="${{ inputs.image_tag }}"
-          NAMESPACE="m8flow"
 
-          # Explicit mapping: component → Docker Hub repo name.
-          # Avoids silent breakage if any name drifts from the m8flow-<component> convention.
+          # Explicit mapping: component → ECR repository name.
           case "${{ inputs.component }}" in
             all)
               REPOS="m8flow-backend m8flow-frontend m8flow-keycloak m8flow-connector-proxy m8flow-mcp" ;;
@@ -98,18 +104,23 @@ jobs:
 
           MISSING=""
           for REPO in $REPOS; do
-            URL="https://hub.docker.com/v2/repositories/${NAMESPACE}/${REPO}/tags?page_size=1&name=${TAG}"
-            COUNT=$(curl -sS "$URL" | jq -r '.count // 0')
-            if [[ "$COUNT" < "1" ]]; then
-              MISSING="${MISSING} ${NAMESPACE}/${REPO}:${TAG}"
+            RESULT=$(aws ecr describe-images \
+              --repository-name "$REPO" \
+              --region "${{ env.AWS_REGION }}" \
+              --image-ids imageTag="${TAG}" \
+              --output json 2>/dev/null || echo "not-found")
+
+            if [[ "$RESULT" == "not-found" ]]; then
+              MISSING="${MISSING} ${REPO}:${TAG}"
             fi
           done
+
           if [[ -n "$MISSING" ]]; then
-            echo "::error::Docker image(s) not found for tag '${TAG}':${MISSING}"
+            echo "::error::ECR image(s) not found for tag '${TAG}':${MISSING}"
             echo "Run 'Deploy to Docker' with this tag first, or provide a valid existing tag."
             exit 1
           fi
-          echo "All images verified for tag '${TAG}'."
+          echo "All ECR images verified for tag '${TAG}'."
 
   deploy:
     name: Deploy to ${{ inputs.environment }}
@@ -117,7 +128,6 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     env:
-      AWS_REGION: ${{ vars.AWS_REGION }}
       ECS_CLUSTER: ${{ secrets.ECS_CLUSTER }}
       BACKEND_TASK_DEF_FAMILY: ${{ secrets.BACKEND_TASK_DEF_FAMILY }}
       BACKEND_CONTAINER_NAME: ${{ secrets.BACKEND_CONTAINER_NAME }}
@@ -140,7 +150,6 @@ jobs:
         run: |
           # Always required
           required=(
-            AWS_REGION
             ECS_CLUSTER
           )
 

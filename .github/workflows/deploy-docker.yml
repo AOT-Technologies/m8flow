@@ -26,13 +26,15 @@ on:
 
 permissions:
   contents: read
+  id-token: write  # Required for AWS OIDC to authenticate to ECR
 
 concurrency:
   group: deploy-dev
   cancel-in-progress: true
 
 env:
-  REGISTRY: docker.io
+  AWS_REGION: us-east-2
+  ECR_REGISTRY: 653405621825.dkr.ecr.us-east-2.amazonaws.com
   IMAGE_REPOSITORY: m8flow
   PROJECT: m8flow
   COMPONENTS: '["backend", "frontend", "keycloak", "connector-proxy", "mcp"]'
@@ -87,37 +89,46 @@ jobs:
       matrix:
         component: ${{ fromJson(needs.prepare.outputs.components) }}
     steps:
-      - name: Setup regctl
-        uses: regclient/actions/regctl-installer@v0.1.0
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login to Docker Hub
-        env:
-          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-        run: |
-          echo "$DOCKERHUB_TOKEN" | regctl registry login ${{ env.REGISTRY }} -u "$DOCKERHUB_USERNAME" --pass-stdin
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Manage Backup Tags
         env:
-          FULL_REPO: "${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-${{ matrix.component }}"
+          REPO: "${{ env.ECR_REGISTRY }}/${{ env.PROJECT }}-${{ matrix.component }}"
           TAG: "${{ needs.prepare.outputs.tag }}"
         run: |
-          # 1. Check if the current tag exists.
-          if ! regctl image inspect "${FULL_REPO}:${TAG}" > /dev/null 2>&1; then
-            echo "Tag ${TAG} not found on remote. Nothing to backup."
+          # 1. Check if the current tag exists in ECR.
+          IMAGE_META=$(aws ecr describe-images \
+            --repository-name "${{ env.PROJECT }}-${{ matrix.component }}" \
+            --region "${{ env.AWS_REGION }}" \
+            --image-ids imageTag="${TAG}" \
+            --output json 2>/dev/null || echo "not-found")
+
+          if [[ "$IMAGE_META" == "not-found" ]] || [[ "$IMAGE_META" == *'"imageDetails": []'* ]]; then
+            echo "Tag ${TAG} not found in ECR. Nothing to backup."
             exit 0
           fi
 
-          # 2. If a backup already exists, delete it so we can overwrite it.
-          # Some registries don't allow overwriting a tag via 'copy' if it exists.
-          if regctl image inspect "${FULL_REPO}:${TAG}-backup" > /dev/null 2>&1; then
-            echo "Found existing backup. Deleting..."
-            regctl tag rm "${FULL_REPO}:${TAG}-backup" || true
-          fi
-
-          # 3. Server-side retag (No layer download)
+          # 2. Server-side retag in ECR (no layer download).
           echo "Backing up ${TAG} to ${TAG}-backup..."
-          regctl image copy "${FULL_REPO}:${TAG}" "${FULL_REPO}:${TAG}-backup"
+          MANIFEST=$(aws ecr batch-get-image \
+            --repository-name "${{ env.PROJECT }}-${{ matrix.component }}" \
+            --region "${{ env.AWS_REGION }}" \
+            --image-ids imageTag="${TAG}" \
+            --query 'images[0].imageManifest' \
+            --output text)
+
+          aws ecr put-image \
+            --repository-name "${{ env.PROJECT }}-${{ matrix.component }}" \
+            --region "${{ env.AWS_REGION }}" \
+            --image-tag "${TAG}-backup" \
+            --image-manifest "$MANIFEST" || true
 
   build:
     name: Build & Push
@@ -132,11 +143,15 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.ref }}
 
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -150,11 +165,11 @@ jobs:
           # Pin the shared base explicitly (only consumed by the backend Dockerfile;
           # ignored as an unused arg by other components).
           build-args: |
-            PYTHON_BASE=${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/m8flow-python-base:ubuntu24.04-py3.12
+            PYTHON_BASE=${{ env.ECR_REGISTRY }}/m8flow-python-base:ubuntu24.04-py3.12
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-${{ matrix.component }}:${{ needs.prepare.outputs.tag }}
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-${{ matrix.component }}:buildcache
-          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-${{ matrix.component }}:buildcache,mode=max
+          tags: ${{ env.ECR_REGISTRY }}/${{ env.PROJECT }}-${{ matrix.component }}:${{ needs.prepare.outputs.tag }}
+          cache-from: type=registry,ref=${{ env.ECR_REGISTRY }}/${{ env.PROJECT }}-${{ matrix.component }}:buildcache
+          cache-to: type=registry,ref=${{ env.ECR_REGISTRY }}/${{ env.PROJECT }}-${{ matrix.component }}:buildcache,mode=max
           provenance: true
           sbom: true
 
