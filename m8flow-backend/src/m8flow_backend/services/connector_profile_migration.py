@@ -210,13 +210,12 @@ def seed_default_profile(connector_type: str, user_id: int | None = None) -> Any
         # Seeding is best effort: a validation gap (say a required field the old
         # form never collected) must not block anything, and the tenant can
         # finish the profile by hand.
-        # Log the exception type only; error.message/error.errors can echo the
-        # submitted config, so the human-readable detail goes to the redacted
-        # audit log below rather than the clear-text application log.
+        # Nothing off `error` is logged here: error.message/error.errors can echo
+        # the submitted config, so the exception type and message go to the
+        # redacted audit log below instead of the clear-text application log.
         logger.warning(
-            "Could not seed a default %s profile (%s); see the audit log for details.",
+            "Could not seed a default %s profile; see the audit log for details.",
             connector_type,
-            type(error).__name__,
         )
         _audit(
             "connector_profile.seed.failed",
