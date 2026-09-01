@@ -229,14 +229,15 @@ def seed_default_profile(connector_type: str, user_id: int | None = None) -> Any
         )
         return None
 
-    # Field names only, rebuilt from the static SECRET_KEY_TO_FIELD mapping so no
-    # value can reach the log: `mapping` is a constant and `key in values` is a
-    # membership test, so `seeded_fields` carries no credential data.
+    # Field names only (smtp_host, ...), never values. The app log gets the
+    # count as an int; the field names go to the redacted audit log below.
+    # CodeQL classifies anything traced to SECRET_KEY_TO_FIELD as sensitive, so
+    # only a non-string (the count) is logged here.
     seeded_fields = sorted(field for key, field in mapping.items() if key in values)
     logger.info(
-        "Seeded default %s profile from existing secrets: %s",
+        "Seeded default %s profile from %d existing secret field(s).",
         connector_type,
-        ", ".join(seeded_fields),
+        len(seeded_fields),
     )
     _audit(
         "connector_profile.seed.succeeded",
@@ -258,21 +259,15 @@ def report_unseedable_secrets() -> list[str]:
     GITHUB_PAT_TOKEN would get no profile, no error and no explanation. Logging
     the names (never the values) makes the gap findable.
     """
-    # Membership only: the key names come from the Secret table, so iterate the
-    # static UNMAPPED_SECRET_KEYS constant for the name and reason and use the
-    # table result solely for a boolean `in` test -- no Secret-table data flows
-    # into the log line.
+    # The key names and reasons go to the redacted audit log (one
+    # connector_profile.seed.skipped event each), which is where the gap is meant
+    # to be found. The app log gets only the count as an int: CodeQL classifies
+    # anything traced to UNMAPPED_SECRET_KEYS as sensitive, so no name is logged.
     present_keys = set(_existing_secret_keys(list(UNMAPPED_SECRET_KEYS)))
     reported: list[str] = []
     for key, reason in UNMAPPED_SECRET_KEYS.items():
         if key not in present_keys:
             continue
-        logger.info(
-            "Secret '%s' cannot be carried into a connector profile: %s. "
-            "Configure that connector's profile by hand.",
-            key,
-            reason,
-        )
         _audit(
             "connector_profile.seed.skipped",
             "skipped",
@@ -281,6 +276,13 @@ def report_unseedable_secrets() -> list[str]:
             reason=reason,
         )
         reported.append(key)
+    if reported:
+        logger.info(
+            "%d stored legacy secret(s) have no connector-profile mapping and "
+            "were skipped; see the connector_profile.seed.skipped audit events "
+            "for the key names and reasons.",
+            len(reported),
+        )
     return reported
 
 
