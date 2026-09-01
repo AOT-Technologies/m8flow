@@ -108,9 +108,10 @@ jobs:
             --repository-name "${{ env.PROJECT }}-${{ matrix.component }}" \
             --region "${{ env.AWS_REGION }}" \
             --image-ids imageTag="${TAG}" \
-            --output json 2>/dev/null || echo "not-found")
+            --output json 2>&1) || { echo "Tag ${TAG} not found in ECR. Nothing to backup."; exit 0; }
 
-          if [[ "$IMAGE_META" == "not-found" ]] || [[ "$IMAGE_META" == *'"imageDetails": []'* ]]; then
+          COUNT=$(echo "$IMAGE_META" | jq '.imageDetails | length' 2>/dev/null || echo "0")
+          if [[ "$COUNT" -lt 1 ]]; then
             echo "Tag ${TAG} not found in ECR. Nothing to backup."
             exit 0
           fi
@@ -124,11 +125,16 @@ jobs:
             --query 'images[0].imageManifest' \
             --output text)
 
+          if [[ -z "$MANIFEST" || "$MANIFEST" == "None" ]]; then
+            echo "::error::Failed to retrieve manifest for ${TAG}."
+            exit 1
+          fi
+
           aws ecr put-image \
             --repository-name "${{ env.PROJECT }}-${{ matrix.component }}" \
             --region "${{ env.AWS_REGION }}" \
             --image-tag "${TAG}-backup" \
-            --image-manifest "$MANIFEST" || true
+            --image-manifest "$MANIFEST"
 
   build:
     name: Build & Push
@@ -150,7 +156,6 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
-        id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Set up Docker Buildx

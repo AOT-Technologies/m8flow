@@ -36,8 +36,11 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  AWS_REGION: us-east-2
+  # ECR registry is fixed to us-east-2 where all m8flow ECR repos live.
+  # AWS_REGION for ECS deploy is resolved per-environment from vars.AWS_REGION
+  # (set in each GitHub environment), falling back to us-east-2 if unset.
   ECR_REGISTRY: 653405621825.dkr.ecr.us-east-2.amazonaws.com
+  ECR_REGION: us-east-2
   IMAGE_BASE: 653405621825.dkr.ecr.us-east-2.amazonaws.com/m8flow
 
 jobs:
@@ -82,7 +85,8 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+          # ECR is always in us-east-2 regardless of ECS environment region
+          aws-region: ${{ env.ECR_REGION }}
 
       - name: Check images exist in ECR
         run: |
@@ -104,13 +108,16 @@ jobs:
 
           MISSING=""
           for REPO in $REPOS; do
+            # Explicitly parse imageDetails length — catches both API errors
+            # and successful responses with empty imageDetails arrays.
             RESULT=$(aws ecr describe-images \
               --repository-name "$REPO" \
-              --region "${{ env.AWS_REGION }}" \
+              --region "${{ env.ECR_REGION }}" \
               --image-ids imageTag="${TAG}" \
-              --output json 2>/dev/null || echo "not-found")
+              --output json 2>&1) || { MISSING="${MISSING} ${REPO}:${TAG}"; continue; }
 
-            if [[ "$RESULT" == "not-found" ]]; then
+            COUNT=$(echo "$RESULT" | jq '.imageDetails | length')
+            if [[ "$COUNT" -lt 1 ]]; then
               MISSING="${MISSING} ${REPO}:${TAG}"
             fi
           done
@@ -128,6 +135,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-2' }}
       ECS_CLUSTER: ${{ secrets.ECS_CLUSTER }}
       BACKEND_TASK_DEF_FAMILY: ${{ secrets.BACKEND_TASK_DEF_FAMILY }}
       BACKEND_CONTAINER_NAME: ${{ secrets.BACKEND_CONTAINER_NAME }}
@@ -150,6 +158,7 @@ jobs:
         run: |
           # Always required
           required=(
+            AWS_REGION
             ECS_CLUSTER
           )
 
