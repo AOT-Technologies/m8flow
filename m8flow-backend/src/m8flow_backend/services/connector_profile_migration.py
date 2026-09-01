@@ -210,8 +210,13 @@ def seed_default_profile(connector_type: str, user_id: int | None = None) -> Any
         # Seeding is best effort: a validation gap (say a required field the old
         # form never collected) must not block anything, and the tenant can
         # finish the profile by hand.
+        # Log the exception type only; error.message/error.errors can echo the
+        # submitted config, so the human-readable detail goes to the redacted
+        # audit log below rather than the clear-text application log.
         logger.warning(
-            "Could not seed a default %s profile: %s", connector_type, error.message
+            "Could not seed a default %s profile (%s); see the audit log for details.",
+            connector_type,
+            type(error).__name__,
         )
         _audit(
             "connector_profile.seed.failed",
@@ -224,12 +229,14 @@ def seed_default_profile(connector_type: str, user_id: int | None = None) -> Any
         )
         return None
 
-    # codeql[py/clear-text-logging-sensitive-data]: sorted(config.keys()) yields
-    # the dict's field names (smtp_host, smtp_password), never its values.
+    # Field names only, rebuilt from the static SECRET_KEY_TO_FIELD mapping so no
+    # value can reach the log: `mapping` is a constant and `key in values` is a
+    # membership test, so `seeded_fields` carries no credential data.
+    seeded_fields = sorted(field for key, field in mapping.items() if key in values)
     logger.info(
         "Seeded default %s profile from existing secrets: %s",
         connector_type,
-        ", ".join(sorted(config.keys())),
+        ", ".join(seeded_fields),
     )
     _audit(
         "connector_profile.seed.succeeded",
@@ -239,7 +246,7 @@ def seed_default_profile(connector_type: str, user_id: int | None = None) -> Any
         profile_name=DEFAULT_PROFILE_NAME,
         resource_id=getattr(profile, "id", None),
         # Field names only. The values are the credentials themselves.
-        seeded_fields=sorted(config.keys()),
+        seeded_fields=seeded_fields,
     )
     return profile
 
@@ -251,22 +258,30 @@ def report_unseedable_secrets() -> list[str]:
     GITHUB_PAT_TOKEN would get no profile, no error and no explanation. Logging
     the names (never the values) makes the gap findable.
     """
-    present = _existing_secret_keys(list(UNMAPPED_SECRET_KEYS))
-    for key in present:
+    # Membership only: the key names come from the Secret table, so iterate the
+    # static UNMAPPED_SECRET_KEYS constant for the name and reason and use the
+    # table result solely for a boolean `in` test -- no Secret-table data flows
+    # into the log line.
+    present_keys = set(_existing_secret_keys(list(UNMAPPED_SECRET_KEYS)))
+    reported: list[str] = []
+    for key, reason in UNMAPPED_SECRET_KEYS.items():
+        if key not in present_keys:
+            continue
         logger.info(
             "Secret '%s' cannot be carried into a connector profile: %s. "
             "Configure that connector's profile by hand.",
             key,
-            UNMAPPED_SECRET_KEYS[key],
+            reason,
         )
         _audit(
             "connector_profile.seed.skipped",
             "skipped",
             f"Secret '{key}' cannot be carried into a connector profile.",
             secret_key=key,
-            reason=UNMAPPED_SECRET_KEYS[key],
+            reason=reason,
         )
-    return present
+        reported.append(key)
+    return reported
 
 
 def seed_all_default_profiles(user_id: int | None = None) -> list[str]:

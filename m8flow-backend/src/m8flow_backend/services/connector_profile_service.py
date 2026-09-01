@@ -174,14 +174,18 @@ class ConnectorProfileService:
         # must still be rollback-able if a secret write fails.
         db.session.flush()
 
-        profile.secret_refs = cls._write_secrets(profile.id, secret_values, user_id)
+        # Capture the generated id before the secret refs are attached, and log
+        # it as a plain int, so nothing derived from the credentials reaches the
+        # log line.
+        new_profile_id = int(profile.id)
+        profile.secret_refs = cls._write_secrets(new_profile_id, secret_values, user_id)
 
         db.session.commit()
         logger.info(
             "Created connector profile '%s' for connector '%s' (id=%s)",
             profile_name,
             connector_type,
-            profile.id,
+            new_profile_id,
         )
         return profile
 
