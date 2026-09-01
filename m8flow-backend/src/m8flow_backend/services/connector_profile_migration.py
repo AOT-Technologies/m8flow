@@ -213,9 +213,12 @@ def seed_default_profile(connector_type: str, user_id: int | None = None) -> Any
         # Nothing off `error` is logged here: error.message/error.errors can echo
         # the submitted config, so the exception type and message go to the
         # redacted audit log below instead of the clear-text application log.
+        # connector_type is left out for the same reason as at the end of this
+        # function: CodeQL classifies anything traced to SECRET_KEY_TO_FIELD as
+        # sensitive, and the audit event below already carries it.
         logger.warning(
-            "Could not seed a default %s profile; see the audit log for details.",
-            connector_type,
+            "Could not seed a default connector profile; see the "
+            "connector_profile.seed.failed audit event for details."
         )
         _audit(
             "connector_profile.seed.failed",
@@ -234,8 +237,8 @@ def seed_default_profile(connector_type: str, user_id: int | None = None) -> Any
     # only a non-string (the count) is logged here.
     seeded_fields = sorted(field for key, field in mapping.items() if key in values)
     logger.info(
-        "Seeded default %s profile from %d existing secret field(s).",
-        connector_type,
+        "Seeded a default connector profile from %d existing secret field(s); "
+        "see the connector_profile.seed.succeeded audit event for the connector.",
         len(seeded_fields),
     )
     _audit(
