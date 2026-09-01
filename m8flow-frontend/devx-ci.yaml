@@ -1,0 +1,53 @@
+# DevX CI Configuration — m8flow-frontend
+# Language: Node.js 20 | React SPA
+# Dockerfile: docker/m8flow.frontend.Dockerfile (builds from repo root context)
+
+project:
+  language: node
+  version: "20"
+  working_directory: "m8flow-frontend"
+
+build:
+  enabled: true
+  install_command: "npm ci"
+  run_tests: true
+  test_script: "npm run lint && npm run test:ci"
+  build_script: "npm run build"
+
+docker:
+  enabled: true
+  working_directory: "."            # Build context must be repo root
+  dockerfile: "docker/m8flow.frontend.Dockerfile"
+  image_name: "m8flow/m8flow-frontend"
+  image_tag: ""                     # Smart versioning: main → <sha>
+  registry_type: generic
+  registry_url: "docker.io"
+  platforms: "linux/amd64"
+
+security:
+  sast:
+    enabled: true
+    tool: sonarqube
+    scan_path: "m8flow-frontend"
+    sonar_host_url: "https://sonarcloud.io"
+    sonar_organization: "aot-technologies"
+    sonar_project_key: "AOT-Technologies_m8flow-frontend"
+    fail_on_quality_gate: false
+
+  iac:
+    enabled: false
+
+  trivy:
+    enabled: true
+    severity: CRITICAL,HIGH
+    fail_on_vuln: false
+    ignore_unfixed: true
+    scanners: vuln,secret
+
+  sbom:
+    enabled: true
+    format: cyclonedx-json
+
+  sbom_scan:
+    enabled: true
+    severity: medium

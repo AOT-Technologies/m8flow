@@ -1,0 +1,52 @@
+# DevX CI Configuration — m8flow-backend
+# Language: Python 3.12 | FastAPI / Django REST backend
+# Dockerfile: docker/m8flow.backend.Dockerfile (builds from repo root context)
+
+project:
+  language: python
+  version: "3.12"
+  working_directory: "."            # Build context is repo root (Dockerfile uses multi-dir COPY)
+
+build:
+  enabled: true
+  install_command: "pip install ruff==0.12.1 uv"
+  run_tests: true
+  test_script: "python -m ruff check m8flow-backend --config m8flow-backend/ruff.toml"
+
+docker:
+  enabled: true
+  working_directory: "."            # Build context must be repo root
+  dockerfile: "docker/m8flow.backend.Dockerfile"
+  image_name: "m8flow/m8flow-backend"
+  image_tag: ""                     # Smart versioning: main → <sha>, tag → X.Y.Z-rc
+  registry_type: generic
+  registry_url: "docker.io"
+  platforms: "linux/amd64"
+
+security:
+  sast:
+    enabled: true
+    tool: sonarqube
+    scan_path: "m8flow-backend"
+    sonar_host_url: "https://sonarcloud.io"
+    sonar_organization: "aot-technologies"
+    sonar_project_key: "AOT-Technologies_m8flow-backend"
+    fail_on_quality_gate: false
+
+  iac:
+    enabled: false
+
+  trivy:
+    enabled: true
+    severity: CRITICAL,HIGH
+    fail_on_vuln: false
+    ignore_unfixed: true
+    scanners: vuln,secret
+
+  sbom:
+    enabled: true
+    format: cyclonedx-json
+
+  sbom_scan:
+    enabled: true
+    severity: medium

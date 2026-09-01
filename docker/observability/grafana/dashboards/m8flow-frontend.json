@@ -1,20 +1,76 @@
 {
   "uid": "m8flow-frontend",
   "title": "M8Flow Frontend (Faro) Overview",
-  "tags": ["m8flow", "frontend"],
+  "tags": [
+    "m8flow",
+    "frontend"
+  ],
   "timezone": "browser",
   "schemaVersion": 39,
   "version": 2,
   "refresh": "30s",
-  "time": { "from": "now-1h", "to": "now" },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
   "templating": {
     "list": [
+      {
+        "name": "namespace",
+        "label": "Environment / Namespace",
+        "type": "custom",
+        "query": "qa,dev,demo,monitoring",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "All",
+            "value": "$__all"
+          },
+          {
+            "selected": false,
+            "text": "qa",
+            "value": "qa"
+          },
+          {
+            "selected": false,
+            "text": "dev",
+            "value": "dev"
+          },
+          {
+            "selected": false,
+            "text": "demo",
+            "value": "demo"
+          },
+          {
+            "selected": false,
+            "text": "monitoring",
+            "value": "monitoring"
+          }
+        ],
+        "includeAll": true,
+        "multi": true,
+        "hide": 0,
+        "skipUrlSync": false,
+        "allValue": ".*"
+      },
       {
         "name": "m8flow_tenant_id",
         "type": "textbox",
         "label": "m8flow_tenant_id",
         "query": "",
-        "current": { "text": "", "value": "" },
+        "current": {
+          "text": "",
+          "value": ""
+        },
         "options": []
       }
     ]
@@ -24,99 +80,283 @@
       "id": 10,
       "type": "text",
       "title": "About logs",
-      "gridPos": { "h": 2, "w": 24, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 2,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "options": {
         "mode": "markdown",
-        "content": "**Faro events** use label `telemetry_source=faro` (JSON lines from the browser SDK). **Nginx access logs** for the frontend container are plain text — do not run `| json` on them (that causes `JSONParserErr`). Enable `M8FLOW_FRONTEND_FARO_COLLECTOR_URL=http://localhost:6865/collect` and rebuild/restart the frontend for Faro data."
+        "content": "**Faro events** use label `telemetry_source=faro` (JSON lines from the browser SDK). **Nginx access logs** for the frontend container are plain text \u00e2\u20ac\u201d do not run `| json` on them (that causes `JSONParserErr`). Enable `M8FLOW_FRONTEND_FARO_COLLECTOR_URL=http://localhost:6865/collect` and rebuild/restart the frontend for Faro data."
       }
     },
     {
       "id": 1,
       "type": "stat",
       "title": "Error rate",
-      "description": "Faro exception events (browser errors) per second. Computed directly from the Faro JSON logs via LogQL — Alloy's faro.receiver only emits logs and traces, never Prometheus metrics, so there is no faro_errors_total (or any faro_* metric) to query.",
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 2 },
-      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "Faro exception events (browser errors) per second. Computed directly from the Faro JSON logs via LogQL \u00e2\u20ac\u201d Alloy's faro.receiver only emits logs and traces, never Prometheus metrics, so there is no faro_errors_total (or any faro_* metric) to query.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 2
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate({telemetry_source=\"faro\"} | json | kind=\"exception\" [$__rate_interval])) or vector(0)",
+          "expr": "sum(count_over_time({namespace=~\"$namespace\", app=\"m8flow-frontend\"} |~ \"(?i)(error|exception|fatal)\" [$__interval]))",
           "legendFormat": "errors/s"
         }
       ],
       "options": {},
-      "fieldConfig": { "defaults": {}, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
     },
     {
       "id": 2,
       "type": "stat",
       "title": "Session count",
       "description": "Distinct Faro session_id values seen in the selected time range. Computed from Faro JSON logs via LogQL (see Error rate panel note).",
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 2 },
-      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 2
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
       "targets": [
         {
           "refId": "A",
-          "expr": "count(count by (session_id) (count_over_time({telemetry_source=\"faro\"} | json [$__range]))) or vector(0)",
+          "expr": "{namespace=~\"$namespace\", app=\"m8flow-frontend\"}",
           "legendFormat": "sessions"
         }
       ],
       "options": {},
-      "fieldConfig": { "defaults": {}, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
     },
     {
       "id": 3,
       "type": "stat",
       "title": "Web Vitals: LCP p75",
       "description": "p75 Largest Contentful Paint (ms) from Faro web-vitals measurements, via LogQL unwrap + quantile_over_time (see Error rate panel note). Picked LCP specifically since other vitals (CLS, INP, etc.) use different units and can't be quantiled together meaningfully.",
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 2 },
-      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 2
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
       "targets": [
         {
           "refId": "A",
-          "expr": "quantile_over_time(0.75, {telemetry_source=\"faro\"} | json | kind=\"measurement\" | unwrap value_LCP [$__range]) or vector(0)",
+          "expr": "{namespace=~\"$namespace\", app=\"m8flow-frontend\"}",
           "legendFormat": "p75"
         }
       ],
       "options": {},
-      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      }
     },
     {
       "id": 4,
       "type": "logs",
       "title": "Faro browser events",
       "description": "Only telemetry from the Faro collector (JSON). Tenant filter applies when user attributes are present.",
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 6 },
-      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 12
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
       "targets": [
         {
           "refId": "A",
-          "expr": "{telemetry_source=\"faro\"} | json | __error__=\"\" | user_attr_m8flow_tenant_id=~`$m8flow_tenant_id|.*`",
+          "expr": "{namespace=~\"$namespace\", app=\"m8flow-frontend\"}",
           "queryType": "range"
         }
       ],
       "options": {},
-      "fieldConfig": { "defaults": {}, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
     },
     {
       "id": 5,
       "type": "logs",
       "title": "Frontend container (nginx) access logs",
-      "description": "Docker stdout from the frontend image — not Faro. Shown without JSON parsing.",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
-      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "Docker stdout from the frontend image \u00e2\u20ac\u201d not Faro. Shown without JSON parsing.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
       "targets": [
         {
           "refId": "A",
-          "expr": "{service_name=\"m8flow-frontend\", telemetry_source!=\"faro\"}",
+          "expr": "{namespace=~\"$namespace\", app=\"m8flow-frontend\"}",
           "queryType": "range"
         }
       ],
       "options": {},
-      "fieldConfig": { "defaults": {}, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 101,
+      "title": "Frontend Pod CPU Usage",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\", pod=~\".*m8flow-frontend.*\", container!=\"\"}[1m])) by (pod, namespace)",
+          "legendFormat": "{{namespace}} / {{pod}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 102,
+      "title": "Frontend Pod Memory Usage",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(container_memory_working_set_bytes{namespace=~\"$namespace\", pod=~\".*m8flow-frontend.*\", container!=\"\"}) by (pod, namespace)",
+          "legendFormat": "{{namespace}} / {{pod}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 103,
+      "title": "Pod Restarts",
+      "type": "stat",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=~\"$namespace\", pod=~\".*m8flow-frontend.*\"}[1h])) by (pod, namespace)",
+          "legendFormat": "{{namespace}} / {{pod}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
     }
   ],
-  "annotations": { "list": [] },
+  "annotations": {
+    "list": []
+  },
   "editable": true,
   "graphTooltip": 1,
   "links": [
@@ -124,6 +364,24 @@
       "title": "Tempo Service Graph",
       "url": "/a/grafana-explore-app/explore?schemaVersion=1&panes=%7B%22tempo%22:%7B%22datasource%22:%22tempo%22%7D%7D",
       "type": "link"
+    }
+  ],
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "Select the Prometheus data source",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    },
+    {
+      "name": "DS_LOKI",
+      "label": "Loki",
+      "description": "Select the Loki data source for logs",
+      "type": "datasource",
+      "pluginId": "loki",
+      "pluginName": "Loki"
     }
   ]
 }
