@@ -1,6 +1,7 @@
 """Platform Sign In flow tests for platform administrators."""
 
 import logging
+import re
 
 import pytest
 from playwright.sync_api import Page, expect
@@ -127,6 +128,12 @@ def test_platform_admin_login_succeeds(platform_admin_page: Page) -> None:
 
 def test_platform_admin_redirected_to_admin_area(platform_admin_page: Page) -> None:
     """Platform administrator lands in the platform administration area after login."""
+    # The redirect from "/" to /tenants is a client-side hop after login, so
+    # poll for it instead of asserting instantly (a VERIFY_PROFILE completion
+    # on first login can delay the hop past the assertion).
+    expect(platform_admin_page).to_have_url(
+        re.compile(re.escape(PLATFORM_ADMIN_LANDING_PATH)), timeout=NAV_TIMEOUT
+    )
     assert PLATFORM_ADMIN_LANDING_PATH in platform_admin_page.url, (
         f"Expected platform admin to land on {PLATFORM_ADMIN_LANDING_PATH!r}, "
         f"but URL was {platform_admin_page.url!r}"
