@@ -413,7 +413,6 @@ jobs:
           docker buildx build \
             --file docker/m8flow.backend.Dockerfile \
             --tag backend:pr-test \
-            --cache-from type=registry,ref=docker.io/m8flow/m8flow-backend:buildcache \
             --cache-from type=gha,scope=backend \
             --cache-to type=gha,mode=max,scope=backend \
             --load \
@@ -475,7 +474,6 @@ jobs:
           docker buildx build \
             --file docker/m8flow.backend.Dockerfile \
             --tag m8flow-backend \
-            --cache-from type=registry,ref=docker.io/m8flow/m8flow-backend:buildcache \
             --cache-from type=gha,scope=backend \
             --cache-to type=gha,mode=max,scope=backend \
             --load \
