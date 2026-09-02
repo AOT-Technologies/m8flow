@@ -3140,8 +3140,110 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /named-values:
+    get:
+      summary: List manual configuration-variable metadata
+      operationId: m8flow_backend.routes.named_values_controller.list_named_values
+      tags: [Configuration]
+      responses:
+        "200":
+          description: Named values for the active tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NamedValueListResponse"
+    post:
+      summary: Create a manual configuration variable
+      operationId: m8flow_backend.routes.named_values_controller.create_named_value
+      tags: [Configuration]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NamedValueRequest"
+      responses:
+        "201":
+          description: Named value created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NamedValue"
+
+  /named-values/{value_id}:
+    parameters:
+      - name: value_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get a named value
+      operationId: m8flow_backend.routes.named_values_controller.get_named_value
+      tags: [Configuration]
+      responses:
+        "200":
+          description: Named value
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NamedValue"
+    put:
+      summary: Update a named value
+      operationId: m8flow_backend.routes.named_values_controller.update_named_value
+      tags: [Configuration]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NamedValueRequest"
+      responses:
+        "200":
+          description: Named value updated
+    delete:
+      summary: Delete a named value
+      operationId: m8flow_backend.routes.named_values_controller.delete_named_value
+      tags: [Configuration]
+      responses:
+        "200":
+          description: Named value deleted
+
 components:
   schemas:
+    NamedValue:
+      type: object
+      required: [id, tenantId, name, isSensitive, isConfigured]
+      properties:
+        id: {type: string, format: uuid}
+        tenantId: {type: string}
+        name: {type: string, maxLength: 255}
+        description: {type: string, nullable: true}
+        isSensitive: {type: boolean}
+        isConfigured: {type: boolean}
+        value: {nullable: true}
+        userId: {type: integer, nullable: true}
+        createdAtInSeconds: {type: integer}
+        updatedAtInSeconds: {type: integer}
+
+    NamedValueListResponse:
+      type: object
+      required: [values]
+      properties:
+        values:
+          type: array
+          items: {$ref: "#/components/schemas/NamedValue"}
+
+    NamedValueRequest:
+      type: object
+      required: [name, value]
+      additionalProperties: false
+      properties:
+        name: {type: string, maxLength: 255}
+        description: {type: string, nullable: true}
+        value: {}
+        is_sensitive: {type: boolean, default: false}
     HealthResponse:
       type: object
       properties:

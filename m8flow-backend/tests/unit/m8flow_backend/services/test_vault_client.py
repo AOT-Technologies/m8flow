@@ -60,8 +60,12 @@ class FakeKvV2:
         mount_point: str,
         path: str,
         secret: dict[str, object],
+        cas: int | None = None,
     ) -> dict[str, object]:
-        self.create_calls.append({"mount_point": mount_point, "path": path, "secret": secret})
+        call = {"mount_point": mount_point, "path": path, "secret": secret}
+        if cas is not None:
+            call["cas"] = cas
+        self.create_calls.append(call)
         if self.write_exception is not None:
             raise self.write_exception
         self.storage[path] = dict(secret)
@@ -487,6 +491,21 @@ class TestVaultClientOperations:
                 "mount_point": "kv",
                 "path": "m8flow/test/SMTP_PASSWORD",
                 "secret": {"value": "super-secret"},
+            }
+        ]
+
+    def test_store_secret_document_passes_expected_version_as_kv_cas(self):
+        fake_client = FakeHvacClient()
+        client = VaultClient(settings=_settings(), client_factory=lambda _settings: fake_client)
+
+        client.store_secret_document("connector-document", {"token": "secret"}, "3")
+
+        assert fake_client.kv_v2.create_calls == [
+            {
+                "mount_point": "kv",
+                "path": "m8flow/test/connector-document",
+                "secret": {"token": "secret"},
+                "cas": 3,
             }
         ]
 

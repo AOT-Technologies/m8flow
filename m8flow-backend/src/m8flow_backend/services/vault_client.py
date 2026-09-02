@@ -400,16 +400,24 @@ class VaultClient:
         self,
         secret_name: str,
         secret_data: Mapping[str, Any],
+        expected_version: str | None = None,
     ) -> dict[str, Any]:
         client = self._get_client()
         path = self._secret_path(secret_name)
 
+        request: dict[str, Any] = {
+            "mount_point": self._settings.mount_point,
+            "path": path,
+            "secret": dict(secret_data),
+        }
+        if expected_version is not None:
+            try:
+                request["cas"] = int(expected_version)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("expected_version must be an integer string.") from exc
+
         try:
-            response = client.secrets.kv.v2.create_or_update_secret(
-                mount_point=self._settings.mount_point,
-                path=path,
-                secret=dict(secret_data),
-            )
+            response = client.secrets.kv.v2.create_or_update_secret(**request)
         except Exception as exc:
             raise self._operation_error("store", secret_name, exc) from exc
 

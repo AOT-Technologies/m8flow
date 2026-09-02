@@ -47,6 +47,7 @@ def test_descriptor_shape(connector_type):
 
     assert descriptor["id"] == connector_type
     assert descriptor["name"]
+    assert descriptor["schemaVersion"] == "1"
     assert descriptor["supportsProfiles"] is True
     # Every connector must offer something a profile can hold, or it has no
     # business appearing in the profile UI at all.
@@ -58,6 +59,8 @@ def test_descriptor_shape(connector_type):
         # The frontend validator only understands this vocabulary.
         assert field["type"] in {"text", "password", "number", "boolean", "select", "textarea"}
         assert isinstance(field["required"], bool)
+        assert field["sensitive"] is field["secret"]
+        assert "isHighlySensitive" not in field
 
 
 @pytest.mark.parametrize("connector_type", sorted(EXPECTED_CONNECTORS))
@@ -255,6 +258,8 @@ def test_slack_token_is_the_secret_and_channel_is_not():
     definition = get_connector("slack")
     assert definition.field_binding("token") == SECRET_PARAM
     assert definition.field_binding("channel") != SECRET_PARAM
+    assert definition.field_is_sensitive("token") is True
+    assert definition.field_is_sensitive("channel") is False
 
 
 # ------------------------------------------------- string input coercion

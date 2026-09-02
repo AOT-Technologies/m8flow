@@ -19,6 +19,7 @@ for path in (repo_root, extension_src, backend_src):
         sys.path.insert(0, path_str)
 
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel, TenantStatus
+from m8flow_backend.models.connector_configuration import ConnectorConfigurationModel
 from m8flow_backend.models.process_model_bpmn_version import ProcessModelBpmnVersionModel  # noqa: F401
 from m8flow_backend.models.user import UserModel
 from m8flow_backend.services import secret_backend as secret_backend_module
@@ -876,6 +877,43 @@ def test_list_without_tenant_context_discovers_all_vault_tenants(app, tenants, u
         (tenants[0], "TENANT_A_SECRET"),
         (tenants[1], "TENANT_B_SECRET"),
     }
+
+
+def test_vault_list_hides_connector_profile_secrets_before_reading_documents(
+    app,
+    tenants,
+    monkeypatch,
+) -> None:
+    fake_vault = FakeVaultClient()
+    backend = _backend(fake_vault)
+    tenant_id = tenants[0]
+    root = f"m8flow/tenants/{tenant_id}/secrets"
+    fake_vault.storage[f"{root}/visible-secret"] = {"value": "visible"}
+    fake_vault.storage[f"{root}/connector-profile"] = {"value": "credential-document"}
+    fake_vault.storage[f"{root}/cnx.1.smtp_password"] = {"value": "legacy-credential"}
+
+    class FakeQuery:
+        def filter(self, _criterion):
+            return self
+
+        def all(self):
+            return [
+                SimpleNamespace(
+                    m8f_tenant_id=tenant_id,
+                    provider_key=f"tenants/{tenant_id}/secrets/connector-configuration/17",
+                    profile_name="connector-profile",
+                    secret_refs={"password": "cnx.1.smtp_password"},
+                )
+            ]
+
+    monkeypatch.setattr(ConnectorConfigurationModel, "query", FakeQuery())
+
+    with app.test_request_context("/"):
+        g.m8flow_tenant_id = tenant_id
+        records = backend.list_secrets()
+
+    assert [record.key for record in records] == ["visible-secret"]
+    assert fake_vault.retrieve_calls == [f"{root}/visible-secret"]
 
 
 def test_legacy_vault_document_without_metadata_still_resolves(app, tenants) -> None:

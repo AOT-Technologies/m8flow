@@ -61,15 +61,16 @@ def config_param(group: str, **ui: Any) -> Any:
     return Field(default=None, json_schema_extra={"binding": CONFIG_PARAM, "group": group, **ui})
 
 
-def secret_param(group: str, *, is_highly_sensitive: bool = True, **ui: Any) -> Any:
-    """Sensitive profile value -> secret store; only a reference is persisted."""
+def secret_param(group: str, **ui: Any) -> Any:
+    """Sensitive profile value -> secret provider; only state is persisted."""
     return Field(
         default=None,
         json_schema_extra={
             "binding": SECRET_PARAM,
             "group": group,
-            "is_highly_sensitive": is_highly_sensitive,
-            "widget": "password" if is_highly_sensitive else "text",
+            # Sensitivity is binary. Widget choice is presentation only: a
+            # username may render as text but is still never a database value.
+            "widget": ui.pop("widget", "password"),
             **ui,
         },
     )
@@ -101,6 +102,9 @@ class ConnectorDefinition(BaseModel):
     icon: ClassVar[str] = "extension"
     groups: ClassVar[tuple[dict[str, str], ...]] = ()
     docs_anchor: ClassVar[str | None] = None
+    # Persisted profiles record this value once the field-level schema cutover
+    # is active. Bump it when a connector's profile field contract changes.
+    schema_version: ClassVar[str] = "1"
 
     @classmethod
     def wire_name(cls, name: str) -> str:
@@ -145,6 +149,11 @@ class ConnectorDefinition(BaseModel):
     @classmethod
     def secret_field_names(cls) -> tuple[str, ...]:
         return cls.field_names_for_binding(SECRET_PARAM)
+
+    @classmethod
+    def field_is_sensitive(cls, name: str) -> bool:
+        """Whether the registry classifies a profile field as sensitive."""
+        return cls.field_binding(name) == SECRET_PARAM
 
     @classmethod
     def has_profile_support(cls) -> bool:

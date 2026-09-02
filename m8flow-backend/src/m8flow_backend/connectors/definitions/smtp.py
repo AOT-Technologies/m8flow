@@ -49,7 +49,7 @@ class SmtpConnector(ConnectorDefinition):
 
     # --- profile: authentication ---------------------------------------------
     smtp_user: Annotated[str | None, secret_param(
-        "authentication", label="Username", is_highly_sensitive=False)]
+        "authentication", label="Username", widget="text")]
     smtp_password: Annotated[str | None, secret_param(
         "authentication", label="Password")]
 

@@ -32,6 +32,14 @@ The local dev setup now has two distinct Vault identity layers:
 - In-container Vault URL: `http://vault:8200`
 - KV v2 mount used by M8Flow: `kv`
 - Logical secret path convention: `kv/m8flow/tenants/{tenant_id}/secrets/{secret_name}`
+- Connector profile credentials use one document per configuration at
+  `kv/m8flow/tenants/{tenant_id}/secrets/connector-configuration/{connector_configuration_id}`.
+  Non-sensitive connector fields remain in `m8flow_connector_variable`; sensitive
+  fields are represented there only by `is_sensitive` and `is_configured` metadata.
+- Manual sensitive Configuration Variables are seeded after backend migrations by the
+  `vault-demo-seed` job. Each has a catalog row in `m8flow_named_value` and a value-only
+  document at
+  `kv/m8flow/tenants/{tenant_id}/secrets/configuration-variable/{named_value_id}`.
 
 The `vault-demo` profile stores generated local-only files inside the named demo state volume at `/vault/demo`:
 

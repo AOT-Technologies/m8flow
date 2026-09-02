@@ -211,6 +211,40 @@ services:
         condition: service_completed_successfully
     restart: "no"
 
+  vault-demo-seed:
+    profiles: ["vault-demo"]
+    image: m8flow-backend
+    pull_policy: never
+    user: "0"
+    entrypoint: ["/bin/bash", "-lc"]
+    command:
+      - |
+        if [ -f /vault/demo/runtime.env ]; then
+          set -a
+          . /vault/demo/runtime.env
+          set +a
+        fi
+        exec gosu app python /app/docker/vault/demo/seed_named_values.py
+    env_file: ../.env
+    environment:
+      M8FLOW_VAULT_ADDR: "http://vault:8200"
+      M8FLOW_VAULT_MOUNT_POINT: "${M8FLOW_VAULT_MOUNT_POINT:-kv}"
+      M8FLOW_VAULT_SECRET_PATH_PREFIX: "${M8FLOW_VAULT_SECRET_PATH_PREFIX:-m8flow}"
+      M8FLOW_VAULT_APPROLE_MOUNT_POINT: "${M8FLOW_VAULT_APPROLE_MOUNT_POINT:-approle}"
+      M8FLOW_VAULT_TENANT_POLICY_PREFIX: "${M8FLOW_VAULT_TENANT_POLICY_PREFIX:-m8flow-tenant-policy}"
+      M8FLOW_VAULT_TENANT_ROLE_PREFIX: "${M8FLOW_VAULT_TENANT_ROLE_PREFIX:-m8flow-tenant-role}"
+      M8FLOW_VAULT_DEMO_SECRETS_FILE: "/app/docker/vault/demo/secrets.yml"
+      M8FLOW_VAULT_DEMO_OVERWRITE: "${M8FLOW_VAULT_DEMO_OVERWRITE:-false}"
+    volumes:
+      - vault-demo-state:/vault/demo:ro
+      - ../docker/vault/demo:/app/docker/vault/demo:ro
+    depends_on:
+      m8flow-backend:
+        condition: service_healthy
+      vault-demo:
+        condition: service_completed_successfully
+    restart: "no"
+
   m8flow-nats-consumer:
     profiles: ["nats"]
     container_name: m8flow-nats-consumer
@@ -457,6 +491,16 @@ services:
       M8FLOW_NATS_URL: "nats://${M8FLOW_NATS_USER:-admin}:${M8FLOW_NATS_PASSWORD:-admin}@nats:4222"
     ports:
       - "${M8FLOW_BACKEND_PORT:-6840}:${M8FLOW_BACKEND_PORT:-6840}"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; response = urllib.request.urlopen('http://127.0.0.1:${M8FLOW_BACKEND_PORT:-6840}/v1.0/status', timeout=3); raise SystemExit(0 if response.status == 200 else 1)\"",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     volumes:
       - type: bind
         source: ../data/process_models

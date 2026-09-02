@@ -352,6 +352,22 @@ permissions:
     groups: ["tenant-admin", "integrator"]
     actions: [all]
     uri: /secrets/*
+  read-named-values:
+    groups: ["integrator", "viewer", "super-admin"]
+    actions: [read]
+    uri: /m8flow/named-values
+  read-named-value-items:
+    groups: ["integrator", "viewer", "super-admin"]
+    actions: [read]
+    uri: /m8flow/named-values/*
+  manage-named-values:
+    groups: ["tenant-admin", "integrator"]
+    actions: [all]
+    uri: /m8flow/named-values
+  manage-named-value-items:
+    groups: ["tenant-admin", "integrator"]
+    actions: [all]
+    uri: /m8flow/named-values/*
   # authentication (singular)
   read-authentication-items:
     groups: ["integrator", "viewer", "super-admin"]

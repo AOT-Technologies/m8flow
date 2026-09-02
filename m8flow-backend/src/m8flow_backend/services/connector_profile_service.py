@@ -29,6 +29,10 @@ from m8flow_backend.connectors.registry import get_connector
 from m8flow_backend.connectors.validation import validate_profile
 from m8flow_backend.models.connector_configuration import ConnectorConfigurationModel
 from m8flow_backend.services.connector_secret_backend import secret_backend
+from m8flow_backend.services.connector_profile_storage_service import (
+    persist_profile_document,
+    variable_rows,
+)
 from m8flow_backend.tenancy import get_tenant_id
 
 logger = logging.getLogger(__name__)
@@ -174,7 +178,16 @@ class ConnectorProfileService:
         # must still be rollback-able if a secret write fails.
         db.session.flush()
 
-        profile.secret_refs = cls._write_secrets(profile.id, secret_values, user_id)
+        backend = secret_backend()
+        if getattr(backend, "capabilities", None) and getattr(
+            backend.capabilities, "supports_secret_documents", False
+        ):
+            persist_profile_document(
+                profile, definition, config_values, secret_values, user_id
+            )
+        else:
+            db.session.add_all(variable_rows(profile, definition, config_values | secret_values, user_id))
+            profile.secret_refs = cls._write_secrets(profile.id, secret_values, user_id)
 
         db.session.commit()
         logger.info(
@@ -236,7 +249,13 @@ class ConnectorProfileService:
         # secrets, so an untouched required secret does not read as missing.
         for_validation = dict(merged)
         for_validation.update(secret_updates)
-        for name in profile.secret_refs or {}:
+        stored_secret_names = set(profile.secret_refs or {})
+        stored_secret_names.update(
+            variable.field_name
+            for variable in getattr(profile, "variables", [])
+            if variable.is_sensitive and variable.is_configured
+        )
+        for name in stored_secret_names:
             for_validation.setdefault(name, "unchanged")
 
         cleaned, errors = validate_profile(definition, for_validation)
@@ -249,10 +268,30 @@ class ConnectorProfileService:
         profile.config_json = config_values
 
         if not secret_updates:
+            cls._sync_variable_rows(profile, definition, cleaned, user_id)
+            return
+
+        backend = secret_backend()
+        if getattr(backend, "capabilities", None) and getattr(
+            backend.capabilities, "supports_secret_documents", False
+        ) and profile.provider_key:
+            try:
+                document = backend.read_document(profile.provider_key) or {}
+            except Exception as exc:
+                raise ConnectorProfileError(
+                    "Could not read the profile's stored credentials.", status_code=500
+                ) from exc
+            document.update({name.upper(): str(value) for name, value in secret_updates.items()})
+            try:
+                backend.write_document(profile.provider_key, document, user_id)
+            except Exception as exc:
+                raise ConnectorProfileError(
+                    "Could not update the profile's credentials.", status_code=500
+                ) from exc
+            cls._sync_variable_rows(profile, definition, cleaned, user_id)
             return
 
         refs = dict(profile.secret_refs or {})
-        backend = secret_backend()
         for name, value in secret_updates.items():
             # Upsert against the existing reference: the ref is keyed on the
             # immutable configuration id, so it is stable and there is no
@@ -261,6 +300,31 @@ class ConnectorProfileService:
             backend.upsert(key, str(value), user_id)
             refs[name] = key
         profile.secret_refs = refs
+        cls._sync_variable_rows(profile, definition, cleaned, user_id)
+
+    @staticmethod
+    def _sync_variable_rows(
+        profile: ConnectorConfigurationModel,
+        definition: type[ConnectorDefinition],
+        values: dict[str, Any],
+        user_id: int | None,
+    ) -> None:
+        """Keep PostgreSQL metadata aligned without persisting sensitive values."""
+        existing = {
+            variable.field_name: variable
+            for variable in getattr(profile, "variables", [])
+        }
+        if not hasattr(profile, "variables"):
+            return
+        for row in variable_rows(profile, definition, values, user_id):
+            current = existing.get(row.field_name)
+            if current is None:
+                db.session.add(row)
+                continue
+            current.is_sensitive = row.is_sensitive
+            current.value = row.value
+            current.is_configured = row.is_configured
+            current.user_id = user_id
 
     @classmethod
     def deactivate_profile(cls, configuration_id: int) -> ConnectorConfigurationModel:
@@ -284,11 +348,28 @@ class ConnectorProfileService:
         """
         profile = cls.get_profile(configuration_id)
         refs = list((profile.secret_refs or {}).values())
+        # Legacy rows created before the document cutover do not have this
+        # nullable column on their lightweight test doubles (or in old data),
+        # so keep the per-field cleanup path available for them.
+        document_key = getattr(profile, "provider_key", None)
+        backend = secret_backend()
 
         db.session.delete(profile)
         db.session.commit()
 
-        backend = secret_backend()
+        if document_key and getattr(backend, "capabilities", None) and getattr(
+            backend.capabilities, "supports_secret_documents", False
+        ):
+            try:
+                backend.delete_document(document_key)
+            except Exception:
+                logger.warning(
+                    "Could not delete secret document for removed profile %s",
+                    configuration_id,
+                    exc_info=True,
+                )
+            return
+
         failed = 0
         for key in refs:
             try:
@@ -356,6 +437,25 @@ class ConnectorProfileService:
             wire(name): value for name, value in (profile.config_json or {}).items()
         }
         backend = secret_backend()
+        if profile.provider_key and getattr(backend, "capabilities", None) and getattr(
+            backend.capabilities, "supports_secret_documents", False
+        ):
+            document = backend.read_document(profile.provider_key)
+            if document is None:
+                raise ConnectorProfileError(
+                    f"Profile '{profile_name}' is missing its stored secret document.",
+                    status_code=500,
+                )
+            for name in definition.secret_field_names():
+                value = document.get(name.upper())
+                if value is None:
+                    raise ConnectorProfileError(
+                        f"Profile '{profile_name}' is missing its stored value for "
+                        f"'{name}'. Re-enter it under Connectors.",
+                        status_code=500,
+                    )
+                resolved[wire(name)] = value
+            return resolved
         for name, key in (profile.secret_refs or {}).items():
             value = backend.get(key)
             if value is None:
@@ -456,4 +556,3 @@ class ConnectorProfileService:
                 "Could not store the profile's credentials.", status_code=500
             ) from exc
         return refs
-
