@@ -15,6 +15,7 @@ tenant A's request context cannot see tenant B's secrets.
 from __future__ import annotations
 
 import logging
+import uuid
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -221,7 +222,11 @@ class VaultConnectorSecretDocumentBackend:
             "secrets/connector-configuration/"
         )
         identifier = key[len(expected_prefix) :] if key.startswith(expected_prefix) else ""
-        if not identifier.isdigit() or int(identifier) <= 0:
+        try:
+            # Connector configurations use immutable UUID primary keys. Validate
+            # the complete suffix so a key cannot escape the active tenant prefix.
+            uuid.UUID(identifier)
+        except (TypeError, ValueError, AttributeError):
             raise SecretProviderCapabilityError("Connector secret document is outside the active tenant scope.")
         return self._tenant_client_provider.for_tenant(tenant_id.strip())
 

@@ -2920,7 +2920,8 @@ paths:
         in: path
         required: true
         schema:
-          type: integer
+          type: string
+          format: uuid
     get:
       operationId: m8flow_backend.routes.connector_profiles_controller.connector_profile_show
       summary: One connector profile

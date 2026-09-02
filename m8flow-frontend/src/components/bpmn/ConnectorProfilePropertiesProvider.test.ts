@@ -99,7 +99,7 @@ const slackTemplate = (): ConnectorTemplate => ({
 });
 
 const profile = (over: Partial<ConnectorProfile>): ConnectorProfile => ({
-  id: 1,
+  id: '01234567-89ab-cdef-0123-456789abcdef',
   connector_type: 'smtp',
   profile_name: 'smtp-staging',
   display_name: 'SMTP Staging',
@@ -351,9 +351,9 @@ describe('ConnectorProfileSelect options', () => {
     primeConnectorProfiles(
       [smtpTemplate()],
       [
-        profile({ id: 1, profile_name: 'smtp-staging', display_name: 'Staging' }),
-        profile({ id: 2, profile_name: 'smtp-production', display_name: 'Production' }),
-        profile({ id: 3, profile_name: 'smtp-dev', display_name: 'Dev' }),
+        profile({ id: '1', profile_name: 'smtp-staging', display_name: 'Staging' }),
+        profile({ id: '2', profile_name: 'smtp-production', display_name: 'Production' }),
+        profile({ id: '3', profile_name: 'smtp-dev', display_name: 'Dev' }),
       ],
     );
 
@@ -369,16 +369,16 @@ describe('ConnectorProfileSelect options', () => {
   });
 
   it('grows as more profiles are saved', () => {
-    primeConnectorProfiles([smtpTemplate()], [profile({ id: 1 })]);
+    primeConnectorProfiles([smtpTemplate()], [profile({ id: '1' })]);
     expect(optionsFor(makeServiceTask('smtp/SendHTMLEmail'))).toHaveLength(2);
 
     primeConnectorProfiles(
       [smtpTemplate()],
       [
-        profile({ id: 1, profile_name: 'a' }),
-        profile({ id: 2, profile_name: 'b' }),
-        profile({ id: 3, profile_name: 'c' }),
-        profile({ id: 4, profile_name: 'd' }),
+        profile({ id: '1', profile_name: 'a' }),
+        profile({ id: '2', profile_name: 'b' }),
+        profile({ id: '3', profile_name: 'c' }),
+        profile({ id: '4', profile_name: 'd' }),
       ],
     );
     expect(optionsFor(makeServiceTask('smtp/SendHTMLEmail'))).toHaveLength(5);
@@ -388,8 +388,8 @@ describe('ConnectorProfileSelect options', () => {
     primeConnectorProfiles(
       [smtpTemplate(), slackTemplate()],
       [
-        profile({ id: 1, connector_type: 'smtp', profile_name: 'smtp-prod' }),
-        profile({ id: 2, connector_type: 'slack', profile_name: 'slack-team' }),
+        profile({ id: '1', connector_type: 'smtp', profile_name: 'smtp-prod' }),
+        profile({ id: '2', connector_type: 'slack', profile_name: 'slack-team' }),
       ],
     );
 
@@ -404,8 +404,8 @@ describe('ConnectorProfileSelect options', () => {
     primeConnectorProfiles(
       [smtpTemplate()],
       [
-        profile({ id: 1, profile_name: 'live' }),
-        profile({ id: 2, profile_name: 'retired', is_active: false }),
+        profile({ id: '1', profile_name: 'live' }),
+        profile({ id: '2', profile_name: 'retired', is_active: false }),
       ],
     );
 

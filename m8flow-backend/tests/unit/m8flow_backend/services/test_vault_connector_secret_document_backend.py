@@ -13,6 +13,9 @@ from m8flow_backend.services.connector_secret_backend import (
 )
 
 
+PROFILE_ID = "01234567-89ab-cdef-0123-456789abcdef"
+
+
 class _VaultClient:
     def __init__(self):
         self.writes = []
@@ -47,7 +50,7 @@ def test_vault_document_adapter_uses_active_tenant_scope():
         "m8flow_backend.services.tenant_identity_helpers.current_tenant_id_or_none",
         return_value="tenant/one",
     ):
-        key = "tenants/tenant%2Fone/secrets/connector-configuration/17"
+        key = f"tenants/tenant%2Fone/secrets/connector-configuration/{PROFILE_ID}"
         backend.write_document(key, {"TOKEN": "value"}, 7)
         assert backend.read_document(key) == {"token": "value"}
         backend.delete_document(key)
@@ -64,7 +67,17 @@ def test_vault_document_adapter_rejects_cross_tenant_key():
         "m8flow_backend.services.tenant_identity_helpers.current_tenant_id_or_none",
         return_value="tenant/one",
     ), pytest.raises(SecretProviderCapabilityError, match="outside"):
-        backend.read_document("tenants/tenant-two/secrets/connector-configuration/17")
+        backend.read_document(f"tenants/tenant-two/secrets/connector-configuration/{PROFILE_ID}")
+
+
+def test_vault_document_adapter_rejects_non_uuid_identifier():
+    backend = VaultConnectorSecretDocumentBackend(_Provider())
+
+    with patch(
+        "m8flow_backend.services.tenant_identity_helpers.current_tenant_id_or_none",
+        return_value="tenant-one",
+    ), pytest.raises(SecretProviderCapabilityError, match="outside"):
+        backend.read_document("tenants/tenant-one/secrets/connector-configuration/17")
 
 
 def test_vault_document_adapter_passes_cas_to_vault():
@@ -75,5 +88,8 @@ def test_vault_document_adapter_passes_cas_to_vault():
         return_value="tenant-one",
     ):
         assert backend.write_document(
-            "tenants/tenant-one/secrets/connector-configuration/17", {"token": "value"}, 7, "3"
+            f"tenants/tenant-one/secrets/connector-configuration/{PROFILE_ID}",
+            {"token": "value"},
+            7,
+            "3",
         ) == "4"

@@ -22,6 +22,8 @@ from m8flow_backend.services.connector_profile_service import (
     ConnectorProfileService,
 )
 
+PROFILE_ID = "01234567-89ab-cdef-0123-456789abcdef"
+
 
 class _FakeBackend:
     """Records writes and deletes instead of touching the secret store."""
@@ -53,7 +55,7 @@ class _StubProfile:
     """The handful of row attributes _update_config reads and writes."""
 
     def __init__(self, **kwargs) -> None:
-        self.id = kwargs.get("id", 42)
+        self.id = kwargs.get("id", PROFILE_ID)
         self.connector_type = kwargs.get("connector_type", "smtp")
         self.config_json = kwargs.get("config_json", {})
         self.secret_refs = kwargs.get("secret_refs", {})
@@ -91,7 +93,7 @@ def slack_stored(backend):
     profile = _StubProfile(
         connector_type="slack",
         config_json={"channel": "#general"},
-        secret_refs={"token": secret_ref(42, "token")},
+        secret_refs={"token": secret_ref(PROFILE_ID, "token")},
     )
     backend.values[profile.secret_refs["token"]] = "xoxb-original"
     return profile
@@ -103,8 +105,8 @@ def stored(backend, smtp):
     profile = _StubProfile(
         config_json={"smtp_host": "smtp.example.com", "smtp_port": 587},
         secret_refs={
-            "smtp_user": secret_ref(42, "smtp_user"),
-            "smtp_password": secret_ref(42, "smtp_password"),
+            "smtp_user": secret_ref(PROFILE_ID, "smtp_user"),
+            "smtp_password": secret_ref(PROFILE_ID, "smtp_password"),
         },
     )
     for name, key in profile.secret_refs.items():
@@ -159,7 +161,7 @@ def test_stored_required_secret_is_not_reported_missing(slack_stored, slack):
     _update(slack_stored, slack, {"channel": "#alerts"})
 
     assert slack_stored.config_json["channel"] == "#alerts"
-    assert slack_stored.secret_refs["token"] == secret_ref(42, "token")
+    assert slack_stored.secret_refs["token"] == secret_ref(PROFILE_ID, "token")
 
 
 def test_blank_required_secret_still_validates_against_the_stored_one(
@@ -169,7 +171,7 @@ def test_blank_required_secret_still_validates_against_the_stored_one(
     _update(slack_stored, slack, {"channel": "#alerts", "token": ""})
 
     assert slack_stored.config_json["channel"] == "#alerts"
-    assert backend.values[secret_ref(42, "token")] == "xoxb-original"
+    assert backend.values[secret_ref(PROFILE_ID, "token")] == "xoxb-original"
     assert backend.upserts == []
 
 
@@ -209,14 +211,14 @@ def test_first_value_for_a_secret_mints_a_reference(backend, smtp):
     """A profile saved without an optional secret can gain one later."""
     profile = _StubProfile(
         config_json={"smtp_host": "smtp.example.com", "smtp_port": 587},
-        secret_refs={"smtp_password": secret_ref(42, "smtp_password")},
+        secret_refs={"smtp_password": secret_ref(PROFILE_ID, "smtp_password")},
     )
     backend.values[profile.secret_refs["smtp_password"]] = "pw"
 
     _update(profile, smtp, {"smtp_host": "smtp.example.com", "smtp_user": "bob"})
 
-    assert profile.secret_refs["smtp_user"] == secret_ref(42, "smtp_user")
-    assert backend.values[secret_ref(42, "smtp_user")] == "bob"
+    assert profile.secret_refs["smtp_user"] == secret_ref(PROFILE_ID, "smtp_user")
+    assert backend.values[secret_ref(PROFILE_ID, "smtp_user")] == "bob"
 
 
 # ------------------------------------------------------------------ config merge
@@ -296,9 +298,9 @@ def test_delete_removes_the_row_before_the_secrets(monkeypatch, backend, no_comm
     """Row first, so a failure orphans unreachable secrets rather than the reverse."""
     order: list[str] = []
     profile = _StubProfile(
-        secret_refs={"smtp_password": secret_ref(42, "smtp_password")}
+        secret_refs={"smtp_password": secret_ref(PROFILE_ID, "smtp_password")}
     )
-    backend.values[secret_ref(42, "smtp_password")] = "pw"
+    backend.values[secret_ref(PROFILE_ID, "smtp_password")] = "pw"
     monkeypatch.setattr(
         ConnectorProfileService, "get_profile", classmethod(lambda cls, _id: profile)
     )
@@ -319,15 +321,15 @@ def test_delete_removes_the_row_before_the_secrets(monkeypatch, backend, no_comm
     ConnectorProfileService.delete_profile(profile.id)
 
     assert order == ["row", "secret"]
-    assert backend.deleted == [secret_ref(42, "smtp_password")]
+    assert backend.deleted == [secret_ref(PROFILE_ID, "smtp_password")]
 
 
 def test_delete_survives_a_failing_secret_removal(monkeypatch, backend, no_commit):
     """Secret cleanup is best effort: the row is already gone."""
     profile = _StubProfile(
         secret_refs={
-            "smtp_user": secret_ref(42, "smtp_user"),
-            "smtp_password": secret_ref(42, "smtp_password"),
+            "smtp_user": secret_ref(PROFILE_ID, "smtp_user"),
+            "smtp_password": secret_ref(PROFILE_ID, "smtp_password"),
         }
     )
     monkeypatch.setattr(
@@ -340,7 +342,7 @@ def test_delete_survives_a_failing_secret_removal(monkeypatch, backend, no_commi
 
 def test_delete_reports_how_many_secrets_were_left_behind(monkeypatch, backend, caplog, no_commit):
     """Ops need the orphan count to size a cleanup; key names stay out of the log."""
-    ref = secret_ref(42, "smtp_password")
+    ref = secret_ref(PROFILE_ID, "smtp_password")
     profile = _StubProfile(secret_refs={"smtp_password": ref})
     monkeypatch.setattr(
         ConnectorProfileService, "get_profile", classmethod(lambda cls, _id: profile)
@@ -357,7 +359,7 @@ def test_delete_reports_how_many_secrets_were_left_behind(monkeypatch, backend, 
 
 
 def test_delete_logs_no_summary_when_every_secret_goes(monkeypatch, backend, caplog, no_commit):
-    profile = _StubProfile(secret_refs={"smtp_password": secret_ref(42, "smtp_password")})
+    profile = _StubProfile(secret_refs={"smtp_password": secret_ref(PROFILE_ID, "smtp_password")})
     monkeypatch.setattr(
         ConnectorProfileService, "get_profile", classmethod(lambda cls, _id: profile)
     )

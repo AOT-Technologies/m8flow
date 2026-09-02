@@ -14,14 +14,18 @@ from m8flow_backend.services.connector_profile_storage_service import (
 
 
 class _Profile:
-    id = 17
+    id = "01234567-89ab-cdef-0123-456789abcdef"
     m8f_tenant_id = "tenant/one"
     profile_name = "slack-profile"
 
 
 def test_provider_key_is_immutable_and_tenant_scoped():
-    assert provider_key("tenant/one", 17) == "tenants/tenant%2Fone/secrets/connector-configuration/17"
-    assert provider_key("tenant/one", 17) == provider_key("tenant/one", 17)
+    profile_id = "01234567-89ab-cdef-0123-456789abcdef"
+    assert provider_key("tenant/one", profile_id) == (
+        "tenants/tenant%2Fone/secrets/connector-configuration/"
+        + profile_id
+    )
+    assert provider_key("tenant/one", profile_id) == provider_key("tenant/one", profile_id)
 
 
 def test_secret_document_rejects_non_sensitive_values():
@@ -54,7 +58,10 @@ def test_prepare_storage_returns_one_document_and_metadata_rows():
         _Profile(), definition, {"channel": "alerts"}, {"token": "secret"}, 7
     )
 
-    assert key == "tenants/tenant%2Fone/secrets/connector-configuration/17"
+    assert key == (
+        "tenants/tenant%2Fone/secrets/connector-configuration/"
+        "01234567-89ab-cdef-0123-456789abcdef"
+    )
     assert document == {"TOKEN": "secret"}
     assert len(rows) == len(definition.profile_field_names())
     assert all(row.value != "secret" for row in rows)

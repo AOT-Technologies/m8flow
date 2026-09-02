@@ -110,7 +110,7 @@ class ConnectorProfileService:
         ).all()
 
     @classmethod
-    def get_profile(cls, configuration_id: int) -> ConnectorConfigurationModel:
+    def get_profile(cls, configuration_id: str) -> ConnectorConfigurationModel:
         profile = (
             cls._tenant_query()
             .filter(ConnectorConfigurationModel.id == configuration_id)
@@ -200,7 +200,7 @@ class ConnectorProfileService:
 
     @classmethod
     def update_profile(
-        cls, configuration_id: int, body: dict[str, Any], user_id: int | None
+        cls, configuration_id: str, body: dict[str, Any], user_id: int | None
     ) -> ConnectorConfigurationModel:
         profile = cls.get_profile(configuration_id)
         definition = cls.definition_or_raise(profile.connector_type)
@@ -327,7 +327,7 @@ class ConnectorProfileService:
             current.user_id = user_id
 
     @classmethod
-    def deactivate_profile(cls, configuration_id: int) -> ConnectorConfigurationModel:
+    def deactivate_profile(cls, configuration_id: str) -> ConnectorConfigurationModel:
         """Soft delete.
 
         The profile leaves the modeler dropdown at once, and a run still naming
@@ -340,7 +340,7 @@ class ConnectorProfileService:
         return profile
 
     @classmethod
-    def delete_profile(cls, configuration_id: int) -> None:
+    def delete_profile(cls, configuration_id: str) -> None:
         """Hard delete: the row, then best-effort secret removal.
 
         Ordering per M8Flow.md 6.4 -- the row goes first, so a failure leaves
@@ -377,7 +377,7 @@ class ConnectorProfileService:
             except Exception:
                 failed += 1
                 # codeql[py/clear-text-logging-sensitive-data]: logs
-                # configuration_id (an int). The loop variable `key` is a
+                # configuration_id (an opaque UUID). The loop variable `key` is a
                 # secret-store reference name, not a credential, and is not
                 # part of the message.
                 logger.warning(
@@ -535,7 +535,7 @@ class ConnectorProfileService:
 
     @staticmethod
     def _write_secrets(
-        configuration_id: int, secret_values: dict[str, Any], user_id: int | None
+        configuration_id: str, secret_values: dict[str, Any], user_id: int | None
     ) -> dict[str, str]:
         """Write each secret, compensating for whatever landed if one fails."""
         backend = secret_backend()

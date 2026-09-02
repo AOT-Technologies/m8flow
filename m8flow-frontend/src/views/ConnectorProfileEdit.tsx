@@ -124,7 +124,7 @@ export default function ConnectorProfileEdit() {
       setTemplate(loadedTemplate);
 
       if (isEdit && profileId) {
-        const profile = await fetchConnectorProfile(Number(profileId));
+        const profile = await fetchConnectorProfile(profileId);
         setExisting(profile);
         setProfileName(profile.profile_name);
         setDisplayName(profile.display_name);
@@ -241,7 +241,7 @@ export default function ConnectorProfileEdit() {
 
     try {
       if (isEdit && profileId) {
-        await updateConnectorProfile(Number(profileId), {
+        await updateConnectorProfile(profileId, {
           display_name: displayName.trim() || profileName,
           description: description.trim() || null,
           config,

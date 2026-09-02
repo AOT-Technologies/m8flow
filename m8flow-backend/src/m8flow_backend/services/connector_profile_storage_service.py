@@ -21,7 +21,7 @@ from m8flow_backend.services.vault_path_utils import (
 from spiffworkflow_backend.models.db import db
 
 
-def provider_key(tenant_id: str, connector_configuration_id: int) -> str:
+def provider_key(tenant_id: str, connector_configuration_id: str) -> str:
     """Build the immutable document identifier for one connector profile.
 
     The tenant namespace is part of the logical key because the tenant AppRole
@@ -29,8 +29,8 @@ def provider_key(tenant_id: str, connector_configuration_id: int) -> str:
     mutable profile name so renaming cannot move or orphan the document.
     """
     tenant_component = vault_safe_tenant_path_component(tenant_id)
-    if not isinstance(connector_configuration_id, int) or connector_configuration_id <= 0:
-        raise ValueError("connector_configuration_id must be a positive integer.")
+    if not isinstance(connector_configuration_id, str):
+        raise ValueError("connector_configuration_id must be a UUID string.")
     return (
         f"tenants/{tenant_component}/secrets/connector-configuration/"
         f"{connector_configuration_id}"

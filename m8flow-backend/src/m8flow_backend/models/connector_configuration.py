@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 from spiffworkflow_backend.models.db import SpiffworkflowBaseDBModel, db
@@ -40,7 +41,7 @@ class ConnectorConfigurationModel(SpiffworkflowBaseDBModel, AuditDateTimeMixin):
         ),
     )
 
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     variables = db.relationship(
         "ConnectorVariableModel",
         back_populates="configuration",
@@ -143,7 +144,7 @@ class ConnectorVariableModel(SpiffworkflowBaseDBModel, AuditDateTimeMixin):
         index=True,
     )
     connector_configuration_id = db.Column(
-        db.Integer,
+        db.String(36),
         db.ForeignKey("m8flow_connector_configuration.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
