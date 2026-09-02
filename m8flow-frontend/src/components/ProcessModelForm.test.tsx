@@ -106,7 +106,8 @@ describe('ProcessModelForm', () => {
         display_name: 'My Model',
       }),
     );
-    expect(call.postBody).not.toHaveProperty('m8f_tenant_id');
+    expect(call.postBody).toHaveProperty('m8f_tenant_id', 'tenant-a');
+    expect(call.tenantId).toBe('tenant-a');
   });
 
   it('does not require tenant selection for non-super-admin create', async () => {
