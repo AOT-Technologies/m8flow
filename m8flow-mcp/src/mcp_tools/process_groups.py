@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from mcp.types import ToolAnnotations
+
 from src.api_client import M8flowAPIClient
 from src.utils.context import get_auth_token
 from src.utils.logging import get_logger
@@ -23,7 +25,12 @@ def register_process_group_tools(mcp: FastMCP) -> None:
         mcp: FastMCP server instance
     """
 
-    @mcp.tool(name="list_process_groups", description="List all process groups with their process models")
+    @mcp.tool(
+        name="list_process_groups",
+        description="List all process groups with their process models",
+        tags={"process-groups"},
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
+    )
     async def list_process_groups(
         page: int = 1,
         per_page: int = 10,
@@ -56,7 +63,12 @@ def register_process_group_tools(mcp: FastMCP) -> None:
             logger.error(f"Failed to list process groups: {e}")
             return {"error": str(e)}
 
-    @mcp.tool(name="get_process_group", description="Get details of a specific process group")
+    @mcp.tool(
+        name="get_process_group",
+        description="Get details of a specific process group",
+        tags={"process-groups"},
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
+    )
     async def get_process_group(process_group_id: str) -> dict[str, Any]:
         """Get process group details.
 
@@ -85,7 +97,12 @@ def register_process_group_tools(mcp: FastMCP) -> None:
             logger.error(f"Failed to get process group {process_group_id}: {e}")
             return {"error": str(e)}
 
-    @mcp.tool(name="create_process_group", description="Create a new process group")
+    @mcp.tool(
+        name="create_process_group",
+        description="Create a new process group",
+        tags={"process-groups"},
+        annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False),
+    )
     async def create_process_group(
         identifier: str,
         display_name: str,
@@ -119,7 +136,12 @@ def register_process_group_tools(mcp: FastMCP) -> None:
             logger.error(f"Failed to create process group: {e}")
             return {"error": str(e)}
 
-    @mcp.tool(name="update_process_group", description="Update an existing process group")
+    @mcp.tool(
+        name="update_process_group",
+        description="Update an existing process group",
+        tags={"process-groups"},
+        annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False),
+    )
     async def update_process_group(
         process_group_id: str,
         display_name: str | None = None,
@@ -154,7 +176,12 @@ def register_process_group_tools(mcp: FastMCP) -> None:
             logger.error(f"Failed to update process group {process_group_id}: {e}")
             return {"error": str(e)}
 
-    @mcp.tool(name="delete_process_group", description="Delete a process group")
+    @mcp.tool(
+        name="delete_process_group",
+        description="Delete a process group",
+        tags={"process-groups"},
+        annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True),
+    )
     async def delete_process_group(process_group_id: str) -> dict[str, Any]:
         """Delete a process group.
 

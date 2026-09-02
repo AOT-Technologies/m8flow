@@ -1,19 +1,32 @@
 {
   "uid": "docker-infra",
   "title": "Docker / Infra (cAdvisor)",
-  "tags": ["m8flow", "infra"],
+  "tags": [
+    "m8flow",
+    "infra"
+  ],
   "timezone": "browser",
   "schemaVersion": 39,
   "version": 2,
   "refresh": "30s",
-  "time": { "from": "now-1h", "to": "now" },
-  "templating": { "list": [] },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
   "panels": [
     {
       "id": 10,
       "type": "text",
       "title": "About this dashboard",
-      "gridPos": { "h": 3, "w": 24, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "options": {
         "mode": "markdown",
         "content": "Container CPU/memory from **cAdvisor**. On Docker Desktop, series are labeled by **container ID suffix** (match with `docker ps -a --format '{{.ID}} {{.Names}}'`). This is host/container resource usage, not application HTTP health."
@@ -23,9 +36,17 @@
       "id": 1,
       "type": "timeseries",
       "title": "CPU cores used by container",
-      "description": "100% ≈ one full CPU core. Values above 100% mean multiple cores in use.",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 3 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "100% \u2248 one full CPU core. Values above 100% mean multiple cores in use.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 3
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "targets": [
         {
           "refId": "A",
@@ -33,15 +54,28 @@
           "legendFormat": "{{short_id}}"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "percent" }, "overrides": [] },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
       "options": {}
     },
     {
       "id": 2,
       "type": "timeseries",
       "title": "Memory by container",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 3 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 3
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "targets": [
         {
           "refId": "A",
@@ -49,7 +83,12 @@
           "legendFormat": "{{short_id}}"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
       "options": {}
     },
     {
@@ -57,8 +96,16 @@
       "type": "stat",
       "title": "cAdvisor scrape healthy",
       "description": "1 = Alloy can scrape cAdvisor (the container metrics collector) and forward it to Prometheus. This does not mean every app container is healthy.",
-      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 11 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 11
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "targets": [
         {
           "refId": "A",
@@ -69,7 +116,17 @@
       "fieldConfig": {
         "defaults": {
           "mappings": [
-            { "type": "value", "options": { "0": { "text": "DOWN" }, "1": { "text": "UP" } } }
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN"
+                },
+                "1": {
+                  "text": "UP"
+                }
+              }
+            }
           ]
         },
         "overrides": []
@@ -77,7 +134,9 @@
       "options": {}
     }
   ],
-  "annotations": { "list": [] },
+  "annotations": {
+    "list": []
+  },
   "editable": true,
   "graphTooltip": 1,
   "links": [
@@ -85,6 +144,16 @@
       "title": "Tempo Service Graph",
       "url": "/a/grafana-explore-app/explore?schemaVersion=1&panes=%7B%22tempo%22:%7B%22datasource%22:%22tempo%22%7D%7D",
       "type": "link"
+    }
+  ],
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "Prometheus metrics datasource",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
     }
   ]
 }

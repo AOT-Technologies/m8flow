@@ -12,6 +12,8 @@ import re
 import time
 from typing import TYPE_CHECKING
 
+from mcp.types import ToolAnnotations
+
 from src.api_client import M8flowAPIClient
 from src.utils.context import get_auth_token, get_tenant_id
 from src.utils.logging import get_logger
@@ -113,6 +115,8 @@ def register_connector_tools(mcp: FastMCP) -> None:
     @mcp.tool(
         name="list_connectors",
         description="List all available M8Flow connectors with their operations count and metadata",
+        tags={"connectors"},
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
     )
     async def list_connectors() -> str:
         """List all available connectors with summary information.
@@ -161,6 +165,8 @@ def register_connector_tools(mcp: FastMCP) -> None:
     @mcp.tool(
         name="get_connector",
         description="Get detailed information about a specific connector including all operations and parameters",
+        tags={"connectors"},
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
     )
     async def get_connector(connector_id: str) -> str:
         """Get detailed information about a specific connector.
@@ -228,6 +234,8 @@ def register_connector_tools(mcp: FastMCP) -> None:
     @mcp.tool(
         name="get_connector_operation",
         description="Get detailed parameters and documentation for a specific connector operation",
+        tags={"connectors"},
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
     )
     async def get_connector_operation(operation_id: str) -> str:
         """Get detailed information about a specific connector operation.
@@ -316,6 +324,8 @@ def register_connector_tools(mcp: FastMCP) -> None:
     @mcp.tool(
         name="search_connectors",
         description="Search connectors by keyword or use case (e.g., 'email', 'database', 'payment')",
+        tags={"connectors"},
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
     )
     async def search_connectors(query: str) -> str:
         """Search connectors by keyword or use case.

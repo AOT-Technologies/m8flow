@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Literal
 
+from mcp.types import ToolAnnotations
+
 from src.api_client import M8flowAPIClient
 from src.utils.context import get_auth_token
 from src.utils.instances import resolve_instance
@@ -52,7 +54,12 @@ def register_process_instance_tools(mcp: FastMCP) -> None:
         mcp: FastMCP server instance
     """
 
-    @mcp.tool(name="start_process_instance", description="Start a new workflow process instance")
+    @mcp.tool(
+        name="start_process_instance",
+        description="Start a new workflow process instance",
+        tags={"process-instances"},
+        annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False),
+    )
     async def start_process_instance(
         process_model_id: str,
         variables: dict[str, Any] | None = None,
@@ -95,7 +102,12 @@ def register_process_instance_tools(mcp: FastMCP) -> None:
             logger.error(f"Failed to start process instance for {process_model_id}: {e}")
             return {"error": str(e)}
 
-    @mcp.tool(name="list_process_instances", description="List workflow process instances with progressive detail")
+    @mcp.tool(
+        name="list_process_instances",
+        description="List workflow process instances with progressive detail",
+        tags={"process-instances"},
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
+    )
     async def list_process_instances(
         process_model_id: str | None = None,
         page: int = 1,
@@ -179,6 +191,8 @@ def register_process_instance_tools(mcp: FastMCP) -> None:
     @mcp.tool(
         name="get_process_instance",
         description="Get details of a specific process instance with progressive detail (80% token savings)",
+        tags={"process-instances"},
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
     )
     async def get_process_instance(
         process_instance_id: int, detail: Literal["minimal", "standard", "full"] = "standard"
@@ -247,7 +261,12 @@ def register_process_instance_tools(mcp: FastMCP) -> None:
             logger.error(f"Failed to get process instance {process_instance_id}: {e}")
             return {"error": str(e)}
 
-    @mcp.tool(name="cancel_process_instance", description="Cancel (terminate) a running process instance")
+    @mcp.tool(
+        name="cancel_process_instance",
+        description="Cancel (terminate) a running process instance",
+        tags={"process-instances"},
+        annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True),
+    )
     async def cancel_process_instance(process_instance_id: int) -> dict[str, Any]:
         """Cancel a process instance by terminating it.
 
@@ -275,7 +294,12 @@ def register_process_instance_tools(mcp: FastMCP) -> None:
             logger.error(f"Failed to cancel process instance {process_instance_id}: {e}")
             return {"error": str(e)}
 
-    @mcp.tool(name="suspend_process_instance", description="Suspend a running process instance")
+    @mcp.tool(
+        name="suspend_process_instance",
+        description="Suspend a running process instance",
+        tags={"process-instances"},
+        annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True),
+    )
     async def suspend_process_instance(process_instance_id: int) -> dict[str, Any]:
         """Suspend a process instance.
 

@@ -16,6 +16,53 @@
   "templating": {
     "list": [
       {
+        "name": "namespace",
+        "label": "Environment / Namespace",
+        "type": "custom",
+        "query": "qa,dev,demo,monitoring",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "All",
+            "value": "$__all"
+          },
+          {
+            "selected": false,
+            "text": "qa",
+            "value": "qa"
+          },
+          {
+            "selected": false,
+            "text": "dev",
+            "value": "dev"
+          },
+          {
+            "selected": false,
+            "text": "demo",
+            "value": "demo"
+          },
+          {
+            "selected": false,
+            "text": "monitoring",
+            "value": "monitoring"
+          }
+        ],
+        "includeAll": true,
+        "multi": true,
+        "hide": 0,
+        "skipUrlSync": false,
+        "allValue": ".*"
+      },
+      {
         "name": "m8flow_tenant_id",
         "type": "textbox",
         "label": "m8flow_tenant_id",
@@ -41,7 +88,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "targets": [
         {
@@ -68,7 +115,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "targets": [
         {
@@ -95,7 +142,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "targets": [
         {
@@ -122,7 +169,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "targets": [
         {
@@ -149,7 +196,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "targets": [
         {
@@ -172,22 +219,142 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 11
+        "y": 17
       },
       "datasource": {
         "type": "loki",
-        "uid": "loki"
+        "uid": "${DS_LOKI}"
       },
       "targets": [
         {
           "refId": "A",
-          "expr": "{service_name=\"m8flow-mcp\"}",
+          "expr": "{namespace=~\"$namespace\", app=\"m8flow-mcp-server-service\"}",
           "queryType": "range"
         }
       ],
       "options": {},
       "fieldConfig": {
         "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 101,
+      "title": "MCP Server Pod CPU Usage",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\", pod=~\".*m8flow-mcp-server-service.*\", container!=\"\"}[1m])) by (pod, namespace)",
+          "legendFormat": "{{namespace}} / {{pod}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 102,
+      "title": "MCP Server Pod Memory Usage",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(container_memory_working_set_bytes{namespace=~\"$namespace\", pod=~\".*m8flow-mcp-server-service.*\", container!=\"\"}) by (pod, namespace)",
+          "legendFormat": "{{namespace}} / {{pod}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 103,
+      "title": "Pod Restarts",
+      "type": "stat",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=~\"$namespace\", pod=~\".*m8flow-mcp-server-service.*\"}[1h])) by (pod, namespace)",
+          "legendFormat": "{{namespace}} / {{pod}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
         "overrides": []
       }
     }
@@ -202,6 +369,24 @@
       "title": "Tempo Service Graph",
       "url": "/a/grafana-explore-app/explore?schemaVersion=1&panes=%7B%22tempo%22:%7B%22datasource%22:%22tempo%22%7D%7D",
       "type": "link"
+    }
+  ],
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "Select the Prometheus data source",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    },
+    {
+      "name": "DS_LOKI",
+      "label": "Loki",
+      "description": "Select the Loki data source for logs",
+      "type": "datasource",
+      "pluginId": "loki",
+      "pluginName": "Loki"
     }
   ]
 }

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from mcp.types import ToolAnnotations
+
 from src.api_client import M8flowAPIClient
 from src.utils.context import get_auth_token
 from src.utils.logging import get_logger
@@ -56,7 +58,10 @@ def register_template_tools(mcp: FastMCP) -> None:
     """
 
     @mcp.tool(
-        name="list_templates", description="List workflow templates (reusable blueprints for creating process models)"
+        name="list_templates",
+        description="List workflow templates (reusable blueprints for creating process models)",
+        tags={"templates"},
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
     )
     async def list_templates(
         category: str | None = None,
@@ -151,7 +156,12 @@ def register_template_tools(mcp: FastMCP) -> None:
             logger.error(f"Failed to list templates: {e}")
             return {"error": str(e)}
 
-    @mcp.tool(name="get_template", description="Get template details including BPMN content and files")
+    @mcp.tool(
+        name="get_template",
+        description="Get template details including BPMN content and files",
+        tags={"templates"},
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
+    )
     async def get_template(
         template_id: int,
         include_contents: bool = True,
@@ -204,6 +214,8 @@ def register_template_tools(mcp: FastMCP) -> None:
     @mcp.tool(
         name="create_process_model_from_template",
         description="Create a new process model from a template (copies all files and tracks provenance)",
+        tags={"templates"},
+        annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False),
     )
     async def create_process_model_from_template(
         template_id: int,
@@ -274,6 +286,8 @@ def register_template_tools(mcp: FastMCP) -> None:
     @mcp.tool(
         name="get_process_model_template_info",
         description="Get template provenance for a process model (which template created it)",
+        tags={"templates"},
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
     )
     async def get_process_model_template_info(
         process_model_id: str,
@@ -321,7 +335,12 @@ def register_template_tools(mcp: FastMCP) -> None:
             logger.error(f"Failed to get template info for {process_model_id}: {e}")
             return {"error": str(e)}
 
-    @mcp.tool(name="count_templates", description="Count available templates (efficient, no data fetching)")
+    @mcp.tool(
+        name="count_templates",
+        description="Count available templates (efficient, no data fetching)",
+        tags={"templates"},
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
+    )
     async def count_templates(
         category: str | None = None,
         visibility: str | None = None,

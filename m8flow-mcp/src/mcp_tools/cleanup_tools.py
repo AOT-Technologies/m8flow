@@ -11,6 +11,7 @@ import time
 from typing import Any
 
 from fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 from src.api_client import M8flowAPIClient
 from src.errors import AuthorizationError, M8flowAPIError, NotFoundError
@@ -188,6 +189,8 @@ def register_cleanup_tools(mcp: FastMCP) -> None:
     @mcp.tool(
         name="create_or_update_process_model",
         description="Create new workflow OR update if exists (idempotent - prevents duplicates)",
+        tags={"cleanup"},
+        annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False),
     )
     async def create_or_update_process_model(
         process_group_id: str,
@@ -310,6 +313,8 @@ def register_cleanup_tools(mcp: FastMCP) -> None:
     @mcp.tool(
         name="cleanup_test_workflows",
         description="Delete test/temporary workflows to clean up duplicates",
+        tags={"cleanup"},
+        annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True),
     )
     async def cleanup_test_workflows(prefix: str = "test", older_than_hours: int = 24) -> str:
         """
@@ -393,6 +398,8 @@ def register_cleanup_tools(mcp: FastMCP) -> None:
     @mcp.tool(
         name="list_duplicate_workflows",
         description="Find duplicate or similar workflow names",
+        tags={"cleanup"},
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
     )
     async def list_duplicate_workflows() -> str:
         """
@@ -447,6 +454,8 @@ def register_cleanup_tools(mcp: FastMCP) -> None:
     @mcp.tool(
         name="batch_delete_workflows",
         description="Delete multiple workflows at once",
+        tags={"cleanup"},
+        annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True),
     )
     async def batch_delete_workflows(workflow_ids: list[str], force: bool = False) -> str:
         """
@@ -516,6 +525,8 @@ def register_cleanup_tools(mcp: FastMCP) -> None:
     @mcp.tool(
         name="create_sandbox_workflow",
         description="Create workflow in sandbox (auto-cleanup enabled, prevents duplicates)",
+        tags={"cleanup"},
+        annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False),
     )
     async def create_sandbox_workflow(
         process_model_id: str, display_name: str, bpmn_content: str, description: str = ""
@@ -621,6 +632,8 @@ def register_cleanup_tools(mcp: FastMCP) -> None:
     @mcp.tool(
         name="cleanup_sandbox_workflows",
         description="Auto-cleanup sandbox test workflows",
+        tags={"cleanup"},
+        annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True),
     )
     async def cleanup_sandbox_workflows(older_than_hours: int = 24) -> str:
         """

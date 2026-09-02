@@ -1,0 +1,83 @@
+name: m8flow-nats-consumer CI/CD
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "m8flow-nats-consumer/**"
+      - ".github/workflows/nats-consumer-cicd.yaml"
+
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "m8flow-nats-consumer/**"
+      - ".github/workflows/nats-consumer-cicd.yaml"
+
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to promote/deploy to"
+        required: true
+        default: "demo"
+        type: choice
+        options:
+          - demo
+          - qa
+      image_uri:
+        description: "Pre-built Image URI to promote (e.g. m8flow/m8flow-nats-consumer:dev-a1b2c3d or release tag)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nats-consumer-cicd-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  ci:
+    name: NATS Consumer CI Pipeline
+    if: github.event_name != 'workflow_dispatch'
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@d74dfcd7c92886f2b74dbaf98536e6bde6d0be99
+    with:
+      config_path: m8flow-nats-consumer/devx-ci.yaml
+      auto_merge: false
+      push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    secrets:
+      registry_username: ${{ secrets.DOCKERHUB_USERNAME }}
+      registry_password: ${{ secrets.DOCKERHUB_TOKEN }}
+      sonar_token: ${{ secrets.SONAR_TOKEN }}
+
+  cd-dev:
+    name: Deploy NATS Consumer → DEV
+    needs: ci
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/cd-orchestrator.yaml@d74dfcd7c92886f2b74dbaf98536e6bde6d0be99
+    with:
+      environment: dev
+      image_uri: ${{ needs.ci.outputs.image_uri }}
+      config_path: m8flow-nats-consumer/devx-config.yaml
+    secrets: inherit
+
+  cd-demo:
+    name: Deploy NATS Consumer → DEMO
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'demo'
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/cd-orchestrator.yaml@d74dfcd7c92886f2b74dbaf98536e6bde6d0be99
+    with:
+      environment: demo
+      image_uri: ${{ github.event.inputs.image_uri }}
+      config_path: m8flow-nats-consumer/devx-config.yaml
+    secrets: inherit
+
+  cd-qa:
+    name: Deploy NATS Consumer → QA
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'qa'
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/cd-orchestrator.yaml@d74dfcd7c92886f2b74dbaf98536e6bde6d0be99
+    with:
+      environment: qa
+      image_uri: ${{ github.event.inputs.image_uri }}
+      config_path: m8flow-nats-consumer/devx-config.yaml
+    secrets: inherit

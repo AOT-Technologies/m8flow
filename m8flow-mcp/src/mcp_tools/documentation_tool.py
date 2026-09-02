@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal
 
+from mcp.types import ToolAnnotations
+
 if TYPE_CHECKING:
     from fastmcp import FastMCP
 
@@ -461,6 +463,8 @@ def register_documentation_tool(mcp: FastMCP) -> None:
     @mcp.tool(
         name="tools_documentation",
         description="Get comprehensive documentation for m8flow MCP tools (reduces errors by 50%)",
+        tags={"documentation"},
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
     )
     def tools_documentation(topic: str | None = None, depth: Literal["quick", "full"] = "quick") -> str:
         """Get documentation for m8flow MCP tools.

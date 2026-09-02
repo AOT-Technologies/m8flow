@@ -8,6 +8,8 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from mcp.types import ToolAnnotations
+
 if TYPE_CHECKING:
     from fastmcp import FastMCP
 
@@ -172,6 +174,12 @@ def register_visualization_tools(mcp: "FastMCP") -> None:
     Args:
         mcp: FastMCP server instance
     """
-    mcp.tool()(view_workflow)
-    mcp.tool()(view_workflow_from_template)
-    mcp.tool()(view_process_instance)
+    mcp.tool(tags={"visualization"}, annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))(
+        view_workflow
+    )
+    mcp.tool(tags={"visualization"}, annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))(
+        view_workflow_from_template
+    )
+    mcp.tool(tags={"visualization"}, annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))(
+        view_process_instance
+    )

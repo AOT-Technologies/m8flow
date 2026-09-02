@@ -1,20 +1,76 @@
 {
   "uid": "m8flow-connector-proxy",
   "title": "M8Flow Connector Proxy Overview",
-  "tags": ["m8flow", "connector"],
+  "tags": [
+    "m8flow",
+    "connector"
+  ],
   "timezone": "browser",
   "schemaVersion": 39,
   "version": 2,
   "refresh": "30s",
-  "time": { "from": "now-1h", "to": "now" },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
   "templating": {
     "list": [
+      {
+        "name": "namespace",
+        "label": "Environment / Namespace",
+        "type": "custom",
+        "query": "qa,dev,demo,monitoring",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "All",
+            "value": "$__all"
+          },
+          {
+            "selected": false,
+            "text": "qa",
+            "value": "qa"
+          },
+          {
+            "selected": false,
+            "text": "dev",
+            "value": "dev"
+          },
+          {
+            "selected": false,
+            "text": "demo",
+            "value": "demo"
+          },
+          {
+            "selected": false,
+            "text": "monitoring",
+            "value": "monitoring"
+          }
+        ],
+        "includeAll": true,
+        "multi": true,
+        "hide": 0,
+        "skipUrlSync": false,
+        "allValue": ".*"
+      },
       {
         "name": "m8flow_tenant_id",
         "type": "textbox",
         "label": "m8flow_tenant_id",
         "query": "",
-        "current": { "text": "", "value": "" },
+        "current": {
+          "text": "",
+          "value": ""
+        },
         "options": []
       }
     ]
@@ -24,7 +80,12 @@
       "id": 10,
       "type": "text",
       "title": "Metrics vs logs",
-      "gridPos": { "h": 2, "w": 24, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 2,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "options": {
         "mode": "markdown",
         "content": "**Connector error rate** = failed connector *calls* (domain metric), not HTTP 5xx. **HTTP RED** panels use OTel when exported. Use log panels for stack traces and SMTP/Slack failures."
@@ -34,8 +95,16 @@
       "id": 1,
       "type": "stat",
       "title": "HTTP request rate",
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 2 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 2
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "targets": [
         {
           "refId": "A",
@@ -44,15 +113,26 @@
         }
       ],
       "options": {},
-      "fieldConfig": { "defaults": {}, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
     },
     {
       "id": 2,
       "type": "stat",
       "title": "Connector call failure %",
       "description": "Failed connector_call_failures_total / connector_calls_total. Stays 0 if no connector traffic or metrics not exported yet.",
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 2 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 2
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "targets": [
         {
           "refId": "A",
@@ -60,7 +140,12 @@
           "legendFormat": "failures"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "percent" }, "overrides": [] },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
       "options": {}
     },
     {
@@ -68,8 +153,16 @@
       "type": "stat",
       "title": "HTTP 5xx rate %",
       "description": "OTel HTTP server 5xx only.",
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 2 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 2
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "targets": [
         {
           "refId": "A",
@@ -77,15 +170,28 @@
           "legendFormat": "5xx"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "percent" }, "overrides": [] },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
       "options": {}
     },
     {
       "id": 3,
       "type": "stat",
       "title": "p99 connector duration",
-      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 2 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 2
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "targets": [
         {
           "refId": "A",
@@ -93,15 +199,28 @@
           "legendFormat": "p99 ms"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
       "options": {}
     },
     {
       "id": 4,
       "type": "timeseries",
       "title": "Calls by connector",
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 6 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "targets": [
         {
           "refId": "A",
@@ -110,43 +229,190 @@
         }
       ],
       "options": {},
-      "fieldConfig": { "defaults": {}, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
     },
     {
       "id": 6,
       "type": "timeseries",
       "title": "Log error lines",
-      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 6 },
-      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(count_over_time({service_name=\"m8flow-connector-proxy\"} |~ \"(?i)(error|exception|traceback)\" [$__interval]))",
+          "expr": "sum(count_over_time({namespace=~\"$namespace\", app=\"m8flow-connector-proxy\"} |~ \"(?i)(error|exception|fatal)\" [$__interval]))",
           "legendFormat": "error-ish lines",
           "queryType": "range"
         }
       ],
       "options": {},
-      "fieldConfig": { "defaults": {}, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
     },
     {
       "id": 5,
       "type": "logs",
       "title": "Connector logs",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 13 },
-      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 19
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
       "targets": [
         {
           "refId": "A",
-          "expr": "{service_name=\"m8flow-connector-proxy\"}",
+          "expr": "{namespace=~\"$namespace\", app=\"m8flow-connector-proxy\"}",
           "queryType": "range"
         }
       ],
       "options": {},
-      "fieldConfig": { "defaults": {}, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 101,
+      "title": "Connector Proxy Pod CPU Usage",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\", pod=~\".*m8flow-connector-proxy.*\", container!=\"\"}[1m])) by (pod, namespace)",
+          "legendFormat": "{{namespace}} / {{pod}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 102,
+      "title": "Connector Proxy Pod Memory Usage",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(container_memory_working_set_bytes{namespace=~\"$namespace\", pod=~\".*m8flow-connector-proxy.*\", container!=\"\"}) by (pod, namespace)",
+          "legendFormat": "{{namespace}} / {{pod}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 103,
+      "title": "Pod Restarts",
+      "type": "stat",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=~\"$namespace\", pod=~\".*m8flow-connector-proxy.*\"}[1h])) by (pod, namespace)",
+          "legendFormat": "{{namespace}} / {{pod}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
     }
   ],
-  "annotations": { "list": [] },
+  "annotations": {
+    "list": []
+  },
   "editable": true,
   "graphTooltip": 1,
   "links": [
@@ -154,6 +420,24 @@
       "title": "Tempo Service Graph",
       "url": "/a/grafana-explore-app/explore?schemaVersion=1&panes=%7B%22tempo%22:%7B%22datasource%22:%22tempo%22%7D%7D",
       "type": "link"
+    }
+  ],
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "Select the Prometheus data source",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    },
+    {
+      "name": "DS_LOKI",
+      "label": "Loki",
+      "description": "Select the Loki data source for logs",
+      "type": "datasource",
+      "pluginId": "loki",
+      "pluginName": "Loki"
     }
   ]
 }

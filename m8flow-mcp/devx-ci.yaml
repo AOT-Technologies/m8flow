@@ -1,0 +1,52 @@
+# DevX CI Configuration — m8flow-mcp-server-service
+# Language: Python 3.12 | MCP (Model Context Protocol) server
+# Dockerfile: m8flow-mcp/Dockerfile
+
+project:
+  language: python
+  version: "3.12"
+  working_directory: "m8flow-mcp"
+
+build:
+  enabled: true
+  install_command: "pip install uv ruff==0.15.20"
+  run_tests: true
+  test_script: "ruff check ."
+
+docker:
+  enabled: true
+  working_directory: "m8flow-mcp"
+  dockerfile: "Dockerfile"
+  image_name: "m8flow/m8flow-mcp-server-service"
+  image_tag: ""
+  registry_type: generic
+  registry_url: "docker.io"
+  platforms: "linux/amd64"
+
+security:
+  sast:
+    enabled: true
+    tool: sonarqube
+    scan_path: "m8flow-mcp"
+    sonar_host_url: "https://sonarcloud.io"
+    sonar_organization: "aot-technologies"
+    sonar_project_key: "AOT-Technologies_m8flow-mcp"
+    fail_on_quality_gate: false
+
+  iac:
+    enabled: false
+
+  trivy:
+    enabled: true
+    severity: CRITICAL,HIGH
+    fail_on_vuln: false
+    ignore_unfixed: true
+    scanners: vuln,secret
+
+  sbom:
+    enabled: true
+    format: cyclonedx-json
+
+  sbom_scan:
+    enabled: true
+    severity: medium
