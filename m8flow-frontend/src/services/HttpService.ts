@@ -32,6 +32,8 @@ type CallArgs = {
   httpMethod?: string;
   extraHeaders?: object;
   postBody?: any;
+  /** Tenant captured by the workflow action, rather than re-read at send time. */
+  tenantId?: string;
 };
 
 type RawExchange = { response: Response; text: string };
@@ -108,12 +110,15 @@ const looksLikeHtmlDocument = (body: string) => {
 
 const stripVersionPrefix = (path: string) => path.replace(/^\/v1\.0/, '');
 
-const getSuperAdminTenantHeaders = (httpMethod: string): Record<string, string> => {
+const getSuperAdminTenantHeaders = (
+  httpMethod: string,
+  tenantId?: string,
+): Record<string, string> => {
   if (httpMethod === HttpMethods.GET || !UserService.isSuperAdmin()) {
     return {};
   }
 
-  const selectedTenantId = getStoredGlobalTenantId().trim();
+  const selectedTenantId = (tenantId ?? getStoredGlobalTenantId()).trim();
   if (!selectedTenantId) {
     return {};
   }
@@ -127,9 +132,10 @@ const assembleFetchInit = ({
   httpMethod = 'GET',
   extraHeaders = {},
   postBody = {},
-}: Pick<CallArgs, 'httpMethod' | 'extraHeaders' | 'postBody'>): RequestInit => {
+  tenantId,
+}: Pick<CallArgs, 'httpMethod' | 'extraHeaders' | 'postBody' | 'tenantId'>): RequestInit => {
   const headers = getBasicHeaders();
-  Object.assign(headers, getSuperAdminTenantHeaders(httpMethod));
+  Object.assign(headers, getSuperAdminTenantHeaders(httpMethod, tenantId));
   if (!objectIsEmpty(extraHeaders)) {
     Object.assign(headers, extraHeaders);
   }
@@ -159,9 +165,10 @@ const exchangeOnce = ({
   httpMethod,
   extraHeaders,
   postBody,
-}: Pick<CallArgs, 'path' | 'httpMethod' | 'extraHeaders' | 'postBody'>): Promise<RawExchange> => {
+  tenantId,
+}: Pick<CallArgs, 'path' | 'httpMethod' | 'extraHeaders' | 'postBody' | 'tenantId'>): Promise<RawExchange> => {
   const url = `${BACKEND_BASE_URL}${stripVersionPrefix(path)}`;
-  return fetch(url, assembleFetchInit({ httpMethod, extraHeaders, postBody })).then(
+  return fetch(url, assembleFetchInit({ httpMethod, extraHeaders, postBody, tenantId })).then(
     (response) => response.text().then((text) => ({ response, text })),
   );
 };
@@ -225,9 +232,10 @@ const makeCallToBackend = ({
   httpMethod = 'GET',
   extraHeaders = {},
   postBody = {},
+  tenantId,
 }: CallArgs) => {
   withGetAuthRetry(httpMethod, () =>
-    exchangeOnce({ path, httpMethod, extraHeaders, postBody }),
+    exchangeOnce({ path, httpMethod, extraHeaders, postBody, tenantId }),
   )
     .then((exchange) => {
       const payload = parseJsonOrThrow(exchange);

@@ -157,6 +157,7 @@ export default function CreateProcessModelFromTemplateModal({
         process_model_id: trimmedId,
         display_name: trimmedName,
         description: description.trim() || undefined,
+        m8f_tenant_id: selectedTenantId || undefined,
       });
 
       const fullProcessModelId = result.template_info?.process_model_identifier || `${selectedGroup.id}/${trimmedId}`;

@@ -92,12 +92,14 @@ export default function ProcessModelForm({
       exception_notification_addresses: model.exception_notification_addresses,
     };
     if (isCreate) payload.id = `${groupId}/${model.id}`;
+    if (isCreate && selectedTenantId) payload.m8f_tenant_id = selectedTenantId;
 
     HttpService.makeCallToBackend({
       path: endpoint,
       successCallback: afterSave,
       httpMethod: isEdit ? 'PUT' : 'POST',
       postBody: payload,
+      tenantId: selectedTenantId || undefined,
     });
   };
 

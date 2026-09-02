@@ -26,6 +26,9 @@ _WORKFLOW_WRITE_OPERATIONS = frozenset(
         "process_model_test_generate",
         "process_model_test_run",
         "process_model_update",
+        "process_instance_create",
+        "process_instance_run",
+        "process_instance_run_deprecated",
     }
 )
 
@@ -47,6 +50,16 @@ def enforce_super_admin_workflow_write_tenant() -> None:
 
     tenant_id = getattr(g, "m8flow_tenant_id", None)
     if is_concrete_tenant_id(tenant_id):
+        body = request.get_json(silent=True) or {}
+        explicit_tenant_id = body.get("m8f_tenant_id") if isinstance(body, dict) else None
+        if explicit_tenant_id is not None and explicit_tenant_id != tenant_id:
+            from spiffworkflow_backend.exceptions.api_error import ApiError
+
+            raise ApiError(
+                "tenant_override_forbidden",
+                "Super-admin workflow write request conflicts with the current tenant context.",
+                status_code=400,
+            )
         return
 
     from spiffworkflow_backend.exceptions.api_error import ApiError

@@ -220,6 +220,28 @@ describe('HttpService.makeCallToBackend', () => {
     expect(headers.get('X-M8Flow-Tenant-Id')).toBe('tenant-42');
   });
 
+  it('uses the tenant captured by the workflow action instead of ambient storage', async () => {
+    getAccessToken.mockReturnValue('access-token');
+    isSuperAdmin.mockReturnValue(true);
+    getStoredGlobalTenantId.mockReturnValue('stale-tenant');
+    const fetchMock = vi.fn().mockResolvedValue(
+      makeResponse({ body: '{"ok":true}', ok: true, status: 200, statusText: 'OK' }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    HttpService.makeCallToBackend({
+      path: '/v1.0/process-groups',
+      httpMethod: 'POST',
+      tenantId: 'captured-tenant',
+      postBody: { id: 'finance', m8f_tenant_id: 'captured-tenant' },
+      successCallback: vi.fn(),
+    });
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const headers = fetchMock.mock.calls[0][1].headers as Headers;
+    expect(headers.get('X-M8Flow-Tenant-Id')).toBe('captured-tenant');
+  });
+
   it('does not add the selected tenant header for GET requests', async () => {
     getAccessToken.mockReturnValue('access-token');
     isSuperAdmin.mockReturnValue(true);

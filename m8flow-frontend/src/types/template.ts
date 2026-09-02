@@ -70,6 +70,7 @@ export interface CreateProcessModelFromTemplateRequest {
   process_model_id: string;
   display_name: string;
   description?: string;
+  m8f_tenant_id?: string;
 }
 
 /** Template provenance info for a process model. */

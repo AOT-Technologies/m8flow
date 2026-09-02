@@ -44,6 +44,23 @@ def test_super_admin_workflow_write_allows_selected_tenant(app: Flask) -> None:
         assert enforce_super_admin_workflow_write_tenant() is None
 
 
+def test_super_admin_workflow_write_rejects_conflicting_explicit_tenant(app: Flask) -> None:
+    from spiffworkflow_backend.exceptions.api_error import ApiError
+
+    with app.test_request_context(
+        "/workflow-write",
+        method="POST",
+        json={"m8f_tenant_id": "tenant-b"},
+    ):
+        g._m8flow_super_admin_request = True
+        g.m8flow_tenant_id = "tenant-a"
+
+        with pytest.raises(ApiError, match="conflicts") as exc_info:
+            enforce_super_admin_workflow_write_tenant()
+
+    assert exc_info.value.error_code == "tenant_override_forbidden"
+
+
 def test_workflow_read_is_not_blocked_for_super_admin_without_tenant(app: Flask) -> None:
     with app.test_request_context("/workflow-read", method="GET"):
         g._m8flow_super_admin_request = True
