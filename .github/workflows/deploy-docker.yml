@@ -33,8 +33,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  AWS_REGION: us-east-2
-  ECR_REGISTRY: 653405621825.dkr.ecr.us-east-2.amazonaws.com
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
   IMAGE_REPOSITORY: m8flow
   PROJECT: m8flow
   COMPONENTS: '["backend", "frontend", "keycloak", "connector-proxy", "mcp"]'
@@ -104,11 +104,23 @@ jobs:
           TAG: "${{ needs.prepare.outputs.tag }}"
         run: |
           # 1. Check if the current tag exists in ECR.
-          IMAGE_META=$(aws ecr describe-images \
+          ERR_FILE=$(mktemp)
+          if ! IMAGE_META=$(aws ecr describe-images \
             --repository-name "${{ env.PROJECT }}-${{ matrix.component }}" \
             --region "${{ env.AWS_REGION }}" \
             --image-ids imageTag="${TAG}" \
-            --output json 2>&1) || { echo "Tag ${TAG} not found in ECR. Nothing to backup."; exit 0; }
+            --output json 2>"$ERR_FILE"); then
+            ERR_MSG=$(cat "$ERR_FILE")
+            rm -f "$ERR_FILE"
+            if [[ "$ERR_MSG" =~ "ImageNotFoundException" ]]; then
+              echo "Tag ${TAG} not found in ECR. Nothing to backup."
+              exit 0
+            else
+              echo "::error::ECR error while checking tag '${TAG}': ${ERR_MSG}"
+              exit 1
+            fi
+          fi
+          rm -f "$ERR_FILE"
 
           COUNT=$(echo "$IMAGE_META" | jq '.imageDetails | length' 2>/dev/null || echo "0")
           if [[ "$COUNT" -lt 1 ]]; then

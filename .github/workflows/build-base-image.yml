@@ -24,8 +24,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  AWS_REGION: us-east-2
-  ECR_REGISTRY: 653405621825.dkr.ecr.us-east-2.amazonaws.com
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
   IMAGE_REPOSITORY: m8flow-python-base
   # Explicit, reproducible tag — never rely on a moving 'latest'.
   IMAGE_TAG: ubuntu24.04-py3.12
