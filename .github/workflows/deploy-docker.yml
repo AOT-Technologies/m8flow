@@ -74,12 +74,29 @@ jobs:
 
       - name: Compute component list
         id: components
+        env:
+          COMPONENT: ${{ inputs.component }}
+        # COMPONENTS is a workflow-level env var, so the shell can read it
+        # directly. It must NOT be interpolated as ${{ env.COMPONENTS }}: a
+        # GitHub expression is spliced into the script as raw text before bash
+        # parses the line, so the JSON's own quotes were consumed as shell
+        # syntax and the step emitted [backend, frontend, ...] -- which fromJson
+        # rejected with "Unexpected symbol: 'backend'".
         run: |
-          if [[ -z "${{ inputs.component }}" || "${{ inputs.component }}" == "all" ]]; then
-            echo "list=${{ env.COMPONENTS }}" >> $GITHUB_OUTPUT
+          set -euo pipefail
+          if [[ -z "$COMPONENT" || "$COMPONENT" == "all" ]]; then
+            LIST="$COMPONENTS"
           else
-            echo "list=[\"${{ inputs.component }}\"]" >> $GITHUB_OUTPUT
+            # jq emits correctly escaped JSON for any component name.
+            LIST=$(jq -cn --arg c "$COMPONENT" '[$c]')
           fi
+
+          # Fail loudly here rather than as an opaque matrix error two jobs later.
+          echo "$LIST" | jq -e 'type == "array" and length > 0' >/dev/null \
+            || { echo "::error::Component list is not a non-empty JSON array: $LIST"; exit 1; }
+
+          echo "Component list: $LIST"
+          echo "list=$LIST" >> "$GITHUB_OUTPUT"
 
   backup-existing-tags:
     name: Backup Tags
