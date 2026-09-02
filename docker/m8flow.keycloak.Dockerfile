@@ -25,11 +25,12 @@ COPY m8flow-backend/keycloak/themes/m8flow /opt/keycloak/themes/m8flow
 RUN chown -R keycloak:keycloak /opt/keycloak/data/import
 COPY docker/keycloak-init-realms.sh /opt/keycloak/bin/keycloak-init-realms.sh
 COPY docker/keycloak-entrypoint.sh /opt/keycloak/bin/keycloak-entrypoint.sh
+COPY docker/keycloak-healthcheck.sh /opt/keycloak/bin/keycloak-healthcheck.sh
 RUN chown keycloak:keycloak /opt/keycloak/providers/realm-info-mapper.jar \
   && chown -R keycloak:keycloak /opt/keycloak/data/import \
   && chown -R keycloak:keycloak /opt/keycloak/themes/m8flow \
-  && chmod +x /opt/keycloak/bin/keycloak-init-realms.sh /opt/keycloak/bin/keycloak-entrypoint.sh \
-  && chown keycloak:keycloak /opt/keycloak/bin/keycloak-init-realms.sh /opt/keycloak/bin/keycloak-entrypoint.sh
+  && chmod +x /opt/keycloak/bin/keycloak-init-realms.sh /opt/keycloak/bin/keycloak-entrypoint.sh /opt/keycloak/bin/keycloak-healthcheck.sh \
+  && chown keycloak:keycloak /opt/keycloak/bin/keycloak-init-realms.sh /opt/keycloak/bin/keycloak-entrypoint.sh /opt/keycloak/bin/keycloak-healthcheck.sh
 USER keycloak
 
 ENTRYPOINT ["/opt/keycloak/bin/keycloak-entrypoint.sh"]
