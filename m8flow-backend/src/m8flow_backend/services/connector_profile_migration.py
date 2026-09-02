@@ -210,8 +210,15 @@ def seed_default_profile(connector_type: str, user_id: int | None = None) -> Any
         # Seeding is best effort: a validation gap (say a required field the old
         # form never collected) must not block anything, and the tenant can
         # finish the profile by hand.
+        # Nothing off `error` is logged here: error.message/error.errors can echo
+        # the submitted config, so the exception type and message go to the
+        # redacted audit log below instead of the clear-text application log.
+        # connector_type is left out for the same reason as at the end of this
+        # function: CodeQL classifies anything traced to SECRET_KEY_TO_FIELD as
+        # sensitive, and the audit event below already carries it.
         logger.warning(
-            "Could not seed a default %s profile: %s", connector_type, error.message
+            "Could not seed a default connector profile; see the "
+            "connector_profile.seed.failed audit event for details."
         )
         _audit(
             "connector_profile.seed.failed",
@@ -224,12 +231,15 @@ def seed_default_profile(connector_type: str, user_id: int | None = None) -> Any
         )
         return None
 
-    # codeql[py/clear-text-logging-sensitive-data]: sorted(config.keys()) yields
-    # the dict's field names (smtp_host, smtp_password), never its values.
+    # Field names only (smtp_host, ...), never values. The app log gets the
+    # count as an int; the field names go to the redacted audit log below.
+    # CodeQL classifies anything traced to SECRET_KEY_TO_FIELD as sensitive, so
+    # only a non-string (the count) is logged here.
+    seeded_fields = sorted(field for key, field in mapping.items() if key in values)
     logger.info(
-        "Seeded default %s profile from existing secrets: %s",
-        connector_type,
-        ", ".join(sorted(config.keys())),
+        "Seeded a default connector profile from %d existing secret field(s); "
+        "see the connector_profile.seed.succeeded audit event for the connector.",
+        len(seeded_fields),
     )
     _audit(
         "connector_profile.seed.succeeded",
@@ -239,7 +249,7 @@ def seed_default_profile(connector_type: str, user_id: int | None = None) -> Any
         profile_name=DEFAULT_PROFILE_NAME,
         resource_id=getattr(profile, "id", None),
         # Field names only. The values are the credentials themselves.
-        seeded_fields=sorted(config.keys()),
+        seeded_fields=seeded_fields,
     )
     return profile
 
@@ -251,22 +261,31 @@ def report_unseedable_secrets() -> list[str]:
     GITHUB_PAT_TOKEN would get no profile, no error and no explanation. Logging
     the names (never the values) makes the gap findable.
     """
-    present = _existing_secret_keys(list(UNMAPPED_SECRET_KEYS))
-    for key in present:
-        logger.info(
-            "Secret '%s' cannot be carried into a connector profile: %s. "
-            "Configure that connector's profile by hand.",
-            key,
-            UNMAPPED_SECRET_KEYS[key],
-        )
+    # The key names and reasons go to the redacted audit log (one
+    # connector_profile.seed.skipped event each), which is where the gap is meant
+    # to be found. The app log gets only the count as an int: CodeQL classifies
+    # anything traced to UNMAPPED_SECRET_KEYS as sensitive, so no name is logged.
+    present_keys = set(_existing_secret_keys(list(UNMAPPED_SECRET_KEYS)))
+    reported: list[str] = []
+    for key, reason in UNMAPPED_SECRET_KEYS.items():
+        if key not in present_keys:
+            continue
         _audit(
             "connector_profile.seed.skipped",
             "skipped",
             f"Secret '{key}' cannot be carried into a connector profile.",
             secret_key=key,
-            reason=UNMAPPED_SECRET_KEYS[key],
+            reason=reason,
         )
-    return present
+        reported.append(key)
+    if reported:
+        logger.info(
+            "%d stored legacy secret(s) have no connector-profile mapping and "
+            "were skipped; see the connector_profile.seed.skipped audit events "
+            "for the key names and reasons.",
+            len(reported),
+        )
+    return reported
 
 
 def seed_all_default_profiles(user_id: int | None = None) -> list[str]:
