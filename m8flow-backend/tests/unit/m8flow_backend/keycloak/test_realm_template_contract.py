@@ -430,14 +430,13 @@ def test_seed_users_carry_only_the_realm_default_role(template: dict, username: 
 
 
 @pytest.mark.parametrize("username", ["editor", "integrator", "reviewer", "submitter", "viewer"])
-def test_non_admin_seed_users_bypass_verify_profile(template: dict, username: str) -> None:
+def test_non_admin_seed_users_have_minimal_profiles(template: dict, username: str) -> None:
     """The seed users are intentionally minimal (empty email, no last name).
 
-    On Keycloak 26 an incomplete profile alone is NOT enough to avoid the
-    profile-completion form on first login: the realm must also disable the
-    VERIFY_PROFILE required action (see
-    ``test_verify_profile_required_action_is_disabled``). These assertions just
-    pin the minimal shape of the seed users.
+    This shape on its own does NOT keep the profile-completion form off the
+    login path: on Keycloak 26 an incomplete profile is exactly what raises
+    VERIFY_PROFILE (see ``test_verify_profile_required_action_is_enabled``).
+    These assertions only pin the minimal shape of the seed users.
     """
     user = _user(template, username)
     assert user["email"] == ""
@@ -445,20 +444,21 @@ def test_non_admin_seed_users_bypass_verify_profile(template: dict, username: st
     assert user["firstName"] == username.capitalize()
 
 
-def test_verify_profile_required_action_is_disabled(template: dict) -> None:
-    """VERIFY_PROFILE must be disabled realm-wide so it never interrupts login.
+def test_verify_profile_required_action_is_enabled(template: dict) -> None:
+    """VERIFY_PROFILE is left at the Keycloak default (enabled).
 
     Keycloak 26 raises VERIFY_PROFILE whenever a required profile attribute is
-    missing (the seed users have empty email / no last name). Leaving the action
-    enabled makes every first login stop on the profile-completion form, which is
-    what stalls the browser E2E login fixtures.
+    missing, and the seed users are deliberately incomplete, so first login can
+    stop on the profile-completion form. If that starts stalling the browser
+    login fixtures, disable this action in the template rather than backfilling
+    per-user profile attributes in the Keycloak entrypoint.
     """
     verify_profile = next(
         action
         for action in template["requiredActions"]
         if action["alias"] == "VERIFY_PROFILE"
     )
-    assert verify_profile["enabled"] is False
+    assert verify_profile["enabled"] is True
 
 
 def test_admin_seed_user_holds_realm_management_roles(template: dict) -> None:

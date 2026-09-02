@@ -13,7 +13,11 @@ from helpers.config import (
     SUPER_ADMIN_USERNAME,
     VIEWPORT,
 )
-from helpers.login import expect_logged_out, logout
+from helpers.login import (
+    complete_verify_profile_if_present,
+    expect_logged_out,
+    logout,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +116,9 @@ def test_platform_admin_login_succeeds(platform_admin_page: Page) -> None:
     platform_admin_page.locator("#username").fill(SUPER_ADMIN_USERNAME)
     platform_admin_page.locator("#password").fill(SUPER_ADMIN_PASSWORD)
     platform_admin_page.locator("#kc-login").click()
+    # VERIFY_PROFILE is enabled and super-admin is seeded without a profile, so
+    # first login lands on the Update Account Information page -- complete it.
+    complete_verify_profile_if_present(platform_admin_page, SUPER_ADMIN_USERNAME)
     expect(platform_admin_page.get_by_test_id("nav-user-actions-button")).to_be_visible(
         timeout=NAV_TIMEOUT
     )

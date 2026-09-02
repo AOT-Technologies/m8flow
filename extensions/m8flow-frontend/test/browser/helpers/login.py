@@ -83,28 +83,83 @@ def _handle_keycloak_update_password(page: Page, password: str) -> None:
     page.locator('input[type="submit"], button[type="submit"]').click()
 
 
+def _fill_if_empty(page: Page, selector: str, value: str) -> None:
+    """Fill a field only when it exists and is currently blank."""
+    loc = page.locator(selector)
+    if loc.count() == 0:
+        return
+    if not (loc.input_value() or "").strip():
+        loc.fill(value)
+
+
+def _complete_update_profile(page: Page, username: str | None = None) -> None:
+    """Complete Keycloak's VERIFY_PROFILE 'Update Account Information' page.
+
+    Seed users are provisioned with incomplete profiles (no first/last name,
+    and most with no email), so with VERIFY_PROFILE enabled Keycloak forces
+    this page on first login.  Fill only the required fields Keycloak left
+    blank -- email is derived from the username to stay unique within the
+    realm -- then submit.  This persists the profile, so later logins of the
+    same user skip the page.
+    """
+    base = (username or "test").strip() or "test"
+    _fill_if_empty(page, "#firstName", base.capitalize())
+    _fill_if_empty(page, "#lastName", "User")
+    _fill_if_empty(page, "#email", f"{base}@example.com")
+    page.locator("#kc-update-profile-form").locator(
+        'button[type="submit"], input[type="submit"]'
+    ).first.click()
+
+
+def complete_verify_profile_if_present(
+    page: Page,
+    username: str | None = None,
+    timeout: int = NAV_TIMEOUT,
+) -> None:
+    """Handle a VERIFY_PROFILE page for tests that drive Keycloak directly.
+
+    Waits until either the profile page or the app shell is visible, then
+    completes the profile when it is the profile page that appeared.  A no-op
+    when the user already has a complete profile.
+    """
+    page.locator(
+        '#kc-update-profile-form, [data-testid="nav-user-actions-button"]'
+    ).first.wait_for(state="visible", timeout=timeout)
+    if page.locator("#kc-update-profile-form").is_visible():
+        _complete_update_profile(page, username)
+
+
 def _wait_for_post_login(
     page: Page,
     password: str,
     new_password: str | None = None,
+    username: str | None = None,
     timeout: int = POST_LOGIN_TIMEOUT,
 ) -> None:
-    """Wait for the app shell or a Keycloak required-action page.
+    """Wait for the app shell, handling Keycloak required-action pages.
 
-    The post-login signal is the user-actions button in the side nav, which
-    every authenticated layout renders.  Handles UPDATE_PASSWORD automatically
-    when Keycloak forces a password change.
+    Post-login can pass through one or more Keycloak required-action pages --
+    UPDATE_PASSWORD, then VERIFY_PROFILE when the profile is incomplete --
+    before the app shell renders.  Handle each page as it appears, in any
+    order, until the side-nav user-actions button (which every authenticated
+    layout renders) is visible.
     """
-    indicator = page.locator(
-        '#password-new, [data-testid="nav-user-actions-button"]'
-    )
-    indicator.first.wait_for(state="visible", timeout=timeout)
+    for _ in range(3):
+        page.locator(
+            '#password-new, #kc-update-profile-form, '
+            '[data-testid="nav-user-actions-button"]'
+        ).first.wait_for(state="visible", timeout=timeout)
 
-    if page.locator("#password-new").is_visible():
-        _handle_keycloak_update_password(page, new_password or password)
-        page.get_by_test_id("nav-user-actions-button").wait_for(
-            state="visible", timeout=timeout
-        )
+        if page.get_by_test_id("nav-user-actions-button").is_visible():
+            return
+        if page.locator("#password-new").is_visible():
+            _handle_keycloak_update_password(page, new_password or password)
+        elif page.locator("#kc-update-profile-form").is_visible():
+            _complete_update_profile(page, username)
+
+    page.get_by_test_id("nav-user-actions-button").wait_for(
+        state="visible", timeout=timeout
+    )
 
 
 def expect_logged_out(page: Page, timeout: int = PAGE_DATA_TIMEOUT) -> None:
@@ -198,7 +253,9 @@ def login(
             # fixture outright.
             _submit_keycloak_form(page, username, password)
             _handle_organization_selection(page, organization_alias=tenant)
-            _wait_for_post_login(page, password, new_password=new_password)
+            _wait_for_post_login(
+                page, password, new_password=new_password, username=username
+            )
             return
         except (AssertionError, PlaywrightTimeout):
             if attempt == MAX_LOGIN_ATTEMPTS:
@@ -295,7 +352,7 @@ def login_as_global_admin(
             # _navigate_to_global_admin_login) instead of failing outright.
             _navigate_to_global_admin_login(page, base_url)
             _submit_keycloak_form(page, username, password)
-            _wait_for_post_login(page, password)
+            _wait_for_post_login(page, password, username=username)
             return
         except (AssertionError, PlaywrightTimeout):
             if attempt == MAX_LOGIN_ATTEMPTS:
