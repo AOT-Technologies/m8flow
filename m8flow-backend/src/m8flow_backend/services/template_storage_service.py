@@ -50,6 +50,16 @@ class TemplateStorageService(Protocol):
         """Retrieve file content by path."""
         ...
 
+    def file_exists(
+        self,
+        tenant_id: str,
+        template_key: str,
+        version: str,
+        file_name: str,
+    ) -> bool:
+        """Return True if the file is present in storage."""
+        ...
+
     def list_files(
         self,
         tenant_id: str,
@@ -101,6 +111,15 @@ class NoopTemplateStorageService:
         version: str,
         file_name: str,
     ) -> bytes:
+        raise NotImplementedError("Template storage is not configured.")
+
+    def file_exists(
+        self,
+        tenant_id: str,
+        template_key: str,
+        version: str,
+        file_name: str,
+    ) -> bool:
         raise NotImplementedError("Template storage is not configured.")
 
     def list_files(
@@ -230,6 +249,15 @@ class FilesystemTemplateStorageService:
                 f"Failed to read file: {str(e)}",
                 status_code=500,
             )
+
+    def file_exists(
+        self,
+        tenant_id: str,
+        template_key: str,
+        version: str,
+        file_name: str,
+    ) -> bool:
+        return os.path.isfile(self._file_path(tenant_id, template_key, version, file_name))
 
     def list_files(
         self,

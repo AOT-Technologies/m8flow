@@ -132,6 +132,7 @@ def load_sample_templates(flask_app) -> None:  # noqa: ANN001
         storage = FilesystemTemplateStorageService()
         loaded = 0
         skipped = 0
+        repaired = 0
 
         for zip_filename in zip_files:
             try:
@@ -157,13 +158,28 @@ def load_sample_templates(flask_app) -> None:  # noqa: ANN001
                     .first()
                 )
                 if existing is not None:
-                    logger.info(
+                    missing_files = [
+                        entry.get("file_name")
+                        for entry in (existing.files or [])
+                        if entry.get("file_name")
+                        and not storage.file_exists(
+                            tenant_id, template_key, existing.version, entry["file_name"]
+                        )
+                    ]
+                    if not missing_files:
+                        logger.info(
                         "Sample template '%s' %s already exists; skipping",
                         template_key,
                         VERSION,
                     )
-                    skipped += 1
-                    continue
+                        skipped += 1
+                        continue
+
+                    logger.warning(
+                        "Sample template '%s' exists in the database but is missing %d file(s) "
+                        "on disk (%s); re-extracting %s to repair storage.",
+                        template_key, len(missing_files), ", ".join(missing_files), zip_filename,
+                    )
 
                 zip_path = os.path.join(sample_dir, zip_filename)
                 try:
@@ -177,6 +193,21 @@ def load_sample_templates(flask_app) -> None:  # noqa: ANN001
                 if not has_bpmn:
                     logger.warning("ZIP %s contains no BPMN file; skipping", zip_filename)
                     skipped += 1
+                    continue
+
+                if existing is not None:
+                    try:
+                        for file_name, content in files:
+                            ft = file_type_from_filename(file_name)
+                            storage.store_file(
+                                tenant_id, template_key, existing.version, file_name, ft, content
+                            )
+                    except Exception:
+                        logger.exception("Failed to repair storage for %s", zip_filename)
+                        skipped += 1
+                        continue
+                    repaired += 1
+                    logger.info("Repaired storage for sample template '%s' (key=%s)", display_name, template_key)
                     continue
 
                 file_entries: list[dict] = []
@@ -225,4 +256,7 @@ def load_sample_templates(flask_app) -> None:  # noqa: ANN001
                 skipped += 1
                 continue
 
-        logger.info("Sample templates loading complete: %d loaded, %d skipped", loaded, skipped)
+        logger.info(
+            "Sample templates loading complete: %d loaded, %d repaired, %d skipped",
+            loaded, repaired, skipped,
+        )
