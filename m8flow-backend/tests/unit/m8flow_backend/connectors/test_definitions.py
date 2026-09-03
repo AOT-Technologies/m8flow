@@ -32,6 +32,9 @@ EXPECTED_CONNECTORS = {
     "stripe",
 }
 
+PROFILE_ID = "01234567-89ab-cdef-0123-456789abcdef"
+PROFILE_ID_TOKEN = "ASNFZ4mrze8BI0VniavN7w"
+
 
 def test_all_eight_connectors_are_registered():
     assert {cls.connector_type for cls in all_connectors()} == EXPECTED_CONNECTORS
@@ -90,13 +93,14 @@ def test_secret_keys_fit_the_upstream_key_column(connector_type):
     definition = get_connector(connector_type)
     for name in definition.secret_field_names():
         assert len(name) <= MAX_SECRET_FIELD_NAME_LENGTH
-        # 9999999999 is the largest configuration id the budget allows for.
-        assert len(secret_ref(9999999999, name)) <= SECRET_KEY_MAX_LENGTH
+        assert len(secret_ref(PROFILE_ID, name)) <= SECRET_KEY_MAX_LENGTH
 
 
 def test_secret_ref_is_keyed_on_configuration_id_not_profile_name():
     """Renaming a profile must not move its secrets."""
-    assert secret_ref(17, "smtp_password") == "cnx.17.smtp_password"
+    assert secret_ref(PROFILE_ID, "smtp_password") == (
+        f"cnx.{PROFILE_ID_TOKEN}.smtp_password"
+    )
 
 
 def test_secret_ref_is_a_single_url_path_segment():
@@ -106,7 +110,7 @@ def test_secret_ref_is_a_single_url_path_segment():
     "/" is unreachable however the frontend encodes it -- show, update and
     delete all 404. Keep the ref free of path separators.
     """
-    key = secret_ref(9999999999, "smtp_password")
+    key = secret_ref(PROFILE_ID, "smtp_password")
     assert "/" not in key
     assert quote(key, safe="") == key
 
