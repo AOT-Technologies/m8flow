@@ -17,6 +17,8 @@ from helpers.config import (
     VIEWPORT,
 )
 
+from helpers.login import _complete_update_profile
+
 logger = logging.getLogger(__name__)
 
 BACKEND_URL = os.getenv("BROWSER_TEST_BACKEND_URL", "http://localhost:6840")
@@ -35,7 +37,7 @@ def _login_via_shared_realm(page: Page, username: str, password: str) -> None:
     page.locator("#username").fill(username)
     page.locator("#password").fill(password)
     page.locator("#kc-login").click()
-    _wait_for_selector_or_app(page, password=password)
+    _wait_for_selector_or_app(page, password=password, username=username)
 
 
 def _complete_required_action_if_needed(page: Page, password: str) -> bool:
@@ -50,12 +52,15 @@ def _complete_required_action_if_needed(page: Page, password: str) -> bool:
     return True
 
 
-def _wait_for_selector_or_app(page: Page, password: str | None = None) -> None:
-    for _ in range(2):
+def _wait_for_selector_or_app(
+    page: Page, password: str | None = None, username: str | None = None
+) -> None:
+    for _ in range(3):
         page.wait_for_function(
             """
             () => Boolean(
               document.querySelector('#password-new')
+              || document.querySelector('#kc-update-profile-form')
               || document.querySelector('[data-testid^="organization-option-"]')
               || document.querySelector('[data-testid="nav-user-actions-button"]')
             )
@@ -63,6 +68,9 @@ def _wait_for_selector_or_app(page: Page, password: str | None = None) -> None:
             timeout=NAV_TIMEOUT,
         )
         if password and _complete_required_action_if_needed(page, password):
+            continue
+        if page.locator("#kc-update-profile-form").is_visible():
+            _complete_update_profile(page, username)
             continue
         return
 

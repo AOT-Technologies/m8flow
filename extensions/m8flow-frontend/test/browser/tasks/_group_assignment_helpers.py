@@ -27,7 +27,7 @@ import re
 import uuid
 
 import pytest
-from playwright.sync_api import APIResponse, Page, TimeoutError as PlaywrightTimeout, expect
+from playwright.sync_api import APIResponse, Error as PlaywrightError, Page, TimeoutError as PlaywrightTimeout, expect
 
 from helpers.config import (
     API_PREFIX,
@@ -84,9 +84,50 @@ def _auth_headers(page: Page) -> dict[str, str]:
     return headers
 
 
-def api_get(page: Page, path: str) -> APIResponse:
-    """Authenticated GET of a backend API path (mirrors the frontend's headers)."""
-    return page.request.get(_api_url(path), headers=_auth_headers(page))
+# Connection-level failures on a *reused* keep-alive socket surface as a
+# Playwright ``Error`` ("socket hang up" / "ECONNRESET"), not as an HTTP status.
+# The backend legitimately closes idle keep-alive connections, so the pooled
+# ``page.request`` context can hand us a half-closed socket on the next reuse --
+# most visibly on the ~1s-spaced ``GET /tasks`` polls right after a completion.
+# A GET is idempotent, so retry it a few times before surfacing the error; a
+# genuine HTTP failure still comes back as a normal (non-OK) ``APIResponse``.
+_TRANSIENT_CONNECTION_MARKERS = (
+    "socket hang up",
+    "econnreset",
+    "connection reset",
+    "connection closed",
+    "connection terminated",
+    "connect econnrefused",
+)
+
+
+def _is_transient_connection_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return any(marker in message for marker in _TRANSIENT_CONNECTION_MARKERS)
+
+
+def api_get(page: Page, path: str, *, attempts: int = 4) -> APIResponse:
+    """Authenticated GET of a backend API path (mirrors the frontend's headers).
+
+    Retries transient keep-alive connection resets ("socket hang up") that a
+    pooled ``page.request`` occasionally hits when the backend has already
+    closed an idle connection. The GET is idempotent, so the retry is safe.
+    """
+    last_error: PlaywrightError | None = None
+    for attempt in range(attempts):
+        try:
+            return page.request.get(_api_url(path), headers=_auth_headers(page))
+        except PlaywrightError as exc:
+            if not _is_transient_connection_error(exc):
+                raise
+            last_error = exc
+            logger.warning(
+                "Transient connection error on GET %s (attempt %d/%d): %s",
+                path, attempt + 1, attempts, exc,
+            )
+            page.wait_for_timeout(500)
+    assert last_error is not None  # loop ran at least once
+    raise last_error
 
 
 def api_task_list(page: Page) -> list[dict]:

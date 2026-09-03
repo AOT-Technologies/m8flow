@@ -1,6 +1,7 @@
 """Platform Sign In flow tests for platform administrators."""
 
 import logging
+import re
 
 import pytest
 from playwright.sync_api import Page, expect
@@ -13,7 +14,11 @@ from helpers.config import (
     SUPER_ADMIN_USERNAME,
     VIEWPORT,
 )
-from helpers.login import expect_logged_out, logout
+from helpers.login import (
+    complete_verify_profile_if_present,
+    expect_logged_out,
+    logout,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +117,9 @@ def test_platform_admin_login_succeeds(platform_admin_page: Page) -> None:
     platform_admin_page.locator("#username").fill(SUPER_ADMIN_USERNAME)
     platform_admin_page.locator("#password").fill(SUPER_ADMIN_PASSWORD)
     platform_admin_page.locator("#kc-login").click()
+    # VERIFY_PROFILE is enabled and super-admin is seeded without a profile, so
+    # first login lands on the Update Account Information page -- complete it.
+    complete_verify_profile_if_present(platform_admin_page, SUPER_ADMIN_USERNAME)
     expect(platform_admin_page.get_by_test_id("nav-user-actions-button")).to_be_visible(
         timeout=NAV_TIMEOUT
     )
@@ -120,6 +128,12 @@ def test_platform_admin_login_succeeds(platform_admin_page: Page) -> None:
 
 def test_platform_admin_redirected_to_admin_area(platform_admin_page: Page) -> None:
     """Platform administrator lands in the platform administration area after login."""
+    # The redirect from "/" to /tenants is a client-side hop after login, so
+    # poll for it instead of asserting instantly (a VERIFY_PROFILE completion
+    # on first login can delay the hop past the assertion).
+    expect(platform_admin_page).to_have_url(
+        re.compile(re.escape(PLATFORM_ADMIN_LANDING_PATH)), timeout=NAV_TIMEOUT
+    )
     assert PLATFORM_ADMIN_LANDING_PATH in platform_admin_page.url, (
         f"Expected platform admin to land on {PLATFORM_ADMIN_LANDING_PATH!r}, "
         f"but URL was {platform_admin_page.url!r}"

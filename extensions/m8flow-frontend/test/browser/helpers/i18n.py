@@ -15,10 +15,16 @@ assertions and layout/overflow checks all go through here.
 from __future__ import annotations
 
 import json
+import logging
 from functools import lru_cache
 from pathlib import Path
 
-from playwright.sync_api import Locator, Page, expect
+from playwright.sync_api import (
+    Error as PlaywrightError,
+    Locator,
+    Page,
+    expect,
+)
 
 from helpers.config import BASE_URL, ELEMENT_TIMEOUT, VIEWPORT
 from helpers.login import login
@@ -70,6 +76,15 @@ NAV_ITEM_KEYS = {
 LANGUAGE_BUTTON_TESTID = "nav-language-button"
 LANGUAGE_MENU_TESTID = "nav-language-menu"
 LANGUAGE_OPTION_PREFIX = "nav-language-option-"
+
+# The app re-authenticates by navigating the whole page (UserService
+# ``redirectToLogin`` -> backend ``/login`` -> back to the app) whenever a
+# backend GET answers 401 twice. On the long-lived module-scoped page that can
+# land in the middle of a language switch, detaching the menu option mid-click
+# and closing the menu, so the switch is retried on a fresh app shell.
+LANGUAGE_SWITCH_ATTEMPTS = 3
+
+logger = logging.getLogger(__name__)
 
 
 # --------------------------------------------------------------------------- #
@@ -136,10 +151,17 @@ def translation(locale: str, key: str) -> str:
 
 
 def open_language_menu(page: Page, timeout: int = ELEMENT_TIMEOUT) -> Locator:
-    """Open (if needed) and return the language menu panel."""
+    """Open (if needed) and return the language menu panel.
+
+    Waits for the language button itself before clicking it: after an
+    app-driven re-authentication navigation the side nav is still mounting, and
+    clicking a not-yet-rendered button would fail instead of waiting.
+    """
     menu = page.get_by_test_id(LANGUAGE_MENU_TESTID)
     if not menu.is_visible():
-        page.get_by_test_id(LANGUAGE_BUTTON_TESTID).click()
+        button = page.get_by_test_id(LANGUAGE_BUTTON_TESTID)
+        expect(button).to_be_visible(timeout=timeout)
+        button.click(timeout=timeout)
         expect(menu).to_be_visible(timeout=timeout)
     return menu
 
@@ -166,12 +188,43 @@ def change_language(page: Page, locale: str, timeout: int = ELEMENT_TIMEOUT) -> 
     Waits on a deterministic re-render signal -- the language button's
     ``aria-label`` is ``t('language')`` and updates when the language changes --
     so callers never need a fixed sleep.
+
+    The whole open-menu-then-pick sequence is retried (bounded, no sleeps)
+    because an automatic re-authentication navigation can land at any moment on
+    the shared module-scoped page: it detaches the option mid-click *and* closes
+    the menu, so retrying the click alone can never recover -- the menu has to be
+    reopened on the reloaded shell. Each attempt is bounded by *timeout* rather
+    than the context default so a bounce cannot burn the whole budget.
     """
-    open_language_menu(page, timeout=timeout)
-    page.get_by_test_id(f"{LANGUAGE_OPTION_PREFIX}{locale}").click()
-    expect(page.get_by_test_id(LANGUAGE_BUTTON_TESTID)).to_have_attribute(
-        "aria-label", translation(locale, "language"), timeout=timeout
-    )
+    expected_label = translation(locale, "language")
+    for attempt in range(1, LANGUAGE_SWITCH_ATTEMPTS + 1):
+        try:
+            open_language_menu(page, timeout=timeout)
+            page.get_by_test_id(f"{LANGUAGE_OPTION_PREFIX}{locale}").click(
+                timeout=timeout
+            )
+            expect(page.get_by_test_id(LANGUAGE_BUTTON_TESTID)).to_have_attribute(
+                "aria-label", expected_label, timeout=timeout
+            )
+            return
+        # ``PlaywrightError`` (the base class of Playwright's ``TimeoutError``)
+        # also covers the "element was detached" / "execution context was
+        # destroyed" errors a mid-flight navigation raises.
+        except (AssertionError, PlaywrightError):
+            if attempt == LANGUAGE_SWITCH_ATTEMPTS:
+                raise
+            logger.warning(
+                "Language switch to %s failed on attempt %d/%d at %s "
+                "(likely an app re-authentication navigation); "
+                "waiting for the app shell and retrying.",
+                locale,
+                attempt,
+                LANGUAGE_SWITCH_ATTEMPTS,
+                page.url,
+            )
+            # Let the re-auth bounce settle so the retry starts from a mounted
+            # shell instead of racing the next navigation.
+            wait_for_app_ready(page)
 
 
 def current_language(page: Page) -> str | None:
@@ -269,6 +322,7 @@ __all__ = [
     "PRIMARY_TEST_LANGUAGE",
     "UNSUPPORTED_LANGUAGE",
     "I18N_STORAGE_KEY",
+    "LANGUAGE_SWITCH_ATTEMPTS",
     "NAV_ITEM_KEYS",
     "BASE_URL",
     "locale_dir",

@@ -41,15 +41,27 @@ def test_super_admin_connectors_list_visible(super_admin_page: Page) -> None:
     logger.info("Super-admin sees the connector catalogue.")
 
 
-def test_super_admin_connectors_configure_restricted(super_admin_page: Page) -> None:
+def test_super_admin_connectors_configure_is_read_navigation(
+    super_admin_page: Page,
+) -> None:
+    """Configure is a read-gated navigation entry, so a super-admin sees it.
+
+    The connector-profiles feature merged the old "Profiles"/"Configure" pair
+    into a single Configure button gated on ``GET`` of the connector-profile
+    list (``<Can I="GET" a={connectorProfileListPath}>`` in Connectors.tsx). A
+    super-admin has cross-tenant read (``GET``) access, so the control renders.
+    It only *navigates* to the profiles / secrets view; creating or editing a
+    profile or secret stays write-gated on those pages and server-side, so the
+    read-only guarantee holds where the write happens rather than by hiding this
+    entry.
+    """
     page = super_admin_page
     setup_super_admin_session(page, connectors=ALL_MOCK_CONNECTORS)
     open_page(page, "/connectors")
     expect(page.get_by_test_id("connector-view-ops-http")).to_be_visible(timeout=15_000)
-    # "Configure" (write affordance) is gated by POST on secrets -- hidden for read-only.
-    expect(page.get_by_test_id("connector-configure-http")).to_have_count(0)
-    expect(page.get_by_test_id("connector-configure-slack")).to_have_count(0)
-    logger.info("Super-admin cannot see connector Configure/modify controls.")
+    expect(page.get_by_test_id("connector-configure-http")).to_be_visible()
+    expect(page.get_by_test_id("connector-configure-slack")).to_be_visible()
+    logger.info("Super-admin sees Configure as a read-gated navigation entry.")
 
 
 def test_super_admin_connectors_consistent_across_tenant_filter(
