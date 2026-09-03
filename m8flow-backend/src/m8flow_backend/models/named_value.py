@@ -19,9 +19,6 @@ class NamedValueModel(SpiffworkflowBaseDBModel, AuditDateTimeMixin):
             "(is_configured = false AND value IS NULL)",
             name="ck_m8flow_named_value_storage",
         ),
-        db.UniqueConstraint(
-            "m8f_tenant_id", "name", name="uq_m8flow_named_value_tenant_name"
-        ),
         db.Index("ix_m8flow_named_value_tenant", "m8f_tenant_id"),
     )
 

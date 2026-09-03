@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+from sqlalchemy.exc import IntegrityError
+
 from m8flow_backend.services import named_value_service
 
 
@@ -20,6 +23,9 @@ class _Storage:
 
 
 class _Session:
+    def flush(self) -> None:
+        pass
+
     def commit(self) -> None:
         pass
 
@@ -31,6 +37,7 @@ def test_sensitive_update_keeps_provider_value_when_input_is_blank(monkeypatch) 
         is_sensitive=True, is_configured=True, user_id=7, value=None,
     )
     monkeypatch.setattr(named_value_service, "get_named_value_secret_storage", lambda: storage)
+    monkeypatch.setattr(named_value_service.NamedValueService, "_ensure_name_available", lambda *args, **kwargs: None)
     monkeypatch.setattr(named_value_service.db, "session", _Session())
 
     named_value_service.NamedValueService.update_value(
@@ -49,6 +56,7 @@ def test_sensitive_update_replaces_only_provider_value(monkeypatch) -> None:
         is_sensitive=True, is_configured=True, user_id=7, value=None,
     )
     monkeypatch.setattr(named_value_service, "get_named_value_secret_storage", lambda: storage)
+    monkeypatch.setattr(named_value_service.NamedValueService, "_ensure_name_available", lambda *args, **kwargs: None)
     monkeypatch.setattr(named_value_service.db, "session", _Session())
 
     named_value_service.NamedValueService.update_value(
@@ -67,3 +75,41 @@ def test_private_runtime_resolution_reads_provider_only_for_sensitive_values(mon
 
     assert named_value_service.NamedValueService.resolve_value(sensitive) == "resolved-value"
     assert named_value_service.NamedValueService.resolve_value(non_sensitive) == "database-value"
+
+
+def test_name_is_trimmed_before_storage() -> None:
+    assert named_value_service.NamedValueService._normalized_name("  Test  ") == "Test"
+
+
+def test_name_validation_rejects_blank_names() -> None:
+    for name in ("", "   "):
+        try:
+            named_value_service.NamedValueService._normalized_name(name)
+        except Exception as exc:
+            assert getattr(exc, "error_code", None) == "invalid_name"
+        else:
+            raise AssertionError("blank name should be rejected")
+
+
+def test_duplicate_name_error_is_case_insensitive() -> None:
+    error = named_value_service.NamedValueService._duplicate_name_error("TEST")
+
+    assert error.status_code == 409
+    assert '"TEST"' in error.message
+    assert "Names are case-insensitive." in error.message
+
+
+def test_name_unique_violation_maps_to_conflict() -> None:
+    database_error = IntegrityError(
+        "INSERT",
+        {},
+        Exception("duplicate key violates uq_m8flow_named_value_tenant_name_ci"),
+    )
+
+    with pytest.raises(named_value_service.ApiError) as raised:
+        named_value_service.NamedValueService._map_name_integrity_error(
+            database_error, "TEST"
+        )
+
+    assert raised.value.status_code == 409
+    assert raised.value.error_code == "duplicate_name"

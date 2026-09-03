@@ -36,6 +36,29 @@ kv/m8flow/tenants/{tenant_id}/secrets/connector-configuration/{configuration_id}
 The Configuration Variables list reads only `m8flow_named_value`; it does not enumerate
 Vault paths.
 
+## Validation
+
+Creation and edition use the same validation rules:
+
+- `name` is trimmed before validation and storage.
+- `name` is required and must contain at least 1 character after trimming.
+- `name` may contain only letters, numbers, underscores (`_`), and hyphens (`-`).
+- `name` may contain at most 255 characters after trimming.
+- Names are compared case-insensitively within a tenant. For example, `Test`,
+  `test`, and `TEST` cannot coexist in the same tenant, but the original casing is
+  preserved for display.
+- `value` is required when creating a variable. Sensitive values must be non-empty
+  when first configured or when changing a non-sensitive variable to sensitive.
+- When editing an already-sensitive variable, its current value is not loaded into
+  the form. Supplying a value replaces the provider value; leaving it empty keeps the
+  existing provider value.
+- `description` is optional and has no application-level length limit beyond the
+  database column capacity.
+
+The UI displays validation failures in red helper text directly below the affected
+input. The backend repeats the validation and the database functional unique index is
+the final authority for concurrent requests.
+
 ## Legacy Vault Rollout
 
 Earlier builds stored manual sensitive values at

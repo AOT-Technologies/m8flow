@@ -3,7 +3,8 @@ from __future__ import annotations
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import null
+from sqlalchemy import func, null
+from sqlalchemy.exc import IntegrityError
 
 from m8flow_backend.models.named_value import NamedValueModel
 from m8flow_backend.services.named_value_secret_storage import get_named_value_secret_storage
@@ -18,6 +19,46 @@ class NamedValueService:
     def _stored_value(value: Any, is_sensitive: bool) -> Any:
         """Return the database representation required by the storage policy."""
         return null() if is_sensitive else value
+
+    @staticmethod
+    def _normalized_name(name: str) -> str:
+        if not isinstance(name, str):
+            raise ApiError("invalid_name", "name must be 1-255 characters.", status_code=400)
+        normalized = name.strip()
+        if not normalized or len(normalized) > 255:
+            raise ApiError("invalid_name", "name must be 1-255 characters.", status_code=400)
+        return normalized
+
+    @staticmethod
+    def _duplicate_name_error(name: str) -> ApiError:
+        return ApiError(
+            "duplicate_name",
+            f'A configuration variable named "{name}" already exists in this tenant. '
+            "Names are case-insensitive.",
+            status_code=409,
+        )
+
+    @classmethod
+    def _ensure_name_available(
+        cls, tenant_id: str, name: str, *, exclude_id: str | None = None
+    ) -> None:
+        query = NamedValueModel.query.filter(
+            NamedValueModel.m8f_tenant_id == tenant_id,
+            func.lower(NamedValueModel.name) == name.lower(),
+        )
+        if exclude_id is not None:
+            query = query.filter(NamedValueModel.id != exclude_id)
+        if query.first() is not None:
+            raise cls._duplicate_name_error(name)
+
+    @classmethod
+    def _map_name_integrity_error(cls, exc: IntegrityError, name: str) -> None:
+        # The pre-check is user-friendly; the functional index remains the
+        # authority for concurrent requests that pass the pre-check together.
+        details = str(getattr(exc, "orig", exc)).lower()
+        if "uq_m8flow_named_value_tenant_name_ci" in details or "23505" in details:
+            raise cls._duplicate_name_error(name) from exc
+        raise exc
 
     @staticmethod
     def list_values(tenant_id: str) -> list[NamedValueModel]:
@@ -42,9 +83,8 @@ class NamedValueService:
         description: str | None,
         is_sensitive: bool = False,
     ) -> NamedValueModel:
-        existing = NamedValueModel.query.filter_by(m8f_tenant_id=tenant_id, name=name).first()
-        if existing:
-            raise ApiError("duplicate_name", "A configuration variable with this name already exists.", status_code=409)
+        name = NamedValueService._normalized_name(name)
+        NamedValueService._ensure_name_available(tenant_id, name)
         if is_sensitive:
             if not isinstance(value, str) or not value:
                 raise ApiError("invalid_value", "A sensitive value is required.", status_code=400)
@@ -71,6 +111,9 @@ class NamedValueService:
             if is_sensitive:
                 get_named_value_secret_storage().write(row, value)
             db.session.commit()
+        except IntegrityError as exc:
+            db.session.rollback()
+            NamedValueService._map_name_integrity_error(exc, name)
         except Exception:
             db.session.rollback()
             if is_sensitive:
@@ -86,14 +129,27 @@ class NamedValueService:
         row: NamedValueModel, *, name: str, value: Any, description: str | None,
         is_sensitive: bool = False,
     ) -> NamedValueModel:
+        name = NamedValueService._normalized_name(name)
+        NamedValueService._ensure_name_available(
+            row.m8f_tenant_id, name, exclude_id=row.id
+        )
         if row.is_sensitive and not is_sensitive and not value:
             raise ApiError("value_required", "A new value is required when making a variable non-sensitive.", status_code=400)
+        if row.is_sensitive != is_sensitive and is_sensitive and (not isinstance(value, str) or not value):
+            raise ApiError("value_required", "A new value is required when making a variable sensitive.", status_code=400)
         storage = get_named_value_secret_storage()
         was_sensitive = row.is_sensitive
+        row.name = name
+        row.description = description
+        # Check the unique index before changing a provider-backed value. This
+        # also makes a concurrent name conflict leave Vault untouched.
+        try:
+            db.session.flush()
+        except IntegrityError as exc:
+            db.session.rollback()
+            NamedValueService._map_name_integrity_error(exc, name)
         if was_sensitive != is_sensitive:
             if is_sensitive:
-                if not isinstance(value, str) or not value:
-                    raise ApiError("value_required", "A new value is required when making a variable sensitive.", status_code=400)
                 storage.write(row, value)
                 row.value = NamedValueService._stored_value(value, True)
             else:
@@ -106,9 +162,11 @@ class NamedValueService:
         else:
             row.value = value
         row.is_configured = True
-        row.name = name
-        row.description = description
-        db.session.commit()
+        try:
+            db.session.commit()
+        except IntegrityError as exc:
+            db.session.rollback()
+            NamedValueService._map_name_integrity_error(exc, name)
         if was_sensitive and not is_sensitive:
             # Removing an old sensitive payload after the catalog transition
             # leaves, at worst, an unreachable provider orphan on failure.

@@ -23,6 +23,7 @@ import {
   Typography,
 } from '@mui/material';
 import HttpService from '../services/HttpService';
+import { validateNamedValueName } from './namedValueValidation';
 
 type NamedValue = {
   id: string;
@@ -46,6 +47,8 @@ export default function NamedValueList() {
   const [loaded, setLoaded] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isSensitive, setIsSensitive] = useState(false);
+  const [editNameError, setEditNameError] = useState('');
+  const [editValueError, setEditValueError] = useState('');
 
   const load = () => {
     HttpService.makeCallToBackend({
@@ -66,11 +69,23 @@ export default function NamedValueList() {
 
   const saveEdit = () => {
     if (!editingId) return;
+    const normalizedName = name.trim();
+    const nameValidationMessage = validateNamedValueName(name);
+    if (nameValidationMessage) {
+      setEditNameError(nameValidationMessage);
+      return;
+    }
+    if (!isSensitive && !value.trim()) {
+      setEditValueError('Value is required.');
+      return;
+    }
+    setEditNameError('');
+    setEditValueError('');
     setError('');
     HttpService.makeCallToBackend({
       path: `/m8flow/named-values/${editingId}`,
       httpMethod: 'PUT',
-      postBody: { name, description: description || null, value, is_sensitive: isSensitive },
+      postBody: { name: normalizedName, description: description || null, value, is_sensitive: isSensitive },
       successCallback: () => {
         setName('');
         setDescription('');
@@ -79,7 +94,16 @@ export default function NamedValueList() {
         setIsSensitive(false);
         load();
       },
-      failureCallback: (reason: unknown) => setError(errorMessage(reason)),
+      failureCallback: (reason: any) => {
+        const message = errorMessage(reason);
+        if (reason?.error_code === 'duplicate_name' || reason?.error_code === 'invalid_name') {
+          setEditNameError(message);
+        } else if (reason?.error_code === 'invalid_value' || reason?.error_code === 'value_required') {
+          setEditValueError(message);
+        } else {
+          setEditNameError(message);
+        }
+      },
     });
   };
 
@@ -89,6 +113,8 @@ export default function NamedValueList() {
     setDescription('');
     setValue('');
     setIsSensitive(false);
+    setEditNameError('');
+    setEditValueError('');
   };
 
   const edit = (row: NamedValue) => {
@@ -96,6 +122,8 @@ export default function NamedValueList() {
     setName(row.name);
     setDescription(row.description || '');
     setIsSensitive(row.isSensitive);
+    setEditNameError('');
+    setEditValueError('');
     // Do not retrieve or prefill a sensitive value from the provider.
     setValue(row.isSensitive ? '' : (typeof row.value === 'string' ? row.value : JSON.stringify(row.value)));
   };
@@ -151,9 +179,30 @@ export default function NamedValueList() {
         <DialogTitle>Edit configuration variable</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ pt: 1 }}>
-            <TextField required label="Name" value={name} onChange={(e) => setName(e.target.value)} />
+            <TextField
+              required
+              label="Name"
+              value={name}
+              error={Boolean(editNameError)}
+              helperText={editNameError}
+              onChange={(e) => {
+                setName(e.target.value);
+                setEditNameError('');
+              }}
+            />
             <TextField label="Description" value={description} onChange={(e) => setDescription(e.target.value)} />
-            <TextField required={!isSensitive} type={isSensitive ? 'password' : 'text'} label="Value" value={value} onChange={(e) => setValue(e.target.value)} helperText={isSensitive ? 'Leave blank to retain the configured value.' : ''} />
+            <TextField
+              required={!isSensitive}
+              type={isSensitive ? 'password' : 'text'}
+              label="Value"
+              value={value}
+              error={Boolean(editValueError)}
+              helperText={editValueError}
+              onChange={(e) => {
+                setValue(e.target.value);
+                setEditValueError('');
+              }}
+            />
             <FormControlLabel control={<Checkbox checked={isSensitive} onChange={(e) => setIsSensitive(e.target.checked)} />} label="Sensitive value" />
           </Stack>
         </DialogContent>
