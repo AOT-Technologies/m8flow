@@ -15,6 +15,19 @@ deployment:
       namespace: dev
       deployment_name: m8flow-backend
       container_name: m8flow-backend
+      # The backend image is the runtime for five workloads -- the API plus the
+      # celery, notification and NATS consumers (see m8flow-charts values.yaml,
+      # all of which set image.repository to m8flow/m8flow-backend). Patching
+      # only m8flow-backend would leave four of them on the previous release.
+      additional_workloads:
+        - name: m8flow-celery-worker
+          container: m8flow-celery-worker
+        - name: m8flow-celery-flower
+          container: m8flow-celery-flower
+        - name: m8flow-notification-worker
+          container: m8flow-notification-worker
+        - name: m8flow-nats-consumer
+          container: m8flow-nats-consumer
       helm:
         release_name: m8flow-backend
         chart_path: m8flow-charts/charts/m8flow-backend
