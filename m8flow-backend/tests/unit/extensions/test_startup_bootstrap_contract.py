@@ -144,6 +144,9 @@ def test_configure_created_app_runs_vault_configuration_before_shared_realm_reco
     assert calls.index("configure_permissions_yml") < calls.index("configure_vault")
     assert calls.index("configure_templates_dir") < calls.index("configure_vault")
     assert calls.index("configure_vault") < calls.index("reconcile_default_shared_realm_tenant")
+    # Model imports/listener registration must stay after migrations. This is
+    # safe for databases that are still on the pre-named-value schema.
+    assert calls.index("run_migrations_if_enabled") < calls.index("ensure_m8flow_audit_timestamps")
 
 
 def test_wrap_asgi_if_needed_skips_for_testing_env(monkeypatch):
