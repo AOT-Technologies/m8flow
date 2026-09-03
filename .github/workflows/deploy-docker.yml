@@ -103,6 +103,10 @@ jobs:
     needs: prepare
     runs-on: ubuntu-latest
     strategy:
+      # One component failing must not cancel the others. Without this, a single
+      # broken image takes down every sibling build mid-run, which hides whether
+      # the rest actually work.
+      fail-fast: false
       matrix:
         component: ${{ fromJson(needs.prepare.outputs.components) }}
     steps:
@@ -170,6 +174,10 @@ jobs:
     needs: [prepare, backup-existing-tags]
     runs-on: ubuntu-latest
     strategy:
+      # One component failing must not cancel the others. Without this, a single
+      # broken image takes down every sibling build mid-run, which hides whether
+      # the rest actually work.
+      fail-fast: false
       matrix:
         component: ${{ fromJson(needs.prepare.outputs.components) }}
     steps:
