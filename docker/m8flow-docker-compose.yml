@@ -227,7 +227,14 @@ services:
         exec gosu app python /app/docker/vault/demo/seed_named_values.py
     env_file: ../.env
     environment:
+      # The seed job imports the backend application. Use the Compose database
+      # address rather than the host-side development default.
+      M8FLOW_BACKEND_DATABASE_URI: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
+      M8FLOW_BACKEND_UPGRADE_DB: "false"
+      M8FLOW_BACKEND_SW_UPGRADE_DB: "false"
       M8FLOW_VAULT_ADDR: "http://vault:8200"
+      M8FLOW_KEYCLOAK_SHARED_REALM: "${M8FLOW_KEYCLOAK_SHARED_REALM:-m8flow}"
+      M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_ALIAS: "${M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_ALIAS:-m8flow}"
       M8FLOW_VAULT_MOUNT_POINT: "${M8FLOW_VAULT_MOUNT_POINT:-kv}"
       M8FLOW_VAULT_SECRET_PATH_PREFIX: "${M8FLOW_VAULT_SECRET_PATH_PREFIX:-m8flow}"
       M8FLOW_VAULT_APPROLE_MOUNT_POINT: "${M8FLOW_VAULT_APPROLE_MOUNT_POINT:-approle}"

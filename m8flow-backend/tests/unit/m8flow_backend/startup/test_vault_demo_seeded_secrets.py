@@ -27,6 +27,16 @@ import bootstrap_vault_demo
 import verify_backend_vault_demo
 
 
+def test_vault_demo_seed_uses_internal_database_without_running_migrations() -> None:
+    """The seed container imports the app and must use the Compose DB service."""
+    compose = (repo_root / "docker" / "m8flow-docker-compose.yml").read_text(encoding="utf-8")
+    seed_block = compose.split("  vault-demo-seed:\n", 1)[1].split("  m8flow-nats-consumer:\n", 1)[0]
+
+    assert "@m8flow-db:5432/" in seed_block
+    assert 'M8FLOW_BACKEND_UPGRADE_DB: "false"' in seed_block
+    assert 'M8FLOW_BACKEND_SW_UPGRADE_DB: "false"' in seed_block
+
+
 def _load_isolated_bootstrap_module(module_name: str) -> ModuleType:
     module_path = demo_src / "bootstrap_vault_demo.py"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
