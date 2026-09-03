@@ -1,0 +1,199 @@
+name: Release (cut RC tag & build images)
+
+# =============================================================================
+# Replaces create-release-tag.yml + deploy-docker.yml.
+#
+# One manual dispatch:
+#   1. resolve and create the next X.Y.Z-rc tag on main
+#   2. build and push every component at that exact tag
+#
+# The build must live in this run rather than in a `push: tags:` workflow:
+# GitHub does not start a workflow run from an event created with the default
+# GITHUB_TOKEN, so a tag pushed by step 1 would never trigger step 2. The old
+# pipeline worked around this with `workflow_run:`; chaining on needs is simpler
+# and keeps the tag and the images atomic to one run.
+# =============================================================================
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Tag to create (X.Y.Z-rc). Leave empty to auto-increment the patch."
+        required: false
+        type: string
+      commit_sha:
+        description: "Commit to tag. Leave empty for the tip of main."
+        required: false
+        type: string
+      components:
+        description: 'Which components to release ("all" for a full set)'
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - backend
+          - frontend
+          - keycloak
+          - connector-proxy
+          - mcp-server
+          - nats-consumer
+      dry_run:
+        description: "Resolve the tag only; create nothing and build nothing"
+        required: false
+        default: false
+        type: boolean
+
+# Declared once at workflow level. A job-level permissions block on a job that
+# calls a reusable workflow makes the run fail to start, so the superset lives
+# here: contents: write for tag creation, the rest for the CI orchestrator.
+permissions:
+  contents: write
+  security-events: write
+  actions: read
+  id-token: write
+  packages: write
+  pull-requests: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    name: Cut Release Tag
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/release-tag.yaml@565fcde7d5c1995cd326c45bcef222fc17c77a48 # v1.2.3
+    with:
+      base_branch: main
+      tag_name: ${{ inputs.tag_name }}
+      commit_sha: ${{ inputs.commit_sha }}
+      version_suffix: "-rc"
+      dry_run: ${{ inputs.dry_run }}
+
+  # Every component is built at the same version, so a release is one complete,
+  # consistent set of images rather than whichever parts happened to change.
+  backend:
+    name: Release m8flow-backend
+    needs: tag
+    if: inputs.dry_run != true && (inputs.components == 'all' || inputs.components == 'backend')
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@565fcde7d5c1995cd326c45bcef222fc17c77a48 # v1.2.3
+    with:
+      config_path: m8flow-backend/devx-ci.yaml
+      push: true
+      image_tag: ${{ needs.tag.outputs.tag }}
+      registry_username: ${{ vars.DOCKERHUB_USERNAME }}
+    secrets:
+      registry_password: ${{ secrets.DOCKERHUB_TOKEN }}
+      sonar_token: ${{ secrets.SONAR_TOKEN }}
+
+  frontend:
+    name: Release m8flow-frontend
+    needs: tag
+    if: inputs.dry_run != true && (inputs.components == 'all' || inputs.components == 'frontend')
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@565fcde7d5c1995cd326c45bcef222fc17c77a48 # v1.2.3
+    with:
+      config_path: m8flow-frontend/devx-ci.yaml
+      push: true
+      image_tag: ${{ needs.tag.outputs.tag }}
+      registry_username: ${{ vars.DOCKERHUB_USERNAME }}
+    secrets:
+      registry_password: ${{ secrets.DOCKERHUB_TOKEN }}
+      sonar_token: ${{ secrets.SONAR_TOKEN }}
+
+  keycloak:
+    name: Release m8flow-keycloak
+    needs: tag
+    if: inputs.dry_run != true && (inputs.components == 'all' || inputs.components == 'keycloak')
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@565fcde7d5c1995cd326c45bcef222fc17c77a48 # v1.2.3
+    with:
+      config_path: keycloak-extensions/devx-ci.yaml
+      push: true
+      image_tag: ${{ needs.tag.outputs.tag }}
+      registry_username: ${{ vars.DOCKERHUB_USERNAME }}
+    secrets:
+      registry_password: ${{ secrets.DOCKERHUB_TOKEN }}
+      sonar_token: ${{ secrets.SONAR_TOKEN }}
+
+  connector-proxy:
+    name: Release m8flow-connector-proxy
+    needs: tag
+    if: inputs.dry_run != true && (inputs.components == 'all' || inputs.components == 'connector-proxy')
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@565fcde7d5c1995cd326c45bcef222fc17c77a48 # v1.2.3
+    with:
+      config_path: m8flow-connector-proxy/devx-ci.yaml
+      push: true
+      image_tag: ${{ needs.tag.outputs.tag }}
+      registry_username: ${{ vars.DOCKERHUB_USERNAME }}
+    secrets:
+      registry_password: ${{ secrets.DOCKERHUB_TOKEN }}
+      sonar_token: ${{ secrets.SONAR_TOKEN }}
+
+  mcp-server:
+    name: Release m8flow-mcp-server
+    needs: tag
+    if: inputs.dry_run != true && (inputs.components == 'all' || inputs.components == 'mcp-server')
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@565fcde7d5c1995cd326c45bcef222fc17c77a48 # v1.2.3
+    with:
+      config_path: m8flow-mcp/devx-ci.yaml
+      push: true
+      image_tag: ${{ needs.tag.outputs.tag }}
+      registry_username: ${{ vars.DOCKERHUB_USERNAME }}
+    secrets:
+      registry_password: ${{ secrets.DOCKERHUB_TOKEN }}
+      sonar_token: ${{ secrets.SONAR_TOKEN }}
+
+  nats-consumer:
+    name: Release m8flow-nats-consumer
+    needs: tag
+    if: inputs.dry_run != true && (inputs.components == 'all' || inputs.components == 'nats-consumer')
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@565fcde7d5c1995cd326c45bcef222fc17c77a48 # v1.2.3
+    with:
+      config_path: m8flow-nats-consumer/devx-ci.yaml
+      push: true
+      image_tag: ${{ needs.tag.outputs.tag }}
+      registry_username: ${{ vars.DOCKERHUB_USERNAME }}
+    secrets:
+      registry_password: ${{ secrets.DOCKERHUB_TOKEN }}
+      sonar_token: ${{ secrets.SONAR_TOKEN }}
+
+  summary:
+    name: Release Summary
+    if: always() && inputs.dry_run != true
+    needs: [tag, backend, frontend, keycloak, connector-proxy, mcp-server, nats-consumer]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Report
+        env:
+          TAG: ${{ needs.tag.outputs.tag }}
+          COMMIT: ${{ needs.tag.outputs.commit }}
+          R_BACKEND: ${{ needs.backend.result }}
+          R_FRONTEND: ${{ needs.frontend.result }}
+          R_KEYCLOAK: ${{ needs.keycloak.result }}
+          R_PROXY: ${{ needs.connector-proxy.result }}
+          R_MCP: ${{ needs.mcp-server.result }}
+          R_NATS: ${{ needs.nats-consumer.result }}
+        run: |
+          {
+            echo "## Release \`${TAG}\`"
+            echo ""
+            echo "Commit: \`${COMMIT}\`"
+            echo ""
+            echo "| Component | Image | Result |"
+            echo "|-----------|-------|--------|"
+            echo "| backend | \`m8flow/m8flow-backend:${TAG}\` | ${R_BACKEND} |"
+            echo "| frontend | \`m8flow/m8flow-frontend:${TAG}\` | ${R_FRONTEND} |"
+            echo "| keycloak | \`m8flow/m8flow-keycloak:${TAG}\` | ${R_KEYCLOAK} |"
+            echo "| connector-proxy | \`m8flow/m8flow-connector-proxy:${TAG}\` | ${R_PROXY} |"
+            echo "| mcp-server | \`m8flow/m8flow-mcp:${TAG}\` | ${R_MCP} |"
+            echo "| nats-consumer | \`m8flow/m8flow-nats-consumer:${TAG}\` | ${R_NATS} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # A component not selected for this release is 'skipped', which is a
+          # normal outcome; only a real failure should fail the release.
+          for r in "$R_BACKEND" "$R_FRONTEND" "$R_KEYCLOAK" "$R_PROXY" "$R_MCP" "$R_NATS"; do
+            if [[ "$r" != "success" && "$r" != "skipped" ]]; then
+              echo "::error::At least one selected component failed to build for ${TAG}."
+              exit 1
+            fi
+          done

@@ -17,8 +17,12 @@ docker:
   enabled: true
   working_directory: "m8flow-mcp"
   dockerfile: "Dockerfile"
-  image_name: "m8flow/m8flow-mcp-server-service"
+  # deploy-docker.yml publishes m8flow/m8flow-<component> for component "mcp";
+  # keep that name so this is a drop-in replacement for it.
+  image_name: "m8flow/m8flow-mcp"
   image_tag: ""
+  # X.Y.Z-rc tags are mutable; keep one level of undo when rebuilt.
+  backup_existing_tag: true
   registry_type: generic
   registry_url: "docker.io"
   platforms: "linux/amd64"
@@ -26,7 +30,11 @@ docker:
 security:
   sast:
     enabled: true
-    tool: sonarqube
+    # Both, on purpose. GitHub withholds secrets from fork pull requests,
+    # so SonarQube cannot run on them -- and every PR here comes from a
+    # fork. semgrep needs no token, so it covers PRs; SonarQube still runs
+    # on push to main and releases. Requires devx >= v1.2.1.
+    tool: "sonarqube,semgrep"
     scan_path: "m8flow-mcp"
     sonar_host_url: "https://sonarcloud.io"
     sonar_organization: "aot-technologies"
