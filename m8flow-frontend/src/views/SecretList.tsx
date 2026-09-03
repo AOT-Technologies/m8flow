@@ -116,7 +116,7 @@ export default function SecretList() {
         setLoaded(true);
       },
     });
-  }, [searchParams, sa, selectedTenantId, t]);
+  }, [searchParams, sa, selectedTenantId]);
 
   useEffect(() => {
     if (!permissionsLoaded) return;

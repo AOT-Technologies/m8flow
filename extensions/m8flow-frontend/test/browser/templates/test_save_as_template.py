@@ -18,7 +18,7 @@ from helpers.config import (
     SHORT_TIMEOUT,
 )
 from helpers.process_group_setup import navigate_into_process_group
-from helpers.templates import navigate_to_templates
+from helpers.templates import navigate_to_templates, search_templates
 from helpers.waiters import wait_for_app_ready
 
 logger = logging.getLogger(__name__)
@@ -544,9 +544,11 @@ def test_delete_created_template(default_admin_page: Page) -> None:
     default_admin_page.get_by_test_id("delete-template-confirm-button").click()
     wait_for_app_ready(default_admin_page)
 
-    # Confirm the card is gone from the gallery.
+    # Confirm the card is gone from the gallery. A published template is
+    # soft-deleted (renamed + is_deleted=True), so re-search to force a fresh
+    # filtered fetch rather than polling the possibly-cached gallery list.
     navigate_to_templates(default_admin_page)
-    wait_for_app_ready(default_admin_page)
+    search_templates(default_admin_page, _TEMPLATE_NAME)
     expect(
         default_admin_page.get_by_test_id(f"template-card-{_TEMPLATE_NAME}")
     ).not_to_be_visible(timeout=PAGE_DATA_TIMEOUT)

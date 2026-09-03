@@ -8,6 +8,7 @@ import re
 from playwright.sync_api import Page, expect
 
 from helpers.config import BASE_URL, ELEMENT_TIMEOUT
+from helpers.mocks import ALL_MOCK_PROCESS_INSTANCES, mock_process_instances_api
 from helpers.waiters import wait_for_app_ready
 from process_instances._process_instances_page import ProcessInstancesPage
 from roles._super_admin_utils import setup_super_admin_session
@@ -28,6 +29,11 @@ def test_editor_can_access_process_instances(editor_page: Page) -> None:
 
 def test_editor_process_instances_have_no_tenant_column(editor_page: Page) -> None:
     """The per-tenant editor view must not gain the super-admin tenant column."""
+    # Mock the list POST so the table renders regardless of seeded data. The
+    # tenant column is injected client-side only for super-admins
+    # (UserService.isSuperAdmin() && variant == "all"), so an editor never gets
+    # it even when the mocked rows carry tenant names.
+    mock_process_instances_api(editor_page, instances=ALL_MOCK_PROCESS_INSTANCES)
     pip = ProcessInstancesPage(editor_page).open("all")
     pip.wait_for_rows()
     assert "Tenant" not in pip.header_labels()
