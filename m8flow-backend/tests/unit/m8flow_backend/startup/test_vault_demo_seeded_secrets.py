@@ -262,7 +262,7 @@ class _SeededNamedValueService:
         cls.updated = []
 
     @staticmethod
-    def _normalized_name(name: str) -> str:
+    def normalize_name(name: str) -> str:
         return name.strip()
 
     @classmethod

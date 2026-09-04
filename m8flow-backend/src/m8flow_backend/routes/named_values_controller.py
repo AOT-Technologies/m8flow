@@ -26,24 +26,26 @@ def _tenant_id() -> str:
     return tenant_id
 
 
-def _body() -> dict:
+def _body(*, require_value: bool) -> dict:
     body = request.get_json(silent=True)
     if not isinstance(body, dict):
         raise ApiError("missing_content", "A JSON request body is required.", status_code=400)
     name = body.get("name")
     if not isinstance(name, str) or not name.strip() or len(name.strip()) > 255:
         raise ApiError("invalid_name", "name must be 1-255 characters.", status_code=400)
-    if "value" not in body:
+    if require_value and "value" not in body:
         raise ApiError("invalid_value", "value is required.", status_code=400)
     is_sensitive = body.get("is_sensitive", body.get("isSensitive", False))
     if not isinstance(is_sensitive, bool):
         raise ApiError("invalid_sensitivity", "is_sensitive must be boolean.", status_code=400)
-    return {
+    data = {
         "name": name.strip(),
-        "value": body["value"],
         "description": body.get("description"),
         "is_sensitive": is_sensitive,
     }
+    if "value" in body:
+        data["value"] = body["value"]
+    return data
 
 
 def _user_id() -> int | None:
@@ -59,7 +61,7 @@ def list_named_values():
 
 @handle_api_errors
 def create_named_value():
-    data = _body()
+    data = _body(require_value=True)
     row = NamedValueService.create_value(_tenant_id(), _user_id(), **data)
     return success_response(row.to_dict(), 201)
 
@@ -77,7 +79,9 @@ def update_named_value(value_id: str):
     row = NamedValueService.get_value(_tenant_id(), value_id)
     if row is None:
         raise ApiError("not_found", "Named value not found.", status_code=404)
-    return success_response(NamedValueService.update_value(row, **_body()).to_dict())
+    return success_response(
+        NamedValueService.update_value(row, **_body(require_value=False)).to_dict()
+    )
 
 
 @handle_api_errors

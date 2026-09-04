@@ -3162,7 +3162,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/NamedValueRequest"
+              $ref: "#/components/schemas/CreateNamedValueRequest"
       responses:
         "201":
           description: Named value created
@@ -3199,7 +3199,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/NamedValueRequest"
+              $ref: "#/components/schemas/UpdateNamedValueRequest"
       responses:
         "200":
           description: Named value updated
@@ -3236,9 +3236,18 @@ components:
           type: array
           items: {$ref: "#/components/schemas/NamedValue"}
 
-    NamedValueRequest:
+    CreateNamedValueRequest:
       type: object
       required: [name, value]
+      additionalProperties: false
+      properties:
+        name: {type: string, maxLength: 255}
+        description: {type: string, nullable: true}
+        value: {}
+        is_sensitive: {type: boolean, default: false}
+    UpdateNamedValueRequest:
+      type: object
+      required: [name]
       additionalProperties: false
       properties:
         name: {type: string, maxLength: 255}

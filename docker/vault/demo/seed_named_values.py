@@ -138,7 +138,7 @@ def reconcile_seeded_values(
                 for value in named_value_service.list_values(secret.tenant_id)
             },
         )
-        normalized_name = named_value_service._normalized_name(secret.secret_name)
+        normalized_name = named_value_service.normalize_name(secret.secret_name)
         existing = values.get(normalized_name.casefold())
 
         if existing is None:

@@ -11,6 +11,8 @@ from m8flow_backend.services.named_value_secret_storage import get_named_value_s
 from spiffworkflow_backend.exceptions.api_error import ApiError
 from spiffworkflow_backend.models.db import db
 
+_VALUE_UNSET = object()
+
 
 class NamedValueService:
     """CRUD for the catalog and payloads of manual configuration variables."""
@@ -21,7 +23,8 @@ class NamedValueService:
         return null() if is_sensitive else value
 
     @staticmethod
-    def _normalized_name(name: str) -> str:
+    def normalize_name(name: str) -> str:
+        """Validate and normalize a catalog name for all callers, including seed jobs."""
         if not isinstance(name, str):
             raise ApiError("invalid_name", "name must be 1-255 characters.", status_code=400)
         normalized = name.strip()
@@ -85,7 +88,7 @@ class NamedValueService:
         *,
         allow_unattributed_sensitive: bool = False,
     ) -> NamedValueModel:
-        name = NamedValueService._normalized_name(name)
+        name = NamedValueService.normalize_name(name)
         NamedValueService._ensure_name_available(tenant_id, name)
         if is_sensitive:
             if not isinstance(value, str) or not value:
@@ -128,17 +131,32 @@ class NamedValueService:
 
     @staticmethod
     def update_value(
-        row: NamedValueModel, *, name: str, value: Any, description: str | None,
+        row: NamedValueModel,
+        *,
+        name: str,
+        description: str | None,
+        value: Any = _VALUE_UNSET,
         is_sensitive: bool = False,
     ) -> NamedValueModel:
-        name = NamedValueService._normalized_name(name)
+        name = NamedValueService.normalize_name(name)
         NamedValueService._ensure_name_available(
             row.m8f_tenant_id, name, exclude_id=row.id
         )
-        if row.is_sensitive and not is_sensitive and not value:
-            raise ApiError("value_required", "A new value is required when making a variable non-sensitive.", status_code=400)
-        if row.is_sensitive != is_sensitive and is_sensitive and (not isinstance(value, str) or not value):
-            raise ApiError("value_required", "A new value is required when making a variable sensitive.", status_code=400)
+        value_supplied = value is not _VALUE_UNSET
+        if row.is_sensitive and not is_sensitive and (not value_supplied or not value):
+            raise ApiError(
+                "value_required",
+                "A new value is required when making a variable non-sensitive.",
+                status_code=400,
+            )
+        if row.is_sensitive != is_sensitive and is_sensitive and (
+            not isinstance(value, str) or not value
+        ):
+            raise ApiError(
+                "value_required",
+                "A new value is required when making a variable sensitive.",
+                status_code=400,
+            )
         storage = get_named_value_secret_storage()
         was_sensitive = row.is_sensitive
         row.name = name
@@ -158,11 +176,12 @@ class NamedValueService:
                 row.value = value
             row.is_sensitive = is_sensitive
         elif row.is_sensitive:
-            if value:
+            if value_supplied and value:
                 storage.write(row, value)
-            row.value = NamedValueService._stored_value(value, True)
+            row.value = NamedValueService._stored_value(None, True)
         else:
-            row.value = value
+            if value_supplied:
+                row.value = value
         row.is_configured = True
         try:
             db.session.commit()

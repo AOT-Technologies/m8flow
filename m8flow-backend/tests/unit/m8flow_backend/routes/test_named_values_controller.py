@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from flask import Flask
+import pytest
+from spiffworkflow_backend.exceptions.api_error import ApiError
 
 from m8flow_backend.routes import named_values_controller as controller
 
@@ -51,3 +53,19 @@ def test_list_and_detail_are_catalog_only_and_do_not_resolve_vault(monkeypatch) 
     assert listed.get_json()["values"] == [value.to_dict()]
     assert detailed.get_json() == value.to_dict()
     assert calls == [("list", "tenant-a"), ("get", "tenant-a:immutable-id")]
+
+
+def test_update_body_allows_an_omitted_value_but_create_requires_one() -> None:
+    app = Flask(__name__)
+
+    with app.test_request_context("/", json={"name": "API_TOKEN"}):
+        assert controller._body(require_value=False) == {
+            "name": "API_TOKEN",
+            "description": None,
+            "is_sensitive": False,
+        }
+
+    with app.test_request_context("/", json={"name": "API_TOKEN"}), pytest.raises(
+        ApiError, match="value is required"
+    ):
+        controller._body(require_value=True)

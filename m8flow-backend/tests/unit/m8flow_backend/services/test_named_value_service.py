@@ -67,6 +67,24 @@ def test_sensitive_update_replaces_only_provider_value(monkeypatch) -> None:
     assert row.name == "RENAMED_VALUE"
 
 
+def test_update_without_value_preserves_a_non_sensitive_value(monkeypatch) -> None:
+    storage = _Storage()
+    row = SimpleNamespace(
+        id="immutable-id", m8f_tenant_id="tenant-a", name="OLD_NAME", description="old",
+        is_sensitive=False, is_configured=True, user_id=7, value="stored-value",
+    )
+    monkeypatch.setattr(named_value_service, "get_named_value_secret_storage", lambda: storage)
+    monkeypatch.setattr(named_value_service.NamedValueService, "_ensure_name_available", lambda *args, **kwargs: None)
+    monkeypatch.setattr(named_value_service.db, "session", _Session())
+
+    named_value_service.NamedValueService.update_value(
+        row, name="RENAMED_VALUE", description="new", is_sensitive=False
+    )
+
+    assert row.value == "stored-value"
+    assert storage.writes == []
+
+
 def test_private_runtime_resolution_reads_provider_only_for_sensitive_values(monkeypatch) -> None:
     storage = _Storage()
     sensitive = SimpleNamespace(is_sensitive=True, value=None)
@@ -78,13 +96,13 @@ def test_private_runtime_resolution_reads_provider_only_for_sensitive_values(mon
 
 
 def test_name_is_trimmed_before_storage() -> None:
-    assert named_value_service.NamedValueService._normalized_name("  Test  ") == "Test"
+    assert named_value_service.NamedValueService.normalize_name("  Test  ") == "Test"
 
 
 def test_name_validation_rejects_blank_names() -> None:
     for name in ("", "   "):
         try:
-            named_value_service.NamedValueService._normalized_name(name)
+            named_value_service.NamedValueService.normalize_name(name)
         except Exception as exc:
             assert getattr(exc, "error_code", None) == "invalid_name"
         else:
