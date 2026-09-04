@@ -99,6 +99,10 @@ class SecretDocumentBackend(Protocol):
 
     def read_document(self, key: str) -> dict[str, Any] | None: ...
 
+    def read_document_with_version(
+        self, key: str
+    ) -> tuple[dict[str, Any], str] | None: ...
+
     def delete_document(self, key: str) -> None: ...
 
 
@@ -202,8 +206,16 @@ class VaultConnectorSecretDocumentBackend:
         return str(version) if version is not None else None
 
     def read_document(self, key: str) -> dict[str, Any] | None:
+        document_and_version = self.read_document_with_version(key)
+        if document_and_version is None:
+            return None
+        return document_and_version[0]
+
+    def read_document_with_version(
+        self, key: str
+    ) -> tuple[dict[str, Any], str] | None:
         tenant_client = self._tenant_client(key)
-        return tenant_client.vault_client.retrieve_secret_document(key)
+        return tenant_client.vault_client.retrieve_secret_document_with_version(key)
 
     def delete_document(self, key: str) -> None:
         tenant_client = self._tenant_client(key)

@@ -27,12 +27,16 @@ from m8flow_backend.connectors.base import (
 )
 from m8flow_backend.connectors.registry import get_connector
 from m8flow_backend.connectors.validation import validate_profile
-from m8flow_backend.models.connector_configuration import ConnectorConfigurationModel
+from m8flow_backend.models.connector_configuration import (
+    ConnectorConfigurationModel,
+    ConnectorVariableModel,
+)
 from m8flow_backend.services.connector_secret_backend import secret_backend
 from m8flow_backend.services.connector_profile_storage_service import (
     persist_profile_document,
     variable_rows,
 )
+from m8flow_backend.services.vault_client import VaultVersionConflictError
 from m8flow_backend.tenancy import get_tenant_id
 
 logger = logging.getLogger(__name__)
@@ -275,14 +279,31 @@ class ConnectorProfileService:
             backend.capabilities, "supports_secret_documents", False
         ) and profile.provider_key:
             try:
-                document = backend.read_document(profile.provider_key) or {}
+                document_and_version = backend.read_document_with_version(profile.provider_key)
             except Exception as exc:
                 raise ConnectorProfileError(
                     "Could not read the profile's stored credentials.", status_code=500
                 ) from exc
+            if document_and_version is None:
+                raise ConnectorProfileError(
+                    "The profile's stored credentials are missing. Re-enter the credentials "+
+                    "under Connectors.",
+                    status_code=500,
+                )
+            document, expected_version = document_and_version
             document.update({name.upper(): str(value) for name, value in secret_updates.items()})
             try:
-                backend.write_document(profile.provider_key, document, user_id)
+                backend.write_document(
+                    profile.provider_key,
+                    document,
+                    user_id,
+                    expected_version=expected_version,
+                )
+            except VaultVersionConflictError as exc:
+                raise ConnectorProfileError(
+                    "The connector profile was updated by another request. Refresh and try again.",
+                    status_code=409,
+                ) from exc
             except Exception as exc:
                 raise ConnectorProfileError(
                     "Could not update the profile's credentials.", status_code=500
@@ -309,12 +330,20 @@ class ConnectorProfileService:
         user_id: int | None,
     ) -> None:
         """Keep PostgreSQL metadata aligned without persisting sensitive values."""
+        # Lightweight profile stubs are used by the isolated credential-update
+        # tests. Real CRUD always supplies the mapped configuration model.
+        if not isinstance(profile, ConnectorConfigurationModel):
+            return
+        # Do not use ``profile.variables`` here. SQLAlchemy may not have loaded
+        # that relationship in this session, in which case treating it as the
+        # complete set would insert duplicate field rows on profile updates.
         existing = {
             variable.field_name: variable
-            for variable in getattr(profile, "variables", [])
+            for variable in ConnectorVariableModel.query.filter(
+                ConnectorVariableModel.connector_configuration_id == profile.id,
+                ConnectorVariableModel.m8f_tenant_id == profile.m8f_tenant_id,
+            ).all()
         }
-        if not hasattr(profile, "variables"):
-            return
         for row in variable_rows(profile, definition, values, user_id):
             current = existing.get(row.field_name)
             if current is None:

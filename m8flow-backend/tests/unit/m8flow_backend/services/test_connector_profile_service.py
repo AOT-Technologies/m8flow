@@ -12,15 +12,19 @@ attributes off it, so these drive it with a stub row and a fake secret backend
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from m8flow_backend.connectors.base import secret_ref
 from m8flow_backend.connectors.registry import get_connector
 from m8flow_backend.services import connector_secret_backend
+from m8flow_backend.services import connector_profile_service
 from m8flow_backend.services.connector_profile_service import (
     ConnectorProfileError,
     ConnectorProfileService,
 )
+from m8flow_backend.services.vault_client import VaultVersionConflictError
 
 PROFILE_ID = "01234567-89ab-cdef-0123-456789abcdef"
 
@@ -60,6 +64,25 @@ class _StubProfile:
         self.config_json = kwargs.get("config_json", {})
         self.secret_refs = kwargs.get("secret_refs", {})
         self.is_active = kwargs.get("is_active", True)
+        self.provider_key = kwargs.get("provider_key")
+
+
+class _DocumentBackend:
+    capabilities = SimpleNamespace(supports_secret_documents=True)
+
+    def __init__(self) -> None:
+        self.document = {"SMTP_USER": "old-user", "SMTP_PASSWORD": "old-password"}
+        self.version = "4"
+        self.write_calls = []
+        self.write_error: Exception | None = None
+
+    def read_document_with_version(self, _key):
+        return dict(self.document), self.version
+
+    def write_document(self, key, values, user_id, expected_version=None):
+        if self.write_error is not None:
+            raise self.write_error
+        self.write_calls.append((key, values, user_id, expected_version))
 
 
 @pytest.fixture
@@ -116,6 +139,76 @@ def stored(backend, smtp):
 
 def _update(profile, definition, config, user_id=7):
     ConnectorProfileService._update_config(profile, definition, config, user_id)
+
+
+def test_sync_variable_rows_queries_database_not_profile_relationship(monkeypatch, smtp):
+    """An unloaded relationship must not cause a duplicate field insert."""
+
+    class _Profile:
+        id = PROFILE_ID
+        m8f_tenant_id = "tenant-a"
+
+        @property
+        def variables(self):
+            raise AssertionError("The ORM relationship must not be used for sync.")
+
+    profile = _Profile()
+    existing = SimpleNamespace(
+        field_name="smtp_host",
+        is_sensitive=True,
+        value="old-value",
+        is_configured=False,
+        user_id=None,
+    )
+    replacement = SimpleNamespace(
+        field_name="smtp_host",
+        is_sensitive=False,
+        value="smtp.example.com",
+        is_configured=False,
+        user_id=7,
+    )
+
+    class _Query:
+        def __init__(self):
+            self.filters = []
+
+        def filter(self, *criteria):
+            self.filters.extend(criteria)
+            return self
+
+        def all(self):
+            return [existing]
+
+    query = _Query()
+    class _Column:
+        def __eq__(self, other):
+            return other
+
+    class _VariableModel:
+        connector_configuration_id = _Column()
+        m8f_tenant_id = _Column()
+
+    _VariableModel.query = query
+
+    monkeypatch.setattr(
+        connector_profile_service, "ConnectorConfigurationModel", _Profile
+    )
+    monkeypatch.setattr(
+        connector_profile_service, "ConnectorVariableModel", _VariableModel
+    )
+    monkeypatch.setattr(
+        connector_profile_service,
+        "variable_rows",
+        lambda *_args: [replacement],
+    )
+
+    ConnectorProfileService._sync_variable_rows(profile, smtp, {}, user_id=7)
+
+    assert len(query.filters) == 2
+    assert existing.is_sensitive is False
+    assert existing.value == "smtp.example.com"
+    assert existing.is_configured is False
+    assert existing.user_id == 7
 
 
 # --------------------------------------------------------- blank means unchanged
@@ -205,6 +298,35 @@ def test_supplied_secret_upserts_against_the_existing_reference(stored, smtp, ba
     assert stored.secret_refs["smtp_password"] == existing
     assert backend.upserts == [(existing, "new-pw")]
     assert backend.values[existing] == "new-pw"
+
+
+def test_document_update_uses_the_read_version_for_compare_and_set(monkeypatch, smtp):
+    backend = _DocumentBackend()
+    profile = _StubProfile(provider_key="connector-document")
+    monkeypatch.setattr(connector_profile_service, "secret_backend", lambda: backend)
+
+    _update(profile, smtp, {"smtp_host": "smtp.example.com", "smtp_user": "new-user"})
+
+    assert backend.write_calls == [
+        (
+            "connector-document",
+            {"SMTP_USER": "new-user", "SMTP_PASSWORD": "old-password"},
+            7,
+            "4",
+        )
+    ]
+
+
+def test_document_update_maps_compare_and_set_conflict_to_409(monkeypatch, smtp):
+    backend = _DocumentBackend()
+    backend.write_error = VaultVersionConflictError("document changed")
+    profile = _StubProfile(provider_key="connector-document")
+    monkeypatch.setattr(connector_profile_service, "secret_backend", lambda: backend)
+
+    with pytest.raises(ConnectorProfileError) as caught:
+        _update(profile, smtp, {"smtp_host": "smtp.example.com", "smtp_user": "new-user"})
+
+    assert caught.value.status_code == 409
 
 
 def test_first_value_for_a_secret_mints_a_reference(backend, smtp):

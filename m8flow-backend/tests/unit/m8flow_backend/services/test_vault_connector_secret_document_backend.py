@@ -23,12 +23,16 @@ class _VaultClient:
         self.deletes = []
 
     def store_secret_document(self, key, values, expected_version=None):
-        self.writes.append((key, values))
+        self.writes.append((key, values, expected_version))
         return {"data": {"metadata": {"version": 4}}}
 
     def retrieve_secret_document(self, key):
         self.reads.append(key)
         return {"token": "value"}
+
+    def retrieve_secret_document_with_version(self, key):
+        self.reads.append(key)
+        return {"token": "value"}, "1"
 
     def delete_secret(self, key):
         self.deletes.append(key)
@@ -55,7 +59,7 @@ def test_vault_document_adapter_uses_active_tenant_scope():
         assert backend.read_document(key) == {"token": "value"}
         backend.delete_document(key)
 
-    assert provider.client.writes == [(key, {"TOKEN": "value"})]
+    assert provider.client.writes == [(key, {"TOKEN": "value"}, None)]
     assert provider.client.reads == [key]
     assert provider.client.deletes == [key]
 
@@ -81,7 +85,8 @@ def test_vault_document_adapter_rejects_non_uuid_identifier():
 
 
 def test_vault_document_adapter_passes_cas_to_vault():
-    backend = VaultConnectorSecretDocumentBackend(_Provider())
+    provider = _Provider()
+    backend = VaultConnectorSecretDocumentBackend(provider)
 
     with patch(
         "m8flow_backend.services.tenant_identity_helpers.current_tenant_id_or_none",
@@ -93,3 +98,5 @@ def test_vault_document_adapter_passes_cas_to_vault():
             7,
             "3",
         ) == "4"
+
+    assert provider.client.writes[-1][2] == "3"
