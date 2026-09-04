@@ -1,6 +1,6 @@
 import { Alert, Box } from '@mui/material';
 import { useTranslation } from 'react-i18next';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import HttpService from '../../services/HttpService';
 import useAPIError from '../../hooks/UseApiError';
@@ -17,6 +17,41 @@ export default function StartProcessInstance() {
   const { addError } = useAPIError();
   const missingTenantSelection =
     UserService.isSuperAdmin() && !selectedTenantId;
+  const startedTargets = useRef(new Set<string>());
+  const modelId = modifyProcessIdentifierForPathParam(modifiedProcessModelId || '');
+
+  useEffect(() => {
+    if (missingTenantSelection) {
+      return;
+    }
+
+    const target = `${modelId}:${selectedTenantId || ''}`;
+    if (startedTargets.current.has(target)) {
+      return;
+    }
+    startedTargets.current.add(target);
+
+    HttpService.makeCallToBackend({
+      path: `/v1.0/process-instances/${modelId}`,
+      successCallback: (processInstance: ProcessInstance) => {
+        HttpService.makeCallToBackend({
+          path: `/process-instance-run/${modelId}/${processInstance.id}`,
+          successCallback: (result: ProcessInstance) => {
+            const suffix = result.process_model_uses_queued_execution
+              ? 'progress'
+              : 'interstitial';
+            navigate(`/process-instances/for-me/${modelId}/${result.id}/${suffix}`);
+          },
+          failureCallback: addError,
+          httpMethod: 'POST',
+          tenantId: selectedTenantId,
+        });
+      },
+      failureCallback: addError,
+      httpMethod: 'POST',
+      tenantId: selectedTenantId,
+    });
+  }, [addError, missingTenantSelection, modelId, navigate, selectedTenantId]);
 
   if (missingTenantSelection) {
     return (
@@ -27,32 +62,6 @@ export default function StartProcessInstance() {
       </Box>
     );
   }
-
-  const modelId = modifyProcessIdentifierForPathParam(modifiedProcessModelId || '');
-  const onRun = (processInstance: ProcessInstance) => {
-    HttpService.makeCallToBackend({
-      path: `/process-instance-run/${modelId}/${processInstance.id}`,
-      successCallback: (result: ProcessInstance) => {
-        const suffix = result.process_model_uses_queued_execution ? 'progress' : 'interstitial';
-        navigate(`/process-instances/for-me/${modelId}/${result.id}/${suffix}`);
-      },
-      failureCallback: addError,
-      httpMethod: 'POST',
-      tenantId: selectedTenantId,
-    });
-  };
-
-  useEffect(() => {
-    HttpService.makeCallToBackend({
-      path: `/v1.0/process-instances/${modelId}`,
-      successCallback: onRun,
-      failureCallback: addError,
-      httpMethod: 'POST',
-      tenantId: selectedTenantId,
-    });
-    // The selected tenant is intentionally captured for this one start action.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   return null;
 }

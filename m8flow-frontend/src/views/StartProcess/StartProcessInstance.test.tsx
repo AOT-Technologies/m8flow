@@ -1,13 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import StartProcessInstance from './StartProcessInstance';
 
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key: string) => key,
-  }),
-}));
+vi.mock('react-i18next', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react-i18next')>();
+  return {
+    ...actual,
+    useTranslation: () => ({
+      t: (key: string) => key,
+    }),
+  };
+});
 
 vi.mock('../../contexts/GlobalTenantContext', () => ({
   useGlobalTenant: vi.fn(),
@@ -19,12 +23,15 @@ vi.mock('../../services/UserService', () => ({
   },
 }));
 
-vi.mock('@spiff-core/views/StartProcess/StartProcessInstance', () => ({
-  default: () => <div data-testid="upstream-start-process" />,
+vi.mock('../../services/HttpService', () => ({
+  default: {
+    makeCallToBackend: vi.fn(),
+  },
 }));
 
 import { useGlobalTenant } from '../../contexts/GlobalTenantContext';
 import UserService from '../../services/UserService';
+import HttpService from '../../services/HttpService';
 
 describe('StartProcessInstance', () => {
   beforeEach(() => {
@@ -47,19 +54,35 @@ describe('StartProcessInstance', () => {
     expect(screen.getByTestId('start-process-tenant-alert')).toBeInTheDocument();
   });
 
-  it('delegates process start to the upstream route when a tenant is selected', () => {
+  it('starts after a super-admin selects a tenant without violating hook order', async () => {
     vi.mocked(UserService.isSuperAdmin).mockReturnValue(true);
-    vi.mocked(useGlobalTenant).mockReturnValue({
-      selectedTenantId: 'tenant-a',
-      setSelectedTenantId: vi.fn(),
-    });
 
-    render(
+    const { rerender } = render(
       <MemoryRouter>
         <StartProcessInstance />
       </MemoryRouter>,
     );
 
-    expect(screen.getByTestId('upstream-start-process')).toBeInTheDocument();
+    expect(vi.mocked(HttpService.makeCallToBackend)).not.toHaveBeenCalled();
+
+    vi.mocked(useGlobalTenant).mockReturnValue({
+      selectedTenantId: 'tenant-a',
+      setSelectedTenantId: vi.fn(),
+    });
+    rerender(
+      <MemoryRouter>
+        <StartProcessInstance />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(vi.mocked(HttpService.makeCallToBackend)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          httpMethod: 'POST',
+          path: '/v1.0/process-instances/',
+          tenantId: 'tenant-a',
+        }),
+      );
+    });
   });
 });
