@@ -44,7 +44,10 @@ import {
   type ConnectorTemplate,
 } from '../services/ConnectorProfileService';
 
-/** Profile names travel through BPMN XML, so the backend keeps them narrow. */
+/**
+ * The immutable identifier is also the Vault document path component. Keep
+ * the browser validation aligned with the backend before a profile is saved.
+ */
 const PROFILE_NAME_RE = /^[a-zA-Z0-9]([a-zA-Z0-9_.-]{0,62}[a-zA-Z0-9])?$/;
 
 /**
@@ -121,7 +124,7 @@ export default function ConnectorProfileEdit() {
       setTemplate(loadedTemplate);
 
       if (isEdit && profileId) {
-        const profile = await fetchConnectorProfile(Number(profileId));
+        const profile = await fetchConnectorProfile(profileId);
         setExisting(profile);
         setProfileName(profile.profile_name);
         setDisplayName(profile.display_name);
@@ -198,7 +201,7 @@ export default function ConnectorProfileEdit() {
       if (!PROFILE_NAME_RE.test(profileName.trim())) {
         found.profile_name = t('connector_profile_name_invalid', {
           defaultValue:
-            'Use 1-64 letters, digits, ".", "-" or "_", starting and ending with a letter or digit.',
+            'Use 1-64 letters, digits, ".", "-" or "_", starting and ending with a letter or digit. This identifier is used in the Vault path.',
         });
       }
     }
@@ -238,7 +241,7 @@ export default function ConnectorProfileEdit() {
 
     try {
       if (isEdit && profileId) {
-        await updateConnectorProfile(Number(profileId), {
+        await updateConnectorProfile(profileId, {
           display_name: displayName.trim() || profileName,
           description: description.trim() || null,
           config,
@@ -321,7 +324,18 @@ export default function ConnectorProfileEdit() {
                 defaultValue: 'Identifier',
               })}
               value={profileName}
-              onChange={(event) => setProfileName(event.target.value)}
+              onChange={(event) => {
+                const nextName = event.target.value;
+                setProfileName(nextName);
+                setErrors((previous) => {
+                  if (!previous.profile_name || PROFILE_NAME_RE.test(nextName.trim())) {
+                    const nextErrors = { ...previous };
+                    delete nextErrors.profile_name;
+                    return nextErrors;
+                  }
+                  return previous;
+                });
+              }}
               // Immutable after create: BPMN diagrams store this name, so
               // changing it would orphan every task that selected the profile.
               disabled={isEdit}
@@ -331,7 +345,7 @@ export default function ConnectorProfileEdit() {
                 errors.profile_name ??
                 t('connector_profile_identifier_help', {
                   defaultValue:
-                    'The name service tasks select, e.g. smtp-production. Cannot be changed later.',
+                    'The immutable identifier service tasks select and Vault uses as the secret document name, e.g. smtp-production.',
                 })
               }
               fullWidth

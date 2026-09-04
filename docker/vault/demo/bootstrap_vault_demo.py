@@ -774,11 +774,13 @@ def main() -> int:
         secret_id = ensure_secret_id(root_token, role_id)
         write_runtime_files(role_id, secret_id)
 
+        # Manual values need catalog rows and therefore seed only after the
+        # backend has applied migrations. ``vault-demo-seed`` performs that
+        # second phase with ID-keyed, value-only documents.
         seeded_secrets = load_seeded_secrets()
         if not seeded_secrets:
             cleanup_legacy_demo_bootstrap_secret(root_token)
-        seed_demo_secrets(root_token, seeded_secrets)
-        verify_bootstrap(seeded_secrets)
+        verify_bootstrap([])
 
         print("vault-demo: Bootstrap complete", flush=True)
         return 0

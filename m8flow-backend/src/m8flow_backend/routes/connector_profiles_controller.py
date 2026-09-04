@@ -144,7 +144,7 @@ def connector_profile_list(
     return make_response(jsonify([profile.to_dict() for profile in profiles]), 200)
 
 
-def connector_profile_show(profile_id: int) -> flask.wrappers.Response:
+def connector_profile_show(profile_id: str) -> flask.wrappers.Response:
     try:
         profile = ConnectorProfileService.get_profile(profile_id)
     except ConnectorProfileError as error:
@@ -160,7 +160,7 @@ def connector_profile_create() -> flask.wrappers.Response:
     return make_response(jsonify(profile.to_dict()), 201)
 
 
-def connector_profile_update(profile_id: int) -> flask.wrappers.Response:
+def connector_profile_update(profile_id: str) -> flask.wrappers.Response:
     try:
         profile = ConnectorProfileService.update_profile(
             profile_id, _body(), _current_user_id()
@@ -170,7 +170,7 @@ def connector_profile_update(profile_id: int) -> flask.wrappers.Response:
     return make_response(jsonify(profile.to_dict()), 200)
 
 
-def connector_profile_delete(profile_id: int, hard: bool = False) -> flask.wrappers.Response:
+def connector_profile_delete(profile_id: str, hard: bool = False) -> flask.wrappers.Response:
     """Deactivate by default; remove permanently with ``?hard=true``.
 
     Soft delete is the default because a process model may still name the

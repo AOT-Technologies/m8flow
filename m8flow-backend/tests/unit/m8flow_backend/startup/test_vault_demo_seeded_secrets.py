@@ -24,7 +24,103 @@ from seeded_secrets import (
     load_seeded_secret_specs,
 )
 import bootstrap_vault_demo
+import seed_named_values
 import verify_backend_vault_demo
+
+
+def test_vault_demo_seed_uses_internal_database_without_running_migrations() -> None:
+    """The seed container imports the app and must use the Compose DB service."""
+    compose = (repo_root / "docker" / "m8flow-docker-compose.yml").read_text(encoding="utf-8")
+    seed_block = compose.split("  vault-demo-seed:\n", 1)[1].split("  m8flow-nats-consumer:\n", 1)[0]
+
+    assert "@m8flow-db:5432/" in seed_block
+    assert 'M8FLOW_BACKEND_UPGRADE_DB: "false"' in seed_block
+    assert 'M8FLOW_BACKEND_SW_UPGRADE_DB: "false"' in seed_block
+    assert 'profiles: ["vault-demo"]' in seed_block
+    assert 'm8flow-backend:\n        condition: service_started' in seed_block
+    assert 'vault-demo:\n        condition: service_started' in seed_block
+    assert 'M8FLOW_VAULT_DEMO_BACKEND_URL: "http://m8flow-backend:6840"' in seed_block
+    assert 'M8FLOW_VAULT_DEMO_SEED_WAIT_TIMEOUT_SECONDS' in seed_block
+    assert 'M8FLOW_VAULT_DEMO_VERIFY_LIST_API: "true"' in seed_block
+
+
+def test_wait_for_backend_ready_retries_until_status_is_ready(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+
+    class FakeResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return b'{"ok": true}'
+
+    def fake_urlopen(_request, timeout):
+        del timeout
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise URLError("not ready")
+        return FakeResponse()
+
+    monkeypatch.setattr(seed_named_values.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(seed_named_values.time, "sleep", lambda _seconds: None)
+
+    seed_named_values.wait_for_backend_ready()
+
+    assert attempts == 2
+
+
+def test_authenticated_list_api_verifies_safe_seeded_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requests: list[object] = []
+
+    class FakeResponse:
+        def __init__(self, payload: dict[str, object]) -> None:
+            self.payload = payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            import json
+
+            return json.dumps(self.payload).encode("utf-8")
+
+    def fake_urlopen(call, timeout):
+        del timeout
+        requests.append(call)
+        if len(requests) == 1:
+            return FakeResponse({"access_token": "token"})
+        return FakeResponse(
+            {
+                "values": [
+                    {
+                        "name": "API_TOKEN",
+                        "tenantId": "tenant-123",
+                        "isSensitive": True,
+                        "isConfigured": True,
+                        "value": None,
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr(seed_named_values.request, "urlopen", fake_urlopen)
+
+    seed_named_values.verify_authenticated_list_api([_seeded_secret()], "tenant-123")
+
+    assert len(requests) == 2
 
 
 def _load_isolated_bootstrap_module(module_name: str) -> ModuleType:
@@ -84,20 +180,192 @@ def test_m8flow_alias_is_resolved_to_current_tenant_id(tmp_path: Path) -> None:
     ]
 
 
-def test_present_file_with_empty_tenant_secret_mapping_is_rejected(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "contents",
+    ["", "   \n", "tenants: {}\n", "tenants:\n  m8flow:\n    secrets: {}\n"],
+)
+def test_empty_seed_files_skip_seeding(tmp_path: Path, contents: str) -> None:
+    secrets_file = tmp_path / "secrets.yml"
+    secrets_file.write_text(contents, encoding="utf-8")
+
+    assert load_seeded_secret_specs(
+        secrets_file,
+        organization_alias="m8flow",
+        organization_id="tenant-123",
+        missing_file_message_factory=lambda path: f"missing {path}",
+    ) == []
+
+
+def test_seed_file_with_only_empty_noncanonical_tenant_skips_seeding(tmp_path: Path) -> None:
+    secrets_file = tmp_path / "secrets.yml"
+    secrets_file.write_text("tenants:\n  other:\n    secrets: {}\n", encoding="utf-8")
+
+    assert load_seeded_secret_specs(
+        secrets_file,
+        organization_alias="m8flow",
+        organization_id="tenant-123",
+        missing_file_message_factory=lambda path: f"missing {path}",
+    ) == []
+
+
+def test_seed_file_rejects_case_insensitive_duplicate_names(tmp_path: Path) -> None:
     secrets_file = tmp_path / "secrets.yml"
     secrets_file.write_text(
-        "tenants:\n  m8flow:\n    secrets: {}\n",
+        "tenants:\n  m8flow:\n    secrets:\n      API_TOKEN: first\n      api_token: second\n",
         encoding="utf-8",
     )
 
-    with pytest.raises(RuntimeError, match="must define at least one secret"):
+    with pytest.raises(RuntimeError, match="duplicate configuration-variable names"):
         load_seeded_secret_specs(
             secrets_file,
             organization_alias="m8flow",
             organization_id="tenant-123",
             missing_file_message_factory=lambda path: f"missing {path}",
         )
+
+
+def test_seed_file_rejects_duplicate_yaml_keys(tmp_path: Path) -> None:
+    secrets_file = tmp_path / "secrets.yml"
+    secrets_file.write_text(
+        "tenants:\n  m8flow:\n    secrets:\n      API_TOKEN: first\n      API_TOKEN: second\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="duplicate mapping key"):
+        load_seeded_secret_specs(
+            secrets_file,
+            organization_alias="m8flow",
+            organization_id="tenant-123",
+            missing_file_message_factory=lambda path: f"missing {path}",
+        )
+
+
+class _SeededRow:
+    def __init__(self, name: str, *, sensitive: bool = True) -> None:
+        self.id = f"id-{name.lower()}"
+        self.name = name
+        self.description = "existing description"
+        self.is_sensitive = sensitive
+        self.value = None if sensitive else "non-sensitive"
+        self.is_configured = True
+
+
+class _SeededNamedValueService:
+    rows: list[_SeededRow] = []
+    created: list[tuple[object, ...]] = []
+    updated: list[tuple[object, ...]] = []
+
+    @classmethod
+    def reset(cls, rows: list[_SeededRow] | None = None) -> None:
+        cls.rows = list(rows or [])
+        cls.created = []
+        cls.updated = []
+
+    @staticmethod
+    def normalize_name(name: str) -> str:
+        return name.strip()
+
+    @classmethod
+    def list_values(cls, _tenant_id: str) -> list[_SeededRow]:
+        return cls.rows
+
+    @classmethod
+    def create_value(cls, *args, **kwargs) -> _SeededRow:
+        cls.created.append((*args, kwargs))
+        row = _SeededRow(args[2])
+        cls.rows.append(row)
+        return row
+
+    @classmethod
+    def update_value(cls, *args, **kwargs) -> _SeededRow:
+        cls.updated.append((*args, kwargs))
+        row = args[0]
+        row.is_sensitive = kwargs["is_sensitive"]
+        row.value = None
+        return row
+
+    @classmethod
+    def resolve_value(cls, row: _SeededRow) -> str:
+        del row
+        return "configured"
+
+
+def _seeded_secret(name: str = "API_TOKEN", value: str = "demo-value") -> SeededSecretSpec:
+    return SeededSecretSpec("m8flow", "tenant-123", name, value)
+
+
+def test_seed_reconciliation_creates_catalog_entry_without_persisting_plaintext() -> None:
+    _SeededNamedValueService.reset()
+
+    result = seed_named_values.reconcile_seeded_values(
+        [_seeded_secret()],
+        user_id=7,
+        overwrite=False,
+        named_value_service=_SeededNamedValueService,
+    )
+
+    assert result == seed_named_values.SeedResult(created=1)
+    assert _SeededNamedValueService.created == [
+        (
+            "tenant-123",
+            7,
+            "API_TOKEN",
+            "demo-value",
+            "Seeded for local Vault development.",
+            {"is_sensitive": True, "allow_unattributed_sensitive": True},
+        )
+    ]
+    assert _SeededNamedValueService.rows[0].value is None
+
+
+def test_seed_verification_requires_sensitive_catalog_rows_and_provider_values() -> None:
+    row = _SeededRow("API_TOKEN")
+    _SeededNamedValueService.reset([row])
+
+    storage = type("Storage", (), {"read_document": lambda self, _row: {"value": "configured"}})()
+    seed_named_values.verify_seeded_values(
+        [_seeded_secret()], named_value_service=_SeededNamedValueService, storage=storage
+    )
+
+    row.is_configured = False
+    with pytest.raises(RuntimeError, match="catalog verification"):
+        seed_named_values.verify_seeded_values(
+            [_seeded_secret()], named_value_service=_SeededNamedValueService, storage=storage
+        )
+
+
+def test_seed_reconciliation_is_idempotent_and_preserves_existing_sensitive_value() -> None:
+    _SeededNamedValueService.reset([_SeededRow("API_TOKEN")])
+
+    result = seed_named_values.reconcile_seeded_values(
+        [_seeded_secret(value="replacement")],
+        user_id=7,
+        overwrite=False,
+        named_value_service=_SeededNamedValueService,
+    )
+
+    assert result == seed_named_values.SeedResult(reused=1)
+    assert _SeededNamedValueService.created == []
+    assert _SeededNamedValueService.updated == []
+
+
+def test_seed_reconciliation_overwrites_only_when_enabled() -> None:
+    existing = _SeededRow("API_TOKEN")
+    _SeededNamedValueService.reset([existing])
+
+    result = seed_named_values.reconcile_seeded_values(
+        [_seeded_secret(value="replacement")],
+        user_id=7,
+        overwrite=True,
+        named_value_service=_SeededNamedValueService,
+    )
+
+    assert result == seed_named_values.SeedResult(updated=1)
+    assert len(_SeededNamedValueService.updated) == 1
+    _args = _SeededNamedValueService.updated[0]
+    assert _args[0] is existing
+    assert _args[-1]["value"] == "replacement"
+    assert _args[-1]["is_sensitive"] is True
 
 
 def test_bootstrap_main_failure_output_logs_safe_exception_text(
@@ -425,11 +693,7 @@ def test_verify_script_failure_output_hides_exception_text(
         del kwargs
         raise RuntimeError("secret_id=secret-123 value=demo-secret")
 
-    monkeypatch.setattr(
-        verify_backend_vault_demo,
-        "wait_for_demo_tenant_identity",
-        fail_with_sensitive_details,
-    )
+    monkeypatch.setattr(verify_backend_vault_demo, "ensure_backend_src_on_path", fail_with_sensitive_details)
 
     result = verify_backend_vault_demo.main()
 
@@ -456,16 +720,6 @@ def test_verify_script_success_output_is_generic(
     monkeypatch.setenv("M8FLOW_VAULT_DEMO_ENV_FILE", str(runtime_env))
     monkeypatch.setenv("M8FLOW_VAULT_DEMO_SECRETS_FILE", str(secrets_file))
 
-    fake_identity = type(
-        "Identity",
-        (),
-        {
-            "admin_username": "admin",
-            "organization_alias": "m8flow",
-            "organization_id": "tenant-123",
-        },
-    )()
-
     fake_broker_client = type(
         "BrokerClient",
         (),
@@ -487,7 +741,6 @@ def test_verify_script_success_output_is_generic(
         },
     )()
 
-    monkeypatch.setattr(verify_backend_vault_demo, "wait_for_demo_tenant_identity", lambda **kwargs: fake_identity)
     monkeypatch.setattr(
         verify_backend_vault_demo,
         "load_env_file",
@@ -535,6 +788,79 @@ def test_verify_script_success_output_is_generic(
         sys.modules,
         "m8flow_backend.services.vault_client",
         fake_vault_client_module,
+    )
+
+    class FakeFlaskApp:
+        def app_context(self):
+            from contextlib import nullcontext
+
+            return nullcontext()
+
+        def test_request_context(self, _path):
+            from contextlib import nullcontext
+
+            return nullcontext()
+
+    fake_app_module = ModuleType("m8flow_backend.app")
+    fake_app_module.app = FakeFlaskApp()
+    monkeypatch.setitem(sys.modules, "m8flow_backend.app", fake_app_module)
+
+    fake_flask_module = ModuleType("flask")
+    fake_flask_module.g = type("G", (), {})()
+    monkeypatch.setitem(sys.modules, "flask", fake_flask_module)
+
+    seeded_row = type(
+        "SeededRow",
+        (),
+        {
+            "id": "named-value-123",
+            "name": "API_TOKEN",
+            "m8f_tenant_id": "tenant-123",
+            "is_sensitive": True,
+            "is_configured": True,
+            "value": None,
+        },
+    )()
+
+    class FakeQuery:
+        def filter_by(self, **kwargs):
+            assert kwargs == {"m8f_tenant_id": "tenant-123"}
+            return self
+
+        def all(self):
+            return [seeded_row]
+
+    fake_named_value_module = ModuleType("m8flow_backend.models.named_value")
+    fake_named_value_module.NamedValueModel = type("NamedValueModel", (), {"query": FakeQuery()})
+    monkeypatch.setitem(sys.modules, "m8flow_backend.models.named_value", fake_named_value_module)
+
+    fake_config_module = ModuleType("m8flow_backend.config")
+    fake_config_module.default_organization_alias = lambda: "m8flow"
+    monkeypatch.setitem(sys.modules, "m8flow_backend.config", fake_config_module)
+
+    fake_shared_realm_module = ModuleType("m8flow_backend.startup.shared_realm_bootstrap")
+    fake_shared_realm_module.resolve_default_shared_realm_tenant_id = lambda: "tenant-123"
+    monkeypatch.setitem(
+        sys.modules,
+        "m8flow_backend.startup.shared_realm_bootstrap",
+        fake_shared_realm_module,
+    )
+
+    fake_storage_module = ModuleType("m8flow_backend.services.named_value_secret_storage")
+
+    class FakeStorage:
+        def read_document(self, row):
+            assert row is seeded_row
+            return {"value": "demo-token"}
+
+    fake_storage_module.VaultNamedValueSecretStorage = FakeStorage
+    fake_storage_module.vault_provider_key = (
+        lambda tenant_id, value_id: f"tenants/{tenant_id}/secrets/configuration-variable/{value_id}"
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "m8flow_backend.services.named_value_secret_storage",
+        fake_storage_module,
     )
 
     result = verify_backend_vault_demo.main()

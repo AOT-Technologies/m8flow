@@ -31,6 +31,7 @@ from m8flow_backend.services.vault_client import (
     VaultDependencyError,
     VaultOperationError,
     VaultSettings,
+    VaultVersionConflictError,
 )
 
 
@@ -60,8 +61,12 @@ class FakeKvV2:
         mount_point: str,
         path: str,
         secret: dict[str, object],
+        cas: int | None = None,
     ) -> dict[str, object]:
-        self.create_calls.append({"mount_point": mount_point, "path": path, "secret": secret})
+        call = {"mount_point": mount_point, "path": path, "secret": secret}
+        if cas is not None:
+            call["cas"] = cas
+        self.create_calls.append(call)
         if self.write_exception is not None:
             raise self.write_exception
         self.storage[path] = dict(secret)
@@ -73,7 +78,7 @@ class FakeKvV2:
             raise self.read_exception
         if path not in self.storage:
             raise FakeInvalidPath(path)
-        return {"data": {"data": dict(self.storage[path])}}
+        return {"data": {"data": dict(self.storage[path]), "metadata": {"version": 1}}}
 
     def list_secrets(self, *, mount_point: str, path: str) -> dict[str, object]:
         self.list_calls.append({"mount_point": mount_point, "path": path})
@@ -490,6 +495,21 @@ class TestVaultClientOperations:
             }
         ]
 
+    def test_store_secret_document_passes_expected_version_as_kv_cas(self):
+        fake_client = FakeHvacClient()
+        client = VaultClient(settings=_settings(), client_factory=lambda _settings: fake_client)
+
+        client.store_secret_document("connector-document", {"token": "secret"}, "3")
+
+        assert fake_client.kv_v2.create_calls == [
+            {
+                "mount_point": "kv",
+                "path": "m8flow/test/connector-document",
+                "secret": {"token": "secret"},
+                "cas": 3,
+            }
+        ]
+
     def test_store_secret_does_not_double_prefix_already_qualified_path(self):
         fake_client = FakeHvacClient()
         client = VaultClient(settings=_settings(), client_factory=lambda _settings: fake_client)
@@ -532,6 +552,31 @@ class TestVaultClientOperations:
         assert fake_client.kv_v2.read_calls == [
             {"mount_point": "kv", "path": "m8flow/test/SMTP_PASSWORD"}
         ]
+
+    def test_retrieve_secret_document_with_version_returns_kv_version(self, monkeypatch):
+        monkeypatch.setattr(
+            vault_client_module,
+            "hvac_exceptions",
+            SimpleNamespace(InvalidPath=FakeInvalidPath),
+        )
+        fake_client = FakeHvacClient()
+        fake_client.kv_v2.storage["m8flow/test/SMTP_PASSWORD"] = {"value": "secret"}
+        client = VaultClient(settings=_settings(), client_factory=lambda _settings: fake_client)
+
+        assert client.retrieve_secret_document_with_version("SMTP_PASSWORD") == (
+            {"value": "secret"},
+            "1",
+        )
+
+    def test_store_secret_document_maps_cas_mismatch_to_version_conflict(self):
+        fake_client = FakeHvacClient()
+        fake_client.kv_v2.write_exception = RuntimeError(
+            "check-and-set parameter did not match the current version"
+        )
+        client = VaultClient(settings=_settings(), client_factory=lambda _settings: fake_client)
+
+        with pytest.raises(VaultVersionConflictError, match="changed before"):
+            client.store_secret_document("SMTP_PASSWORD", {"value": "secret"}, "1")
 
     def test_retrieve_secret_returns_string_value(self, monkeypatch):
         monkeypatch.setattr(

@@ -48,6 +48,31 @@ _VAULT_AVAILABILITY_CACHE_TTL_SECONDS = 2.0
 _VAULT_AVAILABILITY_CACHE_UNSET = object()
 
 
+def _connector_profile_secret_keys(tenant_id: str | None) -> set[str]:
+    """Return secret names owned by connector profiles for list suppression.
+
+    Connector profile credentials remain available through the profile service;
+    this only removes them from the generic Secrets page. Both the legacy
+    per-field references and the new document identifier are included so an
+    upgrade does not expose old entries accidentally.
+    """
+    from m8flow_backend.models.connector_configuration import ConnectorConfigurationModel
+
+    query = ConnectorConfigurationModel.query
+    if tenant_id:
+        query = query.filter(ConnectorConfigurationModel.m8f_tenant_id == tenant_id)
+
+    hidden: set[str] = set()
+    for profile in query.all():
+        for key in (profile.secret_refs or {}).values():
+            if isinstance(key, str) and key.strip():
+                hidden.add(key.strip())
+        if profile.provider_key:
+            hidden.add(profile.provider_key.rstrip("/").rsplit("/", 1)[-1])
+            hidden.add(profile.profile_name)
+    return hidden
+
+
 @dataclass(repr=False)
 class ResolvedSecret:
     """Transient secret object compatible with the upstream SecretService contract."""
@@ -244,6 +269,9 @@ class LegacyDatabaseSecretBackend:
         query = SecretModel.query.order_by(SecretModel.key).join(UserModel).add_columns(UserModel.username)
         if tenant_id:
             query = query.filter(SecretModel.m8f_tenant_id == tenant_id)
+        hidden_keys = _connector_profile_secret_keys(tenant_id)
+        if hidden_keys:
+            query = query.filter(~SecretModel.key.in_(hidden_keys))
         return query.paginate(page=page, per_page=per_page, error_out=False)
 
     def serialize_secret_list_result(
@@ -842,6 +870,20 @@ class VaultBackedSecretBackend:
             for discovered_tenant_id in self._list_tenant_ids():
                 records.extend(self._list_secret_records_for_tenant(discovered_tenant_id))
 
+        # Connector credentials are exposed through connector profile APIs,
+        # not the generic Secrets page. Filter after Vault listing so both the
+        # legacy per-field entries and the new one-document entries disappear
+        # from that page without changing runtime retrieval.
+        hidden_by_tenant = {
+            discovered_tenant_id: _connector_profile_secret_keys(discovered_tenant_id)
+            for discovered_tenant_id in {record.tenant_id for record in records}
+        }
+        records = [
+            record
+            for record in records
+            if record.key not in hidden_by_tenant.get(record.tenant_id, set())
+        ]
+
         return sorted(
             records,
             key=lambda record: (record.key.casefold(), record.tenant_id.casefold(), record.id),
@@ -859,6 +901,7 @@ class VaultBackedSecretBackend:
     def _list_secret_records_for_tenant(self, tenant_id: str) -> list[VaultSecretRecord]:
         root_path = self._vault_secret_root(tenant_id)
         records: list[VaultSecretRecord] = []
+        hidden_keys = _connector_profile_secret_keys(tenant_id)
         vault_client = self._require_tenant_vault_client(tenant_id=tenant_id, action="list", key=tenant_id)
         for secret_path in self._list_secret_paths(
             root_path=root_path,
@@ -866,6 +909,10 @@ class VaultBackedSecretBackend:
             vault_client=vault_client,
         ):
             secret_name = self._secret_name_from_path(secret_path, tenant_id)
+            # Avoid retrieving connector credential documents through the
+            # generic Secrets page; profile APIs own that data.
+            if secret_name in hidden_keys:
+                continue
             record = self._get_record_from_path(
                 path=secret_path,
                 secret_name=secret_name,

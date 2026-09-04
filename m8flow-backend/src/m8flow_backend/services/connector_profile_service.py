@@ -27,8 +27,16 @@ from m8flow_backend.connectors.base import (
 )
 from m8flow_backend.connectors.registry import get_connector
 from m8flow_backend.connectors.validation import validate_profile
-from m8flow_backend.models.connector_configuration import ConnectorConfigurationModel
+from m8flow_backend.models.connector_configuration import (
+    ConnectorConfigurationModel,
+    ConnectorVariableModel,
+)
 from m8flow_backend.services.connector_secret_backend import secret_backend
+from m8flow_backend.services.connector_profile_storage_service import (
+    persist_profile_document,
+    variable_rows,
+)
+from m8flow_backend.services.vault_client import VaultVersionConflictError
 from m8flow_backend.tenancy import get_tenant_id
 
 logger = logging.getLogger(__name__)
@@ -42,7 +50,6 @@ PROFILE_PARAMETER_NAME = "m8flow_profile"
 _PROFILE_NAME_RE = re.compile(
     r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}[a-zA-Z0-9]$|^[a-zA-Z0-9]$"
 )
-
 
 class ConnectorProfileError(Exception):
     """A profile could not be created, read, updated or resolved."""
@@ -106,7 +113,7 @@ class ConnectorProfileService:
         ).all()
 
     @classmethod
-    def get_profile(cls, configuration_id: int) -> ConnectorConfigurationModel:
+    def get_profile(cls, configuration_id: str) -> ConnectorConfigurationModel:
         profile = (
             cls._tenant_query()
             .filter(ConnectorConfigurationModel.id == configuration_id)
@@ -174,24 +181,29 @@ class ConnectorProfileService:
         # must still be rollback-able if a secret write fails.
         db.session.flush()
 
-        # Capture the generated id before the secret refs are attached, and log
-        # it as a plain int, so nothing derived from the credentials reaches the
-        # log line.
-        new_profile_id = int(profile.id)
-        profile.secret_refs = cls._write_secrets(new_profile_id, secret_values, user_id)
+        backend = secret_backend()
+        if getattr(backend, "capabilities", None) and getattr(
+            backend.capabilities, "supports_secret_documents", False
+        ):
+            persist_profile_document(
+                profile, definition, config_values, secret_values, user_id
+            )
+        else:
+            db.session.add_all(variable_rows(profile, definition, config_values | secret_values, user_id))
+            profile.secret_refs = cls._write_secrets(profile.id, secret_values, user_id)
 
         db.session.commit()
         logger.info(
             "Created connector profile '%s' for connector '%s' (id=%s)",
             profile_name,
             connector_type,
-            new_profile_id,
+            profile.id,
         )
         return profile
 
     @classmethod
     def update_profile(
-        cls, configuration_id: int, body: dict[str, Any], user_id: int | None
+        cls, configuration_id: str, body: dict[str, Any], user_id: int | None
     ) -> ConnectorConfigurationModel:
         profile = cls.get_profile(configuration_id)
         definition = cls.definition_or_raise(profile.connector_type)
@@ -240,7 +252,13 @@ class ConnectorProfileService:
         # secrets, so an untouched required secret does not read as missing.
         for_validation = dict(merged)
         for_validation.update(secret_updates)
-        for name in profile.secret_refs or {}:
+        stored_secret_names = set(profile.secret_refs or {})
+        stored_secret_names.update(
+            variable.field_name
+            for variable in getattr(profile, "variables", [])
+            if variable.is_sensitive and variable.is_configured
+        )
+        for name in stored_secret_names:
             for_validation.setdefault(name, "unchanged")
 
         cleaned, errors = validate_profile(definition, for_validation)
@@ -253,10 +271,47 @@ class ConnectorProfileService:
         profile.config_json = config_values
 
         if not secret_updates:
+            cls._sync_variable_rows(profile, definition, cleaned, user_id)
+            return
+
+        backend = secret_backend()
+        if getattr(backend, "capabilities", None) and getattr(
+            backend.capabilities, "supports_secret_documents", False
+        ) and profile.provider_key:
+            try:
+                document_and_version = backend.read_document_with_version(profile.provider_key)
+            except Exception as exc:
+                raise ConnectorProfileError(
+                    "Could not read the profile's stored credentials.", status_code=500
+                ) from exc
+            if document_and_version is None:
+                raise ConnectorProfileError(
+                    "The profile's stored credentials are missing. Re-enter the credentials "+
+                    "under Connectors.",
+                    status_code=500,
+                )
+            document, expected_version = document_and_version
+            document.update({name.upper(): str(value) for name, value in secret_updates.items()})
+            try:
+                backend.write_document(
+                    profile.provider_key,
+                    document,
+                    user_id,
+                    expected_version=expected_version,
+                )
+            except VaultVersionConflictError as exc:
+                raise ConnectorProfileError(
+                    "The connector profile was updated by another request. Refresh and try again.",
+                    status_code=409,
+                ) from exc
+            except Exception as exc:
+                raise ConnectorProfileError(
+                    "Could not update the profile's credentials.", status_code=500
+                ) from exc
+            cls._sync_variable_rows(profile, definition, cleaned, user_id)
             return
 
         refs = dict(profile.secret_refs or {})
-        backend = secret_backend()
         for name, value in secret_updates.items():
             # Upsert against the existing reference: the ref is keyed on the
             # immutable configuration id, so it is stable and there is no
@@ -265,9 +320,42 @@ class ConnectorProfileService:
             backend.upsert(key, str(value), user_id)
             refs[name] = key
         profile.secret_refs = refs
+        cls._sync_variable_rows(profile, definition, cleaned, user_id)
+
+    @staticmethod
+    def _sync_variable_rows(
+        profile: ConnectorConfigurationModel,
+        definition: type[ConnectorDefinition],
+        values: dict[str, Any],
+        user_id: int | None,
+    ) -> None:
+        """Keep PostgreSQL metadata aligned without persisting sensitive values."""
+        # Lightweight profile stubs are used by the isolated credential-update
+        # tests. Real CRUD always supplies the mapped configuration model.
+        if not isinstance(profile, ConnectorConfigurationModel):
+            return
+        # Do not use ``profile.variables`` here. SQLAlchemy may not have loaded
+        # that relationship in this session, in which case treating it as the
+        # complete set would insert duplicate field rows on profile updates.
+        existing = {
+            variable.field_name: variable
+            for variable in ConnectorVariableModel.query.filter(
+                ConnectorVariableModel.connector_configuration_id == profile.id,
+                ConnectorVariableModel.m8f_tenant_id == profile.m8f_tenant_id,
+            ).all()
+        }
+        for row in variable_rows(profile, definition, values, user_id):
+            current = existing.get(row.field_name)
+            if current is None:
+                db.session.add(row)
+                continue
+            current.is_sensitive = row.is_sensitive
+            current.value = row.value
+            current.is_configured = row.is_configured
+            current.user_id = user_id
 
     @classmethod
-    def deactivate_profile(cls, configuration_id: int) -> ConnectorConfigurationModel:
+    def deactivate_profile(cls, configuration_id: str) -> ConnectorConfigurationModel:
         """Soft delete.
 
         The profile leaves the modeler dropdown at once, and a run still naming
@@ -280,7 +368,7 @@ class ConnectorProfileService:
         return profile
 
     @classmethod
-    def delete_profile(cls, configuration_id: int) -> None:
+    def delete_profile(cls, configuration_id: str) -> None:
         """Hard delete: the row, then best-effort secret removal.
 
         Ordering per M8Flow.md 6.4 -- the row goes first, so a failure leaves
@@ -288,11 +376,28 @@ class ConnectorProfileService:
         """
         profile = cls.get_profile(configuration_id)
         refs = list((profile.secret_refs or {}).values())
+        # Legacy rows created before the document cutover do not have this
+        # nullable column on their lightweight test doubles (or in old data),
+        # so keep the per-field cleanup path available for them.
+        document_key = getattr(profile, "provider_key", None)
+        backend = secret_backend()
 
         db.session.delete(profile)
         db.session.commit()
 
-        backend = secret_backend()
+        if document_key and getattr(backend, "capabilities", None) and getattr(
+            backend.capabilities, "supports_secret_documents", False
+        ):
+            try:
+                backend.delete_document(document_key)
+            except Exception:
+                logger.warning(
+                    "Could not delete secret document for removed profile %s",
+                    configuration_id,
+                    exc_info=True,
+                )
+            return
+
         failed = 0
         for key in refs:
             try:
@@ -300,7 +405,7 @@ class ConnectorProfileService:
             except Exception:
                 failed += 1
                 # codeql[py/clear-text-logging-sensitive-data]: logs
-                # configuration_id (an int). The loop variable `key` is a
+                # configuration_id (an opaque UUID). The loop variable `key` is a
                 # secret-store reference name, not a credential, and is not
                 # part of the message.
                 logger.warning(
@@ -360,6 +465,25 @@ class ConnectorProfileService:
             wire(name): value for name, value in (profile.config_json or {}).items()
         }
         backend = secret_backend()
+        if profile.provider_key and getattr(backend, "capabilities", None) and getattr(
+            backend.capabilities, "supports_secret_documents", False
+        ):
+            document = backend.read_document(profile.provider_key)
+            if document is None:
+                raise ConnectorProfileError(
+                    f"Profile '{profile_name}' is missing its stored secret document.",
+                    status_code=500,
+                )
+            for name in definition.secret_field_names():
+                value = document.get(name.upper())
+                if value is None:
+                    raise ConnectorProfileError(
+                        f"Profile '{profile_name}' is missing its stored value for "
+                        f"'{name}'. Re-enter it under Connectors.",
+                        status_code=500,
+                    )
+                resolved[wire(name)] = value
+            return resolved
         for name, key in (profile.secret_refs or {}).items():
             value = backend.get(key)
             if value is None:
@@ -439,7 +563,7 @@ class ConnectorProfileService:
 
     @staticmethod
     def _write_secrets(
-        configuration_id: int, secret_values: dict[str, Any], user_id: int | None
+        configuration_id: str, secret_values: dict[str, Any], user_id: int | None
     ) -> dict[str, str]:
         """Write each secret, compensating for whatever landed if one fails."""
         backend = secret_backend()
@@ -460,4 +584,3 @@ class ConnectorProfileService:
                 "Could not store the profile's credentials.", status_code=500
             ) from exc
         return refs
-

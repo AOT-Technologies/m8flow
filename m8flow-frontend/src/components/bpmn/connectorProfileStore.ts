@@ -41,7 +41,7 @@ export interface ConnectorTemplate {
 }
 
 export interface ConnectorProfile {
-  id: number;
+  id: string;
   connector_type: string;
   profile_name: string;
   display_name: string;
