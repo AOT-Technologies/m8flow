@@ -242,14 +242,21 @@ services:
       M8FLOW_VAULT_TENANT_ROLE_PREFIX: "${M8FLOW_VAULT_TENANT_ROLE_PREFIX:-m8flow-tenant-role}"
       M8FLOW_VAULT_DEMO_SECRETS_FILE: "/app/docker/vault/demo/secrets.yml"
       M8FLOW_VAULT_DEMO_OVERWRITE: "${M8FLOW_VAULT_DEMO_OVERWRITE:-false}"
+      # Compose can leave a one-shot service in Created while waiting on a
+      # health-condition graph. Start this job with the stack instead; the
+      # script waits for the backend's post-migration ready endpoint.
+      M8FLOW_VAULT_DEMO_BACKEND_URL: "http://m8flow-backend:6840"
+      M8FLOW_VAULT_DEMO_SEED_WAIT_TIMEOUT_SECONDS: "${M8FLOW_VAULT_DEMO_SEED_WAIT_TIMEOUT_SECONDS:-180}"
+      M8FLOW_VAULT_DEMO_VERIFY_LIST_API: "true"
+      M8FLOW_VAULT_DEMO_KEYCLOAK_URL: "http://keycloak-proxy:6842"
     volumes:
       - vault-demo-state:/vault/demo:ro
       - ../docker/vault/demo:/app/docker/vault/demo:ro
     depends_on:
       m8flow-backend:
-        condition: service_healthy
+        condition: service_started
       vault-demo:
-        condition: service_completed_successfully
+        condition: service_started
     restart: "no"
 
   m8flow-nats-consumer:

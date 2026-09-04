@@ -47,7 +47,6 @@ _PROFILE_NAME_RE = re.compile(
     r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}[a-zA-Z0-9]$|^[a-zA-Z0-9]$"
 )
 
-
 class ConnectorProfileError(Exception):
     """A profile could not be created, read, updated or resolved."""
 

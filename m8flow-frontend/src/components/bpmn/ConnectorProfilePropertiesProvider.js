@@ -116,8 +116,9 @@ function writeProfileParameter(operator, moddle, value) {
 
 /**
  * Blank the parameters the profile now supplies, so no credential is left in the
- * diagram. The parameter elements themselves stay: the operation declared them,
- * and clearing the profile brings them back.
+ * diagram. The parameter elements themselves stay because the operation
+ * declared them. Clearing the profile makes those fields visible again, but
+ * execution still fails until the task is assigned another profile.
  */
 function blankSuppliedParameters(operator, connectorType) {
   const supplied = profileFieldNames(connectorType);
@@ -160,7 +161,10 @@ export function ConnectorProfileSelect(props) {
   };
 
   const getOptions = () => [
-    { label: translate('None - set parameters manually'), value: '' },
+    {
+      label: translate('None - no connector profile'),
+      value: '',
+    },
     ...profilesFor(connectorType).map((profile) => ({
       label: profile.display_name,
       value: profile.profile_name,
@@ -172,7 +176,7 @@ export function ConnectorProfileSelect(props) {
     element,
     label: translate('Connector profile'),
     description: translate(
-      'Credentials come from the selected profile. Manage profiles under Connectors.',
+      'Credentials come from the selected profile. Tasks without a profile fail at runtime. Manage profiles under Connectors.',
     ),
     getValue,
     setValue,

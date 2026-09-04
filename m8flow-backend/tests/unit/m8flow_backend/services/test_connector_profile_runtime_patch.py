@@ -1,10 +1,4 @@
-"""The runtime injection patch.
-
-The behaviour that matters most here is the pass-through: a service task with no
-``m8flow_profile`` parameter must reach the original ``call_connector`` with its
-arguments untouched, because that is what keeps every existing process model --
-including the shipped sample templates -- working unchanged.
-"""
+"""The runtime injection patch."""
 
 from __future__ import annotations
 
@@ -24,12 +18,23 @@ class _FakeDelegate:
         return "{}"
 
 
+_ORIGINAL_FAKE_CALL_CONNECTOR = _FakeDelegate.call_connector.__func__
+
+
 @pytest.fixture
 def delegate(monkeypatch):
     """Apply the patch against a fake delegate, then undo it."""
     import spiffworkflow_backend.services.service_task_service as sts
 
     _FakeDelegate.calls = []
+    # ``patch.apply`` assigns directly to the fake class. Restore the original
+    # method before each test so one test cannot wrap the previous test's
+    # already-patched method.
+    monkeypatch.setattr(
+        _FakeDelegate,
+        "call_connector",
+        classmethod(_ORIGINAL_FAKE_CALL_CONNECTOR),
+    )
     monkeypatch.setattr(sts, "ServiceTaskDelegate", _FakeDelegate, raising=False)
     monkeypatch.setattr(patch, "_PATCHED", False)
     patch.reset_catalogue_cache()
@@ -67,31 +72,27 @@ def _catalogue(monkeypatch, mapping):
     )
 
 
-def test_task_without_a_profile_is_passed_through_untouched(delegate, resolved):
-    """The backward-compatibility guarantee.
+def test_profile_capable_task_without_a_profile_is_rejected(delegate, resolved):
+    """Connector credentials must always come from an explicit profile."""
+    from m8flow_backend.services.connector_profile_service import ConnectorProfileError
 
-    The original must receive the very same params object, so a task that spells
-    out M8FLOW_SECRET:... behaves exactly as it did before this feature.
-    """
     patch.apply()
-    original_params = {"smtp_host": {"value": "h", "type": "str"}}
+    with pytest.raises(ConnectorProfileError, match="profile must be selected"):
+        delegate.call_connector("smtp/SendHTMLEmail", {}, "task")
 
-    delegate.call_connector("smtp/SendHTMLEmail", original_params, "task")
-
-    assert len(delegate.calls) == 1
-    operator, params, spiff_task = delegate.calls[0]
-    assert operator == "smtp/SendHTMLEmail"
-    assert params is original_params
-    assert spiff_task == "task"
+    assert delegate.calls == []
 
 
-def test_blank_profile_value_is_treated_as_no_profile(delegate, resolved):
+def test_blank_profile_value_is_rejected(delegate, resolved):
+    from m8flow_backend.services.connector_profile_service import ConnectorProfileError
+
     patch.apply()
     params = {"m8flow_profile": {"value": "   ", "type": "str"}}
 
-    delegate.call_connector("smtp/SendHTMLEmail", params, "task")
+    with pytest.raises(ConnectorProfileError, match="profile must be selected"):
+        delegate.call_connector("smtp/SendHTMLEmail", params, "task")
 
-    assert delegate.calls[0][1] is params
+    assert delegate.calls == []
 
 
 def test_profile_values_are_injected(delegate, resolved, monkeypatch):
@@ -272,7 +273,7 @@ def test_applying_twice_does_not_double_wrap(delegate, resolved):
     patch.apply()
     patch.apply()
 
-    delegate.call_connector("smtp/SendHTMLEmail", {}, "task")
+    delegate.call_connector("unknown/Operation", {}, "task")
 
     assert len(delegate.calls) == 1
 

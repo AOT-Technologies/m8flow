@@ -359,7 +359,7 @@ describe('ConnectorProfileSelect options', () => {
 
     const options = optionsFor(makeServiceTask('smtp/SendHTMLEmail'));
 
-    // The "None" option, then the three saved profiles in name order.
+    // The empty choice lets authors remove a previously selected profile.
     expect(options.map((o: any) => o.value)).toEqual([
       '',
       'smtp-dev',
@@ -413,11 +413,10 @@ describe('ConnectorProfileSelect options', () => {
     expect(options.map((o: any) => o.value)).toEqual(['', 'live']);
   });
 
-  it('offers only the None option when nothing is saved yet', () => {
+  it('offers only the empty choice when no profile has been saved yet', () => {
     primeConnectorProfiles([smtpTemplate()], []);
     const options = optionsFor(makeServiceTask('smtp/SendHTMLEmail'));
-    expect(options).toHaveLength(1);
-    expect(options[0].value).toBe('');
+    expect(options).toEqual([expect.objectContaining({ value: '' })]);
   });
 });
 
@@ -478,19 +477,18 @@ describe('ConnectorProfileSelect read and write', () => {
     expect(Object.keys(byId)).toContain('smtp_host');
   });
 
-  it('removes the parameter entirely when the profile is cleared', () => {
+  it('removes the profile parameter when the selection is cleared', () => {
     primeConnectorProfiles([smtpTemplate()], [profile({})]);
     const element = makeServiceTask('smtp/SendHTMLEmail', [
       { id: PROFILE_PARAMETER_ID, value: '"smtp-staging"' },
     ]);
 
-    entryFor(element).setValue('');
+    const entry = entryFor(element);
+    entry.setValue('');
 
-    expect(
-      element.__operator.parameterList.parameters.some(
-        (p: any) => p.id === PROFILE_PARAMETER_ID,
-      ),
-    ).toBe(false);
+    expect(element.__operator.parameterList.parameters.some(
+      (parameter: any) => parameter.id === PROFILE_PARAMETER_ID,
+    )).toBe(false);
   });
 
   it('treats a hand-edited unparseable value as no selection', () => {

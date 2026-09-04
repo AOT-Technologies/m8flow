@@ -55,8 +55,12 @@ class VaultNamedValueSecretStorage:
         self._client(row).store_secret_document(self._key(row), {"value": value})
 
     def read(self, row: NamedValueModel) -> str | None:
-        document = self._client(row).retrieve_secret_document(self._key(row))
+        document = self.read_document(row)
         return self._document_value(document)
+
+    def read_document(self, row: NamedValueModel) -> dict[str, object] | None:
+        """Read the provider document for internal verification only."""
+        return self._client(row).retrieve_secret_document(self._key(row))
 
     def delete(self, row: NamedValueModel) -> None:
         self._client(row).delete_secret(self._key(row))

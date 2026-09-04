@@ -1,13 +1,10 @@
 """Inject connector profile values into service task calls.
 
-A service task opts in by carrying a ``m8flow_profile`` parameter, which the
-modeler writes when an author picks a profile. At execution the profile's config
-and secrets are resolved and merged into the call, so the BPMN never holds a
-host name or a password.
-
-Tasks without that parameter are passed through untouched. That is what keeps
-every existing process model working -- including the shipped sample templates,
-which spell out ``M8FLOW_SECRET:...`` per field.
+A profile-capable service task must carry an ``m8flow_profile`` parameter,
+which the modeler writes when an author picks a profile. At execution the
+profile's config and secrets are resolved and merged into the call, so the BPMN
+never holds a host name or a password. Tasks for connectors without profile
+support are passed through untouched.
 
 ``ServiceTaskDelegate.call_connector`` is the hook because it is the single
 chokepoint every service task passes through, including the ``http/*`` operators
@@ -19,6 +16,8 @@ from __future__ import annotations
 import logging
 import time
 from typing import Any
+
+from m8flow_backend.connectors.registry import get_connector
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +123,7 @@ def apply() -> None:
 
     from m8flow_backend.services.connector_profile_service import (
         PROFILE_PARAMETER_NAME,
+        ConnectorProfileError,
         ConnectorProfileService,
     )
 
@@ -137,8 +137,14 @@ def apply() -> None:
         profile_name = _profile_name(params.pop(PROFILE_PARAMETER_NAME, None))
 
         if not profile_name:
-            # No profile on this task: behave exactly as before, including
-            # passing the original params object through untouched.
+            connector_type = operator_identifier.split("/", 1)[0]
+            definition = get_connector(connector_type)
+            if definition is not None and definition.has_profile_support():
+                raise ConnectorProfileError(
+                    f"A connector profile must be selected for connector "
+                    f"'{connector_type}'.",
+                    status_code=400,
+                )
             return original_call_connector(
                 cls, operator_identifier, bpmn_params, spiff_task
             )

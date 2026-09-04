@@ -82,13 +82,15 @@ class NamedValueService:
         value: Any,
         description: str | None,
         is_sensitive: bool = False,
+        *,
+        allow_unattributed_sensitive: bool = False,
     ) -> NamedValueModel:
         name = NamedValueService._normalized_name(name)
         NamedValueService._ensure_name_available(tenant_id, name)
         if is_sensitive:
             if not isinstance(value, str) or not value:
                 raise ApiError("invalid_value", "A sensitive value is required.", status_code=400)
-            if user_id is None:
+            if user_id is None and not allow_unattributed_sensitive:
                 raise ApiError("not_authenticated", "User not authenticated.", status_code=401)
         row = NamedValueModel(
             id=str(uuid4()),
