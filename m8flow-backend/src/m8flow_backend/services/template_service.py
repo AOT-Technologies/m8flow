@@ -190,7 +190,6 @@ class TemplateService:
             raise ApiError("unauthorized", "User must be authenticated to create templates", status_code=403)
         if is_super_admin_request():
             raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
-
         tenant = tenant_id or getattr(g, "m8flow_tenant_id", None)
         if tenant is None:
             raise ApiError("tenant_required", TENANT_REQUIRED_MESSAGE, status_code=400)
@@ -1092,8 +1091,6 @@ class TemplateService:
         """
         if user is None:
             raise ApiError("unauthorized", "User must be authenticated", status_code=403)
-        if is_super_admin_request():
-            raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
 
         tenant = tenant_id or getattr(g, "m8flow_tenant_id", None)
         if tenant is None:

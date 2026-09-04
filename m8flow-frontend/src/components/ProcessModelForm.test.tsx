@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import type { ReactNode } from 'react';
 import ProcessModelForm from './ProcessModelForm';
@@ -12,10 +11,8 @@ vi.mock('../services/UserService', () => ({
   },
 }));
 
-vi.mock('../services/TenantService', () => ({
-  default: {
-    getAllTenants: vi.fn(),
-  },
+vi.mock('../contexts/GlobalTenantContext', () => ({
+  useGlobalTenant: vi.fn(),
 }));
 
 vi.mock('../services/HttpService', () => ({
@@ -36,7 +33,7 @@ vi.mock('react-i18next', () => ({
 }));
 
 import UserService from '../services/UserService';
-import TenantService from '../services/TenantService';
+import { useGlobalTenant } from '../contexts/GlobalTenantContext';
 import HttpService from '../services/HttpService';
 
 const theme = createTheme();
@@ -51,15 +48,10 @@ const baseModel = {
 };
 
 function renderForm(mode = 'new') {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
   const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={client}>
-      <ThemeProvider theme={theme}>
-        <MemoryRouter>{children}</MemoryRouter>
-      </ThemeProvider>
-    </QueryClientProvider>
+    <ThemeProvider theme={theme}>
+      <MemoryRouter>{children}</MemoryRouter>
+    </ThemeProvider>
   );
   return render(
     <ProcessModelForm
@@ -75,27 +67,30 @@ function renderForm(mode = 'new') {
 describe('ProcessModelForm', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(TenantService.getAllTenants).mockResolvedValue([
-      { id: 'tenant-a', name: 'Acme', slug: 'acme' } as any,
-    ]);
+    vi.mocked(useGlobalTenant).mockReturnValue({
+      selectedTenantId: '',
+      setSelectedTenantId: vi.fn(),
+    });
   });
 
-  it('requires a tenant on super-admin create and includes m8f_tenant_id in the POST body', async () => {
+  it('requires a global tenant selection for super-admin create', async () => {
     vi.mocked(UserService.isSuperAdmin).mockReturnValue(true);
     renderForm('new');
 
     expect(
-      await screen.findByTestId('super-admin-tenant-select'),
+      await screen.findByTestId('super-admin-tenant-alert'),
     ).toBeInTheDocument();
-
-    fireEvent.click(screen.getByTestId('process-model-submit-button'));
+    expect(screen.getByTestId('process-model-submit-button')).toBeDisabled();
     expect(HttpService.makeCallToBackend).not.toHaveBeenCalled();
-    expect(
-      await screen.findByText('tenant_required_for_super_admin'),
-    ).toBeInTheDocument();
+  });
 
-    fireEvent.mouseDown(screen.getByRole('combobox'));
-    fireEvent.click(await screen.findByRole('option', { name: /Acme \(acme\)/ }));
+  it('submits a super-admin create when the global tenant selector is concrete', async () => {
+    vi.mocked(UserService.isSuperAdmin).mockReturnValue(true);
+    vi.mocked(useGlobalTenant).mockReturnValue({
+      selectedTenantId: 'tenant-a',
+      setSelectedTenantId: vi.fn(),
+    });
+    renderForm('new');
 
     fireEvent.click(screen.getByTestId('process-model-submit-button'));
 
@@ -109,16 +104,17 @@ describe('ProcessModelForm', () => {
       expect.objectContaining({
         id: 'finance/my-model',
         display_name: 'My Model',
-        m8f_tenant_id: 'tenant-a',
       }),
     );
+    expect(call.postBody).toHaveProperty('m8f_tenant_id', 'tenant-a');
+    expect(call.tenantId).toBe('tenant-a');
   });
 
-  it('does not show a tenant select or send m8f_tenant_id for non-super-admin create', async () => {
+  it('does not require tenant selection for non-super-admin create', async () => {
     vi.mocked(UserService.isSuperAdmin).mockReturnValue(false);
     renderForm('new');
 
-    expect(screen.queryByTestId('super-admin-tenant-select')).toBeNull();
+    expect(screen.queryByTestId('super-admin-tenant-alert')).toBeNull();
     fireEvent.click(screen.getByTestId('process-model-submit-button'));
 
     await waitFor(() => {
@@ -126,6 +122,5 @@ describe('ProcessModelForm', () => {
     });
     const call = vi.mocked(HttpService.makeCallToBackend).mock.calls[0][0];
     expect(call.postBody).not.toHaveProperty('m8f_tenant_id');
-    expect(TenantService.getAllTenants).not.toHaveBeenCalled();
   });
 });

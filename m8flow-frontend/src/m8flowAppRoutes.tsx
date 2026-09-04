@@ -19,8 +19,15 @@ const TemplateGalleryPage = lazy(() => import('./views/TemplateGalleryPage'));
 const TemplateModelerPage = lazy(() => import('./views/TemplateModelerPage'));
 const TemplateFileDiagramPage = lazy(() => import('./views/TemplateFileDiagramPage'));
 const TemplateFileFormPage = lazy(() => import('./views/TemplateFileFormPage'));
+const ProcessGroupEdit = lazy(() => import('@spiff-core/views/ProcessGroupEdit'));
+const ProcessGroupNew = lazy(() => import('@spiff-core/views/ProcessGroupNew'));
+const ProcessModelEdit = lazy(() => import('@spiff-core/views/ProcessModelEdit'));
+const ProcessModelNew = lazy(() => import('@spiff-core/views/ProcessModelNew'));
 const ProcessModelShowWithSaveAsTemplate = lazy(
   () => import('./views/ProcessModelShowWithSaveAsTemplate'),
+);
+const StartProcessInstance = lazy(
+  () => import('./views/StartProcess/StartProcessInstance'),
 );
 const ConnectorsPage = lazy(() => import('./views/Connectors'));
 const ConnectorProfilesPage = lazy(() => import('./views/ConnectorProfiles'));
@@ -141,6 +148,26 @@ export function M8flowAppRoutes({
     {
       path: 'process-models/:process_model_id',
       element: <ProcessModelShowWithSaveAsTemplate />,
+    },
+    {
+      path: ':modifiedProcessModelId/start',
+      element: <StartProcessInstance />,
+    },
+    {
+      path: 'process-models/:process_group_id/new',
+      element: <ProcessModelNew />,
+    },
+    {
+      path: 'process-models/:process_model_id/edit',
+      element: <ProcessModelEdit />,
+    },
+    {
+      path: 'process-groups/new',
+      element: <ProcessGroupNew />,
+    },
+    {
+      path: 'process-groups/:process_group_id/edit',
+      element: <ProcessGroupEdit />,
     },
     { path: 'extensions/:page_identifier', element: <Extension /> },
     { path: 'login', element: <TenantAwareLogin /> },

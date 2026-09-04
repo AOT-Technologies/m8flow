@@ -2420,6 +2420,144 @@ def test_master_realm_super_admin_start_route_uses_create_permission_for_specifi
     assert ("create", "/process-models/%", "process.start") in command_assignments
 
 
+@pytest.mark.parametrize(
+    ("http_method", "target_uri"),
+    [
+        ("POST", "/v1.0/process-models/finance"),
+        ("PUT", "/v1.0/process-models/finance:approval-with-conditional-escalation"),
+        ("DELETE", "/v1.0/process-models/finance:approval-with-conditional-escalation"),
+    ],
+)
+def test_master_realm_super_admin_can_manage_process_models_via_route_permissions(
+    monkeypatch,
+    http_method: str,
+    target_uri: str,
+) -> None:
+    permissions_path = (
+        Path(__file__).resolve().parents[4] / "src" / "m8flow_backend" / "config" / "permissions" / "m8flow.yml"
+    )
+    app = Flask(__name__)  # NOSONAR - unit test
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SQLALCHEMY_EXPIRE_ON_COMMIT"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"] = "/v1.0"
+    app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_IS_AUTHORITY_FOR_USER_GROUPS"] = True
+    app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_TENANT_SPECIFIC_FIELDS"] = []
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP"] = "spiff_public"
+    app.config["SPIFFWORKFLOW_BACKEND_PERMISSIONS_FILE_ABSOLUTE_PATH"] = str(permissions_path)
+
+    from spiffworkflow_backend.models.db import db
+
+    db.init_app(app)
+
+    monkeypatch.setattr(authorization_service_patch, "_master_realm_identifier", lambda: "master")
+
+    with app.app_context():
+        model_override_patch.apply()
+        from spiffworkflow_backend.models.group import GroupModel
+        from spiffworkflow_backend.models.permission_assignment import PermissionAssignmentModel
+        from spiffworkflow_backend.models.permission_target import PermissionTargetModel
+        from spiffworkflow_backend.models.principal import PrincipalModel
+        from spiffworkflow_backend.models.user import UserModel
+        from spiffworkflow_backend.models.user_group_assignment import UserGroupAssignmentModel
+        from spiffworkflow_backend.services.authorization_service import AuthorizationService
+
+        _ = (
+            GroupModel,
+            PermissionAssignmentModel,
+            PermissionTargetModel,
+            PrincipalModel,
+            UserModel,
+            UserGroupAssignmentModel,
+        )
+
+        db.create_all()
+        authorization_service_patch.apply()
+
+        user = AuthorizationService.create_user_from_sign_in(
+            {
+                "iss": "http://localhost:7002/realms/master",
+                "sub": "subject-123",
+                "preferred_username": "super-admin",
+                "groups": ["super-admin"],
+            }
+        )
+        route_permission = AuthorizationService.get_permission_from_http_method(http_method)
+        allowed = AuthorizationService.user_has_permission(user, route_permission, target_uri)
+
+    assert allowed is True
+
+
+@pytest.mark.parametrize(
+    ("http_method", "target_uri"),
+    [
+        ("POST", "/v1.0/process-groups"),
+        ("PUT", "/v1.0/process-groups/finance"),
+        ("DELETE", "/v1.0/process-groups/finance"),
+    ],
+)
+def test_master_realm_super_admin_can_manage_process_groups_via_route_permissions(
+    monkeypatch,
+    http_method: str,
+    target_uri: str,
+) -> None:
+    permissions_path = (
+        Path(__file__).resolve().parents[4] / "src" / "m8flow_backend" / "config" / "permissions" / "m8flow.yml"
+    )
+    app = Flask(__name__)  # NOSONAR - unit test
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SQLALCHEMY_EXPIRE_ON_COMMIT"] = False
+    app.config["SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"] = "/v1.0"
+    app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_IS_AUTHORITY_FOR_USER_GROUPS"] = True
+    app.config["SPIFFWORKFLOW_BACKEND_OPEN_ID_TENANT_SPECIFIC_FIELDS"] = []
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_USER_GROUP"] = "everybody"
+    app.config["SPIFFWORKFLOW_BACKEND_DEFAULT_PUBLIC_USER_GROUP"] = "spiff_public"
+    app.config["SPIFFWORKFLOW_BACKEND_PERMISSIONS_FILE_ABSOLUTE_PATH"] = str(permissions_path)
+
+    from spiffworkflow_backend.models.db import db
+
+    db.init_app(app)
+
+    monkeypatch.setattr(authorization_service_patch, "_master_realm_identifier", lambda: "master")
+
+    with app.app_context():
+        model_override_patch.apply()
+        from spiffworkflow_backend.models.group import GroupModel
+        from spiffworkflow_backend.models.permission_assignment import PermissionAssignmentModel
+        from spiffworkflow_backend.models.permission_target import PermissionTargetModel
+        from spiffworkflow_backend.models.principal import PrincipalModel
+        from spiffworkflow_backend.models.user import UserModel
+        from spiffworkflow_backend.models.user_group_assignment import UserGroupAssignmentModel
+        from spiffworkflow_backend.services.authorization_service import AuthorizationService
+
+        _ = (
+            GroupModel,
+            PermissionAssignmentModel,
+            PermissionTargetModel,
+            PrincipalModel,
+            UserModel,
+            UserGroupAssignmentModel,
+        )
+
+        db.create_all()
+        authorization_service_patch.apply()
+
+        user = AuthorizationService.create_user_from_sign_in(
+            {
+                "iss": "http://localhost:7002/realms/master",
+                "sub": "subject-123",
+                "preferred_username": "super-admin",
+                "groups": ["super-admin"],
+            }
+        )
+        route_permission = AuthorizationService.get_permission_from_http_method(http_method)
+        allowed = AuthorizationService.user_has_permission(user, route_permission, target_uri)
+
+    assert allowed is True
+
+
 def test_master_realm_create_user_from_sign_in_tolerates_default_group_assignment_race(monkeypatch) -> None:
     from sqlalchemy.exc import IntegrityError
 

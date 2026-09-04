@@ -481,6 +481,7 @@ const TemplateService = {
               : "Failed to create process model from template";
           reject(new Error(message));
         },
+        tenantId: request.m8f_tenant_id,
       });
     });
   },

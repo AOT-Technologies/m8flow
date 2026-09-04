@@ -113,7 +113,9 @@ permissions:
     actions: [read]
     uri: PG:ALL
   manage-all-process-groups:
-    groups: ["tenant-admin", "editor"]
+    # Super-admin may manage workflow definitions only when the request is bound
+    # to one concrete tenant; service-layer guards still deny tenant-less writes.
+    groups: ["tenant-admin", "editor", "super-admin"]
     actions: [all]
     uri: PG:ALL
   read-process-group-list:
@@ -126,7 +128,9 @@ permissions:
     uri: PM:ALL
     command: process_model.read
   manage-all-process-models:
-    groups: ["tenant-admin", "editor"]
+    # Super-admin may manage workflow definitions only when the request is bound
+    # to one concrete tenant; service-layer guards still deny tenant-less writes.
+    groups: ["tenant-admin", "editor", "super-admin"]
     actions: [all]
     uri: PM:ALL
   # Compatibility-only command targets for future m8flow-bpmn-core integration.
@@ -393,6 +397,14 @@ permissions:
   viewer-template-items:
     groups: ["viewer", "super-admin"]
     actions: [read]
+    uri: /m8flow/templates/*
+  create-process-model-from-template:
+    # A super-admin may copy a published template only into the selected
+    # tenant. Permission targets support only trailing wildcards, so the
+    # service enforces that this create action is used only for the dedicated
+    # create-process-model route.
+    groups: ["super-admin"]
+    actions: [create]
     uri: /m8flow/templates/*
   # Admin-only template operations (delete published, restore soft-deleted).
   # Editors can manage templates but only tenant-admin can perform these privileged operations.

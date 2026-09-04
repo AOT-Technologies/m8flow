@@ -4,14 +4,21 @@ import os
 from contextlib import contextmanager
 from typing import Any
 
-from flask import g, has_request_context
+from flask import g, has_request_context, request
 
+from m8flow_backend.services.tenant_identity_helpers import _canonical_tenant_id_from_identifiers
+from m8flow_backend.tenancy import get_context_tenant_id
+from m8flow_backend.tenancy import is_concrete_tenant_id
 from m8flow_backend.tenancy import reset_context_tenant_id, set_context_tenant_id
 from m8flow_backend.tenancy import is_super_admin_request
 
 _PATCHED = False
 _ORIGINAL_METHODS: dict[str, Any] = {}
 SUPER_ADMIN_READ_ONLY_MESSAGE = "Super-admin is read-only across tenants."
+SUPER_ADMIN_WRITE_TENANT_REQUIRED_MESSAGE = (
+    "Super-admin workflow write actions require a concrete tenant selection."
+)
+SUPER_ADMIN_TENANT_SELECTION_HEADER = "x-m8flow-tenant-id"
 
 
 def reset() -> None:
@@ -85,6 +92,58 @@ def _live_tenant_root_bindings(base_dir: str) -> list[tuple[str, str]]:
     return bindings
 
 
+def _canonical_super_admin_write_tenant_id(raw_tenant_id: object) -> str | None:
+    """Resolve a write-target tenant to the local canonical tenant id."""
+    if not isinstance(raw_tenant_id, str):
+        return None
+
+    normalized_tenant_id = raw_tenant_id.strip()
+    if not is_concrete_tenant_id(normalized_tenant_id):
+        return None
+
+    canonical_tenant_id = _canonical_tenant_id_from_identifiers(normalized_tenant_id)
+    if not is_concrete_tenant_id(canonical_tenant_id):
+        return None
+
+    return canonical_tenant_id.strip()
+
+
+def _explicit_concrete_tenant_binding() -> tuple[str, str] | None:
+    """Return the explicitly pinned request/context tenant binding, if any."""
+    if has_request_context():
+        request_tenant = getattr(g, "m8flow_tenant_id", None)
+        if isinstance(request_tenant, str):
+            normalized_request_tenant = request_tenant.strip()
+            if is_concrete_tenant_id(normalized_request_tenant):
+                request_root_tenant = getattr(g, "_m8flow_bpmn_root_tenant", None)
+                if isinstance(request_root_tenant, str):
+                    normalized_request_root = request_root_tenant.strip()
+                    if is_concrete_tenant_id(normalized_request_root):
+                        return normalized_request_tenant, normalized_request_root
+                return normalized_request_tenant, normalized_request_tenant
+
+    context_tenant = get_context_tenant_id()
+    if isinstance(context_tenant, str):
+        normalized_context_tenant = context_tenant.strip()
+        if is_concrete_tenant_id(normalized_context_tenant):
+            return normalized_context_tenant, normalized_context_tenant
+
+    return None
+
+
+def _request_header_tenant_binding() -> tuple[str, str] | None:
+    """Return the concrete tenant selected through the request header, if any."""
+    if not has_request_context():
+        return None
+
+    canonical_tenant_id = _canonical_super_admin_write_tenant_id(
+        request.headers.get(SUPER_ADMIN_TENANT_SELECTION_HEADER)
+    )
+    if canonical_tenant_id is None:
+        return None
+    return canonical_tenant_id, canonical_tenant_id
+
+
 def _tenant_filter_matches(binding: tuple[str, str], tenant_id_filter: str | None) -> bool:
     if not isinstance(tenant_id_filter, str):
         return True
@@ -107,6 +166,52 @@ def _tenant_filter_matches(binding: tuple[str, str], tenant_id_filter: str | Non
     return canonical_filter == binding_tenant_id
 
 
+def _tenant_binding_for_process_model(
+    base_dir: str,
+    process_model_id: str,
+) -> tuple[str, str] | None:
+    """Return the owning tenant binding for an on-disk process model identifier."""
+    if not base_dir or not os.path.isdir(base_dir):
+        return None
+
+    from spiffworkflow_backend.services.file_system_service import FileSystemService
+
+    relative_process_model_path = process_model_id.replace("/", os.sep)
+    for tenant_id, tenant_root in _live_tenant_root_bindings(base_dir):
+        candidate = os.path.join(
+            base_dir,
+            tenant_root,
+            relative_process_model_path,
+            FileSystemService.PROCESS_MODEL_JSON_FILE,
+        )
+        if os.path.isfile(candidate):
+            return tenant_id, tenant_root
+    return None
+
+
+def _tenant_binding_for_process_group(
+    base_dir: str,
+    process_group_id: str,
+) -> tuple[str, str] | None:
+    """Return the owning tenant binding for an on-disk process group identifier."""
+    if not base_dir or not os.path.isdir(base_dir):
+        return None
+
+    from spiffworkflow_backend.services.file_system_service import FileSystemService
+
+    relative_process_group_path = process_group_id.replace("/", os.sep)
+    for tenant_id, tenant_root in _live_tenant_root_bindings(base_dir):
+        candidate = os.path.join(
+            base_dir,
+            tenant_root,
+            relative_process_group_path,
+            FileSystemService.PROCESS_GROUP_JSON_FILE,
+        )
+        if os.path.isfile(candidate):
+            return tenant_id, tenant_root
+    return None
+
+
 def _lock_super_admin_tenant_for_process_model(base_dir: str, process_model_id: str) -> None:
     """If super-admin has no tenant set, find owning tenant on disk and lock g + ContextVar."""
     if not is_super_admin_request() or not has_request_context():
@@ -116,16 +221,14 @@ def _lock_super_admin_tenant_for_process_model(base_dir: str, process_model_id: 
     if not base_dir or not os.path.isdir(base_dir):
         return
 
-    from spiffworkflow_backend.services.file_system_service import FileSystemService
+    tenant_binding = _tenant_binding_for_process_model(base_dir, process_model_id)
+    if tenant_binding is None:
+        return
 
-    rel = process_model_id.replace("/", os.sep)
-    for tenant_id, tenant_root in _live_tenant_root_bindings(base_dir):
-        candidate = os.path.join(base_dir, tenant_root, rel, FileSystemService.PROCESS_MODEL_JSON_FILE)
-        if os.path.isfile(candidate):
-            g.m8flow_tenant_id = tenant_id
-            g._m8flow_bpmn_root_tenant = tenant_root
-            set_context_tenant_id(tenant_id)
-            return
+    tenant_id, tenant_root = tenant_binding
+    g.m8flow_tenant_id = tenant_id
+    g._m8flow_bpmn_root_tenant = tenant_root
+    set_context_tenant_id(tenant_id)
 
 
 def _lock_super_admin_tenant_for_process_group(base_dir: str, process_group_id: str) -> None:
@@ -137,16 +240,14 @@ def _lock_super_admin_tenant_for_process_group(base_dir: str, process_group_id: 
     if not base_dir or not os.path.isdir(base_dir):
         return
 
-    from spiffworkflow_backend.services.file_system_service import FileSystemService
+    tenant_binding = _tenant_binding_for_process_group(base_dir, process_group_id)
+    if tenant_binding is None:
+        return
 
-    rel = process_group_id.replace("/", os.sep)
-    for tenant_id, tenant_root in _live_tenant_root_bindings(base_dir):
-        candidate = os.path.join(base_dir, tenant_root, rel, FileSystemService.PROCESS_GROUP_JSON_FILE)
-        if os.path.isfile(candidate):
-            g.m8flow_tenant_id = tenant_id
-            g._m8flow_bpmn_root_tenant = tenant_root
-            set_context_tenant_id(tenant_id)
-            return
+    tenant_id, tenant_root = tenant_binding
+    g.m8flow_tenant_id = tenant_id
+    g._m8flow_bpmn_root_tenant = tenant_root
+    set_context_tenant_id(tenant_id)
 
 
 @contextmanager
@@ -177,13 +278,94 @@ def _temporary_tenant_context(tenant_id: str, tenant_root: str | None = None):
                 g._m8flow_bpmn_root_tenant = prev_bpmn_root_tenant
 
 
+def _require_super_admin_write_tenant_binding(
+    *,
+    explicit_tenant_id: str | None = None,
+    process_model_id: str | None = None,
+    process_group_id: str | None = None,
+) -> tuple[str, str]:
+    """Resolve the concrete tenant binding required for a super-admin write."""
+    from flask import current_app
+    from spiffworkflow_backend.exceptions.api_error import ApiError
+
+    current_binding = _explicit_concrete_tenant_binding()
+
+    if explicit_tenant_id is not None:
+        canonical_explicit_tenant_id = _canonical_super_admin_write_tenant_id(explicit_tenant_id)
+        if canonical_explicit_tenant_id is None:
+            normalized_explicit_tenant_id = explicit_tenant_id.strip()
+            if normalized_explicit_tenant_id:
+                raise ApiError(
+                    "invalid_tenant",
+                    f"Invalid tenant '{normalized_explicit_tenant_id}'.",
+                    status_code=400,
+                )
+            raise ApiError(
+                "tenant_required",
+                SUPER_ADMIN_WRITE_TENANT_REQUIRED_MESSAGE,
+                status_code=400,
+            )
+
+        if current_binding is not None and current_binding[0] != canonical_explicit_tenant_id:
+            raise ApiError(
+                "tenant_override_forbidden",
+                "Super-admin workflow write request conflicts with the current tenant context.",
+                status_code=400,
+            )
+        return canonical_explicit_tenant_id, canonical_explicit_tenant_id
+
+    if current_binding is not None:
+        return current_binding
+
+    header_binding = _request_header_tenant_binding()
+    if header_binding is not None:
+        return header_binding
+
+    base_dir = current_app.config.get("SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR")
+    if isinstance(base_dir, str):
+        if isinstance(process_model_id, str) and process_model_id.strip():
+            owner_binding = _tenant_binding_for_process_model(base_dir, process_model_id)
+            if owner_binding is not None:
+                return owner_binding
+        if isinstance(process_group_id, str) and process_group_id.strip():
+            owner_binding = _tenant_binding_for_process_group(base_dir, process_group_id)
+            if owner_binding is not None:
+                return owner_binding
+
+    raise ApiError(
+        "tenant_required",
+        SUPER_ADMIN_WRITE_TENANT_REQUIRED_MESSAGE,
+        status_code=400,
+    )
+
+
+@contextmanager
+def super_admin_workflow_write_context(
+    *,
+    explicit_tenant_id: str | None = None,
+    process_model_id: str | None = None,
+    process_group_id: str | None = None,
+):
+    """Pin a concrete tenant for super-admin workflow writes, then restore it."""
+    if not is_super_admin_request():
+        yield
+        return
+
+    tenant_id, tenant_root = _require_super_admin_write_tenant_binding(
+        explicit_tenant_id=explicit_tenant_id,
+        process_model_id=process_model_id,
+        process_group_id=process_group_id,
+    )
+    with _temporary_tenant_context(tenant_id, tenant_root):
+        yield
+
+
 def apply() -> None:
     global _PATCHED
     if _PATCHED:
         return
 
     from flask import current_app
-    from spiffworkflow_backend.exceptions.api_error import ApiError
     from spiffworkflow_backend.services.process_model_service import ProcessModelService
 
     _ORIGINAL_METHODS["get_process_groups_for_api"] = ProcessModelService.get_process_groups_for_api
@@ -418,53 +600,58 @@ def apply() -> None:
 
     @classmethod
     def patched_save_process_model(cls, process_model: Any) -> None:
-        if is_super_admin_request():
-            raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
-        return original_save_process_model(cls, process_model)
+        with super_admin_workflow_write_context(
+            process_model_id=getattr(process_model, "id", None),
+        ):
+            return original_save_process_model(cls, process_model)
 
     @classmethod
     def patched_process_model_delete(cls, process_model_id: str) -> None:
-        if is_super_admin_request():
-            raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
-        return original_process_model_delete(cls, process_model_id)
+        with super_admin_workflow_write_context(process_model_id=process_model_id):
+            return original_process_model_delete(cls, process_model_id)
 
     @classmethod
     def patched_process_model_move(cls, original_process_model_id: str, new_location: str) -> Any:
-        if is_super_admin_request():
-            raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
-        return original_process_model_move(cls, original_process_model_id, new_location)
+        with super_admin_workflow_write_context(process_model_id=original_process_model_id):
+            return original_process_model_move(cls, original_process_model_id, new_location)
 
     @classmethod
     def patched_copy_process_model(
         cls, original_process_model_id: str, new_process_model_id: str, new_display_name: str
     ) -> Any:
-        if is_super_admin_request():
-            raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
-        return original_copy_process_model(cls, original_process_model_id, new_process_model_id, new_display_name)
+        with super_admin_workflow_write_context(process_model_id=original_process_model_id):
+            return original_copy_process_model(
+                cls,
+                original_process_model_id,
+                new_process_model_id,
+                new_display_name,
+            )
 
     @classmethod
     def patched_add_process_group(cls, process_group: Any) -> Any:
-        if is_super_admin_request():
-            raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
-        return original_add_process_group(cls, process_group)
+        process_group_id = getattr(process_group, "id", None)
+        parent_process_group_id: str | None = None
+        if isinstance(process_group_id, str):
+            parent_process_group_id = process_group_id.rpartition("/")[0] or None
+        with super_admin_workflow_write_context(process_group_id=parent_process_group_id):
+            return original_add_process_group(cls, process_group)
 
     @classmethod
     def patched_update_process_group(cls, process_group: Any) -> Any:
-        if is_super_admin_request():
-            raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
-        return original_update_process_group(cls, process_group)
+        with super_admin_workflow_write_context(
+            process_group_id=getattr(process_group, "id", None),
+        ):
+            return original_update_process_group(cls, process_group)
 
     @classmethod
     def patched_process_group_move(cls, original_process_group_id: str, new_location: str) -> Any:
-        if is_super_admin_request():
-            raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
-        return original_process_group_move(cls, original_process_group_id, new_location)
+        with super_admin_workflow_write_context(process_group_id=original_process_group_id):
+            return original_process_group_move(cls, original_process_group_id, new_location)
 
     @classmethod
     def patched_process_group_delete(cls, process_group_id: str) -> None:
-        if is_super_admin_request():
-            raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
-        return original_process_group_delete(cls, process_group_id)
+        with super_admin_workflow_write_context(process_group_id=process_group_id):
+            return original_process_group_delete(cls, process_group_id)
 
     ProcessModelService.get_process_groups_for_api = patched_get_process_groups_for_api
     ProcessModelService.get_process_models_for_api = patched_get_process_models_for_api

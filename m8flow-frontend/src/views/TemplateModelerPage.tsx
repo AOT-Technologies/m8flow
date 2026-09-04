@@ -60,11 +60,15 @@ function TemplateDetailsCard({
   onDelete: () => void;
 }) {
   const { ability, permissionsLoaded } = usePermissionFetcher({
-    "/m8flow/templates": ["POST", "PUT", "DELETE"],
+    "/m8flow/templates": ["PUT", "DELETE"],
+    [`/m8flow/templates/${template.id}/create-process-model`]: ["POST"],
     "/m8flow/admin/templates": ["DELETE"],
   });
 
-  const canCreate  = ability.can("POST",   "/m8flow/templates");
+  const canCreate = ability.can(
+    "POST",
+    `/m8flow/templates/${template.id}/create-process-model`,
+  );
   const canPublish = ability.can("PUT",    "/m8flow/templates");
   const canDelete  = ability.can("DELETE", "/m8flow/templates");
   // Admin-level: required to delete published templates or others' drafts

@@ -279,6 +279,11 @@ POST_APP_EXTENSION_PATCH_SPECS: tuple[PatchSpec, ...] = (
         minimum_phase=BootPhase.APP_CREATED,
     ),
     PatchSpec(
+        target="m8flow_backend.routes.workflow_write_guard:apply",
+        minimum_phase=BootPhase.APP_CREATED,
+        needs_flask_app=True,
+    ),
+    PatchSpec(
         target="m8flow_backend.services.process_instances_controller_patch:apply",
         minimum_phase=BootPhase.APP_CREATED,
     ),

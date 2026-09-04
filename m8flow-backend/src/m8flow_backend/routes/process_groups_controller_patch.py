@@ -29,6 +29,7 @@ from flask import request as flask_request
 _PATCHED = False
 _ORIGINAL_PROCESS_GROUP_LIST: Callable[..., Any] | None = None
 _ORIGINAL_PROCESS_GROUP_SHOW: Callable[..., Any] | None = None
+_ORIGINAL_PROCESS_GROUP_CREATE: Callable[..., Any] | None = None
 
 
 def _resolve_tenant_filter_from_request() -> str | None:
@@ -118,7 +119,7 @@ def _enrich_single_process_group_response(
 
 
 def reset() -> None:
-    global _PATCHED, _ORIGINAL_PROCESS_GROUP_LIST, _ORIGINAL_PROCESS_GROUP_SHOW
+    global _PATCHED, _ORIGINAL_PROCESS_GROUP_LIST, _ORIGINAL_PROCESS_GROUP_SHOW, _ORIGINAL_PROCESS_GROUP_CREATE
     if not _PATCHED:
         return
     mod = importlib.import_module("spiffworkflow_backend.routes.process_groups_controller")
@@ -128,19 +129,38 @@ def reset() -> None:
     if _ORIGINAL_PROCESS_GROUP_SHOW is not None:
         mod.process_group_show = _ORIGINAL_PROCESS_GROUP_SHOW
         _ORIGINAL_PROCESS_GROUP_SHOW = None
+    if _ORIGINAL_PROCESS_GROUP_CREATE is not None:
+        mod.process_group_create = _ORIGINAL_PROCESS_GROUP_CREATE
+        _ORIGINAL_PROCESS_GROUP_CREATE = None
     _PATCHED = False
 
 
 def apply() -> None:
-    global _PATCHED, _ORIGINAL_PROCESS_GROUP_LIST, _ORIGINAL_PROCESS_GROUP_SHOW
+    global _PATCHED, _ORIGINAL_PROCESS_GROUP_LIST, _ORIGINAL_PROCESS_GROUP_SHOW, _ORIGINAL_PROCESS_GROUP_CREATE
     if _PATCHED:
         return
 
     mod = importlib.import_module("spiffworkflow_backend.routes.process_groups_controller")
     upstream_list = mod.process_group_list
     upstream_show = mod.process_group_show
+    upstream_create = mod.process_group_create
     _ORIGINAL_PROCESS_GROUP_LIST = upstream_list
     _ORIGINAL_PROCESS_GROUP_SHOW = upstream_show
+    _ORIGINAL_PROCESS_GROUP_CREATE = upstream_create
+
+    def _patched_process_group_create(body: dict) -> flask.wrappers.Response:
+        explicit_tenant_id = body.get("m8f_tenant_id") if isinstance(body, dict) else None
+        body_for_upstream = dict(body)
+        body_for_upstream.pop("m8f_tenant_id", None)
+        from m8flow_backend.services.process_model_service_patch import (
+            super_admin_workflow_write_context,
+        )
+
+        with super_admin_workflow_write_context(
+            explicit_tenant_id=explicit_tenant_id if isinstance(explicit_tenant_id, str) else None,
+            process_group_id=body_for_upstream.get("id") if isinstance(body_for_upstream.get("id"), str) else None,
+        ):
+            return upstream_create(body_for_upstream)
 
     def _patched_process_group_list(
         process_group_identifier: str | None = None,
@@ -182,4 +202,5 @@ def apply() -> None:
 
     mod.process_group_list = _patched_process_group_list
     mod.process_group_show = _patched_process_group_show
+    mod.process_group_create = _patched_process_group_create
     _PATCHED = True

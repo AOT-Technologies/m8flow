@@ -4,22 +4,33 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const {
   getAccessToken,
   isLoggedIn,
+  isSuperAdmin,
   isPublicUser,
   redirectToLogin,
 } = vi.hoisted(() => ({
   getAccessToken: vi.fn(),
   isLoggedIn: vi.fn(),
+  isSuperAdmin: vi.fn(),
   isPublicUser: vi.fn(),
   redirectToLogin: vi.fn(),
+}));
+
+const { getStoredGlobalTenantId } = vi.hoisted(() => ({
+  getStoredGlobalTenantId: vi.fn(),
 }));
 
 vi.mock('./UserService', () => ({
   default: {
     getAccessToken,
     isLoggedIn,
+    isSuperAdmin,
     isPublicUser,
     redirectToLogin,
   },
+}));
+
+vi.mock('../contexts/GlobalTenantContext', () => ({
+  getStoredGlobalTenantId,
 }));
 
 import { getBasicHeaders } from './HttpService';
@@ -46,8 +57,10 @@ describe('HttpService.getBasicHeaders', () => {
   beforeEach(() => {
     getAccessToken.mockReset();
     isLoggedIn.mockReset();
+    isSuperAdmin.mockReset();
     isPublicUser.mockReset();
     redirectToLogin.mockReset();
+    getStoredGlobalTenantId.mockReset();
     vi.unstubAllGlobals();
   });
 
@@ -71,8 +84,10 @@ describe('HttpService.makeCallToBackend', () => {
   beforeEach(() => {
     getAccessToken.mockReset();
     isLoggedIn.mockReset();
+    isSuperAdmin.mockReset();
     isPublicUser.mockReset();
     redirectToLogin.mockReset();
+    getStoredGlobalTenantId.mockReset();
     vi.unstubAllGlobals();
   });
 
@@ -149,6 +164,7 @@ describe('HttpService.makeCallToBackend', () => {
 
   it('does not retry non-GET requests', async () => {
     getAccessToken.mockReturnValue('access-token');
+    isSuperAdmin.mockReturnValue(false);
     const fetchMock = vi.fn().mockResolvedValue(
       makeResponse({
         body: '{"message":"expired"}',
@@ -171,6 +187,88 @@ describe('HttpService.makeCallToBackend', () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('adds the selected tenant header for super-admin mutating requests', async () => {
+    getAccessToken.mockReturnValue('access-token');
+    isSuperAdmin.mockReturnValue(true);
+    getStoredGlobalTenantId.mockReturnValue('tenant-42');
+    const fetchMock = vi.fn().mockResolvedValue(
+      makeResponse({
+        body: '{"ok":true}',
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const successCallback = vi.fn();
+    HttpService.makeCallToBackend({
+      path: '/v1.0/process-groups',
+      httpMethod: 'POST',
+      postBody: { id: 'finance' },
+      successCallback,
+    });
+
+    await waitFor(() => {
+      expect(successCallback).toHaveBeenCalledWith({ ok: true });
+    });
+
+    const headers = fetchMock.mock.calls[0][1].headers as Headers;
+    expect(headers.get('Authorization')).toBe('Bearer access-token');
+    expect(headers.get('X-M8Flow-Tenant-Id')).toBe('tenant-42');
+  });
+
+  it('uses the tenant captured by the workflow action instead of ambient storage', async () => {
+    getAccessToken.mockReturnValue('access-token');
+    isSuperAdmin.mockReturnValue(true);
+    getStoredGlobalTenantId.mockReturnValue('stale-tenant');
+    const fetchMock = vi.fn().mockResolvedValue(
+      makeResponse({ body: '{"ok":true}', ok: true, status: 200, statusText: 'OK' }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    HttpService.makeCallToBackend({
+      path: '/v1.0/process-groups',
+      httpMethod: 'POST',
+      tenantId: 'captured-tenant',
+      postBody: { id: 'finance', m8f_tenant_id: 'captured-tenant' },
+      successCallback: vi.fn(),
+    });
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const headers = fetchMock.mock.calls[0][1].headers as Headers;
+    expect(headers.get('X-M8Flow-Tenant-Id')).toBe('captured-tenant');
+  });
+
+  it('does not add the selected tenant header for GET requests', async () => {
+    getAccessToken.mockReturnValue('access-token');
+    isSuperAdmin.mockReturnValue(true);
+    getStoredGlobalTenantId.mockReturnValue('tenant-42');
+    const fetchMock = vi.fn().mockResolvedValue(
+      makeResponse({
+        body: '{"ok":true}',
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const successCallback = vi.fn();
+    HttpService.makeCallToBackend({
+      path: '/v1.0/process-groups',
+      httpMethod: 'GET',
+      successCallback,
+    });
+
+    await waitFor(() => {
+      expect(successCallback).toHaveBeenCalledWith({ ok: true });
+    });
+
+    const headers = fetchMock.mock.calls[0][1].headers as Headers;
+    expect(headers.get('X-M8Flow-Tenant-Id')).toBeNull();
   });
 
   it('normalizes RFC 7807 error payloads so failure callbacks always receive a message', async () => {

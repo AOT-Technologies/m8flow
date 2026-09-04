@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+from types import SimpleNamespace
 
 import pytest
 from flask import Flask, g
@@ -216,18 +217,125 @@ def test_super_admin_preset_tenant_skips_scan_other_tenant_model(
             ProcessModelService.get_process_model("abil/test")
 
 
-def test_super_admin_process_model_mutators_are_forbidden(app: Flask, patched_services) -> None:
+def test_super_admin_process_model_delete_uses_owner_tenant_context(
+    app: Flask,
+    tenant_bpmn_tree: str,
+    live_tenants,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", "1")
+    app.config["SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR"] = tenant_bpmn_tree
+    from m8flow_backend.services import process_model_service_patch as pmp
+
+    pmp.reset()
+    seen: dict[str, str | None] = {}
+
+    def fake_delete(cls, process_model_id: str) -> None:
+        seen["process_model_id"] = process_model_id
+        seen["tenant_id"] = getattr(g, "m8flow_tenant_id", None)
+        seen["bpmn_root_tenant"] = getattr(g, "_m8flow_bpmn_root_tenant", None)
+        seen["context_tenant_id"] = get_context_tenant_id()
+
+    monkeypatch.setattr(
+        ProcessModelService,
+        "process_model_delete",
+        classmethod(fake_delete),
+        raising=False,
+    )
+
+    with app.app_context():
+        pmp.apply()
+
     with app.test_request_context("/"):
         g._m8flow_super_admin_request = True
         g._m8flow_tenant_context_exempt_request = True
+        ProcessModelService.process_model_delete("abil/test")
 
-        with pytest.raises(ApiError) as exc:
-            ProcessModelService.process_model_delete("abil/test")
-        assert exc.value.error_code == "forbidden"
+    assert seen == {
+        "process_model_id": "abil/test",
+        "tenant_id": "tenant-abil-id",
+        "bpmn_root_tenant": "tenant-abil-id",
+        "context_tenant_id": "tenant-abil-id",
+    }
 
+
+def test_super_admin_add_process_group_uses_parent_group_tenant_context(
+    app: Flask,
+    tenant_bpmn_tree: str,
+    live_tenants,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", "1")
+    app.config["SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR"] = tenant_bpmn_tree
+    from m8flow_backend.services import process_model_service_patch as pmp
+
+    pmp.reset()
+    seen: dict[str, str | None] = {}
+
+    def fake_add_process_group(cls, process_group: object) -> object:
+        seen["process_group_id"] = getattr(process_group, "id", None)
+        seen["tenant_id"] = getattr(g, "m8flow_tenant_id", None)
+        seen["bpmn_root_tenant"] = getattr(g, "_m8flow_bpmn_root_tenant", None)
+        seen["context_tenant_id"] = get_context_tenant_id()
+        return process_group
+
+    monkeypatch.setattr(
+        ProcessModelService,
+        "add_process_group",
+        classmethod(fake_add_process_group),
+        raising=False,
+    )
+
+    with app.app_context():
+        pmp.apply()
+
+    with app.test_request_context("/"):
+        g._m8flow_super_admin_request = True
+        g._m8flow_tenant_context_exempt_request = True
+        group = SimpleNamespace(id="abil/new-team")
+        created_group = ProcessModelService.add_process_group(group)
+
+    assert created_group is group
+    assert seen == {
+        "process_group_id": "abil/new-team",
+        "tenant_id": "tenant-abil-id",
+        "bpmn_root_tenant": "tenant-abil-id",
+        "context_tenant_id": "tenant-abil-id",
+    }
+
+
+def test_super_admin_add_root_process_group_requires_concrete_tenant_selection(
+    app: Flask,
+    tenant_bpmn_tree: str,
+    live_tenants,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("M8FLOW_ALLOW_MISSING_TENANT_CONTEXT", "1")
+    app.config["SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR"] = tenant_bpmn_tree
+    from m8flow_backend.services import process_model_service_patch as pmp
+
+    pmp.reset()
+
+    def fake_add_process_group(cls, process_group: object) -> object:
+        return process_group
+
+    monkeypatch.setattr(
+        ProcessModelService,
+        "add_process_group",
+        classmethod(fake_add_process_group),
+        raising=False,
+    )
+
+    with app.app_context():
+        pmp.apply()
+
+    with app.test_request_context("/"):
+        g._m8flow_super_admin_request = True
+        g._m8flow_tenant_context_exempt_request = True
         with pytest.raises(ApiError) as exc:
-            ProcessModelService.process_group_delete("abil")
-        assert exc.value.error_code == "forbidden"
+            ProcessModelService.add_process_group(SimpleNamespace(id="brand-new-root"))
+
+    assert exc.value.error_code == "tenant_required"
 
 
 class _FakeGroup:

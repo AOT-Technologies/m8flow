@@ -5,6 +5,13 @@ import time
 
 from flask import current_app
 
+from m8flow_backend.services.tenant_identity_helpers import current_tenant_id_or_none
+from m8flow_backend.tenancy import (
+    is_super_admin_request,
+    reset_context_tenant_id,
+    set_context_tenant_id,
+)
+
 _PATCHED = False
 
 
@@ -349,6 +356,20 @@ def apply() -> None:
         if not callable(original_complete_form_task):
             raise RuntimeError("ProcessInstanceService.complete_form_task is missing")
 
+        # A master-realm super-admin can complete a task from any tenant while
+        # intentionally having no request tenant. Upstream completion writes
+        # tenant-scoped event rows, so bind those writes to the already
+        # authorized process instance instead of leaving their tenant NULL.
+        tenant_context_token = None
+        process_tenant_id = getattr(processor.process_instance_model, "m8f_tenant_id", None)
+        if (
+            is_super_admin_request()
+            and current_tenant_id_or_none() is None
+            and isinstance(process_tenant_id, str)
+            and process_tenant_id.strip()
+        ):
+            tenant_context_token = set_context_tenant_id(process_tenant_id.strip())
+
         original_complete_task = processor.complete_task
 
         def complete_task_with_telemetry(*args, **kwargs):
@@ -391,6 +412,8 @@ def apply() -> None:
         finally:
             processor.complete_task = original_complete_task
             service_module.should_queue_process_instance = previous_should_queue
+            if tenant_context_token is not None:
+                reset_context_tenant_id(tenant_context_token)
 
     @classmethod
     def patched_schedule_next_process_model_cycle(cls, process_instance_model) -> None:

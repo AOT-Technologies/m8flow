@@ -26,6 +26,7 @@ from m8flow_backend.models.m8flow_tenant import M8flowTenantModel  # noqa: E402
 from m8flow_backend.models.template import TemplateModel, TemplateVisibility  # noqa: E402
 from m8flow_backend.models.process_model_template import ProcessModelTemplateModel  # noqa: E402
 from m8flow_backend.services.template_service import TemplateService  # noqa: E402
+from m8flow_backend.services import template_service as template_service_module  # noqa: E402
 from spiffworkflow_backend.exceptions.api_error import ApiError  # noqa: E402
 from spiffworkflow_backend.models.db import db  # noqa: E402
 
@@ -373,6 +374,35 @@ def test_create_process_model_from_template_requires_tenant() -> None:
             )
 
         assert exc_info.value.error_code == "tenant_required"
+
+
+def test_super_admin_can_use_published_template_with_concrete_tenant(monkeypatch) -> None:
+    """Super-admins may enter the tenant-bound template creation flow."""
+    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB, no HTTP/CSRF involved
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    db.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+        g.m8flow_tenant_id = "tenant-1"
+        monkeypatch.setattr(template_service_module, "is_super_admin_request", lambda: True)
+
+        user = MagicMock()
+        user.username = "super-admin"
+
+        with pytest.raises(ApiError) as exc_info:
+            TemplateService.create_process_model_from_template(
+                template_id=999,
+                process_group_id="test-group",
+                process_model_id="test-model",
+                display_name="Test Model",
+                description=None,
+                user=user,
+            )
+
+        # The request passed the super-admin guard and reached template lookup.
+        assert exc_info.value.error_code == "not_found"
 
 
 def test_create_process_model_from_template_raises_not_found_for_missing_template() -> None:
