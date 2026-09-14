@@ -155,7 +155,15 @@ The process holds one provider instance (lazy singleton).
 - `get_auth_provider()` keeps its zero-arg signature — it builds
   `AuthSettings.from_env()` internally before invoking the registered
   factory, so none of the ~20+ existing call sites change.
-- `reset_auth_provider()` drops the cached instance (used by tests).
+- `reset_auth_provider()` drops the cached instance (used by tests) and also
+  clears Keycloak's process-global settings cache so a rebuilt provider can
+  `configure()` cleanly.
+
+Keycloak settings (`keycloak/settings.py`) are **process-global
+single-active-config**, not per-provider-instance. Helpers read
+`current_settings()`; constructing `KeycloakAuthProvider` with a second,
+different `KeycloakSettings` raises until `reset_keycloak_settings()` (or
+`reset_auth_provider()`) runs. Prefer `get_auth_provider()`.
 
 Keycloak is auto-registered as a builtin in `factory._ensure_builtins`, which
 converts the envelope into `KeycloakSettings.from_env(settings.raw)` before

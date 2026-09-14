@@ -5,16 +5,22 @@ Env keys (``M8FLOW_KEYCLOAK_*`` / legacy ``KEYCLOAK_*``) are unchanged — see
 ``KeycloakSettings.from_env`` for every fallback/default rule, each carried
 over verbatim from the module this replaces.
 
+**Single-active-config (process-global).** Helper modules
+(``groups`` / ``tenants`` / ``admin_client`` / ``directory`` / ``oidc``) read
+settings only via ``current_settings()`` (and the thin accessor wrappers
+below). There is intentionally **one** active ``KeycloakSettings`` per
+process — not one per ``KeycloakAuthProvider`` instance. Constructing a
+provider calls ``configure()``; a second construction with *different*
+settings raises. Identical settings are allowed (tests often build
+``KeycloakAuthProvider()`` repeatedly). Call ``reset_keycloak_settings()``
+before installing a new config in tests (same teardown pattern as
+``reset_jwks_cache()`` / ``reset_auth_provider()``).
+
 ``KeycloakAuthProvider.__init__`` (or a test/conformance caller) resolves a
-``KeycloakSettings`` and calls ``configure()`` with it; the module-level
-functions below (kept for the ~17 call sites across this package and the
-handful of host modules tickets 06/07-09 still need to drain) delegate to
-whatever was last configured, falling back to ``KeycloakSettings.from_env()``
-on first use if nothing has been configured yet — e.g. a test that exercises
-a module function directly without constructing a provider first. This is
-the same singleton idiom already used by ``factory.py``'s provider cache and
-``jwks.py``'s JWKS cache; ``reset_keycloak_settings()`` mirrors
-``reset_jwks_cache()``/``reset_auth_provider()`` for test teardown.
+``KeycloakSettings`` and calls ``configure()`` with it. ``current_settings()``
+falls back to ``KeycloakSettings.from_env()`` on first use if nothing has
+been configured yet — e.g. a test that exercises a module function directly
+without constructing a provider first.
 """
 from __future__ import annotations
 
@@ -130,12 +136,26 @@ _active: KeycloakSettings | None = None
 
 
 def configure(settings: KeycloakSettings) -> None:
-    """Set the process-wide active settings. Called by
-    ``KeycloakAuthProvider.__init__``; a test/conformance caller may call
-    this directly to install an explicit ``KeycloakSettings`` without
-    touching the environment."""
+    """Install the process-wide active settings.
+
+    Called by ``KeycloakAuthProvider.__init__``; tests may call this (or
+    construct a provider) after ``reset_keycloak_settings()``.
+
+    Re-entering with the *same* settings is a no-op. Re-entering with
+    *different* settings raises ``RuntimeError`` — helpers always read the
+    module singleton, so a second provider must not silently rewrite the
+    first's effective config. Reset explicitly before swapping.
+    """
     global _active
     with _lock:
+        if _active is not None and _active != settings:
+            raise RuntimeError(
+                "Keycloak settings are process-global (single-active-config). "
+                "An active KeycloakSettings is already configured; call "
+                "reset_keycloak_settings() before installing a different one. "
+                "Constructing multiple KeycloakAuthProvider instances with "
+                "divergent settings is not supported."
+            )
         _active = settings
 
 
@@ -152,8 +172,8 @@ def current_settings() -> KeycloakSettings:
 
 
 def reset_keycloak_settings() -> None:
-    """Drop the cached settings so the next ``current_settings()`` call
-    re-resolves from the environment. Test-only, mirroring
+    """Drop the cached settings so the next ``current_settings()`` /
+    ``configure()`` can install a fresh config. Test-only, mirroring
     ``reset_jwks_cache()`` / ``reset_auth_provider()``."""
     global _active
     with _lock:

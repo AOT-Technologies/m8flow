@@ -25,6 +25,7 @@ from m8flow_backend.integrations.auth.keycloak import directory, groups, tenants
 from m8flow_backend.integrations.auth.keycloak.settings import (
     KeycloakSettings,
     configure,
+    current_settings,
     default_organization_alias,
     default_organization_name,
     keycloak_url,
@@ -48,14 +49,17 @@ class KeycloakAuthProvider(OidcAuthProvider):
     capabilities."""
 
     def __init__(self, settings: KeycloakSettings | None = None) -> None:
-        # Resolves fresh from the environment when no explicit settings is
-        # given (existing bare ``KeycloakAuthProvider()`` call sites keep
-        # working unchanged), then configures the module-level adapter
-        # functions (settings.py's back-compat API) to use it -- the same
-        # singleton idiom factory.py and jwks.py already use elsewhere.
-        self._settings = settings if settings is not None else KeycloakSettings.from_env()
-        configure(self._settings)
+        # Process-global single-active-config: helpers read current_settings(),
+        # not per-instance state. configure() rejects a second divergent
+        # settings object (see settings.py). Prefer get_auth_provider().
+        resolved = settings if settings is not None else KeycloakSettings.from_env()
+        configure(resolved)
         super().__init__(oidc_client)
+
+    @property
+    def settings(self) -> KeycloakSettings:
+        """Active process-wide Keycloak settings (same object helpers use)."""
+        return current_settings()
 
     def map_claims(self, payload: dict[str, Any]) -> VerifiedClaims:
         # ValueError -> TokenInvalid translation happens once, centrally, in

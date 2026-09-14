@@ -50,10 +50,20 @@ def register_auth_provider(name: str, factory: Callable[[AuthSettings], AuthProv
 
 
 def reset_auth_provider() -> None:
-    """Drop the cached instance so the next ``get_auth_provider()`` rebuilds it."""
+    """Drop the cached instance so the next ``get_auth_provider()`` rebuilds it.
+
+    Also clears Keycloak's process-global settings cache when the Keycloak
+    package is importable, so a rebuilt provider can ``configure()`` cleanly.
+    """
     global _instance
     with _lock:
         _instance = None
+    try:
+        from m8flow_backend.integrations.auth.keycloak.settings import reset_keycloak_settings
+
+        reset_keycloak_settings()
+    except ImportError:
+        pass
 
 
 def get_auth_provider() -> AuthProvider:

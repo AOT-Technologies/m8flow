@@ -40,3 +40,31 @@ def test_realm_template_default_walk_matches_former_config_location():
     package_dir = Path(m8flow_backend.__file__).resolve().parent
     expected = package_dir.parent.parent / "keycloak" / "realm_exports" / "m8flow-tenant-template.json"
     assert Path(keycloak_settings.realm_template_path()) == expected
+
+
+def test_configure_rejects_divergent_second_settings():
+    first = keycloak_settings.KeycloakSettings.from_env(
+        {"M8FLOW_KEYCLOAK_URL": "http://kc-a.test", "M8FLOW_KEYCLOAK_SHARED_REALM": "realm-a"}
+    )
+    second = keycloak_settings.KeycloakSettings.from_env(
+        {"M8FLOW_KEYCLOAK_URL": "http://kc-b.test", "M8FLOW_KEYCLOAK_SHARED_REALM": "realm-b"}
+    )
+    keycloak_settings.configure(first)
+    assert keycloak_settings.current_settings() is first
+    keycloak_settings.configure(first)  # identical: allowed
+    with pytest.raises(RuntimeError, match="single-active-config"):
+        keycloak_settings.configure(second)
+    keycloak_settings.reset_keycloak_settings()
+    keycloak_settings.configure(second)
+    assert keycloak_settings.current_settings() == second
+
+
+def test_provider_settings_property_tracks_process_singleton():
+    from m8flow_backend.integrations.auth.keycloak.provider import KeycloakAuthProvider
+
+    settings = keycloak_settings.KeycloakSettings.from_env(
+        {"M8FLOW_KEYCLOAK_URL": "http://kc-provider.test"}
+    )
+    provider = KeycloakAuthProvider(settings)
+    assert provider.settings == settings
+    assert provider.settings is keycloak_settings.current_settings()
