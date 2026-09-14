@@ -221,6 +221,74 @@ def require_tenant_id(user, *, allow_super_admin_override: bool = True) -> str:
     return tenant_id
 
 
+def require_catalog_write_tenant_id(
+    user,
+    *,
+    explicit_tenant_id: str | None = None,
+) -> str:
+    """Concrete tenant for catalog / create-from-template writes (M8F-479).
+
+    Non-super-admins ignore body ``m8f_tenant_id`` and use ``require_tenant_id``.
+
+    Super-admins may bind via body ``m8f_tenant_id``, ``?tenantId`` / ``tenant_id``,
+    or the ``m8flow_selected_tenant`` cookie. Body and resolved context must agree
+    when both are present; otherwise raise ``tenant_override_forbidden``. Missing
+    concrete tenant raises ``tenant_required``.
+    """
+    from m8flow_backend.authorization import actor_is_super_admin
+
+    body_raw = explicit_tenant_id.strip() if isinstance(explicit_tenant_id, str) else ""
+    body_tenant: str | None = None
+    if body_raw:
+        if not is_concrete_tenant_id(body_raw):
+            raise ApiError(
+                "invalid_tenant",
+                f"Invalid tenant '{body_raw}'.",
+                400,
+            )
+        body_tenant = body_raw
+
+    if not actor_is_super_admin(user):
+        return require_tenant_id(user)
+
+    override = tenant_override_for_super_admin(is_super_admin=True)
+    override_tenant = (
+        override.strip()
+        if isinstance(override, str) and override.strip() and is_concrete_tenant_id(override.strip())
+        else None
+    )
+    cookie = tenant_id_from_selected_cookie()
+    cookie_tenant = (
+        cookie.strip()
+        if isinstance(cookie, str) and cookie.strip() and is_concrete_tenant_id(cookie.strip())
+        else None
+    )
+    resolved = override_tenant or cookie_tenant
+
+    if body_tenant is not None and resolved is not None:
+        body_canonical = _canonical(body_tenant)
+        resolved_canonical = _canonical(resolved)
+        if body_canonical != resolved_canonical:
+            raise ApiError(
+                "tenant_override_forbidden",
+                "Super-admin workflow write request conflicts with the current tenant context.",
+                400,
+            )
+        return bind_request_tenant(body_canonical)
+
+    if body_tenant is not None:
+        return bind_request_tenant(body_tenant)
+
+    if resolved is not None:
+        return bind_request_tenant(resolved)
+
+    raise ApiError(
+        "tenant_required",
+        "Select a tenant before creating, updating, or executing a workflow.",
+        400,
+    )
+
+
 def _cookie_tenant() -> str | None:
     raw = request.cookies.get(SELECTED_TENANT_COOKIE_NAME)
     if isinstance(raw, str) and raw.strip():

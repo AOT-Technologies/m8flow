@@ -190,7 +190,7 @@ describe('ProcessesPage', () => {
     expect(screen.getByRole('button', { name: 'Clear' })).toBeInTheDocument();
   });
 
-  it('hides New group for super-admin and shows it for an editor', async () => {
+  it('hides New group for All-Tenants super-admin and shows it when a tenant is selected', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockImplementation(async (input: RequestInfo) => {
@@ -225,7 +225,20 @@ describe('ProcessesPage', () => {
       }),
     );
 
-    const superAdmin = renderWithOutlet(
+    const allTenants = renderWithOutlet(
+      {
+        scopedTenantId: null,
+        selectedTenantId: null,
+        isSuperAdmin: true,
+        canManageProcesses: true,
+      },
+      '/processes',
+    );
+    await waitFor(() => expect(screen.getByText(/Select a concrete tenant/i)).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'New process model' })).not.toBeInTheDocument();
+    allTenants.unmount();
+
+    const scopedSa = renderWithOutlet(
       {
         scopedTenantId: 't1',
         selectedTenantId: 't1',
@@ -235,11 +248,11 @@ describe('ProcessesPage', () => {
       '/processes',
     );
     await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
-    expect(screen.queryByRole('button', { name: 'New process model' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'New process model' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /All groups/ }));
     await waitFor(() => expect(screen.getByRole('dialog', { name: 'Process groups' })).toBeInTheDocument());
-    expect(screen.queryByRole('button', { name: /New group/i })).not.toBeInTheDocument();
-    superAdmin.unmount();
+    expect(screen.getByRole('button', { name: /New group/i })).toBeInTheDocument();
+    scopedSa.unmount();
 
     renderWithOutlet(
       {

@@ -15,7 +15,10 @@ export default function ProcessModelDetailPage() {
   const { processModelId } = useParams<{ processModelId: string }>();
   const { scopedTenantId, isSuperAdmin, needsTenant } = useActiveTenant();
   const { canManageProcesses } = useCapabilities();
-  const canManageCatalog = Boolean(canManageProcesses) && !isSuperAdmin;
+  // M8F-479: catalog writes allowed for SA with a concrete tenant.
+  const canManageCatalog = Boolean(canManageProcesses) && !needsTenant;
+  // Template create remains SA-blocked server-side.
+  const canSaveAsTemplate = Boolean(canManageProcesses) && !isSuperAdmin;
   const canStart = Boolean(canManageProcesses);
   const navigate = useNavigate();
   const modifiedId = processModelId ?? '';
@@ -181,7 +184,7 @@ export default function ProcessModelDetailPage() {
             : undefined
         }
         onSaveAsTemplate={
-          canManageCatalog
+          canSaveAsTemplate
             ? (templateId) => {
                 navigate(`/templates/${templateId}`);
               }

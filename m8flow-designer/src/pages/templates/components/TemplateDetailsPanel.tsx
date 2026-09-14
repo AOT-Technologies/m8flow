@@ -12,8 +12,13 @@ import { Button } from '@/components/ui/button';
 
 export type TemplateDetailsPanelProps = {
   template: Template;
-  /** PUT /m8flow/templates: catalog manager, not super-admin. */
+  /** PUT /m8flow/templates (visibility/publish): not super-admin. */
   canManage: boolean;
+  /**
+   * Create-from-template (M8F-479). Super-admin may create when a concrete
+   * tenant is selected; template metadata mutate stays behind `canManage`.
+   */
+  canCreateProcessModel?: boolean;
   onTemplateChange: (template: Template) => void;
   onCreateProcessModel: () => void;
 };
@@ -29,6 +34,7 @@ const VISIBILITY_OPTIONS: TemplateVisibility[] = ['PRIVATE', 'TENANT', 'PUBLIC']
 export function TemplateDetailsPanel({
   template,
   canManage,
+  canCreateProcessModel = canManage,
   onTemplateChange,
   onCreateProcessModel,
 }: TemplateDetailsPanelProps) {
@@ -130,9 +136,9 @@ export function TemplateDetailsPanel({
           ) : null}
         </div>
 
-        {canManage ? (
+        {canManage || canCreateProcessModel ? (
           <div className="flex flex-none flex-wrap items-center gap-2">
-            {canEditDraft && visibilityDirty ? (
+            {canManage && canEditDraft && visibilityDirty ? (
               <Button
                 type="button"
                 variant="pill-outline"
@@ -143,17 +149,19 @@ export function TemplateDetailsPanel({
                 {savingVisibility ? 'Saving…' : 'Save visibility'}
               </Button>
             ) : null}
-            <Button
-              type="button"
-              variant="pill-outline"
-              size="pill"
-              onClick={onCreateProcessModel}
-              disabled={createDisabled}
-              title={createTitle}
-            >
-              Create process model
-            </Button>
-            {canEditDraft ? (
+            {canCreateProcessModel ? (
+              <Button
+                type="button"
+                variant="pill-outline"
+                size="pill"
+                onClick={onCreateProcessModel}
+                disabled={createDisabled}
+                title={createTitle}
+              >
+                Create process model
+              </Button>
+            ) : null}
+            {canManage && canEditDraft ? (
               <Button
                 type="button"
                 variant="pill-info"

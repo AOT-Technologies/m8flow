@@ -6,6 +6,7 @@ from urllib.parse import quote
 from flask import Response, jsonify, request, g
 
 from m8flow_backend import catalog
+from m8flow_backend.auth import require_catalog_write_tenant_id
 from m8flow_backend.db import db
 from m8flow_backend.errors import ApiError
 
@@ -397,11 +398,15 @@ def template_create_process_model(id: int):
     - process_model_id: Optional leaf id; slugified from display_name when omitted
     - display_name: Display name for the new process model
     - description: Optional description for the new process model
+    - m8f_tenant_id: Optional explicit tenant for super-admin writes (M8F-479)
     """
     user = getattr(g, "user", None)
-    tenant_id = getattr(g, "m8flow_tenant_id", None)
-
     body = request.get_json(force=True, silent=True) or {}
+    explicit_tenant_id = body.get("m8f_tenant_id") if isinstance(body, dict) else None
+    tenant_id = require_catalog_write_tenant_id(
+        user,
+        explicit_tenant_id=explicit_tenant_id if isinstance(explicit_tenant_id, str) else None,
+    )
 
     process_group_id = body.get("process_group_id")
     process_model_id = body.get("process_model_id")
@@ -421,6 +426,8 @@ def template_create_process_model(id: int):
                 status_code=400,
             )
 
+    # Super-admin workflow writes are permitted only after the selected tenant
+    # has been resolved and pinned by the shared tenant-binding helper.
     result = TemplateService.create_process_model_from_template(
         template_id=id,
         process_group_id=process_group_id,

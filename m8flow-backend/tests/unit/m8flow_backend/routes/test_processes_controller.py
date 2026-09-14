@@ -1040,7 +1040,9 @@ def test_viewer_cannot_create_process_group(client, db_session, tmp_path, monkey
     assert not (tmp_path / "bpmn" / "t1" / "legal").exists()
 
 
-def test_super_admin_cannot_create_process_group(client, db_session, tmp_path, monkeypatch):
+def test_super_admin_can_create_process_group_with_concrete_tenant(
+    client, db_session, tmp_path, monkeypatch
+):
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     _user, token = _login_user(
         client, db_session, username="group-sa", groups=["super-admin"], tenant_id="t1"
@@ -1048,10 +1050,47 @@ def test_super_admin_cannot_create_process_group(client, db_session, tmp_path, m
     response = client.post(
         "/v1.0/m8flow/process-groups?tenantId=t1",
         headers={"Authorization": f"Bearer {token}"},
+        json={"id": "legal", "m8f_tenant_id": "t1"},
+    )
+    assert response.status_code == 201, response.get_json()
+    assert (tmp_path / "bpmn" / "t1" / "legal" / "process_group.json").is_file()
+
+
+def test_super_admin_catalog_write_requires_concrete_tenant(
+    client, db_session, tmp_path, monkeypatch
+):
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _user, token = _login_user(
+        client, db_session, username="group-sa-notenant", groups=["super-admin"], tenant_id="t1"
+    )
+    client.delete_cookie(SELECTED_TENANT_COOKIE_NAME)
+    response = client.post(
+        "/v1.0/m8flow/process-groups",
+        headers={"Authorization": f"Bearer {token}"},
         json={"id": "legal"},
     )
-    assert response.status_code == 403
+    assert response.status_code == 400
+    assert response.get_json()["error_code"] == "tenant_required"
     assert not (tmp_path / "bpmn" / "t1" / "legal").exists()
+
+
+def test_super_admin_catalog_write_rejects_conflicting_body_tenant(
+    client, db_session, tmp_path, monkeypatch
+):
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t2")
+    _user, token = _login_user(
+        client, db_session, username="group-sa-conflict", groups=["super-admin"], tenant_id="t1"
+    )
+    response = client.post(
+        "/v1.0/m8flow/process-groups?tenantId=t1",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"id": "legal", "m8f_tenant_id": "t2"},
+    )
+    assert response.status_code == 400
+    assert response.get_json()["error_code"] == "tenant_override_forbidden"
+    assert not (tmp_path / "bpmn" / "t1" / "legal").exists()
+    assert not (tmp_path / "bpmn" / "t2" / "legal").exists()
 
 
 def test_process_group_writes_stay_in_the_active_tenant(client, db_session, tmp_path, monkeypatch):
@@ -1212,17 +1251,42 @@ def test_viewer_cannot_create_process_model(client, db_session, tmp_path, monkey
     assert response.status_code == 403
 
 
-def test_super_admin_cannot_create_process_model(client, db_session, tmp_path, monkeypatch):
+def test_super_admin_can_create_process_model_with_concrete_tenant(
+    client, db_session, tmp_path, monkeypatch
+):
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     _user, token = _login_user(
-        client, db_session, username="model-sa", groups=["super-admin"], tenant_id="t1"
+        client,
+        db_session,
+        username="model-sa",
+        groups=["super-admin"],
+        tenant_id="t1",
+        v1_role="admin",
     )
     response = client.post(
         "/v1.0/m8flow/process-models?tenantId=t1",
         headers={"Authorization": f"Bearer {token}"},
+        json={"group_id": "finance", "id": "sa-model", "m8f_tenant_id": "t1"},
+    )
+    assert response.status_code == 201, response.get_json()
+    assert (tmp_path / "bpmn" / "t1" / "finance" / "sa-model" / "sa-model.bpmn").is_file()
+
+
+def test_super_admin_create_process_model_without_tenant_is_400(
+    client, db_session, tmp_path, monkeypatch
+):
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _user, token = _login_user(
+        client, db_session, username="model-sa-notenant", groups=["super-admin"], tenant_id="t1"
+    )
+    client.delete_cookie(SELECTED_TENANT_COOKIE_NAME)
+    response = client.post(
+        "/v1.0/m8flow/process-models",
+        headers={"Authorization": f"Bearer {token}"},
         json={"group_id": "finance", "id": "x"},
     )
-    assert response.status_code == 403
+    assert response.status_code == 400
+    assert response.get_json()["error_code"] == "tenant_required"
     assert not (tmp_path / "bpmn" / "t1" / "finance" / "x").exists()
 
 
@@ -1345,18 +1409,37 @@ def test_viewer_cannot_copy_process_model(client, db_session, tmp_path, monkeypa
     assert not (tmp_path / "bpmn" / "t1" / "finance" / "x").exists()
 
 
-def test_super_admin_cannot_copy_process_model(client, db_session, tmp_path, monkeypatch):
+def test_super_admin_can_copy_process_model_with_concrete_tenant(
+    client, db_session, tmp_path, monkeypatch
+):
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     _user, token = _login_user(
-        client, db_session, username="model-copy-sa", groups=["super-admin"], tenant_id="t1"
+        client,
+        db_session,
+        username="model-copy-sa",
+        groups=["super-admin"],
+        tenant_id="t1",
+        v1_role="admin",
     )
+    headers = {"Authorization": f"Bearer {token}"}
+    created = client.post(
+        "/v1.0/m8flow/process-models?tenantId=t1",
+        headers=headers,
+        json={
+            "group_id": "archived",
+            "id": "notes",
+            "display_name": "Notes",
+            "m8f_tenant_id": "t1",
+        },
+    )
+    assert created.status_code == 201, created.get_json()
     response = client.post(
-        "/v1.0/m8flow/process-models/finance:invoice-approval/copy?tenantId=t1",
-        headers={"Authorization": f"Bearer {token}"},
-        json={"id": "x"},
+        "/v1.0/m8flow/process-models/archived:notes/copy?tenantId=t1",
+        headers=headers,
+        json={"id": "sa-copy", "display_name": "SA copy", "m8f_tenant_id": "t1"},
     )
-    assert response.status_code == 403
-    assert not (tmp_path / "bpmn" / "t1" / "finance" / "x").exists()
+    assert response.status_code == 201, response.get_json()
+    assert (tmp_path / "bpmn" / "t1" / "archived" / "sa-copy" / "notes.bpmn").is_file()
 
 
 def test_process_model_copy_stays_in_the_active_tenant(client, db_session, tmp_path, monkeypatch):
@@ -1478,16 +1561,41 @@ def test_viewer_cannot_run_bpmn_unit_tests(client, db_session, tmp_path, monkeyp
     assert response.status_code == 403
 
 
-def test_super_admin_cannot_run_bpmn_unit_tests(client, db_session, tmp_path, monkeypatch):
+def test_super_admin_can_run_bpmn_unit_tests_with_concrete_tenant(
+    client, db_session, tmp_path, monkeypatch
+):
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     _user, token = _login_user(
-        client, db_session, username="bpmn-tests-sa", groups=["super-admin"], tenant_id="t1"
+        client,
+        db_session,
+        username="bpmn-tests-sa",
+        groups=["super-admin"],
+        tenant_id="t1",
+        v1_role="admin",
     )
+    headers = {"Authorization": f"Bearer {token}"}
+    created = client.post(
+        "/v1.0/m8flow/process-models?tenantId=t1",
+        headers=headers,
+        json={"group_id": "archived", "id": "notes", "m8f_tenant_id": "t1"},
+    )
+    assert created.status_code == 201, created.get_json()
+    added = client.post(
+        "/v1.0/m8flow/process-models/archived:notes/files?tenantId=t1",
+        headers=headers,
+        json={
+            "file_name": "test_notes.json",
+            "content": json.dumps({"happy_path": {"expected_output_json": {}}}),
+            "m8f_tenant_id": "t1",
+        },
+    )
+    assert added.status_code == 201, added.get_json()
     response = client.post(
-        "/v1.0/m8flow/process-models/finance:invoice-approval/tests/run?tenantId=t1",
-        headers={"Authorization": f"Bearer {token}"},
+        "/v1.0/m8flow/process-models/archived:notes/tests/run?tenantId=t1",
+        headers=headers,
     )
-    assert response.status_code == 403
+    assert response.status_code == 200, response.get_json()
+    assert response.get_json()["all_passed"] is True
 
 
 def test_bpmn_unit_tests_404_without_test_files(client, db_session, tmp_path, monkeypatch):
@@ -1551,17 +1659,30 @@ def test_editor_creates_and_runs_script_unit_test(client, db_session, tmp_path, 
     assert ad_hoc.get_json()["result"] is True
 
 
-def test_super_admin_cannot_run_script_unit_test(client, db_session, tmp_path, monkeypatch):
+def test_super_admin_can_run_script_unit_test_with_concrete_tenant(
+    client, db_session, tmp_path, monkeypatch
+):
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     _user, token = _login_user(
-        client, db_session, username="script-tests-sa", groups=["super-admin"], tenant_id="t1"
+        client,
+        db_session,
+        username="script-tests-sa",
+        groups=["super-admin"],
+        tenant_id="t1",
+        v1_role="admin",
     )
     response = client.post(
         "/v1.0/m8flow/process-models/finance:invoice-approval/script-unit-tests/run?tenantId=t1",
         headers={"Authorization": f"Bearer {token}"},
-        json={"python_script": "x = 1", "input_json": {}, "expected_output_json": {"x": 1}},
+        json={
+            "python_script": "x = 1",
+            "input_json": {},
+            "expected_output_json": {"x": 1},
+            "m8f_tenant_id": "t1",
+        },
     )
-    assert response.status_code == 403
+    assert response.status_code == 200, response.get_json()
+    assert response.get_json()["result"] is True
 
 
 def test_editor_adds_default_json_and_deletes_non_primary(client, db_session, tmp_path, monkeypatch):
@@ -1664,7 +1785,9 @@ def test_viewer_cannot_add_or_delete_file(client, db_session, tmp_path, monkeypa
     assert deleted.status_code == 403
 
 
-def test_super_admin_cannot_add_or_delete_file(client, db_session, tmp_path, monkeypatch):
+def test_super_admin_can_add_and_delete_file_with_concrete_tenant(
+    client, db_session, tmp_path, monkeypatch
+):
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     _user, token = _login_user(
         client, db_session, username="file-sa", groups=["super-admin"], tenant_id="t1"
@@ -1673,15 +1796,18 @@ def test_super_admin_cannot_add_or_delete_file(client, db_session, tmp_path, mon
     created = client.post(
         "/v1.0/m8flow/process-models/finance:invoice-approval/files?tenantId=t1",
         headers=headers,
-        json={"file_name": "notes.md"},
+        json={"file_name": "notes.md", "m8f_tenant_id": "t1"},
     )
-    assert created.status_code == 403
+    assert created.status_code == 201, created.get_json()
+    model_dir = tmp_path / "bpmn" / "t1" / "finance" / "invoice-approval"
+    assert (model_dir / "notes.md").is_file()
     deleted = client.delete(
-        "/v1.0/m8flow/process-models/finance:invoice-approval/files/invoice-form-schema.json?tenantId=t1",
+        "/v1.0/m8flow/process-models/finance:invoice-approval/files/notes.md?tenantId=t1",
         headers=headers,
     )
-    assert deleted.status_code == 403
-    assert (tmp_path / "bpmn" / "t1" / "finance" / "invoice-approval" / "invoice-form-schema.json").is_file()
+    assert deleted.status_code == 200
+    assert not (model_dir / "notes.md").exists()
+    assert (model_dir / "invoice-form-schema.json").is_file()
 
 
 def test_create_file_stays_in_the_active_tenant(client, db_session, tmp_path, monkeypatch):

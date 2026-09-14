@@ -48,12 +48,17 @@ export type TemplatesGalleryListProps = {
   galleryMode: TemplateGalleryMode;
   onGalleryModeChange: (mode: TemplateGalleryMode) => void;
   actor: TemplateGalleryActor;
-  /** Gates "Use template"/import: every template-mutating backend
-   * route unconditionally 403s for super-admin identities
-   * (`TemplateService`'s own `is_super_admin_request()` guard, checked
-   * regardless of tenant selection) — disabled here rather than letting
-   * the action fail every time. */
+  /**
+   * Gates Import (and other template-mutating actions): template CRUD remains
+   * SA-blocked server-side. "Use template" is gated separately via
+   * `canUseTemplate` (M8F-479 allows SA create-from-template with a tenant).
+   */
   isSuperAdmin?: boolean;
+  /**
+   * When false (e.g. super-admin on All Tenants), Use template stays disabled.
+   * Defaults true so callers that omit it keep prior non-SA behavior.
+   */
+  canUseTemplate?: boolean;
 };
 
 const VISIBILITY_OPTIONS: { value: VisibilityFilter; label: string }[] = [
@@ -94,6 +99,7 @@ export function TemplatesGalleryList({
   onGalleryModeChange,
   actor,
   isSuperAdmin = false,
+  canUseTemplate = true,
 }: TemplatesGalleryListProps) {
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -255,7 +261,7 @@ export function TemplatesGalleryList({
                 template={template}
                 galleryMode={galleryMode}
                 actor={actor}
-                isSuperAdmin={isSuperAdmin}
+                canUseTemplate={canUseTemplate}
                 onOpen={() => onOpenTemplate?.(template)}
                 onUse={() => onUseTemplate?.(template)}
                 onExport={() => onExportTemplate?.(template)}
@@ -280,7 +286,7 @@ function TemplateCard({
   template,
   galleryMode,
   actor,
-  isSuperAdmin,
+  canUseTemplate,
   onOpen,
   onUse,
   onExport,
@@ -290,7 +296,7 @@ function TemplateCard({
   template: Template;
   galleryMode: TemplateGalleryMode;
   actor: TemplateGalleryActor;
-  isSuperAdmin: boolean;
+  canUseTemplate: boolean;
   onOpen: () => void;
   onUse: () => void;
   onExport: () => void;
@@ -298,9 +304,9 @@ function TemplateCard({
   onRestore: () => void;
 }) {
   const deletedMode = galleryMode === 'deleted';
-  const useDisabled = deletedMode || !template.isPublished || isSuperAdmin;
-  const useTitle = isSuperAdmin
-    ? 'Not available to super-admin'
+  const useDisabled = deletedMode || !template.isPublished || !canUseTemplate;
+  const useTitle = !canUseTemplate
+    ? 'Select a concrete tenant before creating a process model'
     : deletedMode
       ? 'Restore this template before creating a process model'
       : !template.isPublished

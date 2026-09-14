@@ -26,9 +26,10 @@ import { startErrorMessage } from '@/lib/startProcessError';
  * Super-admin must pick a concrete tenant (no All-Tenants catalog merge).
  */
 export default function ProcessesPage() {
-  const { scopedTenantId, isSuperAdmin, needsTenant } = useActiveTenant();
+  const { scopedTenantId, needsTenant } = useActiveTenant();
   const { canManageProcesses } = useCapabilities();
-  const canManageCatalog = Boolean(canManageProcesses) && !isSuperAdmin;
+  // M8F-479: super-admin may write catalog when a concrete tenant is selected.
+  const canManageCatalog = Boolean(canManageProcesses) && !needsTenant;
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 

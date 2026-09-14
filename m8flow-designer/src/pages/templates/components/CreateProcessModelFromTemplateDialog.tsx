@@ -12,6 +12,11 @@ export type CreateProcessModelFromTemplateDialogProps = {
   open: boolean;
   onClose: () => void;
   scopedTenantId: string | null;
+  /**
+   * Super-admin All-Tenants gate. Regular users are cookie-bound and may have
+   * a null `scopedTenantId` without blocking create-from-template.
+   */
+  needsTenant?: boolean;
   /** `processModel.id` from the response, already `:`-encoded for routing. */
   onCreated: (encodedProcessModelId: string) => void;
 };
@@ -27,12 +32,16 @@ export type CreateProcessModelFromTemplateDialogProps = {
  * "pick a filter, dialog closes," and nesting it inside this dialog (a
  * dialog opening a dialog) for what's otherwise a single form field
  * wasn't worth the indirection.
+ *
+ * Super-admin must have a concrete `scopedTenantId` (M8F-479); the request
+ * then sends both `?tenantId=` and body `m8f_tenant_id`.
  */
 export function CreateProcessModelFromTemplateDialog({
   template,
   open,
   onClose,
   scopedTenantId,
+  needsTenant = false,
   onCreated,
 }: CreateProcessModelFromTemplateDialogProps) {
   const [groups, setGroups] = useState<ProcessGroupListItem[]>([]);
@@ -44,6 +53,7 @@ export function CreateProcessModelFromTemplateDialog({
   const [description, setDescription] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const missingTenant = needsTenant;
 
   useEffect(() => {
     if (!open) return undefined;
@@ -53,6 +63,12 @@ export function CreateProcessModelFromTemplateDialog({
     setIdEdited(false);
     setDescription('');
     setError(null);
+
+    if (missingTenant) {
+      setGroups([]);
+      setGroupsLoading(false);
+      return undefined;
+    }
 
     let cancelled = false;
     setGroupsLoading(true);
@@ -73,7 +89,7 @@ export function CreateProcessModelFromTemplateDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, template.name, scopedTenantId]);
+  }, [open, template.name, scopedTenantId, missingTenant]);
 
   function handleDisplayNameChange(value: string) {
     setDisplayName(value);
@@ -82,6 +98,10 @@ export function CreateProcessModelFromTemplateDialog({
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    if (missingTenant) {
+      setError('Select a concrete tenant before creating a process model.');
+      return;
+    }
     if (!processGroupId || !processModelId.trim() || !displayName.trim()) return;
     setSubmitting(true);
     setError(null);
@@ -91,6 +111,7 @@ export function CreateProcessModelFromTemplateDialog({
         processModelId: processModelId.trim(),
         displayName: displayName.trim(),
         description: description.trim() || undefined,
+        tenantId: scopedTenantId,
       });
       const rawId = String(result.process_model.id ?? '');
       onCreated(rawId.split('/').map(encodeURIComponent).join(':'));
@@ -114,7 +135,13 @@ export function CreateProcessModelFromTemplateDialog({
           <Button
             type="submit"
             form="create-process-model-from-template-form"
-            disabled={submitting || groups.length === 0 || !processModelId.trim() || !displayName.trim()}
+            disabled={
+              submitting ||
+              missingTenant ||
+              groups.length === 0 ||
+              !processModelId.trim() ||
+              !displayName.trim()
+            }
           >
             {submitting ? 'Creating…' : 'Create process model'}
           </Button>
@@ -125,6 +152,11 @@ export function CreateProcessModelFromTemplateDialog({
         Copies every file from &ldquo;{template.name}&rdquo; (v{template.version}) into a new
         process model.
       </p>
+      {missingTenant ? (
+        <p className="text-sm text-destructive" role="alert" data-testid="create-from-template-tenant-alert">
+          Select a concrete tenant in the tenant selector before creating a process model.
+        </p>
+      ) : null}
       <form
         id="create-process-model-from-template-form"
         onSubmit={handleSubmit}
@@ -135,7 +167,9 @@ export function CreateProcessModelFromTemplateDialog({
           <label htmlFor="cpmft-group" className="text-xs font-medium text-muted-foreground">
             Process group
           </label>
-          {groupsLoading ? (
+          {missingTenant ? (
+            <p className="text-sm text-muted-foreground">Choose a tenant to load process groups.</p>
+          ) : groupsLoading ? (
             <p className="text-sm text-muted-foreground">Loading groups…</p>
           ) : groups.length === 0 ? (
             <p className="text-sm text-destructive">
@@ -166,6 +200,7 @@ export function CreateProcessModelFromTemplateDialog({
             value={displayName}
             onChange={(e) => handleDisplayNameChange(e.target.value)}
             required
+            disabled={missingTenant}
           />
         </div>
 
@@ -181,6 +216,7 @@ export function CreateProcessModelFromTemplateDialog({
               setIdEdited(true);
             }}
             placeholder="invoice-approval"
+            disabled={missingTenant}
           />
           <p className="text-[11px] text-muted-foreground">
             Generated from the display name. You can edit it before creating.
@@ -196,6 +232,7 @@ export function CreateProcessModelFromTemplateDialog({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={2}
+            disabled={missingTenant}
             className="w-full rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
           />
         </div>

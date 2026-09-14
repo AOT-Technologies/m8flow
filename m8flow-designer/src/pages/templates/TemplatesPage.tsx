@@ -234,6 +234,7 @@ export default function TemplatesPage() {
         onGalleryModeChange={setGalleryMode}
         actor={actor}
         isSuperAdmin={isSuperAdmin}
+        canUseTemplate={!needsTenant}
       />
 
       <TemplateDeleteConfirmDialog
@@ -259,6 +260,7 @@ export default function TemplatesPage() {
           open
           onClose={() => setUseTemplateTarget(null)}
           scopedTenantId={scopedTenantId}
+          needsTenant={needsTenant}
           onCreated={(encodedProcessModelId) => {
             setUseTemplateTarget(null);
             navigate(`/processes/${encodedProcessModelId}`);

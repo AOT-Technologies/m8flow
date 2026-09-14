@@ -267,10 +267,7 @@ describe('TemplatesPage', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    // Not super-admin: matches SessionFixtureContext's regular-user
-    // convention (scopedTenantId always null) and is required for "Use
-    // template" to be enabled at all (super-admin is unconditionally
-    // forbidden server-side — see TemplatesGalleryList's own doc comment).
+    // Regular users: needsTenant is false even with null scopedTenantId.
     renderWithOutlet({ scopedTenantId: null, selectedTenantId: null, isSuperAdmin: false });
 
     await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
@@ -285,10 +282,57 @@ describe('TemplatesPage', () => {
     await waitFor(() => {
       expect(screen.queryByText('Create process model from template')).not.toBeInTheDocument();
     });
-    expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/create-process-model'))).toBe(true);
+    const createCall = fetchMock.mock.calls.find(([input]) => String(input).includes('/create-process-model'));
+    expect(createCall).toBeDefined();
   });
 
-  it('disables Use template for a draft template or a super-admin', async () => {
+  it('lets a tenant-scoped super-admin use a published template and sends m8f_tenant_id', async () => {
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/create-process-model')) {
+        return {
+          ok: true,
+          json: async () => ({
+            process_model: { id: 'finance/invoice-approval-2' },
+            template_info: { id: 1 },
+          }),
+        };
+      }
+      if (url.includes('/v1.0/m8flow/process-groups')) {
+        return {
+          ok: true,
+          json: async () => [
+            { id: 'finance', display_name: 'Finance', description: '', model_count: 1, last_run_in_seconds: null },
+          ],
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({ results: [mockTemplate()], pagination: { count: 1, total: 1, pages: 1 } }),
+      };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: true });
+
+    await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Import' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Use template' }));
+
+    await waitFor(() => expect(screen.getByText('Create process model from template')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Finance' })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Create process model' }));
+
+    await waitFor(() => {
+      const createCall = fetchMock.mock.calls.find(([input]) => String(input).includes('/create-process-model'));
+      expect(createCall).toBeDefined();
+      expect(String(createCall?.[0])).toContain('tenantId=t1');
+      const body = JSON.parse(String(createCall?.[1]?.body));
+      expect(body.m8f_tenant_id).toBe('t1');
+    });
+  });
+
+  it('disables Use template for a draft template or All-Tenants super-admin', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -304,6 +348,24 @@ describe('TemplatesPage', () => {
 
     await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
     expect(screen.getByRole('button', { name: 'Use template' })).toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it('disables Use template for All-Tenants super-admin on a published template', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          results: [mockTemplate()],
+          pagination: { count: 1, total: 1, pages: 1 },
+        }),
+      }),
+    );
+
+    // TemplatesPage short-circuits on needsTenant before listing — assert the gate.
+    renderWithOutlet({ scopedTenantId: null, selectedTenantId: null, isSuperAdmin: true });
+    await waitFor(() => expect(screen.getByText(/Select a concrete tenant/i)).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'Use template' })).not.toBeInTheDocument();
   });
 
   it('opens the Import dialog and imports a template', async () => {

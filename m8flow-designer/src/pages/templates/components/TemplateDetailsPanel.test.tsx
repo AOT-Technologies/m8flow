@@ -127,4 +127,18 @@ describe('TemplateDetailsPanel', () => {
     expect(screen.queryByLabelText('Visibility')).not.toBeInTheDocument();
     expect(screen.getByText('PRIVATE')).toBeInTheDocument();
   });
+
+  it('shows create-from-template without template mutate actions', () => {
+    render(
+      <TemplateDetailsPanel
+        template={{ ...DRAFT, isPublished: true, status: 'published' }}
+        canManage={false}
+        canCreateProcessModel
+        onTemplateChange={vi.fn()}
+        onCreateProcessModel={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'Publish' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create process model' })).not.toBeDisabled();
+  });
 });

@@ -5,12 +5,10 @@ from urllib.parse import quote, unquote
 from flask import Response, g, request
 
 from m8flow_backend import catalog, workflow
-from m8flow_backend.auth import require_current_user
-from m8flow_backend.authorization import actor_is_super_admin
+from m8flow_backend.auth import require_catalog_write_tenant_id, require_current_user, require_tenant_id
 from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
-from m8flow_backend.auth import require_tenant_id
 
 _FILE_MIMETYPES = {
     "bpmn": "application/xml",
@@ -108,16 +106,15 @@ def list_process_groups():
     return success_response(result, 200)
 
 
-def _deny_super_admin_catalog_write(user) -> None:
-    """Original overlay: super-admin may read and start, never create/edit/delete."""
-    if actor_is_super_admin(user):
-        raise ApiError("permission_denied", "Super-admin cannot modify the catalog", 403)
-
-
 def _group_write_payload(body: dict | None) -> dict:
     if isinstance(body, dict):
         return body
     return request.get_json(silent=True) or {}
+
+
+def _explicit_body_tenant(payload: dict) -> str | None:
+    raw = payload.get("m8f_tenant_id")
+    return raw if isinstance(raw, str) else None
 
 
 @handle_api_errors
@@ -128,13 +125,12 @@ def _group_write_payload(body: dict | None) -> dict:
 def create_process_group(body: dict | None = None):
     """Create a process group (id, display_name, description). Nested ids
     (`parent/child`) create the leaf directory. Write op: denied → 403.
-    Super-admin is always 403, matching the original overlay.
+    Super-admin may write when bound to a concrete tenant (M8F-479).
     """
     user = require_current_user()
-    _deny_super_admin_catalog_write(user)
-    tenant_id = require_tenant_id(user)
-
     payload = _group_write_payload(body)
+    tenant_id = require_catalog_write_tenant_id(user, explicit_tenant_id=_explicit_body_tenant(payload))
+
     row = catalog.create_process_group(
         tenant_id=tenant_id,
         group_id=payload.get("id") or "",
@@ -152,12 +148,11 @@ def create_process_group(body: dict | None = None):
 def update_process_group(modified_process_group_identifier: str, body: dict | None = None):
     """Update process-group metadata only. Id / path does not change."""
     user = require_current_user()
-    _deny_super_admin_catalog_write(user)
     session = g.db_session
-    tenant_id = require_tenant_id(user)
+    payload = _group_write_payload(body)
+    tenant_id = require_catalog_write_tenant_id(user, explicit_tenant_id=_explicit_body_tenant(payload))
 
     group_id = process_model_identifier_from_path_param(modified_process_group_identifier)
-    payload = _group_write_payload(body)
     row = catalog.update_process_group(
         tenant_id=tenant_id,
         group_id=group_id,
@@ -187,9 +182,8 @@ def delete_process_group(modified_process_group_identifier: str):
     instance still references a model in this group or nested under it.
     """
     user = require_current_user()
-    _deny_super_admin_catalog_write(user)
     session = g.db_session
-    tenant_id = require_tenant_id(user)
+    tenant_id = require_catalog_write_tenant_id(user)
 
     group_id = process_model_identifier_from_path_param(modified_process_group_identifier)
     if not catalog.process_group_exists(tenant_id=tenant_id, group_id=group_id):
@@ -216,15 +210,14 @@ def delete_process_group(modified_process_group_identifier: str):
 )
 def create_process_model(body: dict | None = None):
     """Create a process model under an existing group, with a default BPMN.
-    Super-admin is always 403. Distinct from thin POST /v1.0/process-models
-    ({path, xml}).
+    Super-admin may write when bound to a concrete tenant (M8F-479). Distinct
+    from thin POST /v1.0/process-models ({path, xml}).
     """
     user = require_current_user()
-    _deny_super_admin_catalog_write(user)
     session = g.db_session
-    tenant_id = require_tenant_id(user)
-
     payload = _group_write_payload(body)
+    tenant_id = require_catalog_write_tenant_id(user, explicit_tenant_id=_explicit_body_tenant(payload))
+
     identity = catalog.create_process_model(
         session,
         tenant_id=tenant_id,
@@ -246,13 +239,12 @@ def create_process_model(body: dict | None = None):
 def update_process_model(modified_process_model_identifier: str, body: dict | None = None):
     """Update process-model metadata (display_name, description, primary_file_name)."""
     user = require_current_user()
-    _deny_super_admin_catalog_write(user)
-    tenant_id = require_tenant_id(user)
+    payload = _group_write_payload(body)
+    tenant_id = require_catalog_write_tenant_id(user, explicit_tenant_id=_explicit_body_tenant(payload))
 
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier
     )
-    payload = _group_write_payload(body)
     identity = catalog.update_process_model_metadata(
         tenant_id=tenant_id,
         process_model_identifier=process_model_identifier,
@@ -270,18 +262,17 @@ def update_process_model(modified_process_model_identifier: str, body: dict | No
 )
 def copy_process_model(modified_process_model_identifier: str, body: dict | None = None):
     """Duplicate a process model under the same group (new leaf id + display
-    name). Copies files; does not copy process instances. Super-admin is
-    always 403. No git.
+    name). Copies files; does not copy process instances. Super-admin may write
+    when bound to a concrete tenant (M8F-479). No git.
     """
     user = require_current_user()
-    _deny_super_admin_catalog_write(user)
     session = g.db_session
-    tenant_id = require_tenant_id(user)
+    payload = _group_write_payload(body)
+    tenant_id = require_catalog_write_tenant_id(user, explicit_tenant_id=_explicit_body_tenant(payload))
 
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier
     )
-    payload = _group_write_payload(body)
     identity = catalog.copy_process_model(
         session,
         tenant_id=tenant_id,
@@ -324,10 +315,9 @@ def _primary_bpmn_name(*, tenant_id: str, process_model_identifier: str) -> str:
     forbidden_message="Not permitted to run process model tests",
 )
 def run_process_model_tests(modified_process_model_identifier: str):
-    """Run BPMN unit tests (`test_*.json`) for a process model. Super-admin 403."""
+    """Run BPMN unit tests (`test_*.json`) for a process model."""
     user = require_current_user()
-    _deny_super_admin_catalog_write(user)
-    tenant_id = require_tenant_id(user)
+    tenant_id = require_catalog_write_tenant_id(user)
 
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier
@@ -376,19 +366,17 @@ def list_script_unit_tests(modified_process_model_identifier: str):
     forbidden_message="Not permitted to create a script unit test",
 )
 def create_script_unit_test(modified_process_model_identifier: str, body: dict | None = None):
-    """Store a script unit test on the primary BPMN. Super-admin 403. No git."""
+    """Store a script unit test on the primary BPMN. No git."""
     user = require_current_user()
-    _deny_super_admin_catalog_write(user)
     session = g.db_session
-    tenant_id = require_tenant_id(user)
+    payload = _group_write_payload(body)
+    tenant_id = require_catalog_write_tenant_id(user, explicit_tenant_id=_explicit_body_tenant(payload))
 
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier
     )
     if not catalog.model_exists(tenant_id=tenant_id, process_model_identifier=process_model_identifier):
         raise ApiError("not_found", "Process model not found", 404)
-
-    payload = _group_write_payload(body)
     primary = _primary_bpmn_name(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
     xml_bytes = catalog.read_model_file(
         tenant_id=tenant_id, process_model_identifier=process_model_identifier, file_name=primary
@@ -424,18 +412,16 @@ def create_script_unit_test(modified_process_model_identifier: str, body: dict |
     forbidden_message="Not permitted to run a script unit test",
 )
 def run_script_unit_test(modified_process_model_identifier: str, body: dict | None = None):
-    """Run a script unit test (ad-hoc body or stored unit_test_id). Super-admin 403."""
+    """Run a script unit test (ad-hoc body or stored unit_test_id)."""
     user = require_current_user()
-    _deny_super_admin_catalog_write(user)
-    tenant_id = require_tenant_id(user)
+    payload = _group_write_payload(body)
+    tenant_id = require_catalog_write_tenant_id(user, explicit_tenant_id=_explicit_body_tenant(payload))
 
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier
     )
     if not catalog.model_exists(tenant_id=tenant_id, process_model_identifier=process_model_identifier):
         raise ApiError("not_found", "Process model not found", 404)
-
-    payload = _group_write_payload(body)
     unit_test_id = payload.get("unit_test_id")
     if isinstance(unit_test_id, str) and unit_test_id.strip():
         primary = _primary_bpmn_name(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
@@ -555,7 +541,7 @@ def put_process_model_file(modified_process_model_identifier: str, file_name: st
     nothing tenant-identity-revealing to protect by hiding the model here).
     """
     user = require_current_user()
-    tenant_id = require_tenant_id(user)
+    tenant_id = require_catalog_write_tenant_id(user)
 
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier
@@ -589,17 +575,16 @@ def put_process_model_file(modified_process_model_identifier: str, file_name: st
 )
 def create_process_model_file(modified_process_model_identifier: str, body: dict | None = None):
     """Create one file in an existing process model (default contents or upload).
-    Super-admin is always 403. No git.
+    Super-admin may write when bound to a concrete tenant (M8F-479). No git.
     """
     user = require_current_user()
-    _deny_super_admin_catalog_write(user)
     session = g.db_session
-    tenant_id = require_tenant_id(user)
+    payload = _group_write_payload(body)
+    tenant_id = require_catalog_write_tenant_id(user, explicit_tenant_id=_explicit_body_tenant(payload))
 
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier
     )
-    payload = _group_write_payload(body)
     file_name = payload.get("file_name") or ""
     content: bytes | None
     if "content" in payload:
@@ -628,10 +613,9 @@ def create_process_model_file(modified_process_model_identifier: str, body: dict
     forbidden_message="Not permitted to modify this process model",
 )
 def delete_process_model_file(modified_process_model_identifier: str, file_name: str):
-    """Delete one named file. Primary file is 409. Super-admin is always 403."""
+    """Delete one named file. Primary file is 409."""
     user = require_current_user()
-    _deny_super_admin_catalog_write(user)
-    tenant_id = require_tenant_id(user)
+    tenant_id = require_catalog_write_tenant_id(user)
 
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier
@@ -697,7 +681,7 @@ def delete_process_model(modified_process_model_identifier: str):
     """
     user = require_current_user()
     session = g.db_session
-    tenant_id = require_tenant_id(user)
+    tenant_id = require_catalog_write_tenant_id(user)
 
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier

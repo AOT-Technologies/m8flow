@@ -31,9 +31,11 @@ function RouterBreadcrumbLink({ href, className, children }: BreadcrumbLinkProps
  */
 export default function TemplateModelerPage() {
   const { templateId: templateIdParam } = useParams<{ templateId: string }>();
-  const { scopedTenantId, isSuperAdmin } = useActiveTenant();
+  const { scopedTenantId, isSuperAdmin, needsTenant } = useActiveTenant();
   const { canManageProcesses } = useCapabilities();
+  // Template metadata mutate stays SA-blocked; create-from-template is M8F-479.
   const canManage = Boolean(canManageProcesses) && !isSuperAdmin;
+  const canCreateProcessModel = Boolean(canManageProcesses) && !needsTenant;
   const navigate = useNavigate();
 
   const parsedId = templateIdParam ? Number(templateIdParam) : NaN;
@@ -168,6 +170,7 @@ export default function TemplateModelerPage() {
           <TemplateDetailsPanel
             template={template}
             canManage={canManage}
+            canCreateProcessModel={canCreateProcessModel}
             onTemplateChange={setTemplate}
             onCreateProcessModel={() => setCreateOpen(true)}
           />
@@ -181,6 +184,7 @@ export default function TemplateModelerPage() {
           open
           onClose={() => setCreateOpen(false)}
           scopedTenantId={scopedTenantId}
+          needsTenant={needsTenant}
           onCreated={(encodedProcessModelId) => {
             setCreateOpen(false);
             navigate(`/processes/${encodedProcessModelId}`);

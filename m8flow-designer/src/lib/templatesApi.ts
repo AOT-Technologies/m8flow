@@ -289,6 +289,8 @@ export type CreateProcessModelFromTemplateRequest = {
   processModelId: string;
   displayName: string;
   description?: string;
+  /** Super-admin write binding (M8F-479); also sent as `?tenantId=`. */
+  tenantId?: string | null;
 };
 
 export type ProcessModelTemplateInfo = {
@@ -313,16 +315,22 @@ export async function createProcessModelFromTemplate(
   templateId: number,
   request: CreateProcessModelFromTemplateRequest,
 ): Promise<CreateProcessModelFromTemplateResponse> {
-  const response = await apiFetch(`/v1.0/m8flow/templates/${templateId}/create-process-model`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      process_group_id: request.processGroupId,
-      process_model_id: request.processModelId,
-      display_name: request.displayName,
-      description: request.description,
-    }),
-  });
+  const tenantId = request.tenantId?.trim() || null;
+  const suffix = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
+  const response = await apiFetch(
+    `/v1.0/m8flow/templates/${templateId}/create-process-model${suffix}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        process_group_id: request.processGroupId,
+        process_model_id: request.processModelId,
+        display_name: request.displayName,
+        description: request.description,
+        ...(tenantId ? { m8f_tenant_id: tenantId } : {}),
+      }),
+    },
+  );
   return (await response.json()) as CreateProcessModelFromTemplateResponse;
 }
 

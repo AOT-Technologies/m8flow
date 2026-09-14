@@ -63,9 +63,10 @@ export default function ProcessModelModelerPage() {
     fileName: string;
   }>();
   const navigate = useNavigate();
-  const { scopedTenantId, isSuperAdmin, needsTenant } = useActiveTenant();
+  const { scopedTenantId, needsTenant } = useActiveTenant();
   const { canManageProcesses } = useCapabilities();
-  const canManageCatalog = Boolean(canManageProcesses) && !isSuperAdmin;
+  // M8F-479: super-admin may edit catalog files when a concrete tenant is selected.
+  const canManageCatalog = Boolean(canManageProcesses) && !needsTenant;
   const modifiedId = processModelId ?? '';
   const file = fileName ?? '';
   const canvasRef = useRef<DiagramCanvasHandle>(null);

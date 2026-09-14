@@ -159,3 +159,54 @@ def test_super_admin_cannot_write_templates(client, db_session):
     created = _create_template(client, token, name="Admin Write")
     assert created.status_code == 403
     assert "read-only" in created.get_json()["message"].lower() or created.get_json()["error_code"] == "forbidden"
+
+
+def test_super_admin_can_create_process_model_from_published_template(
+    client, db_session, app, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path / "bpmn"))
+    app.config["M8FLOW_TEMPLATES_STORAGE_DIR"] = str(tmp_path / "templates")
+    (tmp_path / "bpmn" / "t1" / "finance").mkdir(parents=True)
+    (tmp_path / "bpmn" / "t1" / "finance" / "process_group.json").write_text(
+        '{"display_name": "Finance"}',
+        encoding="utf-8",
+    )
+
+    _admin, admin_token = _login_user(
+        client, db_session, username="tenant-admin-sa-tpl", groups=["t1:tenant-admin"], tenant_id="t1"
+    )
+    published = _create_template(client, admin_token, name="Sa Source", published=True)
+    assert published.status_code == 201, published.text
+    source_id = published.get_json()["id"]
+
+    _sa, sa_token = _login_user(
+        client, db_session, username="root-from-tpl", groups=["super-admin"], tenant_id="t1"
+    )
+    created_pm = client.post(
+        f"/v1.0/m8flow/templates/{source_id}/create-process-model?tenantId=t1",
+        json={
+            "process_group_id": "finance",
+            "display_name": "From Template SA",
+            "process_model_id": "from-template-sa",
+            "m8f_tenant_id": "t1",
+        },
+        headers=_headers(sa_token),
+    )
+    assert created_pm.status_code == 201, created_pm.text
+    info = created_pm.get_json()["template_info"]
+    assert info["source_template_id"] == source_id
+    assert info["process_model_identifier"] == "finance/from-template-sa"
+    assert (tmp_path / "bpmn" / "t1" / "finance" / "from-template-sa").is_dir()
+
+    client.delete_cookie(SELECTED_TENANT_COOKIE_NAME)
+    missing_tenant = client.post(
+        f"/v1.0/m8flow/templates/{source_id}/create-process-model",
+        json={
+            "process_group_id": "finance",
+            "display_name": "No Tenant",
+            "process_model_id": "no-tenant",
+        },
+        headers=_headers(sa_token),
+    )
+    assert missing_tenant.status_code == 400
+    assert missing_tenant.get_json()["error_code"] == "tenant_required"

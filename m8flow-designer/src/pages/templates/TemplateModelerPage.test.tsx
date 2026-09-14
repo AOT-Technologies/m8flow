@@ -224,7 +224,7 @@ describe('TemplateModelerPage', () => {
     expect(JSON.parse(String(put?.[1]?.body))).toEqual({ is_published: true });
   });
 
-  it('keeps publish and visibility mutate hidden for super-admin', async () => {
+  it('keeps publish and visibility mutate hidden for super-admin but allows create-from-template', async () => {
     vi.stubGlobal('fetch', stubTemplateFetch({ 3: DOCS_ONLY }));
 
     renderAt('3', {
@@ -238,7 +238,7 @@ describe('TemplateModelerPage', () => {
       expect(screen.getByRole('heading', { name: 'Docs Only Template' })).toBeInTheDocument();
     });
     expect(screen.queryByRole('button', { name: 'Publish' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Create process model' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create process model' })).toBeDisabled();
     expect(screen.queryByLabelText('Visibility')).not.toBeInTheDocument();
     expect(screen.getByText('PRIVATE')).toBeInTheDocument();
   });

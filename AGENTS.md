@@ -23,12 +23,28 @@ Only modify files that belong to the `m8flow` repository.
 Typical safe areas include:
 
 - `m8flow-backend/`
-- `m8flow-frontend/`
+- `m8flow-designer/` — **primary UI** (Vite/React designer app)
 - M8Flow configuration
 - tests owned by this repo
 - documentation owned by this repo
 
 When unsure whether a file is owned by this repo, stop and explain the uncertainty before changing it.
+
+## Deprecated / Legacy Modules
+
+Do not treat these as the default place for new product UX. Prefer `m8flow-designer`
+and `m8flow-backend` unless the task explicitly targets a legacy surface.
+
+| Path | Status | Notes |
+|------|--------|--------|
+| `m8flow-frontend/` | **Deprecated / legacy UI** | Older SpiffArena-style frontend. Not the primary app. Avoid new feature work here unless explicitly requested for that tree. Prefer wiring UX in `m8flow-designer/`. |
+| `spiffworkflow-backend/` | **Removed / do not reintroduce** | Upstream vendor tree. See `docs/upstream-recovery.md`. |
+| `spiffworkflow-frontend/` | **Removed / do not reintroduce** | Upstream vendor tree. |
+| `spiff-arena-common/` | **Removed / do not reintroduce** | Upstream vendor tree. |
+| Spiff monkey-patches / `patch_registry` | **Removed / do not reintroduce** | Host must use `m8flow-bpmn-core` APIs and host modules, not Spiff source patches. |
+
+When a ticket mentions “the frontend,” assume **`m8flow-designer`** unless the user
+names `m8flow-frontend` explicitly.
 
 ## Architecture Guidance
 
@@ -87,10 +103,12 @@ After applying code changes, run the relevant repo-owned checks for the area you
   - Run the Python lint target for repo-owned backend code (`ruff` in `m8flow-backend`) when backend Python files change.
   - Run the most relevant `pytest` target for the touched backend files.
   - Prefer focused tests first, then widen only if the change is broad or cross-cutting.
-- Frontend changes:
-  - Run `npm run lint` in `m8flow-frontend`.
-  - Run `npm test` in `m8flow-frontend`.
-  - Run `npm run build` in `m8flow-frontend` when UI, routing, bundling, or shared frontend infrastructure changed.
+- Primary UI (`m8flow-designer`) changes:
+  - Run `npm run lint` in `m8flow-designer`.
+  - Run `npm test` in `m8flow-designer` (prefer focused tests for touched files).
+  - Run `npm run build` in `m8flow-designer` when UI, routing, bundling, or shared frontend infrastructure changed.
+- Legacy UI (`m8flow-frontend`) changes (only when that tree is explicitly in scope):
+  - Run `npm run lint` / `npm test` / `npm run build` in `m8flow-frontend` as applicable.
 - CI or workflow changes:
   - Sanity-check the modified workflow file and, when practical, run the same local commands the workflow is intended to execute.
 - Docker, Keycloak, or startup-script changes:
