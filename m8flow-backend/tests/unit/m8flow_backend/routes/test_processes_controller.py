@@ -1208,6 +1208,48 @@ def test_create_process_model_rejects_duplicate(client, db_session, tmp_path, mo
     assert response.get_json()["error_code"] == "process_model_exists"
 
 
+def test_create_process_model_cleans_up_fs_when_bpmn_write_fails(
+    client, db_session, tmp_path, monkeypatch
+):
+    """If write_spec_file raises after metadata mkdir, the orphaned dir must be removed
+    so a retry is not blocked by target.exists() / process_model_exists."""
+    import m8flow_backend.catalog as catalog_mod
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _user, token = _login_user(
+        client,
+        db_session,
+        username="model-write-fail",
+        groups=["t1:editor"],
+        tenant_id="t1",
+        v1_role="admin",
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+    model_dir = tmp_path / "bpmn" / "t1" / "finance" / "orphan-probe"
+    real_write = catalog_mod.write_spec_file
+
+    def _fail_write(*, tenant_id: str, path: str, file_name: str, content: bytes):
+        raise OSError("injected write_spec_file failure")
+
+    monkeypatch.setattr(catalog_mod, "write_spec_file", _fail_write)
+    failed = client.post(
+        "/v1.0/m8flow/process-models",
+        headers=headers,
+        json={"group_id": "finance", "id": "orphan-probe"},
+    )
+    assert failed.status_code == 500
+    assert not model_dir.exists()
+
+    monkeypatch.setattr(catalog_mod, "write_spec_file", real_write)
+    retry = client.post(
+        "/v1.0/m8flow/process-models",
+        headers=headers,
+        json={"group_id": "finance", "id": "orphan-probe"},
+    )
+    assert retry.status_code == 201, retry.get_json()
+    assert (model_dir / "orphan-probe.bpmn").is_file()
+
+
 def test_update_process_model_primary_file(client, db_session, tmp_path, monkeypatch):
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     _user, token = _login_user(

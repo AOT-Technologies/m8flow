@@ -517,27 +517,34 @@ def create_process_model(
     file_name = f"{leaf}.bpmn"
     xml = default_bpmn_xml(process_id=process_id)
     _reject_unsupported_constructs(xml)
-    workflow.import_definition(
-        session,
-        tenant_id=tenant_id,
-        user_id=user_id,
-        bpmn_identifier=model_id,
-        source_bpmn_xml=xml,
-        bpmn_name=file_name,
-    )
-    add_process_model(
-        {
-            "id": model_id,
-            "display_name": name,
-            "description": desc,
-            "primary_file_name": file_name,
-            "primary_process_id": process_id,
-        },
-        tenant_id=tenant_id,
-    )
-    write_spec_file(
-        tenant_id=tenant_id, path=model_id, file_name=file_name, content=xml.encode("utf-8")
-    )
+    # Create FS metadata + BPMN after DB import. If anything fails mid-way, remove the
+    # new model directory so a later create is not blocked by a ghost target.exists().
+    try:
+        workflow.import_definition(
+            session,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            bpmn_identifier=model_id,
+            source_bpmn_xml=xml,
+            bpmn_name=file_name,
+        )
+        add_process_model(
+            {
+                "id": model_id,
+                "display_name": name,
+                "description": desc,
+                "primary_file_name": file_name,
+                "primary_process_id": process_id,
+            },
+            tenant_id=tenant_id,
+        )
+        write_spec_file(
+            tenant_id=tenant_id, path=model_id, file_name=file_name, content=xml.encode("utf-8")
+        )
+    except Exception:
+        if target.exists():
+            shutil.rmtree(target)
+        raise
     identity = get_model_identity(tenant_id=tenant_id, process_model_identifier=model_id)
     if identity is None:
         raise ApiError("not_found", "Process model not found", 404)
