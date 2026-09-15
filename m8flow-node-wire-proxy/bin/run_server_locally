@@ -12,5 +12,12 @@ cd "$ROOT"
 
 export NW_ALLOWED_CONNECTORS="${NW_ALLOWED_CONNECTORS:-http_generic}"
 port="${CONNECTOR_PROXY_PORT:-7004}"
+# Loopback by default so a local process is not an open outbound HTTP relay.
+host="${CONNECTOR_PROXY_HOST:-127.0.0.1}"
 
-exec python -m uvicorn m8flow_node_wire_proxy.app:app --host 0.0.0.0 --port "$port" --reload
+if [[ -z "${M8FLOW_CONNECTOR_PROXY_API_KEY:-}" ]]; then
+  echo >&2 "M8FLOW_CONNECTOR_PROXY_API_KEY must be set (shared secret for /v1 routes)."
+  exit 1
+fi
+
+exec python -m uvicorn m8flow_node_wire_proxy.app:app --host "$host" --port "$port" --reload

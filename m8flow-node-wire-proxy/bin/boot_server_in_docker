@@ -13,9 +13,12 @@ fi
 
 export NW_ALLOWED_CONNECTORS="${NW_ALLOWED_CONNECTORS:-http_generic}"
 workers="${UVICORN_WORKERS:-2}"
+# Docker network peers (backend) need a non-loopback bind. Host publishing is
+# optional in compose; /v1 routes still require M8FLOW_CONNECTOR_PROXY_API_KEY.
+host="${CONNECTOR_PROXY_HOST:-0.0.0.0}"
 
 exec uvicorn m8flow_node_wire_proxy.app:app \
-  --host 0.0.0.0 \
+  --host "$host" \
   --port "$port" \
   --workers "$workers" \
   --timeout-keep-alive 90 \

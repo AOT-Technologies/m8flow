@@ -21,16 +21,21 @@ python3 -m venv .venv && source .venv/bin/activate
 
 # 3. Run
 ./bin/run_server_locally
-# or: CONNECTOR_PROXY_PORT=6844 ./bin/run_server_locally
+# or: CONNECTOR_PROXY_PORT=6844 M8FLOW_CONNECTOR_PROXY_API_KEY=local-dev-connector-proxy-key ./bin/run_server_locally
 curl -fsS http://127.0.0.1:7004/liveness
+curl -fsS -H "X-M8FLOW-Connector-Proxy-Key: local-dev-connector-proxy-key" \
+  http://127.0.0.1:7004/v1/commands
 ```
 
 Env:
 
 | Variable | Default | Purpose |
 |---|---|---|
+| `M8FLOW_CONNECTOR_PROXY_API_KEY` | _(required)_ | Shared secret; send as `X-M8FLOW-Connector-Proxy-Key` on `/v1/*` |
 | `NW_ALLOWED_CONNECTORS` | `http_generic` | node-wire fail-closed allowlist |
 | `CONNECTOR_PROXY_PORT` | `7004` (local) / compose uses `6844` | listen port |
+| `CONNECTOR_PROXY_HOST` | `127.0.0.1` (local) / `0.0.0.0` (docker) | bind address |
+| `NW_ALLOW_UNAUTHENTICATED` | unset | Test-only; allows boot without an API key |
 
 ## Docker
 

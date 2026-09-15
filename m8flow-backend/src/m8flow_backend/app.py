@@ -16,6 +16,7 @@ from m8flow_backend.auth import install_auth_middleware
 from m8flow_backend.db import attach_host_timestamp_listeners, create_all, get_session_factory
 from m8flow_backend.observability.request_context import install_request_id_middleware
 from m8flow_backend.secrets import install_registry_at_boot
+from m8flow_backend.connectors.proxy_auth import install_connector_proxy_client_auth
 from m8flow_backend.workflow.service_task_params import (
     install_service_task_literal_fallback,
 )
@@ -79,6 +80,7 @@ def create_app() -> FlaskApp:
     apply_m8flow_env_mapping()
     harden_logging()
     install_default_policy()
+    install_connector_proxy_client_auth()
     install_registry_at_boot()
     install_service_task_literal_fallback()
     attach_host_timestamp_listeners()

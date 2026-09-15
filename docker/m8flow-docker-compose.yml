@@ -361,6 +361,7 @@ services:
       M8FLOW_BACKEND_DATABASE_URI: "postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
       M8FLOW_BACKEND_UPGRADE_DB: "${M8FLOW_BACKEND_UPGRADE_DB:-true}"
       M8FLOW_BACKEND_CONNECTOR_PROXY_URL: "http://m8flow-node-wire-proxy:${CONNECTOR_PROXY_PORT:-6844}"
+      M8FLOW_CONNECTOR_PROXY_API_KEY: "${M8FLOW_CONNECTOR_PROXY_API_KEY:?set M8FLOW_CONNECTOR_PROXY_API_KEY in .env}"
       KEYCLOAK_URL: "http://keycloak-proxy:6842"
       M8FLOW_KEYCLOAK_URL: "http://keycloak-proxy:6842"
       KEYCLOAK_HOSTNAME: "${KEYCLOAK_HOSTNAME:-http://localhost:6842}"
@@ -406,6 +407,7 @@ services:
       M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: "${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-/data/process_models}"
       M8FLOW_BACKEND_DATABASE_URI: "postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
       M8FLOW_BACKEND_CONNECTOR_PROXY_URL: "http://m8flow-node-wire-proxy:${CONNECTOR_PROXY_PORT:-6844}"
+      M8FLOW_CONNECTOR_PROXY_API_KEY: "${M8FLOW_CONNECTOR_PROXY_API_KEY:?set M8FLOW_CONNECTOR_PROXY_API_KEY in .env}"
       KEYCLOAK_URL: "http://keycloak-proxy:6842"
       M8FLOW_KEYCLOAK_URL: "http://keycloak-proxy:6842"
       KEYCLOAK_HOSTNAME: "${KEYCLOAK_HOSTNAME:-http://localhost:6842}"
@@ -510,6 +512,9 @@ services:
     environment:
       NW_ALLOWED_CONNECTORS: http_generic
       CONNECTOR_PROXY_PORT: "${CONNECTOR_PROXY_PORT:-6844}"
+      M8FLOW_CONNECTOR_PROXY_API_KEY: "${M8FLOW_CONNECTOR_PROXY_API_KEY:?set M8FLOW_CONNECTOR_PROXY_API_KEY in .env}"
+    # Published for host-run backend / local curl. /v1 still requires the shared
+    # API key — do not expose this port on untrusted networks without it.
     ports:
       - "${CONNECTOR_PROXY_PORT:-6844}:${CONNECTOR_PROXY_PORT:-6844}/tcp"
     healthcheck:
