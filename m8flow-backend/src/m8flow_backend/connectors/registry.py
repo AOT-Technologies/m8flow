@@ -7,12 +7,18 @@ application layer rather than by a SQL CHECK constraint.
 
 from __future__ import annotations
 
+import re
+
 from m8flow_backend.connectors.base import (
+    CONFIG_PARAM,
     MAX_SECRET_FIELD_NAME_LENGTH,
+    SECRET_PARAM,
+    TASK_PARAM,
     ConnectorDefinition,
 )
 
 CONNECTOR_REGISTRY: dict[str, type[ConnectorDefinition]] = {}
+_SCHEMA_VERSION_RE = re.compile(r"^[1-9][0-9]*$")
 
 
 def register(cls: type[ConnectorDefinition]) -> type[ConnectorDefinition]:
@@ -22,6 +28,11 @@ def register(cls: type[ConnectorDefinition]) -> type[ConnectorDefinition]:
     to save a profile, so a bad definition cannot reach a release.
     """
     connector_type = cls.connector_type
+
+    if not _SCHEMA_VERSION_RE.fullmatch(cls.schema_version):
+        raise ValueError(
+            f"{cls.__name__}.schema_version must be a positive integer string."
+        )
 
     if connector_type in CONNECTOR_REGISTRY and CONNECTOR_REGISTRY[connector_type] is not cls:
         raise ValueError(
@@ -45,6 +56,11 @@ def register(cls: type[ConnectorDefinition]) -> type[ConnectorDefinition]:
             raise ValueError(
                 f"{cls.__name__}.{name}: group '{group}' is not declared in "
                 f"{cls.__name__}.groups."
+            )
+        binding = extra.get("binding")
+        if binding is not None and binding not in {CONFIG_PARAM, SECRET_PARAM, TASK_PARAM}:
+            raise ValueError(
+                f"{cls.__name__}.{name}: unsupported field binding '{binding}'."
             )
 
     CONNECTOR_REGISTRY[connector_type] = cls

@@ -5,12 +5,9 @@ import os
 import sys
 from pathlib import Path
 
-from demo_identity import wait_for_demo_tenant_identity
+from demo_identity import ensure_backend_src_on_path
 from seeded_secrets import load_seeded_secret_specs
-
-WAIT_TIMEOUT_SECONDS = float(os.getenv("M8FLOW_VAULT_DEMO_WAIT_TIMEOUT_SECONDS") or "180")
-WAIT_INTERVAL_SECONDS = float(os.getenv("M8FLOW_VAULT_DEMO_WAIT_INTERVAL_SECONDS") or "2")
-
+from seed_named_values import _flask_app_from_wrapped_application
 
 def fail(message: str) -> None:
     raise RuntimeError(message)
@@ -42,76 +39,66 @@ def format_failure_message(_exc: Exception) -> str:
 def main() -> int:
     try:
         script_path = Path(__file__).resolve()
-        repo_root = script_path.parents[3]
-        backend_src = repo_root / "m8flow-backend" / "src"
-        backend_src_str = str(backend_src)
-        if backend_src_str not in sys.path:
-            sys.path.insert(0, backend_src_str)
+        ensure_backend_src_on_path()
 
         runtime_env = Path(os.getenv("M8FLOW_VAULT_DEMO_ENV_FILE") or "/vault/demo/runtime.env")
         secrets_file = Path(
             os.getenv("M8FLOW_VAULT_DEMO_SECRETS_FILE") or str(script_path.with_name("secrets.yml"))
         )
         load_env_file(runtime_env)
-        identity = wait_for_demo_tenant_identity(
-            timeout_seconds=WAIT_TIMEOUT_SECONDS,
-            interval_seconds=WAIT_INTERVAL_SECONDS,
+        from flask import g
+        from m8flow_backend.app import app
+        from m8flow_backend.config import default_organization_alias
+        from m8flow_backend.models.named_value import NamedValueModel
+        from m8flow_backend.services.named_value_secret_storage import (
+            VaultNamedValueSecretStorage,
+            vault_provider_key,
         )
-        seeded_secrets = load_seeded_secret_specs(
-            secrets_file,
-            organization_alias=identity.organization_alias,
-            organization_id=identity.organization_id,
-            missing_file_message_factory=format_missing_secrets_file_message,
-        )
-
-        from m8flow_backend.services.tenant_scoped_vault_client_provider import TenantScopedVaultClientProvider
-        from m8flow_backend.services.tenant_vault_provisioning_service import TenantVaultProvisioningService
-        from m8flow_backend.services.vault_client import VaultClient, VaultClientError, VaultSettings
-
-        broker_client = VaultClient(settings=VaultSettings.from_env())
-        if not broker_client.check_availability():
-            fail("Vault client wrapper reported Vault unavailable.")
-
-        if seeded_secrets:
-            seeded_secret = seeded_secrets[0]
-            tenant_id = seeded_secret.tenant_id
-            logical_path = f"tenants/{tenant_id}/secrets/{seeded_secret.secret_name}"
-        else:
-            seeded_secret = None
-            tenant_id = identity.organization_id
-            logical_path = f"tenants/{tenant_id}/secrets/__vault_demo_probe__"
-        provisioned_identity = TenantVaultProvisioningService(vault_client=broker_client).provision_tenant_identity(
-            tenant_id
+        from m8flow_backend.startup.shared_realm_bootstrap import (
+            resolve_default_shared_realm_tenant_id,
         )
 
-        broker_direct_read_blocked = False
-        try:
-            broker_value = broker_client.retrieve_secret(logical_path)
-        except VaultClientError:
-            broker_direct_read_blocked = True
-        else:
-            if broker_value is None:
-                broker_direct_read_blocked = True
+        flask_app = _flask_app_from_wrapped_application(app)
+        with flask_app.app_context(), flask_app.test_request_context("/"):
+            tenant_id = resolve_default_shared_realm_tenant_id()
+            if not tenant_id:
+                fail("The canonical demo tenant is unavailable in the database.")
+            tenant_alias = default_organization_alias()
+            seeded_secrets = load_seeded_secret_specs(
+                secrets_file,
+                organization_alias=tenant_alias,
+                organization_id=tenant_id,
+                missing_file_message_factory=format_missing_secrets_file_message,
+            )
+            g.m8flow_tenant_id = tenant_id
+            rows = NamedValueModel.query.filter_by(m8f_tenant_id=tenant_id).all()
+            rows_by_name = {row.name.casefold(): row for row in rows}
+            if not seeded_secrets:
+                if rows:
+                    fail("An empty demo secrets file created configuration-variable catalog rows.")
             else:
-                fail(
-                    f"Broker Vault identity still has direct read access to '{logical_path}'. "
-                    "The local demo should only read tenant secrets through a tenant-scoped Vault client."
-                )
+                if len(rows_by_name) != len(seeded_secrets):
+                    fail("The configuration-variable catalog does not match the demo seed file.")
+                storage = VaultNamedValueSecretStorage()
+                for spec in seeded_secrets:
+                    row = rows_by_name.get(spec.secret_name.casefold())
+                    if (
+                        row is None
+                        or not row.is_sensitive
+                        or not row.is_configured
+                        or row.value is not None
+                    ):
+                        fail("A seeded configuration-variable catalog row is invalid.")
+                    if vault_provider_key(row.m8f_tenant_id, row.id).split("/")[3] != "configuration-variable":
+                        fail("A seeded configuration-variable used a noncanonical Vault path.")
+                    document = storage.read_document(row)
+                    if (
+                        not isinstance(document, dict)
+                        or set(document) != {"value"}
+                        or document.get("value") != spec.value
+                    ):
+                        fail("A seeded Vault document is missing or does not use the value-only format.")
 
-        client = TenantScopedVaultClientProvider(broker_vault_client=broker_client).for_tenant(tenant_id)
-        if seeded_secret is not None:
-            resolved_value = client.vault_client.retrieve_secret(logical_path)
-            if resolved_value != seeded_secret.value:
-                fail(
-                    f"Vault client wrapper read '{logical_path}', but the resolved value "
-                    "did not match the seeded demo secret."
-                )
-        else:
-            client.vault_client.list_secret_names(f"tenants/{tenant_id}/secrets")
-
-        del broker_direct_read_blocked
-        del identity
-        del provisioned_identity
         print("vault-demo-verify: Verification succeeded.", flush=True)
         return 0
     except Exception as exc:

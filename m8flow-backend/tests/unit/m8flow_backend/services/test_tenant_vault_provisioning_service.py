@@ -125,8 +125,17 @@ def test_provision_tenant_identity_creates_policy_and_approle(monkeypatch) -> No
                 '  capabilities = ["list", "read"]\n'
                 "}\n\n"
                 'path "kv/metadata/m8flow/tenants/org-uuid-123/secrets/*" {\n'
-                '  capabilities = ["list", "read", "delete"]\n'
-                "}\n"
+                    '  capabilities = ["list", "read", "delete"]\n'
+                    "}\n\n"
+                    'path "kv/data/m8flow/tenants/org-uuid-123/secrets/connector-configuration/*" {\n'
+                    '  capabilities = ["create", "read", "update", "delete"]\n'
+                    "}\n\n"
+                    'path "kv/metadata/m8flow/tenants/org-uuid-123/secrets/connector-configuration" {\n'
+                    '  capabilities = ["list", "read"]\n'
+                    "}\n\n"
+                    'path "kv/metadata/m8flow/tenants/org-uuid-123/secrets/connector-configuration/*" {\n'
+                    '  capabilities = ["list", "read", "delete"]\n'
+                    "}\n"
             ),
         }
     ]
@@ -233,8 +242,17 @@ def test_provision_tenant_identity_encodes_tenant_path_component_in_policy(monke
                 '  capabilities = ["list", "read"]\n'
                 "}\n\n"
                 'path "kv/metadata/m8flow/tenants/tenant%2B%2Fblue%2Awest/secrets/*" {\n'
-                '  capabilities = ["list", "read", "delete"]\n'
-                "}\n"
+                    '  capabilities = ["list", "read", "delete"]\n'
+                    "}\n\n"
+                    'path "kv/data/m8flow/tenants/tenant%2B%2Fblue%2Awest/secrets/connector-configuration/*" {\n'
+                    '  capabilities = ["create", "read", "update", "delete"]\n'
+                    "}\n\n"
+                    'path "kv/metadata/m8flow/tenants/tenant%2B%2Fblue%2Awest/secrets/connector-configuration" {\n'
+                    '  capabilities = ["list", "read"]\n'
+                    "}\n\n"
+                    'path "kv/metadata/m8flow/tenants/tenant%2B%2Fblue%2Awest/secrets/connector-configuration/*" {\n'
+                    '  capabilities = ["list", "read", "delete"]\n'
+                    "}\n"
             ),
         }
     ]

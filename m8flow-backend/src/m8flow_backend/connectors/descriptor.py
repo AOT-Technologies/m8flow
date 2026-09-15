@@ -57,6 +57,9 @@ def field_descriptor(name: str, field: Any) -> dict[str, Any]:
         "required": required,
         "group": extra.get("group", "connection"),
         "binding": extra.get("binding"),
+        # This is the storage classification. `secret` is retained during the
+        # frontend transition because the current modeler consumes that name.
+        "sensitive": extra.get("binding") == SECRET_PARAM,
         "secret": extra.get("binding") == SECRET_PARAM,
     }
 
@@ -74,7 +77,6 @@ def field_descriptor(name: str, field: Any) -> dict[str, Any]:
         ("help_text", "helpText"),
         ("example", "example"),
         ("description", "description"),
-        ("is_highly_sensitive", "isHighlySensitive"),
         ("python_expression", "pythonExpression"),
     ):
         if source in extra:
@@ -113,6 +115,7 @@ def to_descriptor(cls: type[ConnectorDefinition]) -> dict[str, Any]:
         "icon": cls.icon,
         "docsUrl": f"{_DOCS_BASE}#{cls.docs_anchor}" if cls.docs_anchor else _DOCS_BASE,
         "supportsProfiles": cls.has_profile_support(),
+        "schemaVersion": cls.schema_version,
         "groups": [dict(group) for group in cls.groups],
         "profileFields": profile_fields,
         "taskFields": task_fields,

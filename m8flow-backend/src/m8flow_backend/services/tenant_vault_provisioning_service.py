@@ -112,18 +112,20 @@ class TenantVaultProvisioningService:
     @classmethod
     def _tenant_policy(cls, tenant_id: str) -> str:
         mount_point = cls._require_non_empty(vault_mount_point(), "vault_mount_point")
-        secret_root = cls._tenant_secret_root(tenant_id)
-        return (
-            f'path "{mount_point}/data/{secret_root}/*" {{\n'
-            '  capabilities = ["create", "read", "update", "delete"]\n'
-            "}\n\n"
-            f'path "{mount_point}/metadata/{secret_root}" {{\n'
-            '  capabilities = ["list", "read"]\n'
-            "}\n\n"
-            f'path "{mount_point}/metadata/{secret_root}/*" {{\n'
-            '  capabilities = ["list", "read", "delete"]\n'
-            "}\n"
-        )
+        policy_paths = []
+        for root in (cls._tenant_secret_root(tenant_id), cls._tenant_connector_root(tenant_id)):
+            policy_paths.append(
+                f'path "{mount_point}/data/{root}/*" {{\n'
+                '  capabilities = ["create", "read", "update", "delete"]\n'
+                "}\n\n"
+                f'path "{mount_point}/metadata/{root}" {{\n'
+                '  capabilities = ["list", "read"]\n'
+                "}\n\n"
+                f'path "{mount_point}/metadata/{root}/*" {{\n'
+                '  capabilities = ["list", "read", "delete"]\n'
+                "}\n"
+            )
+        return "\n".join(policy_paths)
 
     @classmethod
     def _tenant_secret_root(cls, tenant_id: str) -> str:
@@ -133,6 +135,17 @@ class TenantVaultProvisioningService:
             "tenants",
             vault_safe_tenant_path_component(tenant_id),
             "secrets",
+        )
+
+    @classmethod
+    def _tenant_connector_root(cls, tenant_id: str) -> str:
+        prefix = cls._require_non_empty(vault_secret_path_prefix(), "vault_secret_path_prefix")
+        return cls._join_vault_path(
+            prefix,
+            "tenants",
+            vault_safe_tenant_path_component(tenant_id),
+            "secrets",
+            "connector-configuration",
         )
 
     @classmethod

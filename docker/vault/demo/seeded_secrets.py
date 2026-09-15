@@ -6,6 +6,26 @@ from typing import Callable
 
 import yaml
 
+
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """Reject duplicate YAML keys before a seed value can be overwritten silently."""
+
+
+def _construct_unique_mapping(loader: yaml.SafeLoader, node: yaml.nodes.MappingNode, deep: bool = False):
+    mapping: dict[object, object] = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in mapping:
+            raise RuntimeError("Vault demo secrets file contains a duplicate mapping key.")
+        mapping[key] = loader.construct_object(value_node, deep=deep)
+    return mapping
+
+
+_UniqueKeyLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+    _construct_unique_mapping,
+)
+
 @dataclass(frozen=True)
 class SeededSecretSpec:
     tenant_reference: str
@@ -40,13 +60,16 @@ def load_seeded_secret_specs(
             )
         return []
 
-    raw_payload = yaml.safe_load(secrets_file.read_text(encoding="utf-8")) or {}
+    try:
+        raw_payload = yaml.load(secrets_file.read_text(encoding="utf-8"), Loader=_UniqueKeyLoader) or {}
+    except yaml.YAMLError as exc:
+        raise RuntimeError("Vault demo secrets file contains invalid YAML.") from exc
     if not isinstance(raw_payload, dict):
         raise RuntimeError(f"Vault demo secrets file must contain a top-level mapping: {secrets_file}")
 
     tenants = raw_payload.get("tenants")
     if not isinstance(tenants, dict) or not tenants:
-        raise RuntimeError(f"Vault demo secrets file must define at least one tenant under 'tenants': {secrets_file}")
+        return []
 
     seeded_secrets: list[SeededSecretSpec] = []
     for tenant_reference, tenant_payload in tenants.items():
@@ -57,21 +80,23 @@ def load_seeded_secret_specs(
         if "/" in normalized_tenant_reference:
             raise RuntimeError(f"Invalid tenant id in {secrets_file}: {tenant_reference!r}")
 
-        resolved_tenant_id = (
-            resolved_organization_id
-            if normalized_tenant_reference == resolved_alias
-            else normalized_tenant_reference
-        )
-
         if isinstance(tenant_payload, dict) and "secrets" in tenant_payload:
             secrets_payload = tenant_payload.get("secrets")
         else:
             secrets_payload = tenant_payload
 
-        if not isinstance(secrets_payload, dict) or not secrets_payload:
+        if secrets_payload is None:
+            continue
+        if not isinstance(secrets_payload, dict):
+            raise RuntimeError(f"Tenant '{normalized_tenant_reference}' secrets must be a mapping.")
+        if not secrets_payload:
+            continue
+        if normalized_tenant_reference != resolved_alias:
             raise RuntimeError(
-                f"Tenant '{normalized_tenant_reference}' must define at least one secret in {secrets_file}."
+                f"Vault demo secrets may only seed the canonical tenant '{resolved_alias}'."
             )
+
+        resolved_tenant_id = resolved_organization_id
 
         for secret_name, secret_value in secrets_payload.items():
             normalized_secret_name = _normalized_non_empty(
@@ -82,6 +107,10 @@ def load_seeded_secret_specs(
                 raise RuntimeError(
                     f"Invalid secret name for tenant '{normalized_tenant_reference}' in {secrets_file}: {secret_name!r}"
                 )
+            if secret_value is None:
+                raise RuntimeError(
+                    f"Configuration variable '{normalized_secret_name}' must have a value."
+                )
             seeded_secrets.append(
                 SeededSecretSpec(
                     tenant_reference=normalized_tenant_reference,
@@ -90,5 +119,14 @@ def load_seeded_secret_specs(
                     value=str(secret_value),
                 )
             )
+
+    seen_names: set[tuple[str, str]] = set()
+    for secret in seeded_secrets:
+        uniqueness_key = (secret.tenant_id, secret.secret_name.casefold())
+        if uniqueness_key in seen_names:
+            raise RuntimeError(
+                "Vault demo secrets file contains duplicate configuration-variable names for the same tenant."
+            )
+        seen_names.add(uniqueness_key)
 
     return seeded_secrets

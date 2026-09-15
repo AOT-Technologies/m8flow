@@ -33,7 +33,7 @@ class SalesforceConnector(ConnectorDefinition):
     )
 
     instance_url: Annotated[str, secret_param(
-        "connection", label="Instance URL", is_highly_sensitive=False,
+        "connection", label="Instance URL", widget="text",
         example="https://mycompany.my.salesforce.com")]
     access_token: Annotated[str, secret_param(
         "authentication", label="Access Token")]
@@ -41,7 +41,7 @@ class SalesforceConnector(ConnectorDefinition):
         "authentication", label="Refresh Token",
         help_text="With client id + secret, enables automatic token refresh.")]
     client_id: Annotated[str | None, secret_param(
-        "authentication", label="Consumer Key", is_highly_sensitive=False)]
+        "authentication", label="Consumer Key", widget="text")]
     client_secret: Annotated[str | None, secret_param(
         "authentication", label="Consumer Secret")]
 

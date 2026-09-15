@@ -61,7 +61,7 @@ export const fetchConnectorProfiles = (
   });
 
 export const fetchConnectorProfile = (
-  profileId: number,
+  profileId: string,
 ): Promise<ConnectorProfile> =>
   call({ path: `/m8flow/connector-profiles/${profileId}` });
 
@@ -75,7 +75,7 @@ export const createConnectorProfile = (
   });
 
 export const updateConnectorProfile = (
-  profileId: number,
+  profileId: string,
   payload: ConnectorProfilePayload,
 ): Promise<ConnectorProfile> =>
   call({
@@ -92,7 +92,7 @@ export const updateConnectorProfile = (
  * delete also destroys the stored credentials.
  */
 export const deleteConnectorProfile = (
-  profileId: number,
+  profileId: string,
   hard = false,
 ): Promise<unknown> =>
   call({
@@ -101,7 +101,7 @@ export const deleteConnectorProfile = (
   });
 
 export const reactivateConnectorProfile = (
-  profileId: number,
+  profileId: string,
 ): Promise<ConnectorProfile> =>
   updateConnectorProfile(profileId, { is_active: true });
 

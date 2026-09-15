@@ -46,6 +46,10 @@ class VaultOperationError(VaultClientError):
     """Raised when a Vault operation fails for a non-connectivity reason."""
 
 
+class VaultVersionConflictError(VaultOperationError):
+    """Raised when a KV-v2 compare-and-set write sees a newer version."""
+
+
 @dataclass(frozen=True)
 class VaultSettings:
     """Resolved runtime settings for Vault integration."""
@@ -400,17 +404,29 @@ class VaultClient:
         self,
         secret_name: str,
         secret_data: Mapping[str, Any],
+        expected_version: str | None = None,
     ) -> dict[str, Any]:
         client = self._get_client()
         path = self._secret_path(secret_name)
 
+        request: dict[str, Any] = {
+            "mount_point": self._settings.mount_point,
+            "path": path,
+            "secret": dict(secret_data),
+        }
+        if expected_version is not None:
+            try:
+                request["cas"] = int(expected_version)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("expected_version must be an integer string.") from exc
+
         try:
-            response = client.secrets.kv.v2.create_or_update_secret(
-                mount_point=self._settings.mount_point,
-                path=path,
-                secret=dict(secret_data),
-            )
+            response = client.secrets.kv.v2.create_or_update_secret(**request)
         except Exception as exc:
+            if expected_version is not None and self._is_compare_and_set_conflict(exc):
+                raise VaultVersionConflictError(
+                    "Vault secret document changed before the update could be applied."
+                ) from exc
             raise self._operation_error("store", secret_name, exc) from exc
 
         return response or {}
@@ -426,6 +442,15 @@ class VaultClient:
         return value if isinstance(value, str) else str(value)
 
     def retrieve_secret_document(self, secret_name: str) -> dict[str, Any] | None:
+        document_and_version = self.retrieve_secret_document_with_version(secret_name)
+        if document_and_version is None:
+            return None
+        return document_and_version[0]
+
+    def retrieve_secret_document_with_version(
+        self, secret_name: str
+    ) -> tuple[dict[str, Any], str] | None:
+        """Read a KV-v2 document and the version required for CAS updates."""
         client = self._get_client()
         path = self._secret_path(secret_name)
 
@@ -442,7 +467,11 @@ class VaultClient:
         payload = (((response or {}).get("data") or {}).get("data") or {})
         if not isinstance(payload, dict) or not payload:
             return None
-        return dict(payload)
+        metadata = ((response or {}).get("data") or {}).get("metadata") or {}
+        version = metadata.get("version") if isinstance(metadata, dict) else None
+        if version is None:
+            raise VaultOperationError("Vault secret document did not include a KV-v2 version.")
+        return dict(payload), str(version)
 
     def list_secret_names(self, secret_name_prefix: str) -> list[str]:
         client = self._get_client()
@@ -612,6 +641,11 @@ class VaultClient:
 
     def _operation_error(self, action: str, secret_name: str, exc: Exception) -> VaultClientError:
         return self._resource_error(action, "secret", secret_name, exc)
+
+    @staticmethod
+    def _is_compare_and_set_conflict(exc: Exception) -> bool:
+        message = str(exc).casefold()
+        return "check-and-set" in message or "check and set" in message
 
     def _audit_availability_check(
         self,

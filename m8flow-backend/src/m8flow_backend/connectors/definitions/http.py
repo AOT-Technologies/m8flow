@@ -31,7 +31,7 @@ class HttpConnector(ConnectorDefinition):
     )
 
     basic_auth_username: Annotated[str | None, secret_param(
-        "authentication", label="Basic Auth Username", is_highly_sensitive=False)]
+        "authentication", label="Basic Auth Username", widget="text")]
     basic_auth_password: Annotated[str | None, secret_param(
         "authentication", label="Basic Auth Password")]
 
