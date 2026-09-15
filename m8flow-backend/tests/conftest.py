@@ -4,6 +4,20 @@ from m8flow_backend.auth.tenant_context import clear_tenant_context
 
 
 @pytest.fixture(autouse=True)
+def _unit_testing_env(monkeypatch):
+    """Pin disposable unit-testing env for every test.
+
+    Auth/settings helpers (``KeycloakSettings.from_env``, session secrets) fail
+    closed outside unit-testing. Tests that do not use ``db_engine`` still need
+    this pin — otherwise an empty shell env raises before the assertion runs.
+    Individual tests may override via their own ``monkeypatch.setenv``.
+    """
+    monkeypatch.setenv("M8FLOW_BACKEND_ENV", "unit_testing")
+    monkeypatch.setenv("SPIFFWORKFLOW_BACKEND_ENV", "unit_testing")
+    monkeypatch.setenv("FLASK_SESSION_SECRET_KEY", "unit-test-secret-key-32bytes-min")
+
+
+@pytest.fixture(autouse=True)
 def _reset_tenant_context_between_tests():
     clear_tenant_context()
     yield

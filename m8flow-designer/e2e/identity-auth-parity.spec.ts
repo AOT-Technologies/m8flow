@@ -2,9 +2,10 @@ import { expect, test } from '@playwright/test';
 
 import {
   cookieValue,
+  clearDesignerSession,
   editorCredentials,
   expectCombinedKeycloakLoginPage,
-  expectTwoButtonLanding,
+  expectSharedRealmKeycloakLogin,
   logOutFromDesigner,
   SELECTED_TENANT_COOKIE,
   signInAsPlatformAdmin,
@@ -43,20 +44,15 @@ test.describe('Identity + Auth parity', () => {
     }
   });
 
-  test('PAR-01: two-button landing and combined Keycloak username+password', async ({
+  test('PAR-01: auto-redirect to shared-realm login and platform-admin switch', async ({
     page,
   }) => {
+    await clearDesignerSession(page);
     await page.goto('/');
-    await expectTwoButtonLanding(page);
-
-    await page.getByTestId('shared-realm-sign-in-button').click();
-    await page.waitForURL(/\/realms\/m8flow\//, { timeout: 30_000 });
+    await expectSharedRealmKeycloakLogin(page);
     await expectCombinedKeycloakLoginPage(page);
 
-    await page.goto('/');
-    await expectTwoButtonLanding(page);
-
-    await page.getByTestId('global-admin-sign-in-button').click();
+    await page.locator('#m8f-master-login-button').click();
     await page.waitForURL(/\/realms\/master\//, { timeout: 30_000 });
     await expectCombinedKeycloakLoginPage(page);
   });
@@ -91,10 +87,13 @@ test.describe('Identity + Auth parity', () => {
       await expect(page.getByRole('heading', { name: 'Select a tenant', exact: true })).toBeVisible({
         timeout: 30_000,
       });
+      // Options live in a closed Select portal until the trigger is opened.
+      await page.getByTestId('tenant-select-trigger').click();
       await expect(page.getByTestId(`organization-option-${SEED_TENANT_LABEL}`)).toBeVisible();
       await expect(page.getByTestId(`organization-option-${PARITY_SECOND_TENANT_SLUG}`)).toBeVisible();
 
       await page.getByTestId(`organization-option-${PARITY_SECOND_TENANT_SLUG}`).click();
+      await page.getByTestId('tenant-select-confirm-button').click();
       await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible({
         timeout: 60_000,
       });
@@ -123,7 +122,7 @@ test.describe('Identity + Auth parity', () => {
     await expect(page.getByRole('heading', { name: 'Home', exact: true })).toHaveCount(0);
 
     await page.getByTestId('back-to-login-button').click();
-    await expectTwoButtonLanding(page, 60_000);
+    await expectSharedRealmKeycloakLogin(page, 60_000);
     expect(await cookieValue(page, SELECTED_TENANT_COOKIE)).toBeFalsy();
   });
 
@@ -148,7 +147,7 @@ test.describe('Identity + Auth parity', () => {
       window.localStorage.setItem('m8flow_global_selected_tenant', 'm8flow');
     });
     await page.goto('/processes');
-    await expectTwoButtonLanding(page);
+    await expectSharedRealmKeycloakLogin(page);
     await expect(page.getByRole('heading', { name: 'Processes', exact: true })).toHaveCount(0);
 
     await signInAsSharedRealmUser(page, editorCredentials());
@@ -192,7 +191,7 @@ test.describe('Identity + Auth parity', () => {
     await expect(page.getByRole('heading', { name: 'Home', exact: true })).toHaveCount(0);
 
     await page.getByTestId('accept-invitation-go-login').click();
-    await expectTwoButtonLanding(page);
+    await expectSharedRealmKeycloakLogin(page);
     await expect(page.getByRole('heading', { name: 'Home', exact: true })).toHaveCount(0);
 
     await signInAsSharedRealmUser(page, { username: email, password });

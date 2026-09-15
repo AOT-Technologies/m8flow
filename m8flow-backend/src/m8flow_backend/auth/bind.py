@@ -425,6 +425,15 @@ def resolve_request_tenant() -> None:
         bind_request_tenant(jwt_tenant)
         return
 
+    # Anonymous callers: do not treat a leftover tenant cookie/header as a
+    # membership override failure (400). Exempt paths stay open; protected
+    # routes fail at auth (401) instead.
+    user = getattr(g, "user", None)
+    if user is None:
+        if _path_is_exempt():
+            mark_tenant_exempt()
+        return
+
     header = _header_tenant()
     if header:
         if not _user_belongs(header):
@@ -448,9 +457,8 @@ def resolve_request_tenant() -> None:
         bind_request_tenant(cookie)
         return
 
-    if _path_is_exempt() or getattr(g, "user", None) is None:
-        if _path_is_exempt():
-            mark_tenant_exempt()
+    if _path_is_exempt():
+        mark_tenant_exempt()
         return
 
     raise ApiError(

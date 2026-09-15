@@ -118,6 +118,8 @@ def test_tenant_member_routes_authenticate_even_on_tenant_exempt_prefix(client, 
     _user, token = _login_user(
         client, db_session, username="tenant-admin", groups=["t1:tenant-admin"], tenant_id="t1"
     )
+    # Cookie from _login_user may remain; unauthenticated callers must still
+    # get 401 (not 400 tenant_override_forbidden from a leftover cookie).
     anonymous = client.get("/v1.0/m8flow/tenants/t1/members")
     assert anonymous.status_code == 401
 

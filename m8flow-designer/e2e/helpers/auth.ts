@@ -25,8 +25,23 @@ function isDesignerOrigin(url: URL): boolean {
   return url.origin.includes('localhost:6853');
 }
 
-/** Clear app cookies so each journey starts unauthenticated. */
+/** Clear app cookies + storage so each journey starts unauthenticated. */
 export async function clearDesignerSession(page: Page): Promise<void> {
+  await page.context().clearCookies();
+  // Hit designer origin so we can clear storage; auto-redirect may start.
+  await page.goto('/').catch(() => undefined);
+  await page.evaluate(() => {
+    try {
+      localStorage.clear();
+      sessionStorage.clear();
+      // Force Keycloak to show the credential form on the next auto-login
+      // (same flag logout() sets) so a leftover SSO session cannot silently
+      // re-authenticate as the previous user.
+      sessionStorage.setItem('m8flow_post_logout_prompt', '1');
+    } catch {
+      // Storage may be unavailable on about:blank / cross-origin hops.
+    }
+  }).catch(() => undefined);
   await page.context().clearCookies();
 }
 
@@ -44,9 +59,14 @@ export async function cookieValue(page: Page, name: string): Promise<string | un
   return cookies.find((cookie) => cookie.name === name)?.value;
 }
 
-export async function expectTwoButtonLanding(page: Page, timeout = 20_000): Promise<void> {
-  await expect(page.getByTestId('shared-realm-sign-in-button')).toBeVisible({ timeout });
-  await expect(page.getByTestId('global-admin-sign-in-button')).toBeVisible({ timeout });
+/**
+ * Logged-out designer `/` auto-redirects to the shared-realm Keycloak login
+ * (TenantSelectPage). Platform admin is offered as a link on that page.
+ */
+export async function expectSharedRealmKeycloakLogin(page: Page, timeout = 30_000): Promise<void> {
+  await page.waitForURL(/\/realms\/m8flow\//, { timeout });
+  await expectCombinedKeycloakLoginPage(page);
+  await expect(page.locator('#m8f-master-login-button')).toBeVisible({ timeout });
 }
 
 /** Keycloak hosted login must collect username and password on one page. */
@@ -94,6 +114,12 @@ async function waitAfterKeycloakCredentials(page: Page, persona: DesignerPersona
   await waitForDesignerOrigin(page);
 }
 
+async function openSharedRealmLogin(page: Page): Promise<void> {
+  await clearDesignerSession(page);
+  await page.goto('/');
+  await expectSharedRealmKeycloakLogin(page);
+}
+
 /**
  * Shared-realm sign-in through Keycloak, stopping once the browser is back
  * on designer. Callers assert Home, the tenant picker, or the zero-org gate.
@@ -102,16 +128,13 @@ export async function signInAtSharedRealm(
   page: Page,
   persona: DesignerPersona,
 ): Promise<void> {
-  await clearDesignerSession(page);
-  await page.goto('/');
-  await page.getByTestId('shared-realm-sign-in-button').click();
-  await page.waitForURL(/\/realms\/m8flow\//, { timeout: 30_000 });
+  await openSharedRealmLogin(page);
   await fillKeycloakCredentials(page, persona);
   await waitAfterKeycloakCredentials(page, persona);
 }
 
 /**
- * Shared-realm sign-in: designer landing → Sign In → Keycloak m8flow realm,
+ * Shared-realm sign-in: designer `/` auto-redirect → Keycloak m8flow realm,
  * then tenant finalization and Home.
  */
 export async function signInAsSharedRealmUser(
@@ -125,20 +148,20 @@ export async function signInAsSharedRealmUser(
 }
 
 /**
- * Platform admin sign-in: designer landing → Platform Admin Sign In →
- * master realm credentials → designer Home.
+ * Platform admin sign-in: shared-realm Keycloak → "Platform admin sign in"
+ * link → master realm credentials → designer Home.
  */
 export async function signInAsPlatformAdmin(
   page: Page,
   persona: DesignerPersona,
 ): Promise<void> {
-  await clearDesignerSession(page);
-  await page.goto('/');
-  await page.getByTestId('global-admin-sign-in-button').click();
+  await openSharedRealmLogin(page);
+  await page.locator('#m8f-master-login-button').click();
   await page.waitForURL(/\/realms\/master\//, { timeout: 30_000 });
   await fillKeycloakCredentials(page, persona);
   await waitAfterKeycloakCredentials(page, persona);
-  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible({
+  // Master-realm redirect targets /tenants (GLOBAL_ADMIN_LANDING_PATH).
+  await expect(page.getByRole('heading', { name: 'Tenants', exact: true })).toBeVisible({
     timeout: 60_000,
   });
 }
@@ -146,9 +169,9 @@ export async function signInAsPlatformAdmin(
 export async function logOutFromDesigner(page: Page): Promise<void> {
   await openProfileMenu(page);
   await page.getByRole('menuitem', { name: 'Log out' }).click();
-  // Logout hops through backend + Keycloak; current designer URL already
-  // matches origin 6853, so wait on the landing, not waitForURL.
-  await expectTwoButtonLanding(page, 60_000);
+  // Logout hops through backend + Keycloak, then designer auto-redirects
+  // back to the shared-realm login form.
+  await expectSharedRealmKeycloakLogin(page, 60_000);
 }
 
 export async function openProfileMenu(page: Page): Promise<void> {

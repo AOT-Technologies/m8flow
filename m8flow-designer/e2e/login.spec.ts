@@ -32,7 +32,7 @@ test.describe('m8flow-designer login journeys', () => {
     await expect(page.getByText('Active process instances', { exact: true })).toBeVisible();
   });
 
-  test('CHK-02: master-realm super-admin lands on Home with All Tenants scope', async ({
+  test('CHK-02: master-realm super-admin lands with All Tenants scope', async ({
     page,
   }) => {
     const admin = superAdminCredentials();
@@ -41,6 +41,13 @@ test.describe('m8flow-designer login journeys', () => {
 
     await openProfileMenu(page);
     await expect(page.getByRole('menu', { name: 'Profile' })).toContainText(admin.username);
+    await page.keyboard.press('Escape');
+
+    // Default landing is /tenants; Home still exposes All-Tenants chrome.
+    await page.getByRole('link', { name: 'Home', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
 
     const tenantSelect = page.getByRole('combobox', { name: /Tenant/ });
     await expect(tenantSelect).toBeVisible();

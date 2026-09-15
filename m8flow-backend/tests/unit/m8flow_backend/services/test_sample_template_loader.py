@@ -97,7 +97,8 @@ def test_create_app_does_not_load_samples_in_unit_testing(db_engine, monkeypatch
 
 def test_create_app_loads_samples_outside_unit_testing(db_engine, monkeypatch):
     monkeypatch.setenv("M8FLOW_LOAD_SAMPLE_TEMPLATES", "true")
-    with patch("m8flow_backend.startup.env_var_mapper.is_unit_testing_environment", return_value=False):
+    # app.py binds the helper at import time — patch the name used there.
+    with patch("m8flow_backend.app.is_unit_testing_environment", return_value=False):
         with patch("m8flow_backend.services.sample_template_loader.load_sample_templates") as load:
             from m8flow_backend.app import create_app
 
