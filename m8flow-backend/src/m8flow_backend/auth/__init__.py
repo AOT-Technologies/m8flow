@@ -47,6 +47,7 @@ from m8flow_backend.auth.bind import (  # noqa: F401 -- re-exported public surfa
 )
 
 from m8flow_backend.startup.env_var_mapper import is_unit_testing_environment
+from m8flow_backend.routes.session_cookies import clear_session_cookie, set_session_cookie
 
 logger = logging.getLogger(__name__)
 
@@ -115,11 +116,11 @@ def _store_verified_payload(payload: dict[str, Any], *, verified_claims) -> None
 
 
 def clear_dead_auth_realm_cookie(response) -> None:
-    response.set_cookie("m8flow_auth_realm", "", max_age=0, path="/")
+    clear_session_cookie(response, "m8flow_auth_realm")
 
 
 def set_selected_tenant_cookie(response, tenant_id: str) -> None:
-    response.set_cookie(SELECTED_TENANT_COOKIE_NAME, tenant_id, max_age=86400 * 30, path="/")
+    set_session_cookie(response, SELECTED_TENANT_COOKIE_NAME, tenant_id, max_age=86400 * 30)
 
 
 _FINALIZATION_TRUTHY = frozenset({"1", "true", "yes"})

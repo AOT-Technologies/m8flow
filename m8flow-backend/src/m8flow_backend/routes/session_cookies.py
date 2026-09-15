@@ -5,12 +5,79 @@ refresh-remints the token after writing the active-org attribute).
 """
 from __future__ import annotations
 
+import os
+from typing import Any
+
 from flask import Response
 
 from m8flow_backend.integrations.auth.base.models import TokenSet
 
 SESSION_COOKIE_NAMES = ("access_token", "id_token", "refresh_token", "authentication_identifier")
 DEFAULT_REFRESH_TOKEN_MAX_AGE = 86400  # falls back to the realm's ssoSessionIdleTimeout default
+
+# HTTP-only local/pytest stacks may omit Secure. QA/production require it.
+_HTTP_COOKIE_ENVIRONMENTS = frozenset({"local_development", "unit_testing", "testing"})
+
+
+def session_cookies_are_secure() -> bool:
+    """Whether auth cookies must carry the Secure flag.
+
+    Defaults to Secure outside local/HTTP environments. Override with
+    ``M8FLOW_BACKEND_SESSION_COOKIE_SECURE`` (``true``/``false``) when a
+    deployment needs an explicit choice (e.g. local HTTPS, or temporary
+    HTTP debugging against a non-local env name).
+    """
+    override = (os.environ.get("M8FLOW_BACKEND_SESSION_COOKIE_SECURE") or "").strip().lower()
+    if override in {"1", "true", "yes"}:
+        return True
+    if override in {"0", "false", "no"}:
+        return False
+    env = (
+        os.environ.get("SPIFFWORKFLOW_BACKEND_ENV")
+        or os.environ.get("M8FLOW_BACKEND_ENV")
+        or ""
+    ).strip().lower()
+    return env not in _HTTP_COOKIE_ENVIRONMENTS
+
+
+def session_cookie_kwargs(
+    *,
+    max_age: int,
+    path: str = "/",
+    httponly: bool = False,
+) -> dict[str, Any]:
+    """Common flags for login, refresh, logout clears, and tenant cookies."""
+    return {
+        "max_age": max_age,
+        "path": path,
+        "samesite": "Lax",
+        "secure": session_cookies_are_secure(),
+        "httponly": httponly,
+    }
+
+
+def set_session_cookie(
+    response: Response,
+    name: str,
+    value: str,
+    *,
+    max_age: int,
+    path: str = "/",
+    httponly: bool = False,
+) -> None:
+    response.set_cookie(name, value, **session_cookie_kwargs(max_age=max_age, path=path, httponly=httponly))
+
+
+def clear_session_cookie(
+    response: Response,
+    name: str,
+    *,
+    path: str = "/",
+    httponly: bool = False,
+) -> None:
+    # Clear attributes must match how the cookie was set (incl. Secure) or
+    # some browsers will leave the original cookie in place.
+    set_session_cookie(response, name, "", max_age=0, path=path, httponly=httponly)
 
 
 def token_set_as_dict(token_set: TokenSet) -> dict:
@@ -28,7 +95,11 @@ def token_set_as_dict(token_set: TokenSet) -> dict:
 
 def clear_session_cookies(response: Response) -> None:
     for cookie_name in SESSION_COOKIE_NAMES:
-        response.set_cookie(cookie_name, "", max_age=0, path="/")
+        clear_session_cookie(
+            response,
+            cookie_name,
+            httponly=(cookie_name == "refresh_token"),
+        )
 
 
 def set_token_cookies(response: Response, tokens: dict, *, identifier: str) -> None:
@@ -44,11 +115,11 @@ def set_token_cookies(response: Response, tokens: dict, *, identifier: str) -> N
     access_token = tokens.get("access_token")
     # Non-httpOnly: m8flow-frontend/m8flow-designer read these directly via
     # document.cookie (see m8flow-frontend/src/services/UserService.ts).
-    response.set_cookie("access_token", access_token, max_age=access_max_age, path="/", samesite="Lax")
+    set_session_cookie(response, "access_token", access_token, max_age=access_max_age)
 
     id_token = tokens.get("id_token")
     if id_token:
-        response.set_cookie("id_token", id_token, max_age=access_max_age, path="/", samesite="Lax")
+        set_session_cookie(response, "id_token", id_token, max_age=access_max_age)
 
     refresh_token = tokens.get("refresh_token")
     # httpOnly, unlike the two cookies above: the frontend never reads this
@@ -57,12 +128,11 @@ def set_token_cookies(response: Response, tokens: dict, *, identifier: str) -> N
     identifier_max_age = access_max_age
     if refresh_token:
         identifier_max_age = int(tokens.get("refresh_expires_in") or DEFAULT_REFRESH_TOKEN_MAX_AGE)
-        response.set_cookie(
+        set_session_cookie(
+            response,
             "refresh_token",
             refresh_token,
             max_age=identifier_max_age,
-            path="/",
-            samesite="Lax",
             httponly=True,
         )
 
@@ -70,4 +140,9 @@ def set_token_cookies(response: Response, tokens: dict, *, identifier: str) -> N
     # only needs to outlive the access token long enough for /v1.0/refresh to
     # know which realm to ask, and a refresh attempt is exactly what happens
     # once the access token has already expired.
-    response.set_cookie("authentication_identifier", identifier, max_age=identifier_max_age, path="/", samesite="Lax")
+    set_session_cookie(
+        response,
+        "authentication_identifier",
+        identifier,
+        max_age=identifier_max_age,
+    )

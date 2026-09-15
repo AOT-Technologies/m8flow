@@ -39,7 +39,9 @@ from m8flow_backend.integrations.auth.base.errors import ProviderUnavailable, To
 from m8flow_backend.integrations.auth.base.models import IssuerRef
 from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 from m8flow_backend.routes.session_cookies import (
+    clear_session_cookie,
     clear_session_cookies,
+    set_session_cookie,
     set_token_cookies,
     token_set_as_dict,
 )
@@ -120,13 +122,13 @@ def login() -> Response:
     response = redirect(auth_url)
     # httpOnly + scoped to the callback path: only ever read back by login_return,
     # never needed (or wanted) in frontend JS.
-    response.set_cookie(
+    set_session_cookie(
+        response,
         _OAUTH_NONCE_COOKIE,
         nonce,
         max_age=300,
         path=_LOGIN_RETURN_PATH,
         httponly=True,
-        samesite="Lax",
     )
     return response
 
@@ -162,7 +164,7 @@ def login_return() -> Response:
         raise ApiError("keycloak_token_exchange_failed", "Could not complete sign-in", 401) from None
 
     response = redirect(redirect_url)
-    response.set_cookie(_OAUTH_NONCE_COOKIE, "", max_age=0, path=_LOGIN_RETURN_PATH)
+    clear_session_cookie(response, _OAUTH_NONCE_COOKIE, path=_LOGIN_RETURN_PATH, httponly=True)
     set_token_cookies(response, token_set_as_dict(token_set), identifier=identifier)
     return response
 
@@ -226,8 +228,8 @@ def logout() -> Response:
 
     response = redirect(target)
     clear_session_cookies(response)
-    response.set_cookie("m8flow_auth_realm", "", max_age=0, path="/")
+    clear_session_cookie(response, "m8flow_auth_realm")
     # A full logout should not let the next sign-in silently inherit the
     # previous session's tenant selection.
-    response.set_cookie(SELECTED_TENANT_COOKIE_NAME, "", max_age=0, path="/")
+    clear_session_cookie(response, SELECTED_TENANT_COOKIE_NAME)
     return response

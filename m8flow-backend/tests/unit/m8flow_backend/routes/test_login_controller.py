@@ -132,6 +132,8 @@ def test_login_return_sets_httponly_refresh_token_cookie(client, monkeypatch):
     assert refresh_cookie is not None
     assert "HttpOnly" in refresh_cookie
     assert "Max-Age=86400" in refresh_cookie
+    # unit_testing env keeps Secure off so HTTP TestClient cookies still work.
+    assert "Secure" not in refresh_cookie
 
     # authentication_identifier should track the refresh token's lifetime, not
     # the (much shorter) access token's, so /v1.0/refresh can still read it
@@ -140,6 +142,7 @@ def test_login_return_sets_httponly_refresh_token_cookie(client, monkeypatch):
         header for header in set_cookie_headers if header.startswith("authentication_identifier=")
     )
     assert "Max-Age=86400" in identifier_cookie
+    assert "Secure" not in identifier_cookie
 
 
 def test_login_return_fails_when_keycloak_rejects_the_code(client, monkeypatch):
