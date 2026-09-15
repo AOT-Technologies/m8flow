@@ -89,7 +89,15 @@ class _KeycloakOidcClient(OidcClient):
         return spoke_client_id()
 
     def client_auth_params(self) -> dict[str, str]:
-        return {"client_id": spoke_client_id(), "client_secret": spoke_client_secret() or master_client_secret()}
+        # Prefer the spoke secret when set; otherwise the master secret resolved
+        # by KeycloakSettings (required outside local/test — no committed fallback).
+        secret = (spoke_client_secret() or master_client_secret()).strip()
+        if not secret:
+            raise RuntimeError(
+                "OIDC client_secret is not configured. Set "
+                "M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET or M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET."
+            )
+        return {"client_id": spoke_client_id(), "client_secret": secret}
 
 
 #: Process-wide singleton -- shares one JWKS cache across every call site,

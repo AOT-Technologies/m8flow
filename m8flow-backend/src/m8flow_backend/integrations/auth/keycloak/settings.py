@@ -2,8 +2,11 @@
 per-call ``os.environ`` reads.
 
 Env keys (``M8FLOW_KEYCLOAK_*`` / legacy ``KEYCLOAK_*``) are unchanged — see
-``KeycloakSettings.from_env`` for every fallback/default rule, each carried
-over verbatim from the module this replaces.
+``KeycloakSettings.from_env`` for every fallback/default rule. OIDC client
+secrets are an exception: outside unit-testing the process fails closed
+unless ``M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET`` or
+``M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET`` is set explicitly (no committed
+fallback in this module).
 
 **Single-active-config (process-global).** Helper modules
 (``groups`` / ``tenants`` / ``admin_client`` / ``directory`` / ``oidc``) read
@@ -30,7 +33,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-DEFAULT_KEYCLOAK_CLIENT_SECRET = "JXeQExm0JhQPLumgHtIIqf52bDalHz0q"
+from m8flow_backend.startup.env_var_mapper import is_unit_testing_environment
+
 DEFAULT_SHARED_REALM_NAME = "m8flow"
 DEFAULT_MASTER_REALM_NAME = "master"
 
@@ -38,11 +42,35 @@ DEFAULT_MASTER_REALM_NAME = "master"
 _M8FLOW_BACKEND_PACKAGE_DIR = Path(__file__).resolve().parents[3]
 
 
+def _resolve_master_client_secret(
+    *,
+    explicit_master: str | None,
+    spoke_client_secret: str,
+) -> str:
+    """Require an explicit OIDC client secret outside unit-testing.
+
+    Same gate as ``FLASK_SESSION_SECRET_KEY``: empty is allowed only when
+    ``is_unit_testing_environment()`` is true. There is no committed default
+    in this module — local stacks set the secret in env (sample.env). If a
+    former repository default was ever deployed to a non-disposable Keycloak,
+    rotate that client secret.
+    """
+    configured = (explicit_master or spoke_client_secret or "").strip()
+    if configured:
+        return configured
+    if is_unit_testing_environment():
+        return ""
+    raise RuntimeError(
+        "M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET or M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET "
+        "must be set outside unit-testing environments."
+    )
+
+
 @dataclass(frozen=True)
 class KeycloakSettings:
-    """Fully-resolved Keycloak configuration. Every field mirrors one of
-    config.py's former accessor functions, with the exact same fallback and
-    default rules — see ``from_env``."""
+    """Fully-resolved Keycloak configuration. Field defaults match the former
+    config.py accessors, except OIDC client secrets which must be set
+    explicitly outside unit-testing — same rule as ``FLASK_SESSION_SECRET_KEY``."""
 
     keycloak_url: str
     keycloak_public_issuer_base: str
@@ -79,6 +107,10 @@ class KeycloakSettings:
         shared_realm_name = _get("M8FLOW_KEYCLOAK_SHARED_REALM") or DEFAULT_SHARED_REALM_NAME
         default_organization_alias = _get("M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_ALIAS") or shared_realm_name
         spoke_client_secret = _get("M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET") or ""
+        master_client_secret = _resolve_master_client_secret(
+            explicit_master=_get("M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET"),
+            spoke_client_secret=spoke_client_secret,
+        )
 
         spoke_keystore_default = "m8flow-backend/keystore.p12"
         raw_p12 = _get("M8FLOW_KEYCLOAK_SPOKE_KEYSTORE_P12") or spoke_keystore_default
@@ -124,9 +156,7 @@ class KeycloakSettings:
             spoke_keystore_password=_get("M8FLOW_KEYCLOAK_SPOKE_KEYSTORE_PASSWORD") or "",
             spoke_client_id=_get("M8FLOW_KEYCLOAK_SPOKE_CLIENT_ID") or "m8flow-backend",
             spoke_client_secret=spoke_client_secret,
-            master_client_secret=(
-                _get("M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET") or spoke_client_secret or DEFAULT_KEYCLOAK_CLIENT_SECRET
-            ),
+            master_client_secret=master_client_secret,
             template_realm_name=DEFAULT_SHARED_REALM_NAME,
         )
 

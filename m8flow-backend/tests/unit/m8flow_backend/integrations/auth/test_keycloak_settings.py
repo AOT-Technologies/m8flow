@@ -10,7 +10,11 @@ from m8flow_backend.integrations.auth.keycloak import settings as keycloak_setti
 
 
 @pytest.fixture(autouse=True)
-def _reset_settings():
+def _reset_settings(monkeypatch):
+    # These tests do not use db_engine, so pin disposable env explicitly —
+    # otherwise an empty/production shell env fails closed on the client secret.
+    monkeypatch.setenv("M8FLOW_BACKEND_ENV", "unit_testing")
+    monkeypatch.setenv("SPIFFWORKFLOW_BACKEND_ENV", "unit_testing")
     keycloak_settings.reset_keycloak_settings()
     yield
     keycloak_settings.reset_keycloak_settings()
@@ -68,3 +72,52 @@ def test_provider_settings_property_tracks_process_singleton():
     provider = KeycloakAuthProvider(settings)
     assert provider.settings == settings
     assert provider.settings is keycloak_settings.current_settings()
+
+
+def test_from_env_allows_empty_client_secret_in_unit_testing(monkeypatch):
+    monkeypatch.setenv("M8FLOW_BACKEND_ENV", "unit_testing")
+    monkeypatch.setenv("SPIFFWORKFLOW_BACKEND_ENV", "unit_testing")
+    settings = keycloak_settings.KeycloakSettings.from_env(
+        {
+            "M8FLOW_BACKEND_ENV": "unit_testing",
+            "M8FLOW_KEYCLOAK_URL": "http://kc-test.test",
+        }
+    )
+    assert settings.master_client_secret == ""
+
+
+def test_from_env_requires_client_secret_in_local_development(monkeypatch):
+    monkeypatch.setenv("M8FLOW_BACKEND_ENV", "local_development")
+    monkeypatch.setenv("SPIFFWORKFLOW_BACKEND_ENV", "local_development")
+    with pytest.raises(RuntimeError, match="must be set outside unit-testing"):
+        keycloak_settings.KeycloakSettings.from_env(
+            {
+                "M8FLOW_BACKEND_ENV": "local_development",
+                "M8FLOW_KEYCLOAK_URL": "http://kc-local.test",
+            }
+        )
+
+
+def test_from_env_requires_client_secret_outside_unit_testing(monkeypatch):
+    monkeypatch.setenv("M8FLOW_BACKEND_ENV", "production")
+    monkeypatch.setenv("SPIFFWORKFLOW_BACKEND_ENV", "production")
+    with pytest.raises(RuntimeError, match="must be set outside unit-testing"):
+        keycloak_settings.KeycloakSettings.from_env(
+            {
+                "M8FLOW_BACKEND_ENV": "production",
+                "M8FLOW_KEYCLOAK_URL": "http://kc-prod.test",
+            }
+        )
+
+
+def test_from_env_accepts_explicit_client_secret(monkeypatch):
+    monkeypatch.setenv("M8FLOW_BACKEND_ENV", "production")
+    monkeypatch.setenv("SPIFFWORKFLOW_BACKEND_ENV", "production")
+    settings = keycloak_settings.KeycloakSettings.from_env(
+        {
+            "M8FLOW_BACKEND_ENV": "production",
+            "M8FLOW_KEYCLOAK_URL": "http://kc-prod.test",
+            "M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET": "unique-rotated-secret",
+        }
+    )
+    assert settings.master_client_secret == "unique-rotated-secret"
