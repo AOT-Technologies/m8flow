@@ -102,7 +102,7 @@ docker push "${DOCKER_NAMESPACE}/m8flow-keycloak:${TAG}"
 
 ## 4. MinIO
 
-MinIO is **not** built from this repo. It uses the official image `minio/minio:RELEASE.2025-01-20T14-49-07Z` (see [docker/minio.production.docker-compose.yml](minio.production.docker-compose.yml) and [docker/m8flow-docker-compose.yml](m8flow-docker-compose.yml)). There is no `docker build` or `docker push` for MinIO from this repository.
+MinIO is **not** built from this repo. It uses the Quay image `quay.io/minio/minio:RELEASE.2025-01-20T14-49-07Z` (Docker Hub `minio/minio` is no longer publicly pullable; see [docker/minio.production.docker-compose.yml](minio.production.docker-compose.yml) and [docker/m8flow-docker-compose.yml](m8flow-docker-compose.yml)). There is no `docker build` or `docker push` for MinIO from this repository.
 
 - **Docker Compose:** Use [docker/minio.production.docker-compose.yml](minio.production.docker-compose.yml) for production-style MinIO (standalone or as an override to the main stack). Set `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` in `.env`. With `--profile init`, [docker/minio_mc_init.sh](minio_mc_init.sh) creates buckets `m8flow-process-models` and `m8flow-templates`.
 - **ECS / Terraform (e.g. m8flow-deployment):** MinIO is typically defined in Terraform as its own ECS task (official image, EFS volume for `/data`, secrets for credentials, service discovery). The **backend** task definition must have: (1) `MINIO_ENDPOINT` (e.g. `http://minio:9000` via service discovery), and (2) EFS mounts for `/app/data/process_models` and `/app/data/templates` if process models are synced from MinIO to EFS. There is no separate "deploy MinIO image" step from this repo.
@@ -110,7 +110,7 @@ MinIO is **not** built from this repo. It uses the official image `minio/minio:R
   ```bash
   docker run -p 6846:9000 -p 6847:9001 \
     -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
-    minio/minio:RELEASE.2025-01-20T14-49-07Z server /data --console-address ":9001"
+    quay.io/minio/minio:RELEASE.2025-01-20T14-49-07Z server /data --console-address ":9001"
   ```
 
 ---
